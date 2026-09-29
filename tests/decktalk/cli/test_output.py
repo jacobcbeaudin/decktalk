@@ -96,101 +96,101 @@ def test_every_renderer_is_for_a_published_result_and_writes_what_it_wrote(model
 SHOWN = snapshot(
     {
         "AssembleResult": """\
-Built build/final/demo.mp4, 0:02 long.
-Loudness 1.5 LUFS against 1.5.
+Built build/film12, 0:13 long.
+Loudness 20.2 LUFS against 23.2.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "BuildResult": """\
-     Stopped at narrate, $1.50, 1 finding
-        Next open build/final/demo.mp4
+     Stopped at cue, $19.25, 1 finding
+        Next open build/storyboard24
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "CheckResult": """\
-Checking build/final/demo.mp4.
-This run costs $1.50 for 1 character at $1.50 per 1,000 characters.
-Storyboard build/final/demo.mp4
+Checking build/judged12.
+This run spent $16.25 on 15 characters at $18.25 per 1,000 characters.
+Storyboard build/storyboard20
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "ClipResult": """\
-Cut build/final/demo.mp4, 1.5 seconds of section 1.
+Cut build/film13, 17.2 seconds of section 12.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "ConfigExplainResult": """\
-one = one (default)
-  one
-  type one, default one, one
-  unit one
-  hazard one
-  decides PAGE_UNKNOWN_ATTR
-  docs one
+key10 = value13 (project)
+  sentence12
+  type type11, default default14, range16
+  unit unit15
+  hazard hazard36
+  decides PAGE_STAGGER_EMPTY
+  docs docs37
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "ConfigGetResult": """\
-one = one (default)
+key10 = value11 (environment)
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "ConfigListResult": """\
 
- Key   Value   Layer     Default
- ───────────────────────────────
- one   one     default   one
+ Key     Value     Layer         Default
+ ─────────────────────────────────────────
+ key10   value11   environment   default12
 
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "ConfigSetResult": """\
-build/final/demo.mp4 would set one = one
-The default layer still decides it, at one.
+build/file15 would set key11 = value12
+The environment layer still decides it, at effective16.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "ConfigUnsetResult": """\
-build/final/demo.mp4 no longer sets one.
+build/file14 no longer sets keys11.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "CueResult": """\
 
- Section   Cue   Phrase   Seconds
- ───────────────────────────────────
- 1         one   one      unresolved
+ Section   Cue     Phrase     Seconds
+ ────────────────────────────────────
+ 12        cue14   phrase15   16.25
 
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "DoctorResult": """\
 
- Tool   Version   Where
- ──────────────────────
- one    missing
+ Tool     Version     Where
+ ─────────────────────────────────
+ tool12   version13   build/path14
 
-Python    one
-Platform  one
+Python    python17
+Platform  platform18
 Voice key yes
-Bias      2 ms
-Wrote     build/final/demo.mp4
+Bias      19 ms
+Wrote     build/written11
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "InitResult": """\
-Wrote build/final/demo.mp4 from the one example, 1 file.
-Next   cd build/final/demo.mp4 && decktalk build --no-voice
+Wrote build/root12 from the example14 example, 1 file.
+Next   cd build/root12 && decktalk build --no-voice
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "InstallResult": """\
 
- Tool   Version   Where
- ──────────────────────
- one    missing
+ Tool     Version     Where
+ ─────────────────────────────────
+ tool11   version12   build/path13
 
-Cache  build/final/demo.mp4
+Cache  build/cache15
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
@@ -198,63 +198,68 @@ Found 1 finding, 1 certain.
 
  Section   Take     Characters   Seconds
  ───────────────────────────────────────
- 1         voiced   1            0.0
+ 13        voiced   16           17.2
 
-Spent $1.50 on placeholder narration.
+Spent $23.25 on placeholder narration.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "RecordResult": """\
 
- Section   File   Seconds   Frames   Kept
- ────────────────────────────────────────
- 1                1.5       1        yes
+ Section   File           Seconds   Frames   Kept
+ ────────────────────────────────────────────────
+ 12        build/file14   15.2      16       yes
 
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "ServeResult": """\
-Serving build/final/demo.mp4 on one
+Serving build/root13 on url11
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "SoundscapeResult": """\
 
- Item   Kind    Status    Seconds
- ────────────────────────────────
- one    music   planned   0.0
+ Item     Kind       Status      Seconds
+ ───────────────────────────────────────
+ name12   ambience   generated   16.2
 
-Would spend $1.50 on the soundscape.
+Would spend $21.25 on the soundscape.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "StatusResult": """\
 
- Section   Key   Plays   Voiced   Recorded   Cut   Stale
- ───────────────────────────────────────────────────────
- 1         one   one     yes      yes        yes   yes
+ Section   Key     Plays      Voiced   Recorded   Cut   Stale
+ ────────────────────────────────────────────────────────────
+ 14        key15   source17   yes      yes        yes   yes
 
-Film   build/final/demo.mp4, 0:02 long
-Live   one writing build/final/demo.mp4
-Next   one
+Film   build/film18, 0:19 long
+Live   run20 writing build/events21
+Next   next23
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "StoryboardResult": """\
-Wrote build/final/demo.mp4, 1 panel.
+Wrote build/storyboard12, 1 panel.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "VerifyResult": """\
-Verifying build/final/demo.mp4, 0:02 long.
+Verifying build/film11, 0:12 long.
+
+ Section   Cue     Spoken   Shown   Offset
+ ─────────────────────────────────────────
+ 23        cue24   25.25    26.25   +27.25
+
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "WordsResult": """\
 
- Section 1   Start   End
- ────────────────────────
- one         1.50    1.50
+ Section 11   Start   End
+ ──────────────────────────
+ word13       14.25   15.25
 
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
