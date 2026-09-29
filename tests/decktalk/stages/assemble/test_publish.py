@@ -348,7 +348,7 @@ def test_the_cut_list_a_transcript_reads_carries_every_section(tmp_path, write_p
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     cuts: Cuts = cut_list(inputs, rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}))
     assert len(cuts.sections) == 4
-    assert cuts.at(2.5).section == 2
+    assert [cut.section for cut in cuts.sections if cut.start <= 2.5 < cut.end] == [2]
 
 
 def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, write_project, open_run, monkeypatch):

@@ -47,14 +47,6 @@ class Cuts(Stored):
         """How long the whole film runs, which is where its last section ends."""
         return self.sections[-1].end if self.sections else 0.0
 
-    def at(self, seconds: float) -> Cut | None:
-        """The section playing at one second of the film, or None past its end."""
-        return next((cut for cut in self.sections if cut.start <= seconds < cut.end), None)
-
-    def of(self, section: int) -> Cut | None:
-        """One section's row, or None when that section is not in the film."""
-        return next((cut for cut in self.sections if cut.section == section), None)
-
 
 class CutKey(Stored):
     """What one section cut was encoded from, which is how an unchanged cut is told from a stale one.

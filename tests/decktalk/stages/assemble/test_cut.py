@@ -219,9 +219,8 @@ def test_the_cut_list_records_where_each_section_plays_and_what_stood_in(tmp_pat
     assert [cut.section for cut in cuts.sections] == [1, 2, 3, 4]
     assert [cut.start for cut in cuts.sections] == [0.0, 2.0, 5.0, 7.5]
     assert cuts.total_seconds == 9.0
-    assert cuts.of(2).kind is SectionKind.CLIP
-    assert cuts.of(1).kind is SectionKind.PAGE
-    assert cuts.of(3).chapter == "The edit"
+    assert [cut.kind for cut in cuts.sections[:2]] == [SectionKind.PAGE, SectionKind.CLIP]
+    assert cuts.sections[2].chapter == "The edit"
     assert cuts.fps == inputs.settings.video.output_fps
 
 

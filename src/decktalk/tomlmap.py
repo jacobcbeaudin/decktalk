@@ -142,8 +142,6 @@ def _number(value: float) -> str:
     return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
 
 
-ABOVE_ZERO = Bounds(gt=0)
-NOT_NEGATIVE = Bounds(ge=0)
 A_PERCENT = Bounds(ge=0, le=100)
 A_SHARE = Bounds(ge=0, le=1)
 A_LUMA = Bounds(ge=0, le=255)
@@ -595,30 +593,16 @@ def _as_written(annotation: Any, raw: Any) -> Any:
     return raw
 
 
-def default_of(model: type, name: str) -> Any:
-    """The default one field of a frozen dataclass declares, which a parser passes rather than repeating.
-
-    A table that is read into a dataclass names each key's default once, on the field, so the parse
-    call and the field can never disagree about what a project that writes nothing gets.
-    """
-    if not is_dataclass(model):
-        raise TypeError(f"{model.__name__} declares no fields, so it has no default for {name}")
-    return next(one.default for one in fields(model) if one.name == name)
-
-
 __all__ = [
     "A_LUMA",
     "A_PERCENT",
     "A_SHARE",
-    "ABOVE_ZERO",
-    "NOT_NEGATIVE",
     "PUBLISHED",
     "Bounds",
     "Key",
     "Nature",
     "Source",
     "Table",
-    "default_of",
     "did_you_mean",
     "from_mapping",
     "read_value",
