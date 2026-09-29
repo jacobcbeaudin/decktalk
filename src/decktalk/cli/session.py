@@ -136,8 +136,13 @@ class Session:
         return Machine.from_environment(overrides=self._overrides)
 
     def project(self) -> Project:
-        """The project this run is about, opened on this machine with this run's overrides."""
-        return projects.open(self.flags.project, machine=self.machine, overrides=self._overrides)
+        """The project this run is about, opened on this machine, which already carries this run's overrides.
+
+        The machine is made from every `--set` pair, and a project opened on it starts from the
+        machine's own overrides, so the project is given none of its own. A machine-scoped pair given
+        to the project a second time would be refused, because a project may not set one.
+        """
+        return projects.open(self.flags.project, machine=self.machine)
 
     def fixes_wanted(self, findings: Sequence[Finding], fix: bool | None) -> list[Finding]:
         """The findings whose fixes the caller wants applied, asked once on a terminal, or none.

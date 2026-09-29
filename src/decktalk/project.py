@@ -61,7 +61,7 @@ from decktalk.results import (
     Voicing,
     WordsResult,
 )
-from decktalk.settings import Layers, Settings
+from decktalk.settings import Layers, Settings, route, scoped
 
 STAGES = "decktalk.stages"
 """The package every stage lives in, named rather than imported so the facade loads none of them.
@@ -95,8 +95,9 @@ def open(
     make one itself and hand it to both, which is what keeps the toolchain and the stream shared.
 
     A machine a host built may carry overrides of its own, such as the page policy it enforces on
-    every project. A project opened on it starts from those, and `overrides` come after them, so a
-    caller adds to what the machine says rather than silently replacing it.
+    every project. A project opened on it starts from those, and `overrides` come after them. They
+    may set project-scoped keys only, as `Project` says. With no machine given, the machine is made
+    from `overrides`, so every key reaches the layer it belongs to.
     """
     pairs = tuple(overrides)
     here = machine or Machine.from_environment(overrides=pairs)
@@ -105,7 +106,7 @@ def open(
     root = root if root.is_absolute() else here.cwd / root
     if root.is_file():
         root = root.parent
-    return Project(here, root, overrides=pairs if machine is None else (*here.overrides, *pairs))
+    return Project(here, root, overrides=pairs if machine is not None else ())
 
 
 def section_numbers(selection: str) -> tuple[int, ...]:
@@ -196,10 +197,26 @@ class Project:
     events: Events
 
     def __init__(self, machine: Machine, root: Path, *, overrides: tuple[str, ...] = ()) -> None:
+        """Open the project at `root` on `machine`, with the caller's `overrides` over the machine's own.
+
+        A machine-scoped key in `overrides` is refused, because it names the browser DeckTalk launches
+        and the trust it gives a page, and those belong to whoever built the machine. A host that
+        forwards a tenant's pairs would otherwise hand the tenant both.
+        """
+        if taken := sorted(scoped(route(overrides), Scope.MACHINE)):
+            raise InputError(
+                f"'{taken[0]}' is machine-scoped, so an override of one project cannot set it.",
+                hint="Set it in the overrides of the machine the project is opened on.",
+            )
         self.machine = machine
         self.root = root.resolve()
         self.overrides = overrides
-        self.inputs = Inputs.load(self.root, environ=machine.environ, machine=dict(machine.tables), overrides=overrides)
+        self.inputs = Inputs.load(
+            self.root,
+            environ=machine.environ,
+            machine=dict(machine.tables),
+            overrides=(*machine.overrides, *overrides),
+        )
         self._runs: set[str] = set()
         self.events = ProjectEvents(machine, self._runs)
 

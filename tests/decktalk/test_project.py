@@ -164,6 +164,32 @@ def test_an_override_given_for_one_run_reaches_the_settings(tmp_path: Path) -> N
     assert project.reload().settings.video.crf == 20
 
 
+@pytest.mark.parametrize("pair", ["record.page_policy=trusted", "record.browser_path=/bin/echo"])
+def test_an_override_at_open_cannot_set_a_key_that_belongs_to_the_host_machine(tmp_path: Path, pair: str) -> None:
+    """A host that forwards a tenant's pairs would otherwise hand the tenant its browser and its trust level."""
+    write_project(tmp_path)
+    host = Machine.of(
+        environ={},
+        config_path=tmp_path / "host.toml",
+        cwd=tmp_path,
+        cache_dir=tmp_path / "cache",
+        overrides=("record.page_policy=untrusted",),
+    )
+    with pytest.raises(InputError, match="machine-scoped"):
+        decktalk.open(tmp_path, machine=host, overrides=(pair,))
+    assert decktalk.open(tmp_path, machine=host).settings.record.page_policy == "untrusted"
+
+
+def test_an_override_given_to_open_without_a_machine_reaches_the_machine_it_makes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no machine given, the caller is the one who owns the machine it makes, so every key is theirs."""
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "machine.toml"))
+    write_project(tmp_path)
+    project = decktalk.open(tmp_path, overrides=("record.concurrency=2", "video.crf=20"))
+    assert (project.settings.record.concurrency, project.settings.video.crf) == (2, 20)
+
+
 def test_the_layers_say_which_layer_set_each_key(tmp_path: Path) -> None:
     project = a_project(tmp_path, MINIMAL_TOML + "\n[video]\ncrf = 21\n")
     assert project.layers.winner("video.crf").layer.value == "project"

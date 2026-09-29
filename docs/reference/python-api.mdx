@@ -48,7 +48,7 @@ decktalk.open(path=None, *, machine=None, overrides=()) -> Project
 |---|---|---|
 | `path` | `DECKTALK_PROJECT`, then the directory the process started in | The project directory, or the path of its `decktalk.toml`. |
 | `machine` | a machine made from the environment | The `Machine` to open this project on, which is how two projects share one toolchain and one event stream. |
-| `overrides` | `()` | `table.key=value` strings, which are the top settings layer for every call on this project. |
+| `overrides` | `()` | `table.key=value` strings, which are the top settings layer for every call on this project. When `machine` is given they may set project-scoped keys only, and a machine-scoped key belongs in that machine's own overrides. |
 
 A script that opens two projects should make one `Machine` itself and hand it to both, because the
 machine is what carries the shared toolchain and the shared stream.
