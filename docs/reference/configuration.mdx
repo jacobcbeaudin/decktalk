@@ -295,7 +295,7 @@ These keys name the tools DeckTalk drives, for a machine that supplies its own.
 |---|---|---|---|---|---|---|---|
 | `ffmpeg` | string | `""` | takes any value of its type | path | machine |  | ffmpeg executable. It is empty for the build DeckTalk fetches itself. |
 | `ffprobe` | string | `""` | takes any value of its type | path | machine |  | ffprobe executable. It is empty for the build DeckTalk fetches itself. |
-| `timeout_seconds` | number | `600.0` | must be between 10 and 7200 | seconds | machine |  | Longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
+| `timeout_seconds` | number | `600.0` | must be between 10 and 7200 | seconds | machine |  | Longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before it is stopped. |
 | `cache_dir` | string | `""` | takes any value of its type | path | machine |  | Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache. |
 
 ## `[host]`

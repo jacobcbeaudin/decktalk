@@ -76,7 +76,7 @@ class Bound:
         """(ffmpeg, ffprobe) for this binding, resolved on the first question and kept after it."""
         with self._lock:
             if self._paths is None:
-                self._paths = _resolve(self.tools)
+                self._paths = _resolve(self.tools, self.cancel)
             return self._paths
 
 
@@ -293,11 +293,15 @@ def ffmpeg_paths() -> tuple[str, str]:
     belong to, and keeping one for the process is the leak the binding exists to prevent.
     """
     bound = TOOLS.get()
-    return bound.paths() if bound is not None else _resolve(ToolsConfig())
+    return bound.paths() if bound is not None else _resolve(ToolsConfig(), None)
 
 
-def _resolve(tools: ToolsConfig) -> tuple[str, str]:
-    """(ffmpeg, ffprobe) executables for one set of tools, which a binding asks for once."""
+def _resolve(tools: ToolsConfig, cancel: Cancel | None) -> tuple[str, str]:
+    """(ffmpeg, ffprobe) executables for one set of tools, which a binding asks for once.
+
+    A fetch this starts waits on another fetch of the same build only while `cancel` is unset and
+    for no longer than `tools.timeout_seconds`.
+    """
     if named := _named(tools):
         return named
     if installed := ffmpeg_fetch.installed_pinned():
@@ -311,7 +315,7 @@ def _resolve(tools: ToolsConfig) -> tuple[str, str]:
             f"PATH. Install ffmpeg, or set {' and '.join(NAMED)}."
         )
     try:
-        return ffmpeg_fetch.fetch_ffmpeg()
+        return ffmpeg_fetch.fetch_ffmpeg(cancel=cancel, wait_seconds=tools.timeout_seconds)
     # A digest that does not match raises ToolError and never falls back, because it must stop a run.
     except OSError as exc:
         if on_path:

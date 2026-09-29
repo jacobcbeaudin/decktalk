@@ -605,7 +605,9 @@ def test_a_doctor_that_measured_nothing_writes_nothing(tmp_path: Path) -> None:
 def test_install_fetches_the_browser_and_the_encoder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fetched: list[str] = []
     monkeypatch.setattr(machine_module.chromium_fetch, "fetch_chromium", lambda **_kw: fetched.append("chromium"))
-    monkeypatch.setattr(machine_module, "fetch_ffmpeg", lambda: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe")))
+    monkeypatch.setattr(
+        machine_module, "fetch_ffmpeg", lambda **_: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe"))
+    )
     result = a_machine(tmp_path).install()
     assert fetched == ["chromium"]
     assert [tool.tool for tool in result.tools] == ["chromium", "ffmpeg", "ffprobe"]
@@ -619,7 +621,9 @@ def test_install_reports_the_browser_it_just_fetched_rather_than_a_blank_row(
     """The row said version null, so `install` printed the browser as missing while `doctor` run
     straight afterwards read the real version off the very browser the fetch had left behind."""
     monkeypatch.setattr(machine_module.chromium_fetch, "fetch_chromium", lambda **_kw: None)
-    monkeypatch.setattr(machine_module, "fetch_ffmpeg", lambda: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe")))
+    monkeypatch.setattr(
+        machine_module, "fetch_ffmpeg", lambda **_: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe"))
+    )
     here = a_machine(tmp_path)
     monkeypatch.setattr(
         type(here),

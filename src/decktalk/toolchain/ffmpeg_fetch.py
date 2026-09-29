@@ -18,14 +18,15 @@ import stat
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
-from ..errors import ToolError
+from ..errors import Cancel, ToolError
 from .announce import announce
 from .cache import cache_dir
 
@@ -44,6 +45,9 @@ MAX_ARCHIVE_BYTES = 400 * 1024 * 1024
 USER_AGENT = "decktalk"
 CHUNK_BYTES = 1 << 20
 """Truth: a megabyte at a time, which is large enough that hashing keeps up with the socket."""
+
+LOCK_POLL_SECONDS = 0.1
+"""Calibration: how often a waiting fetch looks at the cancel token and the clock, which nobody notices."""
 
 DOWNLOAD_TIMEOUT_SECONDS = 60
 """Calibration: longer than any read of a healthy host takes, so only one that stopped answering hits it."""
@@ -244,7 +248,35 @@ def _unpack(archive: Path, asset: FfmpegAsset, into: Path) -> None:
         out.chmod(out.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def fetch_ffmpeg(key: str | None = None) -> tuple[str, str]:
+def _take_turn(lock: FileLock, cancel: Cancel | None, wait_seconds: float) -> None:
+    """Acquire the lock of one build, waiting on another fetch of it for no longer than `wait_seconds`.
+
+    The wait is a run of short attempts rather than one blocking call, because a holder that is alive
+    and slow or wedged would otherwise hold every other run on the machine where no cancel reaches
+    it. A waiting run announces the fetch it stopped for once, with nothing counted, because the
+    bytes arrive in another fetch that this one cannot see.
+    """
+    deadline = time.monotonic() + wait_seconds
+    waiting = False
+    while True:
+        try:
+            lock.acquire(timeout=LOCK_POLL_SECONDS)
+            return
+        except Timeout:
+            if not waiting:
+                announce(TOOL, 0, None)
+                waiting = True
+            if cancel is not None:
+                cancel.check()
+            if time.monotonic() > deadline:
+                raise ToolError(
+                    f"Another fetch of ffmpeg held {lock.lock_file} for longer than the {wait_seconds:g} seconds "
+                    "that tools.timeout_seconds allows, so this run stopped waiting for it.",
+                    hint="Let the other fetch finish, or stop it, then run the command again.",
+                ) from None
+
+
+def fetch_ffmpeg(key: str | None = None, *, cancel: Cancel | None = None, wait_seconds: float) -> tuple[str, str]:
     """Download the pinned build for a platform into install_dir() and return its (ffmpeg, ffprobe).
 
     Every archive is verified before it is opened, the executables are unpacked into a scratch
@@ -252,7 +284,8 @@ def fetch_ffmpeg(key: str | None = None) -> tuple[str, str]:
     are in place. Two fetches of one build take turns under an operating system lock beside it,
     which the system releases if its holder dies, and the second finds the build the first installed
     and downloads nothing, so two cold first builds in one process or in two can never delete each
-    other's download.
+    other's download. A fetch waiting for its turn stops when `cancel` is set and gives up after
+    `wait_seconds`, which a run takes from `tools.timeout_seconds`.
     """
     key = key or platform_key()
     build = pinned_build(key)
@@ -263,7 +296,9 @@ def fetch_ffmpeg(key: str | None = None) -> tuple[str, str]:
         )
     dest = install_dir(key)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with FileLock(dest.with_name(f".{dest.name}.lock")):
+    lock = FileLock(dest.with_name(f".{dest.name}.lock"))
+    _take_turn(lock, cancel, wait_seconds)
+    try:
         if installed := installed_pinned(key):
             return installed
         scratch = Path(tempfile.mkdtemp(prefix=f".{dest.name}.", dir=dest.parent))
@@ -276,4 +311,6 @@ def fetch_ffmpeg(key: str | None = None) -> tuple[str, str]:
             scratch.replace(dest)
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
+    finally:
+        lock.release()
     return str(dest / _exe("ffmpeg")), str(dest / _exe("ffprobe"))

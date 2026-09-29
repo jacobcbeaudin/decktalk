@@ -211,12 +211,15 @@ class Toolchain:
             )
         return self.ffmpeg, self.ffprobe
 
-    def fetched(self) -> Toolchain:
-        """This toolchain with the pinned build downloaded when it was not already there."""
+    def fetched(self, *, cancel: Cancel | None = None) -> Toolchain:
+        """This toolchain with the pinned build downloaded when it was not already there.
+
+        `cancel` is the run's token, which a fetch waiting on another fetch of the same build polls.
+        """
         if self.complete:
             return self
-        with self.bound():
-            ffmpeg, ffprobe = fetch_ffmpeg()
+        with self.bound(cancel=cancel):
+            ffmpeg, ffprobe = fetch_ffmpeg(cancel=cancel, wait_seconds=self.tools.timeout_seconds)
         return replace(self, ffmpeg=Path(ffmpeg), ffprobe=Path(ffprobe))
 
 
@@ -563,7 +566,7 @@ class Machine:
             # so `install` cannot print the browser as missing a second after it downloaded one.
             browser = self._browser_row().model_copy(update={"fetched": True})
             held = self.toolchain.complete
-            tools = (browser, *_encoder_rows(self.toolchain.fetched(), fetched=not held))
+            tools = (browser, *_encoder_rows(self.toolchain.fetched(cancel=run.cancel), fetched=not held))
             return run.result(InstallResult, tools=tools, cache=self.cache_dir)
 
     def doctor(self, *, measure: bool = False, cancel: Cancel | None = None) -> DoctorResult:

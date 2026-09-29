@@ -1432,7 +1432,7 @@
           "x-environment": "DECKTALK_TOOLS_FFPROBE"
         },
         "timeout_seconds": {
-          "description": "Longest one ffmpeg or ffprobe call may run before DeckTalk stops it.",
+          "description": "Longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before it is stopped.",
           "type": "number",
           "default": 600.0,
           "minimum": 10,

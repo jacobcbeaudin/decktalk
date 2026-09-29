@@ -805,7 +805,7 @@ class ToolsConfig:
     )
     timeout_seconds: float = tune(
         600.0,
-        "Longest one ffmpeg or ffprobe call may run before DeckTalk stops it.",
+        "Longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before it is stopped.",
         unit="seconds",
         bounds=Bounds(ge=10, le=7200),
         scope=Scope.MACHINE,
