@@ -66,6 +66,20 @@ def test_set_refuses_a_value_the_loader_would_refuse(run, project_dir) -> None:
     assert "crf" not in (project_dir / "decktalk.toml").read_text(encoding="utf-8")
 
 
+def test_set_refuses_a_project_file_that_links_out_of_the_project(run, project_dir, tmp_path_factory) -> None:
+    victim = tmp_path_factory.mktemp("elsewhere") / "victim.toml"
+    victim.write_text("[video]\ncrf = 18\n", encoding="utf-8")
+    (project_dir / "decktalk.toml").unlink()
+    try:
+        (project_dir / "decktalk.toml").symlink_to(victim)
+    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
+        pytest.skip("this machine does not let an unprivileged user make a link")
+    ran = run("-p", str(project_dir), "config", "set", "video.crf", "20")
+    assert ran.exit_code != 0
+    assert "leads outside the project" in ran.err
+    assert victim.read_text(encoding="utf-8") == "[video]\ncrf = 18\n"
+
+
 def test_an_out_of_range_refusal_is_two_sentences(run, project_dir) -> None:
     """The loader's refusal ends on the value it got, and the reason it was refused is a new sentence."""
     said = " ".join(run("-p", str(project_dir), "config", "set", "video.crf", "99").err.split())

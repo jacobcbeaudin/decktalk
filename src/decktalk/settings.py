@@ -1544,8 +1544,7 @@ def write(
     `environ` is the machine's environment, which is the layer over the file that decides whether
     the value written is the value in force.
     """
-    # A link is followed, so a machine file kept in a dotfiles repository stays where its owner keeps it.
-    target = path.resolve()
+    target = _target(path, scope)
     edited = edit(_text(target), key, value, scope=scope, file=path, measured=measured)
     validate(edited.text, path, scope)
     if not dry_run:
@@ -1580,7 +1579,7 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
     a way back to the default.
     """
     _scoped_key(key, scope, action="taken out of", rerun=f"decktalk config unset {key}")
-    target = path.resolve()
+    target = _target(path, scope)
     document = _document(_text(target), path)
     previous = _stated(document, key)
     if previous is not _ABSENT:
@@ -1597,6 +1596,25 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
         effective=json_value(value_of(tree.settings, key)),
         layer=tree.layers.winner(key).layer,
     )
+
+
+def _target(path: Path, scope: Scope) -> Path:
+    """The file a settings change replaces, which is `path` with every link followed.
+
+    A link is followed so a machine file kept in a dotfiles repository stays where its owner keeps
+    it. A project file that leads out of the project is refused, because a project someone else
+    wrote would otherwise choose a file elsewhere on the machine for a fix or `config set` to write.
+    A hard link needs no refusal, because the change replaces the file rather than writing into it,
+    so the other name keeps its own contents.
+    """
+    target = path.resolve()
+    if scope is Scope.PROJECT and not target.is_relative_to(path.parent.resolve()):
+        raise InputError(
+            f"{path.name} leads outside the project, so DeckTalk writes nothing through it.",
+            hint=f"Replace the link at {path.name} with the file itself.",
+            location=Location(where=path.name, file=Path(path.name)),
+        )
+    return target
 
 
 def _text(path: Path) -> str:

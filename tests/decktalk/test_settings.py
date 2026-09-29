@@ -499,6 +499,26 @@ class TestTheWriter:
         assert path.is_symlink()
         assert "concurrency = 2" in kept.read_text(encoding="utf-8")
 
+    @pytest.mark.parametrize("removing", [False, True])
+    def test_a_project_file_linked_out_of_the_project_is_never_written_through(
+        self, tmp_path: Path, removing: bool
+    ) -> None:
+        """A project that arrives with its `decktalk.toml` linked elsewhere chose where `config set` writes."""
+        victim = tmp_path / "victim.toml"
+        victim.write_text("[video]\nwidth = 640\n", encoding="utf-8")
+        root = tmp_path / "project"
+        root.mkdir()
+        try:
+            (root / "decktalk.toml").symlink_to(victim)
+        except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
+            pytest.skip("this machine does not let an unprivileged user make a link")
+        with pytest.raises(InputError, match="leads outside the project"):
+            if removing:
+                unset(root / "decktalk.toml", "video.width", scope=Scope.PROJECT, environ={})
+            else:
+                write(root / "decktalk.toml", "video.width", "1280", scope=Scope.PROJECT, environ={})
+        assert victim.read_text(encoding="utf-8") == "[video]\nwidth = 640\n"
+
 
 class TestTheRemover:
     """A removal is the write's opposite, and it answers with the layer that shows through."""
