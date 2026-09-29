@@ -489,8 +489,9 @@ class CommandFix(Model):
 class RuntimeFix(Model):
     """A fix that replaces a project's copy of the runtime with the one this engine ships.
 
-    The copy is the engine's own file and never the author's work, so replacing it loses nothing, and
-    the fix names only where the copy is, because what goes there is always the engine's runtime.
+    A copy some release shipped holds none of the author's work, so its fix is safe. A copy that
+    matches no shipped runtime holds edits that replacing it would lose, so its fix is unsafe. The
+    fix names only where the copy is, because what goes there is always the engine's runtime.
     """
 
     kind: Literal["runtime"] = Field("runtime", description="The kind of fix, which is how a reader dispatches on it.")

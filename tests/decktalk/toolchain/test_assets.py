@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
+import subprocess
+
+import pytest
 
 from decktalk.toolchain.assets import (
     KATEX_FILES,
     KATEX_VERSION,
+    RUNTIME_FILE,
+    SHIPPED_RUNTIMES,
     katex_dir,
     katex_fonts,
     katex_missing,
@@ -15,6 +21,7 @@ from decktalk.toolchain.assets import (
     runtime_path,
     vendor_katex,
 )
+from support.paths import REPO
 
 
 def test_the_packaged_copy_is_complete():
@@ -67,3 +74,22 @@ def test_katex_missing_names_each_absent_file(tmp_path):
     (copy / "fonts" / "KaTeX_Main-Regular.woff2").unlink()
     (copy / "LICENSE").unlink()
     assert katex_missing(copy) == ["LICENSE", "fonts/KaTeX_Main-Regular.woff2"]
+
+
+def test_the_shipped_runtimes_are_exactly_the_runtimes_the_release_tags_hold():
+    """A release that forgot its digest would make its own unedited copies look edited to the next engine.
+
+    The tags are only there in a full clone, because CI checks out one commit without them, so this
+    runs wherever the history is and is skipped where it is not.
+    """
+    tags = subprocess.run(["git", "tag", "--list", "v*"], cwd=REPO, capture_output=True, text=True, check=False)
+    if tags.returncode or not tags.stdout.split():
+        pytest.skip("the release tags are not in this checkout")
+    shipped = set()
+    for tag in tags.stdout.split():
+        held = subprocess.run(
+            ["git", "show", f"{tag}:src/decktalk/runtime/{RUNTIME_FILE}"], cwd=REPO, capture_output=True, check=False
+        )
+        if held.returncode == 0:
+            shipped.add(hashlib.sha256(held.stdout).hexdigest())
+    assert set(SHIPPED_RUNTIMES) == shipped

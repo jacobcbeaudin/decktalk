@@ -388,8 +388,10 @@ element, so a caller hands it straight to a subprocess with no shell. This one c
 ```
 
 **`kind: "runtime"`** replaces a project's copy of `decktalk-runtime.js` with the one this engine
-ships. Its `file` names the copy, and the fix writes nothing but the engine's runtime there. This
-one comes from a `PAGE_RUNTIME_STALE` finding on a project an older engine wrote.
+ships. Its `file` names the copy, and the fix writes nothing but the engine's runtime there. It is
+`safe` when the copy is, byte for byte, a runtime some release shipped, and `unsafe` when it is not,
+because such a copy holds edits that replacing it would lose. This one comes from a
+`PAGE_RUNTIME_STALE` finding on a project an older engine wrote.
 
 ```json
 {

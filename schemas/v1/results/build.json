@@ -479,7 +479,7 @@
     },
     "RuntimeFix": {
       "additionalProperties": false,
-      "description": "A fix that replaces a project's copy of the runtime with the one this engine ships.\n\nThe copy is the engine's own file and never the author's work, so replacing it loses nothing, and\nthe fix names only where the copy is, because what goes there is always the engine's runtime.",
+      "description": "A fix that replaces a project's copy of the runtime with the one this engine ships.\n\nA copy some release shipped holds none of the author's work, so its fix is safe. A copy that\nmatches no shipped runtime holds edits that replacing it would lose, so its fix is unsafe. The\nfix names only where the copy is, because what goes there is always the engine's runtime.",
       "properties": {
         "kind": {
           "const": "runtime",

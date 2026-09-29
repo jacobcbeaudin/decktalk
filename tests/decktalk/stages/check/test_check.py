@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -201,24 +202,43 @@ def test_a_runtime_copy_an_older_engine_wrote_is_a_certain_finding_at_the_copy(t
     (tmp_path / "deck" / "decktalk-runtime.js").write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
     result = check(inputs, a_run(tmp_path), pages=False)
     (found,) = [one for one in result.findings if one.code is Code.PAGE_RUNTIME_STALE]
-    assert "Run `decktalk check --fix`" in found.message
     assert found.location is not None and found.location.file == Path("deck/decktalk-runtime.js")
     assert result.ok is False
 
 
-def test_the_safe_fix_replaces_a_stale_runtime_copy_with_the_engines(tmp_path: Path) -> None:
-    """What `check --fix` applies is the engine's runtime, byte for byte, and the next check is clean."""
+def test_the_safe_fix_replaces_a_runtime_copy_a_release_shipped_with_the_engines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy a release shipped holds none of the author's work, so `check --fix` replaces it and says so."""
     inputs = a_project(tmp_path, cues=CUES)
     copy = tmp_path / "deck" / "decktalk-runtime.js"
     copy.write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
+    monkeypatch.setattr(assets, "SHIPPED_RUNTIMES", (hashlib.sha256(copy.read_bytes()).hexdigest(),))
     run = a_run(tmp_path)
     (found,) = [one for one in check(inputs, run, pages=False).findings if one.code is Code.PAGE_RUNTIME_STALE]
     assert found.fix is not None and found.fix.applicability is Applicability.SAFE
+    assert "Run `decktalk check --fix`" in found.message
     outcome = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=False)
     assert outcome.applied and outcome.files == (Path("deck/decktalk-runtime.js"),)
     assert copy.read_bytes() == assets.runtime_path().read_bytes()
     again = check(Inputs.load(tmp_path, environ={}), a_run(tmp_path), pages=False)
     assert Code.PAGE_RUNTIME_STALE not in {one.code for one in again.findings}
+
+
+def test_a_runtime_copy_no_release_shipped_is_kept_unless_the_caller_accepts_losing_its_edits(tmp_path: Path) -> None:
+    """A copy the author edited holds their work, so its fix is unsafe and the finding says what it would lose."""
+    inputs = a_project(tmp_path, cues=CUES)
+    copy = tmp_path / "deck" / "decktalk-runtime.js"
+    edited = assets.runtime_path().read_bytes() + b"window.__MINE__ = 1;\n"
+    copy.write_bytes(edited)
+    run = a_run(tmp_path)
+    (found,) = [one for one in check(inputs, run, pages=False).findings if one.code is Code.PAGE_RUNTIME_STALE]
+    assert found.fix is not None and found.fix.applicability is Applicability.UNSAFE
+    assert "edits" in found.message and "lose" in found.fix.title
+    kept = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=False)
+    assert not kept.applied and copy.read_bytes() == edited
+    replaced = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=True)
+    assert replaced.applied and copy.read_bytes() == assets.runtime_path().read_bytes()
 
 
 def test_a_project_whose_pages_load_no_copy_of_the_runtime_is_told_nothing_about_one(tmp_path: Path) -> None:

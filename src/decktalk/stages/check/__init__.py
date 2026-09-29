@@ -23,6 +23,7 @@ and `cue` still owns `build/cue-times.json`.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,6 +58,7 @@ from decktalk.stages.narrate.plan import voice_id_of
 from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
 from decktalk.stages.verify import opted_out
 from decktalk.template import stale_runtime
+from decktalk.toolchain import assets
 from decktalk.toolchain.assets import RUNTIME_FILE
 
 NEEDS_A_PAGE: tuple[Code, ...] = (
@@ -155,12 +157,24 @@ def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
         copy = inputs.path(named)
         if stale_runtime(copy):
             where = named.as_posix()
-            message = (
-                f"{where} is not the runtime this engine ships, so its pages play a contract this engine does not "
-                "measure. Run `decktalk check --fix` to replace it with the engine's."
-            )
-            title = f"Replace {where} with the runtime this engine ships."
-            fix = RuntimeFix(title=title, applicability=Applicability.SAFE, file=named)
+            # Only a copy some release shipped is known to hold none of the author's work. Any other
+            # copy was edited, so replacing it is left to a caller who accepts losing the edits.
+            if hashlib.sha256(copy.read_bytes()).hexdigest() in assets.SHIPPED_RUNTIMES:
+                message = (
+                    f"{where} is not the runtime this engine ships, so its pages play a contract this engine does "
+                    "not measure. Run `decktalk check --fix` to replace it with the engine's."
+                )
+                title = f"Replace {where} with the runtime this engine ships."
+                fix = RuntimeFix(title=title, applicability=Applicability.SAFE, file=named)
+            else:
+                message = (
+                    f"{where} is not the runtime this engine ships, so its pages play a contract this engine does "
+                    "not measure. It matches no runtime a release shipped, so it holds edits that replacing it "
+                    "would lose, and `decktalk check --fix` leaves it as it is. Keep the edits somewhere else "
+                    "and apply the unsafe fix, which replaces it with the engine's."
+                )
+                title = f"Replace {where} with the runtime this engine ships, and lose the edits it holds."
+                fix = RuntimeFix(title=title, applicability=Applicability.UNSAFE, file=named)
             run.found(judge(Code.PAGE_RUNTIME_STALE, message, at(copy, inputs.root), fix=fix))
 
 
