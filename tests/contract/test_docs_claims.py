@@ -21,11 +21,14 @@ from pathlib import Path
 
 import pytest
 
+import decktalk
 from decktalk.cli import catalog
 from decktalk.cli.app import docs_for
 from decktalk.explain import explain
 from decktalk.settings import KEYS
 from support.paths import REPO
+from support.projects import write_project
+from support.runs import a_machine
 
 ROOT = REPO
 INSTALLER = ROOT / "install.sh"
@@ -145,3 +148,17 @@ def test_every_settings_key_sends_a_reader_to_the_table_that_holds_it() -> None:
     assert KEYS, "the settings tree publishes no key, so this test says nothing"
     missing = sorted(key.id for key in KEYS if explain(key.id).docs.split("#")[-1] not in headings)
     assert not missing, f"explained with an anchor the configuration page has not got: {missing}"
+
+
+def test_every_origin_member_the_python_reference_names_is_one_an_origin_has(tmp_path: Path) -> None:
+    """The reference listed `url`, `port` and `run` on the origin after the refactor removed them, and
+    its example printed two of them, so a reader who copied it met an `AttributeError`."""
+    page = (ROOT / "docs" / "reference" / "python-api.mdx").read_text(encoding="utf-8")
+    section = page.split("## `serve` and `Origin`")[1].split("\n## ")[0]
+    named = set(re.findall(r"^\| `(\w+)(?:\(\))?` \|", section, re.MULTILINE))
+    named |= set(re.findall(r"\borigin\.(\w+)", section))
+    assert named, "the reference names no member of the origin, so this test says nothing"
+    write_project(tmp_path)
+    with decktalk.open(tmp_path, machine=a_machine(tmp_path)).serve(port=0) as origin:
+        missing = sorted(name for name in named if not hasattr(origin, name))
+    assert not missing, f"the reference names origin members that do not exist: {missing}"

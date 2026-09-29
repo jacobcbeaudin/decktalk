@@ -513,12 +513,9 @@ the last run resolved.
 
 | Member | Meaning |
 |---|---|
-| `url` | Where the deck is served, which is what an author opens and a recorder drives. |
-| `port` | The port the origin listens on, which a caller reads when it asked for any free one. |
+| `result` | The `ServeResult`: `url` is where the deck is served, `port` is the port the origin listens on, which a caller reads when it asked for any free one, and `root` is the directory it serves. |
 | `wait()` | Block until the origin is closed, which is what a command with no other work to do does. |
 | `close()` | Stop serving, after which the URL answers nothing. |
-| `result` | The `ServeResult`, with `url`, `port` and `root`. |
-| `run` | The run this origin opened. |
 
 It is also a context manager, so the `with` form closes it.
 
@@ -527,8 +524,8 @@ import decktalk
 
 project = decktalk.open("my-lesson")
 with project.serve(port=0) as origin:
-    print(origin.url)     # http://127.0.0.1:64434
-    print(origin.port)    # 64434
+    print(origin.result.url)     # http://127.0.0.1:64434
+    print(origin.result.port)    # 64434
     origin.wait()
 ```
 
