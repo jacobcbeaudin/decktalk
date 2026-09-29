@@ -486,8 +486,21 @@ class CommandFix(Model):
         return command
 
 
-Fix = Annotated[EditFix | SettingFix | CommandFix, Field(discriminator="kind")]
-"""The three moves an agent can make, which are editing a file, turning a knob and running a command."""
+class RuntimeFix(Model):
+    """A fix that replaces a project's copy of the runtime with the one this engine ships.
+
+    The copy is the engine's own file and never the author's work, so replacing it loses nothing, and
+    the fix names only where the copy is, because what goes there is always the engine's runtime.
+    """
+
+    kind: Literal["runtime"] = Field("runtime", description="The kind of fix, which is how a reader dispatches on it.")
+    title: str = Field(description="One sentence saying what applying this fix does.")
+    applicability: Applicability = Field(description="Whether this fix may be applied without asking.")
+    file: ProjectPath = Field(description="The project's copy of the runtime to replace, project-relative.")
+
+
+Fix = Annotated[EditFix | SettingFix | CommandFix | RuntimeFix, Field(discriminator="kind")]
+"""The four moves an agent can make: editing a file, turning a knob, running a command and replacing the runtime."""
 
 
 class Finding(Model):
@@ -544,5 +557,6 @@ __all__ = [
     "Fix",
     "Location",
     "RaisedBy",
+    "RuntimeFix",
     "SettingFix",
 ]

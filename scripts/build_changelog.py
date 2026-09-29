@@ -38,7 +38,7 @@ A change to a file format or to the page contract raises the minor version. The 
 `decktalk.toml`, `cues.json`, and the build artifacts.
 
 A project keeps the `deck/decktalk-runtime.js` it was created with. To move a project onto a newer
-runtime, copy the `deck/decktalk-runtime.js` a fresh `decktalk init` writes into the project, and
+runtime, run `decktalk check --fix`, which replaces the project's copy with the engine's, and
 rewrite its pages wherever the release changed the page contract. 0.5.0 changed it throughout, and
 [Moving between versions](/help/moving-from-0-4) says what each release changes in a project.
 """

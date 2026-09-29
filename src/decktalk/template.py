@@ -8,9 +8,9 @@ the packaged runtime and KaTeX land beside the pages, the skills land in `.agent
 An example with no project behind it yet is reserved here rather than left out, so the flag value
 never changes meaning and the refusal says what it is waiting for.
 
-A project is written once. A project that wants a newer runtime is written again, and
-`stale_runtime` says when a project's copy is not the one this engine ships, because a copy an older
-engine wrote keeps playing the older contract however new the engine that records it.
+A project is written once. `stale_runtime` says when a project's copy of the runtime is not the one
+this engine ships, because a copy an older engine wrote keeps playing the older contract however new
+the engine that records it, and `check --fix` replaces that copy.
 """
 
 from __future__ import annotations
@@ -97,44 +97,13 @@ EXAMPLES: tuple[Example, ...] = (
 """Every packaged example, including the names that are reserved and not yet written."""
 
 
-RUNTIME_VERSION = re.compile(r'\bvar VERSION = "([^"]+)";')
-"""How the runtime bundle carries the version it reports, which is its one version literal."""
+def stale_runtime(copy: Path) -> bool:
+    """Whether the copy at `copy` is there and is not, byte for byte, the runtime this engine ships.
 
-
-def runtime_version(text: str) -> str | None:
-    """The version a runtime bundle carries, or None when it carries none this engine can read."""
-    found = RUNTIME_VERSION.search(text)
-    return found.group(1) if found else None
-
-
-def stale_runtime(copy: Path, named: Path | None = None) -> str | None:
-    """What a reader is told about the copy at `copy` when it is not the runtime this engine ships, or None.
-
-    The two files are compared whole rather than by the version they carry, because an engine built
-    between two releases ships a runtime that still carries the last release's version. `named` is
-    how the caller wants the copy named, which is its path inside the project. Both versions are
-    named when they differ.
+    The files are compared whole rather than by the version they carry, because an engine built
+    between two releases ships a runtime that still carries the last release's version.
     """
-    if not copy.is_file():
-        return None
-    ours = assets.runtime_path().read_bytes()
-    theirs = copy.read_bytes()
-    if theirs == ours:
-        return None
-    version = runtime_version(theirs.decode("utf-8", errors="replace"))
-    shipped = runtime_version(ours.decode("utf-8", errors="replace"))
-    where = (named or copy).as_posix()
-    advice = "Run `decktalk init` into an empty directory and copy its runtime over this one."
-    if version is not None and version == shipped:
-        return (
-            f"{where} is not the runtime this engine ships, although both say version {version}, so the page "
-            f"may play a contract this engine does not measure. {advice}"
-        )
-    theirs_said = f"version {version}" if version else "no version this engine can read"
-    return (
-        f"{where} carries {theirs_said} and this engine ships version {shipped}, so the page plays a contract "
-        f"this engine does not measure. {advice}"
-    )
+    return copy.is_file() and copy.read_bytes() != assets.runtime_path().read_bytes()
 
 
 def listed_names() -> str:

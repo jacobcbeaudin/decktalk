@@ -72,13 +72,14 @@ half when you only want the reading of the files and the page.
 
 ## Apply the fix a finding carries
 
-A finding may carry a `fix`. It is one of three kinds, and it declares how far it may be trusted.
+A finding may carry a `fix`. It is one of four kinds, and it declares how far it may be trusted.
 
 | Kind | What it is |
 |---|---|
 | `edit` | One or more changes to files, each naming exactly one of a JSON pointer, a TOML key or a line. |
 | `setting` | A settings key and the value that clears the judgement. |
 | `command` | The whole command line to run, one argument per element. |
+| `runtime` | A project's copy of the runtime, which is replaced with the one this engine ships. |
 
 | Applicability | What happens |
 |---|---|

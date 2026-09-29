@@ -30,7 +30,7 @@ from pathlib import Path
 from playwright.sync_api import Page
 
 from decktalk.errors import InputError
-from decktalk.findings import Code, Finding, Location, ProjectPath
+from decktalk.findings import Applicability, Code, Finding, Location, ProjectPath, RuntimeFix
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.paths import at
@@ -153,9 +153,15 @@ def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
     for folder in dict.fromkeys(Path(page).parent for page in pages):
         named = folder / RUNTIME_FILE
         copy = inputs.path(named)
-        stale = stale_runtime(copy, named)
-        if stale is not None:
-            run.found(judge(Code.PAGE_RUNTIME_STALE, stale, at(copy, inputs.root)))
+        if stale_runtime(copy):
+            where = named.as_posix()
+            message = (
+                f"{where} is not the runtime this engine ships, so its pages play a contract this engine does not "
+                "measure. Run `decktalk check --fix` to replace it with the engine's."
+            )
+            title = f"Replace {where} with the runtime this engine ships."
+            fix = RuntimeFix(title=title, applicability=Applicability.SAFE, file=named)
+            run.found(judge(Code.PAGE_RUNTIME_STALE, message, at(copy, inputs.root), fix=fix))
 
 
 def _segments(inputs: Inputs, run: Run) -> list[Segment]:

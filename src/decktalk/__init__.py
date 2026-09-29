@@ -84,6 +84,7 @@ from .findings import (
     Fix,
     Location,
     RaisedBy,
+    RuntimeFix,
     SettingFix,
 )
 from .inputs import (
@@ -310,6 +311,7 @@ __all__ = [
     "Run",
     "RunDone",
     "RunStart",
+    "RuntimeFix",
     "Scope",
     "SeamCheck",
     "Section",

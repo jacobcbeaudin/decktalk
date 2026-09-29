@@ -15,7 +15,6 @@ from decktalk.template import (
     STARTER,
     example,
     listed_names,
-    runtime_version,
     stale_runtime,
     title_from,
     write_project,
@@ -122,30 +121,21 @@ def test_the_starter_is_the_default_and_is_not_itself_an_example() -> None:
 
 def test_the_copy_init_writes_is_the_runtime_this_engine_ships(tmp_path: Path) -> None:
     write_project(tmp_path, name="demo", example_name=None, skills=False, force=False)
-    assert stale_runtime(tmp_path / DECK_DIR / assets.RUNTIME_FILE) is None
+    assert not stale_runtime(tmp_path / DECK_DIR / assets.RUNTIME_FILE)
 
 
-def test_a_copy_an_older_engine_wrote_names_both_versions(tmp_path: Path) -> None:
+def test_a_copy_an_older_engine_wrote_is_stale(tmp_path: Path) -> None:
     copy = tmp_path / assets.RUNTIME_FILE
     copy.write_text('(() => {\n  var VERSION = "0.4.0";\n})();\n', encoding="utf-8")
-    stale = stale_runtime(copy, Path("deck") / assets.RUNTIME_FILE)
-    shipped = runtime_version(assets.runtime_path().read_text(encoding="utf-8"))
-    assert stale is not None
-    assert "deck/decktalk-runtime.js carries version 0.4.0" in stale
-    assert f"ships version {shipped}" in stale
+    assert stale_runtime(copy)
 
 
 def test_an_edited_copy_is_stale_although_it_names_the_same_version(tmp_path: Path) -> None:
     """An engine built between two releases ships a runtime that still carries the last release's version."""
     copy = tmp_path / assets.RUNTIME_FILE
-    copy.write_text(assets.runtime_path().read_text(encoding="utf-8") + "\n// edited\n", encoding="utf-8")
-    stale = stale_runtime(copy)
-    assert stale is not None and "although both say version" in stale
+    copy.write_bytes(assets.runtime_path().read_bytes() + b"\n// edited\n")
+    assert stale_runtime(copy)
 
 
 def test_a_project_with_no_copy_has_nothing_stale(tmp_path: Path) -> None:
-    assert stale_runtime(tmp_path / assets.RUNTIME_FILE) is None
-
-
-def test_the_shipped_runtime_carries_a_version_this_engine_can_read() -> None:
-    assert runtime_version(assets.runtime_path().read_text(encoding="utf-8")) is not None
+    assert not stale_runtime(tmp_path / assets.RUNTIME_FILE)

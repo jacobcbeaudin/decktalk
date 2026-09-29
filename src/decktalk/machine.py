@@ -65,6 +65,7 @@ from decktalk.findings import (
     Edit,
     Finding,
     Location,
+    RuntimeFix,
     SettingFix,
 )
 from decktalk.inputs.env import reading_dotenv
@@ -712,6 +713,8 @@ def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, .
     if isinstance(fix, CommandFix):
         _run_command(run, fix, root=root)
         return ()
+    if isinstance(fix, RuntimeFix):
+        return (_replace_runtime(root, fix.file),)
     targets = [(edit, _inside(root, edit.file)) for edit in fix.edits]
     staged: dict[Path, list[str]] = {}
     keys: list[tuple[str, str]] = []
@@ -730,7 +733,24 @@ def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, .
     return tuple(dict.fromkeys(changed))
 
 
-def _replace_all(texts: Mapping[Path, str]) -> None:
+def _replace_runtime(root: Path, named: Path) -> Path:
+    """Replace the project's copy of the runtime at `named` with the engine's, byte for byte.
+
+    The fix arrives as JSON, so the path is held to the project and must name a runtime copy once
+    every link is followed, which keeps a runtime fix from overwriting any other file of the project.
+    """
+    path = _inside(root, named)
+    if path.name != assets.RUNTIME_FILE:
+        raise InputError(
+            f"{Path(named).as_posix()} is not a copy of the runtime, so a runtime fix may not replace it.",
+            hint=f"A runtime fix only ever replaces a file called {assets.RUNTIME_FILE}.",
+            location=Location(where=Path(named).as_posix()),
+        )
+    _replace_all({path: assets.runtime_path().read_bytes()})
+    return path
+
+
+def _replace_all(texts: Mapping[Path, str | bytes]) -> None:
     """Write every text under a temporary name beside its file, then move each over its file.
 
     A failure while writing leaves every target as it was, and the moves that follow cannot be
@@ -742,8 +762,13 @@ def _replace_all(texts: Mapping[Path, str]) -> None:
     try:
         for path, text in texts.items():
             path.parent.mkdir(parents=True, exist_ok=True)
-            with temporary[path].open("x", encoding="utf-8") as handle:
-                handle.write(text)
+            # Bytes are written as they are, because a copy of an engine file must match it exactly.
+            if isinstance(text, bytes):
+                with temporary[path].open("xb") as handle:
+                    handle.write(text)
+            else:
+                with temporary[path].open("x", encoding="utf-8") as handle:
+                    handle.write(text)
             if path.exists():
                 shutil.copymode(path, temporary[path])
         for path, written in temporary.items():

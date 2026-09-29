@@ -46,8 +46,9 @@ that meets one is told by name on its first run.
   is now 0.44 seconds, one frame under the ceiling a cue can still be measured at, so that the span
   the page declares is the span it plays. `draw` and `data-count` now play in 0.44 seconds.
 - **A staggered container with no children publishes a span of 0.** 0.5 published its entrance.
-- **Copy the 0.6 `decktalk-runtime.js` into `deck/`.** `decktalk check` now compares the project's
-  copy with the engine's and says when they differ.
+- **Run `decktalk check --fix` once.** `decktalk check` now compares the project's copy of
+  `decktalk-runtime.js` with the engine's, reports `PAGE_RUNTIME_STALE` when they differ, and
+  `--fix` replaces the copy with the engine's.
 
 **Building**
 

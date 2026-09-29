@@ -375,7 +375,7 @@ for finding in project.check(pages=False).findings:
     print("  read more:", code.url)
 ```
 
-A fix is one of three shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
+A fix is one of four shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
 saying what applying it does, and an `applicability`.
 
 | `kind` | Class | What it changes |
@@ -383,6 +383,7 @@ saying what applying it does, and an `applicability`.
 | `edit` | `EditFix` | `edits`, a run of `Edit` objects applied together or not at all. Each names exactly one of `pointer`, `key` or `line`. |
 | `setting` | `SettingFix` | `key` and `value`, in the same key space `config set` takes. |
 | `command` | `CommandFix` | `command`, the whole argv a caller may hand to a subprocess. |
+| `runtime` | `RuntimeFix` | `file`, a project's copy of the runtime, which becomes the engine's own. |
 
 `Applicability.SAFE` cannot lose the author's work. `Applicability.UNSAFE` can, so it is applied only
 when the caller asked for that. `Applicability.DISPLAY` is a change only a person can make, so it is

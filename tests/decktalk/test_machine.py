@@ -24,6 +24,7 @@ from decktalk.findings import (
     EditFix,
     Finding,
     Location,
+    RuntimeFix,
     SettingFix,
 )
 from decktalk.machine import (
@@ -44,6 +45,7 @@ from decktalk.project import open as open_project
 from decktalk.results import Layer, Scope, Spend, SpendState, StatusResult, Voicing
 from decktalk.settings import BY_ID, ToolsConfig
 from decktalk.speech import VoiceContext, get_provider
+from decktalk.toolchain import assets
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
 from support.paths import REPO
@@ -718,7 +720,7 @@ def an_edit(file: str | Path, **locator: object) -> EditFix:
     return EditFix(title="t", applicability=Applicability.SAFE, edits=(edit,))
 
 
-def applied(here: Machine, fix: EditFix, root: Path) -> tuple[bool, str]:
+def applied(here: Machine, fix: EditFix | RuntimeFix, root: Path) -> tuple[bool, str]:
     with here.run() as run:
         outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
     return outcome.applied, outcome.why or ""
@@ -756,6 +758,35 @@ def test_an_edit_through_a_link_that_leaves_the_project_is_refused(tmp_path: Pat
     done, why = applied(a_machine(tmp_path), an_edit("shared/notes.txt", line=1, old="mine"), root)
     assert not done and "outside the project" in why
     assert (outside / "notes.txt").read_text(encoding="utf-8") == "mine\n"
+
+
+def a_runtime_fix(file: str) -> RuntimeFix:
+    return RuntimeFix(title="t", applicability=Applicability.SAFE, file=Path(file))
+
+
+@pytest.mark.parametrize("named", ["script.md", "../decktalk-runtime.js"])
+def test_a_runtime_fix_replaces_no_file_but_a_runtime_copy_inside_the_project(tmp_path: Path, named: str) -> None:
+    """A runtime fix arrives as JSON, so it may not turn the engine's runtime into any other file."""
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "script.md").write_text("mine\n", encoding="utf-8")
+    done, why = applied(a_machine(tmp_path), a_runtime_fix(named), root)
+    assert not done and ("not a copy of the runtime" in why or "outside the project" in why)
+    assert (root / "script.md").read_text(encoding="utf-8") == "mine\n"
+    assert not (tmp_path / assets.RUNTIME_FILE).exists()
+
+
+def test_a_runtime_copy_that_links_to_another_file_is_never_written_through(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    (root / "deck").mkdir(parents=True)
+    (root / "script.md").write_text("mine\n", encoding="utf-8")
+    try:
+        (root / "deck" / assets.RUNTIME_FILE).symlink_to(root / "script.md")
+    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
+        pytest.skip("this machine does not let an unprivileged user make a link")
+    done, why = applied(a_machine(tmp_path), a_runtime_fix(f"deck/{assets.RUNTIME_FILE}"), root)
+    assert not done and "not a copy of the runtime" in why
+    assert (root / "script.md").read_text(encoding="utf-8") == "mine\n"
 
 
 def test_a_fix_with_one_refused_edit_writes_none_of_its_edits(tmp_path: Path) -> None:

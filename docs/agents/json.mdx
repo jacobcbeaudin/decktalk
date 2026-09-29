@@ -321,9 +321,9 @@ judges is what tells a reader which side of the spend it came from.
 | `section` | integer or null | The section number this is about. |
 | `cue` | string or null | The wire id of the cue this is about. |
 
-## The three fixes
+## The four fixes
 
-A `fix` is one of three kinds, and `kind` is the discriminator. Every fix carries a `title`, which
+A `fix` is one of four kinds, and `kind` is the discriminator. Every fix carries a `title`, which
 is one sentence saying what applying it does, and an `applicability`, which decides whether it may
 be applied without asking.
 
@@ -384,6 +384,19 @@ element, so a caller hands it straight to a subprocess with no shell. This one c
   "title": "Fetch ffmpeg into the cache.",
   "applicability": "safe",
   "command": ["decktalk", "install"]
+}
+```
+
+**`kind: "runtime"`** replaces a project's copy of `decktalk-runtime.js` with the one this engine
+ships. Its `file` names the copy, and the fix writes nothing but the engine's runtime there. This
+one comes from a `PAGE_RUNTIME_STALE` finding on a project an older engine wrote.
+
+```json
+{
+  "kind": "runtime",
+  "title": "Replace deck/decktalk-runtime.js with the runtime this engine ships.",
+  "applicability": "safe",
+  "file": "deck/decktalk-runtime.js"
 }
 ```
 

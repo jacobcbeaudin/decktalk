@@ -7,12 +7,13 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import Cancelled
-from decktalk.findings import Code
+from decktalk.findings import Applicability, Code
 from decktalk.inputs import Inputs
 from decktalk.machine import apply_fix
 from decktalk.results import CheckResult, Scope, SpendState
 from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
+from decktalk.toolchain import assets
 from support.runs import a_run, notes
 
 from .conftest import Drawn, a_project, catalog
@@ -200,9 +201,24 @@ def test_a_runtime_copy_an_older_engine_wrote_is_a_certain_finding_at_the_copy(t
     (tmp_path / "deck" / "decktalk-runtime.js").write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
     result = check(inputs, a_run(tmp_path), pages=False)
     (found,) = [one for one in result.findings if one.code is Code.PAGE_RUNTIME_STALE]
-    assert "deck/decktalk-runtime.js carries version 0.4.0" in found.message
+    assert "Run `decktalk check --fix`" in found.message
     assert found.location is not None and found.location.file == Path("deck/decktalk-runtime.js")
     assert result.ok is False
+
+
+def test_the_safe_fix_replaces_a_stale_runtime_copy_with_the_engines(tmp_path: Path) -> None:
+    """What `check --fix` applies is the engine's runtime, byte for byte, and the next check is clean."""
+    inputs = a_project(tmp_path, cues=CUES)
+    copy = tmp_path / "deck" / "decktalk-runtime.js"
+    copy.write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
+    run = a_run(tmp_path)
+    (found,) = [one for one in check(inputs, run, pages=False).findings if one.code is Code.PAGE_RUNTIME_STALE]
+    assert found.fix is not None and found.fix.applicability is Applicability.SAFE
+    outcome = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=False)
+    assert outcome.applied and outcome.files == (Path("deck/decktalk-runtime.js"),)
+    assert copy.read_bytes() == assets.runtime_path().read_bytes()
+    again = check(Inputs.load(tmp_path, environ={}), a_run(tmp_path), pages=False)
+    assert Code.PAGE_RUNTIME_STALE not in {one.code for one in again.findings}
 
 
 def test_a_project_whose_pages_load_no_copy_of_the_runtime_is_told_nothing_about_one(tmp_path: Path) -> None:
