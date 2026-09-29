@@ -26,7 +26,7 @@ from decktalk.stages.assemble.cut import (
     vfades,
 )
 
-from .conftest import MID_CLIP_TOML, TITLED_TOML
+from .conftest import MID_CLIP_TOML, TITLED_TOML, draw_slate
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
@@ -286,7 +286,49 @@ def test_an_untrusted_project_draws_its_slate_untrusted(tmp_path, write_project,
     write_project(tmp_path, toml)
     inputs = Inputs.load(tmp_path, environ={BY_ID["record.page_policy"].environment: "untrusted"})
     asked: list[object] = []
-    monkeypatch.setattr(browser, "render_slate", lambda out, **named: asked.append(named["policy"]) or out)
+
+    def draw(out: Path, **named: object) -> Path:
+        asked.append(named["policy"])
+        return draw_slate(out)
+
+    monkeypatch.setattr(browser, "render_slate", draw)
     (slot,) = inputs.document.clip_sections
     section_slate(inputs, open_run(tmp_path).run, slot)
     assert asked == ["untrusted"]
+
+
+def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, write_project, open_run, monkeypatch):
+    """A renamed chapter or a new colour once shipped the old slate, because the first one drawn was kept forever.
+
+    The slate is kept under everything it shows, so an edit gives it a new name, the cut that reads it
+    gets a new key, and the same inputs read the kept slate back without opening a browser.
+    """
+    drawn: list[str] = []
+
+    def draw(out: Path, **named: object) -> Path:
+        picture = f"{named['title']}|{named['background']}"
+        drawn.append(picture)
+        draw_slate(out).write_text(picture, encoding="utf-8")
+        return out
+
+    monkeypatch.setattr(browser, "render_slate", draw)
+    base = "[project]\nname = 't'\n{video}[[section]]\nnumber = 1\nclip = 'media/slot.mp4'\nchapter = '{chapter}'\n"
+    out = tmp_path / "build" / "sections" / "01.mp4"
+    out.parent.mkdir(parents=True)
+
+    def cut(chapter: str, video: str = "") -> tuple[Path | None, str]:
+        inputs = write_project(tmp_path, base.format(chapter=chapter, video=video))
+        (slot,) = inputs.document.clip_sections
+        run = open_run(tmp_path).run
+        render_clip(inputs, run, Encoder(inputs.settings.video), slot, out, 0.0, strict=False)
+        return section_slate(inputs, run, slot), out.with_suffix(".json").read_text(encoding="utf-8")
+
+    first, first_key = cut("Demo one")
+    renamed, renamed_key = cut("Live demo")
+    recoloured, recoloured_key = cut("Live demo", "[video]\nslate_color = '#ff0000'\n")
+    again, again_key = cut("Live demo", "[video]\nslate_color = '#ff0000'\n")
+    assert drawn == ["Demo one|0x0e1116", "Live demo|0x0e1116", "Live demo|#ff0000"]
+    assert len({first, renamed, recoloured}) == 3
+    assert len({first_key, renamed_key, recoloured_key}) == 3
+    assert (again, again_key) == (recoloured, recoloured_key)
+    assert renamed is not None and renamed.read_text(encoding="utf-8") == "Live demo|0x0e1116"

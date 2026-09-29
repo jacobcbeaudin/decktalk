@@ -11,7 +11,7 @@ from decktalk.media import audio, browser
 from decktalk.results import AssembleResult, Substitute
 from decktalk.stages.assemble import assemble
 
-from .conftest import TITLED_TOML
+from .conftest import TITLED_TOML, draw_slate
 
 pytestmark = pytest.mark.usefixtures("rendering")
 
@@ -128,7 +128,7 @@ def test_a_film_that_stood_a_frame_in_for_a_missing_file_is_not_ok(tmp_path, wri
     """`ok` is false when any judgement is certain, and a missing file is certain."""
     inputs = write_project(tmp_path, TITLED_TOML)
     opened = open_run(tmp_path)
-    monkeypatch.setattr(browser, "render_slate", lambda *_a, **_k: None)
+    monkeypatch.setattr(browser, "render_slate", draw_slate)
     take_index(
         inputs,
         {1: ("Open", 2.0, 1.6, spoken("alpha")), 3: ("The edit", 2.0, 1.6, spoken("beta")),
@@ -146,7 +146,7 @@ def test_strict_refuses_a_placeholder_frame_where_the_file_is_missing(tmp_path, 
     """A strict run stops at the file it has not got, naming it, rather than publishing a stand-in."""
     inputs = write_project(tmp_path, TITLED_TOML)
     opened = open_run(tmp_path)
-    monkeypatch.setattr(browser, "render_slate", lambda *_a, **_k: None)
+    monkeypatch.setattr(browser, "render_slate", draw_slate)
     inputs.workspace.recordings_dir.mkdir(parents=True)
     for number in (1, 3, 4):
         inputs.workspace.recording(f"{number:02d}").write_bytes(b"a recording")
@@ -186,7 +186,7 @@ def test_a_run_that_asks_for_no_soundscape_lays_no_bed(tmp_path, write_project, 
         tmp_path, TITLED_TOML.replace("[narration]", '[mix]\nmusic = "media/bed.mp3"\n\n[narration]')
     )
     opened = open_run(tmp_path)
-    monkeypatch.setattr(browser, "render_slate", lambda *_a, **_k: None)
+    monkeypatch.setattr(browser, "render_slate", draw_slate)
     take_index(
         inputs,
         {1: ("Open", 2.0, 1.6, spoken("alpha")), 3: ("The edit", 2.0, 1.6, spoken("beta")),

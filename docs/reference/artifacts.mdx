@@ -388,6 +388,14 @@ had, which is the same rule the recorder applies to a whole section. So a second
 unchanged deck opens no page for a frame it already has, and an edit to one picture draws again only
 the frames that loaded it.
 
+The slate that stands in for a missing clip is kept here too. Its key is everything it shows: the
+chapter title, the lines above and below it, the frame size, `[video] slate_color`, the page policy
+and the engine version. A renamed chapter or a new colour therefore draws a new slate, and the section
+cut that reads it gets a new key.
+
+A frame nobody has found or kept for a fortnight is removed whenever another is kept, so the frames
+of an edited page and the slates of a renamed chapter do not stay for as long as the project does.
+
 ## `build/kept.json`
 
 The record a build leaves of its last `assemble` and `verify`, which is what lets the next build keep

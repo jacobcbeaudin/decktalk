@@ -16,12 +16,14 @@ one section it moved, and the rest of the film is read back rather than encoded 
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import Cut, Cuts, RecordingLog, Takes
 from decktalk.artifacts.cuts import CutKey
+from decktalk.artifacts.stills import still_key
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location
@@ -40,8 +42,8 @@ BLACK = "0x000000"
 KEY_SUFFIX = ".json"
 """What the key beside a section cut is called after the cut's own name, such as `03.json` beside `03.mp4`."""
 
-SLATES_DIR = "slates"
-"""Where a rendered slate is kept under the final directory, so a second run draws none of them again."""
+DRAWING_SUFFIX = ".drawing.png"
+"""What a slate is called while the browser draws it, before the stills keep it under its key."""
 
 
 @dataclass(frozen=True)
@@ -112,32 +114,46 @@ def _key_of(path: Path) -> CutKey | None:
 
 
 def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None:
-    """A titled slate for a clip that is missing, drawn once and kept beside the film.
+    """A titled slate for a clip that is missing, kept among the stills under everything it shows.
 
     The slate is drawn on the colour `[video] slate_color` names, which is the same colour the plain
-    frame behind it is drawn on, so a project that sets one colour gets one colour either way.
+    frame behind it is drawn on, so a project that sets one colour gets one colour either way. Its key
+    is every word and number it is drawn from, the page policy and the engine, so a renamed chapter
+    or a new colour draws a new slate, the cut that reads it gets a new key, and the stills prune
+    removes the old slate once nobody asks for it.
     """
-    out = inputs.workspace.final_dir / SLATES_DIR / f"{section.key}-slate.png"
-    if out.exists():
-        return out
-    video = inputs.settings.video
+    video, policy = inputs.settings.video, inputs.settings.record.page_policy
+    title, sub = inputs.chapters()[section.number], "Your clip goes here"
+    eyebrow = f"section {section.number}: slate"
+    foot = f"drop it at {section.clip} and run `decktalk assemble`"
+    shown = json.dumps([title, sub, eyebrow, foot, video.width, video.height, video.slate_color])
+    # The key begins with the substitute's own name, so a slate never shares a name with a frame of a page.
+    key = still_key((Substitute.SLATE.value, f"policy:{policy}", shown))
+    stills = inputs.stills
+    kept = stills.find(key)
+    if kept is not None:
+        return kept
+    drawing = stills.directory / f".{key}{DRAWING_SUFFIX}"
     try:
-        return browser.render_slate(
-            out,
-            title=inputs.chapters()[section.number],
-            sub="Your clip goes here",
-            eyebrow=f"section {section.number}: slate",
-            foot=f"drop it at {section.clip} and run `decktalk assemble`",
+        browser.render_slate(
+            drawing,
+            title=title,
+            sub=sub,
+            eyebrow=eyebrow,
+            foot=foot,
             width=video.width,
             height=video.height,
             background=video.slate_color,
             browser_path=inputs.settings.record.browser_path,
-            policy=inputs.settings.record.page_policy,
+            policy=policy,
         )
+        return stills.keep(key, drawing, ())
     except ToolError as refused:
         run.note(f"A slate could not be drawn ({refused}), so section {section.number} plays a plain frame.",
                  level=Level.WARNING)  # fmt: skip
         return None
+    finally:
+        drawing.unlink(missing_ok=True)
 
 
 def render_clip(inputs: Inputs, run: Run, enc: Encoder, section: ClipSection, out: Path, dip: float, *, strict: bool
