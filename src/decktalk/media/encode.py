@@ -31,12 +31,12 @@ FFMPEG_HEX_PREFIX = "0x"
 def css_color(value: str) -> str:
     """The colour a `[video]` setting names, written the way a page's stylesheet reads it.
 
-    ffmpeg takes `0xRRGGBB` and a stylesheet takes `#RRGGBB`, and both take a colour name. The one
-    setting that says what a missing clip is drawn on is therefore spelled once, in the notation the
-    encoder reads, and converted here rather than restated in a second notation beside the page.
+    ffmpeg takes `0xRRGGBB` and a stylesheet takes `#RRGGBB`. The one setting that says what a missing
+    clip is drawn on is therefore spelled once, in either notation, and converted here rather than
+    restated beside the page. The loader holds the setting to those two spellings, so nothing but six
+    hex digits ever reaches the stylesheet.
     """
-    color = value.strip()
-    return "#" + color[len(FFMPEG_HEX_PREFIX) :] if color.lower().startswith(FFMPEG_HEX_PREFIX) else color
+    return "#" + value[len(FFMPEG_HEX_PREFIX) :] if value.lower().startswith(FFMPEG_HEX_PREFIX) else value
 
 
 def iso_639_2(tag: str) -> str:

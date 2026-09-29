@@ -154,13 +154,15 @@
           "x-environment": "DECKTALK_VIDEO_CHANNELS"
         },
         "slate_color": {
-          "description": "Color of the plain frame that plays when a slate image cannot be rendered.",
+          "description": "Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB.",
           "type": "string",
           "default": "0x0e1116",
-          "x-range": "takes any value of its type",
+          "pattern": "^(#|0[xX])[0-9A-Fa-f]{6}$",
+          "x-range": "must match the pattern ^(#|0[xX])[0-9A-Fa-f]{6}$",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
+          "x-hazard": "The colour is placed inside an ffmpeg filter graph and the slate page's stylesheet, so any other text could add a filter that opens a file or a rule that loads a URL.",
           "x-environment": "DECKTALK_VIDEO_SLATE_COLOR"
         }
       },

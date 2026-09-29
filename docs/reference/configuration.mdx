@@ -86,12 +86,14 @@ These keys set the frame size and the encoding of every recording and of the fin
 | `audio_bitrate` | string | `"192k"` | must be one of 96k, 128k, 160k, 192k, 256k, 320k |  | project |  | AAC bitrate of the final mp4. |
 | `sample_rate` | integer | `48000` | must be one of 44100, 48000 | hertz | project |  | Audio sample rate of the final mp4. Every audio input is resampled to it once. |
 | `channels` | integer | `2` | must be one of 1, 2 |  | project |  | Audio channels of the final mp4. |
-| `slate_color` | string | `"0x0e1116"` | takes any value of its type |  | project |  | Color of the plain frame that plays when a slate image cannot be rendered. |
+| `slate_color` | string | `"0x0e1116"` | must match the pattern ^(#\|0[xX])[0-9A-Fa-f]{6}$ |  | project |  | Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB. |
 
 <Warning>
 **`video.output_fps`** Encoding below the rate the recorder captured at drops presented frames, which both loses motion a viewer saw and corrupts the frames verify measures its own verdicts from.
 
 **`video.crf`** Above about 32 the encoder's own ringing is larger than a small reveal, so a cue that played reads as no change and the check that would have caught it passes instead.
+
+**`video.slate_color`** The colour is placed inside an ffmpeg filter graph and the slate page's stylesheet, so any other text could add a filter that opens a file or a rule that loads a URL.
 
 </Warning>
 

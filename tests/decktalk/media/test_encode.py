@@ -30,7 +30,7 @@ def test_the_stream_language_is_a_code_the_container_knows(tag, want):
 
 @pytest.mark.parametrize(
     ("setting", "want"),
-    [("0x0e1116", "#0e1116"), ("0X0E1116", "#0E1116"), ("#0e1116", "#0e1116"), ("black", "black"), (" 0xfff ", "#fff")],
+    [("0x0e1116", "#0e1116"), ("0X0E1116", "#0E1116"), ("#0e1116", "#0e1116")],
 )
 def test_the_slate_colour_is_one_setting_a_stylesheet_and_an_encoder_both_read(setting, want):
     """`[video] slate_color` is written the way ffmpeg writes a colour, and converted where a page needs it."""

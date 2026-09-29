@@ -67,6 +67,9 @@ X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium"
 COLOR_SCHEMES = ("light", "dark", "no-preference")
 """Truth: the values Chromium reports for `prefers-color-scheme`."""
 
+HEX_COLOR = r"^(#|0[xX])[0-9A-Fa-f]{6}$"
+"""Truth: a colour written as six hex digits after the prefix a stylesheet or ffmpeg reads, and nothing else."""
+
 PAGE_POLICIES = ("trusted", "untrusted")
 """The two ways `record` treats a page: as the author's own work, or as a stranger's that may be hostile."""
 
@@ -148,7 +151,12 @@ class VideoConfig:
     )
     slate_color: str = tune(
         "0x0e1116",
-        "Color of the plain frame that plays when a slate image cannot be rendered.",
+        "Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB.",
+        bounds=Bounds(pattern=HEX_COLOR),
+        hazard=(
+            "The colour is placed inside an ffmpeg filter graph and the slate page's stylesheet, so any other "
+            "text could add a filter that opens a file or a rule that loads a URL."
+        ),
     )
 
 

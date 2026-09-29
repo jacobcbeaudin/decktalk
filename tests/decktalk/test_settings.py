@@ -17,7 +17,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from decktalk.errors import InputError
+from decktalk.errors import ErrorCode, InputError
 from decktalk.findings import Code
 from decktalk.results import Layer, Scope
 from decktalk.settings import (
@@ -100,6 +100,10 @@ def around(bounds: Bounds, *, words: bool = False) -> st.SearchStrategy[object]:
     A float key is also handed integers and an integer key floats, because TOML writes both, and
     JSON Schema counts a float with no fraction such as `320.0` as an integer, as the loader does.
     """
+    if bounds.pattern is not None:
+        # A value that matches, the same value with a filter or a rule after it, and any text at all.
+        matching = st.from_regex(bounds.pattern, fullmatch=True)
+        return matching | matching.map(lambda value: f"{value}:s=1x1,movie=/etc/passwd") | st.text()
     if bounds.enum is not None:
         members = st.sampled_from(bounds.enum)
         if words:
@@ -326,6 +330,29 @@ class TestScope:
         assert load(project={}, machine=untrusted, environ={}).settings.record.page_policy == "untrusted"
         with pytest.raises(InputError, match="record.page_policy"):
             load(project={"record": {"page_policy": "trusted"}}, machine=untrusted, environ={})
+
+    @pytest.mark.parametrize(
+        "hostile",
+        [
+            "black:s=1x1,movie=/etc/passwd",
+            "0x0e1116:s=2x2[v];movie=/etc/passwd",
+            "#0e1116;}body{background:url(http://127.0.0.1/)",
+            "red",
+            "0x0e1116\n",
+        ],
+    )
+    def test_a_slate_colour_that_is_not_a_hex_colour_is_refused_at_load(self, hostile: str) -> None:
+        """The colour is placed inside a filter graph and a stylesheet, so only a colour ever reaches either."""
+        for where in ({"project": {"video": {"slate_color": hostile}}, "environ": {}},
+                      {"project": {}, "environ": {"DECKTALK_VIDEO_SLATE_COLOR": hostile}}):  # fmt: skip
+            with pytest.raises(InputError, match="video.slate_color") as caught:
+                load(machine={}, **where)
+            assert caught.value.code is ErrorCode.INPUT
+
+    @pytest.mark.parametrize("color", ["0x0e1116", "0XFFFFFF", "#0e1116", "#A0b1C2"])
+    def test_a_slate_colour_in_either_hex_spelling_is_read(self, color: str) -> None:
+        here = load(machine={}, project={"video": {"slate_color": color}}, environ={})
+        assert here.settings.video.slate_color == color
 
     def test_a_project_key_in_a_project_is_read(self) -> None:
         refuse_off_scope({"verify": {"cue_offset_max_ms": 400}}, Scope.PROJECT, file=Path("decktalk.toml"))

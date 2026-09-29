@@ -8,7 +8,7 @@ and the published record from the fields, which is how a tuning table is written
 the loader, by the schema, by the reference page and by `config explain`.
 
 `tune()` is the one way a key is declared and `Bounds` is the one way a range is stated. Both are
-declarative: `Bounds` carries numbers and word sets rather than a function, so the same range the
+declarative: `Bounds` carries numbers, word sets and patterns rather than a function, so the same range the
 loader enforces is the range the JSON Schema publishes, and a reader of either can never meet a
 bound the other does not have.
 """
@@ -16,6 +16,7 @@ bound the other does not have.
 from __future__ import annotations
 
 import difflib
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
@@ -77,6 +78,8 @@ class Bounds:
     enum: tuple[Any, ...] | None = None
     items: Bounds | None = None
     min_items: int | None = None
+    pattern: str | None = None
+    """A regular expression the whole of a string must match, for a word whose spellings no set can list."""
 
     def holds(self, value: Any) -> bool:
         """True when this value sits inside the range, arrays being judged element by element."""
@@ -85,6 +88,9 @@ class Bounds:
                 return False
             return all(self.items is None or self.items.holds(item) for item in value)
         if self.enum is not None and value not in self.enum:
+            return False
+        # The whole string must match, so a value that is a colour followed by a newline and more is refused.
+        if self.pattern is not None and not (isinstance(value, str) and re.fullmatch(self.pattern, value)):
             return False
         if self.ge is not None and value < self.ge:
             return False
@@ -100,6 +106,8 @@ class Bounds:
         if self.enum is not None:
             return "must be one of " + ", ".join(str(v) for v in self.enum)
         parts: list[str] = []
+        if self.pattern is not None:
+            parts.append(f"must match the pattern {self.pattern}")
         if self.min_items is not None:
             parts.append(f"must hold at least {self.min_items}")
         if self.items is not None:
@@ -130,6 +138,8 @@ class Bounds:
             out["maximum"] = self.le
         if self.lt is not None:
             out["exclusiveMaximum"] = self.lt
+        if self.pattern is not None:
+            out["pattern"] = self.pattern
         if self.min_items is not None:
             out["minItems"] = self.min_items
         if self.items is not None:
