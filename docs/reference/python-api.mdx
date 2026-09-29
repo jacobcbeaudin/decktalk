@@ -618,8 +618,8 @@ becomes one.
 decktalk.Machine.from_environment(*, overrides=()) -> Machine
 ```
 
-This is the only reading of the environment there is. `overrides` is an iterable of
-`(key, value)` pairs.
+This is the only reading of the environment there is. `overrides` is an iterable of `key=value`
+strings, spelled as `--set` spells them.
 
 | Member | Meaning |
 |---|---|
@@ -674,7 +674,7 @@ see is one the host chose.
 | `cwd` | The directory a relative project path is read from. |
 | `cache_dir` | Where the fetched Chromium and ffmpeg live. |
 | `providers` | The voices this machine answers with by name. It replaces the shipped table, so a machine built with a fake voice reaches no real one by a name the host left out. |
-| `overrides` | `(key, value)` pairs that override settings on this machine. A project opened on it starts from them, and the overrides `decktalk.open` is given come after them. |
+| `overrides` | `key=value` strings, spelled as `--set` spells them, that override settings on this machine. A project opened on it starts from them, and the overrides `decktalk.open` is given come after them. |
 | `dotenv` | False by default, so a project's `.env` is never read and a tenant's upload cannot supply a credential. |
 | `allow_any_api_base` | False by default, so the key goes to ElevenLabs and nowhere else. |
 
@@ -683,7 +683,7 @@ The page policy is machine-scoped, so the host sets it on the render machine, in
 
 ```python
 render = decktalk.Machine.of(environ={}, config_path=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
-                             overrides=[("record.page_policy", "untrusted")])
+                             overrides=["record.page_policy=untrusted"])
 ```
 
 ### One call on one worker thread
@@ -732,7 +732,7 @@ decktalk.open(work, machine=voice).narrate(voice=decktalk.Voicing.PAID, max_cost
 
 # The render job, in another process whose environment holds no key at all.
 render = decktalk.Machine.of(environ={}, config_path=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
-                             overrides=[("record.page_policy", "untrusted")])
+                             overrides=["record.page_policy=untrusted"])
 project = decktalk.open(work, machine=render)
 project.cue()
 project.record()

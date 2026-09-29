@@ -133,7 +133,7 @@ class Session:
     @cached_property
     def machine(self) -> Machine:
         """This machine, read once, which is the only reading of the environment there is."""
-        return Machine.from_environment(overrides=projects._split(self._overrides))
+        return Machine.from_environment(overrides=self._overrides)
 
     def project(self) -> Project:
         """The project this run is about, opened on this machine with this run's overrides."""

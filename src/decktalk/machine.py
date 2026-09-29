@@ -398,7 +398,7 @@ class Machine:
     """What reading the machine noticed, such as a misspelled variable or key, which every run says."""
 
     @classmethod
-    def from_environment(cls, *, overrides: Iterable[tuple[str, str]] = ()) -> Machine:
+    def from_environment(cls, *, overrides: Iterable[str] = ()) -> Machine:
         """This machine as the process found it, which is the only reading of the environment there is."""
         environ = dict(os.environ)
         home = Path.home()
@@ -421,7 +421,7 @@ class Machine:
         cwd: Path,
         cache_dir: Path,
         providers: Mapping[str, Any] | None = None,
-        overrides: Iterable[tuple[str, str]] = (),
+        overrides: Iterable[str] = (),
         dotenv: bool = False,
         allow_any_api_base: bool = False,
     ) -> Machine:
@@ -435,7 +435,7 @@ class Machine:
         `allow_any_api_base` says otherwise, because both are what a tenant's upload would reach for.
         """
         tables = read_machine_toml(config_path)
-        pairs = tuple(f"{key}={value}" for key, value in overrides)
+        pairs = tuple(overrides)
         mine = scoped(route(pairs), SettingScope.MACHINE)
         loaded = load(project={}, machine=tables, machine_path=config_path, environ=environ, overrides=_pairs(mine))
         return cls(

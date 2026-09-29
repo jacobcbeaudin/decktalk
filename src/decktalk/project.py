@@ -99,18 +99,13 @@ def open(
     caller adds to what the machine says rather than silently replacing it.
     """
     pairs = tuple(overrides)
-    here = machine or Machine.from_environment(overrides=_split(pairs))
+    here = machine or Machine.from_environment(overrides=pairs)
     named = path if path is not None else here.environ.get(PROJECT_VARIABLE)
     root = Path(named).expanduser() if named else here.cwd
     root = root if root.is_absolute() else here.cwd / root
     if root.is_file():
         root = root.parent
     return Project(here, root, overrides=pairs if machine is None else (*here.overrides, *pairs))
-
-
-def _split(overrides: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
-    """Each `table.key=value` override as its two halves, which is how a machine takes them."""
-    return tuple((pair.partition("=")[0], pair.partition("=")[2]) for pair in overrides)
 
 
 def section_numbers(selection: str) -> tuple[int, ...]:

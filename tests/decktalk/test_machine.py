@@ -444,7 +444,7 @@ def test_a_host_machine_reads_nothing_from_the_process(tmp_path: Path, monkeypat
 
 def test_a_project_opened_on_a_host_machine_keeps_the_hosts_overrides(tmp_path: Path) -> None:
     """A host enforces the page policy through its machine, so a caller's own override must not drop it."""
-    here = a_host(tmp_path, overrides=[("record.page_policy", "untrusted")])
+    here = a_host(tmp_path, overrides=["record.page_policy=untrusted"])
     project = open_project(a_starter(tmp_path, here), machine=here, overrides=["video.crf=20"])
     assert project.settings.record.page_policy == "untrusted"
     assert project.settings.video.crf == 20
@@ -498,7 +498,7 @@ def test_the_machines_switch_is_stamped_on_every_voice_it_builds(tmp_path: Path)
 def test_the_machines_retries_are_stamped_on_every_voice_it_builds(tmp_path: Path) -> None:
     """A busy voice is asked again as often as the machine says, which no project may change."""
     seen: list[VoiceContext] = []
-    here = a_host(tmp_path, providers={"elevenlabs": seen.append}, overrides=(("narration.retries", "5"),))
+    here = a_host(tmp_path, providers={"elevenlabs": seen.append}, overrides=("narration.retries=5",))
     with here.run():
         get_provider("elevenlabs", a_context())
     assert seen[0].retries == 5
@@ -539,7 +539,7 @@ def a_context() -> VoiceContext:
 def test_an_override_reaches_the_machine_by_its_own_scope(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Every pair reaches both the machine and the project, and each takes the keys it owns."""
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "none.toml"))
-    here = Machine.from_environment(overrides=(("tools.cache_dir", str(tmp_path / "elsewhere")),))
+    here = Machine.from_environment(overrides=(f"tools.cache_dir={tmp_path / 'elsewhere'}",))
     assert here.cache_dir == tmp_path / "elsewhere"
 
 

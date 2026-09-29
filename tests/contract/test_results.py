@@ -474,7 +474,7 @@ def test_a_finding_carries_everything_a_reader_dispatches_on():
 @pytest.fixture
 def machine(tmp_path: Path) -> Machine:
     """A machine whose cache is this test's own directory, so nothing reaches the author's real one."""
-    return Machine.from_environment(overrides=(("tools.cache_dir", str(tmp_path / "cache")),))
+    return Machine.from_environment(overrides=(f"tools.cache_dir={tmp_path / 'cache'}",))
 
 
 @pytest.fixture
