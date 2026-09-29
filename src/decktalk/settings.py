@@ -27,8 +27,7 @@ import operator
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Mapping, MutableMapping
-from dataclasses import Field as DataField
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -1295,11 +1294,7 @@ def route(overrides: tuple[str, ...]) -> dict[str, str]:
                 f"'{key}' is project content rather than a knob, so no override can set it.",
                 hint=f"Edit [{key.split('.')[0]}] in {PROJECT_FILE} instead.",
             )
-        if key not in BY_ID:
-            raise InputError(
-                f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
-                hint="Run `decktalk schema settings` for every key DeckTalk reads.",
-            )
+        key_named(key)
         out[key] = value
     return out
 
@@ -1445,28 +1440,41 @@ COMPARISONS = {">=": operator.ge, "<=": operator.le, ">": operator.gt, "<": oper
 """The four comparisons a declared relation may use."""
 
 
+def not_a_key(key: str) -> InputError:
+    """The one refusal of a name no settings key carries, with the nearest key when one is near."""
+    return InputError(
+        f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
+        hint="Run `decktalk schema settings` for every key DeckTalk reads.",
+    )
+
+
+def key_named(key: str) -> Key:
+    """The settings key called `key`, or the one refusal every reader of a key's name gives."""
+    known = BY_ID.get(key)
+    if known is None:
+        raise not_a_key(key)
+    return known
+
+
 def parse_value(key: Key, text: str) -> object:
     """One value as a command line spells it, read as the key's own type and held to its range.
 
     A value that reaches `config set` and a value that reaches `--set` are the same string, so both
     are read here and both meet the same refusal.
     """
-    return read_value(key.annotation, text, where=key.id, field=_declared(key), from_env=True)
+    return read_value(key.annotation, text, where=key.id, bounds=key.bounds, hazard=key.hazard, from_env=True)
 
 
-def _declared(key: Key) -> DataField[Any]:
-    """The dataclass field that declares this key, found by walking the table path of its id.
-
-    The walk resolves each table's annotation by name, because the module is written under future
-    annotations and a field's declared type is the string the author wrote.
-    """
-    holder: Any = Settings
-    for part in key.table.split("."):
-        annotation = next(f for f in fields(holder) if f.name == part).type
-        holder = globals()[annotation] if isinstance(annotation, str) else annotation
-        if not is_dataclass(holder):
-            raise KeyError(key.id)
-    return next(f for f in fields(holder) if f.name == key.name)
+def _scoped_key(key: str, scope: Scope, *, action: str, rerun: str) -> Key:
+    """The key a write or a removal names, refused when no key has that name or it belongs in the other file."""
+    known = key_named(key)
+    if known.scope is not scope:
+        where = "machine" if known.scope is Scope.MACHINE else "project"
+        raise InputError(
+            f"'{key}' is {known.scope.value}-scoped, so it cannot be {action} the {scope.value} file.",
+            hint=f"Run `{rerun} --where {where}`.",
+        )
+    return known
 
 
 def write(
@@ -1495,18 +1503,7 @@ def write(
     `environ` is the machine's environment, which is the layer over the file that decides whether
     the value written is the value in force.
     """
-    known = BY_ID.get(key)
-    if known is None:
-        raise InputError(
-            f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
-            hint="Run `decktalk schema settings` for every key DeckTalk reads.",
-        )
-    if known.scope is not scope:
-        other = "--where machine" if known.scope is Scope.MACHINE else "--where project"
-        raise InputError(
-            f"'{key}' is {known.scope.value}-scoped, so it cannot be written to the {scope.value} file.",
-            hint=f"Run `decktalk config set {key} {value} {other}`.",
-        )
+    known = _scoped_key(key, scope, action="written to", rerun=f"decktalk config set {key} {value}")
     if known.source is Source.MEASURED and not measured:
         raise InputError(
             f"'{key}' is measured rather than chosen, so a value written by hand would be a guess.",
@@ -1526,6 +1523,10 @@ def write(
     if not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
+    # A write that a higher layer shadows changes the file and not the run, so the result says so
+    # rather than reporting a new value the next command will not use.
+    tree = _in_force(path, scope, {key: typed}, environ)
+    winner = tree.layers.winner(key)
     return SettingWrite(
         key=key,
         value=json_value(typed),
@@ -1534,7 +1535,9 @@ def write(
         file=path,
         line=locate(text, key),
         dry_run=dry_run,
-        **_after(path, key, scope, typed, environ),
+        effective=json_value(value_of(tree.settings, key)),
+        layer=winner.layer,
+        shadowed=winner.layer is not (Layer.MACHINE if scope is Scope.MACHINE else Layer.PROJECT),
     )
 
 
@@ -1549,18 +1552,7 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
     although it may not be written, because a measurement that no longer describes the machine needs
     a way back to the default.
     """
-    known = BY_ID.get(key)
-    if known is None:
-        raise InputError(
-            f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
-            hint="Run `decktalk schema settings` for every key DeckTalk reads.",
-        )
-    if known.scope is not scope:
-        other = "--where machine" if known.scope is Scope.MACHINE else "--where project"
-        raise InputError(
-            f"'{key}' is {known.scope.value}-scoped, so it cannot be taken out of the {scope.value} file.",
-            hint=f"Run `decktalk config unset {key} {other}`.",
-        )
+    _scoped_key(key, scope, action="taken out of", rerun=f"decktalk config unset {key}")
     document = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
     previous = _stated(document, key)
     if previous is not _ABSENT:
@@ -1608,23 +1600,12 @@ def _validate(text: str, path: Path, scope: Scope) -> None:
     except tomllib.TOMLDecodeError as exc:  # pragma: no cover  (tomlkit writes only valid TOML)
         raise InputError(f"{path.name} would not be valid TOML: {exc}.") from exc
     if scope is Scope.MACHINE:
-        _machine_scope(data, path)
+        refuse_off_scope(data, Scope.MACHINE, file=path, text=text)
     load(
         machine=data if scope is Scope.MACHINE else {},
         project=data if scope is Scope.PROJECT else {},
         environ={},
     )
-
-
-def _machine_scope(data: Mapping[str, Any], path: Path) -> None:
-    """The per-machine rule applied to a would-be file, which is the same refusal a read makes."""
-    for dotted, _value in _flatten(data):
-        key = BY_ID.get(dotted)
-        if key is not None and key.scope is not Scope.MACHINE:
-            raise InputError(
-                f"{path.name}: '{dotted}' is {key.scope.value}-scoped and does not belong in this file.",
-                hint=f"Run `decktalk config set {dotted} <value> --where project`.",
-            )
 
 
 def _in_force(path: Path, scope: Scope, stated: Mapping[str, object], environ: Mapping[str, str]) -> Loaded:
@@ -1641,22 +1622,6 @@ def _in_force(path: Path, scope: Scope, stated: Mapping[str, object], environ: M
         machine_path=path if scope is Scope.MACHINE else None,
         environ=environ,
     )
-
-
-def _after(path: Path, key: str, scope: Scope, typed: object, environ: Mapping[str, str]) -> dict[str, Any]:
-    """The value in force once this write lands, and whether a higher layer still decides the key.
-
-    A write that a higher layer shadows changes the file and not the run, so the call says so
-    rather than reporting a new value the next command will not use.
-    """
-    tree = _in_force(path, scope, {key: typed}, environ)
-    winner = tree.layers.winner(key)
-    own = Layer.MACHINE if scope is Scope.MACHINE else Layer.PROJECT
-    return {
-        "effective": json_value(value_of(tree.settings, key)),
-        "layer": winner.layer,
-        "shadowed": winner.layer is not own,
-    }
 
 
 def nested(flat: Mapping[str, object]) -> dict[str, Any]:
@@ -1709,6 +1674,8 @@ __all__ = [
     "load",
     "machine_config_path",
     "merge_tables",
+    "key_named",
+    "not_a_key",
     "parse_value",
     "read_machine_toml",
     "read_project_toml",

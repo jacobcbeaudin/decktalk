@@ -523,7 +523,7 @@ class TestTheRemover:
         """The removal goes through the loader the write goes through, so neither launders a bad file."""
         path = tmp_path / "machine.toml"
         path.write_text('[video]\npreset = "slow"\n[tools]\nffmpeg = "/opt/ffmpeg"\n', encoding="utf-8")
-        with pytest.raises(InputError, match="project-scoped and does not belong in this file"):
+        with pytest.raises(InputError, match="'video.preset' is project-scoped, so it belongs in"):
             unset(path, "tools.ffmpeg", scope=Scope.MACHINE, environ={})
         assert "ffmpeg" in path.read_text(encoding="utf-8")
 

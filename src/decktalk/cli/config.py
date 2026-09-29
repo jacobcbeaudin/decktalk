@@ -38,7 +38,6 @@ from decktalk.results import (
     SettingValue,
 )
 from decktalk.tomlmap import Key as KeyRecord
-from decktalk.tomlmap import did_you_mean
 
 SENTENCE_ENDS = (".", "?", "!")
 """The marks a refusal's own sentence may already end on, which is when no full stop is added."""
@@ -239,13 +238,7 @@ def _named(key: str) -> None:
 
 def _unknown(key: str) -> typer.BadParameter:
     """The refusal of a name no key carries, with the nearest key when one is near."""
-    return _refused(
-        InputError(
-            f"'{key}' is not a settings key.{did_you_mean(key, knobs.BY_ID)}",
-            hint="Run decktalk schema settings for every key DeckTalk reads.",
-        ),
-        "KEY",
-    )
+    return _refused(knobs.not_a_key(key), "KEY")
 
 
 def _loaded(session: sessions.Session) -> knobs.Loaded:

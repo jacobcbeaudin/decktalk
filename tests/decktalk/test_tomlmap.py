@@ -164,10 +164,10 @@ class TestLoading:
             from_mapping(Outer, base={"delays": [0.7, -1.0]}, prefixes=["t"], environ={})
 
     def test_one_value_answers_the_same_way_from_a_file_and_from_the_environment(self) -> None:
-        declared = next(f for f in Inner.__dataclass_fields__.values() if f.name == "count")
-        assert read_value(int, "5", where="inner.count", field=declared, from_env=True) == 5
+        bounds = next(f for f in Inner.__dataclass_fields__.values() if f.name == "count").metadata["bounds"]
+        assert read_value(int, "5", where="inner.count", bounds=bounds, hazard=None, from_env=True) == 5
         with pytest.raises(InputError, match="must be between 1 and 10"):
-            read_value(int, "11", where="inner.count", field=declared, from_env=True)
+            read_value(int, "11", where="inner.count", bounds=bounds, hazard=None, from_env=True)
 
 
 class TestMessages:

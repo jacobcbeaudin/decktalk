@@ -28,11 +28,12 @@ from .settings import (
     Loaded,
     Settings,
     json_value,
+    key_named,
     load,
     nested,
     value_of,
 )
-from .tomlmap import Key, Nature, Source, did_you_mean
+from .tomlmap import Key, Nature, Source
 
 Cue = tuple[float, str]
 """One resolved cue as the explainer reads it, which is its second and its wire id, in that order so it sorts."""
@@ -91,12 +92,7 @@ def explain(
     a value that is written, because an explanation of a value the loader would refuse is a lie
     with arithmetic in it.
     """
-    known = BY_ID.get(key)
-    if known is None:
-        raise InputError(
-            f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
-            hint="Run `decktalk schema settings` for every key DeckTalk reads.",
-        )
+    known = key_named(key)
     on = machine or Machine.from_environment()
     opened = _opened(project, on) if project else None
     here = (

@@ -520,38 +520,30 @@ def from_mapping[T](
         if raw is None:
             continue
         where = ".".join([*names[1:], f.name])
-        args[f.name] = _checked(annotation, raw, where=where, field=f, from_env=from_env)
+        bounds, hazard = f.metadata.get("bounds"), f.metadata.get("hazard")
+        args[f.name] = read_value(annotation, raw, where=where, bounds=bounds, hazard=hazard, from_env=from_env)
     return cls(**args)
 
 
-def _checked(annotation: Any, raw: Any, *, where: str, field: Any, from_env: bool) -> Any:
-    """One value read as its field's type and measured against its safe range, or a refusal.
+def read_value(
+    annotation: Any, raw: Any, *, where: str, bounds: Bounds | None, hazard: str | None, from_env: bool
+) -> Any:
+    """One value read as its type and measured against its safe range, or a refusal.
 
     An environment variable carries a string and nothing else, so its value is converted. A mapping
     carries the type its author wrote, so a value of the wrong type is refused rather than converted,
     which is what keeps `[video] output_fps = "25"` and `[video] output_fps = 25.7` from becoming a
-    number nobody typed.
+    number nobody typed. `config set` and `--set` hand over the string a command line carried, so
+    both read it the way an environment variable is read, and the loader and the writer meet one rule.
     """
     try:
         value = _coerce(annotation, raw) if from_env else _as_written(annotation, raw)
     except (TypeError, ValueError) as exc:
         wanted = getattr(annotation, "__name__", str(annotation))
         raise InputError(f"{where}: expected {wanted}, got {raw!r} ({exc}).") from exc
-    bounds = field.metadata.get("bounds")
     if bounds is not None and not bounds.holds(value):
-        hazard = field.metadata.get("hazard")
         raise InputError(f"{where}: {bounds.sentence}, got {value!r}.", hint=hazard)
     return value
-
-
-def read_value(annotation: Any, raw: Any, *, where: str, field: Any, from_env: bool) -> Any:
-    """One value read as a field's type and held to its safe range, which the writer shares with the loader.
-
-    `config set` and `--set` both hand over the string a command line carried, so both read it the
-    way an environment variable is read, and a value no layer could hold is refused by one rule
-    rather than by three that could disagree.
-    """
-    return _checked(annotation, raw, where=where, field=field, from_env=from_env)
 
 
 def _coerce(annotation: Any, raw: str) -> Any:
