@@ -43,7 +43,8 @@ What the flag does depends on the stage, and the difference is the point of the 
   or its cut when nothing about it changed, because naming a section says which sections a run is
   about and never that its work has to be redone.
 - On `assemble` it never shortens the film. A film is always whole, so every section is in the
-  answer, and `--section` decides only which of them are cut again rather than kept.
+  answer, and every cut is kept only while its key matches, named or not. `--section` decides which
+  sections the run judges, so a missing file in a section you left out is not reported again.
 
 A section you leave out of `record` whose recording no longer matches the project is reported by
 name, with the reason, so a run never leaves an out-of-date picture in the film silently. A section

@@ -189,7 +189,7 @@ def test_ffmpeg_concatenates_files_under_a_directory_with_an_apostrophe_in_its_n
     listing = films / "parts.txt"
     listing.write_text(ffmpeg.concat_list(parts), encoding="utf-8")
     joined = films / "joined.mp4"
-    ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(joined))
+    ffmpeg.run(*ffmpeg.concat_source(listing), "-c", "copy", str(joined))
     assert ffmpeg.probe_duration(joined) == pytest.approx(0.8, abs=0.1)
 
 

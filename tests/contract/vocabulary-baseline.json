@@ -8,7 +8,7 @@
     "tests/decktalk/media/test_encode.py": 1,
     "tests/decktalk/media/test_pagereport.py": 1,
     "tests/decktalk/stages/assemble/test_assemble.py": 2,
-    "tests/decktalk/stages/assemble/test_cut.py": 2,
+    "tests/decktalk/stages/assemble/test_cut.py": 1,
     "tests/decktalk/stages/assemble/test_loudness.py": 3,
     "tests/decktalk/stages/assemble/test_mix.py": 1,
     "tests/decktalk/stages/check/test_check.py": 1,

@@ -248,9 +248,11 @@ def render_sections(
 ) -> list[Rendered]:
     """Every section of the film cut to its span, in the order the film plays them.
 
-    A film is always whole, so every section is in the answer. `only` decides which of them are cut
-    again: a section it does not name whose cut is already on disk is kept, because re-encoding a
-    picture that has not moved buys nothing and costs the longest pass in the stage.
+    A film is always whole, so every section is in the answer, and every one of them is cut through
+    `encode`, which keeps a cut only when its key says these arguments made it from these files. A
+    cut already on disk is therefore never trusted for being there, which is what stops a supplied
+    `build/` from choosing what the film plays. `only` decides which sections this run answers for:
+    those are the ones `strict` holds and the ones judged for a missing file.
 
     `passes` is how many passes the whole stage runs, so the cuts count against the same total the
     passes after them do and a renderer never sees one bar restart inside one stage.
@@ -265,14 +267,11 @@ def render_sections(
     for done, section in enumerate(sections, start=1):
         run.check()
         out = inputs.workspace.section_video(section.key)
-        row = _kept(inputs, section, out) if not wanted(section.number) else None
-        if row is None:
-            row = _cut_one(inputs, run, enc, takes, section, out, dip, strict=strict)
-        rows.append(row)
+        rows.append(_cut_one(inputs, run, enc, takes, section, out, dip, strict=strict and wanted(section.number)))
         run.wrote(out)
         run.progress(Stage.ASSEMBLE, done=done, total=passes or len(sections), unit=Unit.PASS,
                      label=f"cut section {section.number}", section=section.number)  # fmt: skip
-    _judge_missing(run, rows)
+    _judge_missing(run, [row for row in rows if wanted(row.number)])
     return rows
 
 
@@ -283,16 +282,6 @@ def _cut_one(inputs: Inputs, run: Run, enc: Encoder, takes: Takes, section: Sect
         return render_clip(inputs, run, enc, section, out, dip, strict=strict)
     total = page_target(takes, section, enc.v.output_fps)
     return render_page(inputs, run, enc, section, out, dip, total, strict=strict)
-
-
-def _kept(inputs: Inputs, section: Section, out: Path) -> Rendered | None:
-    """The row for a cut already on disk that this run was not asked to make again, or None."""
-    if not out.exists():
-        return None
-    source = section.clip if isinstance(section, ClipSection) else inputs.relative(
-        inputs.workspace.recording(section.key)
-    ).as_posix()  # fmt: skip
-    return Rendered(section, out, ffmpeg.probe_duration(out), f"{out.name} (kept)", str(source))
 
 
 def _judge_missing(run: Run, rows: list[Rendered]) -> None:
@@ -354,11 +343,15 @@ def rendered_starts(rows: list[Rendered]) -> dict[int, float]:
 
 
 def concat(files: list[Path], out: Path) -> None:
-    """Join the section cuts into one picture, with no re-encoding and no gaps between them."""
+    """Join the section cuts into one picture, with no re-encoding and no gaps between them.
+
+    Each cut is opened through the join's own whitelists, so a cut a supplied `build/` planted cannot
+    make the demuxer read a file or a host the project never named.
+    """
     listing = out.with_suffix(".concat.txt")
     listing.write_text(ffmpeg.concat_list(files), encoding="utf-8")
     try:
-        ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", "-movflags", "+faststart", str(out))
+        ffmpeg.run(*ffmpeg.concat_source(listing), "-c", "copy", "-movflags", "+faststart", str(out))
     finally:
         listing.unlink(missing_ok=True)
 

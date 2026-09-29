@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
 
-from decktalk.errors import InputError, NotBuiltError
+from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.inputs import Inputs
+from decktalk.machine import Machine
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.results import SectionKind, Substitute
@@ -130,21 +134,45 @@ def test_strict_refuses_a_missing_clip_unless_the_section_is_optional(tmp_path, 
     assert (allowed.substitute, allowed.missing) == (Substitute.SLATE, "media/slot.mp4")
 
 
-def test_a_section_the_run_did_not_name_keeps_the_cut_already_on_disk(
-    tmp_path, write_project, open_run, take_index, spoken
+def test_a_cut_the_run_did_not_name_is_kept_only_under_its_own_key(
+    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
 ):
-    """Re-encoding a picture that has not moved buys nothing and costs the longest pass in the stage."""
+    """A cut on disk was once kept with no key at all, so a supplied `build/` chose what the film played.
+
+    A section a `--section` run does not name is still cut through its key, so an unchanged cut is
+    read back and one the key does not vouch for is encoded again. Only the named sections are judged.
+    """
     inputs = write_project(tmp_path)
-    opened = open_run(tmp_path)
     takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
-    inputs.workspace.sections_dir.mkdir(parents=True)
-    inputs.workspace.section_video("02").write_bytes(b"already here")
-    rows = render_sections(inputs, opened.run, takes, only=[1, 3], strict=False)
-    kept = next(row for row in rows if row.number == 2)
-    assert kept.note.endswith("(kept)")
-    assert kept.substitute is None
-    # Only the named sections were judged, because the kept one was never looked at for a recording.
-    assert opened.codes() == ["FILE_MISSING", "FILE_MISSING"]
+    _recorded(inputs)
+    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
+    fake_ffmpeg.calls.clear()
+    render_sections(inputs, open_run(tmp_path).run, takes, only=[1, 3], strict=False)
+    assert fake_ffmpeg.wrote(".mp4") == []
+
+    planted = inputs.workspace.section_video("02")
+    for key in ("absent", "stale"):
+        planted.write_bytes(b"a film this build never made")
+        if key == "absent":
+            planted.with_suffix(".json").unlink()
+        else:
+            planted.with_suffix(".json").write_text('{"digest": "0"}', encoding="utf-8")
+        fake_ffmpeg.calls.clear()
+        opened = open_run(tmp_path)
+        render_sections(inputs, opened.run, takes, only=[1, 3], strict=False)
+        assert fake_ffmpeg.wrote(".mp4") == [planted]
+        assert planted.read_bytes() == b""
+
+
+def test_the_join_opens_every_cut_through_the_file_protocol_and_the_closed_demuxers(tmp_path, monkeypatch):
+    """The concat demuxer copies its whitelists to each cut it opens, so a cut cannot be a playlist or a manifest."""
+    seen: list[list[str]] = []
+    monkeypatch.setattr(ffmpeg, "run", lambda *args: seen.append(list(args)))
+    concat([tmp_path / "01.mp4"], tmp_path / "picture.mp4")
+    (args,) = seen
+    ahead = args[: args.index("-i")]
+    assert ahead[ahead.index("-protocol_whitelist") + 1] == ffmpeg.SOURCE_PROTOCOLS
+    assert set(ahead[ahead.index("-format_whitelist") + 1].split(",")) == {"concat", "mov"}
 
 
 def _recorded(inputs, numbers=(1, 2, 3)) -> None:  # noqa: ANN001
@@ -332,3 +360,91 @@ def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, write_proje
     assert len({first_key, renamed_key, recoloured_key}) == 3
     assert (again, again_key) == (recoloured, recoloured_key)
     assert renamed is not None and renamed.read_text(encoding="utf-8") == "Live demo|0x0e1116"
+
+
+@pytest.fixture
+def real_ffmpeg(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """The pinned ffmpeg this machine fetched, in place of the fake the rest of this module runs.
+
+    The module fakes ffmpeg through this same monkeypatch, so undoing it once the fake is in place
+    restores the real tool, and
+    the machine's toolchain is bound as a run binds it, because what these tests measure is what the
+    real demuxer opens.
+    """
+    request.getfixturevalue("fake_ffmpeg")
+    monkeypatch.undo()
+    with Machine.from_environment().toolchain.bound():
+        yield
+
+
+def _film(path: Path) -> Path:
+    """A real one-second section cut, encoded by the pinned ffmpeg."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg.run(
+        "-f", "lavfi", "-i", "color=c=black:s=64x64:r=25:d=1",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path),
+    )  # fmt: skip
+    return path
+
+
+MANIFEST = (
+    '<?xml version="1.0"?>\n<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" '
+    'mediaPresentationDuration="PT1S" minBufferTime="PT1S" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011">'
+    '<Period><AdaptationSet mimeType="video/mp4"><Representation id="1" bandwidth="1000">'
+    "<BaseURL>{target}</BaseURL></Representation></AdaptationSet></Period></MPD>\n"
+)
+"""A DASH manifest, which the concat demuxer would probe inside a cut and follow to the file it names."""
+
+
+@pytest.mark.media
+@pytest.mark.parametrize(
+    "planted",
+    [
+        MANIFEST,
+        "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:1.0,\n{target}\n#EXT-X-ENDLIST\n",
+        "ffconcat version 1.0\nfile '{target}'\n",
+    ],
+    ids=["dash", "hls", "ffconcat"],
+)
+@pytest.mark.usefixtures("real_ffmpeg")
+def test_a_planted_cut_that_names_another_tenants_film_is_never_followed(tmp_path, planted):
+    """0.5.0 joined a supplied `build/sections/01.mp4` that was a DASH manifest, and so read the film it named.
+
+    The refusal is the measure, since 0.5.0 made a film out of the other tenant's where this makes none.
+    """
+    outside = _film(tmp_path / "tenant-b" / "film.mp4")
+    sections = tmp_path / "tenant-a" / "build" / "sections"
+    hostile = sections / "01.mp4"
+    hostile.parent.mkdir(parents=True)
+    hostile.write_text(planted.format(target=outside.resolve().as_posix()), encoding="utf-8")
+    with pytest.raises(ToolError):
+        concat([hostile, _film(sections / "02.mp4")], sections / "picture.mp4")
+
+
+@pytest.mark.media
+@pytest.mark.usefixtures("real_ffmpeg")
+def test_a_planted_manifest_that_names_a_host_reaches_nothing(tmp_path):
+    """The segment is on a listener this test holds, so what is measured is the request that never came."""
+    asked: list[str] = []
+
+    class Listener(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            asked.append(self.path)
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *_args: object) -> None:
+            """Quiet, because the list above is the whole report."""
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Listener)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    hostile = tmp_path / "build" / "sections" / "01.mp4"
+    hostile.parent.mkdir(parents=True)
+    hostile.write_text(MANIFEST.format(target=f"http://127.0.0.1:{server.server_address[1]}/seg.mp4"), encoding="utf-8")
+    try:
+        with pytest.raises(ToolError):
+            concat([hostile], hostile.with_name("picture.mp4"))
+        assert asked == []
+    finally:
+        server.shutdown()
+        server.server_close()

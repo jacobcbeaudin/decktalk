@@ -390,6 +390,24 @@ def concat_list(paths: Iterable[Path | str]) -> str:
     return "".join(concat_line(path) for path in paths)
 
 
+JOINED_FORMATS = ("concat", "mov")
+"""The demuxers a join may open, which are the concat list itself and the mp4 every section cut is written as."""
+
+
+def concat_source(listing: Path | str) -> list[str]:
+    """The arguments that open a concat list, allowing the file protocol and `JOINED_FORMATS` alone.
+
+    The concat demuxer copies both whitelists to every file the list names, so a cut that is really a
+    playlist or a manifest is refused at the join rather than followed to the files it names. The
+    list is written with absolute paths, which is why it is read with `-safe 0`.
+    """
+    return [
+        "-f", "concat", "-safe", "0",
+        "-protocol_whitelist", SOURCE_PROTOCOLS, "-format_whitelist", ",".join(JOINED_FORMATS),
+        "-i", str(listing),
+    ]  # fmt: skip
+
+
 VALUE_ONLY = ("-of", "default=noprint_wrappers=1:nokey=1")
 """Truth: the output format that prints each probed value alone on its line, with no key and no section."""
 
