@@ -23,6 +23,7 @@ reader who cannot find a knob learns the number is deliberately not one.
 
 from __future__ import annotations
 
+import operator
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Mapping, MutableMapping
@@ -48,7 +49,6 @@ from .tomlmap import (
     Nature,
     Source,
     did_you_mean,
-    env_names,
     from_mapping,
     read_value,
     registry,
@@ -1247,7 +1247,7 @@ def env_warnings(environ: Mapping[str, str]) -> list[str]:
     A variable DeckTalk does not read has no effect, so the warning is what tells a reader that a
     typed name never took hold.
     """
-    known = env_names(Settings, ENV_PREFIX) | STANDALONE_ENV
+    known = {key.environment for key in KEYS} | STANDALONE_ENV
     return [
         unknown_key_message(name, known, "environment")
         for name in sorted(n for n in environ if n.startswith("DECKTALK_") and n not in known)
@@ -1256,11 +1256,7 @@ def env_warnings(environ: Mapping[str, str]) -> list[str]:
 
 def _table(doc: Mapping[str, Any], dotted: str) -> Mapping[str, Any] | None:
     """One nested table of a parsed document by its dotted name, or null when it is not there."""
-    found: Any = doc
-    for part in dotted.split("."):
-        if not isinstance(found, Mapping) or part not in found:
-            return None
-        found = found[part]
+    found = _stated(doc, dotted)
     return found if isinstance(found, Mapping) else None
 
 
@@ -1436,7 +1432,7 @@ def _require(settings: Settings) -> None:
         if key.requires is None:
             continue
         left, op, right = key.requires.split()
-        if not _compare(_side(settings, left), op, _side(settings, right)):
+        if not COMPARISONS[op](_side(settings, left), _side(settings, right)):
             raise InputError(
                 f"{key.id} must satisfy {key.requires}, and it does not.",
                 hint=key.hazard,
@@ -1452,14 +1448,8 @@ def _side(settings: Settings, token: str) -> float:
     return float(token)
 
 
-def _compare(left: float, op: str, right: float) -> bool:
-    """The four comparisons a declared relation may use."""
-    return {
-        ">=": left >= right,
-        "<=": left <= right,
-        ">": left > right,
-        "<": left < right,
-    }[op]
+COMPARISONS = {">=": operator.ge, "<=": operator.le, ">": operator.gt, "<": operator.lt}
+"""The four comparisons a declared relation may use."""
 
 
 def parse_value(key: Key, text: str) -> object:

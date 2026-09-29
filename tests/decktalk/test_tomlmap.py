@@ -21,7 +21,6 @@ from decktalk.tomlmap import (
     Table,
     default_of,
     did_you_mean,
-    env_names,
     from_mapping,
     read_value,
     registry,
@@ -169,9 +168,6 @@ class TestLoading:
         assert read_value(int, "5", where="inner.count", field=declared, from_env=True) == 5
         with pytest.raises(InputError, match="must be between 1 and 10"):
             read_value(int, "11", where="inner.count", field=declared, from_env=True)
-
-    def test_every_environment_name_of_a_tree_is_named(self) -> None:
-        assert env_names(Outer, "t") == {"T_NAME", "T_DELAYS", "T_INNER_COUNT", "T_INNER_RATIO", "T_INNER_ON"}
 
 
 class TestMessages:

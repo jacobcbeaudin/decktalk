@@ -271,9 +271,8 @@ def tune[T](
 def registry(cls: type[Any], *, prefix: tuple[str, ...] = ()) -> tuple[Key, ...]:
     """Every key of a dataclass tree, in declaration order, with its dotted id.
 
-    The walk is the same recursion `from_mapping` and `env_names` make, so a nested table is
-    published, loaded and named from one reading of the fields and a table added later needs no
-    second edit anywhere.
+    The walk is the same recursion `from_mapping` makes, so a nested table is published, loaded and
+    named from one reading of the fields and a table added later needs no second edit anywhere.
     """
     out: list[Key] = []
     hints = get_type_hints(cls)
@@ -604,19 +603,6 @@ def _as_written(annotation: Any, raw: Any) -> Any:
     return raw
 
 
-def env_names(cls: type[Any], prefix: str) -> set[str]:
-    """Every environment variable `from_mapping` reads for this dataclass tree, so a typo can be named."""
-    out: set[str] = set()
-    hints = get_type_hints(cls)
-    for f in fields(cast("Any", cls)):
-        annotation = hints.get(f.name, f.type)
-        if is_dataclass(annotation):
-            out |= env_names(cast("type[Any]", annotation), f"{prefix}_{f.name}")
-        else:
-            out.add(f"{prefix}_{f.name}".upper())
-    return out
-
-
 def default_of(model: type, name: str) -> Any:
     """The default one field of a frozen dataclass declares, which a parser passes rather than repeating.
 
@@ -642,7 +628,6 @@ __all__ = [
     "Table",
     "default_of",
     "did_you_mean",
-    "env_names",
     "from_mapping",
     "read_value",
     "registry",
