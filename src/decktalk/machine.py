@@ -316,7 +316,7 @@ class Run:
         self.emit(SpendLine, spend=spend)
         if self.voice is not Voicing.PAID:
             raise ApprovalRequired(
-                f"this run would spend ${spend.dollars:.2f} on speech and no voicing approved it.",
+                f"{spend.sentence} No voicing approved it.",
                 hint="Pass --spend to approve it, or --no-voice to write placeholder narration.",
             )
         if self.max_cost is None:
@@ -328,7 +328,7 @@ class Run:
             )
         if spend.ceiling_dollars > self.max_cost:
             raise ApprovalRequired(
-                f"this run can cost up to ${spend.ceiling_dollars:.2f}, which is over the "
+                f"{spend.sentence} The most it can cost, ${spend.ceiling_dollars:.2f}, is over the "
                 f"${self.max_cost:.2f} ceiling --max-cost set.",
                 hint=f"Raise the ceiling to --max-cost {spend.ceiling_dollars:.2f}, or narrow the run with --section.",
             )

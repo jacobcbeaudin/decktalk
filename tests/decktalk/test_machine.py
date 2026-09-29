@@ -321,6 +321,19 @@ def test_nothing_is_bought_without_a_paid_voicing(tmp_path: Path) -> None:
     assert "--spend" in (refused.value.hint or "")
 
 
+def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_path: Path) -> None:
+    """A run whose certain part is zero must not be said to spend $0.00, which its ceiling contradicts."""
+    here = a_machine(tmp_path)
+    unmatched = spend(0.0, 0.3)
+    with here.run() as run, pytest.raises(ApprovalRequired) as unvoiced:
+        run.approve(unmatched)
+    with here.run(voice=Voicing.PAID, max_cost=0.1) as run, pytest.raises(ApprovalRequired) as capped:
+        run.approve(unmatched)
+    for refused in (unvoiced, capped):
+        assert str(refused.value).startswith(unmatched.sentence)
+        assert "$0.00" not in str(refused.value)
+
+
 def test_a_paid_run_inside_its_ceiling_goes_through(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     with here.run(voice=Voicing.PAID, max_cost=1.0) as run:
