@@ -220,10 +220,12 @@ def test_whether_a_recording_still_stands_is_asked_of_record(tmp_path: Path, mon
     inputs.workspace.recording("01").write_bytes(b"")
     monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: "section 1: its page changed")
     run = a_run(tmp_path)
-    said = notes(run)
+    said: list[Log] = []
+    run.machine.events.subscribe(lambda event: said.append(event) if isinstance(event, Log) else None)
     result = status(inputs, run)
     assert result.sections[0].stale is True
-    assert any("its page changed" in line for line in said)
+    # A reading a reader may act on is a warning, because it is not what the author asked for.
+    assert any("its page changed" in line.message and line.level is Level.WARNING for line in said)
 
 
 def test_a_section_with_no_recording_is_never_stale(tmp_path: Path) -> None:
@@ -358,16 +360,3 @@ def test_the_report_names_the_two_files_the_author_writes(tmp_path: Path) -> Non
     assert result.script == Path("script.md")
     assert result.cues == Path("cues.json")
     assert result.name == "demo"
-
-
-def test_a_stale_recording_is_said_at_warning_level(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A reading a reader may act on is a warning, because it is not what the author asked for."""
-    inputs = a_project(tmp_path)
-    inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.recording("01").write_bytes(b"")
-    monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: "section 1 moved")
-    run = a_run(tmp_path)
-    levels: list[Level] = []
-    run.machine.events.subscribe(lambda event: levels.append(event.level) if isinstance(event, Log) else None)
-    status(inputs, run)
-    assert Level.WARNING in levels

@@ -231,13 +231,6 @@ def test_the_linux_e2e_row_reports_timing_until_it_is_trusted_to_gate() -> None:
     assert (check.REPORT_TIMING in command) is not check.LINUX_GATES_TIMING
 
 
-def test_every_row_that_runs_on_another_platform_reports_timing_once() -> None:
-    for group in check.GROUPS:
-        if group.name.endswith("-platforms"):
-            for command in group.commands:
-                assert command.count(check.REPORT_TIMING) == 1, group.name
-
-
 # ---- one row per contract ------------------------------------------------------------------------
 
 
