@@ -6,13 +6,16 @@ test ends, and hands back the fake so the test reads what the stage asked of it.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from decktalk.media import ffmpeg
 from decktalk.speech import PROVIDERS
+from decktalk.speech import http as speech_http
 from support.fakes import FAKE_VOICE_NAME, FakeFfmpeg, FakeVoice
+from support.service import Service
 
 
 @pytest.fixture
@@ -53,3 +56,24 @@ def fake_voice(monkeypatch: pytest.MonkeyPatch) -> FakeVoice:
     voice = FakeVoice()
     monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: voice)
     return voice
+
+
+@pytest.fixture
+def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Every wait a retry asked for, with none of them slept, so the suite does not wait on a back-off."""
+    asked: list[float] = []
+    monkeypatch.setattr(speech_http, "pause", asked.append)
+    return asked
+
+
+@pytest.fixture
+def service() -> Iterator[Service]:
+    """A threaded local service, started for the test and stopped with every stalled reply let go."""
+    held = Service()
+    held.start()
+    try:
+        yield held
+    finally:
+        held.released.set()
+        held.clear()
+        held.stop()

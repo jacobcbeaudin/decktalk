@@ -8,7 +8,7 @@ import os
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from contextvars import copy_context
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,8 +17,6 @@ from types import SimpleNamespace
 import pytest
 from filelock import FileLock
 from pydantic import TypeAdapter
-from pytest_httpserver import HTTPServer
-from werkzeug import Response
 
 import decktalk
 from decktalk import logs
@@ -40,6 +38,7 @@ from support.fakes import FakeChromium, FakeRouter
 from support.logs import data_of
 from support.projects import write_project
 from support.runs import a_machine
+from support.service import Service
 
 log = logging.getLogger("decktalk.media.ffmpeg")
 
@@ -483,27 +482,12 @@ def test_every_failure_path_leaves_its_record_in_the_events_file(
     assert capsys.readouterr() == ("", "")
 
 
-@pytest.fixture
-def voice_service(monkeypatch: pytest.MonkeyPatch) -> Iterator[HTTPServer]:
-    """A threaded local voice, with every wait skipped, so a stalled reply holds one thread and no test time."""
-    monkeypatch.setattr(_http, "pause", lambda _seconds: None)
-    released = threading.Event()
-    server = HTTPServer(host="127.0.0.1", threaded=True)
-    server.start()
-    server.released = released  # type: ignore[attr-defined]
-    try:
-        yield server
-    finally:
-        released.set()
-        server.clear()
-        server.stop()
-
-
-def test_a_busy_voice_leaves_a_warning_per_retry_and_a_trace_per_attempt(tmp_path: Path, voice_service) -> None:
+@pytest.mark.usefixtures("waits")
+def test_a_busy_voice_leaves_a_warning_per_retry_and_a_trace_per_attempt(tmp_path: Path, service: Service) -> None:
     for _ in range(2):
-        voice_service.expect_oneshot_request("/speak").respond_with_data("", 429, {"Retry-After": "2"})
-    voice_service.expect_request("/speak").respond_with_json({"ok": True})
-    url = voice_service.url_for("/speak")
+        service.expect_oneshot_request("/speak").respond_with_data("", 429, {"Retry-After": "2"})
+    service.expect_request("/speak").respond_with_json({"ok": True})
+    url = service.url_for("/speak")
     lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=5, retries=3))
     said = [line for line in lines if isinstance(line, Log) and line.source == "speech.http"]
     retries = [line.data for line in said if line.level is Level.WARNING]
@@ -512,16 +496,10 @@ def test_a_busy_voice_leaves_a_warning_per_retry_and_a_trace_per_attempt(tmp_pat
     assert [data["status"] for data in attempts] == [429, 429, 200]  # type: ignore[index]
 
 
-def test_a_stalled_voice_is_retried_and_ends_as_a_provider_refusal(tmp_path: Path, voice_service) -> None:
-    def stall(_request: object) -> Response:
-        def body() -> Iterator[bytes]:
-            yield b"{"
-            voice_service.released.wait(timeout=10)
-
-        return Response(body(), 200, {"Content-Length": "100"})
-
-    voice_service.expect_request("/speak").respond_with_handler(stall)
-    url = voice_service.url_for("/speak")
+@pytest.mark.usefixtures("waits")
+def test_a_stalled_voice_is_retried_and_ends_as_a_provider_refusal(tmp_path: Path, service: Service) -> None:
+    service.expect_request("/speak").respond_with_handler(service.stalls)
+    url = service.url_for("/speak")
     lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=1, retries=1))
     retries = [line for line in lines if isinstance(line, Log) and line.level is Level.WARNING]
     assert len(retries) == 1 and "stopped answering" in retries[0].message

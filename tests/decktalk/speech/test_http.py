@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import threading
 import urllib.request
-from collections.abc import Iterator
 
 import pytest
 from pytest_httpserver import HTTPServer
@@ -193,14 +191,6 @@ def test_every_call_carries_the_timeout_it_was_given(httpserver):
 # ---- a busy service ---------------------------------------------------------------------------------
 
 
-@pytest.fixture
-def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """Every wait a retry asked for, with none of them slept, so the suite does not wait on a back-off."""
-    asked: list[float] = []
-    monkeypatch.setattr(_http, "pause", asked.append)
-    return asked
-
-
 def test_a_busy_service_is_asked_again_until_it_answers(httpserver, waits):
     assert _http.post_json(_busy(httpserver, 2, 429), {}, {}, timeout=5, retries=3) == {"ok": True}
     assert len(httpserver.log) == 3
@@ -238,42 +228,18 @@ def test_the_wait_a_service_names_is_the_wait_taken_and_held_under_the_longest(h
 # ---- a reply that stops arriving --------------------------------------------------------------------
 
 
-@pytest.fixture
-def stalling() -> Iterator[HTTPServer]:
-    """A service on threads of its own, so a reply that stalls holds one thread and not the next request.
-
-    A stalled reply sends its headers and one byte of a hundred, then waits until the test is over,
-    which on the caller's side is a read that times out after the request was sent.
-    """
-    released = threading.Event()
-    server = HTTPServer(host="127.0.0.1", threaded=True)
-    server.start()
-
-    def stall() -> Iterator[bytes]:
-        yield b"{"
-        released.wait(timeout=10)
-
-    server.stalls = lambda: Response(stall(), 200, {"Content-Length": "100"})  # type: ignore[attr-defined]
-    try:
-        yield server
-    finally:
-        released.set()
-        server.clear()
-        server.stop()
-
-
-def test_a_reply_that_stalls_is_a_provider_failure_asked_for_again(stalling, waits):
+def test_a_reply_that_stalls_is_a_provider_failure_asked_for_again(service, waits):
     """A read timeout escaped the retry loop as a bare TimeoutError, which the CLI reported as a bug."""
-    stalling.expect_oneshot_request("/stall").respond_with_handler(lambda _request: stalling.stalls())
-    stalling.expect_request("/stall").respond_with_json({"ok": True})
-    assert _http.post_json(stalling.url_for("/stall"), {}, {}, timeout=1, retries=1) == {"ok": True}
-    assert len(stalling.log) == 2 and len(waits) == 1
+    service.expect_oneshot_request("/stall").respond_with_handler(service.stalls)
+    service.expect_request("/stall").respond_with_json({"ok": True})
+    assert _http.post_json(service.url_for("/stall"), {}, {}, timeout=1, retries=1) == {"ok": True}
+    assert len(service.log) == 2 and len(waits) == 1
 
 
-def test_a_reply_that_keeps_stalling_ends_as_a_provider_error_rather_than_a_timeout(stalling, waits):
-    stalling.expect_request("/stall").respond_with_handler(lambda _request: stalling.stalls())
+def test_a_reply_that_keeps_stalling_ends_as_a_provider_error_rather_than_a_timeout(service, waits):
+    service.expect_request("/stall").respond_with_handler(service.stalls)
     with pytest.raises(ProviderError, match="stopped answering") as caught:
-        _http.post_json(stalling.url_for("/stall"), {}, {}, timeout=1, retries=1)
+        _http.post_json(service.url_for("/stall"), {}, {}, timeout=1, retries=1)
     assert caught.value.retryable is True and len(waits) == 1
     assert isinstance(caught.value.__cause__, TimeoutError)
 

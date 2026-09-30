@@ -12,7 +12,6 @@ import re
 import secrets
 import subprocess
 import traceback
-from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -31,7 +30,7 @@ from decktalk.media import audio
 from decktalk.results import Voicing
 from decktalk.secret import Secret, redact, redacted, register, register_environment, secret_name
 from decktalk.settings import ALLOW_ANY_API_BASE, CONFIG_VARIABLE
-from decktalk.speech import http as _http
+from support.service import Service
 from support.speech import alignment
 
 VALUE = "sk_sentinel_key_that_must_never_print"
@@ -239,7 +238,7 @@ scene = "2"
 CANARY_SCRIPT = "# Notes\n\n## 1. Open\n\nA bowl and a ball.\n\n## 2. Close\n\nThe ball rests.\n"
 
 
-class FakeVoice:
+class HostileVoice:
     """A voice service on a local socket, which answers from a script of hostile replies and then speaks.
 
     Every reply that can quote the key does: a refusal echoes it, a busy answer and a gateway page carry
@@ -278,19 +277,6 @@ class FakeVoice:
         return self.spoken(request)
 
 
-@pytest.fixture
-def fake_voice_server(monkeypatch: pytest.MonkeyPatch) -> Iterator[HTTPServer]:
-    """A threaded local server, with every retry's wait skipped so the suite never sleeps on a back-off."""
-    monkeypatch.setattr(_http, "pause", lambda _seconds: None)
-    server = HTTPServer(host="127.0.0.1", threaded=True)
-    server.start()
-    try:
-        yield server
-    finally:
-        server.clear()
-        server.stop()
-
-
 def _canary_project(root: Path, base: str, key: str) -> Path:
     (root / "deck").mkdir(parents=True)
     (root / "deck" / "index.html").write_text("<p>deck</p>", encoding="utf-8")
@@ -311,10 +297,10 @@ def _chain(error: BaseException | None) -> str:
     return "\n".join(said)
 
 
-@pytest.mark.usefixtures("fake_ffmpeg")
+@pytest.mark.usefixtures("fake_ffmpeg", "waits")
 def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
     tmp_path: Path,
-    fake_voice_server: HTTPServer,
+    service: Service,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
     capsys: pytest.CaptureFixture[str],
@@ -327,8 +313,8 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
     key = f"sk_canary_{secrets.token_hex(12)}"
     host = f"pw_canary_{secrets.token_hex(8)}"
-    voice = FakeVoice(fake_voice_server, key)
-    root = _canary_project(tmp_path / "canary", fake_voice_server.url_for("/v1"), key)
+    voice = HostileVoice(service, key)
+    root = _canary_project(tmp_path / "canary", service.url_for("/v1"), key)
     environ = {"ELEVENLABS_API_KEY": key, "ELEVENLABS_VOICE_ID": "voice-canary", "HOST_DB_PASSWORD": host}
     here = Machine.of(
         environ=environ,
