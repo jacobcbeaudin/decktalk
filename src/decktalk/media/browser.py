@@ -609,7 +609,10 @@ def record_page(
         report = read_report(page, out.stem)
         errors = page_errors(page, caught, out.stem)
         for kind, text in console:
-            log.debug("[page] %s  console %s: %s", out.stem, kind, text, extra={"data": {"kind": kind, "text": text}})
+            # A console.error is the author telling themselves something broke, so it reaches the terminal.
+            level = logging.WARNING if kind == "error" else logging.DEBUG
+            said = {"kind": kind, "text": text}
+            log.log(level, "[page] %s  console %s: %s", out.stem, kind, text, extra={"data": said})
         recording = Recording(
             url=url,
             assets=tuple(capture.assets.paths),
