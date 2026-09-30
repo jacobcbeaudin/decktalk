@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+import textwrap
 import tomllib
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -219,18 +220,13 @@ WRAP_AT = 108
 
 def quoted(text: str, indent: str) -> str:
     """A Python string literal for one sentence, split across lines when it would not fit on one."""
-    if len(text) + len(indent) + 2 <= WRAP_AT:
+    width = WRAP_AT - len(indent) - 2  # the two quotes around the literal
+    if len(text) <= width:
         return repr(text)
-    parts: list[str] = []
-    line = ""
-    for word in text.split(" "):
-        candidate = f"{line} {word}" if line else word
-        if len(candidate) + len(indent) + 2 > WRAP_AT and line:
-            parts.append(f"{line} ")
-            line = word
-        else:
-            line = candidate
-    parts.append(line)
+    *lines, last = textwrap.wrap(text, width, break_long_words=False, break_on_hyphens=False)
+    parts = [*(f"{line} " for line in lines), last]
+    if "".join(parts) != text:
+        raise SystemExit(f"{text!r} holds whitespace other than single spaces, which a wrapped literal would lose.")
     body = f"\n{indent}    ".join(repr(part) for part in parts)
     return f"(\n{indent}    {body}\n{indent})"
 
