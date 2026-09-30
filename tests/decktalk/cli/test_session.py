@@ -52,35 +52,29 @@ def test_color_never_turns_colour_off_without_the_variable(monkeypatch: pytest.M
     assert not session(color=When.ALWAYS).terminal.no_color
 
 
-def test_a_run_that_judged_nothing_exits_zero() -> None:
+@pytest.mark.parametrize(
+    ("fail_on", "allow", "found", "code"),
+    [
+        (None, frozenset(), (), 0),  # a run that judged nothing
+        (None, frozenset(), (Code.CUE_UNRESOLVED,), 1),  # a certain judgement under the default threshold
+        (None, frozenset(), (Code.CUE_THIN_CHANGE,), 0),  # an uncertain one fails only under any
+        (FailOn.ANY, frozenset(), (Code.CUE_THIN_CHANGE,), 1),
+        (FailOn.NEVER, frozenset(), (Code.CUE_UNRESOLVED,), 0),
+        (FailOn.CERTAIN, frozenset({Code.CUE_UNRESOLVED}), (Code.CUE_UNRESOLVED,), 0),  # an allowed code
+    ],
+    ids=["nothing", "sure", "unsure", "unsure-failing", "off", "allowed"],
+)
+def test_the_exit_code_fails_on_what_the_threshold_names_and_nothing_it_allows(
+    fail_on: FailOn | None, allow: frozenset[Code], found: tuple[Code, ...], code: int
+) -> None:
     made = session()
-    assert made.exit_code(_status()) == 0
+    if fail_on is not None:
+        made.judging(fail_on=fail_on, allow=allow)
+    assert made.exit_code(_status(*(finding(one) for one in found))) == code
 
 
-def test_a_certain_judgement_fails_a_run_under_the_default_threshold() -> None:
-    made = session()
-    assert made.exit_code(_status(finding())) == 1
-
-
-def test_an_uncertain_judgement_fails_only_under_any() -> None:
-    made = session()
-    soft = _status(finding(Code.CUE_THIN_CHANGE))
-    assert soft.findings[0].certainty is Certainty.UNCERTAIN
-    assert made.exit_code(soft) == 0
-    made.judging(fail_on=FailOn.ANY, allow=frozenset())
-    assert made.exit_code(soft) == 1
-
-
-def test_never_fails_on_nothing() -> None:
-    made = session()
-    made.judging(fail_on=FailOn.NEVER, allow=frozenset())
-    assert made.exit_code(_status(finding())) == 0
-
-
-def test_an_allowed_code_is_carried_past() -> None:
-    made = session()
-    made.judging(fail_on=FailOn.CERTAIN, allow=frozenset({Code.CUE_UNRESOLVED}))
-    assert made.exit_code(_status(finding())) == 0
+def test_a_thin_change_is_the_uncertain_judgement_the_table_uses() -> None:
+    assert finding(Code.CUE_THIN_CHANGE).certainty is Certainty.UNCERTAIN
 
 
 def test_a_refusal_takes_the_exit_code_its_own_code_carries() -> None:
