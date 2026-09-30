@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from decktalk.findings import Code, Finding, Location
 
 # A finding fills its own certainty and page from its code, so the sampler is handed one ready made.
-EXAMPLES: dict[type[BaseModel], BaseModel] = {
+EXAMPLES: dict[object, BaseModel] = {
     Finding: Finding(code=Code.CUE_OFF, message="It lands 340 ms late.", location=Location(where="2.1:formula")),
 }
 
@@ -58,7 +58,7 @@ class Filler:
         if hasattr(annotation, "__metadata__"):
             return self.value(typing.get_args(annotation)[0], name)
         if annotation in EXAMPLES:
-            return EXAMPLES[annotation]  # type: ignore[index]
+            return EXAMPLES[annotation]
         if annotation is bool:
             return True
         if annotation is int:
