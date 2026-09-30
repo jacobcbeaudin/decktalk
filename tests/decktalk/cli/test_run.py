@@ -9,14 +9,18 @@ import pytest
 
 from decktalk.cli import run as commands
 from decktalk.cli.options import FailOn
+from decktalk.cli.session import Globals, Session
 from decktalk.errors import ErrorCode
 from decktalk.events import RunStart
 from decktalk.findings import Certainty, Code
 from decktalk.pipeline import Stage
 from decktalk.results import (
+    ApplyResult,
     AssembleResult,
+    BuildResult,
     ClipResult,
     CueResult,
+    FixOutcome,
     NarrateResult,
     RecordResult,
     SoundscapeResult,
@@ -24,7 +28,7 @@ from decktalk.results import (
     Voicing,
 )
 
-from .conftest import finding, spend
+from .conftest import Fake, finding, spend
 
 NARRATE = NarrateResult(ok=True, run="r", voice=Voicing.PLACEHOLDER, sections=(), spend=spend(), seconds=1.0)
 CUE = CueResult(ok=True, run="r", sections=(), seconds=1.0)
@@ -209,3 +213,22 @@ def test_every_moving_command_is_registered() -> None:
         hasattr(commands, name)
         for name in ("narrate", "cue", "record", "soundscape", "assemble", "verify", "build", "clip")
     )
+
+
+def test_applying_one_fix_says_so_in_the_singular(monkeypatch: pytest.MonkeyPatch) -> None:
+    made = Session(Globals(), command="build")
+    said: list[str] = []
+    monkeypatch.setattr(made, "say", said.append)
+    applied = FixOutcome(code=Code.CUE_THIN_CHANGE, title="Move the cue.", applied=True)
+    fake = Fake(apply=ApplyResult(ok=True, run="r", fixes=(applied,)))
+    built = BuildResult(
+        ok=False,
+        run="r",
+        stages=(),
+        voice=Voicing.PLACEHOLDER,
+        spend=spend(),
+        findings=(finding(fix=True),),
+        seconds=1.0,
+    )
+    commands._offered(made, fake, built, True)  # ty: ignore[invalid-argument-type]
+    assert said == ["Applied 1 fix. Run decktalk build again to make the film from them."]

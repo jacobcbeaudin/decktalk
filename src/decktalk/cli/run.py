@@ -41,6 +41,7 @@ from decktalk.results import (
     RecordResult,
     SoundscapeResult,
     VerifyResult,
+    counted,
 )
 
 BUILD_SHORT = "Run every stage in order, or a span of them."
@@ -293,7 +294,7 @@ def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, 
         return built
     applied = project.apply(offered)
     changed = sum(1 for outcome in applied.fixes if outcome.applied)
-    sessions_.say(f"Applied {changed} fixes. Run decktalk build again to make the film from them.")
+    sessions_.say(f"Applied {counted(changed, 'fix', 'fixes')}. Run decktalk build again to make the film from them.")
     return built
 
 

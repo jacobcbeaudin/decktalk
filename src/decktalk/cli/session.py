@@ -32,7 +32,7 @@ from decktalk.events import Events
 from decktalk.findings import Certainty, Code, Finding
 from decktalk.machine import Machine
 from decktalk.project import Project
-from decktalk.results import ErrorResult, Result, Spend, Voicing
+from decktalk.results import ErrorResult, Result, Spend, Voicing, counted
 
 FOUND_SOMETHING = 1
 """What a run exits with when it judged something at or above the threshold `--fail-on` set."""
@@ -149,7 +149,7 @@ class Session:
         from the objects it holds.
         """
         offered = [found for found in findings if found.fix is not None]
-        return offered if offered and self.approve(fix, f"Apply {len(offered)} fixes?") else []
+        return offered if offered and self.approve(fix, f"Apply {counted(len(offered), 'fix', 'fixes')}?") else []
 
     # ---- the stream -------------------------------------------------------------------------
 
@@ -264,7 +264,7 @@ class Session:
         """
         written = project.storyboard()
         where = written.storyboard.as_posix() if written.storyboard else "nothing"
-        return f"Storyboard {where}, {len(written.panels)} panels."
+        return f"Storyboard {where}, {counted(len(written.panels), 'panel')}."
 
     # ---- how a command ends -------------------------------------------------------------------
 

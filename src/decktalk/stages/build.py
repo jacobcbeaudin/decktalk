@@ -42,7 +42,7 @@ from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.pipeline import Artifact, Outcome, Stage, required
-from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, Voicing
+from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, Voicing, counted
 from decktalk.stages import DOLLAR_DIGITS, assemble, clock, cue, narrate, record, since, storyboard, verify
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.status import (
@@ -365,16 +365,11 @@ def _stopped(
     later = plan[plan.index(stage) + 1 :]
     rest = f"before {later[0].value}" if later else "there"
     run.note(
-        f"{stage.value.capitalize()} made {_counted(len(stopping))} that the build stops on, so the build "
+        f"{stage.value.capitalize()} made {counted(len(stopping), 'finding')} that the build stops on, so the build "
         f"stopped {rest} rather than carry {'it' if len(stopping) == 1 else 'them'} into the film.",
         level=Level.WARNING,
     )
     return True
-
-
-def _counted(count: int) -> str:
-    """A number of findings as a reader says it, which is one finding or several findings."""
-    return "one finding" if count == 1 else f"{count} findings"
 
 
 def _stops(found: Finding, allow: Collection[Code], stop_on: Certainty | None) -> bool:

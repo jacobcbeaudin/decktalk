@@ -158,9 +158,12 @@ class SkipReason(Enum):
     TOO_CLOSE_TO_END = "too_close_to_end"
 
 
-def counted(count: int, noun: str) -> str:
-    """A count and its noun, singular for one and plural otherwise, which every sentence that counts uses."""
-    return f"{count:,} {noun}{'' if count == 1 else 's'}"
+def counted(count: int, noun: str, plural: str | None = None) -> str:
+    """A count and its noun, singular for one and plural otherwise, which every sentence that counts uses.
+
+    The plural adds an s unless the caller names it, which a noun such as fix needs.
+    """
+    return f"{count:,} {noun if count == 1 else plural or noun + 's'}"
 
 
 class Spend(Model):

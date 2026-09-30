@@ -385,7 +385,7 @@ def test_a_run_that_stops_says_so_in_a_sentence(
     answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
     build(inputs, watched.run)
     said = [line.message for line in watched.of("log")]  # type: ignore[attr-defined]
-    assert said == ["Cue made one finding that the build stops on, so the build stopped before record rather "
+    assert said == ["Cue made 1 finding that the build stops on, so the build stopped before record rather "
                     "than carry it into the film."]  # fmt: skip
     assert "(s)" not in said[0]
     assert calls.names == ["narrate", "cue"]

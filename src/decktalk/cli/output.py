@@ -243,8 +243,7 @@ def _counted(findings: Sequence[Finding]) -> Text:
     """How many judgements there are, how many are certain, and how many `--fix` would apply."""
     certain = sum(1 for found in findings if found.certainty is Certainty.CERTAIN)
     fixable = sum(1 for found in findings if found.fix is not None and found.fix.applicability is Applicability.SAFE)
-    word = "finding" if len(findings) == 1 else "findings"
-    text = Text(f"Found {len(findings)} {word}, {certain} certain.")
+    text = Text(f"Found {counted(len(findings), 'finding')}, {certain} certain.")
     if fixable:
         text.append(f" {fixable} fixable with --fix.")
     return text

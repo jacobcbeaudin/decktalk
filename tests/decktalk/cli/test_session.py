@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from rich.console import Console
@@ -185,3 +187,18 @@ def _check() -> CheckResult:
 def test_a_console_reads_the_terminal_rather_than_being_told_about_it() -> None:
     plain = Console(file=io.StringIO())
     assert not plain.is_terminal
+
+
+def test_the_fix_prompt_counts_one_fix_in_the_singular(monkeypatch: pytest.MonkeyPatch) -> None:
+    made = session()
+    asked: list[str] = []
+    monkeypatch.setattr(Session, "asks", property(lambda _: True))
+    monkeypatch.setattr(made, "confirm", lambda question, **_: asked.append(question) or True)
+    made.fixes_wanted((finding(fix=True),), None)
+    assert asked == ["Apply 1 fix?"]
+
+
+def test_the_storyboard_line_counts_one_panel_in_the_singular() -> None:
+    drawn = SimpleNamespace(storyboard=Path("build/storyboard.html"), panels=("one",))
+    line = session().storyboard_line(Fake(storyboard=drawn))  # ty: ignore[invalid-argument-type]
+    assert line == "Storyboard build/storyboard.html, 1 panel."
