@@ -21,7 +21,7 @@ from decktalk.settings import ALLOW_ANY_API_BASE
 from decktalk.speech import PROVIDERS, SpeechRequest, VoiceContext, get_provider
 from decktalk.speech import http as _http
 from decktalk.speech.elevenlabs import ElevenLabs, check_api_base, words_from_alignment
-from support.speech import alignment
+from support.speech import NoSecrets, alignment
 
 SENTINEL = "sk_sentinel_key_that_must_never_print"
 VOICE = "Xb7hH8MSUJpSbSDYk0k2"
@@ -254,7 +254,7 @@ def test_the_registry_builds_the_one_provider_decktalk_ships():
 
 def test_a_provider_name_decktalk_does_not_know_is_refused_with_the_ones_it_does():
     context = VoiceContext(
-        secrets=None,  # type: ignore[arg-type]
+        secrets=NoSecrets(),
         api_base=BASE,
         context_chars=1,
         speech_timeout_seconds=1,

@@ -54,6 +54,7 @@ from support.links import link
 from support.logs import data_of
 from support.paths import REPO
 from support.runs import a_machine
+from support.speech import NoSecrets
 from support.spends import a_spend
 
 # ---- the one reader of the environment -------------------------------------------------------
@@ -580,7 +581,7 @@ def test_the_authors_own_env_file_is_read_under_a_machine_that_allows_it(tmp_pat
 def a_context() -> VoiceContext:
     """A context no machine stamped, which is what a stage builds from its project's values."""
     return VoiceContext(
-        secrets=None,  # type: ignore[arg-type]
+        secrets=NoSecrets(),
         api_base="https://api.elevenlabs.io/v1",
         context_chars=1,
         speech_timeout_seconds=1,

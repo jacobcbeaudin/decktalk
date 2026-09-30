@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import urllib.request
+from http.client import HTTPResponse
 
 import pytest
 from pytest_httpserver import HTTPServer
@@ -170,21 +171,18 @@ def test_a_reply_that_is_not_json_is_asked_for_again_as_its_flag_promises(httpse
     assert len(httpserver.log) == 3 and len(waits) == 2
 
 
-def test_every_call_carries_the_timeout_it_was_given(httpserver):
+def test_every_call_carries_the_timeout_it_was_given(httpserver, monkeypatch):
     """A provider that stopped answering would otherwise hold a build open for as long as the socket did."""
     httpserver.expect_request("/plain").respond_with_json({"ok": True})
-    seen: list[int] = []
+    seen: list[float] = []
     real = _http.urlopen
 
-    def timed(request, *, timeout):  # the opener's own signature
+    def timed(request: urllib.request.Request, *, timeout: float) -> HTTPResponse:
         seen.append(timeout)
         return real(request, timeout=timeout)
 
-    _http.urlopen = timed
-    try:
-        _http.post_bytes(httpserver.url_for("/plain"), {}, {}, timeout=7, retries=0)
-    finally:
-        _http.urlopen = real
+    monkeypatch.setattr(_http, "urlopen", timed)
+    _http.post_bytes(httpserver.url_for("/plain"), {}, {}, timeout=7, retries=0)
     assert seen == [7]
 
 
