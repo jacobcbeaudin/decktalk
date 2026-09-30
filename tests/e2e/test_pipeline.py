@@ -419,7 +419,7 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
     logs = {key: built.recording_log(key) for key in SPOKEN}
     assert {key: list(log.findings) for key, log in logs.items()} == {key: [] for key in SPOKEN}
     assert all(log.checks is not None for log in logs.values())
-    assert all(log.t0_seconds is not None and not log.t0_guessed for log in logs.values())
+    assert all(log.start is not None and not log.start.guessed for log in logs.values())
     assert all(log.recording.url.startswith("http://") for log in logs.values())
     # Every project file the page loaded is named, which is what the next run keys its skip on.
     loaded = set(logs["01"].recording.assets)

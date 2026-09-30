@@ -185,7 +185,7 @@ def test_the_finished_log_carries_narration_t0_the_frames_and_the_judgements(tmp
     log = RecordingLog.read(inputs.workspace.recording_log("01"))
     assert log is not None
     assert log.section == 1
-    assert log.t0_seconds is not None
+    assert log.start is not None
     assert log.checks is not None
     assert log.checks.wanted_seconds == pytest.approx(SPAN_SECONDS + 0.3)
 
@@ -197,7 +197,7 @@ def test_a_run_stopped_before_it_measured_leaves_a_log_the_next_run_records_agai
     record(inputs, a_run(inputs.root))
     log = RecordingLog.read(inputs.workspace.recording_log("01"))
     assert log is not None
-    log.model_copy(update={"t0_seconds": None}).write(inputs.workspace.recording_log("01"))
+    log.model_copy(update={"start": None}).write(inputs.workspace.recording_log("01"))
     driven.order.clear()
     record(inputs, a_run(inputs.root))
     assert "cleared 01.webm" in driven.order

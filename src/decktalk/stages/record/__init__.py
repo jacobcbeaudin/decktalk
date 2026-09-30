@@ -39,7 +39,7 @@ from pathlib import Path
 
 from playwright.sync_api import Browser
 
-from decktalk.artifacts import RecordingChecks, RecordingLog, Takes
+from decktalk.artifacts import RecordingChecks, RecordingLog, Start, Takes
 from decktalk.errors import InputError
 from decktalk.events import Level, SectionDone, SectionStart, Unit
 from decktalk.findings import Code, Finding, Location, judge
@@ -63,7 +63,7 @@ from decktalk.stages.record.capture import (
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
 from decktalk.stages.record.pool import Halt, Pool, automatic
-from decktalk.stages.record.start import Start, find_start
+from decktalk.stages.record.start import find_start
 
 log = logging.getLogger(__name__)
 
@@ -113,9 +113,7 @@ class LogSink:
             section=self.section.number,
             input_hash=section_hash(self.inputs, self.section, self.url, self.seconds, list(recording.assets)),
             recording=recording,
-            t0_seconds=None if start is None else start.seconds,
-            t0_method=None if start is None else start.method,
-            t0_guessed=start is not None and start.guessed,
+            start=start,
             findings=findings,
             checks=checks,
         )

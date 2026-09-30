@@ -24,6 +24,7 @@ from decktalk.artifacts.recordings import (
     Luma,
     RecordingChecks,
     RecordingLog,
+    Start,
     input_hash,
 )
 from decktalk.artifacts.stored import Stored, content_digest, file_digest
@@ -50,6 +51,7 @@ __all__ = [
     "PlaceholderInputs",
     "RecordingChecks",
     "RecordingLog",
+    "Start",
     "Stored",
     "Take",
     "TakeInputs",

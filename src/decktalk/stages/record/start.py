@@ -9,9 +9,9 @@ section.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
+from decktalk.artifacts.recordings import Start
 from decktalk.media import frames
 from decktalk.page import CAPTURE_FPS, SECOND_DIGITS
 from decktalk.settings import RecordConfig
@@ -24,18 +24,6 @@ FASTEST_CAPTURE_FPS = 50
 
 MIN_FRAME_SECONDS = 1 / FASTEST_CAPTURE_FPS
 """Derived: the shortest frame a measurement may claim, which is one frame at the fastest capture rate."""
-
-
-@dataclass(frozen=True)
-class Start:
-    """Where narration t=0 sits in one recording, how it was found, and whether it was measured."""
-
-    seconds: float
-    method: str
-    """One sentence for a reader, which nothing matches a code against."""
-
-    guessed: bool = False
-    """No magenta cover was found, so the start is an estimate and every reveal in the section moves."""
 
 
 def is_cover(frame: frames.FrameStats, settings: RecordConfig) -> bool:
@@ -59,20 +47,32 @@ def find_start(webm: Path, settle: float, settings: RecordConfig) -> Start:
     rows = frames.frame_stats(webm, settings.cover_scan_seconds)
     if not rows:
         fallback = round(settings.fallback_first_paint_seconds + settle, SECOND_DIGITS)
-        return Start(fallback, "no frames could be read, so the start is the fallback guess and the settle", True)
+        return Start(
+            seconds=fallback,
+            method="no frames could be read, so the start is the fallback guess and the settle",
+            guessed=True,
+        )
     cover = [row.pts for row in rows if is_cover(row, settings)]
     if cover:
         found = round(cover[-1] + frame_seconds(rows), SECOND_DIGITS)
-        return Start(found, f"the frame after the last of {len(cover)} cover frames")
+        return Start(seconds=found, method=f"the frame after the last of {len(cover)} cover frames")
     painted = [
         row.pts
         for row in rows
         if row.ymax > settings.painted_peak_luma_min and row.yavg < settings.painted_mean_luma_max
     ]
     if painted:
-        return Start(round(painted[0] + settle, SECOND_DIGITS), "the first painted frame and the settle", True)
+        return Start(
+            seconds=round(painted[0] + settle, SECOND_DIGITS),
+            method="the first painted frame and the settle",
+            guessed=True,
+        )
     fallback = round(settings.fallback_first_paint_seconds + settle, SECOND_DIGITS)
-    return Start(fallback, "no cover and no painted frame were found, so the start is the fallback guess", True)
+    return Start(
+        seconds=fallback,
+        method="no cover and no painted frame were found, so the start is the fallback guess",
+        guessed=True,
+    )
 
 
-__all__ = ["DEFAULT_FRAME_SECONDS", "MIN_FRAME_SECONDS", "Start", "find_start", "frame_seconds", "is_cover"]
+__all__ = ["DEFAULT_FRAME_SECONDS", "MIN_FRAME_SECONDS", "find_start", "frame_seconds", "is_cover"]

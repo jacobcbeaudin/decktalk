@@ -64,27 +64,38 @@ class RecordingChecks(Model):
     luma: Luma = Field(description="How bright the recording is at three points along it.")
 
 
+class Start(Model):
+    """Where narration t=0 sits in one recording, how it was found, and whether it was measured."""
+
+    seconds: float = Field(
+        ge=0, description="Narration t=0 in the webm, which is the first clean frame after the cover."
+    )
+    method: str = Field(
+        description="How t=0 was found, in one sentence for a reader, which nothing matches a code against."
+    )
+    guessed: bool = Field(False, description="True when no cover was found, so every reveal in the section moves.")
+
+
 class RecordingLog(Stored):
     """What `record` did for one section, where narration t=0 sits in the webm, and how it checked out."""
 
     section: int = Field(ge=1, description="The section this recording plays.")
     input_hash: str = Field(description="The digest of what this section was recorded from, which keys a skip.")
     recording: Recording = Field(description="What the recorder knew: the page, its files, its timings and its report.")
-    t0_seconds: float | None = Field(None, ge=0, description="The first clean frame after the cover, or null.")
-    t0_method: str | None = Field(None, description="How t=0 was found, in one sentence, or null.")
-    t0_guessed: bool = Field(False, description="True when no cover was found, so every reveal in the section moves.")
+    start: Start | None = Field(None, description="Where narration t=0 sits in the webm, or null before it was found.")
     findings: tuple[Finding, ...] = Field((), description="Every judgement the page and the frames made.")
     checks: RecordingChecks | None = Field(None, description="What the frames measured, or null when none were.")
 
     @property
     def trim_seconds(self) -> float:
         """Where the assembler cuts the head off this recording, which is narration t=0 in the webm."""
-        return self.t0_seconds if self.t0_seconds is not None else self.recording.clock_start_seconds
+        return self.start.seconds if self.start is not None else self.recording.clock_start_seconds
 
 
 __all__ = [
     "Luma",
     "RecordingChecks",
     "RecordingLog",
+    "Start",
     "input_hash",
 ]

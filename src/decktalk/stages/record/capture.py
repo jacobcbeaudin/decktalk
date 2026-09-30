@@ -284,7 +284,7 @@ class Job:
             self.previous is not None
             and bool(self.previous.input_hash)
             and self.previous.input_hash == self.input_hash
-            and self.previous.t0_seconds is not None
+            and self.previous.start is not None
             and self.out.exists()
         )
 

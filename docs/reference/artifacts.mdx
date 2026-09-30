@@ -264,9 +264,7 @@ log as soon as that section is done and a measurement always belongs to the reco
       "unreadable": []
     }
   },
-  "t0_seconds": 1.08,
-  "t0_method": "the frame after the last of 37 cover frames",
-  "t0_guessed": false,
+  "start": { "seconds": 1.08, "method": "the frame after the last of 37 cover frames", "guessed": false },
   "findings": [
     {
       "code": "PAGE_NO_DESCRIPTION",
@@ -301,9 +299,10 @@ log as soon as that section is done and a measurement always belongs to the reco
 | `recording.clock_start_seconds` | The recorder's own estimate of where narration t=0 is. |
 | `recording.page_errors` | Uncaught exceptions, or the one line for no runtime at all. |
 | `recording.report` | What the page said about itself, read once as it was recorded. |
-| `t0_seconds` | The first clean frame after the cover, or null. |
-| `t0_method` | How t=0 was found, in one sentence, or null. |
-| `t0_guessed` | True when no cover was found, so every reveal in the section moves. |
+| `start` | Where narration t=0 sits in the webm, or null before it was found. |
+| `start.seconds` | The first clean frame after the cover. |
+| `start.method` | How t=0 was found, in one sentence. |
+| `start.guessed` | True when no cover was found, so every reveal in the section moves. |
 | `findings` | Every judgement the page and the frames made, each a whole finding. |
 | `checks` | What the frames measured, or null when none were. |
 

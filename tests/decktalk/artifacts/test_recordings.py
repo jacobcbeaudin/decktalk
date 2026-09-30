@@ -45,7 +45,7 @@ def test_a_newer_engine_records_again_what_an_older_one_recorded(
 
 
 def test_the_head_is_cut_at_the_cover_when_one_was_found_and_at_the_estimate_otherwise() -> None:
-    assert log(t0_seconds=1.1).trim_seconds == 1.1
+    assert log(start={"seconds": 1.1, "method": "the cover"}).trim_seconds == 1.1
     assert log().trim_seconds == 0.8
 
 
