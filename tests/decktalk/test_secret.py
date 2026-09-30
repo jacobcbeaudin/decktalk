@@ -2,20 +2,36 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import logging
 import pickle
 import pprint
+import re
+import secrets
+import subprocess
 import traceback
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import pytest
 from pydantic_core import PydanticSerializationError
+from pytest_httpserver import HTTPServer
+from werkzeug import Request, Response
 
+import decktalk
 from decktalk.artifacts import Stored
-from decktalk.errors import ErrorInfo, ProviderError
+from decktalk.cli.app import main
+from decktalk.errors import DeckTalkError, ErrorCode, ErrorInfo, ProviderError
+from decktalk.findings import Applicability, Code, CommandFix, Finding, Location
+from decktalk.machine import Machine
+from decktalk.media import audio
+from decktalk.results import Voicing
 from decktalk.secret import Secret, redact, redacted, register, register_environment, secret_name
+from decktalk.settings import ALLOW_ANY_API_BASE, CONFIG_VARIABLE
+from decktalk.speech import http as _http
 
 VALUE = "sk_sentinel_key_that_must_never_print"
 
@@ -193,3 +209,195 @@ def test_a_refusal_quoting_a_secret_holds_only_its_name():
     refused = ProviderError(f"HTTP 401: bad key {REGISTERED}", hint=f"check {REGISTERED}")
     assert REGISTERED not in str(refused) and REGISTERED not in (refused.hint or "")
     assert REGISTERED not in ErrorInfo.of(refused).model_dump_json()
+
+
+# ---- the canary run: no path of a run lets a key out ----------------------------------------------
+
+CANARY_TOML = """
+[project]
+name = "canary"
+
+[voice]
+provider = "elevenlabs"
+price_per_1000_characters = 0.30
+
+[elevenlabs]
+api_base = "{base}"
+
+[[section]]
+number = 1
+page = "deck/index.html"
+scene = "1"
+
+[[section]]
+number = 2
+page = "deck/index.html"
+scene = "2"
+"""
+
+CANARY_SCRIPT = "# Notes\n\n## 1. Open\n\nA bowl and a ball.\n\n## 2. Close\n\nThe ball rests.\n"
+
+
+def _alignment(text: str) -> dict[str, object]:
+    """A character clock for `text`, one tenth of a second per character, as the service spells it."""
+    return {
+        "characters": list(text),
+        "character_start_times_seconds": [round(n * 0.1, 3) for n in range(len(text))],
+        "character_end_times_seconds": [round((n + 1) * 0.1, 3) for n in range(len(text))],
+    }
+
+
+class FakeVoice:
+    """A voice service on a local socket, which answers from a script of hostile replies and then speaks.
+
+    Every reply that can quote the key does: a refusal echoes it, a busy answer and a gateway page carry
+    it in their bodies, and a redirect sends the request to another origin, where the key must not go.
+    """
+
+    def __init__(self, server: HTTPServer, key: str) -> None:
+        self.server, self.key = server, key
+        self.script: list[str] = []
+        self.landed: list[dict[str, str]] = []
+        server.expect_request(re.compile(r"/v1/text-to-speech/.*")).respond_with_handler(self.speak)
+        server.expect_request("/landed").respond_with_handler(self.land)
+
+    def spoken(self, request: Request) -> Response:
+        # A redirect turns the POST into a GET with no body, and the landing still speaks.
+        text = (request.get_json(silent=True) or {}).get("text", "moved")
+        body = {"audio_base64": base64.b64encode(b"mp3").decode(), "alignment": _alignment(text)}
+        return Response(json.dumps(body), 200, content_type="application/json")
+
+    def speak(self, request: Request) -> Response:
+        said = request.headers.get("xi-api-key", "")
+        reply = self.script.pop(0) if self.script else "speak"
+        if reply == "refuse":
+            return Response(json.dumps({"detail": f"invalid api key {said}"}), 401, content_type="application/json")
+        if reply == "busy":
+            return Response(f"slow down, {said}", 429, {"Retry-After": "1"})
+        if reply == "gateway":
+            return Response(f"<html>{said}</html>", 200)
+        if reply == "redirect":
+            port = self.server.port
+            return Response(status=302, headers={"Location": f"http://localhost:{port}/landed"})
+        return self.spoken(request)
+
+    def land(self, request: Request) -> Response:
+        self.landed.append({name.lower(): value for name, value in request.headers.items()})
+        return self.spoken(request)
+
+
+@pytest.fixture
+def fake_voice_server(monkeypatch: pytest.MonkeyPatch) -> Iterator[HTTPServer]:
+    """A threaded local server, with every retry's wait skipped so the suite never sleeps on a back-off."""
+    monkeypatch.setattr(_http, "pause", lambda _seconds: None)
+    server = HTTPServer(host="127.0.0.1", threaded=True)
+    server.start()
+    try:
+        yield server
+    finally:
+        server.clear()
+        server.stop()
+
+
+def _canary_project(root: Path, base: str, key: str) -> Path:
+    (root / "deck").mkdir(parents=True)
+    (root / "deck" / "index.html").write_text("<p>deck</p>", encoding="utf-8")
+    (root / "decktalk.toml").write_text(CANARY_TOML.format(base=base), encoding="utf-8")
+    (root / "script.md").write_text(CANARY_SCRIPT, encoding="utf-8")
+    (root / ".env").write_text(f"ELEVENLABS_API_KEY={key}\n", encoding="utf-8")
+    return root
+
+
+def _chain(error: BaseException | None) -> str:
+    """Every sentence an exception and its causes carry, which is what a traceback would print."""
+    said: list[str] = []
+    while error is not None:
+        said.append(str(error))
+        if isinstance(error, DeckTalkError):
+            said.append(ErrorInfo.of(error).model_dump_json())
+        error = error.__cause__ or error.__context__
+    return "\n".join(said)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
+    tmp_path: Path,
+    fake_voice_server: HTTPServer,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The end-to-end proof: a local fake voice answers with every hostile reply, and no canary survives.
+
+    The key is handed over twice, in the machine's environment and in the project's `.env`, beside a
+    host credential of the machine's own. No request leaves this machine and no real key exists.
+    """
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
+    key = f"sk_canary_{secrets.token_hex(12)}"
+    host = f"pw_canary_{secrets.token_hex(8)}"
+    voice = FakeVoice(fake_voice_server, key)
+    root = _canary_project(tmp_path / "canary", fake_voice_server.url_for("/v1"), key)
+    environ = {"ELEVENLABS_API_KEY": key, "ELEVENLABS_VOICE_ID": "voice-canary", "HOST_DB_PASSWORD": host}
+    here = Machine.of(
+        environ=environ,
+        config_path=tmp_path / "machine.toml",
+        cwd=root,
+        cache_dir=tmp_path / "cache",
+        dotenv=True,
+        allow_any_api_base=True,
+    )
+    project = decktalk.open(root, machine=here)
+    raised: list[BaseException] = []
+    lines: list[str] = []
+    here.events.subscribe(lambda event: lines.append(event.model_dump_json()))
+
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        project.check(pages=False, frames=False)
+        voice.script = ["refuse"]
+        with pytest.raises(ProviderError) as refused:
+            project.narrate(voice=Voicing.PAID)
+        raised.append(refused.value)
+        voice.script = ["busy", "gateway", "redirect"]
+        assert project.narrate(voice=Voicing.PAID).ok
+        # A fix whose command fails and says the key and the host's password on its way out.
+        failing = subprocess.CompletedProcess([], 2, b"", f"Traceback\nKeyError: {key} {host}\n".encode())
+        monkeypatch.setattr("decktalk.machine.subprocess.run", lambda argv, **_: failing)
+        fix = CommandFix(title="t", applicability=Applicability.SAFE, command=("decktalk", "install"))
+        found = Finding(code=Code.FILE_MISSING, message="m", location=Location(where="ffmpeg"), fix=fix)
+        applied = project.apply(found)
+        assert not applied.fixes[0].applied
+        # A run that fails on something DeckTalk did not mean to raise, with the key in its message.
+        with pytest.raises(RuntimeError) as broke, here.run(root=root, events_dir=root / "build" / "events"):
+            raise RuntimeError(f"a bug holding {key} and {host}")
+        # The exception is the test's own and keeps its words, and what DeckTalk makes of it does not.
+        internal = ErrorInfo.of_failure(broke.value).model_dump_json()
+
+    # The command line in every mode a caller reads it in, against the same fake and the same key.
+    monkeypatch.setenv("ELEVENLABS_API_KEY", key)
+    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice-canary")
+    monkeypatch.setenv("HOST_DB_PASSWORD", host)
+    monkeypatch.setenv(ALLOW_ANY_API_BASE, "1")
+    monkeypatch.setenv(CONFIG_VARIABLE, str(tmp_path / "machine.toml"))
+    printed: list[str] = []
+    for mode in (["--json"], ["--events"], ["-v"], []):
+        voice.script = ["refuse"]
+        capsys.readouterr()
+        code = main(["-p", str(root), *mode, "narrate", "--spend", "--force"])
+        out, err = capsys.readouterr()
+        assert code == ErrorCode.PROVIDER.exit_code, (mode, out, err)
+        printed.append(out + err)
+
+    assert voice.landed and all("xi-api-key" not in headers for headers in voice.landed)
+    files = "".join(path.read_text(encoding="utf-8") for path in (root / "build" / "events").glob("*.jsonl"))
+    logged = "".join(f"{record.getMessage()} {getattr(record, 'data', '')}" for record in caplog.records)
+    for where, text in {
+        "events files": files,
+        "stream": "".join(lines),
+        "logging": logged,
+        "exceptions": "".join(_chain(error) for error in raised) + internal,
+        "command line": "".join(printed),
+        "fix outcome": applied.model_dump_json(),
+    }.items():
+        assert key not in text, where
+        assert host not in text, where
+    assert "<secret HOST_DB_PASSWORD>" in files and '"code":"PROVIDER"' in files
