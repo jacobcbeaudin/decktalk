@@ -292,13 +292,10 @@ def sections_of(values: Sequence[str] | None) -> tuple[int, ...] | None:
     """
     if not values:
         return None
-    found: list[int] = []
-    for value in values:
-        try:
-            found.extend(section_numbers(value))
-        except InputError as refused:
-            raise typer.BadParameter(str(refused), param_hint="--section") from refused
-    return tuple(dict.fromkeys(found))
+    try:
+        return section_numbers(",".join(values))
+    except InputError as refused:
+        raise typer.BadParameter(str(refused), param_hint="--section") from refused
 
 
 def one_section(values: Sequence[str] | None) -> int:
