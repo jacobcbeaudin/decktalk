@@ -53,6 +53,7 @@ from decktalk.results import (
     VerifyResult,
     WordsResult,
     counted,
+    money,
 )
 
 STAGE_COLUMN = 12
@@ -279,11 +280,6 @@ def _bytes(count: int) -> str:
     return f"{count / 1_000_000:.1f} MB"
 
 
-def _money(dollars: float) -> str:
-    """A price as a person reads one, in US dollars."""
-    return f"${dollars:.2f}"
-
-
 def _yes(state: bool) -> str:
     """A boolean column, written as the two words a reader scans rather than as true and false."""
     return "yes" if state else "no"
@@ -369,7 +365,7 @@ def _narrate(result: NarrateResult) -> Iterable[RenderableType]:
     for take in result.sections:
         table.add_row(str(take.section), take.status.value, str(take.characters), f"{take.seconds or 0:.1f}")
     yield table
-    yield Text(f"Spent {_money(result.spend.dollars)} on {result.voice.value} narration.")
+    yield Text(f"Spent {money(result.spend.dollars)} on {result.voice.value} narration.")
 
 
 def _cue(result: CueResult) -> Iterable[RenderableType]:
@@ -402,7 +398,7 @@ def _soundscape(result: SoundscapeResult) -> Iterable[RenderableType]:
     # A run that bought nothing still prices what it would have bought, and a bare "Spent" line over
     # that number reads as a charge nobody made.
     charged = result.spend.state is SpendState.CHARGED
-    yield Text(f"{'Spent' if charged else 'Would spend'} {_money(result.spend.dollars)} on the soundscape.")
+    yield Text(f"{'Spent' if charged else 'Would spend'} {money(result.spend.dollars)} on the soundscape.")
 
 
 def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
@@ -437,10 +433,10 @@ def _build(result: BuildResult) -> Iterable[RenderableType]:
     found = "nothing found" if not count else counted(count, "finding")
     if result.stopped_at is not None:
         stopped = f"at {result.stopped_at.value}"
-        yield Text(f"{'Stopped'.rjust(STAGE_COLUMN)} {stopped}, {_money(result.spend.dollars)}, {found}")
+        yield Text(f"{'Stopped'.rjust(STAGE_COLUMN)} {stopped}, {money(result.spend.dollars)}, {found}")
     else:
         where = result.film.as_posix() if result.film else "nothing"
-        yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {_money(result.spend.dollars)}, {found}")
+        yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {money(result.spend.dollars)}, {found}")
     if result.storyboard is not None:
         yield Text(f"{'Next'.rjust(STAGE_COLUMN)} open {result.storyboard.as_posix()}", style=QUIET_STYLE)
 

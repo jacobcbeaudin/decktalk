@@ -187,28 +187,28 @@ class Spend(Model):
         because "about $0.00, up to $0.14" reads as a contradiction to anyone not holding the rule.
         Every surface that states a price states this sentence, so the rule is written once.
         """
-        rate = f"{_money(self.price_per_1000_characters)} per 1,000 characters"
+        rate = f"{money(self.price_per_1000_characters)} per 1,000 characters"
         if self.state is SpendState.CHARGED:
             if self.dollars == self.ceiling_dollars == 0:
                 return "This run bought nothing."
-            return f"This run spent {_money(self.dollars)} on {counted(self.characters, 'character')} at {rate}."
+            return f"This run spent {money(self.dollars)} on {counted(self.characters, 'character')} at {rate}."
         if self.ceiling_dollars == 0:
             return "This run buys nothing."
         if self.dollars == self.ceiling_dollars:
-            return f"This run costs {_money(self.dollars)} for {counted(self.characters, 'character')} at {rate}."
+            return f"This run costs {money(self.dollars)} for {counted(self.characters, 'character')} at {rate}."
         if self.dollars == 0:
             return (
                 "The takes on disk could not be matched to a voice, so this run costs up to "
-                f"{_money(self.ceiling_dollars)} at {rate}."
+                f"{money(self.ceiling_dollars)} at {rate}."
             )
         return (
-            f"This run costs {_money(self.dollars)} for the sections that certainly need a take, and up to "
-            f"{_money(self.ceiling_dollars)} if the takes that could not be matched to a voice need one too, "
+            f"This run costs {money(self.dollars)} for the sections that certainly need a take, and up to "
+            f"{money(self.ceiling_dollars)} if the takes that could not be matched to a voice need one too, "
             f"at {rate}."
         )
 
 
-def _money(dollars: float) -> str:
+def money(dollars: float) -> str:
     """An amount in US dollars as a price is written, to the cent."""
     return f"${dollars:.2f}"
 
