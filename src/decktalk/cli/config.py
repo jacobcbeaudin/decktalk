@@ -122,10 +122,9 @@ def set_key(
     path = _file(session, where)
     try:
         with _told(session):
-            written = knobs.write(path, key, value, scope=where, environ=session.machine.environ, dry_run=dry_run)
+            return knobs.write(path, key, value, scope=where, environ=session.machine.environ, dry_run=dry_run)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
-    return ConfigSetResult(ok=True, written=() if dry_run else (written.file,), **_shared(written, ConfigSetResult))
 
 
 @command("unset", group=Group.CONTRACTS, to=config)
@@ -155,12 +154,8 @@ def unset_key(
         )
     going = _stating(path, key, asked=session.approve(whole or None, f"Remove everything {key} sets?"))
     with _told(session):
-        removed = tuple(knobs.unset(path, one, scope=where, environ=session.machine.environ) for one in going)
-    return ConfigUnsetResult(
-        ok=True,
-        written=(path,),
-        **_shared(removed[0], ConfigUnsetResult, keys=tuple(name for one in removed for name in one.keys)),
-    )
+        removed = [knobs.unset(path, one, scope=where, environ=session.machine.environ) for one in going]
+    return removed[0].model_copy(update={"keys": going})
 
 
 @command("explain", group=Group.CONTRACTS, to=config)

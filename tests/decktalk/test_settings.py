@@ -447,8 +447,7 @@ class TestTheWriter:
         assert "# how late" in path.read_text(encoding="utf-8")
         assert (written.previous, written.value, written.effective) == (100, 120.0, 120.0)
         assert written.layer is Layer.PROJECT
-        assert written.shadowed is False
-        assert written.line == 4
+        assert written.written == (path,)
 
     def test_a_write_into_a_file_that_does_not_exist_yet_creates_the_table(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
@@ -481,7 +480,6 @@ class TestTheWriter:
     def test_a_write_a_higher_layer_shadows_says_so(self, tmp_path: Path) -> None:
         environ = {"DECKTALK_VIDEO_PRESET": "slow"}
         written = write(tmp_path / "decktalk.toml", "video.preset", "veryfast", scope=Scope.PROJECT, environ=environ)
-        assert written.shadowed is True
         assert written.layer is Layer.ENVIRONMENT
         assert written.effective == "slow"
 

@@ -39,10 +39,10 @@ from tomlkit.exceptions import ParseError
 
 from .errors import InputError
 from .files import current_text, replace_all
-from .findings import Code, Location, Model, ProjectPath
+from .findings import Code, Location, Model
 from .locate import locate, refused_line
 from .page import CAPTURE_FPS, MEASURABLE_SPAN_SECONDS
-from .results import Layer, LayerValue, Scope
+from .results import ConfigSetResult, ConfigUnsetResult, Layer, LayerValue, Scope
 from .tomlmap import (
     A_LUMA,
     A_PERCENT,
@@ -1089,42 +1089,6 @@ class Loaded:
     layers: Layers
 
 
-class SettingWrite(Model):
-    """What a write to a settings file changed, or would change on a dry run.
-
-    It reports the effective value as well as the written one, because a write to the project file
-    that an environment variable still shadows changes the file and not the run, and an agent that
-    is told only what it wrote will believe the opposite.
-    """
-
-    key: str = Field(description="The key's dotted name.")
-    value: JsonValue = Field(description="The value this call wrote, or would write.")
-    previous: JsonValue = Field(None, description="The value that file held before, or null when it held none.")
-    scope: Scope = Field(description="Which file the write landed in.")
-    file: ProjectPath = Field(description="The file that was written.")
-    line: int | None = Field(None, ge=1, description="The line the key now sits on in that file, or null.")
-    dry_run: bool = Field(description="True when the call reported the change and wrote nothing.")
-    effective: JsonValue = Field(None, description="The value in force after the write.")
-    layer: Layer = Field(description="Which layer the effective value now comes from.")
-    shadowed: bool = Field(description="True when a higher layer still decides this key despite the write.")
-
-
-class SettingUnset(Model):
-    """What a removal from a settings file took out, and what decides the key once it is gone.
-
-    It reports the value in force as well as the value it removed, because the layer that shows
-    through may be the default or an environment variable that was shadowed all along, and an agent
-    that is told only what it removed cannot tell which of the two it is now running on.
-    """
-
-    keys: tuple[str, ...] = Field(description="Every key that file no longer sets, in the order this call named them.")
-    previous: JsonValue = Field(None, description="The value that file held before, or null when it held none.")
-    scope: Scope = Field(description="Which file the removal landed in.")
-    file: ProjectPath = Field(description="The file that was read, and written when it stated the key.")
-    effective: JsonValue = Field(None, description="The value in force once the key is gone from that file.")
-    layer: Layer = Field(description="Which layer decides this key now that the file has stopped stating it.")
-
-
 def machine_config_path(environ: Mapping[str, str], home: Path, platform: str = sys.platform) -> Path:
     """The per-machine settings file this environment names, which DECKTALK_CONFIG moves.
 
@@ -1512,7 +1476,7 @@ def write(
     scope: Scope,
     environ: Mapping[str, str],
     dry_run: bool = False,
-) -> SettingWrite:
+) -> ConfigSetResult:
     """Set one key in one file, through the whole loader, keeping every comment the file already has.
 
     The would-be file is built first and loaded whole, so a value that no run could use never lands
@@ -1521,7 +1485,8 @@ def write(
     it was.
 
     `environ` is the machine's environment, which is the layer over the file that decides whether
-    the value written is the value in force.
+    the value written is the value in force. The answer is `config set`'s own result, so the command
+    renders what the library returns.
     """
     target = _target(path, scope)
     edited = edit(current_text(target), key, value, scope=scope, file=path)
@@ -1531,22 +1496,21 @@ def write(
     # A write that a higher layer shadows changes the file and not the run, so the result says so
     # rather than reporting a new value the next command will not use.
     tree = _in_force(path, scope, {key: edited.value}, environ)
-    winner = tree.layers.winner(key)
-    return SettingWrite(
+    return ConfigSetResult(
+        ok=True,
+        written=() if dry_run else (path,),
         key=key,
         value=json_value(edited.value),
         previous=None if edited.previous is ABSENT else json_value(edited.previous),
         scope=scope,
         file=path,
-        line=locate(edited.text, key),
         dry_run=dry_run,
         effective=json_value(value_of(tree.settings, key)),
-        layer=winner.layer,
-        shadowed=winner.layer is not (Layer.MACHINE if scope is Scope.MACHINE else Layer.PROJECT),
+        layer=tree.layers.winner(key).layer,
     )
 
 
-def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> SettingUnset:
+def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> ConfigUnsetResult:
     """Take one key out of one file, so the layer below it decides again.
 
     This is the writer's opposite and it is built the same way: the would-be file is loaded whole
@@ -1565,7 +1529,9 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
         validate(text, path, scope)
         replace_all({target: text})
     tree = _in_force(path, scope, {}, environ)
-    return SettingUnset(
+    return ConfigUnsetResult(
+        ok=True,
+        written=() if previous is ABSENT else (path,),
         keys=(key,),
         previous=None if previous is ABSENT else json_value(previous),
         scope=scope,
@@ -1706,8 +1672,6 @@ __all__ = [
     "OutputConfig",
     "RecordConfig",
     "Edited",
-    "SettingUnset",
-    "SettingWrite",
     "Settings",
     "ToolsConfig",
     "VerifyConfig",

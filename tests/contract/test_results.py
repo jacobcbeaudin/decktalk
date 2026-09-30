@@ -196,8 +196,7 @@ SURFACE: tuple[Row, ...] = (
         False,
         True,
         HERE,
-        returns_its_result=False,
-        note="The writer returns a SettingWrite, which is the library's record, and the CLI renders it.",
+        note="Editing a validated file is library work, so the writer returns the command's result itself.",
     ),
     Row(
         "config unset",
@@ -206,7 +205,6 @@ SURFACE: tuple[Row, ...] = (
         False,
         True,
         HERE,
-        returns_its_result=False,
         note="The remover is the writer's opposite and belongs beside it, because editing a file is library work.",
     ),
     Row(
@@ -545,9 +543,10 @@ def test_the_settings_writer_reports_what_a_config_set_would_change(project: Pro
         environ=project.machine.environ,
         dry_run=True,
     )
+    assert isinstance(written, ConfigSetResult)
     assert written.key == "video.width"
     assert written.dry_run is True
-    assert set(ConfigSetResult.model_fields) >= set(type(written).model_fields) - {"line", "shadowed"}
+    assert written.written == ()
     printed = capsys.readouterr()
     assert printed.out == "" and printed.err == ""
 
@@ -557,8 +556,8 @@ def test_the_settings_remover_reports_what_a_config_unset_would_change(project: 
     removed = settings.unset(
         project.root / "decktalk.toml", "video.width", scope=Scope.PROJECT, environ=project.machine.environ
     )
+    assert isinstance(removed, ConfigUnsetResult)
     assert removed.keys == ("video.width",)
-    assert set(ConfigUnsetResult.model_fields) >= {"keys", "scope", "file"}
 
 
 def test_the_explainer_reports_what_a_config_explain_would_render(project: Project, capsys):
