@@ -6,6 +6,7 @@ import contextlib
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
 from threading import Thread
 from typing import Any
@@ -241,18 +242,26 @@ def test_an_untrusted_page_reaches_no_origin_but_the_projects_own(tmp_path, url)
     assert served.answer is not None and served.answer["status"] == 200
 
 
+@contextlib.contextmanager
+def serving(allowed: Allowed, documents: dict[str, bytes] | None = None) -> Iterator[str]:
+    """A preview server answering on its own thread, and the URL it prints, stopped however the test ends."""
+    server = open_server(allowed, "127.0.0.1", 0, documents)
+    with server:
+        Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            yield served_url(server)
+        finally:
+            server.shutdown()
+
+
 def test_the_server_serves_the_project_and_names_every_page(tmp_path):
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text("<p>served</p>", encoding="utf-8")
-    server = open_server(whole(tmp_path), "127.0.0.1", 0)
-    with server:
-        url = f"{served_url(server)}/deck/index.html"
-        assert url.startswith("http://127.0.0.1:")
-        Thread(target=server.serve_forever, daemon=True).start()
-        with urllib.request.urlopen(url, timeout=5) as response:
+    with serving(whole(tmp_path)) as base:
+        assert base.startswith("http://127.0.0.1:")
+        with urllib.request.urlopen(f"{base}/deck/index.html", timeout=5) as response:
             assert response.read() == b"<p>served</p>"
             assert response.headers["Cache-Control"] == "no-store"
-        server.shutdown()
 
 
 def _get(url: str) -> tuple[int, bytes]:
@@ -278,10 +287,7 @@ def test_the_server_refuses_a_dotfile_a_listing_and_a_link_out_of_the_project(tm
     (tmp_path / "leak" / "index.html").symlink_to(tmp_path / ".env")
     (tmp_path / "leakhtm").mkdir()
     (tmp_path / "leakhtm" / "index.htm").symlink_to(tmp_path / ".env")
-    server = open_server(whole(tmp_path), "127.0.0.1", 0)
-    with server:
-        base = f"http://127.0.0.1:{server.server_address[1]}"
-        Thread(target=server.serve_forever, daemon=True).start()
+    with serving(whole(tmp_path)) as base:
         assert _get(f"{base}/.env")[0] == 403
         assert _get(f"{base}/deck/../.env")[0] == 403
         assert _get(f"{base}/escape/secret.txt")[0] == 403
@@ -292,7 +298,6 @@ def test_the_server_refuses_a_dotfile_a_listing_and_a_link_out_of_the_project(tm
         status, body = _get(f"{base}/deck/")
         assert status == 404 and b".env" not in body
         assert b".env" not in _get(f"{base}/")[1]
-        server.shutdown()
 
 
 def test_the_ipv6_loopback_binds_as_readily_as_the_ipv4_one(tmp_path):
@@ -421,25 +426,17 @@ def test_the_router_records_what_it_turned_away(tmp_path):
 def test_the_preview_server_answers_the_documents_the_router_answers(tmp_path):
     """An author previewing a deck reads its cue times off the origin exactly as the recorder does."""
     times = b'{"sections": []}'
-    server = open_server(project(tmp_path), "127.0.0.1", 0, {"/__decktalk/cue-times.json": times})
-    with server:
-        base = f"http://127.0.0.1:{server.server_address[1]}"
-        Thread(target=server.serve_forever, daemon=True).start()
+    with serving(project(tmp_path), {"/__decktalk/cue-times.json": times}) as base:
         assert _get(f"{base}/__decktalk/cue-times.json") == (200, times)
         assert _get(f"{base}/__decktalk/nothing.json")[0] == 403
-        server.shutdown()
 
 
 def test_the_preview_server_refuses_what_the_router_refuses(tmp_path):
     """Both halves apply one rule, so an author's own browser reaches exactly what the recorder does."""
-    server = open_server(project(tmp_path), "127.0.0.1", 0)
-    with server:
-        base = f"http://127.0.0.1:{server.server_address[1]}"
-        Thread(target=server.serve_forever, daemon=True).start()
+    with serving(project(tmp_path)) as base:
         assert _get(f"{base}/deck/index.html") == (200, b"<p>hi</p>")
         assert _get(f"{base}/script.md")[0] == 403
         assert _get(f"{base}/build/cue-times.json")[0] == 403
-        server.shutdown()
 
 
 # ---- what the two halves leave behind -------------------------------------------------------------
