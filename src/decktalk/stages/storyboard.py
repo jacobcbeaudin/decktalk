@@ -244,8 +244,7 @@ def panels_of(
     for slide, wires in slides.items():
         if chosen.slides and slide not in chosen.slides:
             continue
-        resolved = [times[wire] for wire in wires if wire in times]
-        opening = min(resolved) if resolved else SECTION_START_SECONDS
+        opening = min((times[wire] for wire in wires if wire in times), default=SECTION_START_SECONDS)
         at = {wire: round(times.get(wire, opening), SECOND_DIGITS) for wire in wires}
         if chosen.names_a_cue:
             out += [(Freeze(slide, cue=wire), wire, at[wire]) for wire in wires if wire in chosen.after]

@@ -26,7 +26,7 @@ from decktalk.page import Attr
 from decktalk.pagescan import Slides, measured_rows, slide_findings
 from decktalk.results import SkipReason
 from decktalk.settings import Settings
-from decktalk.stages import judge
+from decktalk.stages import SECTION_START_SECONDS, judge
 from decktalk.stages.check.freeze import FramePair, first_state, last_state, plan_frames
 from decktalk.stages.storyboard import Freeze, Sheet
 from decktalk.stages.verify import thin_change
@@ -168,8 +168,8 @@ def opening_panels(sheet: Sheet, section: PageSection, slides: Slides, times: Ma
     slide is the picture that slide opens on, so the sheet is complete without drawing anything twice.
     """
     for slide, wires in slides.items():
-        resolved = [times[wire] for wire in wires if wire in times]
-        sheet.panel(section, Freeze.state(slide, (), wires), None, min(resolved) if resolved else 0.0)
+        opening = min((times[wire] for wire in wires if wire in times), default=SECTION_START_SECONDS)
+        sheet.panel(section, Freeze.state(slide, (), wires), None, opening)
 
 
 def seam_findings(
