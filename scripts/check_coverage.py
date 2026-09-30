@@ -58,8 +58,10 @@ from typing import Any
 import coverage
 
 import check
+import generated
 
 ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = Path(__file__).name
 RECORD = ROOT / "scripts" / "coverage-floor.json"
 DATA_FILE = ".coverage"
 """What `coverage` calls its data file, which every suite writes a file of its own beside."""
@@ -70,9 +72,6 @@ MARGIN = 1
 One point is about a hundred statements here, which is more than a runner's own timing costs and far
 less than a change that stopped testing something.
 """
-
-STALE = "{path} is out of date. Run: uv run scripts/check_coverage.py --write"
-"""The one sentence every generator in this repository fails with, naming the file and the command."""
 
 
 def suites() -> dict[str, check.Group]:
@@ -246,7 +245,7 @@ def roll_call() -> int:
 def check_floor() -> int:
     """Gate the measured run against the committed record, naming what fell."""
     if not RECORD.exists():
-        print(STALE.format(path=RECORD.relative_to(ROOT).as_posix()))
+        print(generated.STALE.format(path=RECORD.relative_to(ROOT).as_posix(), reason=generated.MISSING, script=SCRIPT))
         return 1
     if roll_call():
         return 1
@@ -285,12 +284,10 @@ def write() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--check", action="store_true", help="exit 1 if the run measured less than the record")
-    parser.add_argument("--write", action="store_true", help="record what the run just measured")
-    args = parser.parse_args()
-    if args.write:
-        return write()
-    return check_floor()
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--check", action="store_true", help="exit 1 if the run measured less than the record")
+    mode.add_argument("--write", action="store_true", help="record what the run just measured")
+    return write() if parser.parse_args().write else check_floor()
 
 
 if __name__ == "__main__":

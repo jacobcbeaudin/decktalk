@@ -81,3 +81,12 @@ def test_every_measuring_suite_writes_the_report_the_gate_reads() -> None:
     for leg, group in gate.suites().items():
         (command,) = [command for command in group.commands if "pytest" in command]
         assert f"--junitxml={check.REPORTS / f'{leg}.xml'}" in command, group.name
+
+
+@pytest.mark.parametrize("argv", [[], ["--check", "--write"]])
+def test_a_run_must_name_exactly_one_mode(monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> None:
+    """A bare run used to gate as though --check were named, and both flags together used to write."""
+    monkeypatch.setattr("sys.argv", ["check_coverage.py", *argv])
+    with pytest.raises(SystemExit) as refused:
+        gate.main()
+    assert refused.value.code == 2

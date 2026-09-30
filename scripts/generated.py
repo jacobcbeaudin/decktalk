@@ -25,6 +25,9 @@ ROOT = Path(__file__).resolve().parent.parent
 STALE = "stale: {path}, because {reason}. Run `uv run scripts/{script} --write` to bring it up to date."
 """The one sentence every generator fails with, naming the file, why, and the command that fixes it."""
 
+MISSING = "it is not committed"
+"""Why a file a generator owns is stale when there is no committed copy to compare."""
+
 GONE = "no generator writes it any more"
 """Why a file in a directory a generator owns is stale when the generator no longer returns it."""
 
@@ -42,7 +45,7 @@ def splice(text: str, markers: tuple[str, str], block: str, *, where: Path) -> s
 def differs(path: Path, text: str) -> str | None:
     """Why the committed file no longer says `text`, naming the first line that moved, or None."""
     if not path.exists():
-        return "it is not committed"
+        return MISSING
     committed = path.read_text(encoding="utf-8")
     if committed == text:
         return None
