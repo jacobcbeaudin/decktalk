@@ -71,11 +71,6 @@ def test_every_command_sits_in_a_declared_group() -> None:
     assert {str(row["group"]) for row in commands().values()} <= declared
 
 
-def test_every_command_answers_with_a_result_the_registry_knows() -> None:
-    answered = {row["result"] for row in commands().values() if row["result"]}
-    assert answered <= set(RESULTS)
-
-
 @pytest.mark.parametrize("name", sorted(commands()))
 def test_the_finding_flags_are_exactly_on_the_commands_that_judge(name: str) -> None:
     row = commands()[name]

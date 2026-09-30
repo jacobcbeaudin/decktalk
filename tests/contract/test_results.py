@@ -393,12 +393,14 @@ def test_every_row_that_is_not_a_plain_call_says_why(row: Row):
     assert row.note.endswith("."), row.note
 
 
-def test_the_command_set_of_the_app_is_the_surface_table():
+def test_the_app_is_the_surface_table_command_for_command_and_result_for_result():
     """The fourth set: a command the app publishes and the table does not know is undiscoverable.
 
-    The set is the catalog an agent reads, with a group's subcommands spelled as the CLI takes them.
+    The set is the catalog an agent reads, with a group's subcommands spelled as the CLI takes them,
+    and each command answers with the result its row names, by the name `decktalk schema` prints.
     """
-    assert {row["command"] for row in catalog.walk()} == {row.command for row in SURFACE}
+    published = {row["command"]: row["result"] for row in catalog.walk()}
+    assert published == {row.command: row.result and catalog.NAMES[row.result] for row in SURFACE}
 
 
 # ---- what every result promises a reader -------------------------------------------------

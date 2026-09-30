@@ -17,44 +17,6 @@ from support.spends import a_spend
 
 RESERVED = ("schema", "ok", "findings", "error")
 
-# The commands that open a run, and the commands that write a file. Both directions are asserted, so
-# a result that gains one of the two declared fields without being one of these fails here.
-OPENS_A_RUN = {
-    "init",
-    "install",
-    "doctor",
-    "status",
-    "check",
-    "words",
-    "storyboard",
-    "serve",
-    "narrate",
-    "cue",
-    "record",
-    "soundscape",
-    "assemble",
-    "verify",
-    "build",
-    "clip",
-    "apply",
-}
-WRITES_A_FILE = {
-    "init",
-    "doctor",
-    "check",
-    "storyboard",
-    "config-set",
-    "config-unset",
-    "narrate",
-    "cue",
-    "record",
-    "soundscape",
-    "assemble",
-    "build",
-    "clip",
-    "apply",
-}
-
 
 def models() -> list[type[BaseModel]]:
     """Every model this track declares, which is what the shared rules are asserted over."""
@@ -65,10 +27,6 @@ def models() -> list[type[BaseModel]]:
             if isinstance(member, type) and issubclass(member, BaseModel) and member.__module__ == module.__name__:
                 found.append(member)
     return found
-
-
-def test_there_is_one_result_per_command_and_the_names_are_its_own() -> None:
-    assert set(RESULTS) == set(OPENS_A_RUN | WRITES_A_FILE | {"config-list", "config-get", "config-explain", "error"})
 
 
 def test_the_base_reserves_exactly_four_keys() -> None:

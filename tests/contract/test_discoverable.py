@@ -141,13 +141,6 @@ def test_every_result_declares_the_shape_version_the_contract_fixes():
 # ---- the command line, which is the instruction set ------------------------------------------
 
 
-def test_the_command_set_equals_the_results_the_library_publishes():
-    """A result with no command is a call an agent reading `--help` never learns about."""
-    commands = {row["command"].split()[0] for row in catalog.walk()}
-    published = {name.split("-")[0] for name in RESULTS} - {"error", "apply"}
-    assert published <= commands, sorted(published - commands)
-
-
 def test_every_command_and_every_option_carries_its_own_help():
     """An option with no help is a knob an agent can pass and cannot read, which is the thesis failing.
 
