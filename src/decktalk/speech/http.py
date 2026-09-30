@@ -105,7 +105,7 @@ class DropAuthAcrossOrigins(urllib.request.HTTPRedirectHandler):
 _opener = urllib.request.build_opener(DropAuthAcrossOrigins)
 
 
-def urlopen(request: urllib.request.Request, *, timeout: int) -> HTTPResponse:
+def urlopen(request: urllib.request.Request, *, timeout: float) -> HTTPResponse:
     """Open a request through the package's one opener, so the redirect rule applies to every call."""
     return _opener.open(request, timeout=timeout)
 
@@ -191,7 +191,13 @@ def _attempted(path: str, attempt: int, started: float, **measured: object) -> N
 
 
 def post[T](
-    url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: int, retries: int, parse: Callable[[bytes], T]
+    url: str,
+    body: dict[str, Any],
+    headers: dict[str, str],
+    *,
+    timeout: float,
+    retries: int,
+    parse: Callable[[bytes], T],
 ) -> T:
     """One POST, with its reply read by `parse`, and any failure as a `PROVIDER` error that quotes no key.
 
@@ -247,12 +253,14 @@ def post[T](
         attempt += 1
 
 
-def post_bytes(url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: int, retries: int) -> bytes:
+def post_bytes(url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: float, retries: int) -> bytes:
     """One POST whose reply is the bytes it carries, which is what the two sound calls make."""
     return post(url, body, headers, timeout=timeout, retries=retries, parse=bytes)
 
 
-def post_json(url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: int, retries: int) -> dict[str, Any]:
+def post_json(
+    url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: float, retries: int
+) -> dict[str, Any]:
     """One POST whose reply is a JSON object, which is every call a provider makes but the two sound ones."""
 
     def parse(reply: bytes) -> dict[str, Any]:
