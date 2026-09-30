@@ -65,13 +65,10 @@ from .findings import (
     SettingFix,
 )
 from .inputs import (
-    ENV_FILE,
     ClipSection,
-    CuedSection,
     Document,
     Env,
     Inputs,
-    Markers,
     Mix,
     MixEffect,
     MusicSpec,
@@ -84,10 +81,8 @@ from .inputs import (
     Voice,
     Workspace,
 )
-from .inputs.cues import Cue
-from .inputs.markers import Marker
 from .machine import Machine, Run, Toolchain, init
-from .pipeline import PIPELINE, Artifact, Outcome, Stage, StageSpec
+from .pipeline import Outcome, Stage
 from .project import Origin, Project, open, section_numbers
 from .results import (
     ApplyResult,
@@ -171,7 +166,6 @@ __all__ = [
     "Applicability",
     "ApplyResult",
     "ApprovalRequired",
-    "Artifact",
     "AssembleResult",
     "AudioConfig",
     "BuildResult",
@@ -188,16 +182,13 @@ __all__ = [
     "ConfigListResult",
     "ConfigSetResult",
     "ConfigUnsetResult",
-    "Cue",
     "CueCheck",
     "CueResult",
     "CueTime",
-    "CuedSection",
     "CutCheck",
     "DeckTalkError",
     "DoctorResult",
     "Document",
-    "ENV_FILE",
     "Edit",
     "EditFix",
     "ElevenLabsConfig",
@@ -231,8 +222,6 @@ __all__ = [
     "Loudness",
     "LoudnessConfig",
     "Machine",
-    "Marker",
-    "Markers",
     "Mix",
     "MixConfig",
     "MixEffect",
@@ -246,7 +235,6 @@ __all__ = [
     "Origin",
     "Outcome",
     "OutputConfig",
-    "PIPELINE",
     "PageSection",
     "Panel",
     "Progress",
@@ -292,7 +280,6 @@ __all__ = [
     "Stage",
     "StageDone",
     "StageRun",
-    "StageSpec",
     "StageStart",
     "StartCheck",
     "StatusResult",

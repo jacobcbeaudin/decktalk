@@ -190,10 +190,4 @@ def required(plan: tuple[Stage, ...]) -> tuple[Artifact, ...]:
     return tuple(dict.fromkeys(needed))
 
 
-__all__ = [
-    "PIPELINE",
-    "Artifact",
-    "Outcome",
-    "Stage",
-    "StageSpec",
-]
+__all__ = ["Outcome", "Stage"]
