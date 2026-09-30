@@ -8,7 +8,7 @@
     uv run scripts/check.py --group browser  # one group, by name, repeatable and comma-separated
     uv run scripts/check.py --list           # the table, for a person
     uv run scripts/check.py --group generated --write  # every generator in the group, writing
-    uv run scripts/check.py --group e2e --prepare      # only what fetches the group's tools
+    uv run scripts/check.py --group e2e --prepare      # only what fetches the group's cached tools
     uv run scripts/check.py --json --when pr # the matrix, for a workflow
 
 `GROUPS` below is the only place any check is written down. A workflow reads this table at runtime and
@@ -22,8 +22,8 @@ group runs as `--write` instead, the commands that prepare the machine run as th
 command that only judges is left out. The write commands are read from the same rows, so the one
 command that regenerates what a release made stale cannot forget a generator the check remembers.
 
-`--prepare` runs only the commands at the head of a row, which fetch what the row declares it needs.
-CI runs it before it saves the tools cache, so a cache is only ever saved from a fetch that finished.
+`--prepare` runs only the commands at the head of a row that fetch what the tools cache keeps. CI
+runs it before it saves that cache, so a cache is only ever saved from a fetch that finished.
 
 The first run may download headless Chromium and ffmpeg through `decktalk install`, once per machine.
 No check needs an ElevenLabs key, and after `decktalk install` no check needs the network.
@@ -850,7 +850,7 @@ def arguments() -> argparse.ArgumentParser:
     mode.add_argument(
         PREPARE,
         action="store_true",
-        help="run only the commands that fetch what each named group needs, which is what CI caches",
+        help="run only the commands that fetch what each named group keeps in the tools cache",
     )
     parser.add_argument("--list", action="store_true", help="print the table and run nothing")
     parser.add_argument("--json", action="store_true", help="print the matrix a workflow consumes, and run nothing")
@@ -878,8 +878,14 @@ def run_writes(groups: tuple[Group, ...]) -> int:
 
 
 def run_preparations(groups: tuple[Group, ...]) -> int:
-    """Run only what fetches each named group's needs, which CI does before it saves the tools cache."""
-    preparing = tuple(replace(group, commands=()) for group in groups)
+    """Run only what fetches each named group's cached tools, which CI does before it saves the tools cache.
+
+    A need the cache does not keep, such as the Node packages, is left to the row's own run, so a leg
+    never installs it twice.
+    """
+    preparing = tuple(
+        replace(group, tools=tuple(tool for tool in group.tools if NEEDS[tool].cached), commands=()) for group in groups
+    )
     return 0 if all(run_group(group, f" {PREPARE}") for group in preparing) else 1
 
 
