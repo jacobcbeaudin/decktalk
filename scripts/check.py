@@ -544,7 +544,7 @@ GROUPS: tuple[Group, ...] = (
             ("uv", "lock", "--check"),
             (*UV, "ruff", "check", "src", "tests", "scripts"),
             (*UV, "ruff", "format", "--check", "src", "tests", "scripts"),
-            (*UV, "ty", "check", "src", "scripts"),
+            (*UV, "ty", "check", "src", "tests", "scripts"),
             ("npm", "exec", "--no", "--", "biome", "ci", "."),
             ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "install.sh"),
             ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
