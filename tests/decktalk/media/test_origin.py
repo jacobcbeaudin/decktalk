@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import urllib.error
 import urllib.request
@@ -12,6 +13,7 @@ from typing import Any
 import pytest
 
 from decktalk.errors import ToolError
+from decktalk.media import origin
 from decktalk.media.browser import TRUSTED, chromium, open_page
 from decktalk.media.origin import (
     HIDDEN,
@@ -437,3 +439,48 @@ def test_the_preview_server_refuses_what_the_router_refuses(tmp_path):
         assert _get(f"{base}/script.md")[0] == 403
         assert _get(f"{base}/build/cue-times.json")[0] == 403
         server.shutdown()
+
+
+# ---- what the two halves leave behind -------------------------------------------------------------
+
+
+def test_a_request_the_router_could_not_answer_is_a_warning_without_its_query(tmp_path, monkeypatch, caplog):
+    (tmp_path / "deck").mkdir()
+    target = _Target()
+    route_pages(target, whole(tmp_path), trusted=True)
+
+    def broken(*_args: object) -> None:
+        raise OSError("the disk went away")
+
+    monkeypatch.setattr(origin, "local_target", broken)
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        answered = target.request(f"{ORIGIN}/deck/index.html?token=sk_query_canary")
+    assert answered.answer is not None and answered.answer["status"] == 500
+    [record] = [record for record in caplog.records if record.name == "decktalk.media.origin"]
+    assert record.levelname == "WARNING" and "sk_query_canary" not in record.getMessage()
+    assert record.data == {"url": f"{ORIGIN}/deck/index.html"}  # type: ignore[attr-defined]
+
+
+def test_the_preview_server_prints_nothing_when_a_request_raises_and_logs_no_query(
+    tmp_path, monkeypatch, caplog, capsys
+):
+    """socketserver printed a traceback to stderr when a handler raised, which no renderer could hold."""
+    (tmp_path / "deck").mkdir()
+    (tmp_path / "deck" / "index.html").write_text("<p>served</p>", encoding="utf-8")
+    server = open_server(whole(tmp_path), "127.0.0.1", 0)
+
+    def broken(_handler: object) -> None:
+        raise RuntimeError("the handler broke")
+
+    with caplog.at_level("DEBUG", logger="decktalk"), server:
+        Thread(target=server.serve_forever, daemon=True).start()
+        assert _get(f"{served_url(server)}/deck/index.html?token=sk_query_canary")[0] == 200
+        monkeypatch.setattr(origin._Handler, "send_head", broken)
+        with contextlib.suppress(OSError):
+            _get(f"{served_url(server)}/deck/index.html")
+        server.shutdown()
+    assert capsys.readouterr().err == ""
+    said = [record.getMessage() for record in caplog.records if record.name == "decktalk.media.origin"]
+    assert any("GET /deck/index.html HTTP" in line for line in said)
+    assert not any("sk_query_canary" in line for line in said)
+    assert any("could not answer" in line for line in said)

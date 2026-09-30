@@ -34,6 +34,7 @@ import io
 import logging
 import mimetypes
 import os
+import re
 import socket
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -60,6 +61,9 @@ HIDDEN = "a name beginning with a dot is never served"
 UNUSABLE = "that path is not a usable file name"
 UNDECLARED = "that path is not in the deck directory and the project declares no such asset"
 TEXT = "text/plain; charset=utf-8"
+
+QUERY = re.compile(r"\?[^\s\"]*")
+"""The query of a URL inside a request line, up to the space or quote that ends it."""
 """What a refusal is answered as, because a page that asked for a file is given a sentence instead."""
 # A type the standard table gets wrong or does not know, and which a deck loads often enough to matter.
 EXTRA_TYPES = {
@@ -336,7 +340,8 @@ def route_pages(
             route.fulfill(status=HTTPStatus.OK, content_type=content_type(wanted.path), body=wanted.path.read_bytes())
         except Exception as exc:  # noqa: BLE001  (the page must learn its request failed rather than wait for it)
             # The query is left out, because it is where a page puts what it means to send somewhere.
-            log.debug("could not answer %s (%s)", request.url.split("?", 1)[0], exc)
+            shown = request.url.split("?", 1)[0]
+            log.warning("The origin could not answer %s.", shown, exc_info=exc, extra={"data": {"url": shown}})
             broke = HTTPStatus.INTERNAL_SERVER_ERROR
             route.fulfill(status=broke, content_type=TEXT, body="the origin could not answer")
 
@@ -376,7 +381,8 @@ class _Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, format: str, *args: object) -> None:
-        log.debug("[serve] " + format, *args)
+        """Record one request line with its query left out, because the query is what a page means to send."""
+        log.debug("[serve] %s", QUERY.sub("", format % args))
 
     def guess_type(self, path: str | os.PathLike[str]) -> str:
         return content_type(Path(path))
@@ -418,6 +424,9 @@ def open_server(
     `documents` are the paths the caller answers itself, which are the same ones the router answers
     for a recorded page. An author previewing a deck reads its cue times from the origin exactly as
     the recorder does, so a page that works in the preview is the page that is recorded.
+
+    The server outlives the run that opened it, so what it records, a request line or a request that
+    raised, reaches a host's own logging and no run's events file, and nothing it records is printed.
     """
     handler = partial(_Handler, allowed, dict(documents or {}))
     try:
@@ -428,6 +437,10 @@ def open_server(
 
     class Server(ThreadingHTTPServer):
         address_family = family
+
+        def handle_error(self, request: object, client_address: tuple[str, int]) -> None:  # noqa: ARG002  (the base's signature)
+            """Record a request that raised, where the base class prints its traceback to stderr."""
+            log.debug("The preview server could not answer %s.", client_address[0], exc_info=True)
 
     try:
         return Server((host, port), handler)
