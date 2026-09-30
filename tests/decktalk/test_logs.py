@@ -260,14 +260,19 @@ def a_host_machine(root: Path, *, limit: float = 600.0) -> Machine:
     )
 
 
+def read_back(events: Path) -> list[Event]:
+    """Every line of the one run whose events file is in `events`, read as a host reads it."""
+    [path] = events.glob("*.jsonl")
+    return [LINES.validate_json(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
 def recorded(root: Path, fault: Callable[[Run], object], *, limit: float = 600.0) -> list[Event]:
     """Every line of the one run `fault` ran in, read back from its events file."""
     here = a_host_machine(root, limit=limit)
     events = root / "build" / "events"
     with contextlib.suppress(Exception, KeyboardInterrupt), here.run(root=root, events_dir=events) as run:
         fault(run)
-    [path] = events.glob("*.jsonl")
-    return [LINES.validate_json(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    return read_back(events)
 
 
 def a_tool(monkeypatch: pytest.MonkeyPatch, script: str) -> None:
@@ -556,8 +561,7 @@ def test_a_held_project_names_the_lock_on_its_last_line(tmp_path: Path) -> None:
     finally:
         done.set()
         holder.join()
-    [path] = (root / "build" / "events").glob("*.jsonl")
-    last = LINES.validate_json(path.read_text(encoding="utf-8").splitlines()[-1])
+    last = read_back(root / "build" / "events")[-1]
     assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.LOCKED
 
 
@@ -566,7 +570,6 @@ def test_a_stage_missing_its_input_names_it_on_its_last_line(tmp_path: Path) -> 
     project = decktalk.open(root, machine=a_host_machine(root))
     with pytest.raises(NotBuiltError):
         project.cue()
-    [path] = (root / "build" / "events").glob("*.jsonl")
-    last = LINES.validate_json(path.read_text(encoding="utf-8").splitlines()[-1])
+    last = read_back(root / "build" / "events")[-1]
     assert isinstance(last, RunDone) and last.error is not None
     assert last.error.code is ErrorCode.NOT_BUILT and "takes.json" in last.error.message
