@@ -17,7 +17,7 @@ from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
 from decktalk.media.frames import Size
 from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS, MILLISECONDS
-from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig
+from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig, reference_lead_seconds
 from decktalk.stages.verify.plan import (
     EPSILON,
     PROBE_TAIL_SECONDS,
@@ -30,7 +30,6 @@ from decktalk.stages.verify.plan import (
     onset_offset_seconds,
     opted_out,
     probe_plan,
-    reference_lead,
     reference_time,
     thin_change,
 )
@@ -51,11 +50,11 @@ def test_the_reference_lead_is_the_published_formula_and_not_a_second_copy() -> 
     """The lead is the offset limit plus the grid guard plus whatever extra lead was asked for."""
     settings = settings_with(cue_offset_max_ms=80.0, reference_lead_extra_ms=40.0)
     expected = 80.0 / MILLISECONDS + GUARD_FRAMES / CAPTURE_FPS + 40.0 / MILLISECONDS
-    assert reference_lead(settings) == pytest.approx(expected)
+    assert reference_lead_seconds(settings) == pytest.approx(expected)
 
 
 def test_a_wider_offset_limit_reaches_the_reference_frame_further_back() -> None:
-    assert reference_lead(settings_with(cue_offset_max_ms=200.0)) > reference_lead(
+    assert reference_lead_seconds(settings_with(cue_offset_max_ms=200.0)) > reference_lead_seconds(
         settings_with(cue_offset_max_ms=80.0)
     )
 
@@ -76,7 +75,7 @@ def test_a_block_copy_is_one_pixel_per_transform_block() -> None:
 def test_the_reference_frame_sits_the_whole_lead_before_its_cue() -> None:
     settings = settings_with(cue_offset_max_ms=80.0)
     at = reference_time(10.0, 2.0, fade_in=False, dip=0.0, settings=settings, fps=FPS)
-    assert at == pytest.approx(12.0 - reference_lead(settings), abs=1e-4)
+    assert at == pytest.approx(12.0 - reference_lead_seconds(settings), abs=1e-4)
 
 
 def test_a_cue_at_the_very_start_of_a_section_leaves_no_frame_before_it() -> None:

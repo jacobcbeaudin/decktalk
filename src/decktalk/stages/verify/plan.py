@@ -51,15 +51,6 @@ a second is over one frame at every rate DeckTalk encodes at.
 """
 
 
-def reference_lead(settings: Settings) -> float:
-    """How far before its cue the reference frame is read, which is a published derived number.
-
-    The formula lives once, in the settings layer beside the `NUMBERS` row that publishes it, so a
-    reader who asks what decides the lead meets the arithmetic rather than a second copy of it here.
-    """
-    return reference_lead_seconds(settings)
-
-
 def frame_size(settings: Settings) -> Size:
     """The size every probe, control and seam comparison is made at."""
     return Size(probe_width(settings), probe_height(settings))
@@ -107,7 +98,7 @@ def reference_time(
     """
     floor = sec_start + (dip if fade_in else 0.0)
     latest = sec_start + cue_t - 1.0 / fps
-    reference = max(floor, sec_start + cue_t - reference_lead(settings))
+    reference = max(floor, sec_start + cue_t - reference_lead_seconds(settings))
     if reference > latest + EPSILON:
         return None
     return round(reference, 4)
@@ -274,7 +265,6 @@ __all__ = [
     "onset_offset_seconds",
     "opted_out",
     "probe_plan",
-    "reference_lead",
     "reference_time",
     "thin_change",
 ]

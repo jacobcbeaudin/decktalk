@@ -26,7 +26,7 @@ from decktalk.page import MILLISECONDS
 from decktalk.pagescan import measured_rows, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, SkipReason
-from decktalk.settings import CLICK_LEVEL_DBFS
+from decktalk.settings import CLICK_LEVEL_DBFS, reference_lead_seconds
 from decktalk.stages.verify.plan import (
     HALF_FRAME,
     Neighbour,
@@ -35,7 +35,6 @@ from decktalk.stages.verify.plan import (
     frame_size,
     onset_offset_seconds,
     probe_plan,
-    reference_lead,
     reference_time,
     thin_change,
 )
@@ -282,7 +281,7 @@ def _planned(
     floor = sec_start + (dip if fade_in else 0.0)
     sec_end = min((t for t in starts.values() if t > sec_start), default=total)
     times = cue_times.times(section) if cue_times is not None else {}
-    lead = reference_lead(inputs.settings)
+    lead = reference_lead_seconds(inputs.settings)
     delays, fitted = probe_plan(
         spoken, before, floor, sec_end, neighbours_of(times, declared_spans(inputs, section), sec_start, cue),
         verify, fps, lead=lead,
