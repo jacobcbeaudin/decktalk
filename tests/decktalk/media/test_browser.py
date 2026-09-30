@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, get_args
 
@@ -19,8 +20,6 @@ from decktalk.media import browser
 from decktalk.media.environment import child_environment
 from decktalk.media.origin import ORIGIN, Allowed, page_url
 from decktalk.settings import BY_ID, COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
-
-from ..conftest import FakeVideo
 
 REPORTED = {
     "version": "0.5.0",
@@ -35,6 +34,16 @@ REPORTED = {
     "longFrames": [],
 }
 """What the page answers `window.__dtprobe.report()` with, in the shape the contract names."""
+
+
+@dataclass
+class FakeVideo:
+    """The webm Playwright writes when the recording context closes, which `Capture.place` moves."""
+
+    path_: Path
+
+    def path(self) -> str:
+        return str(self.path_)
 
 
 class FakePage:
