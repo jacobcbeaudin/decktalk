@@ -695,6 +695,19 @@ calls on two threads do not share them.
 A run checks its `Cancel` between sections, and `tools.timeout_seconds` stops any one ffmpeg call that
 runs longer than it allows.
 
+### Three readers of one account
+
+A run's account reaches a host three ways, and all three carry the same sentences. A subscriber to
+`Machine.events` receives every line as it is minted. The run's file under `build/events/` holds the
+same lines. And a module below the stages writes standard `logging` records under the `decktalk.*`
+loggers, which one handler DeckTalk puts on the `decktalk` logger turns into `log` lines of the run
+bound to the current thread, and which then propagate to whatever logging the host configured,
+stamped with `decktalk_run`, `decktalk_stage` and `decktalk_section` for its formatter. Nothing is
+printed, a record written while no run is bound reaches the host's logging alone, and every value of
+a credential the machine holds is replaced by its name before any of the three sees it. The
+`decktalk` logger is set to `DEBUG` only when the host chose no level before importing DeckTalk, so a
+host that set one keeps it.
+
 ### Voice and render in separate processes
 
 The voice key must never share a process with a page, because a page is someone else's script and

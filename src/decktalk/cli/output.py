@@ -192,7 +192,10 @@ class Notes(Renderer):
             if event.message in self._heard:
                 return
             self._heard.add(event.message)
-        self._console.print(Text(event.message, style=QUIET_STYLE if level in ("debug", "info") else "yellow"))
+        style = QUIET_STYLE if level in ("debug", "info") else "yellow"
+        # Under -v a line says which module wrote it, which is what tells a tool call from a stage's sentence.
+        said = f"{event.source}: {event.message}" if self._verbose and event.source else event.message
+        self._console.print(Text(said, style=style))
 
 
 class Opening(Renderer):

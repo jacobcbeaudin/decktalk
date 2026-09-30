@@ -543,7 +543,7 @@ class Project:
             keep_runs=keep,
         ) as run:
             # What the load noticed, such as a misspelled key, is said on every run of the project,
-            # because a line on the stream reaches `--json` and the events file where a log line does not.
+            # because the project was loaded once and each run's events file is read on its own.
             for note in self.inputs.notes:
                 run.note(note, level=Level.WARNING)
             with self._lock(run) if writes else nullcontext():

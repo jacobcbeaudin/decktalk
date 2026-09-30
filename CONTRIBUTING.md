@@ -201,6 +201,7 @@ src/decktalk/
   models                 the frozen models and the settings tree, which every layer above reads
     results.py           What every call returns: one frozen result per command, each a flat object a reader can dispatch on.
     events.py            One stream of progress: twelve moments, the four fields the library mints onto each, and the subscribers that render them.
+    logs.py              The bridge from Python's standard logging to the run's event stream, which is the one output there is.
     catalog.py           The library's own contract, walked once so every rendering of it reads the same rows.
     tomlmap.py           One loader from a mapping to typed values, with located errors and "did you mean" hints.
     settings.py          Every knob DeckTalk publishes, with the range that is safe to turn it through.

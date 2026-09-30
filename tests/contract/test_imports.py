@@ -45,27 +45,29 @@ LAYERS: dict[str, tuple[str, int]] = {
     # The frozen models and the settings tree, which every layer above reads and none of them writes.
     "results": ("models", 7),
     "events": ("models", 8),
-    "catalog": ("models", 9),
-    "tomlmap": ("models", 10),
-    "settings": ("models", 11),
+    # The bridge from standard logging to the stream, which reads the stream and nothing above it.
+    "logs": ("models", 9),
+    "catalog": ("models", 10),
+    "tomlmap": ("models", 11),
+    "settings": ("models", 12),
     # One job each, and no knowledge of a project.
-    "toolchain": ("leaves", 12),
-    "captions": ("leaves", 13),
-    "speech": ("leaves", 14),
-    "media": ("leaves", 15),
-    "pagescan": ("leaves", 16),
-    "template": ("leaves", 17),
-    "artifacts": ("leaves", 18),
+    "toolchain": ("leaves", 13),
+    "captions": ("leaves", 14),
+    "speech": ("leaves", 15),
+    "media": ("leaves", 16),
+    "pagescan": ("leaves", 17),
+    "template": ("leaves", 18),
+    "artifacts": ("leaves", 19),
     # The object a caller drives, and the stages it drives.
-    "inputs": ("sdk", 19),
-    "machine": ("sdk", 20),
-    "explain": ("sdk", 21),
-    "stages": ("sdk", 22),
-    "project": ("sdk", 23),
+    "inputs": ("sdk", 20),
+    "machine": ("sdk", 21),
+    "explain": ("sdk", 22),
+    "stages": ("sdk", 23),
+    "project": ("sdk", 24),
     # The first client, and the package's public surface.
-    "cli": ("cli", 24),
-    "__init__": ("cli", 25),
-    "__main__": ("cli", 26),
+    "cli": ("cli", 25),
+    "__init__": ("cli", 26),
+    "__main__": ("cli", 27),
 }
 """Every top-level module and package of decktalk, with its layer and its rank inside that layer.
 

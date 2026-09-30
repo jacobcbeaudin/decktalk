@@ -304,6 +304,12 @@ def test_a_debug_line_is_written_under_verbose_alone() -> None:
     assert "a debug line" in heard(partial(output.Notes, verbose=True, quiet=False), _log(Level.DEBUG))
 
 
+def test_verbose_names_the_module_that_wrote_a_line_and_the_default_does_not() -> None:
+    line = _log(Level.INFO).model_copy(update={"source": "media.ffmpeg"})
+    assert "media.ffmpeg: a debug line" in heard(partial(output.Notes, verbose=True, quiet=False), line)
+    assert "media.ffmpeg" not in heard(partial(output.Notes, verbose=False, quiet=False), line)
+
+
 def test_a_warning_survives_quiet() -> None:
     assert "a debug line" in heard(partial(output.Notes, verbose=False, quiet=True), _log(Level.WARNING))
 

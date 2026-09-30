@@ -23,6 +23,7 @@ the first request rather than counted down as the credits go.
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import subprocess
@@ -71,6 +72,7 @@ from decktalk.findings import (
 from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
+from decktalk.logs import level_of, logging_into, source_of, where, within
 from decktalk.media.environment import children_see
 from decktalk.media.ffmpeg import installed_paths, using_tools
 from decktalk.pipeline import Outcome, Stage
@@ -257,7 +259,32 @@ class Run:
 
     def note(self, message: str, *, level: Level = Level.INFO) -> None:
         """One sentence the library would have printed, had the library printed anything."""
-        self.emit(Log, level=level, message=message)
+        place = where()
+        self.emit(Log, level=level, message=message, stage=place.stage, section=place.section)
+
+    def logged(self, record: logging.LogRecord) -> None:
+        """Turn one standard logging record into one line of this run, which is the bridge's receiver.
+
+        The sentence is the record's own rendering, in which a `Secret` argument already reads as its
+        name. A record that carries an exception adds the exception's type and the first line of its
+        message to `data`, and never the traceback, because a traceback carries locals and paths.
+        """
+        given = getattr(record, "data", None)
+        data = dict(given) if isinstance(given, Mapping) else {}
+        if record.exc_info and record.exc_info[1] is not None:
+            failure = record.exc_info[1]
+            first = next(iter(str(failure).splitlines()), "")
+            data["error"] = f"{type(failure).__name__}: {first}" if first else type(failure).__name__
+        place = where()
+        self.emit(
+            Log,
+            level=level_of(record.levelno),
+            message=record.getMessage(),
+            source=source_of(record.name),
+            stage=place.stage,
+            section=place.section,
+            data=data or None,
+        )
 
     def found(self, finding: Finding) -> Finding:
         """Record one judgement and report it as it was made, rather than holding it to the end."""
@@ -299,8 +326,10 @@ class Run:
         """
         started = time.monotonic()
         self.emit(start, **both, **(opening or {}))
+        stage, section = both.get("stage"), both.get("section")
         try:
-            yield
+            with within(stage=cast("Stage | None", stage), section=cast("int | None", section)):
+                yield
         except BaseException as failure:
             ended = Outcome.STOPPED if isinstance(failure, STOPS) else Outcome.FAILED
             self.emit(done, **both, outcome=ended, seconds=time.monotonic() - started)
@@ -527,8 +556,8 @@ class Machine:
             sink = self.events.subscribe(JsonlSink(events_path), runs=[run.id])
         started = time.monotonic()
         self.events.emit(run.id, RunStart, events_path=relative(events_path, root) if events_path and root else None)
-        # What the machine noticed when it was read is said on every run, because a line on the stream
-        # reaches `--json` and the events file where a log line does not.
+        # What the machine noticed when it was read is said on every run, because the machine was read
+        # once and each run's events file is read on its own.
         for note in self.notes:
             run.note(note, level=Level.WARNING)
         outcome, error = Outcome.OK, None
@@ -544,6 +573,7 @@ class Machine:
                 announcing(run.fetching),
                 voicing(self.voices),
                 reading_dotenv(self.dotenv),
+                logging_into(run.logged, run=run.id),
             ):
                 yield run
         except BaseException as failure:
