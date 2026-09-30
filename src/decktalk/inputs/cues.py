@@ -227,7 +227,7 @@ class Spoken:
     def of(cls, words: Sequence[Word]) -> Spoken:
         """These words with both of their matched forms worked out once."""
         exact = tuple(norm(word.word, case_sensitive=True) for word in words)
-        return cls(words=tuple(words), folded=tuple(one.lower() for one in exact), exact=exact)
+        return cls(words=tuple(words), folded=tuple(one.casefold() for one in exact), exact=exact)
 
     def matches(self, phrase: str, case_sensitive: bool = False) -> list[int]:
         """Index of the first word of every occurrence of phrase, in order."""

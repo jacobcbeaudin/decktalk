@@ -159,3 +159,10 @@ def test_an_accented_or_typographic_word_is_matched_whole(spoken: str, cue: str,
 
 def test_a_word_with_its_accent_cut_out_does_not_match_the_accented_word() -> None:
     assert norm("caf") != norm("café")
+
+
+@pytest.mark.parametrize(("spoken", "phrase"), [("Straße", "STRASSE"), ("Straße", "straße"), ("ΟΔΟΣ", "οδος")])
+def test_a_word_whose_case_folds_to_other_letters_matches_its_phrase(spoken: str, phrase: str) -> None:
+    # Before, the transcript was lowered while the phrase was folded, so "Straße" never matched itself.
+    said = Spoken.of((Word(word=spoken, start=0.0, end=0.4),))
+    assert said.find(phrase) == 0
