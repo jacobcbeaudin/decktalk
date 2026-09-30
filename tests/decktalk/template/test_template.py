@@ -20,9 +20,10 @@ import re
 import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pytest
+import yaml
 
 from decktalk import template
 from decktalk.inputs.cues import load_cues
@@ -295,20 +296,10 @@ def skill_of(path: Path) -> str:
     return path.relative_to(SKILLS).parts[0]
 
 
-def frontmatter(text: str) -> tuple[dict[str, str], str]:
-    """The YAML frontmatter as a flat mapping, and the body after it."""
-    if not text.startswith("---\n"):
-        return {}, text
-    head, _, body = text[4:].partition("\n---\n")
-    doc: dict[str, str] = {}
-    key = ""
-    for line in head.splitlines():
-        if re.match(r"^[a-zA-Z][\w-]*:", line):
-            key, _, value = line.partition(":")
-            doc[key.strip()] = value.strip()
-        elif key and line.strip():
-            doc[key] = f"{doc[key]} {line.strip()}".strip()
-    return doc, body
+def frontmatter(text: str) -> tuple[dict[str, Any], str]:
+    """The YAML frontmatter, read as the YAML an agent's loader reads, and the body after it."""
+    head, _, body = text.removeprefix("---\n").partition("\n---\n")
+    return yaml.safe_load(head), body
 
 
 def test_every_packaged_skill_is_a_folder_with_one_skill_file() -> None:
@@ -326,7 +317,7 @@ def test_the_frontmatter_holds_only_the_keys_a_reader_of_it_accepts(name: str) -
     assert doc["name"] == name and re.fullmatch(r"decktalk-[a-z0-9]+", doc["name"])
     assert 1 <= len(doc["description"]) <= 1024
     assert len(doc.get("compatibility", "")) <= 500
-    assert "<" not in "".join(doc.values()), "frontmatter carries no XML-style tag"
+    assert "<" not in str(doc), "frontmatter carries no XML-style tag"
     assert len(body.splitlines()) <= 200, f"{name} body is {len(body.splitlines())} lines"
 
 
