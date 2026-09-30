@@ -778,8 +778,30 @@ def run_group(group: Group, mode: str = "") -> bool:
     return all(run(command, group.env) for command in group.steps)
 
 
+NO_TOOLS = "nothing beyond uv"
+"""What a row that fetches nothing says it needs, because an empty cell reads as a gap."""
+
+PLATFORM_NAMES = {LINUX: "Linux", MACOS: "macOS", WINDOWS: "Windows"}
+"""The runners as the words a contributor uses rather than the labels GitHub uses."""
+
+
+def summary(group: Group) -> tuple[str, str, str, str]:
+    """A row's first check with how many follow it, what it needs, where it runs and when it gates.
+
+    The table below and the one `build_contributing.py` writes into CONTRIBUTING.md are two renderings
+    of these four facts, so a person reading either reads the same row.
+    """
+    more = f", and {len(group.commands) - 1} more" if len(group.commands) > 1 else ""
+    return (
+        f"`{shell(group.commands[0])}`{more}",
+        ", ".join(group.tools) or NO_TOOLS,
+        ", ".join(PLATFORM_NAMES[runner] for runner in group.runners),
+        ", ".join(group.when),
+    )
+
+
 def table() -> str:
-    """Every group with its first step, what it needs and the job that calls it.
+    """Every group with its first check, what it needs and the job that calls it.
 
     No wall time is printed. A time typed into this table was a number nothing checked, and every one
     that was measured against CI was wrong by a factor of two or more, so the time a group takes is
@@ -787,15 +809,10 @@ def table() -> str:
     """
     rows = []
     for group in GROUPS:
-        steps = group.steps
-        more = f" and {len(steps) - 1} more" if len(steps) > 1 else ""
-        needs = ", ".join(group.tools) or "nothing beyond uv"
+        runs, needs, where, when = summary(group)
         rows.append(
-            f"  {group.name}\n"
-            f"      {shell(steps[0])}{more}\n"
-            f"      needs {needs} on {', '.join(group.runners)}, "
-            f"gates on {', '.join(group.when)}, run by ci / run ({group.name})\n"
-            f"      {group.why}"
+            f"  {group.name}\n      {runs}\n      needs {needs} on {where}, gates on {when}, "
+            f"run in ci as {group.name} (runner, python)\n      {group.why}"
         )
     return "\n".join(rows)
 

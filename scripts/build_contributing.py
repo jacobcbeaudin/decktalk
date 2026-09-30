@@ -125,25 +125,10 @@ def render_tree() -> str:
     return "\n".join(lines)
 
 
-def runner_names(runners: tuple[str, ...]) -> str:
-    """The runners of one row, as the words a contributor uses rather than the labels GitHub uses."""
-    words = {"ubuntu-latest": "Linux", "macos-latest": "macOS", "windows-latest": "Windows"}
-    return ", ".join(words.get(name, name) for name in runners)
-
-
-NO_TOOLS = "nothing beyond uv"
-"""What the Needs column says for a group that fetches nothing, because an empty cell reads as a gap."""
-
-
 def render_checks() -> str:
     """The check table as a Markdown table, one row per entry of `GROUPS`."""
     lines = ["| Group | What it runs | Needs | Where | Gates on |", "|---|---|---|---|---|"]
-    for group in check.GROUPS:
-        more = f", and {len(group.commands) - 1} more" if len(group.commands) > 1 else ""
-        lines.append(
-            f"| `{group.name}` | `{check.shell(group.commands[0])}`{more} | {', '.join(group.tools) or NO_TOOLS} | "
-            f"{runner_names(group.runners)} | {', '.join(group.when)} |"
-        )
+    lines += [f"| `{group.name}` | {' | '.join(check.summary(group))} |" for group in check.GROUPS]
     return "\n".join(lines)
 
 
