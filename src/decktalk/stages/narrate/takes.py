@@ -24,11 +24,11 @@ from pathlib import Path
 from decktalk.artifacts import Take, Takes, Words, take_file, words_file
 from decktalk.events import TakeCharged
 from decktalk.inputs import Inputs
-from decktalk.inputs.script import PUNCT, Segment
+from decktalk.inputs.script import Segment
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.results import Word
-from decktalk.speech import SpeechProvider, SpeechRequest
+from decktalk.speech import PUNCT, SpeechProvider, SpeechRequest
 from decktalk.stages import SECOND_DIGITS, dollars_for
 from decktalk.stages.narrate.plan import TakePlan, is_cached
 

@@ -36,6 +36,9 @@ from ..errors import InputError
 from ..results import Word
 from ..secret import Secret
 
+PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
+"""What is stripped from either end of a spoken word, so a voice's words and a placeholder's read alike."""
+
 
 @dataclass(frozen=True)
 class SpeechRequest:

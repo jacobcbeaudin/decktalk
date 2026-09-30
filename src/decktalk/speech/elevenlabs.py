@@ -22,10 +22,9 @@ from ..errors import InputError, ProviderError
 from ..results import Word
 from ..secret import Secret
 from ..settings import ALLOW_ANY_API_BASE
-from . import SpeechRequest, VoiceContext
+from . import PUNCT, SpeechRequest, VoiceContext
 from .http import post_bytes, post_json
 
-PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 ELEVENLABS_DOMAIN = "elevenlabs.io"
 
 SOUND_PATH = "/sound-generation"

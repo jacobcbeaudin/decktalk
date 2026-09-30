@@ -29,7 +29,6 @@ DIRECTION_RE = re.compile(r"\[(?![A-Z][A-Z0-9_]*\])[^\]]*\]")
 # "[pause 3]" or "[pause 2.5]": a timed pause, in seconds, in place of the default direction pause.
 PAUSE_RE = re.compile(r"\[\s*pause\s+(?P<seconds>\d+(?:\.\d+)?)\s*\]", re.IGNORECASE)
 BREAK_RE = re.compile(r'<break time="([0-9.]+)s"\s*/>')
-PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 
 
 def break_tag(seconds: float) -> str:
