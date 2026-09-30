@@ -13,6 +13,7 @@ platforms would each have to be proved on.
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -47,11 +48,11 @@ def loop(
     session.say(f"Serving {origin.result.url}")
     session.say("Watching for saves. Nothing here spends, so a voiced take goes stale rather than being replaced.")
     built = _once(session, project, skip=skip, only=only, force=force)
-    seen = _stamps(project.root)
+    seen = _stamps(project)
     try:
         while True:
             time.sleep(POLL_SECONDS)
-            fresh = _stamps(project.root)
+            fresh = _stamps(project)
             changed = [path for path, stamp in fresh.items() if seen.get(path) != stamp]
             seen = fresh
             if not changed:
@@ -144,16 +145,23 @@ def _stale(session: sessions.Session, project: Project) -> None:
         )
 
 
-def _stamps(root: Path) -> dict[Path, float]:
-    """Every file an author edits under the project, with when it was last written."""
+def _stamps(project: Project) -> dict[Path, float]:
+    """Every file an author edits under the project, with when it was last written.
+
+    The walk prunes a directory before it descends, so it never stats what `node_modules` or `.git`
+    holds. The project's own build and take folders are pruned wherever its settings put them,
+    because a build that wrote into a watched folder would start the next build without end.
+    """
+    written = {project.workspace.build.resolve(), project.workspace.takes_dir.resolve()}
     found: dict[Path, float] = {}
-    for path in root.rglob("*"):
-        if not path.is_file() or IGNORED & set(path.relative_to(root).parts):
-            continue
-        try:
-            found[path] = path.stat().st_mtime
-        except OSError:
-            continue
+    for folder, dirs, files in os.walk(project.root):
+        here = Path(folder)
+        dirs[:] = [name for name in dirs if name not in IGNORED and (here / name).resolve() not in written]
+        for name in files:
+            try:
+                found[here / name] = (here / name).stat().st_mtime
+            except OSError:
+                continue
     return found
 
 
