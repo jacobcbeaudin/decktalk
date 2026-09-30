@@ -13,13 +13,20 @@ that form is how a stage reaches its neighbour and it was invisible to this guar
 blind spot is closed by `test_every_import_target_resolves_to_a_ranked_module`, which fails on a
 target that no longer exists, because an import of a deleted module used to pass the rank comparison
 by being unrankable rather than by being allowed.
+
+The ranks hold between packages and say nothing inside one, so two modules of one package could
+import each other and pass. The imports are also read as a graph of modules, and that graph has no
+cycle at all, however far round it goes.
 """
 
 from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
+
+import rustworkx as rx
 
 from support.paths import REPO
 
@@ -182,6 +189,21 @@ def edges() -> list[Edge]:
     return out
 
 
+def module_graph() -> rx.PyDiGraph:
+    """Every import between two modules of decktalk as a graph, each edge carrying the import it stands for.
+
+    A module's import of a package it lives inside is left out, because Python has begun that
+    package before it runs any module in it, so that edge can never be the one that finds a module
+    half made.
+    """
+    graph = rx.PyDiGraph()
+    index = {name: graph.add_node(name) for name in sorted(module_names())}
+    for edge in edges():
+        if edge.target in index and edge.source != edge.target and not edge.source.startswith(f"{edge.target}."):
+            graph.add_edge(index[edge.source], index[edge.target], edge)
+    return graph
+
+
 def unit(module: str) -> str:
     """The top-level module or package a dotted path belongs to."""
     return module.split(".", 1)[0]
@@ -243,6 +265,32 @@ def test_no_import_points_up_a_layer_or_sideways_within_one():
             f"{edge.target} ({target_layer}, rank {target_rank})"
         )
     assert not bad, "\n".join(sorted(set(bad)))
+
+
+def test_no_module_imports_itself_back_however_far_round():
+    """A cycle is a module that may be read half made, and the ranks cannot see one inside a package."""
+    graph = module_graph()
+    cycles = [
+        " -> ".join(graph.get_edge_data(a, b).where for a, b in pairwise([*cycle, cycle[0]]))
+        for cycle in rx.simple_cycles(graph)
+    ]
+    assert not cycles, "\n".join(sorted(cycles))
+
+
+def test_the_cycle_check_sees_a_cycle_inside_one_package():
+    """The check above is worth its name only if it fails on the cycle the ranks let through.
+
+    One import between two modules of one package is turned round and added, which is a cycle the
+    rank comparison skips because both ends share a package.
+    """
+    graph = module_graph()
+    source, target = next(
+        (a, b)
+        for a, b, edge in graph.weighted_edge_list()
+        if unit(edge.source) == unit(edge.target) and not edge.target.startswith(f"{edge.source}.")
+    )
+    graph.add_edge(target, source, Edge(graph[target], graph[source], 1))
+    assert not rx.is_directed_acyclic_graph(graph)
 
 
 def test_no_stage_imports_another_stage_but_the_ones_that_run_the_others():

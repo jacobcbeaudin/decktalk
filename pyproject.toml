@@ -113,6 +113,9 @@ dev = [
     # `ci.yml` against the check table, so both read YAML as the YAML it is rather than search it as text.
     "pyyaml>=6",
     "ruff>=0.16.8",
+    # `contract/test_imports.py` reads every import as a graph and asks it for its cycles, which is a
+    # graph algorithm rather than a loop the test should carry. It never reaches the wheel.
+    "rustworkx>=0.17",
     "ty>=0.0.83",
 ]
 
