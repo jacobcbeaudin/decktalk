@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import InputError, NotBuiltError
+from decktalk.events import Log, StageDone, StageStart
 from decktalk.findings import Certainty, Code, Finding, Location
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
@@ -262,10 +263,10 @@ def test_skip_removes_a_stage_the_span_would_have_run(inputs: Inputs, watched: W
 def test_a_skipped_stage_still_reports_that_it_ended(inputs: Inputs, watched: Watched) -> None:
     """A renderer meets every stage of the pipeline exactly once, whether or not the run performed it."""
     build(inputs, watched.run, stages=[Stage.NARRATE])
-    ended = watched.of("stage.done")
-    assert [line.stage for line in ended] == list(Stage)  # type: ignore[attr-defined]
-    assert [line.stage for line in watched.of("stage.start")] == [Stage.NARRATE]  # type: ignore[attr-defined]
-    skipped = [line for line in ended if line.outcome is Outcome.SKIPPED]  # type: ignore[attr-defined]
+    ended = watched.of(StageDone)
+    assert [line.stage for line in ended] == list(Stage)
+    assert [line.stage for line in watched.of(StageStart)] == [Stage.NARRATE]
+    skipped = [line for line in ended if line.outcome is Outcome.SKIPPED]
     assert len(skipped) == len(Stage) - 1
 
 
@@ -386,7 +387,7 @@ def test_a_run_that_stops_says_so_in_a_sentence(
     """The stream says which stage stopped the run and how many findings did it, counted in words."""
     answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
     build(inputs, watched.run)
-    said = [line.message for line in watched.of("log")]  # type: ignore[attr-defined]
+    said = [line.message for line in watched.of(Log)]
     assert said == ["Cue made 1 finding that the build stops on, so the build stopped before record rather "
                     "than carry it into the film."]  # fmt: skip
     assert "(s)" not in said[0]
@@ -554,8 +555,8 @@ def test_an_unchanged_build_keeps_assemble_and_verify(
     assert result.film == Path("build/final/t.mp4")
     # What verify found is still true of the film, so the kept run reports it again.
     assert [found.code for found in result.findings] == [Code.CUE_OFF]
-    kept = [line for line in again.of("stage.done") if line.outcome is Outcome.KEPT]  # type: ignore[attr-defined]
-    assert [line.stage for line in kept] == [Stage.ASSEMBLE, Stage.VERIFY]  # type: ignore[attr-defined]
+    kept = [line for line in again.of(StageDone) if line.outcome is Outcome.KEPT]
+    assert [line.stage for line in kept] == [Stage.ASSEMBLE, Stage.VERIFY]
 
 
 def test_every_kept_or_remade_stage_says_why(

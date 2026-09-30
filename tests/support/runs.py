@@ -48,9 +48,9 @@ class Watched:
     run: Run
     lines: list[Event] = field(default_factory=list)
 
-    def of(self, event: str) -> list[Event]:
-        """Every line of one kind, in the order the stage emitted them."""
-        return [line for line in self.lines if line.event == event]
+    def of[E: Event](self, kind: type[E]) -> list[E]:
+        """Every line of one kind, in the order the stage emitted them, typed as that kind."""
+        return [line for line in self.lines if isinstance(line, kind)]
 
 
 def notes(run: Run) -> list[str]:

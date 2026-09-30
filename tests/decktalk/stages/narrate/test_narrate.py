@@ -9,7 +9,7 @@ import pytest
 
 from decktalk.artifacts import Takes, take_file, words_file
 from decktalk.errors import ApprovalRequired, InputError, ProviderError
-from decktalk.events import Unit
+from decktalk.events import Progress, SectionStart, SpendEvent, TakeCharged, Unit
 from decktalk.inputs import Inputs
 from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SpendState, TakeStatus, Voicing, Word
@@ -144,12 +144,12 @@ def test_the_run_reports_one_take_at_a_time(
     project = one_at_a_time(make_inputs)
     watched = make_run(project)
     placeholder(project, watched)
-    lines = watched.of("progress")
-    assert [line.done for line in lines] == [1, 2, 3]  # type: ignore[attr-defined]
-    assert {line.total for line in lines} == {3}  # type: ignore[attr-defined]
-    assert {line.unit for line in lines} == {Unit.TAKE}  # type: ignore[attr-defined]
-    assert {line.stage for line in lines} == {Stage.NARRATE}  # type: ignore[attr-defined]
-    assert [line.section for line in watched.of("section.start")] == [1, 2, 3]  # type: ignore[attr-defined]
+    lines = watched.of(Progress)
+    assert [line.done for line in lines] == [1, 2, 3]
+    assert {line.total for line in lines} == {3}
+    assert {line.unit for line in lines} == {Unit.TAKE}
+    assert {line.stage for line in lines} == {Stage.NARRATE}
+    assert [line.section for line in watched.of(SectionStart)] == [1, 2, 3]
 
 
 def test_a_paid_run_sends_one_request_per_section_and_reports_what_it_charged(
@@ -157,14 +157,14 @@ def test_a_paid_run_sends_one_request_per_section_and_reports_what_it_charged(
 ) -> None:
     watched = make_run(inputs, voice=Voicing.PAID)
     result = narrate(inputs, watched.run)
-    assert len(fake_voice.requests) == 3  # type: ignore[attr-defined]
+    assert len(fake_voice.requests) == 3
     assert {row.status for row in result.sections} == {TakeStatus.VOICED}
     assert result.spend.state is SpendState.CHARGED
     assert result.spend.sections == (1, 2, 3)
     assert result.spend.dollars > 0
-    charged = watched.of("take.charged")
-    assert sorted(line.section for line in charged) == [1, 2, 3]  # type: ignore[attr-defined]
-    assert sum(line.characters for line in charged) == result.spend.characters  # type: ignore[attr-defined]
+    charged = watched.of(TakeCharged)
+    assert sorted(line.section for line in charged) == [1, 2, 3]
+    assert sum(line.characters for line in charged) == result.spend.characters
 
 
 def test_a_take_the_run_found_on_disk_is_never_charged(
@@ -175,7 +175,7 @@ def test_a_take_the_run_found_on_disk_is_never_charged(
     narrate(inputs, make_run(inputs, voice=Voicing.PAID).run)
     again = make_run(inputs, voice=Voicing.PAID)
     narrate(inputs, again.run)
-    assert again.of("take.charged") == []
+    assert again.of(TakeCharged) == []
 
 
 def test_a_paid_request_carries_the_published_voice_and_its_neighbours(
@@ -183,7 +183,7 @@ def test_a_paid_request_carries_the_published_voice_and_its_neighbours(
 ) -> None:
     project = one_at_a_time(make_inputs)
     narrate(project, make_run(project, voice=Voicing.PAID).run)
-    sent: list[SpeechRequest] = fake_voice.requests  # type: ignore[attr-defined]
+    sent: list[SpeechRequest] = fake_voice.requests
     assert {request.voice_id for request in sent} == {"voice-under-test"}
     assert sent[0].previous_text is None
     assert sent[0].next_text == "It steps down the bowl."
@@ -195,10 +195,10 @@ def test_the_price_is_approved_before_anything_is_sent(
 ) -> None:
     watched = make_run(inputs, voice=Voicing.PAID)
     narrate(inputs, watched.run)
-    priced = watched.of("spend")
+    priced = watched.of(SpendEvent)
     assert priced
-    assert priced[0].spend.state is SpendState.ESTIMATE  # type: ignore[attr-defined]
-    assert fake_voice.requests  # type: ignore[attr-defined]
+    assert priced[0].spend.state is SpendState.ESTIMATE
+    assert fake_voice.requests
 
 
 def test_a_run_over_its_ceiling_buys_nothing(
@@ -207,7 +207,7 @@ def test_a_run_over_its_ceiling_buys_nothing(
     watched = make_run(inputs, voice=Voicing.PAID, max_cost=0.001)
     with pytest.raises(ApprovalRequired):
         narrate(inputs, watched.run)
-    assert fake_voice.requests == []  # type: ignore[attr-defined]
+    assert fake_voice.requests == []
     assert not inputs.workspace.takes_path.exists()
 
 
@@ -273,7 +273,7 @@ def test_the_index_is_checkpointed_after_every_take(
     assert 1 in indexed
     assert 2 not in indexed
     # Every take that was bought is on the stream, even though the run failed after it.
-    assert sorted(line.section for line in watched.of("take.charged")) == indexed  # type: ignore[attr-defined]
+    assert sorted(line.section for line in watched.of(TakeCharged)) == indexed
 
 
 class Overlapping:
@@ -324,7 +324,7 @@ def test_sections_are_voiced_concurrently_and_reported_in_script_order(
     index = Takes.read(inputs.workspace.takes_path)
     assert index is not None
     assert [row.section for row in index.sections] == [1, 2, 3]
-    assert [line.done for line in watched.of("progress")] == [1, 2, 3]  # type: ignore[attr-defined]
+    assert [line.done for line in watched.of(Progress)] == [1, 2, 3]
 
 
 def test_a_concurrency_of_one_voices_one_section_at_a_time(
@@ -344,9 +344,9 @@ def test_two_sections_with_the_same_words_buy_one_take_under_a_pool(
     doubled = make_inputs(script="## 1. Open\n\nA bowl.\n\n## 2. Middle\n\nA bowl.\n\n## 3. Close\n\nA ball.\n")
     watched = make_run(doubled, voice=Voicing.PAID)
     result = narrate(doubled, watched.run)
-    assert len(fake_voice.requests) == 2  # type: ignore[attr-defined]
+    assert len(fake_voice.requests) == 2
     assert [row.status for row in result.sections] == [TakeStatus.VOICED, TakeStatus.KEPT, TakeStatus.VOICED]
-    assert sorted(line.section for line in watched.of("take.charged")) == [1, 3]  # type: ignore[attr-defined]
+    assert sorted(line.section for line in watched.of(TakeCharged)) == [1, 3]
 
 
 def test_a_section_that_left_the_script_leaves_the_index(

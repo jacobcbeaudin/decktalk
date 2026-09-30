@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from decktalk.artifacts import Takes, Words, take_file, words_file
+from decktalk.events import TakeCharged
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.media import audio
@@ -95,7 +96,7 @@ def test_a_voiced_take_writes_what_the_provider_answered(
     assert (inputs.workspace.takes_dir / take_file("00000000000000af")).read_bytes() == b"take"
     assert row.voiced is True
     assert row.speech_end_seconds == pytest.approx(1.0)
-    assert fake_voice.requests == [request]  # type: ignore[attr-defined]
+    assert fake_voice.requests == [request]
     assert len(written) == 2
 
 
@@ -107,11 +108,11 @@ def test_a_voiced_take_is_charged_on_the_stream_once(
     (segment,) = [s for s in inputs.spoken() if s.index == 1]
     request = SpeechRequest(text=segment.tts_text, voice_id=VOICE_ID, model="m")
     write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)  # type: ignore[arg-type]
-    (charged,) = watched.of("take.charged")
-    assert charged.section == 1  # type: ignore[attr-defined]
-    assert charged.take == "00000000000000af"  # type: ignore[attr-defined]
-    assert charged.characters == len(segment.tts_text)  # type: ignore[attr-defined]
-    assert charged.dollars == pytest.approx(len(segment.tts_text) / 1000 * 0.30)  # type: ignore[attr-defined]
+    (charged,) = watched.of(TakeCharged)
+    assert charged.section == 1
+    assert charged.take == "00000000000000af"
+    assert charged.characters == len(segment.tts_text)
+    assert charged.dollars == pytest.approx(len(segment.tts_text) / 1000 * 0.30)
 
 
 def test_the_narration_is_joined_in_the_order_the_index_holds(
