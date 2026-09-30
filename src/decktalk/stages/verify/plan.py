@@ -163,12 +163,11 @@ def probe_plan(
     if not any(spoiled(d) for d in configured):
         return configured, False
     shortest = settings.cue_offset_max_ms / MILLISECONDS + 1.0 / fps
-    delays: list[float] = []
-    for delay in configured:
-        fit = delay if not spoiled(delay) else _fitted(delay, cue_at, before, others, lead, fps, shortest, spoiled)
-        if fit is not None and round(fit, 4) not in delays:
-            delays.append(round(fit, 4))
-    return (sorted(delays), True) if delays else (configured, False)
+    fits = (
+        d if not spoiled(d) else _fitted(d, cue_at, before, others, lead, fps, shortest, spoiled) for d in configured
+    )
+    delays = sorted({round(fit, 4) for fit in fits if fit is not None})
+    return (delays, True) if delays else (configured, False)
 
 
 def _fitted(

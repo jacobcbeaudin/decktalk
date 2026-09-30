@@ -192,11 +192,7 @@ def _assemble_reads(inputs: Inputs) -> list[Path]:
     named += [inputs.root / served for served in inputs.served_paths()]
     named += [workspace.takes_path, workspace.narration_path, workspace.cue_times_path]
     named += [workspace.recordings_dir, workspace.soundscape_dir]
-    files: dict[Path, None] = {}
-    for path in named:
-        for found in _files(path):
-            files[found] = None
-    return sorted(files, key=lambda path: path.as_posix())
+    return sorted({found for path in named for found in _files(path)}, key=lambda path: path.as_posix())
 
 
 def _files(path: Path) -> list[Path]:

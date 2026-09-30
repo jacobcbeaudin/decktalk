@@ -402,12 +402,9 @@ def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
     """What the whole run cost, which is every stage that priced anything added together."""
     if not spends:
         return narrate.spend_of([], inputs, state=SpendState.ESTIMATE)
-    sections: list[int] = []
-    for spend in spends:
-        sections += [number for number in spend.sections if number not in sections]
     return Spend(
         state=SpendState.CHARGED if any(s.state is SpendState.CHARGED for s in spends) else SpendState.ESTIMATE,
-        sections=tuple(sorted(sections)),
+        sections=tuple(sorted({number for spend in spends for number in spend.sections})),
         characters=sum(spend.characters for spend in spends),
         dollars=round(sum(spend.dollars for spend in spends), DOLLAR_DIGITS),
         ceiling_dollars=round(sum(spend.ceiling_dollars for spend in spends), DOLLAR_DIGITS),
