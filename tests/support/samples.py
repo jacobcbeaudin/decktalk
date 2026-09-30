@@ -44,7 +44,7 @@ class Filler:
         self.count = itertools.count(1)
         self.members: set[object] = set()
 
-    def model(self, model: type[BaseModel]) -> BaseModel:
+    def model[M: BaseModel](self, model: type[M]) -> M:
         """One instance of a model with every field filled, and each optional one only when `every` is asked."""
         return model(
             **{
@@ -113,7 +113,7 @@ class Filler:
         return self.text(name)
 
 
-def sample(model: type[BaseModel], *, every: bool = False) -> BaseModel:
+def sample[M: BaseModel](model: type[M], *, every: bool = False) -> M:
     """One instance of a model with every field filled, built from the field types alone.
 
     An optional field is left out unless `every` is asked for, which fills it with a value of the

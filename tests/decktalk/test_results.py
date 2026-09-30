@@ -76,7 +76,7 @@ def test_an_elapsed_time_is_read_to_the_millisecond() -> None:
 
 def test_every_model_uses_the_one_config() -> None:
     for model in models():
-        assert {key: model.model_config[key] for key in findings.MODEL} == dict(findings.MODEL), model.__name__
+        assert findings.MODEL.items() <= model.model_config.items(), model.__name__
 
 
 def test_every_field_publishes_one_sentence() -> None:
@@ -115,7 +115,7 @@ def test_every_path_is_written_with_forward_slashes() -> None:
 def test_a_result_is_frozen() -> None:
     built = sample(RESULTS["status"])
     with pytest.raises(Exception, match="frozen"):
-        built.ok = False  # type: ignore[misc]
+        built.ok = False
 
 
 @pytest.mark.parametrize("generator", ["build_result_schemas.py", "build_api.py"])
