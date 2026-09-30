@@ -400,23 +400,13 @@ class Events:
                 self.emit(event.run, Log, level=Level.ERROR, message=message)
 
 
-KEPT_PAST_THE_BOUND = frozenset(
-    (
-        "run.start",
-        "run.done",
-        "stage.start",
-        "stage.done",
-        "section.start",
-        "section.done",
-        "finding",
-        "spend",
-        "take.charged",
-    )
-)
-"""The lines a bounded file always keeps: the run's own shape, its judgements and every dollar it spent.
+DROPPED_PAST_THE_BOUND = (Progress, Fetch, Log)
+"""The lines a bounded file may leave out, which are the ones the tools a run called can multiply.
 
-Each of them is bounded by the stages and sections of the run rather than by the tools it called, and
-the money lines are the ledger a host bills from, so none of them is ever left out.
+Every other line is the run's own shape, a judgement or a dollar it spent, which is bounded by the
+stages and sections of the run and is the ledger a host bills from, so it is always written. The
+list names what may go rather than what stays, so a moment added later is kept until someone
+decides otherwise.
 """
 
 LOUD = frozenset((Level.WARNING, Level.ERROR))
@@ -436,7 +426,7 @@ class JsonlSink:
     One file per run, never truncated, so a watch loop running beside a build by hand cannot
     overwrite what the other is writing. `max_bytes` bounds the file: once it is reached, progress,
     fetch, debug and info lines are left out and counted, warnings and errors follow them past
-    `LOUD_HEADROOM` times the bound, and the lines in `KEPT_PAST_THE_BOUND` are always written.
+    `LOUD_HEADROOM` times the bound, and every line not in `DROPPED_PAST_THE_BOUND` is always written.
     """
 
     def __init__(self, path: Path, *, max_bytes: int | None = None) -> None:
@@ -450,7 +440,7 @@ class JsonlSink:
 
     def _keeps(self, event: Event) -> bool:
         """Whether this line is written, given how much of the bound the file has already used."""
-        if self.max_bytes is None or self.written < self.max_bytes or event.event in KEPT_PAST_THE_BOUND:
+        if self.max_bytes is None or self.written < self.max_bytes or not isinstance(event, DROPPED_PAST_THE_BOUND):
             return True
         loud = isinstance(event, Log) and event.level in LOUD
         return loud and self.written < self.max_bytes * LOUD_HEADROOM
