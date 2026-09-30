@@ -6,19 +6,20 @@ import inspect
 import socket
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, cast, get_args
 
 import pytest
+from playwright.sync_api import Browser, BrowserContext, Page
 from playwright.sync_api import Error as PlaywrightError
 
 from decktalk.errors import Cancelled, InputError, ToolError
 from decktalk.media import browser
 from decktalk.media.environment import child_environment
-from decktalk.media.origin import ORIGIN, Allowed, page_url
+from decktalk.media.origin import ORIGIN, Allowed, Assets, page_url
 from decktalk.settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 from support.fakes import BareBrowser, FakeChromium
 from support.logs import data_of
@@ -68,7 +69,11 @@ class FakePage:
         self.presented: list[float] = []  # what this machine answers the bias measurement with
         self.video = FakeVideo(context.directory / "page.webm")
 
-    def on(self, event: str, handler: object) -> None:
+    def page(self) -> Page:
+        """This page as the Playwright page it stands in for."""
+        return cast("Page", self)
+
+    def on(self, event: str, handler: Callable[[Said], object]) -> None:
         self.context.handlers.append((event, handler))
 
     def goto(self, url: str, **_kwargs: object) -> None:
@@ -76,9 +81,9 @@ class FakePage:
         for event, handler in self.context.handlers:
             if event == "console":
                 for line in self.context.said:
-                    handler(line)  # type: ignore[operator]
+                    handler(line)
 
-    def evaluate(self, script: str) -> object:
+    def evaluate(self, script: str, /) -> object:
         self.scripts.append(script)
         if browser.REPORT_JS in script:
             return dict(REPORTED)
@@ -89,7 +94,7 @@ class FakePage:
     def set_content(self, html: str) -> None:
         self.html = html
 
-    def wait_for_timeout(self, _ms: float) -> None:
+    def wait_for_timeout(self, _ms: float, /) -> None:
         """A recorder waits in real time and a test does not, so this passes the time by not spending it."""
 
     def screenshot(self, *, path: str) -> None:
@@ -105,9 +110,13 @@ class FakeContext:
         self.said = said  # what every page of this context writes to its console once it has loaded
         self.scripts: list[str] = []
         self.routes: list[str] = []
-        self.handlers: list[tuple[str, object]] = []
+        self.handlers: list[tuple[str, Callable[[Said], object]]] = []
         self.page: FakePage | None = None
         self.closed = False
+
+    def context(self) -> BrowserContext:
+        """This context as the Playwright context it stands in for."""
+        return cast("BrowserContext", self)
 
     def add_init_script(self, script: str) -> None:
         self.scripts.append(script)
@@ -131,6 +140,10 @@ class FakeBrowser:
         self.said = said
         self.contexts: list[FakeContext] = []
         self.asked: list[dict[str, object]] = []  # what each context was opened with
+
+    def browser(self) -> Browser:
+        """This browser as the Playwright browser it stands in for."""
+        return cast("Browser", self)
 
     def new_context(self, **kwargs: object) -> FakeContext:
         self.asked.append(kwargs)
@@ -173,7 +186,13 @@ def record(
     }
     allowed = Allowed.of(tmp_path, ["deck"])
     return browser.record_page(
-        fake or FakeBrowser(), page_url("deck/index.html"), seconds, out, allowed=allowed, log_sink=sink, **options
+        (fake or FakeBrowser()).browser(),
+        page_url("deck/index.html"),
+        seconds,
+        out,
+        allowed=allowed,
+        log_sink=sink,
+        **options,
     )
 
 
@@ -231,7 +250,7 @@ def test_the_temporary_directory_and_the_context_go_however_the_recording_ends(t
     allowed = Allowed.of(tmp_path, ["deck"])
     with pytest.raises(PlaywrightError):
         with browser.capturing(
-            fake, allowed, width=960, height=540, color_scheme="dark", motion=MotionConfig()
+            fake.browser(), allowed, width=960, height=540, color_scheme="dark", motion=MotionConfig()
         ) as capture:
             directory = capture.directory
             assert directory.is_dir()
@@ -247,7 +266,12 @@ def test_a_browser_that_will_not_do_something_is_a_tool_failure_and_not_a_bug(tm
 
     with pytest.raises(ToolError) as raised:
         with browser.capturing(
-            Refuses(), Allowed.of(tmp_path, []), width=960, height=540, color_scheme="dark", motion=MotionConfig()
+            Refuses().browser(),
+            Allowed.of(tmp_path, []),
+            width=960,
+            height=540,
+            color_scheme="dark",
+            motion=MotionConfig(),
         ):
             pytest.fail("the context opened after all")
     assert str(raised.value).startswith("could not open a recording context (Browser closed")
@@ -265,26 +289,30 @@ def test_every_call_into_the_page_carries_a_deadline(tmp_path):
         assert f"{browser.DEADLINE_SECONDS * 1000:.0f}" in script, script
 
 
-def test_a_call_the_page_never_answered_is_a_tool_failure():
-    class Hangs(FakePage):
-        def evaluate(self, _script: str) -> object:
-            raise PlaywrightError("Error: the page did not answer within 15 seconds")
+class Hangs(FakePage):
+    """A page every call into fails the way Playwright fails it, with `said`."""
 
-    page = Hangs(FakeContext(Path(".")))
+    def __init__(self, said: str) -> None:
+        super().__init__(FakeContext(Path(".")))
+        self.said = said
+
+    def evaluate(self, _script: str, /) -> object:
+        raise PlaywrightError(self.said)
+
+
+UNANSWERED = "Error: the page did not answer within 15 seconds"
+
+
+def test_a_call_the_page_never_answered_is_a_tool_failure():
     with pytest.raises(ToolError) as raised:
-        browser.evaluate(page, browser.REPORT_JS)
+        browser.evaluate(Hangs(UNANSWERED).page(), browser.REPORT_JS)
     assert str(raised.value).startswith("the page could not answer")
 
 
 def test_a_page_that_answers_neither_ready_nor_painted_is_taken_as_it_stands_and_says_so(caplog):
     """Both waits carry on rather than fail a frame, so the log is where a mistimed frame is explained."""
-
-    class Hangs(FakePage):
-        def evaluate(self, _script: str) -> object:
-            raise PlaywrightError("Error: the page did not answer within 15 seconds")
-
     with caplog.at_level("DEBUG", logger="decktalk.media.browser"):
-        browser.await_painted(Hangs(FakeContext(Path("."))))  # type: ignore[arg-type]
+        browser.await_painted(Hangs(UNANSWERED).page())
     said = [record.getMessage() for record in caplog.records if record.name == "decktalk.media.browser"]
     assert len(said) == 2
     assert "did not answer __dtprobe.ready()" in said[0] and "painted no frame" in said[1]
@@ -302,11 +330,7 @@ def test_a_context_the_recording_already_closed_is_passed_over_and_logged(caplog
 
 
 def test_a_page_that_cannot_report_leaves_a_report_that_says_so():
-    class Hangs(FakePage):
-        def evaluate(self, _script: str) -> object:
-            raise PlaywrightError("Execution context was destroyed")
-
-    report = browser.read_report(Hangs(FakeContext(Path("."))), "01")
+    report = browser.read_report(Hangs("Execution context was destroyed").page(), "01")
     assert report.warnings == () and report.unreadable
 
 
@@ -513,7 +537,8 @@ def test_an_untrusted_page_gets_the_sandbox_a_proxy_that_answers_nothing_and_no_
     asked = chromium.asked[0]
     assert asked["chromium_sandbox"] is True
     assert asked["proxy"] == {"server": browser.DEAD_PROXY, "bypass": browser.EVERY_HOST}
-    assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in asked["args"]  # type: ignore[operator]
+    args = asked["args"]
+    assert isinstance(args, list) and "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in args
 
 
 def test_a_trusted_page_keeps_the_machines_own_network_and_still_gets_a_scrubbed_environment():
@@ -542,9 +567,9 @@ def test_every_page_a_browser_opens_is_routed_by_the_policy_it_was_launched_unde
     allowed = Allowed.of(tmp_path, ["deck"])
     for policy in (browser.TRUSTED, browser.UNTRUSTED):
         with browser.chromium(policy=policy) as launched:
-            browser.open_page(launched, allowed, width=10, height=10)  # type: ignore[arg-type]
+            browser.open_page(launched, allowed, width=10, height=10)
     # A browser this module never launched is routed as a stranger's page.
-    browser.open_page(BareBrowser(), allowed, width=10, height=10)  # type: ignore[arg-type]
+    browser.open_page(BareBrowser().browser(), allowed, width=10, height=10)
     assert seen == [True, False, False]
 
 
@@ -579,7 +604,7 @@ def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_p
     """
     launched = browser.launch_options
 
-    def unchecked(chosen: str) -> dict[str, Any]:
+    def unchecked(chosen: browser.PagePolicy) -> dict[str, Any]:
         options = launched(chosen)
         return options | {"args": [*options.get("args", []), LOCAL_NETWORK_ACCESS_OFF]}
 
@@ -667,7 +692,7 @@ def test_the_slices_of_a_wait_add_up_to_the_span_exactly():
         def wait_for_timeout(self, ms: float) -> None:
             waits.append(ms)
 
-    browser.waited(Clock(), 2.5, lambda: None)  # type: ignore[arg-type]
+    browser.waited(cast("Page", Clock()), 2.5, lambda: None)
     assert waits == [1000.0, 1000.0, 500.0]
 
 
@@ -676,11 +701,11 @@ def test_a_frozen_frame_is_taken_once_the_page_is_ready_and_has_painted_twice(tm
     waits: list[float] = []
 
     class Timed(FakePage):
-        def wait_for_timeout(self, ms: float) -> None:
+        def wait_for_timeout(self, ms: float, /) -> None:
             waits.append(ms)
 
     page = Timed(FakeContext(tmp_path))
-    browser.screenshot(page, page_url("deck/index.html"), tmp_path / "a.png")  # type: ignore[arg-type]
+    browser.screenshot(page.page(), page_url("deck/index.html"), tmp_path / "a.png")
     order = [script for script in page.scripts if browser.READY_JS in script or browser.PAINTED_JS in script]
     assert [browser.READY_JS in script for script in order] == [True, False]
     assert waits == [], "no fixed settle is spent on top of ready() and two painted frames"
@@ -688,21 +713,9 @@ def test_a_frozen_frame_is_taken_once_the_page_is_ready_and_has_painted_twice(tm
 
 def test_a_recorded_pages_own_errors_and_warnings_are_collected_and_its_chatter_is_not(tmp_path) -> None:
     """A page's console.error and console.warn are the author's diagnostics, and nothing recorded them."""
-
-    class Page:
-        def __init__(self) -> None:
-            self.handlers: dict[str, object] = {}
-
-        def on(self, event: str, handler: object) -> None:
-            self.handlers[event] = handler
-
-        def goto(self, _url: str, **_kwargs: object) -> None:
-            for kind, text in (("log", "chatter"), ("warning", "a slow font"), ("error", "no cue 2.1")):
-                self.handlers["console"](Said(kind, text))  # type: ignore[operator]
-
-    page = Page()
-    context = type("Context", (), {"new_page": lambda _self: page})()
-    capture = browser.Capture(context=context, assets=None, directory=tmp_path, opened=0.0)  # type: ignore[arg-type]
+    said = (Said("log", "chatter"), Said("warning", "a slow font"), Said("error", "no cue 2.1"))
+    context = FakeContext(tmp_path, said)
+    capture = browser.Capture(context=context.context(), assets=Assets(tmp_path), directory=tmp_path, opened=0.0)
     console: list[tuple[str, str]] = []
     capture.open("http://project.localhost/deck/", [], console)
     assert console == [("warning", "a slow font"), ("error", "no cue 2.1")]
