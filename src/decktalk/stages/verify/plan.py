@@ -24,6 +24,7 @@ from decktalk.inputs import Inputs
 from decktalk.media import MILLISECONDS
 from decktalk.media.frames import Size
 from decktalk.settings import NUMBERS_BY_ID, Settings, VerifyConfig
+from decktalk.stages import selects
 
 EPSILON = 1e-6
 """Truth: the slack two measured seconds need to compare equal, which is far under one frame."""
@@ -220,10 +221,10 @@ def default_checks(cue_times: CueTimes | None, only: Sequence[int] | None = None
     """Every resolved cue as (section number, cue id), in section order and then cue time."""
     if cue_times is None:
         return []
-    wanted = set(only or ())
+    wanted = selects(only)
     checks: list[tuple[int, str]] = []
     for block in sorted(cue_times.sections, key=lambda row: row.section):
-        if wanted and block.section not in wanted:
+        if not wanted(block.section):
             continue
         times = cue_times.times(block.section)
         checks += [(block.section, cue) for cue, _at in sorted(times.items(), key=lambda item: item[1])]
