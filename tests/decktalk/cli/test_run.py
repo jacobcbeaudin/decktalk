@@ -26,13 +26,14 @@ from decktalk.results import (
     VerifyResult,
     Voicing,
 )
+from support.spends import a_spend
 
-from .conftest import ANSWERS, Fake, finding, spend
+from .conftest import ANSWERS, Fake, finding
 
-NARRATE = NarrateResult(ok=True, run="r", voice=Voicing.PLACEHOLDER, sections=(), spend=spend(), seconds=1.0)
+NARRATE = NarrateResult(ok=True, run="r", voice=Voicing.PLACEHOLDER, sections=(), spend=a_spend(), seconds=1.0)
 CUE = CueResult(ok=True, run="r", sections=(), seconds=1.0)
 RECORD = RecordResult(ok=True, run="r", sections=(), seconds=1.0)
-SOUNDSCAPE = SoundscapeResult(ok=True, run="r", items=(), spend=spend(), seconds=1.0)
+SOUNDSCAPE = SoundscapeResult(ok=True, run="r", items=(), spend=a_spend(), seconds=1.0)
 ASSEMBLE = AssembleResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, sections=(), seconds=1.0)
 VERIFY = VerifyResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, seconds=1.0)
 MOVING = {

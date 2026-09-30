@@ -13,6 +13,7 @@ from decktalk import errors, events, findings, results
 from decktalk.results import RESULTS, Result
 from support.paths import REPO
 from support.samples import sample
+from support.spends import a_spend
 
 RESERVED = ("schema", "ok", "findings", "error")
 
@@ -162,26 +163,13 @@ def test_the_committed_schemas_and_api_are_what_their_generator_writes(generator
     assert done.returncode == 0, done.stdout + done.stderr
 
 
-def _spend(dollars: float, ceiling: float, *, state: results.SpendState = results.SpendState.ESTIMATE) -> results.Spend:
-    """A price as a stage states one, at thirty cents a thousand characters."""
-    return results.Spend(
-        state=state,
-        sections=(1,),
-        characters=int(dollars / 0.30 * 1000),
-        dollars=dollars,
-        ceiling_dollars=ceiling,
-        price_per_1000_characters=0.30,
-        price_layer=results.Layer.PROJECT,
-    )
-
-
 def test_a_price_that_is_certain_is_stated_once() -> None:
-    assert _spend(0.14, 0.14).sentence == "This run costs $0.14 for 466 characters at $0.30 per 1,000 characters."
+    assert a_spend(0.14, 0.14).sentence == "This run costs $0.14 for 466 characters at $0.30 per 1,000 characters."
 
 
 def test_a_price_the_cache_could_not_check_is_stated_as_a_ceiling() -> None:
     """The smoke test read "about $0.00, up to $0.14" as a contradiction, so the ceiling says why it is one."""
-    said = _spend(0.0, 0.14).sentence
+    said = a_spend(0.0, 0.14).sentence
     assert said == (
         "The takes on disk could not be matched to a voice, so this run costs up to $0.14 at $0.30 per 1,000 "
         "characters."
@@ -190,15 +178,15 @@ def test_a_price_the_cache_could_not_check_is_stated_as_a_ceiling() -> None:
 
 
 def test_a_price_with_a_certain_part_and_a_ceiling_names_both() -> None:
-    said = _spend(0.03, 0.18).sentence
+    said = a_spend(0.03, 0.18).sentence
     assert "$0.03 for the sections that certainly need a take" in said
     assert "up to $0.18" in said
 
 
 def test_a_charged_price_is_stated_as_spent() -> None:
-    charged = _spend(0.14, 0.14, state=results.SpendState.CHARGED)
+    charged = a_spend(0.14, 0.14, state=results.SpendState.CHARGED)
     assert charged.sentence.startswith("This run spent $0.14")
 
 
 def test_a_price_of_nothing_says_the_run_buys_nothing() -> None:
-    assert _spend(0.0, 0.0).sentence == "This run buys nothing."
+    assert a_spend(0.0, 0.0).sentence == "This run buys nothing."

@@ -44,7 +44,7 @@ from decktalk.media.environment import child_environment
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.project import open as open_project
-from decktalk.results import FixOutcome, Layer, Scope, Spend, SpendState, StatusResult, Voicing
+from decktalk.results import FixOutcome, Layer, Scope, StatusResult, Voicing
 from decktalk.settings import BY_ID, ToolsConfig
 from decktalk.speech import VoiceContext, get_provider
 from decktalk.toolchain import assets, command_line
@@ -54,21 +54,9 @@ from support.links import link
 from support.logs import data_of
 from support.paths import REPO
 from support.runs import a_machine
+from support.spends import a_spend
 
 from .conftest import FakeVoice
-
-
-def spend(dollars: float, ceiling: float, *, layer: Layer = Layer.PROJECT) -> Spend:
-    return Spend(
-        state=SpendState.ESTIMATE,
-        sections=(1,),
-        characters=1000,
-        dollars=dollars,
-        ceiling_dollars=ceiling,
-        price_per_1000_characters=0.3,
-        price_layer=layer,
-    )
-
 
 # ---- the one reader of the environment -------------------------------------------------------
 
@@ -369,7 +357,7 @@ def test_a_certain_judgement_is_what_makes_a_result_not_ok(tmp_path: Path) -> No
 def test_nothing_is_bought_without_a_paid_voicing(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     with here.run() as run, pytest.raises(ApprovalRequired) as refused:
-        run.approve(spend(0.42, 0.42))
+        run.approve(a_spend(0.42, 0.42))
     assert refused.value.code is ErrorCode.APPROVAL
     assert "--spend" in (refused.value.hint or "")
 
@@ -377,7 +365,7 @@ def test_nothing_is_bought_without_a_paid_voicing(tmp_path: Path) -> None:
 def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_path: Path) -> None:
     """A run whose certain part is zero must not be said to spend $0.00, which its ceiling contradicts."""
     here = a_machine(tmp_path)
-    unmatched = spend(0.0, 0.3)
+    unmatched = a_spend(0.0, 0.3)
     with here.run() as run, pytest.raises(ApprovalRequired) as unvoiced:
         run.approve(unmatched)
     with here.run(voice=Voicing.PAID, max_cost=0.1) as run, pytest.raises(ApprovalRequired) as capped:
@@ -390,21 +378,21 @@ def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_p
 def test_a_paid_run_inside_its_ceiling_goes_through(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     with here.run(voice=Voicing.PAID, max_cost=1.0) as run:
-        assert run.approve(spend(0.42, 0.9)).dollars == 0.42
+        assert run.approve(a_spend(0.42, 0.9)).dollars == 0.42
 
 
 def test_the_ceiling_is_compared_against_the_most_a_run_can_cost(tmp_path: Path) -> None:
     """Credits go one request at a time, so a cap that stopped a run halfway would be a lie."""
     here = a_machine(tmp_path)
     with here.run(voice=Voicing.PAID, max_cost=0.5) as run, pytest.raises(ApprovalRequired) as refused:
-        run.approve(spend(0.42, 0.9))
+        run.approve(a_spend(0.42, 0.9))
     assert "0.90" in str(refused.value)
 
 
 def test_a_cap_is_refused_while_nobody_has_stated_the_price(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     with here.run(voice=Voicing.PAID, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
-        run.approve(spend(0.42, 0.9, layer=Layer.DEFAULT))
+        run.approve(a_spend(0.42, 0.9, layer=Layer.DEFAULT))
     assert "price_per_1000_characters" in (refused.value.hint or "")
 
 
@@ -412,7 +400,7 @@ def test_every_priced_request_reaches_the_stream_before_it_is_judged(tmp_path: P
     here = a_machine(tmp_path)
     seen: list[Event] = []
     with here.events.subscribe(seen.append), here.run(voice=Voicing.PAID) as run:
-        run.approve(spend(0.42, 0.42))
+        run.approve(a_spend(0.42, 0.42))
     assert [line.event for line in seen if line.event == "spend"] == ["spend"]
 
 

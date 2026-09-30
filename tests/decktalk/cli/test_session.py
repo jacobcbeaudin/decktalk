@@ -14,8 +14,9 @@ from decktalk.cli.session import Globals, Session, Terminal
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError
 from decktalk.findings import Certainty, Code
 from decktalk.results import CheckResult, StatusResult, Voicing
+from support.spends import a_spend
 
-from .conftest import Fake, finding, spend
+from .conftest import Fake, finding
 
 
 def session(**flags: object) -> Session:
@@ -181,7 +182,7 @@ def _status(*found: object) -> StatusResult:
 
 def _check() -> CheckResult:
     """What `check` answers with when a session prices a run before refusing it."""
-    return CheckResult(ok=True, run="r", judged=(), pages=False, frames=False, spend=spend())
+    return CheckResult(ok=True, run="r", judged=(), pages=False, frames=False, spend=a_spend())
 
 
 def test_a_console_reads_the_terminal_rather_than_being_told_about_it() -> None:

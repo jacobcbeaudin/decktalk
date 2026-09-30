@@ -36,8 +36,9 @@ from decktalk.events import (
 )
 from decktalk.findings import Code, Finding, Location
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Layer, Spend, SpendState
+from decktalk.results import Layer
 from decktalk.secret import Secret
+from support.spends import a_spend
 
 NAMES = (
     "run.start",
@@ -56,15 +57,7 @@ NAMES = (
 MINTED = ("event", "time", "seq", "run")
 
 FINDING = Finding(code=Code.CUE_OFF, message="It lands 340 ms late.", location=Location(where="2.1:formula"))
-SPEND = Spend(
-    state=SpendState.ESTIMATE,
-    sections=(1,),
-    characters=392,
-    dollars=0.12,
-    ceiling_dollars=0.15,
-    price_per_1000_characters=0.3,
-    price_layer=Layer.DEFAULT,
-)
+SPEND = a_spend(0.12, 0.15, layer=Layer.DEFAULT)
 PAYLOADS: dict[str, dict[str, object]] = {
     "run.start": {"events_path": "build/events/r1.jsonl"},
     "run.done": {"outcome": Outcome.OK, "seconds": 64.0},

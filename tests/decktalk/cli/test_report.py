@@ -7,8 +7,9 @@ from pathlib import Path
 
 from decktalk.cli import report as commands
 from decktalk.results import ApplyResult
+from support.spends import a_spend
 
-from .conftest import ANSWERS, Fake, finding, spend
+from .conftest import ANSWERS, Fake, finding
 
 FIXABLE = ANSWERS["check"].model_copy(
     update={"ok": False, "findings": (finding(fix=True),), "judged": (Path("cues.json"),)}
@@ -40,7 +41,7 @@ def test_check_judges_the_written_files_and_prices_a_voiced_run(run, project, an
     ran = run("check", "--json")
     assert ran.exit_code == 0
     written = json.loads(ran.out)
-    assert written["spend"]["ceiling_dollars"] == spend().ceiling_dollars
+    assert written["spend"]["ceiling_dollars"] == a_spend().ceiling_dollars
     assert made.called("check")["pages"] is True
 
 

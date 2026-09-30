@@ -27,16 +27,14 @@ from decktalk.results import (
     DoctorResult,
     InitResult,
     InstallResult,
-    Layer,
     Result,
     ServeResult,
-    Spend,
-    SpendState,
     StatusResult,
     StoryboardResult,
     Voicing,
     WordsResult,
 )
+from support.spends import a_spend
 
 TTY = "TTY_COMPATIBLE"
 """The variable Rich reads to be told there is a terminal here, which is how both paths are run."""
@@ -127,19 +125,6 @@ def machine(monkeypatch: pytest.MonkeyPatch):
     return install
 
 
-def spend(dollars: float = 0.12, ceiling: float = 0.2) -> Spend:
-    """A priced run, which is what `check` reports and what an approval refusal carries."""
-    return Spend(
-        state=SpendState.ESTIMATE,
-        sections=(1, 2, 3),
-        characters=392,
-        dollars=dollars,
-        ceiling_dollars=ceiling,
-        price_per_1000_characters=0.3,
-        price_layer=Layer.PROJECT,
-    )
-
-
 def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
     """One judgement, with a safe fix under it when the test is about fixing."""
     repair = (
@@ -170,11 +155,11 @@ ANSWERS: dict[str, Result] = {
     "status": StatusResult(
         ok=True, run="r", name="demo", script=Path("script.md"), cues=Path("cues.json"), sections=()
     ),
-    "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=spend()),
+    "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=a_spend()),
     "words": WordsResult(ok=True, run="r", sections=()),
     "storyboard": StoryboardResult(ok=True, run="r", storyboard=Path("build/storyboard.html"), panels=()),
     "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000, root=Path(".")),
-    "build": BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=spend(), seconds=1.0),
+    "build": BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=a_spend(), seconds=1.0),
 }
 """One prepared answer per command, so a client test says what it asked for rather than what it got."""
 

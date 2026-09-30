@@ -11,10 +11,11 @@ from decktalk.cli.session import Globals, Session
 from decktalk.errors import InputError
 from decktalk.inputs.workspace import Workspace
 from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, Voicing
+from support.spends import a_spend
 
-from .conftest import Fake, spend
+from .conftest import Fake
 
-BUILT = BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=spend(), seconds=1.0)
+BUILT = BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=a_spend(), seconds=1.0)
 
 
 class Origin:

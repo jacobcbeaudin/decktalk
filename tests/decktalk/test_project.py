@@ -38,8 +38,6 @@ from decktalk.results import (
     NarrateResult,
     RecordResult,
     Result,
-    Spend,
-    SpendState,
     StatusResult,
     Voicing,
 )
@@ -47,6 +45,7 @@ from decktalk.results import Layer as SettingLayer
 from support.links import link
 from support.projects import MINIMAL_TOML, write_project
 from support.runs import a_machine
+from support.spends import a_spend
 
 
 def a_project(tmp_path: Path, toml: str = MINIMAL_TOML, **environ: str) -> Project:
@@ -91,15 +90,7 @@ def fake_stages(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Call]]:
 
 def _filler(name: str) -> dict[str, Any]:
     """The fields each faked result needs beyond the ones the run fills, and nothing more."""
-    priced = Spend(
-        state=SpendState.ESTIMATE,
-        sections=(1,),
-        characters=10,
-        dollars=0.0,
-        ceiling_dollars=0.0,
-        price_per_1000_characters=0.0,
-        price_layer=SettingLayer.DEFAULT,
-    )
+    priced = a_spend(0.0, 0.0, layer=SettingLayer.DEFAULT)
     return {
         "narrate": {"voice": Voicing.PLACEHOLDER, "sections": (), "spend": priced, "seconds": 0.0},
         "cue": {"sections": (), "seconds": 0.0},
