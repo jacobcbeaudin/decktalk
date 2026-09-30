@@ -218,12 +218,19 @@ class Toolchain:
     def fetched(self, *, cancel: Cancel | None = None) -> Toolchain:
         """This toolchain with the pinned build downloaded when it was not already there.
 
-        `cancel` is the run's token, which a fetch waiting on another fetch of the same build polls.
+        `cancel` is the run's token, which a fetch waiting on another fetch of the same build polls. A
+        download the network refuses is a `TOOL` refusal, never a bug in DeckTalk.
         """
         if self.complete:
             return self
         with self.bound(cancel=cancel):
-            ffmpeg, ffprobe = fetch_ffmpeg(cancel=cancel, wait_seconds=self.tools.timeout_seconds)
+            try:
+                ffmpeg, ffprobe = fetch_ffmpeg(cancel=cancel, wait_seconds=self.tools.timeout_seconds)
+            except OSError as exc:
+                raise ToolError(
+                    f"the pinned ffmpeg could not be downloaded ({exc}).",
+                    hint="Run `decktalk install` again with network access, or install ffmpeg and ffprobe on PATH.",
+                ) from exc
         return replace(self, ffmpeg=Path(ffmpeg), ffprobe=Path(ffprobe))
 
 

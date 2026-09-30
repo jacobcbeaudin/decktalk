@@ -159,6 +159,19 @@ def test_a_toolchain_that_is_there_fetches_nothing(tmp_path: Path, monkeypatch: 
     assert chain.fetched() is chain
 
 
+def test_a_fetch_the_network_refuses_is_a_tool_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`decktalk install` offline is the machine's problem, so it must never read as a bug to report."""
+
+    def offline(**_: object) -> tuple[str, str]:
+        raise OSError("offline")
+
+    monkeypatch.setattr(machine_module, "fetch_ffmpeg", offline)
+    with pytest.raises(machine_module.ToolError, match="offline") as refused:
+        Toolchain().fetched()
+    assert refused.value.code is ErrorCode.TOOL
+    assert "network access" in (refused.value.hint or "")
+
+
 def test_a_run_hands_its_pair_and_its_cancel_to_every_ffmpeg_call(tmp_path: Path) -> None:
     """A run that could not reach ffmpeg with its cancel token would wait out an encode it was told to stop."""
     pair = (tmp_path / "ff", tmp_path / "fp")
