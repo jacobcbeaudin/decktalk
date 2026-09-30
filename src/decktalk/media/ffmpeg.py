@@ -354,15 +354,10 @@ def _resolve(tools: ToolsConfig, cancel: Cancel | None) -> tuple[str, str]:
 def installed_paths(tools: ToolsConfig | None = None) -> tuple[str, str] | None:
     """The (ffmpeg, ffprobe) pair that ffmpeg_paths() would return without downloading anything.
 
-    None means only a fetch could provide them, or that `[tools]` names half a build or a file that
-    is not there. `decktalk doctor` reports on that instead of triggering it.
+    None means only a fetch could provide them, which `decktalk doctor` reports instead of triggering
+    it. `[tools]` naming half a build or a file that is not there is refused in its own words.
     """
-    try:
-        named = _named(tools or bound_tools())
-    except ToolError:
-        # silent: doctor reports a pair it cannot resolve as missing.
-        return None
-    return named or ffmpeg_fetch.installed_pinned() or _path_pair()
+    return _named(tools or bound_tools()) or ffmpeg_fetch.installed_pinned() or _path_pair()
 
 
 def ffmpeg() -> str:

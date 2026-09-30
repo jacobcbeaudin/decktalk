@@ -477,6 +477,19 @@ def test_what_reading_the_machine_noticed_is_a_warning_on_every_run(tmp_path: Pa
     assert [("CRV" in note, "presett" in note) for note in warned] == [(True, False), (False, True)]
 
 
+def test_tools_that_name_half_a_build_are_a_note_that_names_the_key_rather_than_a_missing_encoder(
+    tmp_path: Path,
+) -> None:
+    """`install` cannot mend a key that names one half, so `doctor` must say which key to mend."""
+    config = tmp_path / "host" / "machine.toml"
+    config.parent.mkdir(parents=True)
+    (tmp_path / "ffmpeg").write_bytes(b"")
+    config.write_text(f"[tools]\nffmpeg = '{(tmp_path / 'ffmpeg').as_posix()}'\n", encoding="utf-8")
+    here = a_host(tmp_path, config_path=config)
+    assert here.toolchain.ffmpeg is None
+    assert any("tools.ffprobe is not set" in note for note in here.notes)
+
+
 @pytest.fixture
 def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail the test the moment anything opens a connection or looks up a host name."""

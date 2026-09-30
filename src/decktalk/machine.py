@@ -164,7 +164,10 @@ class Toolchain:
 
     @classmethod
     def of(cls, tools: ToolsConfig, *, cache: Path) -> Toolchain:
-        """The toolchain these keys resolve to, resolved once and without fetching anything."""
+        """The toolchain these keys resolve to, resolved once and without fetching anything.
+
+        `[tools]` naming half a build or a file that is not there is a `TOOL` refusal.
+        """
         named = cls(tools=tools, cache=cache)
         with named.bound():
             found = installed_paths(tools)
@@ -489,17 +492,23 @@ class Machine:
         pairs = tuple(overrides)
         mine = _machine_overrides(pairs)
         loaded = load(project={}, machine=tables, machine_path=config_path, environ=environ, overrides=mine)
+        # A machine whose `[tools]` names no usable pair is still a machine: every run says why, so
+        # `doctor` reports the key to mend rather than a missing encoder `install` could not fix.
+        try:
+            toolchain, refused = Toolchain.of(loaded.settings.tools, cache=cache_dir), ()
+        except ToolError as refusal:
+            toolchain, refused = Toolchain(tools=loaded.settings.tools, cache=cache_dir), (f"{refusal} {refusal.hint}",)
         return cls(
             environ=dict(environ),
             tables=tables,
             config_path=config_path,
             cwd=cwd,
-            toolchain=Toolchain.of(loaded.settings.tools, cache=cache_dir),
+            toolchain=toolchain,
             overrides=pairs,
             providers=providers,
             dotenv=dotenv,
             allow_any_api_base=allow_any_api_base,
-            notes=(*env_warnings(environ), *key_warnings(tables, config_path.name)),
+            notes=(*env_warnings(environ), *key_warnings(tables, config_path.name), *refused),
         )
 
     @property

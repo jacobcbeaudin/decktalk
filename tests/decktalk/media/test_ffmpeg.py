@@ -127,8 +127,9 @@ def test_naming_one_half_of_the_build_is_refused_rather_than_ignored(tmp_path):
     with ffmpeg.using_tools(half), pytest.raises(ToolError) as raised:
         ffmpeg.ffmpeg_paths()
     assert "tools.ffprobe" in str(raised.value)
-    # `doctor` reports a machine rather than rendering on it, so it says there is no usable pair.
-    assert ffmpeg.installed_paths(half) is None
+    # `doctor` reports a machine rather than rendering on it, and says why the key is unusable.
+    with pytest.raises(ToolError, match="tools.ffprobe"):
+        ffmpeg.installed_paths(half)
 
 
 def test_a_key_that_names_a_file_which_is_not_there_is_refused_rather_than_resolved(tmp_path):
@@ -136,8 +137,9 @@ def test_a_key_that_names_a_file_which_is_not_there_is_refused_rather_than_resol
     both = ToolsConfig(ffmpeg=str(tmp_path / "nope"), ffprobe=str(tmp_path / "also-nope"))
     with ffmpeg.using_tools(both), pytest.raises(ToolError, match="tools.ffmpeg, tools.ffprobe names a file"):
         ffmpeg.ffmpeg_paths()
-    # `doctor` says there is no usable pair rather than reporting the pinned build the key overrides.
-    assert ffmpeg.installed_paths(both) is None
+    # `doctor` names the key rather than reporting the pinned build the key overrides.
+    with pytest.raises(ToolError, match="names a file"):
+        ffmpeg.installed_paths(both)
 
 
 def test_naming_both_halves_is_the_build_this_machine_renders_with(tmp_path):
