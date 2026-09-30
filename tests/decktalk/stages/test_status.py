@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import Take, file_digest
-from decktalk.errors import InputError
 from decktalk.events import Level, Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
@@ -101,12 +100,12 @@ def test_a_project_is_told_the_next_stage_its_artifacts_leave(tmp_path: Path, st
 
 def measured(inputs: Inputs) -> None:
     """The record a build leaves after it assembled this film and verified it."""
-    options: dict[str, object] = {"only": None}
-    made = stage.assemble_key(inputs, options)  # type: ignore[arg-type]
+    options = {"only": None}
+    made = stage.assemble_key(inputs, options)
     film = inputs.relative(inputs.workspace.film).as_posix()
     stage.Kept(
-        assemble=stage.KeptStage(key=made, options={"only": None}, outputs={film: file_digest(inputs.workspace.film)}),
-        verify=stage.KeptStage(key=stage.verify_key(inputs, made, {"only": None}), options={"only": None}),
+        assemble=stage.KeptStage(key=made, options=options, outputs={film: file_digest(inputs.workspace.film)}),
+        verify=stage.KeptStage(key=stage.verify_key(inputs, made, options), options=options),
     ).write(stage.kept_path(inputs))
 
 
@@ -343,13 +342,10 @@ def test_the_report_names_the_two_files_the_author_writes(tmp_path: Path) -> Non
 
 
 def test_a_script_that_will_not_parse_is_recorded_rather_than_read_as_no_words(
-    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    class Unparsed:
-        def script(self) -> None:
-            raise InputError("script.md has no sections.")
-
+    unparsed = a_project(tmp_path, script="# Demo\n\nNo section heading anywhere.\n")
     with caplog.at_level("DEBUG", logger="decktalk"):
-        assert voiced_text(Unparsed()) == {}  # type: ignore[arg-type]
+        assert voiced_text(unparsed) == {}
     [record] = [record for record in caplog.records if record.name == "decktalk.stages.status"]
-    assert record.exc_info is not None and "no sections" in str(record.exc_info[1])
+    assert record.exc_info is not None and "no '## N. Title' section" in str(record.exc_info[1])
