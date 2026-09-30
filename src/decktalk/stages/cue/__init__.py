@@ -126,8 +126,8 @@ def _catalogs(inputs: Inputs) -> dict[str, tuple[MeasuredScene, ...]]:
         if section.page in out:
             continue
         log = inputs.recording_log(section.key)
-        if log is not None and log.report.catalog:
-            out[section.page] = tuple(log.report.catalog)
+        if log is not None and log.recording.report.catalog:
+            out[section.page] = tuple(log.recording.report.catalog)
     return out
 
 

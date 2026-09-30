@@ -15,7 +15,7 @@ from typing import Any
 from decktalk.artifacts import RecordingLog
 from decktalk.findings import Finding
 from decktalk.inputs import Inputs
-from decktalk.media.pagereport import PageReport
+from decktalk.media.pagereport import PageReport, Recording
 
 TOML = """
 [project]
@@ -75,6 +75,22 @@ def catalog(scene: str, moments: dict[str, list[str]], *, text: str = "x", **ext
     return {"scene": scene, "elements": found, "slides": list(moments), "cues": dict(moments), **extra}
 
 
+def a_recording(**fields: object) -> Recording:
+    """What the recorder knew about one section's webm, with a short page and nothing it loaded."""
+    base: dict[str, object] = {
+        "url": "http://project.localhost/deck/index.html",
+        "assets": (),
+        "external": (),
+        "requested_seconds": 2.0,
+        "load_seconds": 0.1,
+        "settle_seconds": 0.1,
+        "clock_start_seconds": 0.2,
+        "page_errors": (),
+        "report": PageReport(),
+    }
+    return Recording.model_validate({**base, **fields})
+
+
 def write_log(
     inputs: Inputs,
     section: int,
@@ -86,12 +102,7 @@ def write_log(
     """The log one section's recording left, carrying what its page said and what the recorder judged."""
     RecordingLog(
         section=section,
-        url="http://project.localhost/deck/index.html",
         input_hash="abc",
-        requested_seconds=requested_seconds,
-        settle_seconds=0.1,
-        load_seconds=0.1,
-        clock_start_seconds=0.2,
+        recording=a_recording(requested_seconds=requested_seconds, report=report or PageReport()),
         findings=tuple(findings),
-        report=report or PageReport(),
     ).write(inputs.workspace.recording_log(f"{section:02d}"))

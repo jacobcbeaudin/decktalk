@@ -119,7 +119,7 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(
         log = RecordingLog.read(log_path)
         assert log is not None, log_path
         assert list(log.findings) == [], (log_path.name, log.findings)
-        assert list(log.external) == [], (log_path.name, log.external)
+        assert list(log.recording.external) == [], (log_path.name, log.recording.external)
 
     # Read the finished film back. No packaged project may raise a certain finding this runner
     # judges, because that is a cue that did not land. An example is a project that was really made

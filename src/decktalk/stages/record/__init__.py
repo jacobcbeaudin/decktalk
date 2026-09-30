@@ -111,20 +111,13 @@ class LogSink:
         """
         return RecordingLog(
             section=self.section.number,
-            url=recording.url,
             input_hash=section_hash(self.inputs, self.section, self.url, self.seconds, list(recording.assets)),
-            requested_seconds=recording.requested_seconds,
-            settle_seconds=recording.settle_seconds,
-            load_seconds=recording.load_seconds,
-            clock_start_seconds=recording.clock_start_seconds,
+            recording=recording,
             t0_seconds=None if start is None else start.seconds,
             t0_method=None if start is None else start.method,
             t0_guessed=start is not None and start.guessed,
-            assets=tuple(Path(name) for name in recording.assets),
-            external=recording.external,
             findings=findings,
             checks=checks,
-            report=recording.report,
         )
 
 

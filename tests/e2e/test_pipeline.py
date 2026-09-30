@@ -418,9 +418,9 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
     assert {key: list(log.findings) for key, log in logs.items()} == {key: [] for key in SPOKEN}
     assert all(log.checks is not None for log in logs.values())
     assert all(log.t0_seconds is not None and not log.t0_guessed for log in logs.values())
-    assert all(log.url.startswith("http://") for log in logs.values())
+    assert all(log.recording.url.startswith("http://") for log in logs.values())
     # Every project file the page loaded is named, which is what the next run keys its skip on.
-    loaded = {path.as_posix() for path in logs["01"].assets}
+    loaded = set(logs["01"].recording.assets)
     assert "deck/index.html" in loaded
     assert f"deck/{RUNTIME_FILE}" in loaded
 
@@ -428,7 +428,7 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
 def test_no_page_loaded_anything_from_another_origin(built: Project) -> None:
     """The film may depend on no host it does not own, which is what the local origin is for."""
     for key in SPOKEN:
-        assert list(built.recording_log(key).external) == [], key
+        assert list(built.recording_log(key).recording.external) == [], key
 
 
 def test_a_second_record_run_keeps_every_section(built: Project) -> None:
@@ -703,8 +703,8 @@ def test_the_storyboard_narrows_to_one_slide(built: Project) -> None:
 def test_the_equation_typesets_from_the_deck_and_not_from_a_cdn(built: Project) -> None:
     """KaTeX is vendored into deck/katex, so section 4 records with no finding and loads no host."""
     log = built.recording_log("04")
-    assert list(log.findings) == [] and list(log.external) == []
-    assert any(path.as_posix().startswith("deck/katex/") for path in log.assets), log.assets
+    assert list(log.findings) == [] and list(log.recording.external) == []
+    assert any(name.startswith("deck/katex/") for name in log.recording.assets), log.recording.assets
 
 
 def test_the_take_index_and_the_cue_times_agree_with_what_was_built(built: Project) -> None:

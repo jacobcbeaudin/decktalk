@@ -9,21 +9,12 @@ import pytest
 from decktalk.artifacts import stored
 from decktalk.artifacts.recordings import RecordingLog, input_hash
 from decktalk.findings import Code, Finding, Location
-from decktalk.media.pagereport import PageReport
+from support.pages import a_recording
 
 
 def log(**fields: object) -> RecordingLog:
-    base = {
-        "section": 3,
-        "url": "http://project.localhost/deck/index.html",
-        "input_hash": "abc",
-        "requested_seconds": 10.0,
-        "settle_seconds": 0.3,
-        "load_seconds": 0.4,
-        "clock_start_seconds": 0.8,
-        "report": PageReport(),
-    }
-    return RecordingLog(**{**base, **fields})
+    base = {"section": 3, "input_hash": "abc", "recording": a_recording(clock_start_seconds=0.8)}
+    return RecordingLog.model_validate({**base, **fields})
 
 
 def test_the_order_a_page_asked_for_its_files_in_is_not_part_of_the_key(tmp_path: Path) -> None:
@@ -73,6 +64,6 @@ def test_every_judgement_the_recorder_made_is_one_list_of_findings() -> None:
 
 
 def test_the_log_round_trips_through_its_own_file(tmp_path: Path) -> None:
-    written = log(assets=(Path("deck/index.html"),), external=("https://cdn.example",))
+    written = log(recording=a_recording(assets=("deck/index.html",), external=("https://cdn.example",)))
     path = written.write(tmp_path / "03.json")
     assert RecordingLog.read(path) == written

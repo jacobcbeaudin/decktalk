@@ -239,17 +239,34 @@ log as soon as that section is done and a measurement always belongs to the reco
 ```json build/recordings/01.json
 {
   "section": 1,
-  "url": "http://project.localhost/deck/index.html?scene=1&cues=1.1%3Atitle%400.5&t0=signal",
   "input_hash": "4b1d90a7c3e2f085",
-  "requested_seconds": 17.67,
-  "settle_seconds": 0.4,
-  "load_seconds": 0.62,
-  "clock_start_seconds": 1.04,
+  "recording": {
+    "url": "http://project.localhost/deck/index.html?scene=1&cues=1.1%3Atitle%400.5&t0=signal",
+    "assets": ["deck/index.html", "deck/decktalk-runtime.js"],
+    "external": [],
+    "missing": [],
+    "requested_seconds": 17.67,
+    "load_seconds": 0.62,
+    "settle_seconds": 0.4,
+    "clock_start_seconds": 1.04,
+    "page_errors": [],
+    "report": {
+      "version": "<the runtime that drew the page>",
+      "mode": "cue",
+      "scene": "1",
+      "slide": "1.2",
+      "warnings": [],
+      "catalog": [],
+      "cues": [],
+      "words": [],
+      "frameGaps": [],
+      "longFrames": [],
+      "unreadable": []
+    }
+  },
   "t0_seconds": 1.08,
   "t0_method": "the frame after the last of 37 cover frames",
   "t0_guessed": false,
-  "assets": ["deck/index.html", "deck/decktalk-runtime.js"],
-  "external": [],
   "findings": [
     {
       "code": "PAGE_NO_DESCRIPTION",
@@ -265,19 +282,6 @@ log as soon as that section is done and a measurement always belongs to the reco
     "duration_seconds": 17.7,
     "wanted_seconds": 17.67,
     "luma": { "at_tenth": 31.2, "at_half": 44.9, "at_nine_tenths": 45.1, "peak_at_half": 238.0 }
-  },
-  "report": {
-    "version": "<the runtime that drew the page>",
-    "mode": "cue",
-    "scene": "1",
-    "slide": "1.2",
-    "warnings": [],
-    "catalog": [],
-    "cues": [],
-    "words": [],
-    "frameGaps": [],
-    "longFrames": [],
-    "unreadable": []
   }
 }
 ```
@@ -285,20 +289,23 @@ log as soon as that section is done and a measurement always belongs to the reco
 | Field | Meaning |
 |---|---|
 | `section` | The section this recording plays. |
-| `url` | The page URL the recorder opened, with its cues and its words. |
 | `input_hash` | The digest of what this section was recorded from, which is what a skip is keyed on. |
-| `requested_seconds` | How long the recorder asked the page to play for. |
-| `settle_seconds` | How long the page was left to settle before the clock started. |
-| `load_seconds` | How long the page took to load. |
-| `clock_start_seconds` | The recorder's own estimate of where narration t=0 is. |
+| `recording` | What the recorder knew, as the browser driver read it. |
+| `recording.url` | The page URL the recorder opened, with its cues and its words. |
+| `recording.assets` | Every project file the page loaded, project-relative. |
+| `recording.external` | Every other origin the page reached for while recording. |
+| `recording.missing` | Every project file the page asked for that is not there. |
+| `recording.requested_seconds` | How long the recorder asked the page to play for. |
+| `recording.load_seconds` | How long the page took to load. |
+| `recording.settle_seconds` | How long the page was left to settle before the clock started. |
+| `recording.clock_start_seconds` | The recorder's own estimate of where narration t=0 is. |
+| `recording.page_errors` | Uncaught exceptions, or the one line for no runtime at all. |
+| `recording.report` | What the page said about itself, read once as it was recorded. |
 | `t0_seconds` | The first clean frame after the cover, or null. |
 | `t0_method` | How t=0 was found, in one sentence, or null. |
 | `t0_guessed` | True when no cover was found, so every reveal in the section moves. |
-| `assets` | Every project file the page loaded, project-relative. |
-| `external` | Every other origin the page reached for while recording. |
 | `findings` | Every judgement the page and the frames made, each a whole finding. |
 | `checks` | What the frames measured, or null when none were. |
-| `report` | What the page said about itself, read once as it was recorded. |
 
 Every judgement the recorder makes is a finding, so the page's own warnings, the exceptions it threw
 and the checks over the frames are one list a reader dispatches on by code.

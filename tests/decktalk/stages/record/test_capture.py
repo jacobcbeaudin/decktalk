@@ -15,7 +15,6 @@ import pytest
 from decktalk.artifacts import CueTimes, RecordingLog
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
-from decktalk.media.pagereport import PageReport
 from decktalk.page import Q
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages.record.capture import (
@@ -27,6 +26,7 @@ from decktalk.stages.record.capture import (
     section_hash,
     words_param,
 )
+from support.pages import a_recording
 from support.projects import write_project
 
 from .conftest import PAGE
@@ -197,14 +197,7 @@ def test_a_log_with_no_narration_start_in_it_is_a_recording_that_never_finished(
     job.out.parent.mkdir(parents=True, exist_ok=True)
     job.out.write_bytes(b"webm")
     RecordingLog(
-        section=1,
-        url="http://project.localhost/deck/index.html",
-        input_hash=job.input_hash,
-        requested_seconds=10.0,
-        settle_seconds=0.5,
-        load_seconds=0.2,
-        clock_start_seconds=1.5,
-        report=PageReport(),
+        section=1, input_hash=job.input_hash, recording=a_recording(requested_seconds=10.0, clock_start_seconds=1.5)
     ).write(job.log_path)
     assert not plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0).unchanged
 

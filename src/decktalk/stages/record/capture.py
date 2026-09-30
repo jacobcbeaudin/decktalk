@@ -301,7 +301,7 @@ def plan_job(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, s
         seconds=seconds,
         out=workspace.recording(section.key),
         log_path=workspace.recording_log(section.key),
-        input_hash=section_hash(inputs, section, url, seconds, previous.assets if previous else ()),
+        input_hash=section_hash(inputs, section, url, seconds, previous.recording.assets if previous else ()),
         previous=previous,
     )
 

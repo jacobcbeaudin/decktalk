@@ -75,7 +75,7 @@ def declared_spans(inputs: Inputs, section: int) -> dict[str, float]:
         return {}
     scale = inputs.settings.motion.scale
     spans: dict[str, float] = {}
-    entry = scene_entry(log.report.catalog, scene)
+    entry = scene_entry(log.recording.report.catalog, scene)
     for measured in measured_rows(entry) if entry is not None else ():
         if measured.cue is not None:
             spans[measured.cue] = max(spans.get(measured.cue, 0.0), measured.span(scale))

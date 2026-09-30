@@ -261,7 +261,7 @@ def described_cues(inputs: Inputs, section: int, at: float) -> tuple[tuple[float
         return ()
     rows = [
         (round(at + cue.ran, SECOND_DIGITS), cue.describe.strip())
-        for cue in log.report.cues
+        for cue in log.recording.report.cues
         if cue.describe and cue.describe.strip()
     ]
     return tuple(sorted(rows, key=lambda row: row[0]))
