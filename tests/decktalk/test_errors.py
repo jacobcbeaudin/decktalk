@@ -40,10 +40,8 @@ def test_there_are_nine_codes_and_they_are_the_ones_the_design_named() -> None:
     ]
 
 
-def test_there_are_seven_classes_and_each_is_a_kind_of_the_base() -> None:
-    assert len(CLASSES) == 7
-    for kind in CLASSES:
-        assert issubclass(kind, DeckTalkError)
+def test_the_seven_classes_are_every_kind_of_the_base() -> None:
+    assert set(DeckTalkError.__subclasses__()) == set(CLASSES) and len(CLASSES) == 7
 
 
 def test_every_class_carries_a_different_code() -> None:

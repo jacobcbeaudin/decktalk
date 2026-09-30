@@ -71,7 +71,7 @@ def test_the_starter_writes_a_project_that_already_builds(tmp_path: Path) -> Non
     assert (tmp_path / "script.md").exists()
     assert (tmp_path / "cues.json").exists()
     assert (tmp_path / template.DECK_DIR / "decktalk-runtime.js").exists()
-    assert set(written) == set(written)  # every path is reported once, in the order it was written
+    assert len(written) == len(set(written))  # every path is reported once
 
 
 def test_the_project_name_is_filled_into_the_files_that_carry_it(tmp_path: Path) -> None:
