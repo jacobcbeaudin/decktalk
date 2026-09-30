@@ -95,6 +95,12 @@ class Row:
     returns_its_result: bool = True  # false when the callable returns a library record the CLI renders
     note: str = ""  # why this row is not a plain callable returning its own result
 
+    @property
+    def model(self) -> type[Result]:
+        """The result of a row that has one, which is every row the model tests below are drawn from."""
+        assert self.result is not None, f"{self.command} answers with the contract document, not a result"
+        return self.result
+
 
 SURFACE: tuple[Row, ...] = (
     Row("init", "decktalk:init", InitResult, True, True, HERE),
@@ -255,7 +261,7 @@ NO_COMMAND: tuple[Row, ...] = (
 ALL_ROWS = (*SURFACE, *NO_COMMAND)
 MODEL_ROWS = tuple(row for row in ALL_ROWS if row.result is not None)
 DRIVEN_ELSEWHERE = tuple(row for row in ALL_ROWS if row.driver != HERE)
-IDS = [row.command or row.result.__name__ for row in MODEL_ROWS]
+IDS = [row.command or row.model.__name__ for row in MODEL_ROWS]
 
 
 # ---- resolving what a row names ----------------------------------------------------------
@@ -316,7 +322,7 @@ def test_the_schema_names_and_the_tables_name_the_same_results():
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_every_row_names_a_result_with_a_committed_schema(row: Row):
     """An agent reads the contract from the schema directory, so every result has a file there."""
-    assert issubclass(row.result, Result)
+    assert issubclass(row.model, Result)
     name = next(key for key, model in RESULTS.items() if model is row.result)
     assert (SCHEMAS / f"{name}.json").is_file(), f"{name}.json is missing from schemas/v1/results/"
 
@@ -340,7 +346,7 @@ def test_every_row_names_a_callable_that_is_public_and_returns_its_result(row: R
 def test_a_plain_row_returns_the_result_it_declares(row: Row):
     """Most rows are a callable that returns its own result, which is the ordinary shape."""
     returned = getattr(resolve(row.call), "__annotations__", {}).get("return")
-    assert returned == row.result.__name__, f"{row.call} returns {returned} and the table says {row.result.__name__}"
+    assert returned == row.model.__name__, f"{row.call} returns {returned} and the table says {row.model.__name__}"
 
 
 def test_serve_returns_an_origin_that_carries_its_result():
@@ -352,9 +358,9 @@ def test_serve_returns_an_origin_that_carries_its_result():
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_the_run_and_the_written_fields_are_declared_exactly_where_the_table_says(row: Row):
     """Founder decision 13: four keys on the base, and these two declared by the commands that earn them."""
-    declared = row.result.model_fields
-    assert ("run" in declared) == row.opens_run, f"{row.result.__name__} and the table disagree about run"
-    assert ("written" in declared) == row.writes, f"{row.result.__name__} and the table disagree about written"
+    declared = row.model.model_fields
+    assert ("run" in declared) == row.opens_run, f"{row.model.__name__} and the table disagree about run"
+    assert ("written" in declared) == row.writes, f"{row.model.__name__} and the table disagree about written"
 
 
 def subject_of(row: Row) -> tuple[str, ...]:
@@ -409,13 +415,13 @@ def test_the_app_is_the_surface_table_command_for_command_and_result_for_result(
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_the_schema_is_one_flat_object_with_the_four_reserved_keys(row: Row):
     """The founder's decided contract: its own fields plus four keys, with no envelope around them."""
-    schema = row.result.model_json_schema(by_alias=True)
+    schema = row.model.model_json_schema(by_alias=True)
     properties = schema["properties"]
     assert set(RESERVED_KEYS) <= set(properties), sorted(set(RESERVED_KEYS) - set(properties))
     assert properties["schema"]["const"] == SCHEMA
     for name, definition in schema.get("$defs", {}).items():
         nested = set(definition.get("properties", {}))
-        assert not set(RESERVED_KEYS) <= nested, f"{name} is a second envelope inside {row.result.__name__}"
+        assert not set(RESERVED_KEYS) <= nested, f"{name} is a second envelope inside {row.model.__name__}"
 
 
 @pytest.mark.parametrize(
@@ -423,16 +429,16 @@ def test_the_schema_is_one_flat_object_with_the_four_reserved_keys(row: Row):
 )
 def test_the_run_id_is_declared_volatile(row: Row):
     """R11: a value that differs between two identical runs is declared, so a golden read drops it."""
-    schema = row.result.model_json_schema(by_alias=True)
-    assert schema["properties"]["run"].get("volatile") is True, f"{row.result.__name__}.run is not declared volatile"
+    schema = row.model.model_json_schema(by_alias=True)
+    assert schema["properties"]["run"].get("volatile") is True, f"{row.model.__name__}.run is not declared volatile"
 
 
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_a_measured_duration_is_declared_volatile(row: Row):
     """The same rule as the run id, because a wall-clock second is measured and never reproduced."""
-    schema = row.result.model_json_schema(by_alias=True)
+    schema = row.model.model_json_schema(by_alias=True)
     for name in ("seconds", "film_seconds"):
-        field = row.result.model_fields.get(name)
+        field = row.model.model_fields.get(name)
         if field is not None and field.json_schema_extra:
             assert schema["properties"][name].get("volatile") is True, name
 
@@ -513,7 +519,7 @@ def test_a_driven_row_returns_its_result_as_one_flat_object(
     """The whole contract on a real call: the type, the four keys, the round trip and the silence."""
     capsys.readouterr()
     result = driven(row, project, machine)
-    assert isinstance(result, row.result)
+    assert isinstance(result, row.model)
     payload = read_back(result)
     assert payload["schema"] == SCHEMA
     assert set(RESERVED_KEYS) <= set(payload)
