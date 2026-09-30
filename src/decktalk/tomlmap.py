@@ -216,12 +216,13 @@ def tune[T](
     The record lives beside the default because every other spelling of a key is generated from it:
     the loader reads `bounds`, the schema reads all of it, the reference page renders it and a
     finding that names a knob quotes `decides` in reverse. A key declared here and nowhere else
-    cannot drift from the value the code actually reads.
+    cannot drift from the value the code actually reads. The metadata is named after `Key`'s own
+    fields, so `registry` builds each key from it whole.
     """
     return field(
         default=default,
         metadata={
-            "doc": doc,
+            "description": doc,
             "unit": unit,
             "scope": scope,
             "nature": nature,
@@ -250,25 +251,7 @@ def registry(cls: type[Any], *, prefix: tuple[str, ...] = ()) -> tuple[Key, ...]
         if is_dataclass(annotation):
             out += registry(cast("type[Any]", annotation), prefix=(*prefix, f.name))
             continue
-        out.append(
-            Key(
-                id=".".join((*prefix, f.name)),
-                description=str(f.metadata.get("doc", "")),
-                default=f.default,
-                annotation=annotation,
-                bounds=f.metadata.get("bounds"),
-                typed=f.metadata.get("typed"),
-                unit=f.metadata.get("unit"),
-                scope=f.metadata.get("scope", Scope.PROJECT),
-                nature=f.metadata.get("nature", Nature.TASTE),
-                source=f.metadata.get("source", Source.CHOSEN),
-                evidence=f.metadata.get("evidence"),
-                hazard=f.metadata.get("hazard"),
-                requires=f.metadata.get("requires"),
-                see_also=tuple(f.metadata.get("see_also", ())),
-                decides=tuple(f.metadata.get("decides", ())),
-            )
-        )
+        out.append(Key(id=".".join((*prefix, f.name)), default=f.default, annotation=annotation, **f.metadata))
     return tuple(out)
 
 
