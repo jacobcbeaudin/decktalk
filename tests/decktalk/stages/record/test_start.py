@@ -87,19 +87,13 @@ def test_no_cover_falls_back_to_the_first_painted_frame_and_says_so(
     assert start.guessed
 
 
-def test_a_recording_with_no_picture_at_all_falls_back_to_the_fixed_guess(
-    monkeypatch: pytest.MonkeyPatch, settings: RecordConfig, tmp_path: Path
+@pytest.mark.parametrize(
+    "rows", [[a_frame(0.0, yavg=0.0, ymax=0.0, chroma=128.0)], []], ids=["no picture at all", "no frame read"]
+)
+def test_a_recording_with_no_picture_to_find_falls_back_to_the_fixed_guess(
+    monkeypatch: pytest.MonkeyPatch, settings: RecordConfig, tmp_path: Path, rows: list[frames.FrameStats]
 ) -> None:
-    read_as(monkeypatch, [a_frame(0.0, yavg=0.0, ymax=0.0, chroma=128.0)])
+    read_as(monkeypatch, rows)
     start = find_start(tmp_path / "01.webm", SETTLE, settings)
     assert start.seconds == pytest.approx(settings.fallback_first_paint_seconds + SETTLE)
     assert start.guessed
-
-
-def test_a_recording_whose_frames_cannot_be_read_is_a_guess(
-    monkeypatch: pytest.MonkeyPatch, settings: RecordConfig, tmp_path: Path
-) -> None:
-    read_as(monkeypatch, [])
-    start = find_start(tmp_path / "01.webm", SETTLE, settings)
-    assert start.guessed
-    assert start.seconds == pytest.approx(settings.fallback_first_paint_seconds + SETTLE)
