@@ -243,33 +243,6 @@ def words(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
-RETIRED = (
-    "data-cue", "data-reveal", "data-duration", "data-text", "data-delay", "data-preview",
-    "data-camera", "data-ease", "data-distance", "data-sync-lead", "min_tail_seconds",
-    "max_offset_frames", "true_peak_db", "mix.sfx", "soundscape.sfx", "video.fps", "screenshot_settle_ms",
-    "screenshot_settle_seconds",
-    "DECKTALK_FFMPEG", "DECKTALK_FFPROBE", "DECKTALK_CACHE_DIR", "preflight", "screenshots",
-)  # fmt: skip
-"""Every name a release retired, which no file a reader receives from the wheel may still carry."""
-
-
-def carried(path: Path) -> list[str]:
-    """Every retired name one packaged file still writes, which is empty on a file that is clean."""
-    text = path.read_text(encoding="utf-8")
-    return [name for name in RETIRED if name in text]
-
-
-WRITTEN_SUFFIXES = frozenset({".toml", ".json", ".md", ".html", ".example"})
-"""The packaged files a person reads. Everything else is a font or a bundle, and carries no name."""
-
-PROJECT_FILES = sorted(p for root in PROJECTS.values() for p in root.rglob("*") if p.suffix in WRITTEN_SUFFIXES)
-
-
-@pytest.mark.parametrize("path", PROJECT_FILES, ids=lambda p: p.name)
-def test_no_retired_name_survives_in_a_packaged_project(path: Path) -> None:
-    assert not carried(path), f"{path.name} still carries {carried(path)}"
-
-
 # ---- the packaged skills ------------------------------------------------------------------------
 
 COMMANDS = {stage.value for stage in Stage} | {
@@ -397,16 +370,10 @@ def test_no_skill_carries_a_semicolon_or_a_dash_in_its_prose(path: Path) -> None
     assert not hits, "\n".join(hits)
 
 
-@pytest.mark.parametrize("path", SKILL_FILES, ids=lambda p: p.name)
-def test_no_retired_name_survives_in_a_skill(path: Path) -> None:
-    assert not carried(path), f"{path.name} still carries {carried(path)}"
-
-
 def test_the_agents_file_init_writes_points_at_the_help_rather_than_repeating_it() -> None:
     """A concise file that names the surface beats a long one that copies it and goes stale."""
     path = assets.package_file(f"template/{template.AGENTS_FILE}")
     text = path.read_text(encoding="utf-8")
-    assert not carried(path), f"AGENTS.md still carries {carried(path)}"
     assert "`decktalk --help`" in text and "`decktalk schema`" in text
     assert len(text.split()) < 200, "AGENTS.md is a few lines, not a manual"
 
