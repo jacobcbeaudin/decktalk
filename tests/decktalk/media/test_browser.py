@@ -143,26 +143,21 @@ class Sink:
 
 
 def record(
-    tmp_path: Path,
-    sink: Sink,
-    *,
-    out: Path,
-    fake: FakeBrowser | None = None,
-    motion: MotionConfig | None = None,
+    tmp_path: Path, sink: Sink, *, out: Path, fake: FakeBrowser | None = None, seconds: float = 0.5, **extra: object
 ) -> browser.Recording:
+    """One fake recording of the deck's page, with any option of `record_page` a test is about in `extra`."""
+    options: dict[str, Any] = {
+        "settle_seconds": 0.0,
+        "min_cover_seconds": 0.0,
+        "width": 960,
+        "height": 540,
+        "color_scheme": "dark",
+        "motion": MotionConfig(),
+        **extra,
+    }
+    allowed = Allowed.of(tmp_path, ["deck"])
     return browser.record_page(
-        fake or FakeBrowser(),
-        page_url("deck/index.html"),
-        0.5,
-        out,
-        allowed=Allowed.of(tmp_path, ["deck"]),
-        log_sink=sink,
-        settle_seconds=0.0,
-        min_cover_seconds=0.0,
-        width=960,
-        height=540,
-        color_scheme="dark",
-        motion=motion or MotionConfig(),
+        fake or FakeBrowser(), page_url("deck/index.html"), seconds, out, allowed=allowed, log_sink=sink, **options
     )
 
 
@@ -240,10 +235,7 @@ def test_every_call_into_the_page_carries_a_deadline(tmp_path):
     """A deck's own script runs in the page's one thread, so a call with no deadline is a build with none."""
     out = tmp_path / "01.webm"
     fake = FakeBrowser()
-    browser.record_page(
-        fake, page_url("deck/index.html"), 0.1, out, allowed=Allowed.of(tmp_path, ["deck"]), log_sink=Sink(out),
-        settle_seconds=0.0, min_cover_seconds=0.0, width=960, height=540, color_scheme="dark", motion=MotionConfig(),
-    )  # fmt: skip
+    record(tmp_path, Sink(out), out=out, fake=fake, seconds=0.1)
     page = fake.contexts[0].page
     assert page is not None and page.scripts
     for script in page.scripts:
@@ -347,11 +339,7 @@ def test_a_document_the_caller_answers_itself_is_never_a_recorded_asset(tmp_path
     """The cue times a run resolved are its own output, so a recording keyed on them keys on itself."""
     fake = FakeBrowser()
     out = tmp_path / "01.webm"
-    browser.record_page(
-        fake, page_url("deck/index.html"), 0.1, out, allowed=Allowed.of(tmp_path, ["deck"]), log_sink=Sink(out),
-        settle_seconds=0.0, min_cover_seconds=0.0, width=960, height=540, color_scheme="dark",
-        motion=MotionConfig(), documents={"/__decktalk/cue-times.json": b'{"sections": []}'},
-    )  # fmt: skip
+    record(tmp_path, Sink(out), out=out, fake=fake, seconds=0.1, documents={"/__decktalk/cue-times.json": b"{}"})
     assert fake.contexts[0].routes == ["**/*"]
 
 
@@ -650,11 +638,7 @@ def test_a_recording_asks_whether_to_stop_at_least_once_a_second_and_stops_whole
     out = tmp_path / "01.webm"
     sink = Sink(out)
     with pytest.raises(Cancelled):
-        browser.record_page(
-            FakeBrowser(), page_url("deck/index.html"), 10.0, out, allowed=Allowed.of(tmp_path, ["deck"]),
-            log_sink=sink, settle_seconds=0.0, min_cover_seconds=0.0, width=960, height=540,
-            color_scheme="no-preference", motion=MotionConfig(), check=check,
-        )  # fmt: skip
+        record(tmp_path, sink, out=out, seconds=10.0, check=check)
     assert len(asked) == 3
     assert not out.exists() and sink.moments == [("clear", False)], "nothing is placed and no log is written"
 
