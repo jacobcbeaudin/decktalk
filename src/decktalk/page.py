@@ -40,6 +40,7 @@ __all__ = [
     "Kind",
     "LIST_SEPARATOR",
     "MEASURABLE_SPAN_SECONDS",
+    "MILLISECONDS",
     "MOMENTS",
     "MOTION_SCALE_PROPERTY",
     "ONSET_FIRST_FRAME_PERCENT",
@@ -51,6 +52,7 @@ __all__ = [
     "QUERY",
     "REPORT",
     "Range",
+    "SECOND_DIGITS",
     "SLIDE_ENTRANCES",
     "Subject",
     "TIME_MARK",
@@ -59,6 +61,12 @@ __all__ = [
     "measurable",
     "stagger_span",
 ]
+
+MILLISECONDS = 1000
+"""Truth: the milliseconds in a second, which is the unit Chromium and the page both count in."""
+
+SECOND_DIGITS = 3
+"""Truth: a second is written to the millisecond, which is finer than any frame a recording holds."""
 
 CAPTURE_FPS = 25
 """The rate the recorder captures at, which is the rate Chromium paints a deck at."""

@@ -33,6 +33,7 @@ from pydantic import AfterValidator, Field, JsonValue
 
 from decktalk.errors import ErrorInfo
 from decktalk.findings import Code, Finding, Model, ProjectPath
+from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Outcome, Stage
 
 SCHEMA = 2
@@ -53,13 +54,10 @@ Written = Annotated[
 ]
 """The files a run wrote, declared once and carried by every result whose command writes any."""
 
-ELAPSED_DIGITS = 3
-"""Truth: a duration is read to the millisecond, which is finer than any frame and coarser than a clock tick."""
-
 Elapsed = Annotated[
     float,
     Field(ge=0, description="How long this call took, in seconds.", json_schema_extra=VOLATILE),
-    AfterValidator(lambda seconds: round(seconds, ELAPSED_DIGITS)),
+    AfterValidator(lambda seconds: round(seconds, SECOND_DIGITS)),
 ]
 """A wall-clock duration, which is measured rather than computed and so is never compared.
 

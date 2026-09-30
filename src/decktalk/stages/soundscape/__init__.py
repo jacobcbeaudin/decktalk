@@ -40,7 +40,8 @@ from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs, MusicSpec, SoundSpec
 from decktalk.machine import Run
-from decktalk.media import MILLISECONDS, audio, ffmpeg
+from decktalk.media import audio, ffmpeg
+from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Stage
 from decktalk.results import (
     SoundItem,

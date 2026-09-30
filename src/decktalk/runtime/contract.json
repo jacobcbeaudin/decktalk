@@ -1,4 +1,6 @@
 {
+  "milliseconds": 1000,
+  "secondDigits": 3,
   "captureFps": 25,
   "pairSeparator": "|",
   "pairMark": ":",

@@ -36,9 +36,6 @@ from decktalk.pipeline import Stage
 from decktalk.results import Layer
 from decktalk.speech import VoiceContext
 
-SECOND_DIGITS = 3
-"""Truth: three decimal places of a second is one millisecond, which is finer than any frame."""
-
 PRICE_KEY = "voice.price_per_1000_characters"
 """The key that states what speech costs, whose layer decides whether a spend ceiling may refuse a run."""
 
@@ -108,7 +105,6 @@ __all__ = [
     "CHARACTERS_PER_PRICE",
     "DOLLAR_DIGITS",
     "PRICE_KEY",
-    "SECOND_DIGITS",
     "SECTION_START_SECONDS",
     "dollars_for",
     "judge",

@@ -27,15 +27,8 @@ from pathlib import Path
 from decktalk import page
 from decktalk.findings import Code, Finding, Location
 from decktalk.media.pagereport import ElementRow, MeasuredScene, PageReport
-from decktalk.page import Attr, measurable
+from decktalk.page import SECOND_DIGITS, Attr, measurable
 from decktalk.pipeline import Stage
-
-MILLISECOND_DIGITS = 3
-"""Truth: three decimal places of a second is one millisecond, which is finer than any frame.
-
-Every span this module reports is rounded there, because a reader comparing two of them against a
-limit written in seconds should not have to read a number the measurement never had.
-"""
 
 SWAP_APART_SECONDS = page.MEASURABLE_SPAN_SECONDS
 """How far a swap's two halves may land apart before a viewer reads them as two separate changes.
@@ -183,7 +176,7 @@ def swap_findings(
         mine, theirs = times.get(row.cue), times.get(partner)
         if mine is None or theirs is None:
             continue
-        apart = round(abs(mine - theirs), MILLISECOND_DIGITS)
+        apart = round(abs(mine - theirs), SECOND_DIGITS)
         if apart <= SWAP_APART_SECONDS:
             continue
         found.append(
@@ -207,7 +200,7 @@ def overlap_findings(
     ordered = sorted(times.items(), key=lambda item: (item[1], item[0]))
     found: list[Finding] = []
     for (first, at), (second, then) in pairwise(ordered):
-        apart = round(then - at, MILLISECOND_DIGITS)
+        apart = round(then - at, SECOND_DIGITS)
         playing = spans.get(first, 0.0)
         if apart >= playing or playing == 0.0:
             continue
@@ -259,7 +252,6 @@ def slide_findings(
 
 __all__ = [
     "CUES_FIELD",
-    "MILLISECOND_DIGITS",
     "SLIDES_FIELD",
     "SWAP_APART_SECONDS",
     "Slides",

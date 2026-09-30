@@ -35,9 +35,10 @@ from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import Encoder
+from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
-from decktalk.stages import SECOND_DIGITS, judge, selects
+from decktalk.stages import judge, selects
 
 log = logging.getLogger(__name__)
 

@@ -33,10 +33,10 @@ from decktalk.machine import Run
 from decktalk.media.browser import await_ready, chromium, open_page, read_report, screenshot
 from decktalk.media.origin import Allowed, Assets, page_url
 from decktalk.media.pagereport import MeasuredScene, PageReport
-from decktalk.page import Q
+from decktalk.page import SECOND_DIGITS, Q
 from decktalk.pagescan import Slides, scene_entry, slide_cues
 from decktalk.results import Panel, StoryboardResult, counted
-from decktalk.stages import SECOND_DIGITS, SECTION_START_SECONDS, selects
+from decktalk.stages import SECTION_START_SECONDS, selects
 from decktalk.stages.record.capture import as_query, words_query
 
 LABEL_SAFE = re.compile(r"[^A-Za-z0-9._-]+")

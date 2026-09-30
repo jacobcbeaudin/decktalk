@@ -43,11 +43,11 @@ from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import InputError, ToolError
-from ..page import MOTION_SCALE_PROPERTY
+from ..page import MILLISECONDS, MOTION_SCALE_PROPERTY
 from ..settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
-from . import MILLISECONDS, pagereport
+from . import pagereport
 from .encode import css_color
 from .environment import child_environment
 from .origin import Allowed, Assets, route_pages

@@ -33,9 +33,8 @@ from decktalk.artifacts import CueTimes, RecordingLog, content_digest, input_has
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
-from decktalk.page import LIST_SEPARATOR, TIME_MARK, Q
+from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, TIME_MARK, Q
 from decktalk.results import Word
-from decktalk.stages import SECOND_DIGITS
 
 log = logging.getLogger(__name__)
 

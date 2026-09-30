@@ -40,7 +40,8 @@ import pytest
 from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words
 from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart, StageDone, StageStart
 from decktalk.findings import Code
-from decktalk.media import MILLISECONDS, audio, ffmpeg, frames
+from decktalk.media import audio, ffmpeg, frames
+from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import Layer, SectionKind, SpendState, Substitute, Voicing, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex

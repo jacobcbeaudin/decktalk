@@ -14,9 +14,8 @@ import pytest
 
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
-from decktalk.media import MILLISECONDS
 from decktalk.media.frames import Size
-from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS
+from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS, MILLISECONDS
 from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig
 from decktalk.stages.verify.plan import (
     EPSILON,

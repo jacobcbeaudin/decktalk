@@ -42,10 +42,9 @@ from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import iso_639_2
 from decktalk.media.origin import page_url
 from decktalk.media.pagereport import MeasuredScene
-from decktalk.page import Q
+from decktalk.page import SECOND_DIGITS, Q
 from decktalk.pagescan import scene_entry, slide_cues
 from decktalk.results import SectionKind, Word
-from decktalk.stages import SECOND_DIGITS
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
 from decktalk.stages.assemble.mix import effect_second
 from decktalk.stages.storyboard import open_project_page

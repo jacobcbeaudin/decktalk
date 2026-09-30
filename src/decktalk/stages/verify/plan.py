@@ -21,8 +21,8 @@ from typing import cast
 
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
-from decktalk.media import MILLISECONDS
 from decktalk.media.frames import Size
+from decktalk.page import MILLISECONDS
 from decktalk.settings import NUMBERS_BY_ID, Settings, VerifyConfig
 from decktalk.stages import selects
 

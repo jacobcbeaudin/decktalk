@@ -329,6 +329,7 @@ def page_module(data: dict[str, Any]) -> str:
         "Kind",
         "LIST_SEPARATOR",
         "MEASURABLE_SPAN_SECONDS",
+        "MILLISECONDS",
         "MOTION_SCALE_PROPERTY",
         "MOMENTS",
         "ONSET_FIRST_FRAME_PERCENT",
@@ -340,6 +341,7 @@ def page_module(data: dict[str, Any]) -> str:
         "QUERY",
         "REPORT",
         "Range",
+        "SECOND_DIGITS",
         "SLIDE_ENTRANCES",
         "Subject",
         "TIME_MARK",
@@ -351,6 +353,10 @@ def page_module(data: dict[str, Any]) -> str:
     parts = [
         PAGE_HEADER,
         "__all__ = [\n" + "".join(f"    {name!r},\n" for name in sorted(exported)) + "]\n",
+        f"MILLISECONDS = {data['milliseconds']!r}\n"
+        '"""Truth: the milliseconds in a second, which is the unit Chromium and the page both count in."""\n',
+        f"SECOND_DIGITS = {data['secondDigits']!r}\n"
+        '"""Truth: a second is written to the millisecond, which is finer than any frame a recording holds."""\n',
         f"CAPTURE_FPS = {data['captureFps']!r}\n"
         '"""The rate the recorder captures at, which is the rate Chromium paints a deck at."""\n',
         f"FRAME_STEP_MS = {data['frameStepMs']!r}\n"

@@ -28,9 +28,9 @@ from decktalk.inputs.paths import at
 from decktalk.machine import Run
 from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
+from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact
 from decktalk.results import ClipResult, SectionWords, Word
-from decktalk.stages import SECOND_DIGITS
 from decktalk.stages.words import section_words
 
 FRAME_SLACK = 0.5

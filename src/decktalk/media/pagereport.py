@@ -20,8 +20,7 @@ from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from .. import page
 from ..findings import Code, Model, RaisedBy
-from ..page import REPORT, Attr, stagger_span
-from . import MILLISECONDS
+from ..page import MILLISECONDS, REPORT, Attr, stagger_span
 
 
 class PageWarningRow(Model):

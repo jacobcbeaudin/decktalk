@@ -901,6 +901,8 @@ export function scaled(span: number, scale: number): number {
  * the JSON the skills quote.
  */
 export const CONTRACT = {
+  milliseconds: MILLISECONDS,
+  secondDigits: SECOND_DIGITS,
   captureFps: CAPTURE_FPS,
   pairSeparator: PAIR_SEPARATOR,
   pairMark: PAIR_MARK,

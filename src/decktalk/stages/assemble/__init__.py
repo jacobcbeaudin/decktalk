@@ -23,9 +23,9 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.timeline import narration_offsets
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
+from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import AssembleResult, RenderedSection, counted
-from decktalk.stages import SECOND_DIGITS
 from decktalk.stages.assemble.cut import Rendered, cut_list, remove_stray_cuts, render_sections, rendered_starts
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
 from decktalk.stages.assemble.mix import MixPlan, encode_soundtrack, mix_soundtrack

@@ -49,10 +49,10 @@ from decktalk.machine import Run
 from decktalk.media import browser
 from decktalk.media.browser import Recording
 from decktalk.media.origin import Allowed
-from decktalk.page import CAPTURE_FPS
+from decktalk.page import CAPTURE_FPS, SECOND_DIGITS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
-from decktalk.stages import SECOND_DIGITS, judge, selects
+from decktalk.stages import judge, selects
 from decktalk.stages.record.capture import (
     Job,
     plan_job,

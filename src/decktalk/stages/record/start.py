@@ -13,9 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.media import frames
-from decktalk.page import CAPTURE_FPS
+from decktalk.page import CAPTURE_FPS, SECOND_DIGITS
 from decktalk.settings import RecordConfig
-from decktalk.stages import SECOND_DIGITS
 
 DEFAULT_FRAME_SECONDS = 1 / CAPTURE_FPS
 """Derived: one frame at the rate the recorder captures at, for a recording too short to measure its own."""
