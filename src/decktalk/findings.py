@@ -92,8 +92,8 @@ class Code(Enum):
         cls,
         code: str,
         sentence: str,
-        certainty: Certainty = Certainty.CERTAIN,
         raised_by: RaisedBy = RaisedBy.RUNTIME,
+        certainty: Certainty = Certainty.CERTAIN,
     ) -> Code:
         # A row that names no certainty is certain and one that names no side is the page's, because
         # most rows are both, and a row that differs says so where it is written.
@@ -226,62 +226,54 @@ class Code(Enum):
     PAGE_MOTION_OVERRUN = (
         "PAGE_MOTION_OVERRUN",
         "A motion span runs past the measurable ceiling, so the cue it carries cannot be verified.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     PAGE_STAGGER_OVERRUN = (
         "PAGE_STAGGER_OVERRUN",
         "A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     PAGE_THIN_DRAW = (
         "PAGE_THIN_DRAW",
         "A frozen slide draws less of the picture than a change must cross to be seen.",
-        Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
+        Certainty.UNCERTAIN,
     )
     PAGE_NO_DESCRIPTION = (
         "PAGE_NO_DESCRIPTION",
         "An element changes the picture and describes nothing, so the transcript loses the change.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     PAGE_SWAP_APART = (
         "PAGE_SWAP_APART",
         "A swap's two halves land far enough apart that a viewer sees the gap between them.",
-        Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
+        Certainty.UNCERTAIN,
     )
     PAGE_STALLED = (
         "PAGE_STALLED",
         "The picture held still for longer than a recorded section ever should.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     PAGE_BLACK = (
         "PAGE_BLACK",
         "A recorded frame is black, so the film shows nothing at that moment.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     PAGE_TRUNCATED = (
         "PAGE_TRUNCATED",
         "A recording stopped before its section's clock ran out, so the film is short of picture.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     PAGE_CDN_ASSET = (
         "PAGE_CDN_ASSET",
         "The page loads an asset from a network origin, so the film depends on somebody else's server.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     PAGE_RUNTIME_STALE = (
         "PAGE_RUNTIME_STALE",
         "The project's copy of the runtime is not the one this engine ships, so its pages play a contract "
         "this engine does not measure.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
 
@@ -289,92 +281,82 @@ class Code(Enum):
     CUE_MISSING = (
         "CUE_MISSING",
         "The page declares a moment that cues.json does not list, so nothing gives it a second.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     CUE_UNKNOWN = (
         "CUE_UNKNOWN",
         "cues.json lists a cue no page declares, so nothing plays it.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     CUE_UNRESOLVED = (
         "CUE_UNRESOLVED",
         "The cue's phrase is not spoken in its section, so there is no second to place it at.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     CUE_STALE = (
         "CUE_STALE",
         "The cue times on disk were placed from a different cues.json than the project's, so the film "
         "is judged against moments nobody asked for until the project is built again.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     CUE_OFF = (
         "CUE_OFF",
         "The change lands further from its word than the offset limit allows.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     CUE_NO_ONSET = (
         "CUE_NO_ONSET",
         "The cue resolved with no measured onset, so its second is the section's start and not its word's.",
-        Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
+        Certainty.UNCERTAIN,
     )
     CUE_NO_CHANGE = (
         "CUE_NO_CHANGE",
         "Nothing in the picture changed at the cue's second, so the reveal never happened.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     CUE_THIN_CHANGE = (
         "CUE_THIN_CHANGE",
         "Less of the picture changed at the cue than a visible reveal must cross.",
-        Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
+        Certainty.UNCERTAIN,
     )
     CUE_OVERLAP = (
         "CUE_OVERLAP",
         "Two cues resolve close enough together that a viewer cannot tell them apart.",
-        Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
+        Certainty.UNCERTAIN,
     )
     TAKE_PLACEHOLDER = (
         "TAKE_PLACEHOLDER",
         "The script still holds an open placeholder, so a voiced run would read it out.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     TAKE_SPOKEN_SYMBOL = (
         "TAKE_SPOKEN_SYMBOL",
         "The script holds a symbol the voice reads as its name rather than as the thing it means.",
-        Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
+        Certainty.UNCERTAIN,
     )
     CUT_SPEECH = (
         "CUT_SPEECH",
         "Speech is still sounding at a section cut, so the film slices a word in two.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     CUT_POP = (
         "CUT_POP",
         "The picture steps at a section cut, so the film pops on the seam.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
     MIX_LOUDNESS = (
         "MIX_LOUDNESS",
         "The mixed film misses the loudness it was mastered to.",
-        Certainty.UNCERTAIN,
         RaisedBy.PYTHON,
+        Certainty.UNCERTAIN,
     )
     FILE_MISSING = (
         "FILE_MISSING",
         "A file the project names is not on disk.",
-        Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
 
