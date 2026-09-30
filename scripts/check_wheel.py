@@ -79,7 +79,8 @@ def smoke(built: Path) -> int:
         )
         if run.returncode:
             print(f"the wheel could not write a project: `decktalk init` exited {run.returncode}")
-            print(run.stdout.strip() or run.stderr.strip())
+            # Both streams, because a refusal goes to stderr and anything printed before it to stdout.
+            print(f"{run.stdout}{run.stderr}".strip())
             return 1
         missing = [name for name in WRITTEN_BY_INIT if not (target / name).is_file()]
         if missing:
