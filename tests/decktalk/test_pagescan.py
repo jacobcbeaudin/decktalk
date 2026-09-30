@@ -72,8 +72,6 @@ def test_a_scene_also_declares_the_cues_its_own_map_names() -> None:
     """A cue a handler alone serves is in the scene's map and on no element, so both are read."""
     one = entry("1", {"1.1": ["1.1:a"]}, cues={"1.1": ["1.1:a", "1.1:handled"]})
     assert scene_cues(one) == ("1.1:a", "1.1:handled")
-    flat = entry("1", {}, cues=["1.1:listed"])
-    assert scene_cues(flat) == ("1.1:listed",)
 
 
 def test_a_catalog_row_is_the_row_this_module_judges() -> None:

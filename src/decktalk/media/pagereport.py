@@ -154,6 +154,10 @@ class MeasuredScene(Model):
     elements: dict[str, tuple[ElementRow, ...]] = Field(
         default_factory=dict, description="The measured rows of each slide, keyed by the slide id."
     )
+    slides: tuple[str, ...] = Field((), description="The slides of this scene, in the order the page declares them.")
+    cues: dict[str, tuple[str, ...]] = Field(
+        default_factory=dict, description="The wire ids of the cues each slide declares, keyed by the slide id."
+    )
 
 
 class PageReport(Model):

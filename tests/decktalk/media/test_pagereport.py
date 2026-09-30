@@ -17,7 +17,9 @@ REPORTED = {
     "catalog": [
         {
             "scene": "intro",
-            "slides": [{"id": "1.1", "cues": ["1.1:expand"]}],
+            "name": "Intro",
+            "slides": ["1.1"],
+            "cues": {"1.1": ["1.1:expand"]},
             "elements": {
                 "1.1": [
                     {
@@ -91,11 +93,12 @@ def test_a_label_reported_as_something_other_than_text_is_one_sentence():
 
 
 def test_the_catalog_keeps_what_the_recorder_does_not_read():
-    """`pagescan.py` is the catalog's reader, so the slides and the cues survive this boundary."""
+    """`pagescan.py` is the catalog's reader, so what this model does not name survives this boundary."""
     scene = pagereport.read(REPORTED).catalog[0]
     assert scene.scene == "intro"
     assert scene.elements["1.1"][0].moments == {"data-in": "1.1:expand"}
-    assert scene.model_dump()["slides"] == [{"id": "1.1", "cues": ["1.1:expand"]}]
+    assert (scene.slides, scene.cues) == (("1.1",), {"1.1": ("1.1:expand",)})
+    assert scene.model_dump()["name"] == "Intro"
 
 
 def test_the_worst_stall_counts_only_what_a_viewer_can_see():

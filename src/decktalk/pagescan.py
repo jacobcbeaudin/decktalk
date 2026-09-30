@@ -37,12 +37,6 @@ Derived: it is the measurable ceiling itself, because a change still playing whe
 due is the same failure whether the page calls it a swap or calls it a motion.
 """
 
-SLIDES_FIELD = "slides"
-"""What the catalog entry calls the slides of a scene, in the order the page declares them."""
-
-CUES_FIELD = "cues"
-"""What the catalog entry calls the map of the cues each slide of a scene declares."""
-
 Slides = dict[str, tuple[str, ...]]
 """Each slide of one scene, in page order, with the wire ids of the cues it declares in cue order."""
 
@@ -66,11 +60,8 @@ def slide_cues(entry: MeasuredScene | None) -> Slides | None:
     """
     if entry is None:
         return None
-    extra = entry.model_extra or {}
-    order = _names(extra.get(SLIDES_FIELD)) or list(entry.elements)
-    declared = extra.get(CUES_FIELD)
-    listed = declared if isinstance(declared, Mapping) else {}
-    return {slide: tuple(dict.fromkeys(_names(listed.get(slide)) or _moments(entry, slide))) for slide in order}
+    order = entry.slides or tuple(entry.elements)
+    return {slide: tuple(dict.fromkeys(entry.cues.get(slide) or _moments(entry, slide))) for slide in order}
 
 
 def scene_cues(entry: MeasuredScene) -> tuple[str, ...]:
@@ -80,17 +71,9 @@ def scene_cues(entry: MeasuredScene) -> tuple[str, ...]:
     in the scene's own cue map, and the two agree. Both are read because a scene whose cues are
     served by a handler alone declares them in the map and on no element.
     """
-    listed = (entry.model_extra or {}).get(CUES_FIELD)
-    named = [wire for ids in listed.values() for wire in _names(ids)] if isinstance(listed, Mapping) else _names(listed)
+    named = [wire for ids in entry.cues.values() for wire in ids]
     found = [wire for row in measured_rows(entry) for wire in row.moments.values() if wire]
     return tuple(dict.fromkeys(found + named))
-
-
-def _names(given: object) -> list[str]:
-    """One list of names as the page wrote it, which is nothing at all when it wrote something else."""
-    if isinstance(given, str | bytes) or not isinstance(given, Sequence):
-        return []
-    return [str(one) for one in given]
 
 
 def _moments(entry: MeasuredScene, slide: str) -> list[str]:
@@ -242,8 +225,6 @@ def slide_findings(
 
 
 __all__ = [
-    "CUES_FIELD",
-    "SLIDES_FIELD",
     "SWAP_APART_SECONDS",
     "Slides",
     "asset_findings",
