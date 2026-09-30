@@ -42,7 +42,7 @@ from decktalk.files import replace_all
 from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Document, Inputs, Workspace
 from decktalk.inputs.paths import at, relative
-from decktalk.machine import Machine, Run, apply_fix, fixes_of, new_run
+from decktalk.machine import Machine, Run, apply_fixes, new_run
 from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
@@ -462,11 +462,7 @@ class Project:
         applied.
         """
         with self._open(writes=True) as run:
-            outcomes = tuple(
-                apply_fix(run, code, found, root=self.root, scope=Scope.PROJECT, unsafe=unsafe)
-                for code, found in fixes_of(fix)
-            )
-            return run.result(ApplyResult, fixes=outcomes)
+            return apply_fixes(run, fix, root=self.root, scope=Scope.PROJECT, unsafe=unsafe)
 
     # ---- the local origin ---------------------------------------------------------------------
 

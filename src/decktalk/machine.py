@@ -639,11 +639,7 @@ class Machine:
     def apply(self, fix: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
         """Carry out the fixes a machine can make, which is turning a machine knob and running a command."""
         with self.run(root=self.cwd) as run:
-            outcomes = tuple(
-                apply_fix(run, code, found, root=self.cwd, scope=Scope.MACHINE, unsafe=unsafe)
-                for code, found in fixes_of(fix)
-            )
-            return run.result(ApplyResult, fixes=outcomes)
+            return apply_fixes(run, fix, root=self.cwd, scope=Scope.MACHINE, unsafe=unsafe)
 
     # ---- the rows `doctor` reports ---------------------------------------------------------
 
@@ -741,6 +737,14 @@ def init(
 
 
 # ---- applying a fix ------------------------------------------------------------------------
+
+
+def apply_fixes(run: Run, fix: Finding | Iterable[Finding], *, root: Path, scope: Scope, unsafe: bool) -> ApplyResult:
+    """Carry out every fix a caller handed over, in order, and publish what each one did."""
+    outcomes = tuple(
+        apply_fix(run, code, found, root=root, scope=scope, unsafe=unsafe) for code, found in fixes_of(fix)
+    )
+    return run.result(ApplyResult, fixes=outcomes)
 
 
 def apply_fix(run: Run, code: Code, fix: Fix, *, root: Path, scope: Scope, unsafe: bool) -> FixOutcome:
