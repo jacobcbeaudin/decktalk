@@ -28,9 +28,7 @@ from pathlib import Path
 
 import rustworkx as rx
 
-from support.paths import REPO
-
-SRC = REPO / "src" / "decktalk"
+from support.paths import SRC
 
 LAYERS: dict[str, tuple[str, int]] = {
     # The words every layer above shares, which import nothing but each other, and the one rule by

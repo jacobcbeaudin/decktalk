@@ -19,9 +19,7 @@ from __future__ import annotations
 import ast
 import re
 
-from support.paths import REPO
-
-SRC = REPO / "src" / "decktalk"
+from support.paths import SRC
 
 TAG = re.compile(r"#\s*(?:silent:\s*\S|noqa: BLE001\s+\()")
 """The two spellings of a reason a quiet except block gives, which a reader can grep for."""

@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from decktalk.settings import KEYS
 from support import ratchet
-from support.paths import REPO
+from support.paths import REPO, SRC
 
 BASELINE = Path(__file__).resolve().parent / "numbers-baseline.json"
 """The committed per-file count of literals still waiting for a door, which only ever shrinks."""
@@ -79,7 +79,7 @@ def walked() -> list[Path]:
     """Every Python file the rule holds over, in a stable order."""
     out: list[Path] = []
     for name in WALKED:
-        here = REPO / "src" / "decktalk" / name
+        here = SRC / name
         out += sorted(here.rglob("*.py")) if here.is_dir() else [here]
     return out
 

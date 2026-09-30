@@ -69,9 +69,7 @@ from decktalk.results import (
 )
 from decktalk.tomlmap import Nature, Source
 from support import ratchet
-from support.paths import REPO
-
-ROOT = REPO
+from support.paths import REPO, SRC, TESTS
 
 BASELINE = Path(__file__).resolve().parent / "vocabulary-baseline.json"
 """The committed per-file count of literals still spelling a closed vocabulary, which only ever shrinks."""
@@ -266,15 +264,15 @@ def violations(source: str, where: str) -> list[str]:
 
 
 def python_files() -> list[Path]:
-    files = [*(ROOT / "src" / "decktalk").rglob("*.py"), *(ROOT / "tests").rglob("*.py")]
-    return sorted(p for p in files if "__pycache__" not in p.parts and "out" not in p.relative_to(ROOT).parts)
+    files = [*SRC.rglob("*.py"), *TESTS.rglob("*.py")]
+    return sorted(p for p in files if "__pycache__" not in p.parts and "out" not in p.relative_to(REPO).parts)
 
 
 def measured() -> dict[str, int]:
     """How many literals each file still spells, which is what the baseline is a count of."""
     found: dict[str, int] = {}
     for path in python_files():
-        where = path.relative_to(ROOT).as_posix()
+        where = path.relative_to(REPO).as_posix()
         if where in DEFINING:
             continue
         count = len(violations(path.read_text(encoding="utf-8"), where))
@@ -369,7 +367,7 @@ def test_every_word_with_a_second_job_is_still_a_word_an_enum_owns(word):
 
 def test_every_defining_module_is_still_there():
     for name in sorted(DEFINING):
-        assert (ROOT / name).exists(), f"{name} defines part of the vocabulary and is not there any more."
+        assert (REPO / name).exists(), f"{name} defines part of the vocabulary and is not there any more."
 
 
 if __name__ == "__main__":

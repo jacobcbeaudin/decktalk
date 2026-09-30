@@ -15,6 +15,14 @@ from pathlib import Path
 
 import pytest
 
+SUITE_MARKERS = ("browser", "media", "e2e", "scaffold", "platform")
+"""The markers that name what a test needs beyond Python. Every one is registered in `pyproject.toml`.
+
+`platform` is the machine itself rather than a tool: those tests assert what this filesystem and
+this fetched toolchain really do, so a runner that has fetched nothing would fail them and the
+default suite may not collect them. `tests/conftest.py` selects by these and nothing else is one.
+"""
+
 FETCH = "uv run decktalk install"
 """The command that fetches every tool a suite needs, which is the command a person runs."""
 

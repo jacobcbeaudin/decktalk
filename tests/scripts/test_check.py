@@ -93,7 +93,7 @@ def test_every_tool_a_row_declares_is_prepared_before_its_checks(group) -> None:
             assert prepare in prepared, f"{group.name} declares {tool} and never fetches it"
 
 
-@pytest.mark.parametrize("marker", ["browser", "media", "e2e", "scaffold", "platform"])
+@pytest.mark.parametrize("marker", tools.SUITE_MARKERS)
 def test_every_suite_that_needs_a_tool_runs_after_the_install(marker: str) -> None:
     rows = [group for group in check.GROUPS if any(marker in command for command in group.commands)]
     assert rows, f"no row runs the {marker} suite"

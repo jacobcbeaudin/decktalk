@@ -13,6 +13,8 @@ from __future__ import annotations
 import pytest
 from hypothesis import settings
 
+from support.tools import SUITE_MARKERS
+
 pytest_plugins = ["pytester"]
 
 # A property test draws its examples from a seed derived from the test itself and keeps no example
@@ -21,14 +23,6 @@ pytest_plugins = ["pytester"]
 # turn the time an example took into a failure that says nothing about the code.
 settings.register_profile("decktalk", derandomize=True, database=None, deadline=None, print_blob=True)
 settings.load_profile("decktalk")
-
-SUITE_MARKERS = ("browser", "media", "e2e", "scaffold", "platform")
-"""The markers that name what a test needs beyond Python. Every one is registered in `pyproject.toml`.
-
-`platform` is the machine itself rather than a tool: those tests assert what this filesystem and
-this fetched toolchain really do, so a runner that has fetched nothing would fail them and the
-default suite may not collect them.
-"""
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
