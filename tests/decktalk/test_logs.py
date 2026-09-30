@@ -26,7 +26,7 @@ from decktalk import logs
 from decktalk.errors import ErrorCode, NotBuiltError, ProjectLocked, ProviderError
 from decktalk.events import Event, Level, Line, Log, RunDone
 from decktalk.findings import Applicability, Code, CommandFix
-from decktalk.logs import HANDLER, LOGGER, RunHandler, install, level_of, logging_into, where, within
+from decktalk.logs import HANDLER, LOGGER, RunHandler, install, level_of, logging_into, within
 from decktalk.machine import Machine, Run, Toolchain, apply_fix
 from decktalk.media import browser, ffmpeg, origin
 from decktalk.media.environment import children_see
@@ -208,9 +208,9 @@ def test_the_place_is_restored_when_a_block_closes() -> None:
 
     with logging_into(receiver, run="r1"):
         with within(stage=Stage.CUE, section=1):
-            assert (where().run, where().stage, where().section) == ("r1", Stage.CUE, 1)
-        assert (where().stage, where().section) == (None, None)
-    assert where() == logs.Where()
+            assert (logs.WHERE.get().run, logs.WHERE.get().stage, logs.WHERE.get().section) == ("r1", Stage.CUE, 1)
+        assert (logs.WHERE.get().stage, logs.WHERE.get().section) == (None, None)
+    assert logs.WHERE.get() == logs.Where()
 
 
 def test_a_hosts_own_handler_never_sees_a_registered_secret(caplog: pytest.LogCaptureFixture) -> None:

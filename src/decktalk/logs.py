@@ -58,11 +58,6 @@ HANDLING: ContextVar[bool] = ContextVar("decktalk_log_handling", default=False)
 """Whether this context is already turning a record into a line, so a record written on the way is dropped."""
 
 
-def where() -> Where:
-    """Where the current context is working, which every line of the run is stamped with."""
-    return WHERE.get()
-
-
 @contextmanager
 def logging_into(receiver: Receiver, *, run: str) -> Iterator[None]:
     """Hand every record written under this context to `receiver`, and to nobody once it closes."""
@@ -208,4 +203,4 @@ def install() -> RunHandler:
 HANDLER = install()
 """The handler this process installed, which a test reads to see what it could not deliver."""
 
-__all__ = ["HANDLER", "LOGGER", "RunHandler", "Where", "cache_decision", "logging_into", "where", "within"]
+__all__ = ["HANDLER", "LOGGER", "RunHandler", "Where", "cache_decision", "logging_into", "WHERE", "within"]

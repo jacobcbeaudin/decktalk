@@ -17,6 +17,7 @@ from decktalk import machine as machines
 from decktalk.cli import session as sessions
 from decktalk.cli.app import command
 from decktalk.cli.options import Fix, Group
+from decktalk.errors import ApprovalRequired
 from decktalk.results import DoctorResult, InitResult, InstallResult
 from decktalk.template import STARTER, listed_names
 
@@ -49,7 +50,7 @@ def init(
     if _occupied(root) and not session.approve(
         overwrite or None, f"{root.name} is not empty. Write the project into it?"
     ):
-        raise session.refuse(
+        raise ApprovalRequired(
             f"{root.name} already holds files, and writing a project over them could lose work.",
             hint=f"Run decktalk init {directory} --overwrite to write into it anyway.",
         )
@@ -98,7 +99,7 @@ def install(ctx: Context) -> InstallResult:
     """
     session = sessions.of(ctx)
     if _asks_for_sudo() and session.asks and not session.confirm(_SUDO_QUESTION, default=True):
-        raise session.refuse(
+        raise ApprovalRequired(
             "installing Chromium's system libraries needs a password that was not given.",
             hint="Run decktalk install again when you can give one, or install the libraries yourself.",
         )

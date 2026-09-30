@@ -208,10 +208,6 @@ class Session:
         """Ask one question with a default on stderr, which is only ever called when `asks` is true."""
         return str(typer.prompt(question, default=default, err=True))
 
-    def refuse(self, message: str, *, hint: str) -> ApprovalRequired:
-        """The refusal a run makes when a prompt had no terminal and no flag answered it."""
-        return ApprovalRequired(message, hint=hint)
-
     def say(self, message: str) -> None:
         """One sentence on stderr, which is where everything but the result goes, unless `--events` holds it."""
         if not self.flags.quiet and not self.terminal.events:
@@ -237,7 +233,7 @@ class Session:
             return Voicing.PAID
         priced = self.price(project)
         if not self.asks:
-            raise self.refuse(_spend_sentence(priced), hint=_spend_hint(self.command))
+            raise ApprovalRequired(_spend_sentence(priced), hint=_spend_hint(self.command))
         if storyboard:
             self.say(self.storyboard_line(project))
         if priced is not None:

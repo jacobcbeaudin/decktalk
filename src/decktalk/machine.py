@@ -72,7 +72,7 @@ from decktalk.findings import (
 from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
-from decktalk.logs import level_of, logging_into, source_of, where, within
+from decktalk.logs import WHERE, level_of, logging_into, source_of, within
 from decktalk.media.environment import child_environment, children_see
 from decktalk.media.ffmpeg import installed_paths, using_tools
 from decktalk.pipeline import Outcome, Stage
@@ -261,7 +261,7 @@ class Run:
 
     def note(self, message: str, *, level: Level = Level.INFO) -> None:
         """One sentence the library would have printed, had the library printed anything."""
-        place = where()
+        place = WHERE.get()
         self.emit(Log, level=level, message=message, stage=place.stage, section=place.section)
 
     def logged(self, record: logging.LogRecord) -> None:
@@ -277,7 +277,7 @@ class Run:
             failure = record.exc_info[1]
             first = next(iter(str(failure).splitlines()), "")
             data["error"] = f"{type(failure).__name__}: {first}" if first else type(failure).__name__
-        place = where()
+        place = WHERE.get()
         self.emit(
             Log,
             level=level_of(record.levelno),
