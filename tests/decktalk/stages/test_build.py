@@ -40,6 +40,7 @@ from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.build import build
 from decktalk.stages.status import read_kept
 from support.logs import decisions
+from support.projects import load_project
 from support.runs import RUN_ID, Watched
 
 RATE = 0.30
@@ -115,11 +116,7 @@ class Calls:
 @pytest.fixture
 def inputs(tmp_path: Path) -> Inputs:
     """A two-section project with no soundscape, which is the shape most of these tests want."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    (root / "decktalk.toml").write_text(TOML, encoding="utf-8")
-    (root / "script.md").write_text(SCRIPT, encoding="utf-8")
-    return Inputs.load(root, environ={})
+    return load_project(tmp_path / "proj", TOML, script=SCRIPT)
 
 
 @dataclass

@@ -17,6 +17,8 @@ from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, StatusResult
 from decktalk.stages import status as stage
 from decktalk.stages.status import BUILT, next_command, source_of, status, voiced_text
+from support.pages import SCENE_ONE
+from support.projects import load_project
 from support.runs import a_run, notes
 from support.takes import a_take, write_takes
 
@@ -44,14 +46,7 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
 def a_project(tmp_path: Path, *, script: str | None = SCRIPT, toml: str = TOML) -> Inputs:
     """A project whose page and clip are both on disk, so nothing is missing until a case removes it."""
-    (tmp_path / "deck").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "deck" / "index.html").write_text("<div data-scene='1'></div>", encoding="utf-8")
-    (tmp_path / "media").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "media" / "b-roll.mp4").write_bytes(b"")
-    (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
-    if script is not None:
-        (tmp_path / "script.md").write_text(script, encoding="utf-8")
-    return Inputs.load(tmp_path, environ={})
+    return load_project(tmp_path, toml, page=SCENE_ONE, script=script, media=("media/b-roll.mp4",))
 
 
 def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: bool = True) -> Take:

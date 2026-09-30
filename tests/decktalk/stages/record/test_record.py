@@ -27,7 +27,7 @@ from decktalk.media.pagereport import PageReport
 from decktalk.stages.record import pool, record, stale_recording
 from support.logs import decisions
 from support.pages import TWO_SCENE_PAGE, a_report
-from support.projects import write_project
+from support.projects import load_project
 from support.runs import a_run
 from support.takes import a_take, write_takes
 
@@ -60,11 +60,7 @@ LAUNCH_WAIT_SECONDS = 10.0
 
 
 def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "", machine: dict[str, Any] | None = None) -> Inputs:
-    write_project(tmp_path, TOML + extra)
-    deck = tmp_path / "deck"
-    deck.mkdir(exist_ok=True)
-    (deck / "index.html").write_text(TWO_SCENE_PAGE, encoding="utf-8")
-    inputs = Inputs.load(tmp_path, environ={})
+    inputs = load_project(tmp_path, TOML + extra, page=TWO_SCENE_PAGE)
     if takes:
         write_takes(inputs, *(a_take(section, seconds=SPAN_SECONDS, voiced=False) for section in (1, 2)))
     return Inputs.load(tmp_path, environ={}, machine=machine)

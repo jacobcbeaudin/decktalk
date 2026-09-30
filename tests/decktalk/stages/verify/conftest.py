@@ -21,6 +21,7 @@ from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.results import SectionCues, Voicing
+from support.projects import load_project
 from support.runs import a_machine
 from support.takes import a_take, write_takes
 
@@ -160,12 +161,7 @@ def assembled(tmp_path: Path) -> Callable[..., Inputs]:
     def make(
         cue_times: dict[int, dict[str, float]] | None = None, *, toml: str = PAGES_TOML, cues: dict | None = None
     ) -> Inputs:
-        (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
-        (tmp_path / "deck").mkdir(exist_ok=True)
-        (tmp_path / "deck" / "index.html").write_text("<html></html>", encoding="utf-8")
-        if cues is not None:
-            (tmp_path / "cues.json").write_text(json.dumps({"sections": cues}), encoding="utf-8")
-        inputs = Inputs.load(tmp_path, environ={})
+        inputs = load_project(tmp_path, toml, page="<html></html>", cues=cues)
         write_artifacts(inputs, cue_times or {})
         return inputs
 

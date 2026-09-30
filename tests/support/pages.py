@@ -7,7 +7,6 @@ to any of those shapes is made once.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ from decktalk.artifacts import RecordingLog
 from decktalk.findings import Finding
 from decktalk.inputs import Inputs
 from decktalk.media.pagereport import PageReport, Recording
+from support.projects import load_project
 
 TOML = """
 [project]
@@ -50,19 +50,16 @@ TWO_SCENE_PAGE = """<!doctype html><html><body>
 """
 """The two-scene page the recorder tests open, each scene with one slide and one reveal."""
 
+SCENE_ONE = "<div data-scene='1'></div>"
+"""A deck page with one scene on it, which is all a project that is never recorded needs."""
+
 BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
 """One element's box, which no case measures."""
 
 
 def a_project(tmp_path: Path, *, toml: str = TOML, script: str = SCRIPT, cues: dict | None = None) -> Inputs:
     """A project with a deck, a script and the cue file the case asks for."""
-    (tmp_path / "deck").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "deck" / "index.html").write_text("<div data-scene='1'></div>", encoding="utf-8")
-    (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
-    (tmp_path / "script.md").write_text(script, encoding="utf-8")
-    if cues is not None:
-        (tmp_path / "cues.json").write_text(json.dumps({"sections": cues}, indent=2), encoding="utf-8")
-    return Inputs.load(tmp_path, environ={})
+    return load_project(tmp_path, toml, page=SCENE_ONE, script=script, cues=cues)
 
 
 def elements(moments: dict[str, list[str]], *, text: str = "x") -> dict[str, list[dict[str, Any]]]:

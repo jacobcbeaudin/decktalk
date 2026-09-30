@@ -12,6 +12,8 @@ from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.results import ClipResult, Word
 from decktalk.stages.clip import clip
+from support.pages import SCENE_ONE
+from support.projects import load_project
 from support.runs import a_run, notes
 from support.takes import a_take, write_takes
 
@@ -47,12 +49,7 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
 def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_disk: bool = True) -> Inputs:
     """A project whose section one is narrated and cut, which is what a clip is taken out of."""
-    (tmp_path / "deck").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "deck" / "index.html").write_text("<div data-scene='1'></div>", encoding="utf-8")
-    (tmp_path / "media").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "media" / "b-roll.mp4").write_bytes(b"")
-    (tmp_path / "decktalk.toml").write_text(TOML, encoding="utf-8")
-    inputs = Inputs.load(tmp_path, environ={})
+    inputs = load_project(tmp_path, TOML, page=SCENE_ONE, media=("media/b-roll.mp4",))
     take = a_take(1, seconds=2.0, hash="0123456789abcdef", voiced=voiced, lead_seconds=0.5)
     write_takes(inputs, take)
     Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("0123456789abcdef"))

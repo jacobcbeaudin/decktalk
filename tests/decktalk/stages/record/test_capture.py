@@ -27,7 +27,7 @@ from decktalk.stages.record.capture import (
     words_param,
 )
 from support.pages import TWO_SCENE_PAGE, a_recording
-from support.projects import write_project
+from support.projects import load_project
 
 TOML = """
 [project]
@@ -60,12 +60,7 @@ cue = "1.1:open"
 
 
 def a_project(tmp_path: Path, toml: str = TOML, page: str = TWO_SCENE_PAGE) -> Inputs:
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    write_project(tmp_path, toml)
-    deck = tmp_path / "deck"
-    deck.mkdir(exist_ok=True)
-    (deck / "index.html").write_text(page, encoding="utf-8")
-    return Inputs.load(tmp_path, environ={})
+    return load_project(tmp_path, toml, page=page)
 
 
 def section_of(inputs: Inputs, number: int) -> PageSection:
@@ -109,8 +104,7 @@ def test_the_page_url_carries_the_scene_and_the_recorder_signal(tmp_path: Path) 
 
 
 def test_a_section_whose_page_is_not_there_is_refused(tmp_path: Path) -> None:
-    write_project(tmp_path, TOML)
-    inputs = Inputs.load(tmp_path, environ={})
+    inputs = load_project(tmp_path, TOML)
     with pytest.raises(InputError, match="deck/index.html"):
         scene_url(inputs, section_of(inputs, 1), {})
 

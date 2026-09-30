@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,7 +16,8 @@ from decktalk.media.pagereport import PageReport
 from decktalk.pipeline import Stage
 from decktalk.results import CueResult, Word
 from decktalk.stages.cue import cue
-from support.pages import elements, write_log
+from support.pages import SCENE_ONE, elements, write_log
+from support.projects import load_project
 from support.runs import Watched, a_run, notes
 from support.takes import a_take, write_takes
 
@@ -46,12 +46,7 @@ WORDS = (
 
 def a_project(tmp_path: Path, *, cues: dict | None = None, voiced: bool = True) -> Inputs:
     """A project with one take for section one, and the cue file the case asks for."""
-    (tmp_path / "deck").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "deck" / "index.html").write_text("<div data-scene='1'></div>", encoding="utf-8")
-    (tmp_path / "decktalk.toml").write_text(TOML, encoding="utf-8")
-    if cues is not None:
-        (tmp_path / "cues.json").write_text(json.dumps({"sections": cues}, indent=2), encoding="utf-8")
-    inputs = Inputs.load(tmp_path, environ={})
+    inputs = load_project(tmp_path, TOML, page=SCENE_ONE, cues=cues)
     write_takes(inputs, a_take(1, seconds=2.0, hash="0123456789abcdef", voiced=voiced, sound_end_seconds=1.7))
     Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("0123456789abcdef"))
     return inputs

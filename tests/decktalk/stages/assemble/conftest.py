@@ -18,6 +18,7 @@ from decktalk.machine import Run
 from decktalk.media import ffmpeg
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages.assemble.cut import Rendered
+from support.projects import load_project
 from support.runs import RUN_ID, Watched, a_machine
 from support.takes import a_take, write_takes
 
@@ -116,10 +117,7 @@ def draw_slate(out: Path, **_named: object) -> Path:
 
 def write_project(root: Path, toml: str = PAGES_TOML) -> Inputs:
     """One project on disk, parsed as a stage is handed it."""
-    (root / "decktalk.toml").write_text(toml, encoding="utf-8")
-    (root / "deck").mkdir(exist_ok=True)
-    (root / "deck" / "index.html").write_text("<html></html>", encoding="utf-8")
-    return Inputs.load(root, environ={})
+    return load_project(root, toml, page="<html></html>")
 
 
 class Opened(Watched):

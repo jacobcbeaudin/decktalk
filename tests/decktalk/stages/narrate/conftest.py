@@ -16,6 +16,7 @@ import pytest
 from decktalk.artifacts import Take
 from decktalk.inputs import Inputs
 from decktalk.media import audio
+from support.projects import load_project
 from support.takes import a_take
 
 VOICE_ID = "voice-under-test"
@@ -75,12 +76,7 @@ def make_inputs(tmp_path: Path) -> Callable[..., Inputs]:
     """Write a project into its own directory and load it, so a rewrite reloads the same root."""
 
     def build(*, toml: str = TOML, script: str | None = SCRIPT, name: str = "proj") -> Inputs:
-        root = tmp_path / name
-        root.mkdir(parents=True, exist_ok=True)
-        (root / "decktalk.toml").write_text(toml, encoding="utf-8")
-        if script is not None:
-            (root / "script.md").write_text(script, encoding="utf-8")
-        return Inputs.load(root, environ=ENVIRON)
+        return load_project(tmp_path / name, toml, script=script, environ=ENVIRON)
 
     return build
 
