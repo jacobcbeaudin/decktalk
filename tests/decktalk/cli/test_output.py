@@ -14,7 +14,7 @@ from rich.console import Console
 
 from decktalk.cli import output
 from decktalk.errors import ErrorCode, ErrorInfo, InputError
-from decktalk.events import Event, Level, Log, Progress, RunStart, StageDone, StageStart
+from decktalk.events import Event, Fetch, Level, Log, Progress, RunStart, StageDone, StageStart
 from decktalk.findings import Certainty, Code
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
@@ -378,6 +378,15 @@ def test_the_live_region_shows_each_stage_its_progress_and_its_time() -> None:
     assert "Record" in shown
     assert "0:58" in shown
     assert "2/5" in shown
+
+
+def test_a_download_shows_its_size_in_the_unit_a_person_reads() -> None:
+    console = Console(record=True, width=100, no_color=True, file=io.StringIO(), force_terminal=True)
+    region = output.Region(console)
+    region.open()
+    region(Fetch(event="fetch", time=_now(), seq=0, run="r", tool="ffmpeg", bytes=169_000_000))
+    region.close()
+    assert "Fetching ffmpeg, 169.0 MB" in console.export_text()
 
 
 def test_a_finished_build_names_its_film_its_price_and_what_it_found() -> None:

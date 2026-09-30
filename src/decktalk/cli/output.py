@@ -19,6 +19,7 @@ from typing import Any
 from rich import box
 from rich.console import Console, RenderableType
 from rich.console import Group as Stack
+from rich.filesize import decimal
 from rich.live import Live
 from rich.table import Table
 from rich.text import Text
@@ -138,7 +139,7 @@ class Region(Renderer):
             row = self._rows.setdefault(event.stage, Report(stage=event.stage))
             row.seconds, row.outcome = event.seconds, event.outcome
         elif isinstance(event, Fetch):
-            self._live.update(Text(f"{'Fetching'.rjust(STAGE_COLUMN)} {event.tool}, {_bytes(event.bytes)}"))
+            self._live.update(Text(f"{'Fetching'.rjust(STAGE_COLUMN)} {event.tool}, {decimal(event.bytes)}"))
             return
         else:
             return
@@ -273,11 +274,6 @@ def _table(*columns: str) -> Table:
     for column in columns:
         table.add_column(column)
     return table
-
-
-def _bytes(count: int) -> str:
-    """A download as a person reads one, in megabytes."""
-    return f"{count / 1_000_000:.1f} MB"
 
 
 def _yes(state: bool) -> str:
