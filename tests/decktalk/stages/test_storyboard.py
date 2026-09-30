@@ -178,40 +178,40 @@ def test_the_page_sits_beside_the_stills_it_lays_out(tmp_path: Path) -> None:
     assert write_page(inputs.workspace, [], title="demo") == inputs.workspace.storyboard_path
 
 
+@pytest.fixture
+def published(tmp_path: Path, opened: Opened) -> Inputs:
+    """The demo project, whose one page publishes both its scenes with one cue each."""
+    inputs = a_project(tmp_path, cues=CUES)
+    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
+    return inputs
+
+
 # ---- the stage ---------------------------------------------------------------------------------
 
 
-def test_it_draws_one_still_per_moment_and_writes_the_sheet(tmp_path: Path, opened: Opened) -> None:
-    inputs = a_project(tmp_path, cues=CUES)
-    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
-    result = storyboard(inputs, a_run(tmp_path))
+def test_it_draws_one_still_per_moment_and_writes_the_sheet(tmp_path: Path, opened: Opened, published: Inputs) -> None:
+    result = storyboard(published, a_run(tmp_path))
     assert isinstance(result, StoryboardResult)
     assert result.storyboard == Path("build/storyboard.html")
     assert len(result.panels) == len(opened.shots)
     assert (tmp_path / "build" / "storyboard.html").is_file()
 
 
-def test_it_judges_nothing_at_all(tmp_path: Path, opened: Opened) -> None:
+def test_it_judges_nothing_at_all(tmp_path: Path, published: Inputs) -> None:
     """A storyboard draws what the film will show, and what it shows is for a person to judge."""
-    inputs = a_project(tmp_path, cues=CUES)
-    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
-    result = storyboard(inputs, a_run(tmp_path))
+    result = storyboard(published, a_run(tmp_path))
     assert result.findings == ()
     assert result.ok is True
 
 
-def test_a_selection_draws_the_sections_it_names_and_no_others(tmp_path: Path, opened: Opened) -> None:
-    inputs = a_project(tmp_path, cues=CUES)
-    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
-    result = storyboard(inputs, a_run(tmp_path), only=[2])
+def test_a_selection_draws_the_sections_it_names_and_no_others(tmp_path: Path, published: Inputs) -> None:
+    result = storyboard(published, a_run(tmp_path), only=[2])
     assert {panel.section for panel in result.panels} == {2}
 
 
-def test_the_four_selectors_reach_the_sheet_through_the_stage(tmp_path: Path, opened: Opened) -> None:
+def test_the_four_selectors_reach_the_sheet_through_the_stage(tmp_path: Path, published: Inputs) -> None:
     """The selectors are the stage's own arguments, so a caller narrows the sheet without a second call."""
-    inputs = a_project(tmp_path, cues=CUES)
-    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
-    result = storyboard(inputs, a_run(tmp_path), slide=["1.1"], after=["1.1:a"])
+    result = storyboard(published, a_run(tmp_path), slide=["1.1"], after=["1.1:a"])
     assert [(panel.slide, panel.cue) for panel in result.panels] == [("1.1", "1.1:a")]
 
 
@@ -230,10 +230,8 @@ def test_a_project_with_no_page_section_writes_no_sheet(tmp_path: Path, opened: 
     assert result.panels == ()
 
 
-def test_every_still_it_wrote_is_reported(tmp_path: Path, opened: Opened) -> None:
-    inputs = a_project(tmp_path, cues=CUES)
-    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
-    result = storyboard(inputs, a_run(tmp_path))
+def test_every_still_it_wrote_is_reported(tmp_path: Path, published: Inputs) -> None:
+    result = storyboard(published, a_run(tmp_path))
     assert Path("build/storyboard.html") in result.written
     assert all(str(one).startswith("build/") for one in result.written)
 
@@ -241,13 +239,13 @@ def test_every_still_it_wrote_is_reported(tmp_path: Path, opened: Opened) -> Non
 # ---- frames kept by what drew them -------------------------------------------------------------
 
 
-def test_a_second_storyboard_reads_every_still_back_and_draws_none(tmp_path: Path, opened: Opened) -> None:
+def test_a_second_storyboard_reads_every_still_back_and_draws_none(
+    tmp_path: Path, opened: Opened, published: Inputs
+) -> None:
     """A repeat storyboard with nothing changed falls to the catalog read, which is all a page must do."""
-    inputs = a_project(tmp_path, cues=CUES)
-    opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
-    first = storyboard(inputs, a_run(tmp_path))
+    first = storyboard(published, a_run(tmp_path))
     drawn = len(opened.shots)
-    again = storyboard(inputs, a_run(tmp_path))
+    again = storyboard(published, a_run(tmp_path))
     assert len(opened.shots) == drawn
     assert again.panels == first.panels
     assert all((tmp_path / panel.image).is_file() for panel in again.panels)
