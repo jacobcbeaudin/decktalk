@@ -20,6 +20,7 @@ from decktalk.media import browser
 from decktalk.media.environment import child_environment
 from decktalk.media.origin import ORIGIN, Allowed, page_url
 from decktalk.settings import BY_ID, COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
+from support.logs import data_of
 
 REPORTED = {
     "version": "0.5.0",
@@ -46,6 +47,14 @@ class FakeVideo:
         return str(self.path_)
 
 
+@dataclass
+class Said:
+    """One line a page wrote to its console, as Playwright hands it to a `console` handler."""
+
+    type: str
+    text: str
+
+
 class FakePage:
     """A page that answers the four calls the recorder makes and remembers what it was asked."""
 
@@ -63,6 +72,10 @@ class FakePage:
 
     def goto(self, url: str, **_kwargs: object) -> None:
         self.urls.append(url)
+        for event, handler in self.context.handlers:
+            if event == "console":
+                for line in self.context.said:
+                    handler(line)  # type: ignore[operator]
 
     def evaluate(self, script: str) -> object:
         self.scripts.append(script)
@@ -86,8 +99,9 @@ class FakePage:
 
 
 class FakeContext:
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, said: tuple[Said, ...] = ()) -> None:
         self.directory = directory
+        self.said = said  # what every page of this context writes to its console once it has loaded
         self.scripts: list[str] = []
         self.routes: list[str] = []
         self.handlers: list[tuple[str, object]] = []
@@ -112,13 +126,14 @@ class FakeContext:
 
 
 class FakeBrowser:
-    def __init__(self) -> None:
+    def __init__(self, said: tuple[Said, ...] = ()) -> None:
+        self.said = said
         self.contexts: list[FakeContext] = []
         self.asked: list[dict[str, object]] = []  # what each context was opened with
 
     def new_context(self, **kwargs: object) -> FakeContext:
         self.asked.append(kwargs)
-        context = FakeContext(Path(str(kwargs["record_video_dir"])))
+        context = FakeContext(Path(str(kwargs["record_video_dir"])), self.said)
         self.contexts.append(context)
         return context
 
@@ -193,14 +208,20 @@ def test_the_log_is_cleared_before_anything_is_captured_and_written_once_the_web
     assert sink.written is recording
 
 
-def test_the_recording_carries_what_the_page_said_and_what_it_loaded(tmp_path):
+def test_the_recording_carries_what_the_page_said_and_what_it_loaded(tmp_path, caplog):
+    """The page's console.error and console.warn lines have no field on the recording, so the log is theirs."""
     out = tmp_path / "01.webm"
-    recording = record(tmp_path, Sink(out), out=out)
+    fake = FakeBrowser(said=(Said("log", "chatter"), Said("error", "no cue 2.1")))
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        recording = record(tmp_path, Sink(out), out=out, fake=fake)
     assert recording.url.startswith(ORIGIN)
     assert recording.report.warnings[0].code.name == "PAGE_CUE_UNKNOWN"
     assert recording.report.frame_gaps[0].ms == 150
     assert recording.page_errors == ()
     assert recording.requested_seconds == 0.5
+    kept = [record for record in caplog.records if "console" in record.getMessage()]
+    assert [data_of(record) for record in kept] == [{"kind": "error", "text": "no cue 2.1"}]
+    assert [record.levelname for record in kept] == ["WARNING"]
 
 
 def test_the_temporary_directory_and_the_context_go_however_the_recording_ends(tmp_path):
@@ -252,6 +273,31 @@ def test_a_call_the_page_never_answered_is_a_tool_failure():
     with pytest.raises(ToolError) as raised:
         browser.evaluate(page, browser.REPORT_JS)
     assert str(raised.value).startswith("the page could not answer")
+
+
+def test_a_page_that_answers_neither_ready_nor_painted_is_taken_as_it_stands_and_says_so(caplog):
+    """Both waits carry on rather than fail a frame, so the log is where a mistimed frame is explained."""
+
+    class Hangs(FakePage):
+        def evaluate(self, _script: str) -> object:
+            raise PlaywrightError("Error: the page did not answer within 15 seconds")
+
+    with caplog.at_level("DEBUG", logger="decktalk.media.browser"):
+        browser.await_painted(Hangs(FakeContext(Path("."))))  # type: ignore[arg-type]
+    said = [record.getMessage() for record in caplog.records if record.name == "decktalk.media.browser"]
+    assert len(said) == 2
+    assert "did not answer __dtprobe.ready()" in said[0] and "painted no frame" in said[1]
+
+
+def test_a_context_the_recording_already_closed_is_passed_over_and_logged(caplog):
+    """`place` closes the context on the way out, so a second close is expected and only noted."""
+    with caplog.at_level("DEBUG", logger="decktalk.media.browser"), browser.suppressing_a_closed_context():
+        raise PlaywrightError("Target page, context or browser has been closed\nCall log:")
+    [record] = [record for record in caplog.records if record.name == "decktalk.media.browser"]
+    assert (
+        record.getMessage()
+        == "the recording context was already closed (Target page, context or browser has been closed)"
+    )
 
 
 def test_a_page_that_cannot_report_leaves_a_report_that_says_so():
@@ -671,10 +717,6 @@ def test_a_frozen_frame_is_taken_once_the_page_is_ready_and_has_painted_twice(tm
 
 def test_a_recorded_pages_own_errors_and_warnings_are_collected_and_its_chatter_is_not(tmp_path) -> None:
     """A page's console.error and console.warn are the author's diagnostics, and nothing recorded them."""
-
-    class Said:
-        def __init__(self, kind: str, text: str) -> None:
-            self.type, self.text = kind, text
 
     class Page:
         def __init__(self) -> None:
