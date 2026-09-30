@@ -8,7 +8,6 @@ with both is refused before it reads or writes anything.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 import types
 from pathlib import Path
@@ -24,30 +23,38 @@ USAGE_ERROR = 2
 """The exit code argparse gives a command line it refuses."""
 
 
-def invoked(script: Path, *flags: str) -> subprocess.CompletedProcess[str]:
-    """The generator run by the interpreter the tests run under, from the repository root."""
-    return subprocess.run((sys.executable, str(script), *flags), cwd=REPO, capture_output=True, text=True, check=False)
+@pytest.fixture
+def as_generator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`generated.run` reads its script's name and help off `__main__`, which in a test is pytest's own."""
+    monkeypatch.setitem(sys.modules, "__main__", types.ModuleType("__main__", "A generator under test."))
+    monkeypatch.setattr(sys.modules["__main__"], "__file__", str(tmp_path / "build_test.py"), raising=False)
 
 
 @pytest.mark.parametrize("script", GENERATORS, ids=lambda path: path.name)
 def test_a_generator_hands_its_files_to_the_runner_and_exits_with_its_answer(script: Path) -> None:
-    """A generator that dropped the runner's exit code would pass `--check` over any stale file."""
+    """A generator that dropped the runner's exit code would pass `--check` over any stale file.
+
+    Handing its files to the runner is also what gives every generator the runner's refusal below.
+    """
     text = script.read_text(encoding="utf-8")
     assert "sys.exit(generated.run(" in text, f"{script.name} does not exit with what scripts/generated.py says"
 
 
-@pytest.mark.parametrize("script", GENERATORS, ids=lambda path: path.name)
-def test_a_generator_run_with_no_mode_is_refused(script: Path) -> None:
-    result = invoked(script)
-    assert result.returncode == USAGE_ERROR, f"{script.name} ran with no mode: {result.stdout}"
-    assert "--write" in result.stderr
-    assert "--check" in result.stderr
+@pytest.mark.usefixtures("as_generator")
+@pytest.mark.parametrize("flags", [(), ("--write", "--check")], ids=["no-mode", "both-modes"])
+def test_a_run_with_no_mode_or_both_is_refused_before_it_reads_a_source(
+    flags: tuple[str, ...], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["build_test.py", *flags])
 
+    def unread() -> dict[Path, str]:
+        raise AssertionError("the sources were read before the mode was parsed")
 
-@pytest.mark.parametrize("script", GENERATORS, ids=lambda path: path.name)
-def test_a_generator_run_with_both_modes_is_refused(script: Path) -> None:
-    result = invoked(script, "--write", "--check")
-    assert result.returncode == USAGE_ERROR, f"{script.name} ran with both modes: {result.stdout}"
+    with pytest.raises(SystemExit) as refused:
+        generated.run(unread)
+    assert refused.value.code == USAGE_ERROR
+    said = capsys.readouterr().err
+    assert "--write" in said and "--check" in said
 
 
 def test_the_list_of_generators_is_not_empty() -> None:
@@ -73,6 +80,7 @@ def test_a_stale_file_names_the_first_line_that_moved(tmp_path: Path) -> None:
     assert generated.differs(tmp_path / "missing.md", "one\n") == "it is not committed"
 
 
+@pytest.mark.usefixtures("as_generator")
 def test_a_check_over_a_stale_file_and_an_orphan_exits_1_and_names_both(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -82,8 +90,6 @@ def test_a_check_over_a_stale_file_and_an_orphan_exits_1_and_names_both(
     (owned / "kept.json").write_text("old\n", encoding="utf-8")
     (owned / "orphan.json").write_text("left\n", encoding="utf-8")
     monkeypatch.setattr(generated, "ROOT", tmp_path)
-    monkeypatch.setitem(sys.modules, "__main__", types.ModuleType("__main__", "A generator under test."))
-    monkeypatch.setattr(sys.modules["__main__"], "__file__", str(tmp_path / "build_test.py"), raising=False)
     monkeypatch.setattr(sys, "argv", ["build_test.py", "--check"])
     code = generated.run(lambda: {owned / "kept.json": "new\n"}, owned=[owned / "*.json"])
     said = capsys.readouterr().out.splitlines()
