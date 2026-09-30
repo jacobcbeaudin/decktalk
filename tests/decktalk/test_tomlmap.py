@@ -77,7 +77,7 @@ class TestBounds:
         low, high = sorted((one, other))
         value = data.draw(st.sampled_from((low, high)) | FINITE)
         assert Bounds(ge=low, le=high).holds(value) is (low <= value <= high)
-        assert Bounds(gt=low, lt=high).holds(value) is (low < value < high)
+        assert Bounds(gt=low, le=high).holds(value) is (low < value <= high)
         assert Bounds(enum=(low, high)).holds(value) is (value in (low, high))
 
     @given(st.lists(FINITE, max_size=4), st.integers(min_value=0, max_value=3))
@@ -93,7 +93,7 @@ class TestBounds:
 
     def test_a_range_emits_the_json_schema_keywords_it_states(self) -> None:
         assert Bounds(ge=1, le=9).json_schema() == {"minimum": 1, "maximum": 9}
-        assert Bounds(gt=0, lt=1).json_schema() == {"exclusiveMinimum": 0, "exclusiveMaximum": 1}
+        assert Bounds(gt=0, le=1).json_schema() == {"exclusiveMinimum": 0, "maximum": 1}
         assert Bounds(enum=("a",)).json_schema() == {"enum": ["a"]}
         assert Bounds(min_items=1, items=Bounds(gt=0)).json_schema() == {
             "minItems": 1,

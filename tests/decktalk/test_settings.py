@@ -110,7 +110,7 @@ def around(bounds: Bounds, *, words: bool = False) -> st.SearchStrategy[object]:
         if words:
             return members | st.text()
         return members | st.integers(min_value=min(bounds.enum) - 2, max_value=max(bounds.enum) + 2)
-    edges = [edge for edge in (bounds.ge, bounds.gt, bounds.le, bounds.lt) if edge is not None]
+    edges = [edge for edge in (bounds.ge, bounds.gt, bounds.le) if edge is not None]
     return st.sampled_from(edges).flatmap(
         lambda edge: (
             st.just(edge)

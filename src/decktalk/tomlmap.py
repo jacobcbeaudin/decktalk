@@ -72,7 +72,6 @@ class Bounds:
     ge: float | None = None
     gt: float | None = None
     le: float | None = None
-    lt: float | None = None
     enum: tuple[Any, ...] | None = None
     items: Bounds | None = None
     min_items: int | None = None
@@ -94,9 +93,7 @@ class Bounds:
             return False
         if self.gt is not None and value <= self.gt:
             return False
-        if self.le is not None and value > self.le:
-            return False
-        return not (self.lt is not None and value >= self.lt)
+        return not (self.le is not None and value > self.le)
 
     @property
     def sentence(self) -> str:
@@ -119,8 +116,6 @@ class Bounds:
                 parts.append(f"must be above {_number(self.gt)}")
             if self.le is not None:
                 parts.append(f"must be at most {_number(self.le)}")
-            if self.lt is not None:
-                parts.append(f"must be below {_number(self.lt)}")
         return " and ".join(parts) if parts else "takes any value of its type"
 
     def json_schema(self) -> dict[str, Any]:
@@ -134,8 +129,6 @@ class Bounds:
             out["exclusiveMinimum"] = self.gt
         if self.le is not None:
             out["maximum"] = self.le
-        if self.lt is not None:
-            out["exclusiveMaximum"] = self.lt
         if self.pattern is not None:
             out["pattern"] = self.pattern
         if self.min_items is not None:
