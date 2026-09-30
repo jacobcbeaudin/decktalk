@@ -92,7 +92,7 @@ def encode(out: Path, args: Sequence[str], sources: Sequence[Path]) -> bool:
     """
     where = out.with_suffix(KEY_SUFFIX)
     key = CutKey.of(args, sources)
-    held = _key_of(where) if out.is_file() else None
+    held = CutKey.previous(where) if out.is_file() else None
     why = "no-cut" if not out.is_file() else "no-key" if held is None else "unchanged" if held == key else "key-changed"
     cache_decision(log, "cut", hit=why == "unchanged", why=why, file=out.name)
     if why == "unchanged":
@@ -112,15 +112,6 @@ def _cut(
         *source, "-filter_complex", f"[0:v]{chain}[v]",
         "-map", "[v]", "-an", *limit, *enc.venc, "-movflags", "+faststart", str(out),
     ), sources)  # fmt: skip
-
-
-def _key_of(path: Path) -> CutKey | None:
-    """The key a cut on disk was made under, or None when it has none or one this engine cannot read."""
-    try:
-        return CutKey.read(path)
-    except NotBuiltError:
-        # silent: a key that will not read is recorded as the cut's cache decision.
-        return None
 
 
 def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None:

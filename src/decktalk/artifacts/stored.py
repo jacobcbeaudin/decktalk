@@ -9,11 +9,16 @@ A file is written under a temporary name in the same directory and renamed over 
 is atomic on every platform DeckTalk ships on, so a reader never opens a half-written artifact and
 a run interrupted mid-write leaves the previous file whole.
 
-An artifact that will not parse is reported as one that was never built, because the recovery is
-the same: run the stage that writes it again. The hint names that stage, read from `PIPELINE`
-through `Artifact.next_step`, so no stage spells a "run this first" sentence of its own. A refusal names the
-file it looked for rather than the artifact's default path, because a project may move its build
-directory.
+A stage that needs an artifact as its input refuses one that will not parse as one that was never
+built. The hint names the stage that writes it, read from `PIPELINE` through `Artifact.next_step`,
+so no stage spells a "run this first" sentence of its own. A refusal names the file it looked for
+rather than the artifact's default path, because a project may move its build directory.
+
+A stage that reads its own earlier output reads it through `previous`, which counts a file it cannot
+read as absent. `build/` is DeckTalk's cache and that stage is about to write the file again, so an
+engine that changed the file's shape builds it again rather than asking a person to delete it. A
+paid record, the take index and the sound ledger, is never read this way, because counting one of
+those as absent would buy what it records again.
 
 Every fingerprint of a file's content is `file_digest`, and every fingerprint of content held in
 memory is `content_digest`, which are one hash: BLAKE3. The files a build fingerprints are the
@@ -27,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Self
@@ -38,6 +44,8 @@ from decktalk.errors import NotBuiltError
 from decktalk.files import replace_all
 from decktalk.findings import Model
 from decktalk.pipeline import Artifact
+
+log = logging.getLogger(__name__)
 
 INDENT = 2
 """How the artifacts are indented, which keeps a diff of one readable in a terminal."""
@@ -99,10 +107,32 @@ class Stored(Model):
 
     @classmethod
     def read(cls, path: Path) -> Self | None:
-        """The artifact at `path`, or None when nothing has written one there yet."""
+        """The artifact at `path`, or None when nothing has written one there yet.
+
+        A file that is there and cannot be read as this shape is refused as `NOT_BUILT`.
+        """
         if not path.is_file():
             return None
-        return cls.parse(path)
+        try:
+            return cls.model_validate_json(path.read_bytes())
+        except (ValidationError, ValueError, OSError) as exc:
+            raise NotBuiltError(
+                f"{path.name} is there and cannot be read as {cls.__name__.lower()} ({_first_line(exc)}).",
+                hint=f"Delete {path.name} and build it again.",
+            ) from exc
+
+    @classmethod
+    def previous(cls, path: Path) -> Self | None:
+        """What the stage that writes `path` wrote there last, or None when there is none it can read.
+
+        Only the writer reads its own file this way, so a file it cannot read is built again, and the
+        record this leaves is how a person learns why a kept section was made again.
+        """
+        try:
+            return cls.read(path)
+        except NotBuiltError as exc:
+            log.info("%s It will be built again.", exc, extra={"data": {"file": path.name}})
+            return None
 
     @classmethod
     def require(cls, path: Path, artifact: Artifact) -> Self:
@@ -111,17 +141,6 @@ class Stored(Model):
         if found is None:
             raise NotBuiltError(f"{path.name} has not been built.", hint=artifact.next_step)
         return found
-
-    @classmethod
-    def parse(cls, path: Path) -> Self:
-        """The artifact at `path`, refusing a file that is there and cannot be read as this shape."""
-        try:
-            return cls.model_validate_json(path.read_bytes())
-        except (ValidationError, ValueError, OSError) as exc:
-            raise NotBuiltError(
-                f"{path.name} is there and cannot be read as {cls.__name__.lower()} ({_first_line(exc)}).",
-                hint=f"Delete {path.name} and build it again.",
-            ) from exc
 
     def write(self, path: Path) -> Path:
         """Write this artifact over `path` in one step, and give back the path it was written to."""

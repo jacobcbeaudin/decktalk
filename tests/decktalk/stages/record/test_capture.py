@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import CueTimes, RecordingLog
-from decktalk.errors import InputError
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.page import Q
 from decktalk.results import CueTime, SectionCues, Word
@@ -193,6 +193,22 @@ def test_a_log_with_no_narration_start_in_it_is_a_recording_that_never_finished(
         section=1, input_hash=job.input_hash, recording=a_recording(requested_seconds=10.0, clock_start_seconds=1.5)
     ).write(job.log_path)
     assert not plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0).unchanged
+
+
+def test_a_log_an_earlier_engine_wrote_is_recorded_again_and_refused_by_a_stage_that_reads_it(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The recorder rewrites its own log, so only a stage that needs the log as its input refuses it."""
+    inputs = a_project(tmp_path)
+    path = inputs.workspace.recording_log("01")
+    path.parent.mkdir(parents=True)
+    path.write_text('{"section": 1, "input_hash": "abc", "trim_seconds": 1.5}', encoding="utf-8")
+    with caplog.at_level("INFO", logger="decktalk"):
+        job = plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0)
+    assert job.previous is None and not job.unchanged
+    assert any("01.json" in record.getMessage() and "built again" in record.getMessage() for record in caplog.records)
+    with pytest.raises(NotBuiltError, match=r"01\.json is there and cannot be read"):
+        inputs.recording_log("01")
 
 
 def test_a_page_that_could_not_be_read_is_hashed_as_empty_and_says_so(tmp_path: Path, caplog) -> None:

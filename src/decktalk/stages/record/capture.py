@@ -293,7 +293,7 @@ def plan_job(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, s
     """What recording one section would open and write, and whether the recording on disk still stands."""
     url = scene_url(inputs, section, scene_params(section, cue_times))
     workspace = inputs.workspace
-    previous = RecordingLog.read(workspace.recording_log(section.key))
+    previous = RecordingLog.previous(workspace.recording_log(section.key))
     return Job(
         section=section,
         url=url,

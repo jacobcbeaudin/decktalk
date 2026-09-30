@@ -90,7 +90,7 @@ def test_a_frame_that_is_found_is_kept_however_old_it_was(tmp_path: Path) -> Non
 
 
 def test_every_answer_says_why_it_kept_or_drew_again(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """A manifest that would not parse is told apart from one that is not there, although both draw again."""
+    """A manifest that would not parse draws again as a missing one does, and leaves a record saying so."""
     store = a_store(tmp_path)
 
     def why(key: str) -> tuple[object, ...]:
@@ -103,7 +103,9 @@ def test_every_answer_says_why_it_kept_or_drew_again(tmp_path: Path, caplog: pyt
         store.keep("k", drawn(tmp_path), ["deck/index.html"])
         assert why("k") == (True, "unchanged")
         store.manifest("k").write_text("{", encoding="utf-8")
-        assert why("k") == (False, "manifest-unreadable")
+        assert why("k") == (False, "no-manifest")
+        assert any("built again" in record.getMessage() for record in caplog.records)
+        caplog.clear()
         store.manifest("k").unlink()
         assert why("k") == (False, "no-manifest")
         store.keep("k", drawn(tmp_path), ["deck/index.html"])

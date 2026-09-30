@@ -38,7 +38,7 @@ from pathlib import Path
 from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
 from decktalk.artifacts.stored import Stored, engine_digest, file_digest
-from decktalk.errors import DeckTalkError, NotBuiltError
+from decktalk.errors import DeckTalkError
 from decktalk.events import Level, Line, StageStart
 from decktalk.findings import Code, Finding, Location, Model, judge
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
@@ -117,11 +117,7 @@ def read_kept(inputs: Inputs) -> Kept:
     A record this version cannot read keeps nothing, which costs one assemble and one verify and is
     never wrong, so it is not worth a refusal.
     """
-    try:
-        return Kept.read(kept_path(inputs)) or Kept()
-    except NotBuiltError:
-        # silent: a record that will not read keeps nothing, and the build says no-record.
-        return Kept()
+    return Kept.previous(kept_path(inputs)) or Kept()
 
 
 def kept_path(inputs: Inputs) -> Path:

@@ -33,7 +33,6 @@ from pydantic import Field
 
 from decktalk.artifacts.recordings import HASH_DIGITS
 from decktalk.artifacts.stored import Stored, engine_digest, file_digest
-from decktalk.errors import NotBuiltError
 from decktalk.logs import cache_decision
 
 log = logging.getLogger(__name__)
@@ -75,8 +74,8 @@ class Stills:
     def find(self, key: str) -> Path | None:
         """The kept frame with this key, or None when there is none or a file it was drawn from has moved.
 
-        Each answer is recorded with the reason for it, and a manifest that would not parse is told
-        apart from one that is not there, although both mean the frame is drawn again.
+        Each answer is recorded with the reason for it. A manifest that would not parse counts as none,
+        and `Stored.previous` leaves a record of its own that tells the two apart.
         """
         found, why = self._found(key)
         cache_decision(log, "still", hit=found is not None, why=why, key=key)
@@ -86,11 +85,7 @@ class Stills:
         image = self.image(key)
         if not image.is_file():
             return None, "no-image"
-        try:
-            kept = StillManifest.read(self.manifest(key))
-        except NotBuiltError:
-            # silent: the reason is returned and recorded as the cache decision.
-            return None, "manifest-unreadable"
+        kept = StillManifest.previous(self.manifest(key))
         if kept is None:
             return None, "no-manifest"
         if any(file_digest(self.root / name) != digest for name, digest in kept.files.items()):

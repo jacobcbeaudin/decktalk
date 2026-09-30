@@ -64,6 +64,26 @@ def test_an_artifact_that_will_not_parse_is_reported_as_one_that_was_never_built
     assert "takes.json" in (refused.value.hint or "")
 
 
+def test_a_writer_counts_its_own_file_it_cannot_read_as_absent_and_says_so(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`build/` is a cache the writer is about to fill again, so an unreadable file is rebuilt, not refused."""
+    path = tmp_path / "tiny.json"
+    path.write_text('{"count": "many"}', encoding="utf-8")
+    with caplog.at_level("INFO", logger="decktalk"):
+        assert Tiny.previous(path) is None
+    [record] = caplog.records
+    assert record.levelname == "INFO" and "tiny.json" in record.getMessage() and "built again" in record.getMessage()
+    with pytest.raises(NotBuiltError):
+        Tiny.read(path)
+
+
+def test_a_writer_reads_its_own_readable_file_and_nothing_where_there_is_none(tmp_path: Path) -> None:
+    path = Tiny(count=4).write(tmp_path / "tiny.json")
+    assert Tiny.previous(path) == Tiny(count=4)
+    assert Tiny.previous(tmp_path / "gone.json") is None
+
+
 def test_an_artifact_is_frozen() -> None:
     tiny = Tiny(count=1)
     with pytest.raises(ValueError, match="frozen"):

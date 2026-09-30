@@ -203,7 +203,7 @@ def test_every_resolved_cue_is_checked_in_section_order_and_then_cue_time(tmp_pa
     }
     path = tmp_path / "cue-times.json"
     path.write_text(json.dumps(document), encoding="utf-8")
-    assert default_checks(CueTimes.parse(path)) == [(1, "early"), (1, "late"), (2, "b")]
+    assert default_checks(CueTimes.read(path)) == [(1, "early"), (1, "late"), (2, "b")]
 
 
 def test_a_run_that_names_sections_checks_only_their_cues(tmp_path: Path) -> None:
@@ -215,7 +215,7 @@ def test_a_run_that_names_sections_checks_only_their_cues(tmp_path: Path) -> Non
     }
     path = tmp_path / "cue-times.json"
     path.write_text(json.dumps(document), encoding="utf-8")
-    assert default_checks(CueTimes.parse(path), [2]) == [(2, "b")]
+    assert default_checks(CueTimes.read(path), [2]) == [(2, "b")]
 
 
 def test_a_film_with_no_cue_times_checks_nothing() -> None:

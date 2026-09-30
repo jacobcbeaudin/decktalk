@@ -161,7 +161,7 @@ def _overlap_findings(inputs: Inputs, sections: Sequence[SectionCues]) -> list[F
 def _write(inputs: Inputs, sections: Sequence[SectionCues], *, replacing: bool) -> Path:
     """Write `build/cue-times.json`, keeping the rows of every section this run did not resolve."""
     resolved = {block.section: block for block in sections}
-    previous = inputs.cue_times() if replacing else None
+    previous = CueTimes.previous(inputs.workspace.cue_times_path) if replacing else None
     kept = [block for block in previous.sections if block.section not in resolved] if previous else []
     blocks = sorted([*kept, *sections], key=lambda block: block.section)
     return CueTimes(sections=tuple(blocks)).write(inputs.workspace.cue_times_path)
