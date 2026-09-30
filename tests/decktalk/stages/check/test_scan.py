@@ -6,13 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.events import Log
 from decktalk.findings import Code
+from decktalk.inputs import Inputs
+from decktalk.machine import Run
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import page_findings, slide_cues
 from decktalk.settings import Settings
-from decktalk.stages import storyboard
-from decktalk.stages.check import scan
 from decktalk.stages.check.scan import (
     DRAW_STYLE,
     drawn_cues,
@@ -25,9 +24,9 @@ from decktalk.stages.check.scan import (
     static_findings,
 )
 from decktalk.stages.storyboard import Freeze, Sheet
-from support.runs import a_run
+from support.runs import a_run, notes
 
-from .conftest import BOX, FakeAssets, a_project, a_report, catalog
+from .conftest import BOX, Drawn, FakeAssets, a_project, a_report, catalog
 
 SLIDES = {"1.1": ("1.1:a", "1.1:b")}
 """One slide with two cues, which is enough to measure a pair and to leave one in front of it."""
@@ -61,37 +60,28 @@ def entry_of(moments: dict[str, list[str]]) -> MeasuredScene:
     return MeasuredScene.model_validate(catalog("1", moments))
 
 
-def wrote(out: Path) -> None:
-    """Stand in for a screenshot, which leaves a file where a real one would."""
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(b"png")
+def a_sheet(inputs: Inputs, run: Run | None = None) -> Sheet:
+    """The sheet one pass draws on, with the project's one page opened on nothing."""
+    run = run or a_run(inputs.root)
+    return Sheet(inputs, run, {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
 
 
-@pytest.fixture
-def frozen(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """The screenshot and the comparison faked, with the share every comparison reads in one list."""
-    share = [0.0]
-    monkeypatch.setattr(storyboard, "screenshot", lambda _page, _url, out, **_kwargs: wrote(out))
-    monkeypatch.setattr(scan.frames, "changed_images_percent", lambda *_a, **_k: share[0])
-    return share
+FLOOR = Settings().verify.changed_share_min_percent
+"""The least share a reveal may change, which each row below is measured against."""
 
 
-def test_a_share_under_the_floor_is_a_reveal_that_never_happened() -> None:
-    assert share_code(0.0, settings(), drawn=False) is Code.CUE_NO_CHANGE
-
-
-def test_a_stroke_under_the_floor_is_a_stroke_too_thin_to_see() -> None:
-    """A stroke sweeps a thin area, so the same number means something else about it."""
-    assert share_code(0.0, settings(), drawn=True) is Code.PAGE_THIN_DRAW
-
-
-def test_a_share_that_only_just_passes_is_uncertain() -> None:
-    just = settings().verify.changed_share_min_percent * 1.5
-    assert share_code(just, settings(), drawn=False) is Code.CUE_THIN_CHANGE
-
-
-def test_a_clean_reveal_is_no_judgement_at_all() -> None:
-    assert share_code(settings().verify.changed_share_min_percent * 10, settings(), drawn=False) is None
+@pytest.mark.parametrize(
+    ("share", "drawn", "code"),
+    [
+        pytest.param(0.0, False, Code.CUE_NO_CHANGE, id="under the floor is a reveal that never happened"),
+        # A stroke sweeps a thin area, so the same number means something else about it.
+        pytest.param(0.0, True, Code.PAGE_THIN_DRAW, id="a stroke under the floor is too thin to see"),
+        pytest.param(FLOOR * 1.5, False, Code.CUE_THIN_CHANGE, id="only just passing is uncertain"),
+        pytest.param(FLOOR * 10, False, None, id="a clean reveal is no judgement at all"),
+    ],
+)
+def test_a_share_is_judged_against_the_floor(share: float, drawn: bool, code: Code | None) -> None:
+    assert share_code(share, settings(), drawn=drawn) is code
 
 
 @pytest.mark.parametrize("code", [Code.CUE_NO_CHANGE, Code.CUE_THIN_CHANGE, Code.PAGE_THIN_DRAW])
@@ -139,92 +129,73 @@ def test_the_strokes_of_a_scene_are_the_elements_that_arrive_drawn() -> None:
     assert drawn_cues(entry) == {"1.1:a"}
 
 
-def test_a_state_is_drawn_once_however_many_pairs_name_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_state_is_drawn_once_however_many_pairs_name_it(tmp_path: Path, drawn: Drawn) -> None:
     inputs = a_project(tmp_path)
-    shots: list[str] = []
-    monkeypatch.setattr(storyboard, "screenshot", lambda _p, url, out, **_k: (shots.append(url), wrote(out)) and None)
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
+    sheet = a_sheet(inputs)
     section = inputs.document.page_sections[0]
     first = sheet.frozen(section, Freeze("1.1", cue="1.1:a"))
     assert sheet.frozen(section, Freeze("1.1", cue="1.1:a")) == first
-    assert len(shots) == 1
+    assert len(drawn.shots) == 1
 
 
-def test_a_thin_frozen_share_is_judged_against_the_frame_it_was_read_on(tmp_path: Path, frozen: list[float]) -> None:
+@pytest.mark.parametrize(("share", "codes"), [(0.0, {Code.CUE_NO_CHANGE}), (40.0, set())], ids=["thin", "clean"])
+def test_a_frozen_share_is_judged_against_the_frame_it_was_read_on(
+    tmp_path: Path, drawn: Drawn, share: float, codes: set[Code]
+) -> None:
     inputs = a_project(tmp_path)
-    frozen[0] = 0.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
+    drawn.share = share
     section = inputs.document.page_sections[0]
-    found = landing_findings(sheet, section, entry_of({"1.1": list(SLIDES["1.1"])}), SLIDES, TIMES, skipped=set())
-    assert {one.code for one in found} == {Code.CUE_NO_CHANGE}
+    entry = entry_of({"1.1": list(SLIDES["1.1"])})
+    found = landing_findings(a_sheet(inputs), section, entry, SLIDES, TIMES, skipped=set())
+    assert {one.code for one in found} == codes
     assert all(one.location.file is not None for one in found)
 
 
-def test_a_clean_frozen_share_judges_nothing(tmp_path: Path, frozen: list[float]) -> None:
-    inputs = a_project(tmp_path)
-    frozen[0] = 40.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
-    section = inputs.document.page_sections[0]
-    assert landing_findings(sheet, section, entry_of({"1.1": list(SLIDES["1.1"])}), SLIDES, TIMES, skipped=set()) == []
-
-
-def test_a_cue_no_element_declares_is_passed_over_rather_than_judged(tmp_path: Path, frozen: list[float]) -> None:
+def test_a_cue_no_element_declares_is_passed_over_rather_than_judged(tmp_path: Path, drawn: Drawn) -> None:
     """A still fires cues and runs no handler, so a `data-owns` cue draws nothing however well it plays."""
     inputs = a_project(tmp_path)
-    frozen[0] = 0.0
+    drawn.share = 0.0
     run = a_run(tmp_path)
-    said: list[str] = []
-    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
-    sheet = Sheet(inputs, run, {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
+    said = notes(run)
     section = inputs.document.page_sections[0]
-    found = landing_findings(sheet, section, entry_of({"1.1": ["1.1:a"]}), SLIDES, TIMES, skipped=set())
+    found = landing_findings(a_sheet(inputs, run), section, entry_of({"1.1": ["1.1:a"]}), SLIDES, TIMES, skipped=set())
     assert [one.location.cue for one in found] == ["1.1:a"]
     assert any("1.1:b" in line and "runs no handler" in line for line in said)
 
 
-def test_a_cue_the_cue_file_opts_out_of_is_never_measured(tmp_path: Path, frozen: list[float]) -> None:
+def test_a_cue_the_cue_file_opts_out_of_is_never_measured(tmp_path: Path, drawn: Drawn) -> None:
     inputs = a_project(tmp_path)
-    frozen[0] = 0.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
+    drawn.share = 0.0
     section = inputs.document.page_sections[0]
     entry = entry_of({"1.1": list(SLIDES["1.1"])})
-    assert landing_findings(sheet, section, entry, SLIDES, TIMES, skipped={(1, "1.1:a"), (1, "1.1:b")}) == []
+    assert landing_findings(a_sheet(inputs), section, entry, SLIDES, TIMES, skipped={(1, "1.1:a"), (1, "1.1:b")}) == []
 
 
-def test_a_seam_that_would_show_is_a_pop_at_the_cut(tmp_path: Path, frozen: list[float]) -> None:
+@pytest.mark.parametrize(("share", "codes"), [(50.0, [Code.CUT_POP]), (0.0, [])], ids=["shows", "holds"])
+def test_a_seam_is_a_pop_at_the_cut_only_when_it_would_show(
+    tmp_path: Path, drawn: Drawn, share: float, codes: list[Code]
+) -> None:
     inputs = a_project(tmp_path, toml=SEAMLESS)
-    frozen[0] = 50.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
+    drawn.share = share
     first, second = inputs.document.page_sections
     slides = {1: {"1.1": ("1.1:a",)}, 2: {"2.1": ("2.1:a",)}}
     times = {1: {"1.1:a": 1.0}, 2: {"2.1:a": 1.0}}
-    (found,) = seam_findings(sheet, first, second, slides, times)
-    assert found.code is Code.CUT_POP
-    assert "50.00" in found.message
+    found = seam_findings(a_sheet(inputs), first, second, slides, times)
+    assert [one.code for one in found] == codes
+    assert all("50.00" in one.message for one in found)
 
 
-def test_a_seam_that_holds_its_picture_is_no_judgement(tmp_path: Path, frozen: list[float]) -> None:
+def test_a_seam_whose_side_published_no_catalog_is_a_line_and_no_judgement(tmp_path: Path, drawn: Drawn) -> None:
     inputs = a_project(tmp_path, toml=SEAMLESS)
-    frozen[0] = 0.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
     first, second = inputs.document.page_sections
-    slides = {1: {"1.1": ("1.1:a",)}, 2: {"2.1": ("2.1:a",)}}
-    times = {1: {"1.1:a": 1.0}, 2: {"2.1:a": 1.0}}
-    assert seam_findings(sheet, first, second, slides, times) == []
+    assert seam_findings(a_sheet(inputs), first, second, {}, {}) == []
+    assert drawn.shots == []
 
 
-def test_a_seam_whose_side_published_no_catalog_is_a_line_and_no_judgement(tmp_path: Path, frozen: list[float]) -> None:
-    inputs = a_project(tmp_path, toml=SEAMLESS)
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
-    first, second = inputs.document.page_sections
-    assert seam_findings(sheet, first, second, {}, {}) == []
-    assert frozen[0] == 0.0
-
-
-def test_every_slide_keeps_the_state_it_opens_on_as_a_panel(tmp_path: Path, frozen: list[float]) -> None:
+def test_every_slide_keeps_the_state_it_opens_on_as_a_panel(tmp_path: Path, drawn: Drawn) -> None:
     inputs = a_project(tmp_path)
-    frozen[0] = 0.0
-    sheet = Sheet(inputs, a_run(tmp_path), {"deck/index.html": (object(), FakeAssets())}, inputs.workspace.frames_dir)
+    drawn.share = 0.0
+    sheet = a_sheet(inputs)
     section = inputs.document.page_sections[0]
     landing_findings(sheet, section, entry_of({"1.1": list(SLIDES["1.1"])}), SLIDES, TIMES, skipped=set())
     opening_panels(sheet, section, SLIDES, TIMES)
