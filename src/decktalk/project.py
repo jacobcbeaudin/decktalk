@@ -23,6 +23,7 @@ opener and can neither read the environment nor print.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import threading
@@ -62,6 +63,8 @@ from decktalk.results import (
     WordsResult,
 )
 from decktalk.settings import Layers, Settings, route, scoped
+
+log = logging.getLogger(__name__)
 
 STAGES = "decktalk.stages"
 """The package every stage lives in, named rather than imported so the facade loads none of them.
@@ -588,6 +591,8 @@ class Project:
                 gone = f"A run that is no longer there left {OWNER_FILE} behind, so this run took it."
                 run.note(gone, level=Level.WARNING)
             _write_owner(note, f"{os.getpid()} {run.id}\n")
+            # A host that sees two jobs collide learns the winner's side from this line.
+            log.debug("This run holds the build directory.", extra={"data": {"pid": os.getpid(), "lock": LOCK_FILE}})
             try:
                 yield
             finally:

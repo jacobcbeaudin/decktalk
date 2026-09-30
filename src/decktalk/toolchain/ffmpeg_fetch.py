@@ -197,6 +197,7 @@ def _download_verified(asset: FfmpegAsset, into: Path) -> Path:
     partial = target.with_name(f"{target.name}.part")
     digest = hashlib.sha256()
     total = 0
+    started = time.monotonic()
     request = urllib.request.Request(asset.url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as resp, partial.open("wb") as fh:
         expected = _content_length(resp)
@@ -220,6 +221,13 @@ def _download_verified(asset: FfmpegAsset, into: Path) -> Path:
             "and `ffprobe` to a build of your own until the pin is updated."
         )
     partial.replace(target)
+    seconds = round(time.monotonic() - started, 3)
+    log.debug(
+        "%s arrived and matched its pinned digest in %.2f seconds.",
+        target.name,
+        seconds,
+        extra={"data": {"url": asset.url, "sha256": asset.sha256, "bytes": total, "seconds": seconds}},
+    )
     return target
 
 
@@ -248,20 +256,22 @@ def _unpack(archive: Path, asset: FfmpegAsset, into: Path) -> None:
         out.chmod(out.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _take_turn(lock: FileLock, cancel: Cancel | None, wait_seconds: float) -> None:
+def _take_turn(lock: FileLock, cancel: Cancel | None, wait_seconds: float) -> float | None:
     """Acquire the lock of one build, waiting on another fetch of it for no longer than `wait_seconds`.
 
     The wait is a run of short attempts rather than one blocking call, because a holder that is alive
     and slow or wedged would otherwise hold every other run on the machine where no cancel reaches
     it. A waiting run announces the fetch it stopped for once, with nothing counted, because the
-    bytes arrive in another fetch that this one cannot see.
+    bytes arrive in another fetch that this one cannot see. The seconds it waited are given back, or
+    None when the lock was free, so the caller can say what it found once its turn came.
     """
-    deadline = time.monotonic() + wait_seconds
+    started = time.monotonic()
+    deadline = started + wait_seconds
     waiting = False
     while True:
         try:
             lock.acquire(timeout=LOCK_POLL_SECONDS)
-            return
+            return round(time.monotonic() - started, 3) if waiting else None
         except Timeout:
             if not waiting:
                 announce(TOOL, 0, None)
@@ -297,9 +307,19 @@ def fetch_ffmpeg(key: str | None = None, *, cancel: Cancel | None = None, wait_s
     dest = install_dir(key)
     dest.parent.mkdir(parents=True, exist_ok=True)
     lock = FileLock(dest.with_name(f".{dest.name}.lock"))
-    _take_turn(lock, cancel, wait_seconds)
+    waited = _take_turn(lock, cancel, wait_seconds)
     try:
-        if installed := installed_pinned(key):
+        installed = installed_pinned(key)
+        if waited is not None:
+            log.info(
+                "Waited %.1f seconds for another fetch of ffmpeg, which %s.",
+                waited,
+                "installed it" if installed else "left nothing installed, so this run fetches it",
+                extra={
+                    "data": {"lock": str(lock.lock_file), "waited_seconds": waited, "found_installed": bool(installed)}
+                },
+            )
+        if installed:
             return installed
         scratch = Path(tempfile.mkdtemp(prefix=f".{dest.name}.", dir=dest.parent))
         try:

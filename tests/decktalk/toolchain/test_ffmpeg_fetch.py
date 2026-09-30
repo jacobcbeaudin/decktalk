@@ -398,3 +398,27 @@ def test_a_fetch_waiting_on_another_gives_up_after_the_tools_timeout(monkeypatch
     with the_lock("test-wedged"), pytest.raises(ToolError, match="tools.timeout_seconds"):
         fetch.fetch_ffmpeg(wait_seconds=0.3)
     assert fetch.installed_pinned() is None
+
+
+def test_a_fetch_that_waited_says_how_long_and_what_it_found(monkeypatch, caplog):
+    """A run that downloaded nothing because another had just installed the build used to say nothing."""
+    pinned_tar(monkeypatch, "test-waited")
+    held = threading.Event()
+
+    def hold() -> None:
+        # The lock belongs to the thread that took it, so the same thread gives it back.
+        with the_lock("test-waited"):
+            held.set()
+            time.sleep(0.3)
+
+    holder = threading.Thread(target=contextvars.copy_context().run, args=(hold,))
+    holder.start()
+    held.wait(timeout=5)
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        fetch.fetch_ffmpeg(wait_seconds=5)
+    holder.join()
+    waited = [record.data for record in caplog.records if "waited_seconds" in getattr(record, "data", {})]
+    assert len(waited) == 1 and waited[0]["waited_seconds"] >= 0.2
+    assert waited[0]["found_installed"] is False
+    verified = [record.data for record in caplog.records if "sha256" in getattr(record, "data", {})]
+    assert verified and verified[0]["bytes"] > 0 and verified[0]["url"].startswith("https://")

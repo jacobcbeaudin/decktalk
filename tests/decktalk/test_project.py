@@ -8,6 +8,7 @@ the lock it holds, the arguments it hands down and the result it insists on.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import types
@@ -271,7 +272,18 @@ def test_a_call_opens_a_run_on_the_project_view_of_the_stream(tmp_path: Path) ->
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    assert [line.event for line in seen] == ["run.start", "run.done"]
+    assert [line.event for line in seen if line.event != "log"] == ["run.start", "run.done"]
+
+
+@pytest.mark.usefixtures("fake_stages")
+def test_a_writing_run_says_it_holds_the_build_directory(tmp_path: Path) -> None:
+    """A host that sees two jobs collide learns the winner's side as well as the loser's."""
+    project = a_project(tmp_path)
+    seen: list[Event] = []
+    with project.events.subscribe(seen.append):
+        project.cue()
+    [held] = [line for line in seen if isinstance(line, Log) and line.source == "project"]
+    assert held.data == {"pid": os.getpid(), "lock": ".lock"}
 
 
 @pytest.mark.usefixtures("fake_stages")
