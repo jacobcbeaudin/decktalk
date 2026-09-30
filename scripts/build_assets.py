@@ -44,11 +44,12 @@ import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
-import generated
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 from playwright.sync_api import sync_playwright
+
+import generated
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"

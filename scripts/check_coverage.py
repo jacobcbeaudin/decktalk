@@ -54,8 +54,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import check
 import coverage
+
+import check
 
 ROOT = Path(__file__).resolve().parent.parent
 RECORD = ROOT / "scripts" / "coverage-floor.json"

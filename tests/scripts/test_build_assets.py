@@ -14,15 +14,12 @@ number, an identifier that ends in a digit, a colour and an embedded font.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
+import build_assets
 from support.paths import REPO
-
-sys.path.insert(0, str(REPO / "scripts"))
-import build_assets  # noqa: E402
 
 FONT = "data:font/woff2;base64,d09GMgABAAAAAAr4ABAAAAAAFjQAAAqfAAEAAAAAAAAAAAAA1234567890+/=="
 FIGURE = (

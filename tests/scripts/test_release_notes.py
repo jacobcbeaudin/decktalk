@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import json
-import sys
 
 import pytest
 
+import build_changelog
+import release_notes
 from support.paths import REPO
-
-sys.path.insert(0, str(REPO / "scripts"))
-import build_changelog  # noqa: E402
-import release_notes  # noqa: E402
 
 CHANGELOG = """# Changelog
 

@@ -31,6 +31,8 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+import generated
+
 ROOT = Path(__file__).resolve().parent.parent
 RUNTIME = ROOT / "src" / "decktalk" / "runtime"
 SOURCE = RUNTIME / "src"
@@ -554,8 +556,4 @@ def documents() -> dict[Path, str]:
 
 
 if __name__ == "__main__":
-    # The runner is imported here rather than above, because the suite loads this file by its path to
-    # reach `page_module`, and that load has no `scripts/` on the import path.
-    import generated
-
     sys.exit(generated.run(documents))

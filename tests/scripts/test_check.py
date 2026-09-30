@@ -10,33 +10,18 @@ skipped.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 import yaml
 
+import check
 from support import tools
 from support.paths import REPO
-
-
-def _check() -> ModuleType:
-    """`scripts/check.py` as a module, which is the only way to reach a file outside the package."""
-    spec = importlib.util.spec_from_file_location("check", REPO / "scripts" / "check.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["check"] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-check = _check()
 
 
 def scripts(commands: tuple[tuple[str, ...], ...]) -> list[str]:

@@ -22,7 +22,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 import generated  # noqa: E402
-
 from decktalk.catalog import result_schemas  # noqa: E402  (after sys.path, so a checkout needs no install)
 
 TARGET = ROOT / "schemas" / "v1" / "results"

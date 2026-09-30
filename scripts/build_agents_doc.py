@@ -18,7 +18,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 import generated  # noqa: E402
-
 from decktalk.cli import catalog  # noqa: E402  (after sys.path, so a checkout needs no install)
 from decktalk.cli.options import Group  # noqa: E402
 

@@ -19,15 +19,13 @@ that flag, so every hosted runner gated and the founder's decision lived only in
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Any, Protocol, cast
 
 import pytest
 
+import check
 from decktalk.findings import Certainty, Code
-from support.paths import REPO
 from support.timing_policy import (
     BASE_BUDGET_SECONDS,
     LATE_FRAME,
@@ -45,28 +43,12 @@ STATED_LIMIT_MS = 80.0
 """A project's own cue offset limit, which stands here for whatever a real project states."""
 
 
-def check_table() -> ModuleType:
-    """`scripts/check.py` as a module, because `GROUPS` is the one place a leg is written down.
-
-    The script is loaded from its path rather than imported by name, because `scripts/` is not a
-    package and putting it on the path would make every check script importable from every test.
-    """
-    spec = importlib.util.spec_from_file_location("check_table", REPO / "scripts" / "check.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-CHECK = check_table()
-
 REPORTS_TIMING = (
     "browser-platforms",
     "media-platforms",
     "e2e-platforms",
     "scaffold",
-    *(() if CHECK.LINUX_GATES_TIMING else ("e2e",)),
+    *(() if check.LINUX_GATES_TIMING else ("e2e",)),
 )
 """Every leg whose compositor is not trustworthy, which is the founder's decision written as names.
 
@@ -265,21 +247,21 @@ def suites(group: Row) -> list[tuple[str, ...]]:
 
 def test_the_table_passes_the_flag_on_every_leg_the_founder_named_and_on_no_other() -> None:
     """One assertion in both directions, because a flag on a trusted runner is as wrong as none here."""
-    for group in CHECK.GROUPS:
+    for group in check.GROUPS:
         for command in suites(group):
-            reports = CHECK.REPORT_TIMING in command
+            reports = check.REPORT_TIMING in command
             assert reports == (group.name in REPORTS_TIMING), f"{group.name}: {' '.join(command)}"
 
 
 def test_a_second_platform_row_can_never_be_added_without_the_flag() -> None:
     """`elsewhere()` makes these rows, so a group added to `ON_A_REAL_TOOL` is covered by being added."""
-    hosted = {group.name for group in CHECK.GROUPS if suites(group) and CHECK.LINUX not in group.runners}
+    hosted = {group.name for group in check.GROUPS if suites(group) and check.LINUX not in group.runners}
     assert hosted, "the table names no suite on macOS or Windows, so this rule guards nothing"
     assert hosted <= set(REPORTS_TIMING), sorted(hosted - set(REPORTS_TIMING))
 
 
 def test_the_flag_the_table_passes_is_the_option_the_suite_registers() -> None:
     """A flag spelled in one file and read in another is two spellings until something holds them."""
-    name, _, value = CHECK.REPORT_TIMING.partition("=")
+    name, _, value = check.REPORT_TIMING.partition("=")
     assert name == "--timing"
     assert value == "report"

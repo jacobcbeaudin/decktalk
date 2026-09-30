@@ -12,7 +12,6 @@ because a rule the contract keeps and the generator loses is exactly the failure
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
 import sys
@@ -20,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+import build_runtime
 from decktalk import page
 from decktalk.page import ATTRS, CAPTURE_FPS, EXEMPT, FRAME_STEP_MS, Attr, PageWarning, Subject
 
@@ -37,15 +37,6 @@ ROWS_PER_SUBJECT: dict[tuple[Subject, ...], int] = {
     (Subject.SLIDE,): 5,
     (Subject.SCENE,): 2,
 }
-
-
-def generator():
-    """`scripts/build_runtime.py` imported by path, because the scripts directory is not a package."""
-    spec = importlib.util.spec_from_file_location("build_runtime", GENERATOR)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 # ---- the rules the table rests on ----------------------------------------------------------
@@ -123,7 +114,7 @@ def test_no_code_spells_its_own_certainty_and_every_one_is_a_sentence():
 def test_the_page_module_is_what_the_committed_contract_says():
     """Everything downstream of `contract.json` is pure Python, so this half runs on every platform."""
     data = json.loads(CONTRACT_JSON.read_text(encoding="utf-8"))
-    assert generator().page_module(data) == PAGE_MODULE.read_text(encoding="utf-8")
+    assert build_runtime.page_module(data) == PAGE_MODULE.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(not ESBUILD.exists(), reason="the pinned node tools are not installed, so run `npm ci`")

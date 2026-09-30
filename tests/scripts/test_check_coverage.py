@@ -6,28 +6,12 @@ reads the JUnit report each suite writes as well, and these are the reports it h
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
-from support.paths import REPO
-
-
-def _load(name: str) -> ModuleType:
-    """One script under `scripts/` as a module, registered so the scripts can import each other."""
-    spec = importlib.util.spec_from_file_location(name, REPO / "scripts" / f"{name}.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-check = sys.modules.get("check") or _load("check")
-gate = _load("check_coverage")
+import check
+import check_coverage as gate
 
 
 def report(path: Path, *, tests: int, skipped: int) -> None:

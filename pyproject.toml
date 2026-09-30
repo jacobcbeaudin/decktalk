@@ -106,6 +106,9 @@ dev = [
 
 [tool.ruff]
 line-length = 120
+# The three roots a module is imported from, so `decktalk`, the suite's `support` and every script
+# sort as first-party without a list of names that a new script would have to join by hand.
+src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = [
@@ -129,11 +132,6 @@ select = [
 # so ARG005 there measures the seam rather than the test. ARG still holds over every other argument.
 "tests/**" = ["ARG005"]
 
-# `tests/support` is on the path as `support`, so it sorts beside `decktalk` rather than with the
-# third-party packages, which is where a reader looks for it.
-[tool.ruff.lint.isort]
-known-first-party = ["decktalk", "support"]
-
 [tool.ruff.lint.flake8-unused-arguments]
 # A fake of a third-party seam takes the arguments the real one takes, and reads the ones it judges.
 ignore-variadic-names = true
@@ -143,7 +141,8 @@ testpaths = ["tests"]
 # Two modules of the tree are named plan.py, so their mirrored test files share a basename.
 consider_namespace_packages = true
 # tests/ is on the path, so `tests/support/` is imported as `support.<module>` from anywhere in the suite.
-pythonpath = ["tests"]
+# scripts/ is on it too, so a test imports the script it tests by name, as the scripts import each other.
+pythonpath = ["tests", "scripts"]
 # Every marker names its tool in its first clause, so `pytest --markers` answers what a table used to.
 markers = [
     "browser: needs the headless Chromium that `decktalk install` fetches",

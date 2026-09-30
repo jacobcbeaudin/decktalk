@@ -8,26 +8,10 @@ banner to the first line once the formatter has run.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
-from types import ModuleType
 
-from support.paths import REPO
-
-
-def _generator() -> ModuleType:
-    """`scripts/build_runtime.py` as a module, which is the only way to reach a file outside the package."""
-    spec = importlib.util.spec_from_file_location("build_runtime", REPO / "scripts" / "build_runtime.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-build_runtime = _generator()
+import build_runtime
 
 RUNTIME: Path = build_runtime.RUNTIME
 """The folder the bundles are committed in, read from the generator that writes them."""

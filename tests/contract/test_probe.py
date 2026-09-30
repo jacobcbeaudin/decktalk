@@ -14,8 +14,8 @@ import shutil
 from pathlib import Path
 
 import pytest
-from contract.test_runtime import MARKUP_SCENE, deck
 
+from contract.test_runtime import MARKUP_SCENE, deck
 from decktalk.page import REPORT
 from decktalk.toolchain.assets import (
     KATEX_DIR,

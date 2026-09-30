@@ -8,15 +8,12 @@ judgement the rehearsal makes before any bump, and the copy it makes the bump in
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
+import rehearse_release as rehearse
 from support.paths import REPO
-
-sys.path.insert(0, str(REPO / "scripts"))
-import rehearse_release as rehearse  # noqa: E402
 
 NOTES = (
     "## [0.5.0-rc3](https://github.com/o/r/compare/v0.5.0-rc2...v0.5.0-rc3) (2026-01-02)\n\n\n"

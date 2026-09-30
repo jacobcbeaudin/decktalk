@@ -15,10 +15,8 @@ from pathlib import Path
 
 import pytest
 
+import generated
 from support.paths import REPO
-
-sys.path.insert(0, str(REPO / "scripts"))
-import generated  # noqa: E402
 
 GENERATORS = sorted((REPO / "scripts").glob("build_*.py"))
 
