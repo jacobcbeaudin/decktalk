@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from decktalk.errors import ApprovalRequired
+from decktalk.errors import ApprovalRequired, Cancelled
 from decktalk.events import Event, Progress, Unit
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
@@ -288,8 +288,6 @@ def test_a_ceiling_over_a_price_nobody_stated_refuses_the_run_before_it_buys(tmp
 
 
 def test_a_cancelled_run_stops_before_it_reaches_the_first_item(tmp_path: Path) -> None:
-    from decktalk.errors import Cancelled  # noqa: PLC0415  (the class this one test names)
-
     run = a_run(tmp_path)
     run.cancel.cancel()
     with pytest.raises(Cancelled):

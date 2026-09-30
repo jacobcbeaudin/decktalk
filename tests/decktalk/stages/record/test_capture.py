@@ -20,6 +20,7 @@ from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages.record.capture import (
     as_query,
     page_parts,
+    page_source,
     plan_job,
     scene_params,
     scene_url,
@@ -195,8 +196,6 @@ def test_a_log_with_no_narration_start_in_it_is_a_recording_that_never_finished(
 
 
 def test_a_page_that_could_not_be_read_is_hashed_as_empty_and_says_so(tmp_path: Path, caplog) -> None:
-    from decktalk.stages.record.capture import page_source  # noqa: PLC0415
-
     with caplog.at_level("DEBUG", logger="decktalk"):
         assert page_source(tmp_path / "gone.html") == ""
     [record] = [record for record in caplog.records if record.name == "decktalk.stages.record.capture"]
