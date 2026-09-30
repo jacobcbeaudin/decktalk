@@ -39,8 +39,11 @@ const { PyProjectToml } = require("release-please/build/src/updaters/python/pypr
 const { ReleasePleaseManifest } = require("release-please/build/src/updaters/release-please-manifest.js");
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const QUIET = { error() {}, warn() {}, info() {}, debug() {}, trace() {} };
-setLogger(QUIET);
+// release-please's warnings and errors reach stderr, where the rehearsal prints them, because an
+// updater that found no version to move says why only there. Its progress lines stay quiet.
+const say = (...parts) => console.error(...parts);
+const LOGGER = { error: say, warn: say, info() {}, debug() {}, trace() {} };
+setLogger(LOGGER);
 
 /** The commit a rehearsal pretends landed when nothing releasable has, which is one fix. */
 export const REHEARSAL_COMMIT = { sha: "rehearsal", message: "fix: rehearse the release path", files: [] };
@@ -57,7 +60,7 @@ function strategy(settings) {
     bumpPatchForMinorPreMajor: settings["bump-patch-for-minor-pre-major"] === true,
     prereleaseType: settings["prerelease-type"],
     prerelease: settings.prerelease === true,
-    logger: QUIET,
+    logger: LOGGER,
   };
   const versioning = settings.versioning ?? "default";
   if (versioning === "prerelease") return new PrereleaseVersioningStrategy(options);
@@ -149,7 +152,7 @@ export function rewrite(dir, path, updater) {
   const file = join(dir, path);
   if (!existsSync(file)) throw new Error(`${path} does not exist, and release-please would bump it`);
   const before = readFileSync(file, "utf8");
-  const after = updater.updateContent(before, QUIET);
+  const after = updater.updateContent(before, LOGGER);
   if (after === before)
     throw new Error(`the bump changed nothing in ${path}, so release-please would leave its version behind`);
   writeFileSync(file, after);

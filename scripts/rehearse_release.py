@@ -60,6 +60,7 @@ def next_versions(root: Path) -> dict[str, dict[str, Any]]:
     found = subprocess.run(NEXT_VERSION, cwd=root, capture_output=True, text=True, check=False)
     if found.returncode != 0:
         raise Refused(f"the next version cannot be computed: {found.stderr.strip()}")
+    sys.stderr.write(found.stderr)  # release-please's own warnings, which a green run still shows
     return json.loads(found.stdout)
 
 
@@ -110,6 +111,7 @@ def bump(tree: Path, reports: dict[str, dict[str, Any]]) -> dict[str, str]:
         )
         if done.returncode != 0:
             raise Refused(done.stderr.strip())
+        sys.stderr.write(done.stderr)
         print(done.stdout, end="")
     return bumped
 
