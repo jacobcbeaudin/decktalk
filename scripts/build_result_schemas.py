@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import generated
-from decktalk.catalog import result_schemas
+from decktalk.results import RESULTS
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -34,7 +34,10 @@ def document(name: str, schema: dict[str, Any]) -> str:
 
 def documents() -> dict[Path, str]:
     """Every schema file this generator owns, by the path it is written to."""
-    return {TARGET / f"{name}.json": document(name, schema) for name, schema in result_schemas().items()}
+    return {
+        TARGET / f"{name}.json": document(name, schema)
+        for name, schema in ((name, model.model_json_schema()) for name, model in RESULTS.items())
+    }
 
 
 if __name__ == "__main__":

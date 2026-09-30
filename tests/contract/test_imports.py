@@ -36,7 +36,7 @@ LAYERS: dict[str, tuple[str, ...]] = {
     "vocabulary": ("files", "pipeline", "findings", "secret", "errors", "locate", "page"),
     # The frozen models and the settings tree, which every layer above reads and none of them writes.
     # `logs` is the bridge from standard logging to the stream, which reads the stream and nothing above it.
-    "models": ("results", "events", "logs", "catalog", "tomlmap", "settings"),
+    "models": ("results", "events", "logs", "tomlmap", "settings"),
     # One job each, and no knowledge of a project.
     "leaves": ("toolchain", "captions", "speech", "media", "pagescan", "template", "artifacts"),
     # The object a caller drives, and the stages it drives.

@@ -144,8 +144,8 @@ class MeasuredScene(Model):
 
     The catalog is the page's own document and `pagescan.py` is its reader, so what this model does
     not name is kept rather than dropped, and what it does name is read. It is named for what it
-    carries rather than for the field it arrives under, because `decktalk.catalog` is the library's
-    own contract walker and no published name may be read as that one.
+    carries rather than for the field it arrives under, because the contract walker behind
+    `decktalk schema` is the catalog and no published name may be read as that one.
     """
 
     # What a scene does not name is kept, because `pagescan` reads the rest of the catalog.
