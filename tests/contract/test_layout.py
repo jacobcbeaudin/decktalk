@@ -274,7 +274,7 @@ def test_no_end_to_end_test_names_a_variable_decktalk_does_not_read():
     its own variable there puts that warning in the stderr those same tests print as the evidence
     for a failure. The loader answers here rather than a list, so the rule and the warning agree.
     """
-    for path in sorted((TESTS / "e2e").glob("test_*.py")):
+    for path in [*sorted((TESTS / "e2e").glob("test_*.py")), TESTS / "support" / "commands.py"]:
         warnings = env_warnings(dict.fromkeys(named_in_the_settings_namespace(path), ""))
         assert warnings == [], (
             f"{path.relative_to(REPO).as_posix()}: {warnings} A variable a suite owns is spelled outside "

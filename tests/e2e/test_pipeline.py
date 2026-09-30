@@ -44,6 +44,14 @@ from decktalk.media import MILLISECONDS, audio, ffmpeg, frames
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import Layer, SectionKind, SpendState, Substitute, Voicing, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
+from support.commands import (
+    FOUND_NOTHING,
+    FOUND_SOMETHING,
+    HOSTILE_DIRECTORY,
+    clean_environ,
+    codes,
+    flat,
+)
 from support.timing_policy import (
     BASE_BUDGET_SECONDS,
     FIRST_FETCH_SECONDS,
@@ -69,14 +77,6 @@ pytestmark = [pytest.mark.e2e, pytest.mark.timeout(BUILD_BUDGET_SECONDS)]
 
 FIXTURE = Path(__file__).parent / "fixture"
 
-HOSTILE_DIRECTORY = "jacob's fïlms 2"
-"""The name every temporary root of this suite sits under, because a path is an input like any other.
-
-An apostrophe and a diacritic reach every shell quote, every ffmpeg concat list and every served URL
-the build writes, and the founder's own films live under a name like this one. Building anywhere
-else would leave the quoting of must 1 proven by nothing that runs on every platform.
-"""
-
 OUT = Path(os.environ.get("E2E_OUT") or Path(__file__).parent.parent / "out") / "e2e" / HOSTILE_DIRECTORY
 
 FILM_NAME = "pipeline"
@@ -97,12 +97,6 @@ CUES = (
     "4:3.1:bar",
 )
 """Every cue the fixture declares, as the section number, then the wire id of slide and local name."""
-
-RESERVED_KEYS = frozenset({"schema", "ok", "findings", "error"})
-"""The four keys every result carries, which is the founder's decided JSON contract."""
-
-FOUND_NOTHING, FOUND_SOMETHING = 0, 1
-"""What the CLI exits when it judged nothing and when it judged something, from the CLI design."""
 
 SLATE_SECONDS = 1.0
 """How long section 5's slate plays, which `decktalk.toml` states as `slate_seconds = 1`."""
@@ -165,11 +159,7 @@ class Run:
     @property
     def json(self) -> dict[str, Any]:
         """The one flat object the command printed, checked against the reserved key contract."""
-        doc = json.loads(self.stdout)
-        assert isinstance(doc, dict), f"{self.args}: --json prints one object and nothing else"
-        assert RESERVED_KEYS <= set(doc), f"{self.args}: missing {sorted(RESERVED_KEYS - set(doc))}"
-        assert doc["schema"] == 2, doc["schema"]
-        return doc
+        return flat(self.stdout, self.args)
 
     @property
     def findings(self) -> list[dict[str, Any]]:
@@ -186,7 +176,7 @@ class Run:
 
     def codes(self) -> list[Code]:
         """Every finding as the model's own member, which is what the timing policy judges."""
-        return [Code(row["code"]) for row in self.findings]
+        return codes(self.json)
 
 
 BLOCK_THE_NETWORK = '''
@@ -234,12 +224,8 @@ class Project:
         The CLI is reached through `python -m decktalk` rather than through a console script, so the
         command under test is the one the wheel installs and no entry point has to be on PATH.
         """
-        env = dict(os.environ)
+        env = clean_environ(self.shim)
         env["E2E_ATTEMPTS"] = str(self.attempts)
-        # A key or a settings file belonging to whoever runs the suite must not reach the build.
-        for name in ("DECKTALK_PROJECT", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"):
-            env.pop(name, None)
-        env["DECKTALK_CONFIG"] = str(self.shim / "no-machine-config.toml")
         existing = env.get("PYTHONPATH")
         env["PYTHONPATH"] = os.pathsep.join([str(self.shim), *([existing] if existing else [])])
         done = subprocess.run(

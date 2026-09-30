@@ -66,13 +66,11 @@ from decktalk.results import (
     VerifyResult,
     WordsResult,
 )
+from support.commands import RESERVED_KEYS
 from support.paths import REPO
 
 SOME_CODE = Code.CUE_OFF
 """One finding code, for the rows where a finding is the input rather than the subject."""
-
-RESERVED = ("schema", "ok", "findings", "error")
-"""The four keys the base reserves, which every result carries and no subclass may spell again."""
 
 SCHEMAS = REPO / "schemas" / "v1" / "results"
 """Where the committed JSON Schema of each result lives, one file per name `decktalk schema` prints."""
@@ -430,11 +428,11 @@ def test_the_schema_is_one_flat_object_with_the_four_reserved_keys(row: Row):
     """The founder's decided contract: its own fields plus four keys, with no envelope around them."""
     schema = row.result.model_json_schema(by_alias=True)
     properties = schema["properties"]
-    assert set(RESERVED) <= set(properties), sorted(set(RESERVED) - set(properties))
+    assert set(RESERVED_KEYS) <= set(properties), sorted(set(RESERVED_KEYS) - set(properties))
     assert properties["schema"]["const"] == SCHEMA
     for name, definition in schema.get("$defs", {}).items():
         nested = set(definition.get("properties", {}))
-        assert not set(RESERVED) <= nested, f"{name} is a second envelope inside {row.result.__name__}"
+        assert not set(RESERVED_KEYS) <= nested, f"{name} is a second envelope inside {row.result.__name__}"
 
 
 @pytest.mark.parametrize(
@@ -535,7 +533,7 @@ def test_a_driven_row_returns_its_result_as_one_flat_object(
     assert isinstance(result, row.result)
     payload = read_back(result)
     assert payload["schema"] == SCHEMA
-    assert set(RESERVED) <= set(payload)
+    assert set(RESERVED_KEYS) <= set(payload)
     assert ("run" in payload) == row.opens_run
     assert ("written" in payload) == row.writes
     printed = capsys.readouterr()
@@ -608,7 +606,7 @@ def test_applying_a_fix_reports_what_it_changed(project: Project, capsys: pytest
     assert [outcome.applied for outcome in applied.fixes] == [True]
     assert Path("decktalk.toml") in applied.written
     payload = read_back(applied)
-    assert set(RESERVED) <= set(payload)
+    assert set(RESERVED_KEYS) <= set(payload)
     printed = capsys.readouterr()
     assert printed.out == "" and printed.err == ""
 
