@@ -1271,7 +1271,7 @@ def env_warnings(environ: Mapping[str, str]) -> list[str]:
 
 def _table(doc: Mapping[str, Any], dotted: str) -> Mapping[str, Any] | None:
     """One nested table of a parsed document by its dotted name, or null when it is not there."""
-    found = _stated(doc, dotted)
+    found = stated(doc, dotted)
     return found if isinstance(found, Mapping) else None
 
 
@@ -1382,13 +1382,13 @@ def _layers(
     for key in KEYS:
         found = [LayerValue(layer=Layer.DEFAULT, value=json_value(key.default))]
         for layer, doc in ((Layer.MACHINE, machine), (Layer.PROJECT, project)):
-            stated = _stated(doc, key.id)
-            if stated is not _ABSENT:
+            said = stated(doc, key.id)
+            if said is not ABSENT:
                 path = files.get(layer)
                 found.append(
                     LayerValue(
                         layer=layer,
-                        value=json_value(stated),
+                        value=json_value(said),
                         file=path,
                         line=locate(texts.get(layer, ""), key.id) if path else None,
                     )
@@ -1404,16 +1404,16 @@ def _layers(
     return Layers(rows=rows)
 
 
-_ABSENT = object()
+ABSENT = object()
 """The answer to a lookup for a key a layer never stated, which None cannot be because None is a value."""
 
 
-def _stated(doc: Mapping[str, Any], dotted: str) -> object:
-    """What one layer's document says about one key, or `_ABSENT` when it says nothing."""
+def stated(doc: Mapping[str, Any], dotted: str) -> object:
+    """What one layer's document says about one key, or `ABSENT` when it says nothing."""
     found: object = doc
     for part in dotted.split("."):
         if not isinstance(found, Mapping) or part not in found:
-            return _ABSENT
+            return ABSENT
         found = found[part]
     return found
 
@@ -1424,10 +1424,12 @@ json_value: Callable[[object], JsonValue] = functools.partial(to_jsonable_python
 
 def value_of(settings: Settings, dotted: str) -> object:
     """The value one dotted key holds in a settings tree."""
-    found: object = settings
-    for part in dotted.split("."):
-        found = getattr(found, part)
-    return found
+    return operator.attrgetter(dotted)(settings)
+
+
+def effective(settings: Settings, name: str) -> object:
+    """One input of a relation or a formula at its effective value, whether it is a key or a published number."""
+    return value_of(settings, name) if name in BY_ID else NUMBERS_BY_ID[name].at(settings)
 
 
 def _require(settings: Settings) -> None:
@@ -1449,10 +1451,8 @@ def _require(settings: Settings) -> None:
 
 def _side(settings: Settings, token: str) -> float:
     """One side of a declared relation, which is a key, a published number or a literal."""
-    if token in BY_ID:
-        return float(cast("float", value_of(settings, token)))
-    if token in NUMBERS_BY_ID:
-        return float(cast("float", NUMBERS_BY_ID[token].at(settings)))
+    if token in BY_ID or token in NUMBERS_BY_ID:
+        return float(cast("float", effective(settings, token)))
     return float(token)
 
 
@@ -1537,7 +1537,7 @@ def edit(text: str, key: str, value: str, *, scope: Scope, file: Path, measured:
         )
     typed = parse_value(known, value)
     document = _document(text, file)
-    previous = _stated(document, key)
+    previous = stated(document, key)
     _put(document, key.split("."), typed)
     return Edited(text=tomlkit.dumps(document), value=typed, previous=previous)
 
@@ -1574,7 +1574,7 @@ def write(
     return SettingWrite(
         key=key,
         value=json_value(edited.value),
-        previous=None if edited.previous is _ABSENT else json_value(edited.previous),
+        previous=None if edited.previous is ABSENT else json_value(edited.previous),
         scope=scope,
         file=path,
         line=locate(edited.text, key),
@@ -1599,8 +1599,8 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
     _scoped_key(key, scope, action="taken out of", rerun=f"decktalk config unset {key}")
     target = _target(path, scope)
     document = _document(_text(target), path)
-    previous = _stated(document, key)
-    if previous is not _ABSENT:
+    previous = stated(document, key)
+    if previous is not ABSENT:
         _take(document, key.split("."))
         text = tomlkit.dumps(document)
         validate(text, path, scope)
@@ -1608,7 +1608,7 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
     tree = _in_force(path, scope, {}, environ)
     return SettingUnset(
         keys=(key,),
-        previous=None if previous is _ABSENT else json_value(previous),
+        previous=None if previous is ABSENT else json_value(previous),
         scope=scope,
         file=path,
         effective=json_value(value_of(tree.settings, key)),
@@ -1726,6 +1726,7 @@ def nested(flat: Mapping[str, object]) -> dict[str, Any]:
 
 
 __all__ = [
+    "ABSENT",
     "ALLOW_ANY_API_BASE",
     "json_value",
     "nested",
@@ -1760,6 +1761,7 @@ __all__ = [
     "VideoConfig",
     "VoiceConfig",
     "edit",
+    "effective",
     "env_warnings",
     "key_warnings",
     "load",
@@ -1774,6 +1776,7 @@ __all__ = [
     "read_toml",
     "route",
     "scoped",
+    "stated",
     "unset",
     "validate",
     "value_of",

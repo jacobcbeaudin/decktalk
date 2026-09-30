@@ -11,7 +11,7 @@ where unset says exactly what happens: the override is removed and the layer bel
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -289,7 +289,9 @@ def _stating(path: Path, key: str, *, asked: bool) -> tuple[str, ...]:
     because a table is many keys at once and a person who typed one word meant one thing.
     """
     document = knobs.read_toml(path)
-    going = tuple(one.id for one in knobs.KEYS if _under(one.id, key) and _states(document, one.id))
+    going = tuple(
+        one.id for one in knobs.KEYS if _under(one.id, key) and knobs.stated(document, one.id) is not knobs.ABSENT
+    )
     if not going:
         raise InputError(f"{path.name} sets nothing under '{key}'.", hint="Run decktalk config list --changed.")
     if key not in knobs.BY_ID and not asked:
@@ -303,16 +305,6 @@ def _stating(path: Path, key: str, *, asked: bool) -> tuple[str, ...]:
 def _under(published: str, named: str) -> bool:
     """Whether one published key is the key a caller named, or one of the keys of the table they named."""
     return published == named or published.startswith(f"{named}.")
-
-
-def _states(document: Mapping[str, Any], key: str) -> bool:
-    """Whether this file states one published key, walked down its dotted name."""
-    here: Any = document
-    for part in key.split("."):
-        if not isinstance(here, Mapping) or part not in here:
-            return False
-        here = here[part]
-    return True
 
 
 def _file(session: sessions.Session, where: Scope) -> Path:

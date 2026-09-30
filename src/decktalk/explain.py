@@ -22,11 +22,11 @@ from .inputs import Inputs
 from .machine import Machine
 from .results import Layer, LayerValue, NumberView, Scope, SectionCues
 from .settings import (
-    BY_ID,
     NUMBERS,
     NUMBERS_BY_ID,
     Loaded,
     Settings,
+    effective,
     json_value,
     key_named,
     load,
@@ -170,7 +170,7 @@ def _numbers(key: Key, here: Settings, candidate: Settings | None) -> tuple[Numb
         NumberView(
             id=number.id,
             formula=number.formula,
-            reads={name: json_value(_read(here, name)) for name in number.reads},
+            reads={name: json_value(effective(here, name)) for name in number.reads},
             value=json_value(number.at(here)),
             candidate=None if candidate is None else json_value(number.at(candidate)),
             unit=number.unit,
@@ -179,11 +179,6 @@ def _numbers(key: Key, here: Settings, candidate: Settings | None) -> tuple[Numb
         for number in NUMBERS
         if key.id in number.reads
     )
-
-
-def _read(settings: Settings, name: str) -> object:
-    """One input of a formula at its effective value, whether it is a key or a published number."""
-    return value_of(settings, name) if name in BY_ID else NUMBERS_BY_ID[name].at(settings)
 
 
 def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[Cue, ...]], ...]) -> tuple[str, ...]:
