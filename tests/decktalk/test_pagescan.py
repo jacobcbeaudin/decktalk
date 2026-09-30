@@ -6,8 +6,8 @@ from pathlib import Path
 
 from decktalk import page, pagescan
 from decktalk.findings import Code
-from decktalk.media.pagereport import MeasuredScene, PageReport
-from decktalk.pagescan import Measured, measured_rows, page_findings, scene_cues, scene_entry, slide_cues
+from decktalk.media.pagereport import ElementRow, MeasuredScene, PageReport
+from decktalk.pagescan import measured_rows, page_findings, scene_cues, scene_entry, slide_cues
 from decktalk.pipeline import Stage
 from decktalk.settings import KEYS
 
@@ -16,13 +16,13 @@ NONE = 1.0
 """The scale a project that has not turned `motion.scale` renders at, which is no change at all."""
 
 
-def row(cue: str | None = "1.1:open", **attrs: str) -> Measured:
-    moments = {page.Attr.IN.value: cue} if cue else {}
-    return Measured(attrs=attrs, moments=moments, text="", box=(0, 0, 100, 40))
-
-
 BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
 """One element's box, which every catalog row here shares because none of these cases measures a box."""
+
+
+def row(cue: str | None = "1.1:open", **attrs: str) -> ElementRow:
+    moments = {page.Attr.IN.value: cue} if cue else {}
+    return ElementRow.model_validate({"attrs": attrs, "moments": moments, "box": BOX})
 
 
 def codes(found: list) -> list[Code]:
@@ -79,9 +79,9 @@ def test_a_scene_also_declares_the_cues_its_own_map_names() -> None:
     assert scene_cues(flat) == ("1.1:listed",)
 
 
-def test_a_catalog_row_becomes_the_row_this_module_judges() -> None:
+def test_a_catalog_row_is_the_row_this_module_judges() -> None:
     (row,) = measured_rows(entry("1", {"1.1": ["1.1:a"]}))
-    assert row.cue == "1.1:a" and row.box == (0, 0, 10, 10)
+    assert row.cue == "1.1:a"
 
 
 def test_a_staggered_row_carries_the_count_of_children_the_probe_measured() -> None:
@@ -178,7 +178,7 @@ def test_an_element_that_changes_the_picture_and_says_nothing_loses_it_from_the_
 
 def test_an_element_that_describes_itself_or_draws_words_is_not_judged() -> None:
     described = row(**{"data-describe": "the curve appears"})
-    worded = Measured(attrs={}, moments={page.Attr.IN.value: "1.1:open"}, text="Ninety percent", box=None)
+    worded = row().model_copy(update={"text": "Ninety percent"})
     assert pagescan.description_findings([described, worded], where=PAGE, section=1) == []
 
 

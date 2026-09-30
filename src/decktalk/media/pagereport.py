@@ -18,8 +18,9 @@ from __future__ import annotations
 
 from pydantic import ConfigDict, Field, ValidationError, field_validator
 
+from .. import page
 from ..findings import Code, Model, RaisedBy
-from ..page import REPORT
+from ..page import REPORT, Attr, stagger_span
 from . import MILLISECONDS
 
 
@@ -100,6 +101,42 @@ class ElementRow(Model):
     text: str = Field("", description="The element's text, collapsed and cut to the contract's length.")
     children: int = Field(0, ge=0, description="How many children a staggered element reveals one after another.")
     box: Box
+
+    @property
+    def cue(self) -> str | None:
+        """The wire id of this element's entrance, which is the moment every span is measured from."""
+        return self.moments.get(Attr.IN.value)
+
+    @property
+    def described(self) -> bool:
+        """True when the element says in words what it changes, which the transcript carries."""
+        return bool(self.attrs.get(Attr.DESCRIBE.value) or self.attrs.get(Attr.DESCRIBE_CLASS.value))
+
+    @property
+    def entrance(self) -> float:
+        """How long this element's entrance plays, from the seconds it declares or the style it names."""
+        declared = self.attrs.get(Attr.IN_SECONDS.value)
+        if declared:
+            return float(declared)
+        style = self.attrs.get(Attr.IN_STYLE.value) or page.ATTRS[Attr.IN_STYLE].default or ""
+        effect = page.ENTRANCES.get(style)
+        return effect.seconds if effect else 0.0
+
+    def span(self, scale: float) -> float:
+        """The seconds of motion this element puts between its own cue and the next one.
+
+        The scale is applied without the clamp the runtime puts on it, because this is the
+        judgement that tells an author the scale they chose has made their own cues unmeasurable.
+        A staggered container's span is its step times the children after the first plus one
+        entrance, which is exact arithmetic rather than an estimate, so its judgement is certain.
+        The number of children is what the probe counted on the page, because `data-steps` is a flag
+        that says the children step, and a flag carries no count.
+        """
+        entrance = self.entrance * scale
+        step = self.attrs.get(Attr.STAGGER.value)
+        if not step:
+            return entrance
+        return stagger_span(float(step) * scale, self.children, entrance)
 
 
 class MeasuredScene(Model):

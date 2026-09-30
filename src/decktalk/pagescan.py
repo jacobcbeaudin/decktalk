@@ -24,12 +24,10 @@ from collections.abc import Iterable, Mapping, Sequence
 from itertools import pairwise
 from pathlib import Path
 
-from pydantic import Field
-
 from decktalk import page
-from decktalk.findings import Code, Finding, Location, Model
-from decktalk.media.pagereport import MeasuredScene, PageReport
-from decktalk.page import Attr, measurable, stagger_span
+from decktalk.findings import Code, Finding, Location
+from decktalk.media.pagereport import ElementRow, MeasuredScene, PageReport
+from decktalk.page import Attr, measurable
 from decktalk.pipeline import Stage
 
 MILLISECOND_DIGITS = 3
@@ -65,74 +63,14 @@ def judged(code: Code, message: str, location: Location, *, stage: Stage | None 
     return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage})
 
 
-class Measured(Model):
-    """One element the probe measured, as the contract's own attribute names spell it."""
-
-    attrs: dict[str, str] = Field(description="Every contract attribute this element carries, by name.")
-    moments: dict[str, str] = Field(description="The wire id of each moment this element names, by attribute.")
-    text: str = Field("", description="The words this element draws, which a synced line is judged on.")
-    box: tuple[int, int, int, int] | None = Field(None, description="Its box in stage pixels, or null when unlaid.")
-    children: int = Field(0, ge=0, description="How many children it staggers, which is zero when it staggers none.")
-
-    @property
-    def cue(self) -> str | None:
-        """The wire id of this element's entrance, which is the moment every span is measured from."""
-        return self.moments.get(Attr.IN.value)
-
-    @property
-    def described(self) -> bool:
-        """True when the element says in words what it changes, which the transcript carries."""
-        return bool(self.attrs.get(Attr.DESCRIBE.value) or self.attrs.get(Attr.DESCRIBE_CLASS.value))
-
-    @property
-    def entrance(self) -> float:
-        """How long this element's entrance plays, from the seconds it declares or the style it names."""
-        declared = self.attrs.get(Attr.IN_SECONDS.value)
-        if declared:
-            return float(declared)
-        style = self.attrs.get(Attr.IN_STYLE.value) or page.ATTRS[Attr.IN_STYLE].default or ""
-        effect = page.ENTRANCES.get(style)
-        return effect.seconds if effect else 0.0
-
-    def span(self, scale: float) -> float:
-        """The seconds of motion this element puts between its own cue and the next one.
-
-        The scale is applied without the clamp the runtime puts on it, because this is the
-        judgement that tells an author the scale they chose has made their own cues unmeasurable.
-        A staggered container's span is its step times the children after the first plus one
-        entrance, which is exact arithmetic rather than an estimate, so its judgement is certain.
-        The number of children is what the probe counted on the page, because `data-steps` is a flag
-        that says the children step, and a flag carries no count.
-        """
-        entrance = self.entrance * scale
-        step = self.attrs.get(Attr.STAGGER.value)
-        if not step:
-            return entrance
-        return stagger_span(float(step) * scale, self.children, entrance)
-
-
 def scene_entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
     """The catalog entry for one scene of one page, or None when the page published no such scene."""
     return next((one for one in entries or () if str(one.scene) == str(scene)), None)
 
 
-def measured_rows(entry: MeasuredScene) -> list[Measured]:
-    """Every element the probe measured on one scene, as the rows this module judges.
-
-    The catalog speaks the page's own shapes and this module speaks the contract's, so this is the
-    one place the two sit beside each other.
-    """
-    return [
-        Measured(
-            attrs=dict(row.attrs),
-            moments=dict(row.moments),
-            text=row.text,
-            box=(int(row.box.x), int(row.box.y), int(row.box.w), int(row.box.h)),
-            children=row.children,
-        )
-        for slide in entry.elements.values()
-        for row in slide
-    ]
+def measured_rows(entry: MeasuredScene) -> list[ElementRow]:
+    """Every element the probe measured on one scene, every slide's rows in page order."""
+    return [row for slide in entry.elements.values() for row in slide]
 
 
 def slide_cues(entry: MeasuredScene | None) -> Slides | None:
@@ -195,7 +133,7 @@ def page_findings(
     ]
 
 
-def motion_findings(rows: Iterable[Measured], *, where: str, section: int | None, scale: float) -> list[Finding]:
+def motion_findings(rows: Iterable[ElementRow], *, where: str, section: int | None, scale: float) -> list[Finding]:
     """One judgement per element whose motion runs past the ceiling its own cue is measured under."""
     found: list[Finding] = []
     for row in rows:
@@ -217,7 +155,7 @@ def motion_findings(rows: Iterable[Measured], *, where: str, section: int | None
     return found
 
 
-def description_findings(rows: Iterable[Measured], *, where: str, section: int | None) -> list[Finding]:
+def description_findings(rows: Iterable[ElementRow], *, where: str, section: int | None) -> list[Finding]:
     """One judgement per element that changes the picture and says nothing about what it changed."""
     return [
         judged(
@@ -234,7 +172,7 @@ def description_findings(rows: Iterable[Measured], *, where: str, section: int |
 
 
 def swap_findings(
-    rows: Iterable[Measured], times: Mapping[str, float], *, where: str, section: int | None
+    rows: Iterable[ElementRow], times: Mapping[str, float], *, where: str, section: int | None
 ) -> list[Finding]:
     """One judgement per swap whose two halves land far enough apart that a viewer sees the gap."""
     found: list[Finding] = []
@@ -262,7 +200,7 @@ def swap_findings(
 
 
 def overlap_findings(
-    rows: Iterable[Measured], times: Mapping[str, float], *, where: str, section: int | None, scale: float
+    rows: Iterable[ElementRow], times: Mapping[str, float], *, where: str, section: int | None, scale: float
 ) -> list[Finding]:
     """One judgement per pair of cues closer together than the first one's own motion lasts."""
     spans = {row.cue: row.span(scale) for row in rows if row.cue is not None}
@@ -302,7 +240,7 @@ def asset_findings(origins: Iterable[str], *, where: str, section: int | None = 
 
 
 def slide_findings(
-    rows: Iterable[Measured],
+    rows: Iterable[ElementRow],
     times: Mapping[str, float],
     *,
     where: str,
@@ -324,7 +262,6 @@ __all__ = [
     "MILLISECOND_DIGITS",
     "SLIDES_FIELD",
     "SWAP_APART_SECONDS",
-    "Measured",
     "Slides",
     "asset_findings",
     "description_findings",
