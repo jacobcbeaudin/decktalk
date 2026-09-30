@@ -1,4 +1,4 @@
-/*! decktalk-runtime 0.5.0 */
+/*! decktalk-runtime 0.6.0-rc1 */
 "use strict";
 (() => {
   // src/decktalk/runtime/src/contract.ts
@@ -2032,7 +2032,7 @@
    * the seam, and publishes `window.DeckTalk` for an author and `window.__decktalk` for whoever is
    * reading the page back. Nothing imports it, which is what keeps every other module testable.
    */
-  var VERSION = "0.5.0";
+  var VERSION = "0.6.0-rc1";
   var GATE_SECONDS = 5;
   var gates = [];
   function injected() {
