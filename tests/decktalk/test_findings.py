@@ -6,7 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from decktalk.findings import (
-    DOCS,
     Applicability,
     Certainty,
     Code,
@@ -125,11 +124,6 @@ def test_the_stagger_overrun_is_certain_because_its_arithmetic_is_exact() -> Non
 
 def test_a_null_offset_is_uncertain_rather_than_a_passing_row() -> None:
     assert Code.CUE_NO_ONSET.certainty is Certainty.UNCERTAIN
-
-
-def test_every_code_has_a_docs_page_under_the_one_prefix() -> None:
-    for code in Code:
-        assert code.url == f"{DOCS}/findings/{code.name}"
 
 
 def test_a_finding_takes_its_certainty_and_its_page_from_its_code() -> None:

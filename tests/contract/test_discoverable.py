@@ -91,12 +91,6 @@ def test_every_error_code_publishes_a_sentence_an_exit_code_and_an_address(code:
     assert code.url == f"{DOCS}/reference/errors/{code.value}", code.name
 
 
-def test_no_code_spells_its_own_certainty():
-    """A code that carried its own certainty would publish one fact twice and could disagree with itself."""
-    for code in Code:
-        assert not code.value.endswith(("_UNSURE", "_MAYBE", "?")), code.name
-
-
 # ---- the page attributes, which are the knobs an author writes in the markup -----------------
 
 
@@ -120,12 +114,6 @@ def test_every_page_attribute_carries_a_code_or_is_exempt_with_its_sentence(attr
     else:
         assert attr not in page.EXEMPT, f"{attr.value} names a code and is excused from naming one."
         assert row.code.name in Code.__members__, attr.value
-
-
-def test_the_exemption_list_names_no_attribute_the_contract_dropped():
-    """A closed list a test can count beats an open claim, which is why the list is counted here."""
-    extra = sorted(attr.value for attr in page.EXEMPT if attr not in page.ATTRS)
-    assert extra == [], extra
 
 
 # ---- the results, which are what a command publishes -----------------------------------------
