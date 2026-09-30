@@ -543,7 +543,7 @@ def test_an_edit_into_a_file_that_is_not_there_says_so_rather_than_raising(tmp_p
     """A fix that changes a line needs the lines, and a caller is told that in a sentence it can print."""
     project = a_project(tmp_path)
     outcome = project.apply(fixing(Edit(file=Path("notes.txt"), line=4, old="two", new="three"))).fixes[0]
-    assert not outcome.applied and "notes.txt" in outcome.why
+    assert not outcome.applied and "notes.txt" in (outcome.why or "")
     assert not (tmp_path / "notes.txt").exists()
 
 

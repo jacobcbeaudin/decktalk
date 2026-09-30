@@ -124,6 +124,7 @@ def test_project_missing_file_names_the_file_and_the_next_action(tmp_path):
         Inputs.load(tmp_path, environ={})
     error = raised.value
     assert str(error) == "decktalk.toml is not there."
+    assert error.location is not None
     assert error.location.file == Path("decktalk.toml") and error.location.line is None
     assert "decktalk init" in (error.hint or "")
 
@@ -175,7 +176,8 @@ def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monk
     # A warning, not an error: the load succeeds and every misspelled key keeps its default.
     assert p.settings.voice.stability == 0.55
     assert p.settings.video.preset == "medium"
-    assert p.document.soundscape.music.seconds == 360
+    music = p.document.soundscape.music
+    assert music is not None and music.seconds == 360
 
 
 def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):

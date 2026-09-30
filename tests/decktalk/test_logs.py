@@ -490,10 +490,10 @@ def test_a_busy_voice_leaves_a_warning_per_retry_and_a_trace_per_attempt(tmp_pat
     url = service.url_for("/speak")
     lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=5, retries=3))
     said = [line for line in lines if isinstance(line, Log) and line.source == "speech.http"]
-    retries = [line.data for line in said if line.level is Level.WARNING]
-    attempts = [line.data for line in said if line.level is Level.DEBUG]
-    assert [(data["wait_seconds"], data["wait_source"]) for data in retries] == [(2.0, "retry-after")] * 2  # type: ignore[index]
-    assert [data["status"] for data in attempts] == [429, 429, 200]  # type: ignore[index]
+    retries = [line.data or {} for line in said if line.level is Level.WARNING]
+    attempts = [line.data or {} for line in said if line.level is Level.DEBUG]
+    assert [(data["wait_seconds"], data["wait_source"]) for data in retries] == [(2.0, "retry-after")] * 2
+    assert [data["status"] for data in attempts] == [429, 429, 200]
 
 
 @pytest.mark.usefixtures("waits")

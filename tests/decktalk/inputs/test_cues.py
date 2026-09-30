@@ -36,7 +36,8 @@ def test_a_cue_row_names_its_id_under_one_key_and_no_other(tmp_path: Path) -> No
     with pytest.raises(InputError) as info:
         load_cues(path, tmp_path, {1})
     assert "'occurence' is not a key of a cue" in str(info.value)
-    assert info.value.location is not None and info.value.location.file.name == "cues.json"
+    location = info.value.location
+    assert location is not None and location.file is not None and location.file.name == "cues.json"
     assert info.value.hint is not None and "occurrence" in info.value.hint
 
 

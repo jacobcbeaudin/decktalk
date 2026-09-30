@@ -27,7 +27,7 @@ def session(**flags: object) -> Session:
 def terminal(**state: bool) -> Terminal:
     """One terminal reading, with every question answered the way a test needs it."""
     base = {"is_terminal": True, "is_dumb": False, "no_color": False, "json": False, "events": False, "quiet": False}
-    return Terminal(**{**base, **state})  # ty: ignore[invalid-argument-type]
+    return Terminal(**{**base, **state})
 
 
 def test_the_live_region_needs_a_terminal_with_one_stream_to_itself() -> None:
@@ -165,11 +165,11 @@ def _status(*found: object) -> StatusResult:
     """A reading of a project, with whatever judgements a test wants hung on it."""
     return StatusResult(
         ok=not found,
-        findings=tuple(found),  # ty: ignore[invalid-argument-type]
+        findings=tuple(found),
         run="r",
         name="demo",
-        script="script.md",  # ty: ignore[invalid-argument-type]
-        cues="cues.json",  # ty: ignore[invalid-argument-type]
+        script="script.md",
+        cues="cues.json",
         sections=(),
     )
 

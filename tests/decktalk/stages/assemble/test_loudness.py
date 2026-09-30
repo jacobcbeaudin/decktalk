@@ -73,6 +73,7 @@ def test_a_mix_inside_the_tolerance_is_judged_at_all(tmp_path):
 def test_the_measurement_becomes_the_one_shape_a_reader_receives(tmp_path):
     inputs = write_project(tmp_path)
     row = measured(inputs, a_measurement(i=-16.04, tp=-1.26, lra=7.44))
+    assert row is not None
     assert (row.integrated_lufs, row.true_peak_dbtp, row.range_lu) == (-16.0, -1.3, 7.4)
     assert row.target_lufs == inputs.settings.mix.loudness.target_lufs
 
