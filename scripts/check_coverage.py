@@ -45,6 +45,7 @@ measurement.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import math
 import platform
@@ -176,24 +177,19 @@ def silent_legs() -> list[str]:
 
 
 def measured_total() -> int:
-    """What the combined data scored over the whole package, rounded down.
+    """What the combined data scored over the whole package, rounded down so the record reads as a floor.
 
-    `analysis2` is the measurement the text report prints, so the record and the report can never
-    disagree about what a run scored.
+    It is the total `coverage report` prints, so the record and the report can never disagree about
+    what a run scored. A run with no combined data scored nothing, which is a total of zero.
     """
     data = coverage.Coverage()
+    # The data is loaded first on purpose. Under `parallel = true` a report asked of a fresh object
+    # starts an empty data file of its own and erases the combined one, which then scores nothing.
     data.load()
-    statements = missing = 0
-    for measured in sorted(data.get_data().measured_files()):
-        _name, lines, _excluded, absent, _formatted = data.analysis2(measured)
-        statements += len(lines)
-        missing += len(absent)
-    return floor_percent(statements - missing, statements)
-
-
-def floor_percent(covered: int, statements: int) -> int:
-    """What a run scored, rounded down, so the record reads as a floor rather than as a measurement."""
-    return math.floor(100 * covered / statements) if statements else 0
+    try:
+        return math.floor(data.report(file=io.StringIO()))
+    except coverage.exceptions.NoDataError:
+        return 0
 
 
 @dataclass(frozen=True)
