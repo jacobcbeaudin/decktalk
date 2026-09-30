@@ -58,20 +58,18 @@ class Rendered:
 
     This is the working row the cut, the mix and the captions all read. The result model of the same
     idea is `results.RenderedSection`, which carries what a reader receives rather than the paths a
-    filter graph is built from, and `rendered_rows` is the one place the two meet.
+    filter graph is built from, and `assemble._rendered_rows` is the one place the two meet.
     """
 
     section: Section
     path: Path
     seconds: float
-    note: str
-    source: str
+    source: Path
+    """The file the section is cut from, project-relative, which is the one it has not got when `substitute` is set."""
+
     substitute: Substitute | None = None
     audio: Path | None = None
     """A clip with its own sound, which is mixed in at the section start."""
-
-    missing: str | None = None
-    """The file the project names and has not got, project-relative, or None when nothing is missing."""
 
     @property
     def key(self) -> str:
@@ -169,9 +167,7 @@ def render_clip(inputs: Inputs, run: Run, enc: Encoder, section: ClipSection, ou
         if not sounds:
             run.note(f"{section.clip} carries no audio track, so section {section.number} plays silent.",
                      level=Level.WARNING)  # fmt: skip
-        note = f"{clip.name} (own audio)" if sounds else f"{clip.name} (silent)"
-        return Rendered(section, out, ffmpeg.probe_duration(out), note, str(inputs.relative(clip).as_posix()),
-                        audio=clip if sounds else None)  # fmt: skip
+        return Rendered(section, out, ffmpeg.probe_duration(out), inputs.relative(clip), audio=clip if sounds else None)
     if strict and not section.optional:
         raise InputError(
             f"section {section.number} names the clip {section.clip}, which is not there.",
@@ -199,10 +195,8 @@ def _render_slate_section(
         section=section,
         path=out,
         seconds=ffmpeg.probe_duration(out),
-        note=Substitute.SLATE.value,
-        source=section.clip,
+        source=Path(section.clip),
         substitute=Substitute.SLATE,
-        missing=section.clip,
     )
 
 
@@ -210,7 +204,7 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
                 strict: bool) -> Rendered:  # fmt: skip
     """One page section cut to its span in the narration, from its recording or from black."""
     webm = inputs.workspace.recording(section.key)
-    source = str(inputs.relative(webm).as_posix())
+    source = inputs.relative(webm)
     fades = inputs.document.fade_flags[section.key]
     if not webm.exists():
         if strict:
@@ -220,19 +214,17 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
         run.note(f"{source} is not there, so section {section.number} plays black.", level=Level.WARNING)
         chain = f"{enc.fit},trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
         _cut(out, enc, enc.color_source(BLACK, total), chain, (), seconds=total)
-        return Rendered(section, out, ffmpeg.probe_duration(out), Substitute.BLACK.value, source,
-                        substitute=Substitute.BLACK, missing=source)  # fmt: skip
+        return Rendered(section, out, ffmpeg.probe_duration(out), source, substitute=Substitute.BLACK)
     # The recorder covers the page until it starts the narration clock, so the head of the webm is
     # trimmed at the moment its own log recorded as narration t=0.
     log = RecordingLog.read(inputs.workspace.recording_log(section.key))
     lead = "" if log is None else f"trim=start={log.trim_seconds},setpts=PTS-STARTPTS,"
-    note = webm.name if log is None else f"{webm.name} (t0 {log.trim_seconds}s trimmed)"
     chain = (
         f"{lead}{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},"
         f"setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
     )
     _cut(out, enc, ffmpeg.source(webm), chain, (webm,), seconds=total)
-    return Rendered(section, out, ffmpeg.probe_duration(out), note, source)
+    return Rendered(section, out, ffmpeg.probe_duration(out), source)
 
 
 def page_target(takes: Takes, section: PageSection, fps: int) -> float:
@@ -292,7 +284,7 @@ def _judge_missing(run: Run, rows: list[Rendered]) -> None:
     there, so judging it certain would stop the build on the very thing the project asked for.
     """
     for row in rows:
-        if row.missing is None:
+        if row.substitute is None:
             continue
         if isinstance(row.section, ClipSection) and row.section.optional:
             continue
@@ -300,9 +292,9 @@ def _judge_missing(run: Run, rows: list[Rendered]) -> None:
         run.found(
             judge(
                 Code.FILE_MISSING,
-                f"section {row.number} names {row.missing}, which is not on disk, so {stood_in} plays for "
-                f"{row.seconds:.2f}s in its place.",
-                Location(where=row.missing, file=Path(row.missing), section=row.number),
+                f"section {row.number} names {row.source.as_posix()}, which is not on disk, so {stood_in} plays "
+                f"for {row.seconds:.2f}s in its place.",
+                Location(where=row.source.as_posix(), file=row.source, section=row.number),
                 stage=Stage.ASSEMBLE,
             )
         )
@@ -322,7 +314,7 @@ def cut_list(inputs: Inputs, rows: list[Rendered]) -> Cuts:
                 kind=SectionKind.CLIP if row.section.is_clip else SectionKind.PAGE,
                 start=round(starts[row.number], SECOND_DIGITS),
                 end=round(starts[row.number] + row.seconds, SECOND_DIGITS),
-                source=Path(row.source),
+                source=row.source,
                 chapter=chapters[row.number],
                 substitute=row.substitute,
                 dip_in=flags.get(row.key, (False, False))[0],

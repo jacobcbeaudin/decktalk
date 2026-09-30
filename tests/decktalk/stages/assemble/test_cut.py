@@ -103,7 +103,7 @@ def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, monke
     (slot,) = inputs.document.clip_sections
     row = render_clip(inputs, opened.run, enc, slot, tmp_path / "out.mp4", 0.0, strict=False)
     _judge_missing(opened.run, [row])
-    assert (row.substitute, row.missing) == (Substitute.SLATE, "media/slot.mp4")
+    assert (row.substitute, row.source) == (Substitute.SLATE, Path("media/slot.mp4"))
     assert opened.codes() == []
 
 
@@ -127,7 +127,7 @@ def test_strict_refuses_a_missing_clip_unless_the_section_is_optional(tmp_path, 
     assert refused.value.location.where == "media/real.mp4"
 
     allowed = render_clip(inputs, opened.run, enc, slot, out, 0.0, strict=True)
-    assert (allowed.substitute, allowed.missing) == (Substitute.SLATE, "media/slot.mp4")
+    assert (allowed.substitute, allowed.source) == (Substitute.SLATE, Path("media/slot.mp4"))
 
 
 def test_a_cut_the_run_did_not_name_is_kept_only_under_its_own_key(tmp_path, fake_ffmpeg):
