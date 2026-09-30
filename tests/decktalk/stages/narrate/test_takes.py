@@ -21,9 +21,9 @@ from decktalk.stages.narrate.takes import (
     write_placeholder_take,
     write_voiced_take,
 )
+from support.fakes import FakeVoice
 from support.runs import Watched
 
-from ...conftest import FakeVoice
 from .conftest import VOICE_ID, a_paid_take
 
 

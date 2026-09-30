@@ -26,9 +26,9 @@ from decktalk.stages.assemble.cut import (
     section_targets,
     vfades,
 )
+from support.fakes import FakeFfmpeg
 from support.logs import decisions
 
-from ...conftest import FakeFfmpeg
 from .conftest import MID_CLIP_TOML, TITLED_TOML, draw_slate, open_run, rendered, spoken, take_index, write_project
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")

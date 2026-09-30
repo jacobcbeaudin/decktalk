@@ -21,8 +21,7 @@ from decktalk.inputs import Inputs
 from decktalk.media.pagereport import PageReport
 from decktalk.stages import storyboard
 from decktalk.stages.check import scan
-
-from ...conftest import FakePage
+from support.fakes import FakePage
 
 
 def a_report(*scenes: dict[str, Any], warnings: Sequence[dict[str, Any]] = ()) -> PageReport:

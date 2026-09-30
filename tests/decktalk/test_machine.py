@@ -50,13 +50,12 @@ from decktalk.speech import VoiceContext, get_provider
 from decktalk.toolchain import assets, command_line
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
+from support.fakes import FakeVoice
 from support.links import link
 from support.logs import data_of
 from support.paths import REPO
 from support.runs import a_machine
 from support.spends import a_spend
-
-from .conftest import FakeVoice
 
 # ---- the one reader of the environment -------------------------------------------------------
 

@@ -17,10 +17,10 @@ from decktalk.results import NarrateResult, SpendState, TakeStatus, Voicing, Wor
 from decktalk.speech import PROVIDERS, SpeechRequest
 from decktalk.stages import narrate as narrate_stage
 from decktalk.stages.narrate import narrate
+from support.fakes import FakeVoice
 from support.logs import data_of, decisions
 from support.runs import Watched
 
-from ...conftest import FakeVoice
 from .conftest import ENVIRON, SCRIPT, TOML
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
