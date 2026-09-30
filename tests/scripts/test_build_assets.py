@@ -85,30 +85,21 @@ def test_the_tolerance_is_the_edge() -> None:
     assert build_assets.stale_reason(nudge(FIGURE, "270.5", f"{270.5 + edge + 0.1}"), FIGURE) is not None
 
 
-def test_changed_words_are_stale() -> None:
-    """Text is held exactly, because no measurement can rewrite what a figure says."""
-    reason = build_assets.stale_reason(FIGURE.replace("three.", "four."), FIGURE)
-    assert reason is not None
-    assert "the text differs" in reason
-
-
-def test_a_changed_colour_is_stale() -> None:
-    """A colour is text rather than a number, so the digits in it are held exactly."""
-    reason = build_assets.stale_reason(FIGURE.replace("#7a5000", "#7a5001"), FIGURE)
-    assert reason is not None
-    assert "the text differs" in reason
-
-
-def test_a_renamed_class_is_stale() -> None:
-    """An identifier that ends in a digit is text, so `w3` never passes for `w4` within the tolerance."""
-    reason = build_assets.stale_reason(FIGURE.replace("w3", "w4"), FIGURE)
-    assert reason is not None
-    assert "the text differs" in reason
-
-
-def test_a_new_element_is_stale() -> None:
-    """Structure is held exactly, so an element that appeared or vanished fails whatever its numbers are."""
-    reason = build_assets.stale_reason(FIGURE.replace("</svg>", '  <circle cx="8" cy="8" r="4"/>\n</svg>'), FIGURE)
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        # Text is held exactly, because no measurement can rewrite what a figure says.
+        pytest.param("three.", "four.", id="words"),
+        # A colour is text rather than a number, so the digits in it are held exactly.
+        pytest.param("#7a5000", "#7a5001", id="colour"),
+        # An identifier that ends in a digit is text, so `w3` never passes for `w4` within the tolerance.
+        pytest.param("w3", "w4", id="class"),
+        # Structure is held exactly, so an element that appeared or vanished fails whatever its numbers are.
+        pytest.param("</svg>", '  <circle cx="8" cy="8" r="4"/>\n</svg>', id="element"),
+    ],
+)
+def test_a_change_no_tolerance_covers_is_stale(old: str, new: str) -> None:
+    reason = build_assets.stale_reason(FIGURE.replace(old, new), FIGURE)
     assert reason is not None
     assert "the text differs" in reason
 

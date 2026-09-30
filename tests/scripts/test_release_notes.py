@@ -57,14 +57,16 @@ def test_an_older_release_is_left_out() -> None:
     assert "older" not in release_notes.notes(CHANGELOG, "0.5.0")
 
 
-def test_a_candidate_keeps_the_notes_release_please_wrote() -> None:
-    with pytest.raises(SystemExit, match="candidate"):
-        release_notes.notes(CHANGELOG, "0.5.0-rc2")
-
-
-def test_a_version_the_changelog_never_released_is_refused() -> None:
-    with pytest.raises(SystemExit, match="no entry for 0.6.0"):
-        release_notes.notes(CHANGELOG, "0.6.0")
+@pytest.mark.parametrize(
+    ("version", "match"),
+    [
+        pytest.param("0.5.0-rc2", "candidate", id="a candidate keeps the notes release-please wrote"),
+        pytest.param("0.6.0", "no entry for 0.6.0", id="a version the changelog never released"),
+    ],
+)
+def test_a_version_with_no_notes_of_its_own_is_refused(version: str, match: str) -> None:
+    with pytest.raises(SystemExit, match=match):
+        release_notes.notes(CHANGELOG, version)
 
 
 def test_every_section_the_changelog_shows_carries_a_docs_tag() -> None:

@@ -107,18 +107,18 @@ def test_every_suite_prints_the_reason_of_every_skip() -> None:
     assert all("-rs" in command for command in suites)
 
 
-def test_a_row_that_names_a_need_nothing_provides_is_refused() -> None:
-    with pytest.raises(ValueError, match="no row can provide"):
-        check.Group(
-            name="x",
-            why="x.",
-            commands=(),
-            runners=(),
-            pythons=(),
-            tools=("docker",),
-            timeout=1,
-            when=(),
-        )
+@pytest.mark.parametrize(
+    ("tools", "when", "match"),
+    [
+        pytest.param(("docker",), (), "no row can provide", id="a need nothing provides"),
+        pytest.param((), ("release",), "no run of ci.yml is", id="a moment no run is"),
+    ],
+)
+def test_a_row_that_names_what_nothing_answers_is_refused(
+    tools: tuple[str, ...], when: tuple[str, ...], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        check.Group(name="x", why="x.", commands=(), runners=(), pythons=(), tools=tools, timeout=1, when=when)
 
 
 # ---- the tools cache belongs to one leg -----------------------------------------------------------
@@ -194,20 +194,6 @@ def test_the_tools_cache_is_saved_to_the_key_it_is_restored_from() -> None:
     assert restore["with"]["key"] == "${{ matrix.cache }}"
 
 
-def test_a_row_that_gates_at_a_moment_no_run_is_refused() -> None:
-    with pytest.raises(ValueError, match="no run of ci.yml is"):
-        check.Group(
-            name="x",
-            why="x.",
-            commands=(),
-            runners=(),
-            pythons=(),
-            tools=(),
-            timeout=1,
-            when=("release",),
-        )
-
-
 # ---- cue timing ----------------------------------------------------------------------------------
 
 
@@ -252,14 +238,27 @@ def doctor_reports(monkeypatch: pytest.MonkeyPatch, rows: list[dict[str, object]
     monkeypatch.setattr(tools.subprocess, "run", run)
 
 
-def test_a_tool_doctor_reports_no_version_for_is_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    doctor_reports(monkeypatch, [{"tool": "chromium", "version": None}, {"tool": "ffmpeg", "version": "8.1.2"}])
-    assert tools.missing(("chromium", "ffmpeg"), tmp_path) == ["chromium"]
-
-
-def test_a_tool_doctor_never_names_is_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    doctor_reports(monkeypatch, [])
-    assert tools.missing(("ffmpeg",), tmp_path) == ["ffmpeg"]
+@pytest.mark.parametrize(
+    ("rows", "wanted", "missing"),
+    [
+        pytest.param(
+            [{"tool": "chromium", "version": None}, {"tool": "ffmpeg", "version": "8.1.2"}],
+            ("chromium", "ffmpeg"),
+            ["chromium"],
+            id="reported with no version",
+        ),
+        pytest.param([], ("ffmpeg",), ["ffmpeg"], id="never named"),
+    ],
+)
+def test_a_tool_doctor_cannot_vouch_for_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    rows: list[dict[str, object]],
+    wanted: tuple[str, ...],
+    missing: list[str],
+) -> None:
+    doctor_reports(monkeypatch, rows)
+    assert tools.missing(wanted, tmp_path) == missing
 
 
 def test_a_missing_tool_fails_the_run_and_names_the_command_that_fetches_it(

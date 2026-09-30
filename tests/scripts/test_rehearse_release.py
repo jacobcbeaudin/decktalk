@@ -35,37 +35,36 @@ def report(**changes: object) -> dict[str, object]:
     return base | changes
 
 
-def test_the_next_candidate_is_rehearsed() -> None:
-    assert rehearse.judged(".", report()) == "0.5.0-rc3"
+@pytest.mark.parametrize(
+    ("changes", "judged"),
+    [
+        pytest.param({}, "0.5.0-rc3", id="the next candidate"),
+        pytest.param({"next": "0.5.0", "rehearse": "0.5.0", "named": "0.5.0"}, "0.5.0", id="a final a footer named"),
+        pytest.param({"tree": "0.5.0-rc3"}, None, id="the release pull request is left alone"),
+    ],
+)
+def test_a_release_the_rules_agree_on_is_rehearsed(changes: dict[str, object], judged: str | None) -> None:
+    assert rehearse.judged(".", report(**changes)) == judged
 
 
-def test_a_final_version_a_footer_named_is_rehearsed() -> None:
-    assert rehearse.judged(".", report(next="0.5.0", rehearse="0.5.0", named="0.5.0")) == "0.5.0"
-
-
-def test_a_final_version_nobody_named_is_refused() -> None:
-    with pytest.raises(rehearse.Refused, match="no Release-As footer named it"):
-        rehearse.judged(".", report(next="0.5.0", rehearse="0.5.0"))
-
-
-def test_a_candidate_with_no_number_is_refused() -> None:
-    with pytest.raises(rehearse.Refused, match="no number"):
-        rehearse.judged(".", report(next="0.6.0-rc", rehearse="0.6.0-rc"))
-
-
-def test_a_footer_release_please_never_reads_is_refused() -> None:
-    dropped = [{"sha": "abcdef0123", "version": "0.5.0"}]
-    with pytest.raises(rehearse.Refused, match="touches only excluded paths"):
-        rehearse.judged(".", report(dropped=dropped))
-
-
-def test_the_release_pull_request_is_judged_and_left_alone() -> None:
-    assert rehearse.judged(".", report(tree="0.5.0-rc3")) is None
-
-
-def test_a_release_pull_request_that_disagrees_with_the_rules_is_refused() -> None:
-    with pytest.raises(rehearse.Refused, match="disagree"):
-        rehearse.judged(".", report(tree="0.5.0-rc4"))
+@pytest.mark.parametrize(
+    ("changes", "match"),
+    [
+        pytest.param(
+            {"next": "0.5.0", "rehearse": "0.5.0"}, "no Release-As footer named it", id="a final nobody named"
+        ),
+        pytest.param({"next": "0.6.0-rc", "rehearse": "0.6.0-rc"}, "no number", id="a candidate with no number"),
+        pytest.param(
+            {"dropped": [{"sha": "abcdef0123", "version": "0.5.0"}]},
+            "touches only excluded paths",
+            id="a footer release-please never reads",
+        ),
+        pytest.param({"tree": "0.5.0-rc4"}, "disagree", id="a release pull request that disagrees"),
+    ],
+)
+def test_a_release_the_rules_cannot_vouch_for_is_refused(changes: dict[str, object], match: str) -> None:
+    with pytest.raises(rehearse.Refused, match=match):
+        rehearse.judged(".", report(**changes))
 
 
 def test_the_copy_carries_the_checkout_and_no_repository_to_commit_to(tmp_path: Path) -> None:

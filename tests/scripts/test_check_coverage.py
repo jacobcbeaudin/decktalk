@@ -27,51 +27,48 @@ def report(path: Path, *, tests: int, skipped: int) -> None:
 
 @pytest.fixture
 def reports(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """An empty report directory, with every suite having measured some lines."""
+    """A healthy report of every suite, each having run ten tests and measured some lines.
+
+    A test unlinks or overwrites the one report it is about, so every other leg stays healthy.
+    """
     monkeypatch.setattr(check, "REPORTS", tmp_path)
     monkeypatch.setattr(gate, "lines_measured", lambda _leg: 100)
+    for leg in gate.reporting_legs():
+        report(tmp_path / f"{leg}.xml", tests=10, skipped=0)
     return tmp_path
 
 
-def test_a_healthy_run_of_every_suite_is_not_silent(reports: Path) -> None:
-    for leg in gate.reporting_legs():
-        report(reports / f"{leg}.xml", tests=10, skipped=0)
-    assert gate.silent_legs() == []
-
-
-def test_a_suite_whose_every_test_skipped_is_silent(reports: Path) -> None:
-    for leg in gate.reporting_legs():
-        report(reports / f"{leg}.xml", tests=10, skipped=0)
-    report(reports / "e2e.xml", tests=32, skipped=32)
-    assert gate.silent_legs() == ["e2e (ran no test)"]
-
-
-def test_a_skip_under_the_marker_the_run_named_is_silent(reports: Path) -> None:
-    for leg in gate.reporting_legs():
-        report(reports / f"{leg}.xml", tests=10, skipped=0)
-    report(reports / "browser.xml", tests=85, skipped=80)
-    assert gate.silent_legs() == ["browser (skipped 80 tests that -m browser selected)"]
-
-
-def test_the_suite_that_names_no_marker_may_skip_what_this_platform_cannot_run(reports: Path) -> None:
-    for leg in gate.reporting_legs():
-        report(reports / f"{leg}.xml", tests=10, skipped=0)
-    report(reports / "unit.xml", tests=4537, skipped=1)
-    assert gate.silent_legs() == []
+@pytest.mark.parametrize(
+    ("leg", "tests", "skips", "silent"),
+    [
+        pytest.param(None, 0, 0, [], id="a healthy run of every suite"),
+        pytest.param("e2e", 32, 32, ["e2e (ran no test)"], id="every test skipped"),
+        pytest.param(
+            "browser",
+            85,
+            80,
+            ["browser (skipped 80 tests that -m browser selected)"],
+            id="a skip under the marker the run named",
+        ),
+        pytest.param("unit", 4537, 1, [], id="the suite that names no marker skips what this platform cannot run"),
+    ],
+)
+def test_a_suite_is_silent_when_it_ran_nothing_its_marker_selected(
+    reports: Path, leg: str | None, tests: int, skips: int, silent: list[str]
+) -> None:
+    if leg is not None:
+        report(reports / f"{leg}.xml", tests=tests, skipped=skips)
+    assert gate.silent_legs() == silent
 
 
 def test_a_suite_that_wrote_no_report_is_silent(reports: Path) -> None:
-    for leg in gate.reporting_legs():
-        if leg != "media":
-            report(reports / f"{leg}.xml", tests=10, skipped=0)
+    (reports / "media.xml").unlink()
     assert gate.silent_legs() == ["media (wrote no report of the tests it ran)"]
 
 
 def test_one_python_of_a_leg_that_ran_nothing_is_enough_to_silence_it(reports: Path) -> None:
     """The coverage job renames each report after its leg, and the unit group runs on three Pythons."""
-    for leg in gate.reporting_legs():
-        if leg != "unit":
-            report(reports / f"{leg}.xml", tests=10, skipped=0)
+    (reports / "unit.xml").unlink()
     report(reports / f"unit-{check.LINUX}-3.12.xml", tests=4537, skipped=1)
     report(reports / f"unit-{check.LINUX}-3.13.xml", tests=0, skipped=0)
     assert gate.silent_legs() == ["unit (ran no test)"]

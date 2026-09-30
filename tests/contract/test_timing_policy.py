@@ -60,42 +60,35 @@ other leg gates, which is what keeps the Linux row of each pair the one that hol
 """
 
 
-def test_an_exit_code_of_zero_settles_it_whatever_was_reported() -> None:
-    """The rule reads the exit code, not the rows: a reported row that did not fail the build is news."""
-    assert tolerated(0, [Code.CUE_OFF], gate=True) is None
+UNCERTAIN = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
+"""One finding a run is not sure of, for the rows where an uncertain finding rides along."""
 
 
-def test_late_reveals_alone_are_tolerated_where_timing_is_not_gated() -> None:
-    """A runner whose compositor is not trustworthy reports a late reveal and does not fail on it."""
-    assert tolerated(1, [Code.CUE_OFF], gate=False) is None
-
-
-def test_late_reveals_fail_where_timing_is_gated() -> None:
-    """Gating is the default everywhere, so the same build is a failure unless a step asked otherwise."""
-    why = tolerated(1, [Code.CUE_OFF], gate=True)
-    assert why is not None and Code.CUE_OFF.name in why
-
-
-@pytest.mark.parametrize("other", [Code.CUT_SPEECH, Code.PAGE_STALLED])
-def test_any_other_fault_fails_even_where_timing_is_not_gated(other: Code) -> None:
-    """The tolerance is for late reveals only. A stalled page is the near miss: it is also a timing
-    fault and it is deliberately not tolerated, because it means the recorder stopped presenting
-    frames rather than the runner being slow."""
-    why = tolerated(1, [Code.CUE_OFF, other], gate=False)
-    assert why is not None and other.name in why
-
-
-def test_an_uncertain_finding_riding_along_is_not_a_fault() -> None:
-    """Only a certain finding exits a build that is not strict, so an uncertain one explains nothing."""
-    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
-    assert tolerated(1, [Code.CUE_OFF, uncertain], gate=False) is None
-
-
-def test_a_non_zero_exit_with_nothing_to_explain_it_fails() -> None:
-    """An exit code with no certain finding row is a bug in the command, not a slow runner."""
-    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
-    why = tolerated(1, [uncertain], gate=False)
-    assert why is not None
+@pytest.mark.parametrize(
+    ("code", "codes", "gate", "named"),
+    [
+        # The rule reads the exit code, not the rows: a reported row that did not fail the build is news.
+        pytest.param(0, [Code.CUE_OFF], True, None, id="an exit code of zero settles it"),
+        # A runner whose compositor is not trustworthy reports a late reveal and does not fail on it.
+        pytest.param(1, [Code.CUE_OFF], False, None, id="late reveals alone where timing is not gated"),
+        # Gating is the default everywhere, so the same build is a failure unless a step asked otherwise.
+        pytest.param(1, [Code.CUE_OFF], True, Code.CUE_OFF.name, id="late reveals where timing is gated"),
+        # The tolerance is for late reveals only. A stalled page is the near miss: it is also a timing
+        # fault and it is deliberately not tolerated, because it means the recorder stopped presenting
+        # frames rather than the runner being slow.
+        pytest.param(1, [Code.CUE_OFF, Code.CUT_SPEECH], False, Code.CUT_SPEECH.name, id="cut speech"),
+        pytest.param(1, [Code.CUE_OFF, Code.PAGE_STALLED], False, Code.PAGE_STALLED.name, id="a stalled page"),
+        # Only a certain finding exits a build that is not strict, so an uncertain one explains nothing.
+        pytest.param(1, [Code.CUE_OFF, UNCERTAIN], False, None, id="an uncertain finding riding along"),
+        # An exit code with no certain finding row is a bug in the command, not a slow runner.
+        pytest.param(1, [UNCERTAIN], False, "", id="a non-zero exit with nothing to explain it"),
+    ],
+)
+def test_a_build_is_tolerated_only_for_late_reveals_where_timing_is_not_gated(
+    code: int, codes: list[Code], gate: bool, named: str | None
+) -> None:
+    why = tolerated(code, codes, gate=gate)
+    assert why is None if named is None else why is not None and named in why
 
 
 def test_a_reading_with_no_exit_code_is_judged_on_the_same_rule() -> None:
@@ -113,8 +106,7 @@ def test_a_finding_that_is_not_a_late_landing_is_judged_wherever_it_is_read(othe
 
 def test_the_starter_rule_reads_every_row_and_not_only_the_certain_ones() -> None:
     """The starter may publish no finding at all, so an uncertain row is judged there as well."""
-    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
-    assert judged([uncertain], gate=True) == [uncertain]
+    assert judged([UNCERTAIN], gate=True) == [UNCERTAIN]
     assert judged(LATE_FRAME, gate=False) == []
 
 
@@ -203,9 +195,8 @@ def test_every_other_certain_finding_is_returned_on_either_leg(other: Code) -> N
 
 def test_an_uncertain_row_is_not_a_certain_finding_on_either_leg() -> None:
     """The seam answers what a run is sure about, so a row it is unsure of is neither held nor news."""
-    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
-    assert seam("gate", row(uncertain))[0] == []
-    assert seam("report", row(uncertain, Certainty.UNCERTAIN)) == ([], [])
+    assert seam("gate", row(UNCERTAIN))[0] == []
+    assert seam("report", row(UNCERTAIN, Certainty.UNCERTAIN)) == ([], [])
 
 
 def test_a_run_with_no_reporter_still_holds_the_deck_to_every_other_finding() -> None:
