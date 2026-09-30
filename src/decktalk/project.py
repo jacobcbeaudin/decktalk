@@ -38,6 +38,7 @@ from filelock import FileLock, Timeout
 
 from decktalk.errors import Cancel, InputError, ProjectLocked
 from decktalk.events import Event, Events, Level, Subscription
+from decktalk.files import replace_all
 from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Document, Inputs, Workspace
 from decktalk.inputs.paths import at, relative
@@ -590,26 +591,14 @@ class Project:
             if _read_owner(note) is not None:
                 gone = f"A run that is no longer there left {OWNER_FILE} behind, so this run took it."
                 run.note(gone, level=Level.WARNING)
-            _write_owner(note, f"{os.getpid()} {run.id}\n")
+            # The note is replaced whole, so a reader never sees half a line.
+            replace_all({note: f"{os.getpid()} {run.id}\n"})
             # A host that sees two jobs collide learns the winner's side from this line.
             log.debug("This run holds the build directory.", extra={"data": {"pid": os.getpid(), "lock": LOCK_FILE}})
             try:
                 yield
             finally:
                 note.unlink(missing_ok=True)
-
-
-def _write_owner(note: Path, owner: str) -> None:
-    """Say who holds the lock, replacing the note whole so a reader never sees half a line.
-
-    The draft is created afresh after anything under its name is removed, so a link a project
-    planted there is never written through.
-    """
-    fresh = note.with_name(f"{note.name}.{os.getpid()}")
-    fresh.unlink(missing_ok=True)
-    with fresh.open("x", encoding="utf-8") as handle:
-        handle.write(owner)
-    fresh.replace(note)
 
 
 def _read_owner(note: Path) -> tuple[int, str] | None:

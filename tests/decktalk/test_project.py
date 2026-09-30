@@ -22,9 +22,9 @@ import pytest
 from filelock import FileLock, Timeout
 
 import decktalk
-from decktalk import project as project_module
 from decktalk.errors import Cancel, ErrorCode, InputError, ProjectLocked
 from decktalk.events import Event, Level, Log
+from decktalk.files import replace_all
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain
@@ -370,7 +370,7 @@ def test_a_build_directory_that_is_itself_a_link_out_of_the_project_is_refused(t
 def held(build: Path, owner: str = "1 abc\n") -> Iterator[None]:
     """The build lock taken by another writer, with its note, for as long as the block runs."""
     with FileLock(build / LOCK_FILE):
-        project_module._write_owner(build / OWNER_FILE, owner)
+        replace_all({build / OWNER_FILE: owner})
         yield
 
 
@@ -468,11 +468,12 @@ HOLDER = """
 import os, sys
 from pathlib import Path
 from filelock import FileLock
-from decktalk.project import LOCK_FILE, OWNER_FILE, _write_owner
+from decktalk.files import replace_all
+from decktalk.project import LOCK_FILE, OWNER_FILE
 build = Path(sys.argv[1])
 lock = FileLock(build / LOCK_FILE)
 lock.acquire()
-_write_owner(build / OWNER_FILE, f"{os.getpid()} crashed\\n")
+replace_all({build / OWNER_FILE: f"{os.getpid()} crashed\\n"})
 print("held", flush=True)
 sys.stdin.read()
 """
