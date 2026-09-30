@@ -599,8 +599,9 @@ def test_appear_on_a_long_line_is_reported(page, tmp_path):
 # ---- the transcript ---------------------------------------------------------------------------
 
 
-def test_each_moment_composes_its_own_sentence(page, tmp_path):
-    """The author writes one noun phrase and the runtime gives it the verb the moment owns."""
+def test_each_moment_of_one_element_fires_in_the_order_its_cues_land(page, tmp_path):
+    """One element owns four moments, and each fires as its own cue lands. The sentence each moment
+    composes is read back through the probe in test_probe.py, which is where the transcript lives."""
     scene = """
     <div data-scene="11">
       <template data-slide="11.1">
@@ -610,10 +611,8 @@ def test_each_moment_composes_its_own_sentence(page, tmp_path):
     </div>
     """
     url = write_page(tmp_path, "transcript.html", scene)
-    probe = "<script>window.__said = []; </script>"
     page.goto(f"{url}?scene=11&t0=0&cues=11.1:show@0.05,11.1:aside@0.2,11.1:back-to-it@0.35,11.1:go@0.5")
     page.wait_for_function("() => window.__decktalk.fired.length === 4")
-    assert probe  # The sentences are read back through the probe in test_probe.py, not written here.
     assert page.evaluate("() => window.__decktalk.fired") == [
         "11.1:show",
         "11.1:aside",
@@ -733,10 +732,6 @@ def test_a_slide_that_owns_no_listed_cue_is_reported(page, tmp_path):
 
 def test_katex_refusing_a_value_leaves_the_readable_text(page, tmp_path):
     """The element's own text is the equation's readable fallback, which is what it falls back to."""
-    head = (
-        f'<link rel="stylesheet" href="{(katex_dir() / "katex.min.css").resolve().as_uri()}">'
-        f'<script src="{(katex_dir() / "katex.min.js").resolve().as_uri()}"></script>'
-    )
     scene = """
     <div data-scene="19">
       <template data-slide="19.1">
@@ -744,7 +739,7 @@ def test_katex_refusing_a_value_leaves_the_readable_text(page, tmp_path):
       </template>
     </div>
     """
-    page.goto(f"{write_page(tmp_path, 'katex-bad.html', scene, head=head)}?slide=19.1")
+    page.goto(f"{write_page(tmp_path, 'katex-bad.html', scene, head=KATEX)}?slide=19.1")
     page.wait_for_function("() => document.body.dataset.done === '1'")
     assert "PAGE_KATEX_ERROR" in codes_of(page)
     assert page.evaluate("() => document.querySelector('.bad').textContent") == "one over"
