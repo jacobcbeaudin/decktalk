@@ -39,7 +39,7 @@ from decktalk.stages.assemble.publish import (
     with_sound_captions,
 )
 
-from .conftest import MID_CLIP_TOML, TITLED_TOML
+from .conftest import MID_CLIP_TOML, TITLED_TOML, cue_times, open_run, rendered, spoken, take_index, write_project
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
@@ -61,7 +61,7 @@ def a_log(inputs, section: int, cues: tuple[CueRow, ...]) -> None:
 # ---- the transcript ---------------------------------------------------------------------------
 
 
-def test_described_cues_sort_on_the_time_alone(tmp_path, write_project):
+def test_described_cues_sort_on_the_time_alone(tmp_path):
     """Two lines at one cue used to break the tie on their first letter, which printed a step back
     before the arrival it belongs to. The runtime composes one sentence per cue in document order,
     so the second is the whole of the rule."""
@@ -77,19 +77,19 @@ def test_described_cues_sort_on_the_time_alone(tmp_path, write_project):
     assert described_cues(inputs, 1, 0.0) == ((1.0, "the arrival"), (1.0, "a step back"))
 
 
-def test_described_cues_are_placed_where_their_section_plays(tmp_path, write_project):
+def test_described_cues_are_placed_where_their_section_plays(tmp_path):
     inputs = write_project(tmp_path)
     a_log(inputs, 1, (CueRow(id="1.1:a", due=0.5, ran=0.75, describe="the reveal"),))
     assert described_cues(inputs, 1, 4.0) == ((4.75, "the reveal"),)
 
 
-def test_a_cue_that_described_nothing_is_not_in_the_transcript(tmp_path, write_project):
+def test_a_cue_that_described_nothing_is_not_in_the_transcript(tmp_path):
     inputs = write_project(tmp_path)
     a_log(inputs, 1, (CueRow(id="1.1:a", due=1.0, ran=1.0), CueRow(id="1.1:b", due=2.0, ran=2.0, describe="  ")))
     assert described_cues(inputs, 1, 0.0) == ()
 
 
-def test_a_section_that_was_never_recorded_describes_nothing(tmp_path, write_project):
+def test_a_section_that_was_never_recorded_describes_nothing(tmp_path):
     inputs = write_project(tmp_path)
     assert described_cues(inputs, 1, 0.0) == ()
 
@@ -103,7 +103,7 @@ def test_a_note_says_what_plays_where_nothing_was_said():
     assert cut_note(slated) == "A placeholder slate frame plays here."
 
 
-def test_sections_that_share_a_chapter_share_one_transcript_entry(tmp_path, write_project, rendered):
+def test_sections_that_share_a_chapter_share_one_transcript_entry(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
     entries = transcript_sections(inputs, cut_list(inputs, rows), {1: "hello", 3: "again"})
@@ -112,7 +112,7 @@ def test_sections_that_share_a_chapter_share_one_transcript_entry(tmp_path, writ
     assert len(entries[1].said) == 2
 
 
-def test_a_clip_that_names_a_words_file_is_read_into_the_transcript(tmp_path, write_project):
+def test_a_clip_that_names_a_words_file_is_read_into_the_transcript(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     (tmp_path / "media").mkdir()
     Words(words=(Word(word="spoken", start=0.0, end=0.4),)).write(tmp_path / "media" / "before.words.json")
@@ -123,7 +123,7 @@ def test_a_clip_that_names_a_words_file_is_read_into_the_transcript(tmp_path, wr
 # ---- chapters ---------------------------------------------------------------------------------
 
 
-def test_consecutive_sections_with_one_title_share_one_chapter_marker(tmp_path, write_project, rendered):
+def test_consecutive_sections_with_one_title_share_one_chapter_marker(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
     chapters = build_chapters(rows, inputs.chapters())
@@ -134,7 +134,7 @@ def test_consecutive_sections_with_one_title_share_one_chapter_marker(tmp_path, 
 # ---- captions ---------------------------------------------------------------------------------
 
 
-def test_every_spoken_section_is_captioned_where_its_narration_plays(tmp_path, write_project, take_index, spoken):
+def test_every_spoken_section_is_captioned_where_its_narration_plays(tmp_path):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta")), 2: ("B", 2.0, 1.6, spoken("gamma delta"))})
     cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
@@ -144,7 +144,7 @@ def test_every_spoken_section_is_captioned_where_its_narration_plays(tmp_path, w
     assert any(cue.start >= 2.0 for cue in cues)
 
 
-def test_a_clips_captions_count_from_its_own_start_and_stop_at_its_picture(tmp_path, write_project, open_run, rendered):
+def test_a_clips_captions_count_from_its_own_start_and_stop_at_its_picture(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     (tmp_path / "media").mkdir()
     Words(
@@ -160,7 +160,7 @@ def test_a_clips_captions_count_from_its_own_start_and_stop_at_its_picture(tmp_p
     assert cues[0].start == 2.0
 
 
-def test_a_clip_whose_words_file_is_missing_is_said_and_plays_uncaptioned(tmp_path, write_project, open_run, rendered):
+def test_a_clip_whose_words_file_is_missing_is_said_and_plays_uncaptioned(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     opened = open_run(tmp_path)
     rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
@@ -168,13 +168,13 @@ def test_a_clip_whose_words_file_is_missing_is_said_and_plays_uncaptioned(tmp_pa
     assert any("plays with no captions" in note for note in opened.notes())
 
 
-def test_the_take_index_lends_the_captions_the_scripts_own_spelling(tmp_path, write_project, take_index, spoken):
+def test_the_take_index_lends_the_captions_the_scripts_own_spelling(tmp_path):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
     assert caption_texts(inputs, takes) == {1: "alpha beta"}
 
 
-def test_a_section_the_index_never_spoke_falls_back_to_the_script(tmp_path, write_project, take_index, spoken):
+def test_a_section_the_index_never_spoke_falls_back_to_the_script(tmp_path):
     inputs = write_project(tmp_path)
     (tmp_path / "script.md").write_text("## 1. One\n\nWritten words.\n\n## 2. Two\n\nMore.\n", encoding="utf-8")
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha"))})
@@ -187,7 +187,7 @@ def test_a_section_the_index_never_spoke_falls_back_to_the_script(tmp_path, writ
 # ---- sound captions ----------------------------------------------------------------------------
 
 
-def test_a_cued_sound_that_names_no_caption_is_said(tmp_path, write_project, open_run):
+def test_a_cued_sound_that_names_no_caption_is_said(tmp_path):
     toml = (
         "[project]\nname = 't'\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
@@ -202,7 +202,7 @@ def test_a_cued_sound_that_names_no_caption_is_said(tmp_path, write_project, ope
     ]
 
 
-def test_a_sounds_caption_is_bracketed_and_placed_at_its_resolved_cue(tmp_path, write_project, cue_times):
+def test_a_sounds_caption_is_bracketed_and_placed_at_its_resolved_cue(tmp_path):
     toml = (
         "[project]\nname = 't'\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
@@ -241,14 +241,14 @@ def test_no_two_captions_are_ever_on_screen_at_once():
 # ---- the poster --------------------------------------------------------------------------------
 
 
-def test_the_poster_freezes_the_opening_slide_with_its_reveals_fired(tmp_path, write_project):
+def test_the_poster_freezes_the_opening_slide_with_its_reveals_fired(tmp_path):
     inputs = write_project(tmp_path)
     catalog = (MeasuredScene.model_validate({"scene": "1", "elements": {}, "slides": ["1.1", "1.2"]}),)
     assert poster_query(catalog, inputs.document.page_sections[0]) == {Q.SLIDE: "1.1"}
     assert poster_query((), inputs.document.page_sections[0]) is None
 
 
-def test_a_refusal_from_the_media_layer_costs_the_film_nothing(tmp_path, write_project, open_run, monkeypatch):
+def test_a_refusal_from_the_media_layer_costs_the_film_nothing(tmp_path, monkeypatch):
     """Nothing here may cost a film that is already written, so a refusal is a sentence and no poster."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
@@ -261,7 +261,7 @@ def test_a_refusal_from_the_media_layer_costs_the_film_nothing(tmp_path, write_p
     assert any("could not be drawn" in note for note in opened.notes())
 
 
-def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, write_project, open_run, monkeypatch):
+def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, monkeypatch):
     """A build with nothing changed should not launch Chromium to draw the same picture again."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
@@ -305,7 +305,7 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, write_proj
     assert launched == ["trusted", "trusted"]
 
 
-def test_a_project_with_no_page_section_draws_no_poster(tmp_path, write_project, open_run):
+def test_a_project_with_no_page_section_draws_no_poster(tmp_path):
     toml = "[project]\nname = 't'\n[[section]]\nnumber = 1\nclip = 'media/a.mp4'\n"
     inputs = write_project(tmp_path, toml)
     assert render_poster(inputs, open_run(tmp_path).run, tmp_path / "poster.png") is None
@@ -314,7 +314,7 @@ def test_a_project_with_no_page_section_draws_no_poster(tmp_path, write_project,
 # ---- publishing ---------------------------------------------------------------------------------
 
 
-def test_the_film_appears_in_one_step_and_a_stamped_copy_is_made_only_when_asked(tmp_path, write_project, monkeypatch):
+def test_the_film_appears_in_one_step_and_a_stamped_copy_is_made_only_when_asked(tmp_path, monkeypatch):
     inputs = write_project(tmp_path)
     paths = inputs.workspace.deliverables()
     inputs.workspace.final_dir.mkdir(parents=True)
@@ -331,7 +331,7 @@ def test_the_film_appears_in_one_step_and_a_stamped_copy_is_made_only_when_asked
     assert not work.exists()
 
 
-def test_a_render_that_produced_nothing_is_never_published(tmp_path, write_project, monkeypatch):
+def test_a_render_that_produced_nothing_is_never_published(tmp_path, monkeypatch):
     inputs = write_project(tmp_path)
     paths = inputs.workspace.deliverables()
     inputs.workspace.final_dir.mkdir(parents=True)
@@ -344,14 +344,14 @@ def test_a_render_that_produced_nothing_is_never_published(tmp_path, write_proje
     assert not inputs.workspace.film.exists()
 
 
-def test_the_cut_list_a_transcript_reads_carries_every_section(tmp_path, write_project, rendered):
+def test_the_cut_list_a_transcript_reads_carries_every_section(tmp_path):
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     cuts: Cuts = cut_list(inputs, rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}))
     assert len(cuts.sections) == 4
     assert [cut.section for cut in cuts.sections if cut.start <= 2.5 < cut.end] == [2]
 
 
-def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, write_project, open_run, monkeypatch):
+def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, monkeypatch):
     """The poster opens the author's page, so it is sandboxed exactly as the recording of that page is."""
     write_project(tmp_path)
     inputs = Inputs.load(tmp_path, environ={BY_ID["record.page_policy"].environment: "untrusted"})

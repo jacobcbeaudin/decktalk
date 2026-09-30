@@ -28,7 +28,7 @@ from decktalk.stages.assemble.cut import (
     vfades,
 )
 
-from .conftest import MID_CLIP_TOML, TITLED_TOML, draw_slate
+from .conftest import MID_CLIP_TOML, TITLED_TOML, draw_slate, open_run, rendered, spoken, take_index, write_project
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
@@ -52,7 +52,7 @@ def test_a_path_with_an_apostrophe_in_it_survives_the_concat_list(tmp_path, monk
     assert "jacob'\\''s films" in written[0]
 
 
-def test_section_targets_are_frame_exact(tmp_path, write_project, take_index, spoken):
+def test_section_targets_are_frame_exact(tmp_path):
     """A section is cut to a whole number of frames, so the film never drifts off the narration."""
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("a", 1.02, 1.0, spoken("one")), 2: ("b", 1.48, 1.4, spoken("two"))})
@@ -63,9 +63,7 @@ def test_section_targets_are_frame_exact(tmp_path, write_project, take_index, sp
     assert abs(targets[1] + targets[2] - takes.total_seconds) < 1 / 30
 
 
-def test_a_page_section_with_no_recording_plays_black_and_is_a_certain_finding(
-    tmp_path, write_project, open_run, take_index, spoken
-):
+def test_a_page_section_with_no_recording_plays_black_and_is_a_certain_finding(tmp_path):
     """A film that quietly played black where a recording should be would publish a lie about itself."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
@@ -78,9 +76,7 @@ def test_a_page_section_with_no_recording_plays_black_and_is_a_certain_finding(
     assert "a black frame plays" in said
 
 
-def test_strict_refuses_a_missing_recording_and_names_the_stage_that_writes_one(
-    tmp_path, write_project, open_run, take_index, spoken
-):
+def test_strict_refuses_a_missing_recording_and_names_the_stage_that_writes_one(tmp_path):
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("a", 1.0, 0.8, spoken("word"))})
@@ -89,7 +85,7 @@ def test_strict_refuses_a_missing_recording_and_names_the_stage_that_writes_one(
     assert "decktalk record" in (refused.value.hint or "")
 
 
-def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, write_project, open_run, monkeypatch):
+def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, monkeypatch):
     """A section that declares `optional` says the slate is what it wants when the clip is not there.
 
     A certain `FILE_MISSING` stopped the build on that very slate, so a project could declare the
@@ -109,7 +105,7 @@ def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, write
     assert opened.codes() == []
 
 
-def test_strict_refuses_a_missing_clip_unless_the_section_is_optional(tmp_path, write_project, open_run, monkeypatch):
+def test_strict_refuses_a_missing_clip_unless_the_section_is_optional(tmp_path, monkeypatch):
     """A section that declares `optional` says its slate is what `--strict` is told to allow."""
     toml = (
         "[project]\nname = 't'\n"
@@ -132,9 +128,7 @@ def test_strict_refuses_a_missing_clip_unless_the_section_is_optional(tmp_path, 
     assert (allowed.substitute, allowed.missing) == (Substitute.SLATE, "media/slot.mp4")
 
 
-def test_a_cut_the_run_did_not_name_is_kept_only_under_its_own_key(
-    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
-):
+def test_a_cut_the_run_did_not_name_is_kept_only_under_its_own_key(tmp_path, fake_ffmpeg):
     """A cut on disk was once kept with no key at all, so a supplied `build/` chose what the film played.
 
     A section a `--section` run does not name is still cut through its key, so an unchanged cut is
@@ -180,9 +174,7 @@ def _recorded(inputs, numbers=(1, 2, 3)) -> None:  # noqa: ANN001
         inputs.workspace.recording(f"{number:02d}").write_bytes(f"webm {number}".encode())
 
 
-def test_an_unchanged_rebuild_encodes_no_section_again(
-    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
-):
+def test_an_unchanged_rebuild_encodes_no_section_again(tmp_path, fake_ffmpeg):
     """A cut whose arguments and whose recording have not moved is read back rather than encoded."""
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
@@ -194,9 +186,7 @@ def test_an_unchanged_rebuild_encodes_no_section_again(
     assert fake_ffmpeg.wrote(".mp4") == []
 
 
-def test_a_changed_recording_encodes_its_own_section_and_no_other(
-    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
-):
+def test_a_changed_recording_encodes_its_own_section_and_no_other(tmp_path, fake_ffmpeg):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
     _recorded(inputs)
@@ -207,9 +197,7 @@ def test_a_changed_recording_encodes_its_own_section_and_no_other(
     assert fake_ffmpeg.wrote(".mp4") == [inputs.workspace.section_video("02")]
 
 
-def test_a_changed_fade_encodes_the_sections_it_touches_and_keeps_the_rest(
-    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
-):
+def test_a_changed_fade_encodes_the_sections_it_touches_and_keeps_the_rest(tmp_path, fake_ffmpeg):
     """The key is the whole argument list, so a setting nobody thought to name still moves it."""
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
@@ -224,9 +212,7 @@ def test_a_changed_fade_encodes_the_sections_it_touches_and_keeps_the_rest(
     assert fake_ffmpeg.wrote(".mp4") == [changed.workspace.section_video("01")]
 
 
-def test_a_cut_left_by_a_stopped_run_is_encoded_again(
-    tmp_path, write_project, open_run, take_index, spoken, fake_ffmpeg
-):
+def test_a_cut_left_by_a_stopped_run_is_encoded_again(tmp_path, fake_ffmpeg):
     """A cut with no key beside it may be half written, so it is never kept."""
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
@@ -238,7 +224,7 @@ def test_a_cut_left_by_a_stopped_run_is_encoded_again(
     assert fake_ffmpeg.wrote(".mp4") == [inputs.workspace.section_video("01")]
 
 
-def test_the_cut_list_records_where_each_section_plays_and_what_stood_in(tmp_path, write_project, rendered):
+def test_the_cut_list_records_where_each_section_plays_and_what_stood_in(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
     cuts = cut_list(inputs, rows)
@@ -250,13 +236,13 @@ def test_the_cut_list_records_where_each_section_plays_and_what_stood_in(tmp_pat
     assert cuts.fps == inputs.settings.video.output_fps
 
 
-def test_rendered_starts_add_up_in_the_order_the_film_plays(tmp_path, write_project, rendered):
+def test_rendered_starts_add_up_in_the_order_the_film_plays(tmp_path):
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
     assert rendered_starts(rows) == {1: 0.0, 2: 2.0, 3: 5.0, 4: 7.5}
 
 
-def test_a_page_with_no_span_names_the_stage_that_gives_it_one(tmp_path, write_project, take_index, spoken):
+def test_a_page_with_no_span_names_the_stage_that_gives_it_one(tmp_path):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("a", 1.0, 0.8, spoken("word"))})
     with pytest.raises(NotBuiltError) as refused:
@@ -264,7 +250,7 @@ def test_a_page_with_no_span_names_the_stage_that_gives_it_one(tmp_path, write_p
     assert "decktalk narrate" in (refused.value.hint or "")
 
 
-def test_a_hold_is_picture_alone_and_the_narration_pauses_for_it(tmp_path, write_project, take_index, spoken):
+def test_a_hold_is_picture_alone_and_the_narration_pauses_for_it(tmp_path):
     toml = (
         "[project]\nname = 't'\n[narration]\nlead_seconds = 0\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\nhold_seconds = 1.5\n"
@@ -280,7 +266,7 @@ def test_the_fades_a_section_carries_are_the_dips_at_its_own_cuts():
     assert vfades(10.0, False, True, 0.16) == ",fade=t=out:st=9.840:d=0.16"
 
 
-def test_a_leftover_cut_and_key_of_a_section_nobody_declares_are_removed(tmp_path, write_project):
+def test_a_leftover_cut_and_key_of_a_section_nobody_declares_are_removed(tmp_path):
     inputs = write_project(tmp_path)
     sections = inputs.workspace.sections_dir
     sections.mkdir(parents=True)
@@ -290,9 +276,7 @@ def test_a_leftover_cut_and_key_of_a_section_nobody_declares_are_removed(tmp_pat
     assert sorted(path.name for path in sections.iterdir()) == ["01.json", "01.mp4"]
 
 
-def test_a_clip_the_project_names_opens_as_one_file_and_follows_no_name_inside_it(
-    tmp_path, write_project, open_run, fake_ffmpeg
-):
+def test_a_clip_the_project_names_opens_as_one_file_and_follows_no_name_inside_it(tmp_path, fake_ffmpeg):
     """A clip that is a playlist would otherwise read files and hosts the project never named."""
     toml = "[project]\nname = 't'\n[[section]]\nnumber = 1\nclip = 'media/clip.mp4'\n"
     inputs = write_project(tmp_path, toml)
@@ -306,7 +290,7 @@ def test_a_clip_the_project_names_opens_as_one_file_and_follows_no_name_inside_i
     assert any(call[: len(opened)] == opened for call in fake_ffmpeg.calls)
 
 
-def test_an_untrusted_project_draws_its_slate_untrusted(tmp_path, write_project, open_run, monkeypatch):
+def test_an_untrusted_project_draws_its_slate_untrusted(tmp_path, monkeypatch):
     """A slate carries the project's own chapter title, so it launches under the project's policy."""
     toml = "[project]\nname = 't'\n[[section]]\nnumber = 1\nclip = 'media/slot.mp4'\noptional = true\n"
     write_project(tmp_path, toml)
@@ -323,7 +307,7 @@ def test_an_untrusted_project_draws_its_slate_untrusted(tmp_path, write_project,
     assert asked == ["untrusted"]
 
 
-def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, write_project, open_run, monkeypatch):
+def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch):
     """A renamed chapter or a new colour once shipped the old slate, because the first one drawn was kept forever.
 
     The slate is kept under everything it shows, so an edit gives it a new name, the cut that reads it

@@ -242,38 +242,3 @@ def rendering(fake_ffmpeg, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN001, AN
 
     monkeypatch.setattr(ffmpeg, "run", run)
     return fake_ffmpeg
-
-
-@pytest.fixture(name="write_project")
-def write_project_fixture():  # noqa: ANN201  (a fixture that hands back one helper)
-    return write_project
-
-
-@pytest.fixture(name="open_run")
-def open_run_fixture():  # noqa: ANN201
-    return open_run
-
-
-@pytest.fixture(name="spoken")
-def spoken_fixture():  # noqa: ANN201
-    return spoken
-
-
-@pytest.fixture(name="take_index")
-def take_index_fixture():  # noqa: ANN201
-    return take_index
-
-
-@pytest.fixture(name="cue_times")
-def cue_times_fixture():  # noqa: ANN201
-    return cue_times
-
-
-@pytest.fixture(name="rendered")
-def rendered_fixture():  # noqa: ANN201
-    return rendered
-
-
-@pytest.fixture(name="durations")
-def durations_fixture():  # noqa: ANN201
-    return durations

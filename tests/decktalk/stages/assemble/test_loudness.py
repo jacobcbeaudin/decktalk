@@ -14,6 +14,8 @@ from decktalk.stages.assemble.loudness import (
     normalize_loudness,
 )
 
+from .conftest import open_run, write_project
+
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
 
@@ -22,7 +24,7 @@ def a_measurement(*, i: float, tp: float, lra: float = 6.0) -> audio.Loudness:
 
 
 def test_the_gain_is_the_distance_to_the_target_and_the_limiter_sits_under_the_ceiling(
-    tmp_path, write_project, monkeypatch, fake_ffmpeg
+    tmp_path, monkeypatch, fake_ffmpeg
 ):
     """A plain gain keeps the mix's dynamics, and only the peaks that would cross the ceiling are touched."""
     inputs = write_project(tmp_path)
@@ -36,7 +38,7 @@ def test_the_gain_is_the_distance_to_the_target_and_the_limiter_sits_under_the_c
     assert "aresample=192000" in graph
 
 
-def test_a_peak_over_the_ceiling_names_the_measured_number_and_the_limit(tmp_path, write_project, open_run):
+def test_a_peak_over_the_ceiling_names_the_measured_number_and_the_limit(tmp_path):
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
     ceiling = inputs.settings.mix.loudness.true_peak_max_dbtp
@@ -48,7 +50,7 @@ def test_a_peak_over_the_ceiling_names_the_measured_number_and_the_limit(tmp_pat
     assert opened.codes() == ["MIX_LOUDNESS"]
 
 
-def test_an_integrated_loudness_off_target_names_how_far_off_it_is(tmp_path, write_project, open_run):
+def test_an_integrated_loudness_off_target_names_how_far_off_it_is(tmp_path):
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
     target = inputs.settings.mix.loudness.target_lufs
@@ -59,7 +61,7 @@ def test_an_integrated_loudness_off_target_names_how_far_off_it_is(tmp_path, wri
     assert f"{LOUDNESS_TOLERANCE_LU:.1f} LU" in found[0].message
 
 
-def test_a_mix_inside_the_tolerance_is_judged_at_all(tmp_path, write_project, open_run):
+def test_a_mix_inside_the_tolerance_is_judged_at_all(tmp_path):
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
     loudness = inputs.settings.mix.loudness
@@ -68,7 +70,7 @@ def test_a_mix_inside_the_tolerance_is_judged_at_all(tmp_path, write_project, op
     assert opened.codes() == []
 
 
-def test_the_measurement_becomes_the_one_shape_a_reader_receives(tmp_path, write_project):
+def test_the_measurement_becomes_the_one_shape_a_reader_receives(tmp_path):
     inputs = write_project(tmp_path)
     row = measured(inputs, a_measurement(i=-16.04, tp=-1.26, lra=7.44))
     assert (row.integrated_lufs, row.true_peak_dbtp, row.range_lu) == (-16.0, -1.3, 7.4)
@@ -84,7 +86,7 @@ SILENCE = float("-inf")
 """What a silent mix measures, which is no loudness at all."""
 
 
-def test_a_silent_mix_is_encoded_at_unity_gain(tmp_path, write_project, monkeypatch, fake_ffmpeg):
+def test_a_silent_mix_is_encoded_at_unity_gain(tmp_path, monkeypatch, fake_ffmpeg):
     inputs = write_project(tmp_path)
     monkeypatch.setattr(audio, "measure_loudness", lambda *_a, **_k: a_measurement(i=SILENCE, tp=SILENCE))
     normalize_loudness(inputs, tmp_path / "mix.mov", tmp_path / "work.mp4")
@@ -92,7 +94,7 @@ def test_a_silent_mix_is_encoded_at_unity_gain(tmp_path, write_project, monkeypa
     assert graph.startswith("volume=0.00dB,")
 
 
-def test_a_silent_mix_is_one_finding_that_says_it_is_silent(tmp_path, write_project, open_run):
+def test_a_silent_mix_is_one_finding_that_says_it_is_silent(tmp_path):
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
     found = loudness_findings(inputs, opened.run, a_measurement(i=SILENCE, tp=SILENCE, lra=0.0))
@@ -101,7 +103,7 @@ def test_a_silent_mix_is_one_finding_that_says_it_is_silent(tmp_path, write_proj
     assert "0.0 LUFS" not in found[0].message
 
 
-def test_a_silent_mix_publishes_no_loudness(tmp_path, write_project):
+def test_a_silent_mix_publishes_no_loudness(tmp_path):
     """JSON has no -inf, so the result says the mix was not measured rather than failing to write."""
     inputs = write_project(tmp_path)
     assert measured(inputs, a_measurement(i=SILENCE, tp=SILENCE, lra=0.0)) is None

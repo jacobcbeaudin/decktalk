@@ -21,7 +21,7 @@ from decktalk.stages.assemble.mix import (
     speech_spans,
 )
 
-from .conftest import MID_CLIP_TOML
+from .conftest import MID_CLIP_TOML, cue_times, open_run, rendered, spoken, take_index, write_project
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
@@ -57,8 +57,7 @@ def test_the_largest_of_no_ramps_is_nothing_at_all():
     assert max_expr(["a", "b", "c"]) == "max(max(a,b),c)"
 
 
-def test_a_silent_anchor_of_the_pictures_length_fixes_the_mix(tmp_path, write_project, open_run, take_index, spoken,
-                                                              rendered):  # fmt: skip
+def test_a_silent_anchor_of_the_pictures_length_fixes_the_mix(tmp_path):  # fmt: skip
     """The picture carries no audio, so without the anchor the mix is as long as its longest layer."""
     inputs = write_project(tmp_path)
     plan = three_page_plan(inputs, open_run(tmp_path), take_index, spoken, rendered)
@@ -69,8 +68,7 @@ def test_a_silent_anchor_of_the_pictures_length_fixes_the_mix(tmp_path, write_pr
     assert plan.filter.endswith("amix=inputs=2:duration=first:normalize=0[a]")
 
 
-def test_one_unbroken_run_of_pages_plays_the_whole_track_once(tmp_path, write_project, open_run, take_index, spoken,
-                                                              rendered):  # fmt: skip
+def test_one_unbroken_run_of_pages_plays_the_whole_track_once(tmp_path):  # fmt: skip
     inputs = write_project(tmp_path)
     plan = three_page_plan(inputs, open_run(tmp_path), take_index, spoken, rendered)
     narration = [layer for layer in plan.inputs if layer.path.endswith("narration.mp3")]
@@ -79,9 +77,7 @@ def test_one_unbroken_run_of_pages_plays_the_whole_track_once(tmp_path, write_pr
     assert "atrim=start=" not in plan.filter
 
 
-def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(
-    tmp_path, write_project, open_run, take_index, spoken, rendered
-):
+def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(tmp_path):
     """The narration pauses for a clip, so each run of page sections plays its own stretch of the track."""
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     opened = open_run(tmp_path)
@@ -102,9 +98,7 @@ def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(
     assert "adelay=5000:all=1" in plan.filter
 
 
-def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(
-    tmp_path, write_project, open_run, take_index, spoken, rendered
-):
+def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(tmp_path):
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
@@ -116,9 +110,7 @@ def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(
     assert "atrim=duration=3.000" in plan.filter
 
 
-def test_a_music_bed_the_project_names_and_has_not_got_is_a_certain_finding(
-    tmp_path, write_project, open_run, take_index, spoken, rendered
-):
+def test_a_music_bed_the_project_names_and_has_not_got_is_a_certain_finding(tmp_path):
     """A film mixed without the music it declares is not the film the project asked for."""
     toml = MID_CLIP_TOML + '\n[mix]\nmusic = "media/bed.mp3"\n'
     inputs = write_project(tmp_path, toml)
@@ -132,9 +124,7 @@ def test_a_music_bed_the_project_names_and_has_not_got_is_a_certain_finding(
     assert "[music]" not in plan.filter
 
 
-def test_a_run_that_asks_for_no_soundscape_lays_no_bed_and_judges_nothing(
-    tmp_path, write_project, open_run, take_index, spoken, rendered
-):
+def test_a_run_that_asks_for_no_soundscape_lays_no_bed_and_judges_nothing(tmp_path):
     toml = MID_CLIP_TOML + '\n[mix]\nmusic = "media/bed.mp3"\n'
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
@@ -144,9 +134,7 @@ def test_a_run_that_asks_for_no_soundscape_lays_no_bed_and_judges_nothing(
     assert "[music]" not in plan.filter
 
 
-def test_an_effect_lands_at_the_second_its_own_cue_resolved_to(
-    tmp_path, write_project, open_run, take_index, spoken, rendered, cue_times
-):
+def test_an_effect_lands_at_the_second_its_own_cue_resolved_to(tmp_path):
     toml = (
         "[project]\nname = 't'\n[narration]\nlead_seconds = 0\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
@@ -165,9 +153,7 @@ def test_an_effect_lands_at_the_second_its_own_cue_resolved_to(
     assert "adelay=2500:all=1" in plan.filter
 
 
-def test_an_effect_whose_cue_is_unresolved_is_said_and_never_played(
-    tmp_path, write_project, open_run, take_index, spoken, rendered
-):
+def test_an_effect_whose_cue_is_unresolved_is_said_and_never_played(tmp_path):
     toml = (
         "[project]\nname = 't'\n[narration]\nlead_seconds = 0\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
@@ -183,7 +169,7 @@ def test_an_effect_whose_cue_is_unresolved_is_said_and_never_played(
     assert any("is unresolved" in note for note in opened.notes())
 
 
-def test_speech_spans_cover_every_spoken_section_and_every_clip(tmp_path, write_project, take_index, spoken, rendered):
+def test_speech_spans_cover_every_spoken_section_and_every_clip(tmp_path):
     inputs = write_project(tmp_path, MID_CLIP_TOML)
     takes = take_index(
         inputs,
@@ -197,7 +183,7 @@ def test_speech_spans_cover_every_spoken_section_and_every_clip(tmp_path, write_
     assert (2.0, 5.0) in spans
 
 
-def test_a_marker_resolves_against_the_words_of_its_own_section(tmp_path, write_project, take_index, spoken):
+def test_a_marker_resolves_against_the_words_of_its_own_section(tmp_path):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta gamma"))})
     starts = {1: 4.0}
