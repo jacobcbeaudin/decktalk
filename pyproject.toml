@@ -91,6 +91,9 @@ dev = [
     # variable turns the plugin's writing off, and under `-n auto` asking it to write is refused.
     # `pytest -p no:xdist --inline-snapshot=create,fix <file>` is how a person writes one.
     "inline-snapshot>=0.35",
+    # `scripts/build_outbound_reference.py` renders its page from a template that reads as the page
+    # does, with a loop where each table is written from the data file.
+    "jinja2>=3.1",
     "jsonschema>=4.23",
     # `contract/test_installer.py` runs install.sh under a terminal of its own, because the script
     # branches on `[ -t 1 ]`, and pexpect is that terminal and the Ctrl-C it sends.
