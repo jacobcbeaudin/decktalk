@@ -111,3 +111,9 @@ def test_a_pass_that_printed_no_measurement_is_a_tool_error(monkeypatch):
     monkeypatch.setattr(ffmpeg, "stderr", lambda *args: "size=N/A time=00:00:02.00\n")
     with pytest.raises(ToolError, match="no measurement"):
         audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+
+
+def test_a_level_becomes_the_factor_that_plays_it() -> None:
+    assert audio.gain(0) == 1.0
+    assert round(audio.gain(-6), 3) == 0.501
+    assert round(audio.gain(20), 3) == 10.0

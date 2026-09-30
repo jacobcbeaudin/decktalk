@@ -20,12 +20,13 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
 from decktalk.machine import Run
 from decktalk.media import MILLISECONDS, audio, ffmpeg
+from decktalk.media.audio import FULL_SCALE, gain
 from decktalk.media.frames import Decoded, Size, Wanted
 from decktalk.pagescan import measured_rows, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, SkipReason
 from decktalk.settings import CLICK_LEVEL_DBFS
-from decktalk.stages import gain, judge
+from decktalk.stages import judge
 from decktalk.stages.verify.plan import (
     HALF_FRAME,
     Neighbour,
@@ -38,9 +39,6 @@ from decktalk.stages.verify.plan import (
     reference_time,
     thin_change,
 )
-
-FULL_SCALE = 32767
-"""Truth: the largest magnitude a sixteen bit sample can carry, which every level is measured against."""
 
 
 def film_starts(inputs: Inputs, film: Path) -> tuple[dict[int, float], float]:

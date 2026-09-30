@@ -30,9 +30,10 @@ from decktalk.inputs.markers import Marker
 from decktalk.inputs.timeline import narration_offsets, narration_runs
 from decktalk.machine import Run
 from decktalk.media import MILLISECONDS, ffmpeg
+from decktalk.media.audio import gain
 from decktalk.media.encode import Encoder
 from decktalk.pipeline import Artifact, Stage
-from decktalk.stages import SECOND_DIGITS, gain, judge
+from decktalk.stages import SECOND_DIGITS, judge
 from decktalk.stages.assemble.cut import Rendered, concat, rendered_starts
 
 CLIP_FADE_SECONDS = 0.02

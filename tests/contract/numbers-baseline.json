@@ -2,7 +2,7 @@
   "files": {
     "src/decktalk/captions/files.py": 8,
     "src/decktalk/captions/layout.py": 11,
-    "src/decktalk/media/audio.py": 4,
+    "src/decktalk/media/audio.py": 1,
     "src/decktalk/media/browser.py": 3,
     "src/decktalk/media/frames.py": 5,
     "src/decktalk/runtime/src/contract.ts": 2,

@@ -52,12 +52,6 @@ DOLLAR_DIGITS = 2
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
 
-DECIBEL_BASE = 10
-"""Truth: a decibel is a base ten ratio, so a level becomes an amplitude through ten to a power."""
-
-DECIBEL_DECADE = 20.0
-"""Truth: twenty decibels is one decade of amplitude, which is what converts a level to a factor."""
-
 
 def judge(
     code: Code, message: str, location: Location, *, stage: Stage | None = None, fix: Fix | None = None
@@ -69,11 +63,6 @@ def judge(
     exists to prevent.
     """
     return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage, "fix": fix})
-
-
-def gain(level_db: float) -> float:
-    """The amplitude factor one level in decibels asks for, which is what `volume` reads."""
-    return DECIBEL_BASE ** (level_db / DECIBEL_DECADE)
 
 
 def dollars_for(characters: int, inputs: Inputs) -> float:
@@ -128,15 +117,12 @@ def clock() -> float:
 
 __all__ = [
     "CHARACTERS_PER_PRICE",
-    "DECIBEL_BASE",
-    "DECIBEL_DECADE",
     "DOLLAR_DIGITS",
     "PRICE_KEY",
     "SECOND_DIGITS",
     "SECTION_START_SECONDS",
     "clock",
     "dollars_for",
-    "gain",
     "judge",
     "price_layer",
     "selects",

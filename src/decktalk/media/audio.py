@@ -48,6 +48,20 @@ CLICK_SECONDS = 0.008
 PCM_BYTES_PER_SAMPLE = 2
 """Truth: the width of one signed 16-bit sample, which is what the s16le calls below read and write."""
 
+FULL_SCALE = 32767
+"""Truth: the largest magnitude a sixteen bit sample can carry, which every level is measured against."""
+
+DECIBEL_BASE = 10
+"""Truth: a decibel is a base ten ratio, so a level becomes an amplitude through ten to a power."""
+
+DECIBEL_DECADE = 20.0
+"""Truth: twenty decibels is one decade of amplitude, which is what converts a level to a factor."""
+
+
+def gain(level_db: float) -> float:
+    """The amplitude factor one level in decibels asks for, which is what `volume` reads."""
+    return DECIBEL_BASE ** (level_db / DECIBEL_DECADE)
+
 
 def rms_db(path: Path, start: float, seconds: float) -> float:
     """The RMS level in dBFS of the audio between start and start + seconds."""
@@ -97,7 +111,7 @@ def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate
     """
     n = round(duration * sample_rate)
     samples = array.array("h", bytes(PCM_BYTES_PER_SAMPLE * n))
-    amp = int(32767 * 10 ** (CLICK_LEVEL_DBFS / 20))
+    amp = int(FULL_SCALE * gain(CLICK_LEVEL_DBFS))
     click = round(CLICK_SECONDS * sample_rate)
     for t in times:
         start = round(t * sample_rate)
