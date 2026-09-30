@@ -12,11 +12,10 @@ library's own registry.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from dataclasses import MISSING, Field, fields, is_dataclass
 from enum import Enum
 from typing import Any
 
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 from typer._click import Context, Parameter
 from typer._click.core import Command
 from typer.main import get_command
@@ -203,33 +202,21 @@ def page_schema() -> dict[str, Any]:
 
 
 def project_schema() -> dict[str, Any]:
-    """The shape of `cues.json`, walked from the row the loader parses it into."""
-    # The cue row is an input rather than a result, so its schema is walked from the declaration
-    # the loader reads it with, which is the one place its keys and their defaults are written.
-    from decktalk.inputs.cues import Cue  # noqa: PLC0415
+    """The shape of `cues.json`, read off the row the loader parses it into."""
+    # The cue row is an input rather than a result, so its schema comes from the declaration the
+    # loader reads it with, which is the one place its keys and their defaults are written.
+    from decktalk.inputs.cues import READ_HERE, Cue  # noqa: PLC0415
 
-    if not is_dataclass(Cue):  # pragma: no cover  (the row is a dataclass and the walk needs one)
-        raise TypeError("the cue row is no longer a dataclass, so its schema cannot be walked")
+    declared = TypeAdapter(Cue).json_schema()["properties"]
     rows = [
-        {"key": field.name, "type": _type_name(field.type), "default": _default(field)}
-        for field in fields(Cue)
-        if field.name != "occurrence_set"
+        {"key": name, "type": row["type"], "default": row.get("default")}
+        for name, row in declared.items()
+        if name not in READ_HERE
     ]
     return {
         "file": "cues.json",
         "sections": {"min_seconds": {"type": "number", "default": None}, "cues": rows},
     }
-
-
-def _default(field: Field[object]) -> JsonValue:
-    """What a row holds when the author writes nothing, or null when the key is required."""
-    return None if field.default is MISSING else json_value(field.default)
-
-
-def _type_name(annotation: object) -> str:
-    """One declared type as JSON names it, which is what a reader writes in the file."""
-    spelled = annotation if isinstance(annotation, str) else getattr(annotation, "__name__", str(annotation))
-    return {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}.get(spelled, spelled)
 
 
 CONTRACTS: dict[str, Callable[..., dict[str, Any]]] = {

@@ -70,7 +70,10 @@ def test_the_page_document_publishes_every_attribute(run) -> None:
 def test_the_project_document_publishes_the_cue_row(run) -> None:
     written = json.loads(run("schema", "project").out)
     assert written["file"] == "cues.json"
-    assert {"cue", "on"} <= {row["key"] for row in written["sections"]["cues"]}
+    rows = {row["key"]: row for row in written["sections"]["cues"]}
+    assert {"cue", "on"} <= rows.keys()
+    assert "line" not in rows, "the loader fills the line, so an author never writes it"
+    assert rows["offset"] == {"key": "offset", "type": "number", "default": 0.0}
 
 
 def test_the_set_parameter_points_at_the_key_space(run) -> None:
