@@ -12,6 +12,7 @@ from werkzeug import Request, Response
 
 from decktalk.errors import ProviderError
 from decktalk.speech import http as _http
+from support.logs import data_of
 
 SENTINEL = "sk_sentinel_key_that_must_never_print"
 
@@ -286,8 +287,8 @@ def test_every_retry_says_how_long_it_waits_and_why_and_every_attempt_is_traced(
     with caplog.at_level("DEBUG", logger="decktalk"):
         _http.post_json(url, {}, {"xi-api-key": SENTINEL}, timeout=5, retries=3)
     records = [record for record in caplog.records if record.name == "decktalk.speech.http"]
-    retries = [record.data for record in records if record.levelname == "WARNING"]  # type: ignore[attr-defined]
-    attempts = [record.data for record in records if record.levelname == "DEBUG"]  # type: ignore[attr-defined]
+    retries = [data_of(record) for record in records if record.levelname == "WARNING"]
+    attempts = [data_of(record) for record in records if record.levelname == "DEBUG"]
     assert [(said["wait_seconds"], said["wait_source"], said["attempt"]) for said in retries] == [
         (3.0, _http.STATED, 1),
         (3.0, _http.STATED, 2),
@@ -302,4 +303,4 @@ def test_a_wait_worked_out_by_doubling_says_so(httpserver, caplog):
     with caplog.at_level("WARNING", logger="decktalk"):
         _http.post_json(_busy(httpserver, 1, 503), {}, {}, timeout=5, retries=1)
     [record] = [record for record in caplog.records if record.name == "decktalk.speech.http"]
-    assert record.data["wait_source"] == _http.DOUBLED  # type: ignore[attr-defined]
+    assert data_of(record)["wait_source"] == _http.DOUBLED

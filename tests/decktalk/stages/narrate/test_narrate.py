@@ -15,7 +15,7 @@ from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SpendState, TakeStatus, Voicing, Word
 from decktalk.speech import PROVIDERS, SpeechRequest
 from decktalk.stages.narrate import narrate
-from support.logs import decisions
+from support.logs import data_of, decisions
 from support.runs import Watched
 
 from .conftest import ENVIRON, SCRIPT, TOML
@@ -76,7 +76,7 @@ def test_every_take_kept_or_made_says_why_and_the_worker_count_is_recorded(
 ) -> None:
     with caplog.at_level("DEBUG", logger="decktalk"):
         placeholder(inputs, watched)
-        workers = [record.data for record in caplog.records if "workers" in getattr(record, "data", {})]
+        workers = [data_of(record) for record in caplog.records if "workers" in data_of(record)]
         assert workers and workers[0]["jobs"] == 3
         said = sorted(decisions(caplog, "take", "section", "hit", "why"))
         assert said == [(1, False, "to-make"), (2, False, "to-make"), (3, False, "to-make")]
@@ -376,4 +376,4 @@ def test_every_section_that_failed_is_recorded_and_the_first_is_raised(caplog: p
     with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ProviderError, match="section 1"):
         _in_pool(work, plans, workers=2)  # type: ignore[arg-type]
     later = [record for record in caplog.records if record.levelname == "WARNING"]
-    assert [record.data["section"] for record in later] == [2]  # type: ignore[attr-defined]
+    assert [data_of(record)["section"] for record in later] == [2]

@@ -19,6 +19,7 @@ from decktalk.media import ffmpeg
 from decktalk.media.environment import children_see
 from decktalk.settings import ToolsConfig
 from decktalk.toolchain.cache import cache_dir
+from support.logs import data_of
 
 
 @pytest.fixture
@@ -325,8 +326,8 @@ def test_a_stopped_call_says_which_command_was_stopped_and_why(monkeypatch, capl
         ffmpeg.stream("-i", "stuck.mp4", "-", into=refuse)
     [record] = [record for record in caplog.records if record.name == "decktalk.media.ffmpeg"]
     assert record.levelname == "WARNING"
-    assert record.data["reason"] == reason and record.data["limit"] == limit  # type: ignore[attr-defined]
-    assert record.data["argv"] == "ffmpeg -v error -i stuck.mp4 -"  # type: ignore[attr-defined]
+    assert data_of(record)["reason"] == reason and data_of(record)["limit"] == limit
+    assert data_of(record)["argv"] == "ffmpeg -v error -i stuck.mp4 -"
 
 
 @pytest.mark.usefixtures("tools")
@@ -335,7 +336,7 @@ def test_every_call_that_ends_leaves_its_command_exit_time_and_last_lines(monkey
     with caplog.at_level("DEBUG", logger="decktalk"):
         ffmpeg.run("-i", "a b.mp3", "out.mp3")
     [record] = [record for record in caplog.records if record.name == "decktalk.media.ffmpeg"]
-    data = record.data  # type: ignore[attr-defined]
+    data = data_of(record)
     assert record.levelname == "DEBUG"
     assert data["argv"] == "ffmpeg -hide_banner -loglevel error -y -i 'a b.mp3' out.mp3"
     assert data["exit"] == 0 and data["seconds"] >= 0

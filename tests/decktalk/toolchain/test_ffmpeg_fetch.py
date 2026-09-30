@@ -25,6 +25,7 @@ from decktalk.media import ffmpeg as ff
 from decktalk.settings import ToolsConfig
 from decktalk.toolchain import ffmpeg_fetch as fetch
 from decktalk.toolchain.announce import announcing
+from support.logs import data_of
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 WAIT = ToolsConfig().timeout_seconds
@@ -417,8 +418,8 @@ def test_a_fetch_that_waited_says_how_long_and_what_it_found(monkeypatch, caplog
     with caplog.at_level("DEBUG", logger="decktalk"):
         fetch.fetch_ffmpeg(wait_seconds=5)
     holder.join()
-    waited = [record.data for record in caplog.records if "waited_seconds" in getattr(record, "data", {})]
+    waited = [data_of(record) for record in caplog.records if "waited_seconds" in data_of(record)]
     assert len(waited) == 1 and waited[0]["waited_seconds"] >= 0.2
     assert waited[0]["found_installed"] is False
-    verified = [record.data for record in caplog.records if "sha256" in getattr(record, "data", {})]
+    verified = [data_of(record) for record in caplog.records if "sha256" in data_of(record)]
     assert verified and verified[0]["bytes"] > 0 and verified[0]["url"].startswith("https://")

@@ -31,6 +31,7 @@ from decktalk.media import browser
 from decktalk.media.environment import children_see
 from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.announce import announcing
+from support.logs import data_of
 from support.paths import REPO
 
 SRC = REPO / "src" / "decktalk"
@@ -239,7 +240,7 @@ def test_every_installer_run_leaves_its_command_exit_and_output_on_the_record(mo
         chromium_fetch.fetch_chromium(env={})
     [record] = [record for record in caplog.records if record.name == "decktalk.toolchain.chromium_fetch"]
     assert record.levelname == "WARNING"
-    data = record.data  # type: ignore[attr-defined]
+    data = data_of(record)
     assert data["exit"] == 1 and "playwright install chromium" in data["argv"]
     assert data["output_tail"] == "line 1 | ERROR: host unreachable"
 
@@ -251,7 +252,7 @@ def test_an_installer_that_never_finishes_says_it_was_stopped(monkeypatch, caplo
     monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
     with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ToolError):
         chromium_fetch.fetch_chromium(env={})
-    assert [record.data["reason"] for record in caplog.records if hasattr(record, "data")] == ["timeout"]
+    assert [data_of(record)["reason"] for record in caplog.records if data_of(record)] == ["timeout"]
 
 
 # ---- the one command that may ask for a password ------------------------------------------------

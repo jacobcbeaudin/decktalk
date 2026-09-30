@@ -31,6 +31,7 @@ from decktalk.media.origin import (
     served_url,
 )
 from decktalk.page import Q
+from support.logs import data_of
 
 WHOLE = ("deck", "envlink", "pub", "escape", "leak", "away", "leakhtm")
 """Every name the tests about the other rules ask for, declared so that those rules are what refuse."""
@@ -458,7 +459,7 @@ def test_a_request_the_router_could_not_answer_is_a_warning_without_its_query(tm
     assert answered.answer is not None and answered.answer["status"] == 500
     [record] = [record for record in caplog.records if record.name == "decktalk.media.origin"]
     assert record.levelname == "WARNING" and "sk_query_canary" not in record.getMessage()
-    assert record.data == {"url": f"{ORIGIN}/deck/index.html"}  # type: ignore[attr-defined]
+    assert data_of(record) == {"url": f"{ORIGIN}/deck/index.html"}
 
 
 def test_the_preview_server_prints_nothing_when_a_request_raises_and_logs_no_query(

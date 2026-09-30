@@ -12,6 +12,7 @@ import pytest
 from decktalk.errors import Cancel, Cancelled, ToolError
 from decktalk.stages.record import pool
 from decktalk.stages.record.pool import Halt, Pool, at_once
+from support.logs import data_of
 
 # ---- how many at once ----------------------------------------------------------------------------
 
@@ -150,7 +151,7 @@ def test_a_second_section_that_failed_on_its_own_is_recorded_and_a_halted_one_is
         for record in caplog.records
         if record.name == "decktalk.stages.record.pool" and record.levelname == "WARNING"
     ]
-    assert [record.data["section"] for record in later] == [2]  # type: ignore[attr-defined]
+    assert [data_of(record)["section"] for record in later] == [2]
     assert "section 2 would not load" in later[0].exc_info[1].args[0]  # type: ignore[index]
 
 
@@ -182,4 +183,4 @@ def test_the_number_of_recorders_chosen_is_recorded_beside_the_cpus_it_was_chose
     with caplog.at_level("DEBUG", logger="decktalk"):
         assert pool.automatic(0, 5) == 3
     [record] = [record for record in caplog.records if record.name == "decktalk.stages.record.pool"]
-    assert record.data == {"workers": 3, "jobs": 5, "cpus": 6.0, "requested": 0}  # type: ignore[attr-defined]
+    assert data_of(record) == {"workers": 3, "jobs": 5, "cpus": 6.0, "requested": 0}
