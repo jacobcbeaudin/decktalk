@@ -597,14 +597,19 @@ def test_an_override_reaches_the_machine_by_its_own_scope(monkeypatch: pytest.Mo
     assert here.cache_dir == tmp_path / "elsewhere"
 
 
-def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    here = a_machine(tmp_path)
+@pytest.fixture
+def launched(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A browser row that answers without launching Chromium, which the rows below have no need of."""
     monkeypatch.setattr(
         Machine,
         "_browser_row",
         lambda self: machine_module.InstalledTool(tool="chromium", version="140", path=None, fetched=False),
     )
-    result = here.doctor()
+
+
+@pytest.mark.usefixtures("launched")
+def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path) -> None:
+    result = a_machine(tmp_path).doctor()
     assert [tool.tool for tool in result.tools] == ["chromium", "ffmpeg", "ffprobe", "katex"]
     assert not result.ok  # this machine has no encoder, which a build needs
     assert {found.code for found in result.findings} == {Code.FILE_MISSING}
@@ -658,6 +663,7 @@ def test_a_browser_that_will_not_launch_is_a_row_and_a_warning_that_says_why(
     assert data_of(said) == {"reason": "Executable doesn't exist"}
 
 
+@pytest.mark.usefixtures("launched")
 def test_a_measured_doctor_reports_the_number_and_keeps_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
