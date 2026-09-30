@@ -14,8 +14,7 @@ import pytest
 from decktalk.artifacts import Luma, RecordingChecks
 from decktalk.findings import Code
 from decktalk.media import ffmpeg, frames
-from decktalk.media.browser import Recording
-from decktalk.media.pagereport import FrameGap, PageReport, PageWarningRow
+from decktalk.media.pagereport import FrameGap, PageWarningRow
 from decktalk.settings import Settings
 from decktalk.stages.record.checks import (
     check_recording,
@@ -24,7 +23,7 @@ from decktalk.stages.record.checks import (
     recording_findings,
     stall_finding,
 )
-from support.pages import a_report
+from support.pages import a_recording, a_report
 
 PAGE = "deck/index.html"
 """The page every row here is about, as `decktalk.toml` spells it."""
@@ -34,20 +33,6 @@ WHERE = Path("build/recordings/01.webm")
 
 SECTION = 1
 """The section every row here belongs to."""
-
-
-def a_recording(report: PageReport, *, external: tuple[str, ...] = (), wanted: float = 10.0) -> Recording:
-    return Recording(
-        url="http://project.localhost/deck/index.html?scene=1",
-        assets=(PAGE,),
-        external=external,
-        requested_seconds=wanted,
-        load_seconds=0.2,
-        settle_seconds=0.5,
-        clock_start_seconds=1.5,
-        page_errors=(),
-        report=report,
-    )
 
 
 def checks_of(*, duration: float = 10.0, wanted: float = 10.0, peak: float = 200.0) -> RecordingChecks:
@@ -82,7 +67,7 @@ def test_the_checks_measure_the_file_against_what_the_recorder_asked_for(
 ) -> None:
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: 9.5)
     monkeypatch.setattr(frames, "luma_at", lambda _path, _at, **_kwargs: (90.0, 210.0))
-    measured = check_recording(tmp_path / "01.webm", a_recording(a_report(), wanted=10.0))
+    measured = check_recording(tmp_path / "01.webm", a_recording(report=a_report(), requested_seconds=10.0))
     assert (measured.duration_seconds, measured.wanted_seconds) == (9.5, 10.0)
 
 
@@ -131,7 +116,7 @@ def test_every_judgement_of_one_recording_arrives_in_one_list(settings: Settings
         frameGaps=[FrameGap(at=2.0, ms=settings.record.frame_gap_max_ms + 100).model_dump()],
     )
     found = recording_findings(
-        a_recording(report, external=("https://cdn.example.com",)),
+        a_recording(report=report, external=("https://cdn.example.com",), requested_seconds=10.0),
         checks_of(peak=1.0),
         page=PAGE,
         where=WHERE,
