@@ -750,6 +750,17 @@ def test_a_fix_only_a_person_can_make_is_reported_and_never_applied(tmp_path: Pa
     assert not outcome.applied and "only a person" in (outcome.why or "")
 
 
+def test_a_fix_left_alone_is_a_warning_that_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`doctor --fix` and `check --fix` print the stream, not the result, so the reason has to be a line."""
+    here = a_machine(tmp_path)
+    exits(monkeypatch, 1)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append):
+        here.apply(a_finding(INSTALL_FIX))
+    warned = [line.message for line in seen if isinstance(line, Log) and line.level is Level.WARNING]
+    assert any(INSTALL_FIX.title in message and "exited 1" in message for message in warned)
+
+
 def test_a_fix_that_can_lose_work_is_applied_only_on_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     here = a_machine(tmp_path)
     exits(monkeypatch, 0)

@@ -128,7 +128,8 @@ def _fixed(
     if not offered:
         return judged
     project = session.project()
-    project.apply(offered)
+    with session.watching(project.events, heard=heard):
+        project.apply(offered)
     fresh = project.reload()
     with session.watching(fresh.events, heard=heard):
         return fresh.check(*paths, **asked, cancel=session.cancel)

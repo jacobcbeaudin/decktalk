@@ -292,7 +292,8 @@ def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, 
     offered = sessions_.fixes_wanted(built.findings, fix)
     if not offered:
         return built
-    applied = project.apply(offered)
+    with sessions_.watching(project.events):
+        applied = project.apply(offered)
     changed = sum(1 for outcome in applied.fixes if outcome.applied)
     sessions_.say(f"Applied {counted(changed, 'fix', 'fixes')}. Run decktalk build again to make the film from them.")
     return built

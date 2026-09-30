@@ -754,10 +754,17 @@ def init(
 
 
 def apply_fixes(run: Run, fix: Finding | Iterable[Finding], *, root: Path, scope: Scope, unsafe: bool) -> ApplyResult:
-    """Carry out every fix a caller handed over, in order, and publish what each one did."""
+    """Carry out every fix a caller handed over, in order, and publish what each one did.
+
+    A fix left alone is also a warning on the run, so a reader of the stream or the events file
+    learns why without holding the result.
+    """
     outcomes = tuple(
         apply_fix(run, code, found, root=root, scope=scope, unsafe=unsafe) for code, found in fixes_of(fix)
     )
+    for outcome in outcomes:
+        if not outcome.applied:
+            run.note(f"{outcome.title} was not applied: {outcome.why}", level=Level.WARNING)
     return run.result(ApplyResult, fixes=outcomes)
 
 
