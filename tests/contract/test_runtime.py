@@ -38,7 +38,7 @@ from decktalk.page import (
     WORD_STYLES,
 )
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
-from support.browser_pages import KATEX, chromium_page, opened, script_page, settled, write_page
+from support.browser_pages import KATEX, Tab, chromium_tab, opened, script_page, settled, write_page
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -72,15 +72,21 @@ def deck(tmp_path: Path, name: str, body: str = MARKUP_SCENE) -> str:
 
 
 @pytest.fixture(scope="module")
-def page():
+def tab():
     """The page a person opens: the runtime and nothing the recorder would add."""
-    yield from chromium_page()
+    yield from chromium_tab()
 
 
-@pytest.fixture(autouse=True)
-def _fresh_errors(page):
-    page.errors.clear()
-    yield
+@pytest.fixture
+def page(tab: Tab) -> Page:
+    tab.errors.clear()
+    return tab.page
+
+
+@pytest.fixture
+def errors(tab: Tab) -> list[str]:
+    """What the page threw during this test, which `page` cleared before it began."""
+    return tab.errors
 
 
 def warnings_of(page: Page) -> list[dict[str, Any]]:
@@ -169,12 +175,12 @@ def test_the_stylesheet_is_prepended_and_carries_no_specificity(page, tmp_path):
     assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).color") == "rgb(1, 2, 3)"
 
 
-def test_wait_for_holds_ready_until_the_pages_own_condition(page, tmp_path):
+def test_wait_for_holds_ready_until_the_pages_own_condition(page, errors, tmp_path):
     """A deck with a condition of its own adds it to the runtime rather than replacing a global."""
     body = "<script>DeckTalk.waitFor(new Promise((r) => setTimeout(() => { window.__late = 1; r(); }, 200)));</script>"
     opened(page, deck(tmp_path, "gate.html", body + MARKUP_SCENE))
     assert page.evaluate("() => window.__late") == 1
-    assert not page.errors
+    assert not errors
 
 
 # ---- slides written as markup ------------------------------------------------------------------
@@ -341,13 +347,13 @@ def test_two_sections_naming_one_scene_cannot_be_told_apart(page, origin):
     assert "PAGE_PREVIEW_AMBIGUOUS" in codes_of(page)
 
 
-def test_an_absent_cue_times_file_never_fails_a_preview(page, origin):
+def test_an_absent_cue_times_file_never_fails_a_preview(page, errors, origin):
     """Nothing on the preview path may fail a page, so a project that has never run `cue` previews anyway."""
     origin.publish(None)
     page.goto(f"{origin.write('absent.html', MARKUP_SCENE)}?scene=1&speed=8")
     page.wait_for_function("() => window.__decktalk.fired.includes('1.1:ball')", timeout=15000)
     assert warnings_of(page) == []
-    assert not page.errors
+    assert not errors
 
 
 # ---- how a moment looks ------------------------------------------------------------------------
@@ -667,12 +673,12 @@ def test_a_slide_handler_and_a_deck_handler_both_receive_the_slide(page, tmp_pat
         ),
     ],
 )
-def test_a_page_callback_that_throws_becomes_a_warning(page, tmp_path, script, code):
+def test_a_page_callback_that_throws_becomes_a_warning(page, errors, tmp_path, script, code):
     """A deck that threw at its author would cost a recording rather than save one."""
     page.goto(f"{script_page(tmp_path, f'threw-{code}.html', script)}?scene=13&t0=0&cues=13.1:beat@0.1")
     page.wait_for_function("() => window.__decktalk.warnings.length > 0")
     assert code in codes_of(page)
-    assert not page.errors
+    assert not errors
 
 
 # ---- what the page cannot honour ---------------------------------------------------------------
@@ -809,14 +815,13 @@ def test_a_page_promise_that_rejects_or_never_settles_does_not_hold_the_page(pag
 
 
 @pytest.fixture
-def quiet(page):
+def quiet(page: Page) -> Iterator[Tab]:
     """A page that asks for reduced motion, which is what `motion.reduce` asks Chromium for."""
-    other = page.context.browser.new_page(viewport={"width": 1920, "height": 1080}, reduced_motion="reduce")
-    errors: list[str] = []
-    other.on("pageerror", lambda exc: errors.append(str(exc)))
-    other.errors = errors
+    browser = page.context.browser
+    assert browser is not None
+    other = Tab.of(browser.new_page(viewport={"width": 1920, "height": 1080}, reduced_motion="reduce"))
     yield other
-    other.close()
+    other.page.close()
 
 
 TRAVELLED = """
@@ -831,10 +836,10 @@ TRAVELLED = """
 def test_a_reduced_render_keeps_every_length_and_drops_every_travel(quiet, tmp_path):
     """Nothing in the reduced render moves a cue, so the film is the same duration with the same captions."""
     url = write_page(tmp_path, "reduced.html", TRAVELLED)
-    quiet.goto(f"{url}?scene=20&t0=0&cues=20.1:show@0.05")
-    quiet.wait_for_function("() => window.__decktalk.fired.length === 1")
-    assert quiet.evaluate("() => document.documentElement.classList.contains('dt-reduced')") is True
-    playing = quiet.evaluate(
+    quiet.page.goto(f"{url}?scene=20&t0=0&cues=20.1:show@0.05")
+    quiet.page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    assert quiet.page.evaluate("() => document.documentElement.classList.contains('dt-reduced')") is True
+    playing = quiet.page.evaluate(
         "() => document.querySelector('.subject').getAnimations()"
         ".map((a) => [a.animationName, a.effect.getTiming().duration])"
     )
@@ -876,7 +881,7 @@ def test_a_class_that_still_animates_under_reduced_motion_is_reported(quiet, tmp
       </template>
     </div>
     """
-    opened(quiet, write_page(tmp_path, "not-reduced.html", scene, head=head))
-    reported = quiet.evaluate("() => window.__decktalk.warnings")
+    opened(quiet.page, write_page(tmp_path, "not-reduced.html", scene, head=head))
+    reported = quiet.page.evaluate("() => window.__decktalk.warnings")
     assert [row["code"] for row in reported] == ["PAGE_CLASS_NOT_REDUCED"]
     assert reported[0]["cue"] == "21.1:cancel"

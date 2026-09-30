@@ -9,6 +9,7 @@ property the split is supposed to have.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,7 +30,22 @@ KATEX = (
 )
 
 
-def chromium_page(instrument: Callable[[Page], object] | None = None) -> Iterator[Page]:
+@dataclass
+class Tab:
+    """One Chromium page, and everything it threw since a test last cleared `errors`."""
+
+    page: Page
+    errors: list[str] = field(default_factory=list)
+
+    @classmethod
+    def of(cls, page: Page) -> Tab:
+        """A tab that listens on `page` for what it throws."""
+        tab = cls(page)
+        page.on("pageerror", lambda e: tab.errors.append(str(e)))
+        return tab
+
+
+def chromium_tab(instrument: Callable[[Page], object] | None = None) -> Iterator[Tab]:
     """One Chromium page for a module, with an `errors` list of everything it threw.
 
     `instrument` is the hook a DeckTalk command uses to add decktalk-probe.js, and a module that
@@ -46,10 +62,7 @@ def chromium_page(instrument: Callable[[Page], object] | None = None) -> Iterato
         page = browser.new_page(viewport={"width": 1920, "height": 1080})
         if instrument is not None:
             instrument(page)
-        errors: list[str] = []
-        page.on("pageerror", lambda e: errors.append(str(e)))
-        page.errors = errors  # type: ignore[attr-defined]
-        yield page
+        yield Tab.of(page)
         browser.close()
 
 
