@@ -232,8 +232,11 @@ def glyph_outlines(text: str, size: float, tracking: float) -> tuple[str, float]
     advance width, with `tracking` (in em) added between letters.
     """
     font = TTFont(FONTS / DISPLAY_FACE[1])
-    scale = size / font["head"].unitsPerEm
+    # fontTools declares no attributes on its tables, so the one field read from `head` is untyped.
+    scale = size / font["head"].unitsPerEm  # ty: ignore[unresolved-attribute]
     cmap = font.getBestCmap()
+    if cmap is None:
+        raise SystemExit(f"{DISPLAY_FACE[1]} has no Unicode character map, so no glyph can be found for a letter.")
     glyphs = font.getGlyphSet()
     x = 0.0
     parts = []

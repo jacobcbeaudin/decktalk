@@ -42,6 +42,7 @@ import time
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -529,7 +530,7 @@ GROUPS: tuple[Group, ...] = (
             ("uv", "lock", "--check"),
             (*UV, "ruff", "check", "src", "tests", "scripts"),
             (*UV, "ruff", "format", "--check", "src", "tests", "scripts"),
-            (*UV, "ty", "check", "src"),
+            (*UV, "ty", "check", "src", "scripts"),
             ("npm", "exec", "--no", "--", "biome", "ci", "."),
             ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "install.sh"),
             ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
@@ -715,9 +716,9 @@ def shell(command: tuple[str, ...]) -> str:
     return " ".join(parts)
 
 
-def legs(groups: tuple[Group, ...]) -> list[dict[str, object]]:
+def legs(groups: tuple[Group, ...]) -> list[dict[str, Any]]:
     """One matrix row per group, runner and Python, which is what a workflow consumes."""
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, Any]] = []
     for group in groups:
         for runner in group.runners:
             pythons = group.pythons if runner == LINUX else (FLOOR,)
