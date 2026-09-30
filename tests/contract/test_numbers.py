@@ -22,7 +22,6 @@ that no walk of Python can see, which is exactly the class of number this rule e
 from __future__ import annotations
 
 import ast
-import json
 import re
 import sys
 from collections.abc import Iterator
@@ -34,6 +33,7 @@ from typing import cast
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from decktalk.settings import KEYS
+from support import ratchet
 from support.paths import REPO
 
 BASELINE = Path(__file__).resolve().parent / "numbers-baseline.json"
@@ -228,11 +228,6 @@ def measured() -> dict[str, int]:
     return found
 
 
-def baseline() -> dict[str, int]:
-    """The committed to-do list, which is the only thing that excuses a literal."""
-    return json.loads(BASELINE.read_text(encoding="utf-8"))["files"]
-
-
 SOURCE = '''
 LIMIT_MS = 42
 """Truth: a fact about a codec, which is what a name and a sentence together admit."""
@@ -288,12 +283,7 @@ def test_the_baseline_only_shrinks() -> None:
 
     One walk of the tree answers all three, so the message names every kind of drift at once.
     """
-    found, excused = measured(), baseline()
-    added = [f"{name} ({count})" for name, count in sorted(found.items()) if name not in excused]
-    grown = [f"{name} {was} to {found[name]}" for name, was in sorted(excused.items()) if found.get(name, 0) > was]
-    stale = [
-        f"{name} {was} to {found.get(name, 0)}" for name, was in sorted(excused.items()) if found.get(name, 0) < was
-    ]
+    added, grown, stale = ratchet.drift(measured(), ratchet.baseline(BASELINE))
     assert not (added or grown or stale), (
         f"These files hold a number that went through no door: {added}. Make it a settings key, write "
         "it as the expression it is, or bind it to a module-level upper-case name with one sentence "
@@ -310,20 +300,9 @@ def _sentence(node: ast.stmt) -> str | None:
     return None
 
 
-def _write() -> int:
-    """Lower every count the code has beaten, and refuse to raise one, which is the ratchet."""
-    committed = baseline()
-    found = measured()
-    lowered = {name: min(count, found.get(name, 0)) for name, count in committed.items()}
-    kept = {name: count for name, count in sorted(lowered.items()) if count}
-    raised = sorted(name for name, count in found.items() if count > committed.get(name, 0))
-    BASELINE.write_text(json.dumps({"files": kept}, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {BASELINE.name} with {len(kept)} files and {sum(kept.values())} numbers")
-    if raised:
-        print("these files are not excused and must go through a door: " + ", ".join(raised))
-        return 1
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(_write())
+    sys.exit(
+        ratchet.write(
+            BASELINE, measured(), noun="numbers", refusal="these files are not excused and must go through a door"
+        )
+    )

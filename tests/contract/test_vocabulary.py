@@ -43,7 +43,6 @@ words an enum really owns.
 from __future__ import annotations
 
 import ast
-import json
 import sys
 from enum import Enum
 from pathlib import Path
@@ -69,6 +68,7 @@ from decktalk.results import (
     Voicing,
 )
 from decktalk.tomlmap import Nature, Source
+from support import ratchet
 from support.paths import REPO
 
 ROOT = REPO
@@ -283,21 +283,12 @@ def measured() -> dict[str, int]:
     return found
 
 
-def baseline() -> dict[str, int]:
-    return dict(json.loads(BASELINE.read_text(encoding="utf-8"))["files"])
-
-
 def test_the_baseline_only_shrinks():
     """A file off the list spells no word, a file on it never grows, and a beaten count is written down.
 
     One walk of the tree answers all three, so the message names every kind of drift at once.
     """
-    found, excused = measured(), baseline()
-    added = [f"{name} ({count})" for name, count in sorted(found.items()) if name not in excused]
-    grown = [f"{name} {was} to {found[name]}" for name, was in sorted(excused.items()) if found.get(name, 0) > was]
-    stale = [
-        f"{name} {was} to {found.get(name, 0)}" for name, was in sorted(excused.items()) if found.get(name, 0) < was
-    ]
+    added, grown, stale = ratchet.drift(measured(), ratchet.baseline(BASELINE))
     assert not (added or grown or stale), (
         f"These files spell a closed vocabulary as a string and are not excused: {added}. Use the enum "
         f"member, and `.value` where the word is written into text. These files grew a literal: {grown}. "
@@ -381,20 +372,9 @@ def test_every_defining_module_is_still_there():
         assert (ROOT / name).exists(), f"{name} defines part of the vocabulary and is not there any more."
 
 
-def _write() -> int:
-    """Lower every count the code has beaten, and refuse to raise one, which is the ratchet."""
-    committed = baseline()
-    found = measured()
-    lowered = {name: min(count, found.get(name, 0)) for name, count in committed.items()}
-    kept = {name: count for name, count in sorted(lowered.items()) if count}
-    raised = sorted(name for name, count in found.items() if count > committed.get(name, 0))
-    BASELINE.write_text(json.dumps({"files": kept}, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {BASELINE.name} with {len(kept)} files and {sum(kept.values())} literals")
-    if raised:
-        print("these files are not excused and must use the enum member: " + ", ".join(raised))
-        return 1
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(_write())
+    sys.exit(
+        ratchet.write(
+            BASELINE, measured(), noun="literals", refusal="these files are not excused and must use the enum member"
+        )
+    )
