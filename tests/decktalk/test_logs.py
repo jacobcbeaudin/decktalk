@@ -37,6 +37,7 @@ from decktalk.settings import ToolsConfig
 from decktalk.speech import http as _http
 from decktalk.stages.narrate import _in_pool
 from decktalk.toolchain import chromium_fetch
+from support.logs import data_of
 from support.projects import write_project
 from support.runs import a_machine
 
@@ -104,25 +105,21 @@ def test_every_standard_level_lands_on_one_of_the_streams_four(number: int, leve
     assert level_of(number) is level
 
 
-@pytest.fixture
-def last_resort(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[logging.LogRecord]]:
-    """Every record Python's last-resort handler would have printed to bare stderr."""
-    printed: list[logging.LogRecord] = []
+def test_nothing_prints_when_no_run_is_bound() -> None:
+    """A host that configured no logging gets silence, not Python's last-resort handler on bare stderr.
 
-    class Spy(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            printed.append(record)
-
-    monkeypatch.setattr(logging, "lastResort", Spy())
-    yield printed
-
-
-def test_nothing_prints_when_no_run_is_bound(capsys: pytest.CaptureFixture[str], last_resort: list) -> None:
-    for name in ("decktalk", "decktalk.media.ffmpeg", "decktalk.toolchain.chromium_fetch", "decktalk.media.origin"):
-        for level in (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL):
-            logging.getLogger(name).log(level, "a sentence nobody bound a run for")
-    assert capsys.readouterr() == ("", "")
-    assert last_resort == []
+    It runs in a fresh interpreter, because pytest's own handlers on the root logger would answer for
+    the package inside this one and hide a missing handler.
+    """
+    said = "\n".join(
+        f"logging.getLogger({name!r}).log({level}, 'a sentence nobody bound a run for')"
+        for name in ("decktalk", "decktalk.media.ffmpeg", "decktalk.toolchain.chromium_fetch", "decktalk.media.origin")
+        for level in (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL)
+    )
+    ran = subprocess.run(
+        [sys.executable, "-c", f"import logging\nimport decktalk\n{said}"], capture_output=True, text=True, check=True
+    )
+    assert (ran.stdout, ran.stderr) == ("", "")
 
 
 def test_a_record_that_cannot_be_rendered_is_counted_and_never_printed(
@@ -178,22 +175,14 @@ def test_two_runs_on_two_threads_each_keep_their_own_lines(tmp_path: Path) -> No
     assert len({line.run for line in said}) == 2
 
 
-def test_a_hosts_own_handler_hears_the_record_stamped_with_the_run(tmp_path: Path) -> None:
-    heard: list[logging.LogRecord] = []
-
-    class Host(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            heard.append(record)
-
-    host = Host()
-    logging.getLogger().addHandler(host)
-    try:
-        here = a_machine(tmp_path)
-        with here.run() as run, run.section(Stage.RECORD, 4):
-            log.info("stamped")
-    finally:
-        logging.getLogger().removeHandler(host)
-    [record] = [record for record in heard if record.getMessage() == "stamped"]
+def test_a_hosts_own_handler_hears_the_record_stamped_with_the_run(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """pytest's capture handler sits on the root logger, where a host's own handler would."""
+    here = a_machine(tmp_path)
+    with here.run() as run, run.section(Stage.RECORD, 4):
+        log.info("stamped")
+    [record] = [record for record in caplog.records if record.getMessage() == "stamped"]
     assert (record.decktalk_run, record.decktalk_stage, record.decktalk_section) == (run.id, "record", 4)
 
 
@@ -224,23 +213,13 @@ def test_the_place_is_restored_when_a_block_closes() -> None:
     assert where() == logs.Where()
 
 
-def test_a_hosts_own_handler_never_sees_a_registered_secret() -> None:
+def test_a_hosts_own_handler_never_sees_a_registered_secret(caplog: pytest.LogCaptureFixture) -> None:
     """An f-string over a revealed key reaches the root logger's handlers as well as the run's line."""
     canary = "sk_host_handler_canary_77c1"
     Secret(canary, "ELEVENLABS_API_KEY")
-    heard: list[str] = []
-
-    class Host(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            heard.append(f"{record.getMessage()} {getattr(record, 'data', '')}")
-
-    host = Host()
-    logging.getLogger().addHandler(host)
-    try:
-        log.warning(f"sent {canary}", extra={"data": {"header": canary}})
-    finally:
-        logging.getLogger().removeHandler(host)
-    assert heard and canary not in heard[-1] and "<secret ELEVENLABS_API_KEY>" in heard[-1]
+    log.warning(f"sent {canary}", extra={"data": {"header": canary}})
+    heard = f"{caplog.records[-1].getMessage()} {data_of(caplog.records[-1])}"
+    assert canary not in heard and "<secret ELEVENLABS_API_KEY>" in heard
 
 
 # ---- every failure path leaves a record --------------------------------------------------------------
