@@ -114,7 +114,9 @@ def test_the_union_is_closed_over_the_eleven_names() -> None:
 
 @pytest.mark.parametrize("name", NAMES)
 def test_an_event_round_trips_through_the_union(name: str) -> None:
-    built = EVENTS[name](time=datetime(2026, 9, 24, 3, 0, tzinfo=UTC), seq=0, run="r1", **PAYLOADS[name])
+    built = EVENTS[name].model_validate(
+        {"time": datetime(2026, 9, 24, 3, 0, tzinfo=UTC), "seq": 0, "run": "r1", **PAYLOADS[name]}
+    )
     assert TypeAdapter(Line).validate_json(built.model_dump_json()) == built
 
 
@@ -145,7 +147,8 @@ def test_a_subscription_to_named_runs_yields_only_those_runs() -> None:
     with machine.subscribe(seen.append, runs=("r1",)):
         machine.emit("r1", Log, level=Level.INFO, message="Mine.")
         machine.emit("r2", Log, level=Level.INFO, message="Somebody else's.")
-    assert [event.message for event in seen] == ["Mine."]  # type: ignore[attr-defined]
+    [mine] = seen
+    assert isinstance(mine, Log) and mine.message == "Mine."
 
 
 def test_a_closed_subscription_receives_nothing_more() -> None:
@@ -284,7 +287,7 @@ def carrying(text: str) -> dict[str, dict[str, object]]:
 def test_no_line_can_be_built_holding_a_registered_secret(before: str, after: str, twice: bool) -> None:
     text = before + CANARY + after + (CANARY if twice else "")
     for name, payload in carrying(text).items():
-        line = EVENTS[name](time=datetime.now(UTC), seq=0, run="r1", **payload)
+        line = EVENTS[name].model_validate({"time": datetime.now(UTC), "seq": 0, "run": "r1", **payload})
         assert CANARY not in line.model_dump_json(), name
         assert "<secret ELEVENLABS_API_KEY>" in line.model_dump_json(), name
 

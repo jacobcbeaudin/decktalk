@@ -64,9 +64,9 @@ def lead_at(offset_ms: float) -> float:
     return NUMBERS_BY_ID["verify.reference_lead_seconds"].at(settings)
 
 
-def explain(key: str, **asked: object) -> ConfigExplainResult:
+def explain(key: str, *, project: Path | None = None, value: str | None = None) -> ConfigExplainResult:
     """The explainer as every test here calls it, on the machine above rather than this process's own."""
-    return explained(key, machine=MACHINE, **asked)  # type: ignore[arg-type]
+    return explained(key, project=project, value=value, machine=MACHINE)
 
 
 @pytest.fixture

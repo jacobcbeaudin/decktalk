@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -425,14 +426,14 @@ HOST_SECRETS = {"ELEVENLABS_API_KEY": "sk-host-owned", "ELEVENLABS_VOICE_ID": "h
 
 def a_host(tmp_path: Path, **choices: object) -> Machine:
     """A machine a host built from values it chose, with the voice job's two variables by default."""
-    values: dict[str, object] = {
+    values: dict[str, Any] = {
         "environ": HOST_SECRETS,
         "config_path": tmp_path / "host" / "machine.toml",
         "cwd": tmp_path,
         "cache_dir": tmp_path / "host" / "cache",
         **choices,
     }
-    return Machine.of(**values)  # type: ignore[arg-type]
+    return Machine.of(**values)
 
 
 def test_a_credential_a_host_hands_its_machine_never_reaches_a_line(tmp_path: Path) -> None:

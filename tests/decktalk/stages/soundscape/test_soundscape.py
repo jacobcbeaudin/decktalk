@@ -242,8 +242,8 @@ def test_the_ledger_records_what_each_item_was_bought_with(tmp_path: Path, servi
     ledger = Ledger.read(inputs.workspace.soundscape_dir / LEDGER_FILE)
     assert ledger is not None
     assert {row.name for row in ledger.items} == {"ambience", "chime", "music"}
-    assert ledger.of("chime") is not None
-    assert "a bright chime" in ledger.of("chime").request  # type: ignore[union-attr]  (asserted above)
+    chime = ledger.of("chime")
+    assert chime is not None and "a bright chime" in chime.request
     assert service.sounds
 
 

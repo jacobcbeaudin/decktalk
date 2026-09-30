@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from inline_snapshot import snapshot
+from pydantic import JsonValue
 from rich.console import Console
 
 from decktalk.cli import output
@@ -452,7 +453,7 @@ def test_an_unset_names_every_key_the_file_no_longer_sets() -> None:
 @pytest.mark.parametrize(
     ("value", "shown"), [(True, "true"), (None, "null"), (1.5, "1.5"), (["a", "b"], '["a","b"]'), ("plain", "plain")]
 )
-def test_a_settings_value_prints_in_the_spelling_config_set_accepts(value: object, shown: str) -> None:
+def test_a_settings_value_prints_in_the_spelling_config_set_accepts(value: JsonValue, shown: str) -> None:
     got = ConfigGetResult(
         ok=True, key=SettingValue(key="verify.strict", value=value, default=value, layer=Layer.DEFAULT)
     )

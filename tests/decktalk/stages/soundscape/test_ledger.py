@@ -27,14 +27,16 @@ ENDPOINT = "https://api.elevenlabs.io/v1/sound-generation"
 
 
 def an_entry(name: str = "chime", digest: str = "abc123", **fields: object) -> SoundEntry:
-    return SoundEntry(
-        name=name,
-        kind=SoundKind.EFFECT,
-        digest=digest,
-        file=Path("build/soundscape/chime.mp3"),
-        seconds=1.5,
-        request='{"text":"a bright chime"}',
-        **fields,  # type: ignore[arg-type]  (a test names the field it is judging)
+    return SoundEntry.model_validate(
+        {
+            "name": name,
+            "kind": SoundKind.EFFECT,
+            "digest": digest,
+            "file": Path("build/soundscape/chime.mp3"),
+            "seconds": 1.5,
+            "request": '{"text":"a bright chime"}',
+            **fields,
+        }
     )
 
 
@@ -68,8 +70,8 @@ def test_writing_one_row_replaces_the_row_of_that_name_and_keeps_the_others() ->
     ledger = Ledger(items=(an_entry("chime"), an_entry("thunder")))
     grown = ledger.updated(an_entry("chime", digest="moved"))
     assert {row.name for row in grown.items} == {"chime", "thunder"}
-    assert grown.of("chime") is not None
-    assert grown.of("chime").digest == "moved"  # type: ignore[union-attr]  (asserted above)
+    chime = grown.of("chime")
+    assert chime is not None and chime.digest == "moved"
 
 
 def test_a_row_still_being_bought_carries_a_digest_no_request_can_match() -> None:

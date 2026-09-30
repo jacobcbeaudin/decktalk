@@ -8,6 +8,7 @@ span, which no two effects share.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -40,7 +41,7 @@ FPS = 25
 
 def settings_with(**verify: object) -> Settings:
     """The default tree with one or two verify keys moved, which is what a case names."""
-    return Settings(verify=VerifyConfig(**verify))  # type: ignore[arg-type]
+    return Settings(verify=replace(VerifyConfig(), **verify))
 
 
 # ---- the published numbers this module reads rather than restates -----------------------------

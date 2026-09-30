@@ -234,8 +234,8 @@ def test_every_section_recorded_or_kept_says_why(tmp_path: Path, caplog: pytest.
     """A kept section emitted `skipped` with no reason, so a reader could not tell forced from unchanged."""
     inputs = a_project(tmp_path)
 
-    def said(**options: object) -> list[tuple[object, ...]]:
-        record(inputs, a_run(inputs.root), **options)  # type: ignore[arg-type]
+    def said(**options: Any) -> list[tuple[object, ...]]:  # noqa: ANN401  (record's own keywords)
+        record(inputs, a_run(inputs.root), **options)
         return decisions(caplog, "recording", "section", "hit", "why")
 
     with caplog.at_level("DEBUG", logger="decktalk"):

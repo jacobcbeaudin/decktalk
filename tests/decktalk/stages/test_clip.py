@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -61,11 +62,11 @@ def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_
     return inputs
 
 
-def cut_a_clip(inputs: Inputs, run: Run, **options: object) -> ClipResult:
+def cut_a_clip(inputs: Inputs, run: Run, **options: Any) -> ClipResult:  # noqa: ANN401  (clip's own keywords)
     """One clip of section one, over the whole second the fake encoder says the section runs for."""
-    settings: dict[str, object] = {"section": 1, "start": 0.0, "end": 0.8, "out": Path("media/answer.mp4")}
+    settings: dict[str, Any] = {"section": 1, "start": 0.0, "end": 0.8, "out": Path("media/answer.mp4")}
     settings.update(options)
-    return clip(inputs, run, **settings)  # type: ignore[arg-type]  (the test names the same keywords)
+    return clip(inputs, run, **settings)
 
 
 # ---- what it writes ------------------------------------------------------------------------------
