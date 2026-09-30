@@ -32,6 +32,7 @@ from decktalk.results import Voicing
 from decktalk.secret import Secret, redact, redacted, register, register_environment, secret_name
 from decktalk.settings import ALLOW_ANY_API_BASE, CONFIG_VARIABLE
 from decktalk.speech import http as _http
+from support.speech import alignment
 
 VALUE = "sk_sentinel_key_that_must_never_print"
 
@@ -238,15 +239,6 @@ scene = "2"
 CANARY_SCRIPT = "# Notes\n\n## 1. Open\n\nA bowl and a ball.\n\n## 2. Close\n\nThe ball rests.\n"
 
 
-def _alignment(text: str) -> dict[str, object]:
-    """A character clock for `text`, one tenth of a second per character, as the service spells it."""
-    return {
-        "characters": list(text),
-        "character_start_times_seconds": [round(n * 0.1, 3) for n in range(len(text))],
-        "character_end_times_seconds": [round((n + 1) * 0.1, 3) for n in range(len(text))],
-    }
-
-
 class FakeVoice:
     """A voice service on a local socket, which answers from a script of hostile replies and then speaks.
 
@@ -264,7 +256,7 @@ class FakeVoice:
     def spoken(self, request: Request) -> Response:
         # A redirect turns the POST into a GET with no body, and the landing still speaks.
         text = (request.get_json(silent=True) or {}).get("text", "moved")
-        body = {"audio_base64": base64.b64encode(b"mp3").decode(), "alignment": _alignment(text)}
+        body = {"audio_base64": base64.b64encode(b"mp3").decode(), "alignment": alignment(text)}
         return Response(json.dumps(body), 200, content_type="application/json")
 
     def speak(self, request: Request) -> Response:

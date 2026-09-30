@@ -19,6 +19,7 @@ from decktalk.settings import ALLOW_ANY_API_BASE
 from decktalk.speech import PROVIDERS, SpeechRequest, VoiceContext, get_provider
 from decktalk.speech import http as _http
 from decktalk.speech.elevenlabs import ElevenLabs, check_api_base, words_from_alignment
+from support.speech import alignment
 
 SENTINEL = "sk_sentinel_key_that_must_never_print"
 VOICE = "Xb7hH8MSUJpSbSDYk0k2"
@@ -27,15 +28,6 @@ BASE = "https://api.elevenlabs.io/v1"
 
 SPOKEN = 'Hi <break time="0.7s" /> there, world.'
 """What the script asks for, with the break tag the voice honours and never says."""
-
-
-def alignment(text: str, *, per_char: float = 0.1) -> dict[str, object]:
-    """A character alignment of `text` at a fixed pace, which is what the endpoint answers with."""
-    return {
-        "characters": list(text),
-        "character_start_times_seconds": [round(i * per_char, 3) for i in range(len(text))],
-        "character_end_times_seconds": [round((i + 1) * per_char, 3) for i in range(len(text))],
-    }
 
 
 REPLY = {"audio_base64": base64.b64encode(AUDIO).decode(), "alignment": alignment(SPOKEN)}
