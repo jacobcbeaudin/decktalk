@@ -11,11 +11,11 @@ and a cue anchored to the section's own start stays at zero.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Container, Mapping, Sequence
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from decktalk.files import json_text
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs.cues import SECTION_END, SECTION_START, Cue, CuedSection, Spoken, norm
 from decktalk.pipeline import Stage
@@ -127,7 +127,7 @@ def phrase_fix(cue: Cue, phrase: str, cues_file: Path | None, lines: Sequence[st
     if cues_file is None or cue.line is None or not 1 <= cue.line <= len(lines):
         return None
     written = lines[cue.line - 1]
-    old, new = f'"on": {json.dumps(cue.on)}', f'"on": {json.dumps(phrase)}'
+    old, new = f'"on": {json_text(cue.on)}', f'"on": {json_text(phrase)}'
     if written.count(old) != 1:
         return None
     return EditFix(

@@ -17,12 +17,12 @@ left on disk and `check` calls it with the catalogs it read live, and both reach
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from decktalk.files import json_text
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs.cues import CuedSection
 from decktalk.inputs.document import PageSection
@@ -215,7 +215,7 @@ def _create_findings(declared: Mapping[int, Sequence[str]], *, where: Path, stag
             "each waiting for the phrase you write in its `on`."
         ),
         applicability=Applicability.SAFE,
-        edits=(Edit(file=where, line=1, old=None, new=json.dumps(document, indent=JSON_INDENT)),),
+        edits=(Edit(file=where, line=1, old=None, new=json_text(document, indent=JSON_INDENT)),),
     )
     return [
         judge(
@@ -258,7 +258,7 @@ def _by_hand(number: int, wires: Sequence[str], *, where: Path) -> EditFix:
     A hand-written `cues.json` may be laid out any way its author likes, and an edit that guessed
     where a row goes would be worse than an edit nobody made.
     """
-    rows = ", ".join(json.dumps({"cue": wire, "on": EMPTY_PHRASE}) for wire in wires)
+    rows = ", ".join(_row(wire) for wire in wires)
     return EditFix(
         title=f"Add these row(s) to section {number} of {where.as_posix()}: {rows}",
         applicability=Applicability.DISPLAY,
@@ -282,7 +282,7 @@ def _place(text: str, number: int, wires: Sequence[str]) -> Placement | None:
         if not match:
             continue
         indent = match.group("indent") + "  "
-        rows = [json.dumps({"cue": wire, "on": EMPTY_PHRASE}) for wire in wires]
+        rows = [_row(wire) for wire in wires]
         if "]" in line:
             inner = line[line.index("[") + 1 : line.rindex("]")].strip()
             kept = [*rows, inner] if inner else rows
@@ -310,11 +310,16 @@ def _new_block(lines: Sequence[str], number: int, wires: Sequence[str]) -> Place
     if opened is None or match is None:
         return None
     indent = match.group("indent") + "  "
-    rows = f",\n{indent}    ".join(json.dumps({"cue": wire, "on": EMPTY_PHRASE}) for wire in wires)
+    rows = f",\n{indent}    ".join(_row(wire) for wire in wires)
     after = next((line.strip() for line in lines[opened + 1 :] if line.strip()), "")
     comma = "" if after.startswith("}") else ","
     block = f'{indent}"{number}": {{\n{indent}  "cues": [\n{indent}    {rows}\n{indent}  ]\n{indent}}}{comma}'
     return Placement(line=opened + 2, replaces=None, text=block)
+
+
+def _row(wire: str) -> str:
+    """One new row, spaced the way the file this module writes spaces a row, waiting for its phrase."""
+    return f'{{"cue": {json_text(wire)}, "on": {json_text(EMPTY_PHRASE)}}}'
 
 
 def _section_line(lines: Sequence[str], number: int) -> int | None:

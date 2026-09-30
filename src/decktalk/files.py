@@ -7,7 +7,8 @@ every target an earlier move already replaced, so a fix never reports a refusal 
 half changed.
 
 This module sits below every layer, because the settings file and the files a fix edits are
-replaced by the same rule and the settings layer cannot reach up into the machine.
+replaced by the same rule and the settings layer cannot reach up into the machine. It also holds the
+one way DeckTalk writes JSON text that no digest is taken over, which every layer shares.
 """
 
 from __future__ import annotations
@@ -16,6 +17,8 @@ import secrets
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
+
+from pydantic_core import to_json
 
 DRAFT_TOKEN_BYTES = 8
 """The random bytes in a draft's name, which is enough that no file already in the project carries it."""
@@ -65,4 +68,15 @@ def _move_over(drafts: Mapping[Path, Path]) -> None:
         raise
 
 
-__all__ = ["replace_all"]
+def json_text(value: object, *, indent: int | None = None) -> str:
+    """One value as JSON text, written by pydantic-core, whose serializer is Rust.
+
+    Non-ASCII text is kept as it is, and a value JSON has no spelling for is written as its text. A
+    digest is never taken over this text, because it is not the standard library's spelling: it
+    puts no space between items, sorts no keys and escapes no non-ASCII character, so every key and
+    every file a key reads keeps `json.dumps`.
+    """
+    return to_json(value, indent=indent, fallback=str).decode("utf-8")
+
+
+__all__ = ["json_text", "replace_all"]

@@ -478,7 +478,7 @@ def test_an_unset_names_every_key_the_file_no_longer_sets() -> None:
 
 
 @pytest.mark.parametrize(
-    ("value", "shown"), [(True, "true"), (None, "null"), (1.5, "1.5"), (["a", "b"], '["a", "b"]'), ("plain", "plain")]
+    ("value", "shown"), [(True, "true"), (None, "null"), (1.5, "1.5"), (["a", "b"], '["a","b"]'), ("plain", "plain")]
 )
 def test_a_settings_value_prints_in_the_spelling_config_set_accepts(value: object, shown: str) -> None:
     got = ConfigGetResult(

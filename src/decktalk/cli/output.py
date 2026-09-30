@@ -12,7 +12,6 @@ error block is the same block, and nothing prints a second vocabulary for a read
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -28,6 +27,7 @@ from rich.text import Text
 from decktalk.captions import clock
 from decktalk.errors import ErrorInfo
 from decktalk.events import Event, Fetch, Log, Progress, RunStart, StageDone, StageStart
+from decktalk.files import json_text
 from decktalk.findings import Applicability, Certainty, Finding, Location
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
@@ -478,7 +478,7 @@ def _config_explain(result: ConfigExplainResult) -> Iterable[RenderableType]:
 
 def _scalar(value: object) -> str:
     """One settings value as a row prints it, which is JSON's own spelling for everything but a string."""
-    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    return value if isinstance(value, str) else json_text(value)
 
 
 RENDERERS: dict[type[Result], Callable[[Any], Iterable[RenderableType]]] = {

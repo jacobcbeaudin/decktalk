@@ -12,6 +12,7 @@ from decktalk.stages.cue.resolve import (
     ambiguity,
     anchor_time,
     nearest_phrase,
+    phrase_fix,
     resolve_cue,
     resolve_sections,
     short_section,
@@ -173,6 +174,15 @@ def test_an_unresolved_cue_names_its_line_and_carries_the_edit_that_resolves_it(
     (edit,) = found.fix.edits
     assert (edit.line, edit.old) == (2, '  {"cue": "1.1:a", "on": "in tin"}')
     assert edit.new == '  {"cue": "1.1:a", "on": "in ten"}'
+
+
+def test_a_phrase_written_with_accents_is_found_on_its_line_and_offered_its_edit() -> None:
+    """An author writes the letter itself, and a search that escaped it as \\u00eb never found the row."""
+    line = '  {"cue": "1.1:a", "on": "Zoë in tin"}'
+    fix = phrase_fix(Cue(cue="1.1:a", on="Zoë in tin", line=1), "Zoë in ten", Path("cues.json"), [line])
+    assert fix is not None
+    (edit,) = fix.edits
+    assert (edit.old, edit.new) == (line, '  {"cue": "1.1:a", "on": "Zoë in ten"}')
 
 
 def test_no_edit_is_offered_when_the_row_is_not_on_the_line_it_was_read_from() -> None:

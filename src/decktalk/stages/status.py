@@ -386,7 +386,7 @@ def _live_run(inputs: Inputs, run: Run, path: Path) -> LiveRun | None:
         for raw in path.read_text(encoding="utf-8").splitlines():
             if raw.strip():
                 lines.append(LINE.validate_json(raw))
-    except (OSError, ValidationError, json.JSONDecodeError) as refused:
+    except (OSError, ValidationError) as refused:
         run.note(f"{inputs.relative(path)} is not a run this version can read ({refused}).", level=Level.WARNING)
         return None
     if not lines or any(line.event == "run.done" for line in lines):

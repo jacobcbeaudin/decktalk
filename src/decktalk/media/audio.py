@@ -14,13 +14,14 @@ audio rather than a choice about a film.
 from __future__ import annotations
 
 import array
-import json
 import math
 import re
 import shutil
 import wave
 from dataclasses import dataclass
 from pathlib import Path
+
+from pydantic_core import from_json
 
 from ..errors import ToolError
 from ..settings import CLICK_LEVEL_DBFS
@@ -216,7 +217,7 @@ def measure_loudness(path: Path, *, i: float, tp: float, lra: float) -> Loudness
 
     # loudnorm prints its measurement as the last JSON object on stderr, with every number a string.
     try:
-        read = json.loads(err[err.rindex("{") : err.rindex("}") + 1])
+        read = from_json(err[err.rindex("{") : err.rindex("}") + 1])
     except ValueError as exc:
         raise ToolError(f"loudnorm printed no measurement for {path.name}.") from exc
     return Loudness(

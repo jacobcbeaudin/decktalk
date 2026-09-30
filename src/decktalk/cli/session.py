@@ -12,7 +12,6 @@ A prompt an agent cannot answer and a flag that does not exist are the same fail
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -29,6 +28,7 @@ from decktalk.cli import output
 from decktalk.cli.options import FailOn, When, pairs
 from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorCode, ErrorInfo
 from decktalk.events import Events
+from decktalk.files import json_text
 from decktalk.findings import Certainty, Code, Finding
 from decktalk.machine import Machine
 from decktalk.project import Project
@@ -295,7 +295,7 @@ class Session:
         `schema` set to 2 inside a document about schemas is unreadable.
         """
         self._said = True
-        self._stdout(json.dumps(contract, indent=2, sort_keys=False, default=str))
+        self._stdout(json_text(contract, indent=2))
         return 0
 
     def _stdout(self, text: str) -> None:

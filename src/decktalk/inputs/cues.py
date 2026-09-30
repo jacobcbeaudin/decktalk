@@ -25,6 +25,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
+from pydantic_core import from_json
+
 from decktalk.errors import InputError
 from decktalk.findings import Location
 from decktalk.inputs.document import fill
@@ -147,8 +149,8 @@ def phrase_lines(text: str) -> list[tuple[str, int]]:
     found: list[tuple[str, int]] = []
     for match in PHRASE_KEY.finditer(text):
         try:
-            phrase = json.loads(match.group(1))
-        except json.JSONDecodeError:
+            phrase = from_json(match.group(1))
+        except ValueError:
             continue
         found.append((phrase, text.count("\n", 0, match.start()) + 1))
     return found
