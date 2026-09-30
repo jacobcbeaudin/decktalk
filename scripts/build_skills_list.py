@@ -18,6 +18,8 @@ import re
 import sys
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -31,26 +33,14 @@ MARKERS = ("{/* skills:start */}", "{/* skills:end */}")
 
 
 def front_matter(text: str) -> dict[str, str]:
-    """The skill's front matter, with one level of nesting flattened and a folded value joined.
+    """The skill's front matter as an agent's YAML loader reads it, with `metadata` lifted beside `name`.
 
     `metadata.ends_with` arrives as `ends_with`, because the front matter's keys are fixed and a
-    page-only line lives under `metadata` rather than beside `name` and `description`.
+    page-only line lives under `metadata` rather than beside `name` and `description`. A value that
+    is not valid YAML stops the run here, because every harness that loads the skill would refuse it.
     """
-    head = text[4:].partition("\n---\n")[0]
-    doc: dict[str, str] = {}
-    key = ""
-    for line in head.splitlines():
-        nested = re.match(r"^(\s+)([a-zA-Z][\w-]*):\s*(.*)$", line)
-        if re.match(r"^[a-zA-Z][\w-]*:", line):
-            key, _, value = line.partition(":")
-            key = key.strip()
-            doc[key] = value.strip()
-        elif nested:
-            key = nested.group(2)
-            doc[key] = nested.group(3).strip()
-        elif key and line.strip():
-            doc[key] = f"{doc[key]} {line.strip()}".strip()
-    return doc
+    doc = yaml.safe_load(text[4:].partition("\n---\n")[0])
+    return {**doc, **doc["metadata"]}
 
 
 def trigger(description: str) -> str:
