@@ -19,6 +19,7 @@ from decktalk.machine import Run
 from decktalk.media import ffmpeg
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages.assemble.cut import Rendered
+from support.fakes import FakeFfmpeg
 from support.projects import load_project
 from support.runs import RUN_ID, Watched, a_machine
 from support.takes import a_take, write_takes
@@ -214,7 +215,7 @@ def durations(monkeypatch: pytest.MonkeyPatch, by_name: dict[str, float], defaul
 
 
 @pytest.fixture
-def rendering(fake_ffmpeg, monkeypatch: pytest.MonkeyPatch):
+def rendering(fake_ffmpeg: FakeFfmpeg, monkeypatch: pytest.MonkeyPatch) -> FakeFfmpeg:
     """`fake_ffmpeg` whose outputs are not empty, because a published film is checked for content.
 
     The shared fixture writes a zero-byte file at each output, and `publish` refuses to rename an

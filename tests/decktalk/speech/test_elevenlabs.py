@@ -10,6 +10,7 @@ import base64
 import io
 import json
 import urllib.error
+import urllib.request
 from email.message import Message
 from typing import Any
 
@@ -44,11 +45,12 @@ def answers(monkeypatch: pytest.MonkeyPatch, reply: object, *, status: int = 200
     """Answer every request with one canned reply, and give back what was asked, headers and all."""
     asked: list[dict[str, Any]] = []
 
-    def urlopen(request, *, timeout):  # urllib's own signature
+    def urlopen(request: urllib.request.Request, *, timeout: float) -> Answer:
+        assert isinstance(request.data, bytes), "the client sends its JSON body as bytes"
         asked.append(
             {
                 "url": request.full_url,
-                "body": json.loads(request.data.decode()),
+                "body": json.loads(request.data),
                 "headers": dict(request.headers),
                 "timeout": timeout,
             }

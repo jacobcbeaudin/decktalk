@@ -16,6 +16,7 @@ from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, StatusResult
 from decktalk.stages import status as stage
 from decktalk.stages.status import BUILT, next_command, source_of, status, voiced_text
+from support.fakes import FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
 from support.runs import a_run, notes
@@ -155,7 +156,9 @@ def test_a_page_section_names_the_scene_it_plays_with_the_runtime_s_own_word(tmp
     assert source_of(clip) == "media/b-roll.mp4"
 
 
-def test_a_section_is_voiced_when_a_take_of_its_current_text_is_on_disk(tmp_path: Path, fake_ffmpeg) -> None:
+def test_a_section_is_voiced_when_a_take_of_its_current_text_is_on_disk(
+    tmp_path: Path, fake_ffmpeg: FakeFfmpeg
+) -> None:
     inputs = a_project(tmp_path)
     take_on_disk(inputs)
     result = status(inputs, a_run(tmp_path))
@@ -315,7 +318,7 @@ def test_an_events_file_this_version_cannot_read_is_skipped_with_a_line(tmp_path
 # ---- the film ------------------------------------------------------------------------------------
 
 
-def test_the_built_film_is_measured_and_an_unbuilt_one_is_null(tmp_path: Path, fake_ffmpeg) -> None:
+def test_the_built_film_is_measured_and_an_unbuilt_one_is_null(tmp_path: Path, fake_ffmpeg: FakeFfmpeg) -> None:
     inputs = a_project(tmp_path)
     assert status(inputs, a_run(tmp_path)).film is None
     inputs.workspace.film.parent.mkdir(parents=True, exist_ok=True)
