@@ -35,7 +35,7 @@ import { warn, warnings } from "./warn.ts";
  * The bundle's first line names the engine version from the project file, and release-please writes
  * both, so the version a page reports and the version its file names are the same.
  */
-const VERSION = "0.5.0"; // x-release-please-version
+const VERSION = "0.6.0-rc1"; // x-release-please-version
 
 /** How long the page waits for a promise its author handed it before it is drawn without it. */
 const GATE_SECONDS = 5;
