@@ -26,14 +26,15 @@ from decktalk.captions import (
     Said,
     TranscriptSection,
     caption_cues,
+    chapters_text,
     display_words,
-    write_srt,
-    write_transcript,
-    write_vtt,
+    srt_text,
+    transcript_html,
+    vtt_text,
 )
-from decktalk.captions import write_chapters as write_chapter_file
 from decktalk.errors import DeckTalkError, ToolError
 from decktalk.events import Level
+from decktalk.files import replace_all
 from decktalk.inputs import ClipSection, Inputs, PageSection
 from decktalk.machine import Run
 from decktalk.media import browser, ffmpeg
@@ -224,9 +225,9 @@ def build_chapters(rows: list[Rendered], titles: Mapping[int, str]) -> list[Chap
 
 def write_caption_files(paths: Mapping[str, Path], cues: list[CaptionCue], chapters: list[Chapter]) -> None:
     """The SubRip, the WebVTT and the ffmetadata chapters, so nothing ever writes half of them."""
-    write_srt(paths["srt"], cues)
-    write_vtt(paths["vtt"], cues)
-    write_chapter_file(paths["chapters"], chapters)
+    replace_all(
+        {paths["srt"]: srt_text(cues), paths["vtt"]: vtt_text(cues), paths["chapters"]: chapters_text(chapters)}
+    )
 
 
 def mux_chapters(src: Path, chapters: Path, dst: Path, language: str) -> None:
@@ -397,12 +398,8 @@ def publish(inputs: Inputs, work: Path, paths: Mapping[str, Path]) -> Path | Non
 
 def write_transcript_page(inputs: Inputs, path: Path, cuts: Cuts, texts: Mapping[int, str]) -> None:
     """The media alternative: one page with a heading per chapter, the speech and every reveal."""
-    write_transcript(
-        path,
-        inputs.workspace.name,
-        transcript_sections(inputs, cuts, texts),
-        language=inputs.document.language,
-    )
+    sections = transcript_sections(inputs, cuts, texts)
+    replace_all({path: transcript_html(inputs.workspace.name, sections, language=inputs.document.language)})
 
 
 __all__ = [

@@ -17,12 +17,12 @@ from .files import (
     Chapter,
     Said,
     TranscriptSection,
+    chapters_text,
     clock,
     ffmetadata_escape,
-    write_chapters,
-    write_srt,
-    write_transcript,
-    write_vtt,
+    srt_text,
+    transcript_html,
+    vtt_text,
 )
 from .layout import CAPTION_MAX_CHARS, CaptionCue, caption_cues, display_words
 
@@ -36,8 +36,8 @@ __all__ = [
     "clock",
     "display_words",
     "ffmetadata_escape",
-    "write_chapters",
-    "write_srt",
-    "write_transcript",
-    "write_vtt",
+    "chapters_text",
+    "srt_text",
+    "transcript_html",
+    "vtt_text",
 ]

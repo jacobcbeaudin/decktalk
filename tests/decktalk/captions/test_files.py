@@ -5,8 +5,8 @@ from __future__ import annotations
 from hypothesis import given
 from hypothesis import strategies as st
 
-from decktalk.captions import CaptionCue, Chapter, Said, TranscriptSection, write_chapters, write_srt, write_vtt
-from decktalk.captions.files import clock, ffmetadata_escape, write_transcript
+from decktalk.captions import CaptionCue, Chapter, Said, TranscriptSection, chapters_text, srt_text, vtt_text
+from decktalk.captions.files import clock, ffmetadata_escape, transcript_html
 
 CUES = [
     CaptionCue(start=0.5, end=2.25, lines=("A first block,", "a second beside it.")),
@@ -14,18 +14,14 @@ CUES = [
 ]
 
 
-def test_srt_numbers_every_cue_and_stamps_it_with_a_comma(tmp_path):
-    path = tmp_path / "f.srt"
-    write_srt(path, CUES)
-    text = path.read_text(encoding="utf-8")
+def test_srt_numbers_every_cue_and_stamps_it_with_a_comma():
+    text = srt_text(CUES)
     assert text.startswith("1\n00:00:00,500 --> 00:00:02,250\nA first block,\na second beside it.\n")
     assert "2\n00:00:02,500 --> 00:00:04,000\n[ball bounces]\n" in text
 
 
-def test_vtt_opens_with_its_header_and_stamps_with_a_full_stop(tmp_path):
-    path = tmp_path / "f.vtt"
-    write_vtt(path, CUES)
-    text = path.read_text(encoding="utf-8")
+def test_vtt_opens_with_its_header_and_stamps_with_a_full_stop():
+    text = vtt_text(CUES)
     assert text.startswith("WEBVTT\n\n00:00:00.500 --> 00:00:02.250\n")
 
 
@@ -44,10 +40,8 @@ def test_any_title_survives_the_ffmetadata_escape(title):
     assert ffmetadata_read(ffmetadata_escape(title)) == title
 
 
-def test_a_chapter_title_is_written_escaped(tmp_path):
-    path = tmp_path / "f.txt"
-    write_chapters(path, [Chapter(0.0, 2.0, "One = two")])
-    text = path.read_text(encoding="utf-8")
+def test_a_chapter_title_is_written_escaped():
+    text = chapters_text([Chapter(0.0, 2.0, "One = two")])
     assert text.startswith(";FFMETADATA1")
     assert "START=0\nEND=2000\ntitle=One \\= two" in text
 
@@ -58,8 +52,7 @@ def test_the_clock_drops_the_hour_under_an_hour():
     assert clock(3600) == "1:00:00"
 
 
-def test_the_transcript_is_one_plain_page_a_viewer_can_read(tmp_path):
-    path = tmp_path / "film-transcript.html"
+def test_the_transcript_is_one_plain_page_a_viewer_can_read():
     sections = [
         TranscriptSection(
             chapter="Open & close",
@@ -72,8 +65,7 @@ def test_the_transcript_is_one_plain_page_a_viewer_can_read(tmp_path):
             chapter="B-roll", start=12.5, end=15.0, said=(Said("A clip plays here: media/b.mp4.", note=True),)
         ),
     ]
-    write_transcript(path, "film", sections, language="fr")
-    text = path.read_text(encoding="utf-8")
+    text = transcript_html("film", sections, language="fr")
     assert text.startswith("<!doctype html>") and '<html lang="fr">' in text
     assert "<title>film transcript</title>" in text
     assert "<h2>Open &amp; close</h2>" in text  # a title is escaped, never injected
