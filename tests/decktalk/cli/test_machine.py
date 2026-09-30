@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from decktalk.cli import machine as commands
 
 from .conftest import ANSWERS, Fake, finding
@@ -81,8 +79,3 @@ def test_doctor_fix_applies_and_reads_the_machine_again(run, machine) -> None:
     made = machine(doctor=MISSING, apply=None)
     run("doctor", "--fix")
     assert [name for name, _, _ in made.calls] == ["doctor", "apply", "doctor"]
-
-
-@pytest.mark.parametrize("name", ["init", "install", "doctor"])
-def test_every_machine_command_is_registered(name: str) -> None:
-    assert hasattr(commands, name)

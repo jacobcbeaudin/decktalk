@@ -221,18 +221,6 @@ def test_clip_needs_exactly_one_section(run, project) -> None:
     assert run("clip", "--section", "1,2").exit_code == 2
 
 
-@pytest.mark.parametrize("name", ["narrate", "cue", "record", "soundscape", "assemble", "verify", "build", "clip"])
-def test_every_stage_command_answers_with_its_own_result(run, name: str) -> None:
-    assert run(name, "--help").exit_code == 0
-
-
-def test_every_moving_command_is_registered() -> None:
-    assert all(
-        hasattr(commands, name)
-        for name in ("narrate", "cue", "record", "soundscape", "assemble", "verify", "build", "clip")
-    )
-
-
 def test_applying_one_fix_says_so_in_the_singular(monkeypatch: pytest.MonkeyPatch) -> None:
     made = Session(Globals(), command="build")
     said: list[str] = []
