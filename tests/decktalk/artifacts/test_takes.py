@@ -29,6 +29,7 @@ from decktalk.artifacts.takes import (
 )
 from decktalk.errors import NotBuiltError
 from support.paths import DATA
+from support.takes import a_take
 
 INPUTS = json.loads((DATA / "take_hash.json").read_text(encoding="utf-8"))["inputs"]
 """The inputs the founder's takes were bought under, which the golden digests are held to."""
@@ -68,35 +69,19 @@ def test_a_placeholder_moves_with_its_pace_and_its_beat() -> None:
     assert first != faster
 
 
-def take(section: int, *, seconds: float, voiced: bool = True, lead: float = 0.0, tail: float = 0.0) -> Take:
-    return Take(
-        section=section,
-        key=f"{section:02d}",
-        chapter="",
-        hash=f"{section:016x}",
-        voiced=voiced,
-        word_count=2,
-        characters=10,
-        estimated_seconds=seconds,
-        duration_seconds=seconds,
-        speech_end_seconds=seconds,
-        sound_end_seconds=seconds,
-        lead_seconds=lead,
-        tail_seconds=tail,
-        spoken="hello there",
-    )
-
-
 INDEX = Takes(
     script="script.md",
     model=INPUTS["model"],
     output_format=INPUTS["output_format"],
-    sections=(take(1, seconds=2.0, lead=0.5, tail=0.7), take(2, seconds=3.0, lead=0.5, tail=0.7)),
+    sections=(
+        a_take(1, seconds=2.0, lead_seconds=0.5, tail_seconds=0.7),
+        a_take(2, seconds=3.0, lead_seconds=0.5, tail_seconds=0.7),
+    ),
 )
 
 
 def test_a_take_is_named_by_its_digest() -> None:
-    assert take(1, seconds=1.0).file == take_file(f"{1:016x}")
+    assert a_take(1, seconds=1.0).file == take_file(f"{1:016x}")
 
 
 DIGEST = st.from_regex(TAKE_HASH, fullmatch=True)
@@ -120,7 +105,7 @@ def test_a_take_index_that_names_a_file_by_anything_but_a_digest_is_refused(tmp_
 
     One index file is written over again for every example, which is why the shared directory is safe.
     """
-    row = take(1, seconds=1.0).model_dump(mode="json") | {"hash": hostile}
+    row = a_take(1, seconds=1.0).model_dump(mode="json") | {"hash": hostile}
     index = INDEX.model_dump(mode="json") | {"sections": [row]}
     path = tmp_path / "takes.json"
     path.write_text(json.dumps(index), encoding="utf-8")
@@ -131,20 +116,20 @@ def test_a_take_index_that_names_a_file_by_anything_but_a_digest_is_refused(tmp_
 def test_both_kinds_of_digest_name_a_take() -> None:
     placeholder = PlaceholderInputs(words_per_minute=150.0, beat_seconds=0.35, text="hello").digest
     for digest in (inputs_for("hello").digest, placeholder):
-        assert Take.model_validate(take(1, seconds=1.0).model_dump() | {"hash": digest}).hash == digest
+        assert Take.model_validate(a_take(1, seconds=1.0).model_dump() | {"hash": digest}).hash == digest
 
 
 def test_a_section_runs_for_its_lead_its_sound_and_its_tail() -> None:
-    assert take(1, seconds=2.0, lead=0.5, tail=0.7).span_seconds == 3.2
+    assert a_take(1, seconds=2.0, lead_seconds=0.5, tail_seconds=0.7).span_seconds == 3.2
 
 
 def test_a_take_plays_to_its_sound_end_rather_than_to_its_last_byte() -> None:
-    row = take(1, seconds=2.0).model_copy(update={"duration_seconds": 2.6, "sound_end_seconds": 2.0})
+    row = a_take(1, seconds=2.0).model_copy(update={"duration_seconds": 2.6, "sound_end_seconds": 2.0})
     assert row.sound_seconds == 2.0
 
 
 def test_a_take_with_no_measured_sound_end_plays_whole() -> None:
-    row = take(1, seconds=2.0).model_copy(update={"sound_end_seconds": None})
+    row = a_take(1, seconds=2.0).model_copy(update={"sound_end_seconds": None})
     assert row.sound_seconds == 2.0
 
 
@@ -167,11 +152,11 @@ def test_a_section_with_no_take_has_no_place_on_the_clock() -> None:
 
 def test_an_index_is_estimated_when_any_row_is_a_placeholder() -> None:
     assert not INDEX.estimated
-    assert INDEX.model_copy(update={"sections": (take(1, seconds=1.0, voiced=False),)}).estimated
+    assert INDEX.model_copy(update={"sections": (a_take(1, seconds=1.0, voiced=False),)}).estimated
 
 
 def test_the_paid_sections_are_the_ones_a_placeholder_run_must_not_replace() -> None:
-    mixed = INDEX.model_copy(update={"sections": (take(1, seconds=1.0), take(2, seconds=1.0, voiced=False))})
+    mixed = INDEX.model_copy(update={"sections": (a_take(1, seconds=1.0), a_take(2, seconds=1.0, voiced=False))})
     assert mixed.voiced == (1,)
 
 
