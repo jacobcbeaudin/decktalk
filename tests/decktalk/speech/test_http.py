@@ -104,6 +104,24 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
+        if self.path.startswith("/say/"):
+            # A reply that arrives whole and is not the object a caller reads.
+            body = b"[1, 2, 3]" if self.path.endswith("/list") else b"<html>not json</html>"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path.startswith("/stall/"):
+            # A service that sends its headers and then stops, which is a read timeout on the caller's side.
+            server.stalled = getattr(server, "stalled", 0) + 1
+            if server.stalled <= int(self.path.removeprefix("/stall/")):
+                self.send_response(200)
+                self.send_header("Content-Length", "100")
+                self.end_headers()
+                self.wfile.flush()
+                server.release.wait(timeout=5)
+                return
         if self.path.startswith("/to/"):
             host = self.path.removeprefix("/to/").split("/")[0]
             self.send_response(302)
@@ -125,11 +143,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 @pytest.fixture
 def server():
     srv = _Server(("127.0.0.1", 0), _Handler)
+    srv.release = threading.Event()  # type: ignore[attr-defined]
     thread = threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": STOP_POLL_SECONDS}, daemon=True)
     thread.start()
     try:
         yield srv
     finally:
+        srv.release.set()  # type: ignore[attr-defined]
         srv.shutdown()
         srv.server_close()
 
@@ -202,14 +222,21 @@ def test_a_host_that_cannot_be_reached_is_worth_trying_again():
     assert "could not reach http://127.0.0.1:1/never" in str(caught.value)
 
 
-def test_a_reply_that_is_not_an_object_is_refused_rather_than_read(monkeypatch):
+def test_a_reply_that_is_not_an_object_is_refused_rather_than_read(server, waits):
     """The caller reads fields off what comes back, so a list or a number is refused where it arrives."""
-    monkeypatch.setattr(_http, "post_bytes", lambda *_a, **_k: b"[1, 2, 3]")
-    with pytest.raises(ProviderError, match="rather than an object"):
-        _http.post_json("https://x.test/a", {}, {}, timeout=5, retries=0)
-    monkeypatch.setattr(_http, "post_bytes", lambda *_a, **_k: b"<html>not json</html>")
-    with pytest.raises(ProviderError, match="not JSON"):
-        _http.post_json("https://x.test/a", {}, {}, timeout=5, retries=0)
+    port = server.server_port
+    with pytest.raises(ProviderError, match="rather than an object") as caught:
+        _http.post_json(f"http://127.0.0.1:{port}/say/list", {}, {}, timeout=5, retries=2)
+    assert caught.value.retryable is False and waits == []
+
+
+def test_a_reply_that_is_not_json_is_asked_for_again_as_its_flag_promises(server, waits):
+    """A gateway answering for the service is worth asking again, and the retry is made rather than promised."""
+    port = server.server_port
+    with pytest.raises(ProviderError, match="not JSON") as caught:
+        _http.post_json(f"http://127.0.0.1:{port}/say/html", {}, {}, timeout=5, retries=2)
+    assert caught.value.retryable is True
+    assert len(server.seen) == 3 and len(waits) == 2
 
 
 def test_every_call_carries_the_timeout_it_was_given(server, monkeypatch):
@@ -276,3 +303,46 @@ def test_the_wait_a_service_names_is_the_wait_taken_and_held_under_the_longest(s
     assert _http.wait_before(0, "86400") == _http.LONGEST_WAIT_SECONDS
     assert _http.wait_before(10, None) == _http.LONGEST_WAIT_SECONDS
     assert _http.wait_before(1, "a date rather than seconds") == 2 * _http.FIRST_WAIT_SECONDS
+
+
+def test_a_reply_that_stalls_is_a_provider_failure_asked_for_again(server, waits):
+    """A read timeout escaped the retry loop as a bare TimeoutError, which the CLI reported as a bug."""
+    port = server.server_port
+    assert _http.post_json(f"http://127.0.0.1:{port}/stall/1", {}, {}, timeout=1, retries=1) == {"ok": True}
+    assert server.stalled == 2 and len(waits) == 1
+
+
+@pytest.mark.usefixtures("waits")
+def test_a_reply_that_keeps_stalling_ends_as_a_provider_error_rather_than_a_timeout(server):
+    port = server.server_port
+    with pytest.raises(ProviderError, match="stopped answering") as caught:
+        _http.post_json(f"http://127.0.0.1:{port}/stall/9", {}, {}, timeout=1, retries=1)
+    assert caught.value.retryable is True
+    assert isinstance(caught.value.__cause__, TimeoutError)
+
+
+@pytest.mark.usefixtures("waits")
+def test_every_retry_says_how_long_it_waits_and_why_and_every_attempt_is_traced(server, caplog):
+    port = server.server_port
+    server.retry_after = "3"
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        _http.post_json(f"http://127.0.0.1:{port}/busy/2/429", {}, {"xi-api-key": SENTINEL}, timeout=5, retries=3)
+    records = [record for record in caplog.records if record.name == "decktalk.speech.http"]
+    retries = [record.data for record in records if record.levelname == "WARNING"]  # type: ignore[attr-defined]
+    attempts = [record.data for record in records if record.levelname == "DEBUG"]  # type: ignore[attr-defined]
+    assert [(said["wait_seconds"], said["wait_source"], said["attempt"]) for said in retries] == [
+        (3.0, _http.STATED, 1),
+        (3.0, _http.STATED, 2),
+    ]
+    assert [(said["status"], said["attempt"]) for said in attempts] == [(429, 1), (429, 2), (200, 3)]
+    assert attempts[-1]["path"] == "/busy/2/429" and attempts[-1]["bytes"] > 0
+    assert SENTINEL not in caplog.text
+
+
+@pytest.mark.usefixtures("waits")
+def test_a_wait_worked_out_by_doubling_says_so(server, caplog):
+    port = server.server_port
+    with caplog.at_level("WARNING", logger="decktalk"):
+        _http.post_json(f"http://127.0.0.1:{port}/busy/1/503", {}, {}, timeout=5, retries=1)
+    [record] = [record for record in caplog.records if record.name == "decktalk.speech.http"]
+    assert record.data["wait_source"] == _http.DOUBLED  # type: ignore[attr-defined]

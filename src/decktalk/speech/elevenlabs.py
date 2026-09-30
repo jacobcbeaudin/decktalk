@@ -150,7 +150,9 @@ class ElevenLabs:
         """
         encoded = reply.get("audio_base64")
         if not isinstance(encoded, str) or not encoded:
-            raise ProviderError("the voice answered with no audio in it.", retryable=True)
+            # The service answered, and it may have charged for the answer, so asking again could buy
+            # the same take twice. The refusal is therefore not worth trying again on its own.
+            raise ProviderError("the voice answered with no audio in it.")
         return base64.b64decode(encoded)
 
     def _words(self, reply: Mapping[str, Any]) -> list[Word]:

@@ -43,6 +43,8 @@ REPLY = {"audio_base64": base64.b64encode(AUDIO).decode(), "alignment": alignmen
 
 
 class Answer(io.BytesIO):
+    status = 200
+
     def __enter__(self) -> Answer:
         return self
 
@@ -192,7 +194,8 @@ def test_a_reply_with_no_audio_in_it_is_a_provider_failure_rather_than_an_empty_
     answers(monkeypatch, {"alignment": alignment("Hi")})
     with pytest.raises(ProviderError) as caught:
         provider().speak(request())
-    assert caught.value.retryable is True
+    # The service answered and may have charged for it, so nothing asks again and the flag says so.
+    assert caught.value.retryable is False
 
 
 def test_a_refusal_quotes_the_service_and_never_the_key(monkeypatch):
