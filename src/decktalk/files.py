@@ -69,8 +69,8 @@ def _move_over(drafts: Mapping[Path, Path]) -> None:
 
 
 def current_text(path: Path) -> str:
-    """The text a file holds before a change replaces it, which is empty when the change creates it."""
-    return path.read_text(encoding="utf-8") if path.exists() else ""
+    """The text a file holds, which is empty when there is no file there, as before a change creates it."""
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def json_text(value: object, *, indent: int | None = None) -> str:

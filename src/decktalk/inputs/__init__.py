@@ -32,6 +32,7 @@ from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words, conte
 from decktalk.artifacts.stills import Stills, still_key
 from decktalk.artifacts.words import words_file
 from decktalk.errors import InputError
+from decktalk.files import current_text
 from decktalk.inputs.cues import CuedSection, load_cues
 from decktalk.inputs.document import (
     ClipSection,
@@ -213,8 +214,7 @@ class Inputs:
 
     def cues_text(self) -> str:
         """`cues.json` as it is written, which a fix that rewrites one row is worked out on, or nothing."""
-        path = self.cues_path
-        return path.read_text(encoding="utf-8") if path.is_file() else ""
+        return current_text(self.cues_path)
 
     def markers(self) -> Markers | None:
         """The parsed `[mix] music_markers` file, or None when the project names none."""

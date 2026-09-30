@@ -32,6 +32,7 @@ from pathlib import Path
 from playwright.sync_api import Page
 
 from decktalk.errors import InputError
+from decktalk.files import current_text
 from decktalk.findings import Applicability, Code, Finding, Location, ProjectPath, RuntimeFix, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
@@ -106,7 +107,7 @@ def check(
     script = inputs.relative(inputs.script_path)
     segments = _segments(inputs, run)
     spoken = [one for one in segments if one.index not in inputs.document.clip_numbers and wanted(one.index)]
-    for found in script_findings(_markdown(inputs), spoken, script=script):
+    for found in script_findings(current_text(inputs.script_path), spoken, script=script):
         run.found(found)
 
     extra = _named_pages(inputs, paths)
@@ -136,12 +137,6 @@ def check(
 
 
 # ---- the files the author writes ---------------------------------------------------------------
-
-
-def _markdown(inputs: Inputs) -> str:
-    """The script as it is written, or nothing at all when the project has not got one."""
-    path = inputs.script_path
-    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
 def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
