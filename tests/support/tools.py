@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,9 @@ SUITE_MARKERS = ("browser", "media", "e2e", "scaffold", "platform")
 this fetched toolchain really do, so a runner that has fetched nothing would fail them and the
 default suite may not collect them. `tests/conftest.py` selects by these and nothing else is one.
 """
+
+FETCHED = ("media", "platform")
+"""The markers of the tests that run a fetched tool outside a run, so `tests/conftest.py` binds one for each."""
 
 FETCH = "uv run decktalk install"
 """The command that fetches every tool a suite needs, which is the command a person runs."""
@@ -49,3 +54,16 @@ def require(tools: tuple[str, ...], cwd: Path) -> None:
     """Fail the run when this machine lacks any of `tools`, naming each one and the command that fetches it."""
     if lacking := missing(tools, cwd):
         pytest.fail(absent(", ".join(lacking), "doctor reports no version"))
+
+
+@contextmanager
+def machine_tools() -> Iterator[None]:
+    """Bind this process's machine's cache and tools, as a run does.
+
+    A call to ffmpeg outside a run has no machine to say where the pinned build is kept, so a test,
+    or a fixture that runs the real tool, binds the toolchain of the machine this process would build.
+    """
+    from decktalk.machine import Machine  # noqa: PLC0415  (a bare run that fetches nothing never loads it)
+
+    with Machine.from_environment().toolchain.bound():
+        yield

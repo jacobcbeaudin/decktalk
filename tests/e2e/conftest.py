@@ -11,8 +11,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from decktalk.machine import Machine
-from support.tools import require
+from support.tools import machine_tools, require
 
 NEEDED = ("chromium", "ffmpeg")
 """What a build of any project in this directory reaches for, which `decktalk doctor` reports."""
@@ -25,7 +24,7 @@ def tools_present(tmp_path_factory: pytest.TempPathFactory) -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def machine_tools() -> Iterator[None]:
+def session_tools() -> Iterator[None]:
     """Bind this process's machine's cache and tools for the session, because the fixture runs ffmpeg outside a run."""
-    with Machine.from_environment().toolchain.bound():
+    with machine_tools():
         yield

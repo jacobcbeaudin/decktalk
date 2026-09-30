@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -10,7 +9,6 @@ import pytest
 from decktalk.artifacts import Takes
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.results import SectionKind, Substitute
@@ -355,18 +353,15 @@ def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch
 
 
 @pytest.fixture
-def real_ffmpeg(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def real_ffmpeg(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
     """The pinned ffmpeg this machine fetched, in place of the fake the rest of this module runs.
 
     The module fakes ffmpeg through this same monkeypatch, so undoing it once the fake is in place
-    restores the real tool, and
-    the machine's toolchain is bound as a run binds it, because what these tests measure is what the
-    real demuxer opens.
+    restores the real tool. Its tests are marked `media`, so the machine's toolchain is already bound
+    as a run binds it, because what these tests measure is what the real demuxer opens.
     """
     request.getfixturevalue("fake_ffmpeg")
     monkeypatch.undo()
-    with Machine.from_environment().toolchain.bound():
-        yield
 
 
 def _film(path: Path) -> Path:

@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.machine import Machine
 from decktalk.media import ffmpeg, frames
 from support.media_cards import FPS, PANEL_PERCENT, H, W, write_card
+from support.tools import machine_tools
 
 pytestmark = pytest.mark.media
 
@@ -20,9 +20,9 @@ pytestmark = pytest.mark.media
 def card(tmp_path_factory) -> Path:
     """The card every test here reads, written once under the machine's own tools.
 
-    A module fixture is set up before the per-test binding in `conftest.py`, so it binds for itself.
+    A module fixture is set up before the per-test binding in `tests/conftest.py`, so it binds for itself.
     """
-    with Machine.from_environment().toolchain.bound():
+    with machine_tools():
         return write_card(tmp_path_factory.mktemp("media") / "card.mp4")
 
 

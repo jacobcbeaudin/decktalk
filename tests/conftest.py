@@ -10,10 +10,12 @@ used to admit the five-minute scaffold build and `-m unit` used to select nothin
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 from hypothesis import settings
 
-from support.tools import SUITE_MARKERS
+from support.tools import FETCHED, SUITE_MARKERS, machine_tools
 
 pytest_plugins = ["pytester"]
 
@@ -69,3 +71,13 @@ def httpserver_listen_address() -> tuple[str, int]:
     It also leaves `localhost` a second host on the same machine, which a redirect test needs.
     """
     return ("127.0.0.1", 0)
+
+
+@pytest.fixture(autouse=True)
+def fetched_tools(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Bind this process's machine's tools for every test that runs a fetched tool, and for no other."""
+    if not any(request.node.get_closest_marker(name) for name in FETCHED):
+        yield
+        return
+    with machine_tools():
+        yield
