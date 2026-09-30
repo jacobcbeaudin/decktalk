@@ -1510,29 +1510,35 @@ def write(
     )
 
 
-def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> ConfigUnsetResult:
-    """Take one key out of one file, so the layer below it decides again.
+def unset(path: Path, key: str, *more: str, scope: Scope, environ: Mapping[str, str]) -> ConfigUnsetResult:
+    """Take one key, or several, out of one file, so the layer below each decides again.
 
     This is the writer's opposite and it is built the same way: the would-be file is loaded whole
     before a byte lands, so a removal that breaks a relation between two keys never reaches the
     disk, and the document is edited rather than rewritten so the comments a person wrote around the
-    key survive. A key the file never stated is taken out of nothing and the call says so, which is
-    what lets an agent that cannot read the file call this twice.
+    key survive. Several keys are one edit and one write, so a table is removed whole or not at all.
+    A key the file never stated is taken out of nothing and the call says so, which is what lets an
+    agent that cannot read the file call this twice. `previous`, `effective` and `layer` describe
+    the first key.
     """
-    _scoped_key(key, scope, action="taken out of", rerun=f"decktalk config unset {key}")
+    keys = (key, *more)
+    for one in keys:
+        _scoped_key(one, scope, action="taken out of", rerun=f"decktalk config unset {one}")
     target = _target(path, scope)
     document = _document(current_text(target), path)
+    stating = [one for one in keys if stated(document, one) is not ABSENT]
     previous = stated(document, key)
-    if previous is not ABSENT:
-        _take(document, key.split("."))
+    for one in stating:
+        _take(document, one.split("."))
+    if stating:
         text = tomlkit.dumps(document)
         validate(text, path, scope)
         replace_all({target: text})
     tree = _in_force(path, scope, {}, environ)
     return ConfigUnsetResult(
         ok=True,
-        written=() if previous is ABSENT else (path,),
-        keys=(key,),
+        written=(path,) if stating else (),
+        keys=keys,
         previous=None if previous is ABSENT else json_value(previous),
         scope=scope,
         file=path,

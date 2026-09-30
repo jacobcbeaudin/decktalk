@@ -138,9 +138,9 @@ def unset_key(
     `--all` says so, and on a terminal it is confirmed first.
 
     The removal itself is the settings layer's, because editing a validated file is library work and
-    a second editor here would be a second thing to keep true. A table is that call once per key the
-    file states, and the value that now applies is the first key's, because the three scalars
-    describe one key and `keys` names the rest.
+    a second editor here would be a second thing to keep true. A table is every key the file states
+    under it, removed in one write, and the value that now applies is the first key's, because the
+    three scalars describe one key and `keys` names the rest.
     """
     session = sessions.of(ctx)
     _named(key)
@@ -152,8 +152,7 @@ def unset_key(
         )
     going = _stating(path, key, asked=session.approve(whole or None, f"Remove everything {key} sets?"))
     with _told(session):
-        removed = [knobs.unset(path, one, scope=where, environ=session.machine.environ) for one in going]
-    return removed[0].model_copy(update={"keys": going})
+        return knobs.unset(path, *going, scope=where, environ=session.machine.environ)
 
 
 @command("explain", group=Group.CONTRACTS, to=config)

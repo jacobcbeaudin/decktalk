@@ -554,6 +554,16 @@ class TestTheRemover:
         assert removed.previous is None
         assert path.read_text(encoding="utf-8") == '[video]\npreset = "veryfast"\n'
 
+    def test_several_keys_are_taken_out_in_one_write_or_not_at_all(self, tmp_path: Path) -> None:
+        path = tmp_path / "decktalk.toml"
+        path.write_text('[video]\npreset = "veryfast"\ncrf = 20\n', encoding="utf-8")
+        with pytest.raises(InputError):
+            unset(path, "video.preset", "tools.ffmpeg", scope=Scope.PROJECT, environ={})
+        assert "preset" in path.read_text(encoding="utf-8")
+        removed = unset(path, "video.preset", "video.crf", scope=Scope.PROJECT, environ={})
+        assert removed.keys == ("video.preset", "video.crf") and removed.written == (path,)
+        assert path.read_text(encoding="utf-8") == "[video]\n"
+
     def test_a_removal_from_a_file_that_is_not_there_writes_no_file(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
         assert unset(path, "video.crf", scope=Scope.PROJECT, environ={}).previous is None
