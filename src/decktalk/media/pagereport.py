@@ -16,23 +16,15 @@ two names of a field sit beside each other, and `page.REPORT` is what holds the 
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from ..findings import Code, Model, RaisedBy
 from ..page import REPORT
 from . import MILLISECONDS
 
-PAGE = ConfigDict(frozen=True, extra="forbid", populate_by_name=True, serialize_by_alias=True)
-"""The configuration every row here uses, which refuses a field the page contract does not name."""
 
-MEASURED = ConfigDict(frozen=True, extra="allow", populate_by_name=True, serialize_by_alias=True)
-"""A measured scene's own configuration, which keeps what it does not name, because `pagescan` reads the rest."""
-
-
-class PageWarningRow(BaseModel):
+class PageWarningRow(Model):
     """One thing the page could not honour, as the code it carries and the sentence it printed."""
-
-    model_config = PAGE
 
     code: Code = Field(description="The page code this warning raises, which is what a check dispatches on.")
     message: str = Field(description="The sentence the page printed, which is written for a person to read.")
@@ -53,10 +45,8 @@ class PageWarningRow(BaseModel):
         return code
 
 
-class CueRow(BaseModel):
+class CueRow(Model):
     """One cue as the page ran it, in seconds on the narration clock."""
-
-    model_config = PAGE
 
     id: str = Field(description="The wire id of the cue that fired.")
     due: float = Field(description="The second the cue was due.")
@@ -67,10 +57,8 @@ class CueRow(BaseModel):
     after: float | None = Field(None, description="The second the frame after that one began, or null.")
 
 
-class WordRow(BaseModel):
+class WordRow(Model):
     """One line shown word by word, reported once its first word is on screen."""
-
-    model_config = PAGE
 
     text: str = Field(description="The opening of the line, which is enough to find it in the script.")
     cue_at: float = Field(alias="cueAt", description="The second the cue that started the line ran.")
@@ -79,19 +67,15 @@ class WordRow(BaseModel):
     first_shown: float = Field(alias="firstOn", description="The second the first word was drawn.")
 
 
-class FrameGap(BaseModel):
+class FrameGap(Model):
     """One gap between two animation frames longer than the recorder can absorb."""
-
-    model_config = PAGE
 
     at: float | None = Field(description="The second the gap ended, or null when it ended before t=0.")
     ms: int = Field(ge=0, description="How long the gap lasted.")
 
 
-class LongFrame(BaseModel):
+class LongFrame(Model):
     """One animation frame that took longer than a captured frame, with when it was presented."""
-
-    model_config = PAGE
 
     start: float | None = Field(description="The second the frame began, or null before t=0.")
     ms: int = Field(ge=0, description="How long the frame took.")
@@ -99,10 +83,8 @@ class LongFrame(BaseModel):
     presented: float | None = Field(None, description="The second the frame was presented, or null.")
 
 
-class Box(BaseModel):
+class Box(Model):
     """Where one element sits in the frame, in the picture's own pixels."""
-
-    model_config = PAGE
 
     x: float
     y: float
@@ -110,10 +92,8 @@ class Box(BaseModel):
     h: float
 
 
-class ElementRow(BaseModel):
+class ElementRow(Model):
     """One measured element of a slide, which is every element a slide draws whether or not it is cued."""
-
-    model_config = PAGE
 
     attrs: dict[str, str] = Field(default_factory=dict, description="Every contract attribute the element carries.")
     moments: dict[str, str] = Field(default_factory=dict, description="Each moment attribute against its wire id.")
@@ -122,7 +102,7 @@ class ElementRow(BaseModel):
     box: Box
 
 
-class MeasuredScene(BaseModel):
+class MeasuredScene(Model):
     """One scene of the catalog the page published, with the boxes the probe measured onto it.
 
     The catalog is the page's own document and `pagescan.py` is its reader, so what this model does
@@ -131,7 +111,8 @@ class MeasuredScene(BaseModel):
     own contract walker and no published name may be read as that one.
     """
 
-    model_config = MEASURED
+    # What a scene does not name is kept, because `pagescan` reads the rest of the catalog.
+    model_config = ConfigDict(extra="allow")
 
     scene: str = Field(description="The scene this entry is about.")
     elements: dict[str, tuple[ElementRow, ...]] = Field(
@@ -139,10 +120,8 @@ class MeasuredScene(BaseModel):
     )
 
 
-class PageReport(BaseModel):
+class PageReport(Model):
     """Everything one page said about itself, read once, at the boundary where the page stops being trusted."""
-
-    model_config = PAGE
 
     version: str | None = Field(None, description=REPORT["version"])
     mode: str | None = Field(None, description=REPORT["mode"])
@@ -170,7 +149,7 @@ class PageReport(BaseModel):
         return int(max((seen for seen in visible if seen > 0), default=0))
 
 
-ROWS: dict[str, type[BaseModel]] = {
+ROWS: dict[str, type[Model]] = {
     "warnings": PageWarningRow,
     "catalog": MeasuredScene,
     "cues": CueRow,
@@ -202,7 +181,7 @@ class Recording(Model):
     report: PageReport = Field(description="What the page said about itself, read once.")
 
 
-def _rows(field: str, given: object) -> tuple[list[BaseModel], list[str]]:
+def _rows(field: str, given: object) -> tuple[list[Model], list[str]]:
     """The rows of one list field that read, and a sentence for each that did not.
 
     A page that reports a row this contract cannot read has gone its own way, which is worth saying
@@ -211,7 +190,7 @@ def _rows(field: str, given: object) -> tuple[list[BaseModel], list[str]]:
     model = ROWS[field]
     if not isinstance(given, list):
         return [], [f"the page reported {field} as {type(given).__name__} rather than a list"]
-    kept: list[BaseModel] = []
+    kept: list[Model] = []
     refused: list[str] = []
     for index, row in enumerate(given):
         try:
