@@ -20,12 +20,14 @@ from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     RESULTS,
     BuildResult,
+    ConfigGetResult,
     ConfigSetResult,
     ConfigUnsetResult,
     CueCheck,
     ErrorResult,
     Layer,
     Scope,
+    SettingValue,
     VerifyResult,
     Voicing,
 )
@@ -473,3 +475,13 @@ def test_an_unset_names_every_key_the_file_no_longer_sets() -> None:
         file=Path("decktalk.toml"),
     )
     assert "decktalk.toml no longer sets video.crf, video.preset." in recorded(gone)
+
+
+@pytest.mark.parametrize(
+    ("value", "shown"), [(True, "true"), (None, "null"), (1.5, "1.5"), (["a", "b"], '["a", "b"]'), ("plain", "plain")]
+)
+def test_a_settings_value_prints_in_the_spelling_config_set_accepts(value: object, shown: str) -> None:
+    got = ConfigGetResult(
+        ok=True, key=SettingValue(key="verify.strict", value=value, default=value, layer=Layer.DEFAULT)
+    )
+    assert recorded(got) == f"verify.strict = {shown} (default)\n"

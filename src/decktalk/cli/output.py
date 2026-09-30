@@ -12,6 +12,7 @@ error block is the same block, and nothing prints a second vocabulary for a read
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -477,7 +478,7 @@ def _config_explain(result: ConfigExplainResult) -> Iterable[RenderableType]:
 
 def _scalar(value: object) -> str:
     """One settings value as a row prints it, which is JSON's own spelling for everything but a string."""
-    return value if isinstance(value, str) else repr(value)
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
 RENDERERS: dict[type[Result], Callable[[Any], Iterable[RenderableType]]] = {
