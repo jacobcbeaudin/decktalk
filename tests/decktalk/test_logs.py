@@ -16,7 +16,6 @@ from types import SimpleNamespace
 
 import pytest
 from filelock import FileLock
-from playwright.sync_api import Error as PlaywrightError
 from pydantic import TypeAdapter
 from pytest_httpserver import HTTPServer
 from werkzeug import Response
@@ -37,6 +36,7 @@ from decktalk.settings import ToolsConfig
 from decktalk.speech import http as _http
 from decktalk.stages.narrate import _in_pool
 from decktalk.toolchain import chromium_fetch
+from support.fakes import FakeChromium
 from support.logs import data_of
 from support.projects import write_project
 from support.runs import a_machine
@@ -374,19 +374,10 @@ def two_sections_fail(_run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -
 def browser_is_fetched_again(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
     executable = tmp / "chrome"
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
-    launched = type("Launched", (), {"version": "0.0.0.0"})()
-    tries: list[int] = []
-
-    def launch(**_options: object) -> object:
-        tries.append(1)
-        if len(tries) == 1:
-            raise PlaywrightError("error while loading shared libraries: libnss3.so")
-        return launched
-
-    chromium = SimpleNamespace(executable_path=str(executable), launch=launch)
+    chromium = FakeChromium(executable, refusal="error while loading shared libraries: libnss3.so", refusals=1)
     fetched = subprocess.CompletedProcess([], 0, b"", b"")
     monkeypatch.setattr(chromium_fetch.subprocess, "run", lambda cmd, **_kwargs: fetched)
-    browser.launch(SimpleNamespace(chromium=chromium), policy=browser.TRUSTED)  # type: ignore[arg-type]
+    browser.launch(chromium.driver(), policy=browser.TRUSTED)
 
 
 def run_is_cancelled(run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:

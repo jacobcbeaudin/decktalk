@@ -3,6 +3,7 @@
 A stage test runs the real stage. What it must not run is ffmpeg, Chromium and a paid voice, so
 ffmpeg and the voice are replaced at the one module attribute the stage reads, each fixture handing
 back the record of what the stage asked for, and `FakePage` is the page a browser seam hands a stage.
+`FakeChromium` stands one level lower, as the Playwright a launch is handed.
 Faking the seam rather than the stage is what keeps these tests about the stage: an argument list, a
 page call or a speech request that changes shape shows up here rather than passing unread.
 
@@ -12,8 +13,15 @@ here to type the fixture it asked for or to build one of its own.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
+
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import Playwright
 
 from decktalk.media import browser
 from decktalk.results import Word
@@ -105,3 +113,49 @@ class FakeVoice:
 
     def cache_key(self, request: SpeechRequest) -> str:  # noqa: ARG002  (the protocol names it)
         return self.name
+
+
+class BareBrowser:
+    """A launched Chromium, which opens pages that carry nothing and closes without a sound."""
+
+    version = "0.0.0.0"
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def new_page(self, **_kwargs: object) -> object:
+        return object()
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeChromium:
+    """`pw.chromium` as a launch uses it: an executable path, and a launch that needs the file there.
+
+    Each launch's options are kept in `asked`. A launch works when the file it would run is on disk,
+    which is what a fetch puts there. `refusal` is the other way a launch fails: the browser is on disk
+    and still will not start, for the first `refusals` launches or, when that is None, for every one.
+    """
+
+    def __init__(self, executable: Path, *, refusal: str = "", refusals: int | None = None) -> None:
+        self.executable_path = str(executable)
+        self.refusal, self.refusals = refusal, refusals
+        self.asked: list[dict[str, object]] = []
+
+    def launch(self, **options: object) -> BareBrowser:
+        self.asked.append(options)
+        target = Path(str(options.get("executable_path") or self.executable_path))
+        if not target.is_file():
+            raise PlaywrightError(f"Executable doesn't exist at {target}\nPlaywright was just installed")
+        if self.refusal and (self.refusals is None or len(self.asked) <= self.refusals):
+            raise PlaywrightError(self.refusal)
+        return BareBrowser()
+
+    def driver(self) -> Playwright:
+        """This Chromium inside the Playwright a launch is handed, typed as the one it stands in for."""
+        return cast("Playwright", SimpleNamespace(chromium=self))
+
+    def started(self) -> Callable[[], AbstractContextManager[Playwright]]:
+        """`sync_playwright` as a seam that starts this Chromium's driver, for code that opens its own."""
+        return lambda: nullcontext(self.driver())

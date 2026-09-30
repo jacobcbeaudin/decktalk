@@ -20,6 +20,7 @@ from decktalk.media import browser
 from decktalk.media.environment import child_environment
 from decktalk.media.origin import ORIGIN, Allowed, page_url
 from decktalk.settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
+from support.fakes import BareBrowser, FakeChromium
 from support.logs import data_of
 
 REPORTED = {
@@ -502,51 +503,23 @@ def test_the_page_policies_this_module_accepts_are_the_ones_the_setting_publishe
         browser.page_policy("mostly")
 
 
-class Launcher:
-    """Playwright's `chromium`, as far as a launch uses it: it records what it was asked and may refuse."""
-
-    def __init__(self, *, refuse: bool = False, installed: bool = True) -> None:
-        self.refuse = refuse
-        self.asked: list[dict[str, object]] = []
-        self.executable_path = __file__ if installed else "/nowhere/chromium"
-
-    def launch(self, **options: object) -> Launched:
-        self.asked.append(options)
-        if self.refuse:
-            raise PlaywrightError("No usable sandbox! Update your kernel.")
-        return Launched()
-
-
-class Launched:
-    """A launched browser that opens pages which carry nothing and closes without a sound."""
-
-    version = "0.0.0.0"
-
-    def new_page(self, **_kwargs: object) -> object:
-        return object()
-
-    def close(self) -> None:
-        """There is no process behind it to stop."""
-
-
-class Driver:
-    def __init__(self, launcher: Launcher) -> None:
-        self.chromium = launcher
+INSTALLED = Path(__file__)
+"""A file that is on disk, which is all a fake launch asks of the executable it would run."""
 
 
 def test_an_untrusted_page_gets_the_sandbox_a_proxy_that_answers_nothing_and_no_webrtc_udp():
-    launcher = Launcher()
-    browser.launch(Driver(launcher), policy=browser.UNTRUSTED)  # type: ignore[arg-type]
-    asked = launcher.asked[0]
+    chromium = FakeChromium(INSTALLED)
+    browser.launch(chromium.driver(), policy=browser.UNTRUSTED)
+    asked = chromium.asked[0]
     assert asked["chromium_sandbox"] is True
     assert asked["proxy"] == {"server": browser.DEAD_PROXY, "bypass": browser.EVERY_HOST}
     assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in asked["args"]  # type: ignore[operator]
 
 
 def test_a_trusted_page_keeps_the_machines_own_network_and_still_gets_a_scrubbed_environment():
-    launcher = Launcher()
-    browser.launch(Driver(launcher), policy=browser.TRUSTED)  # type: ignore[arg-type]
-    asked = launcher.asked[0]
+    chromium = FakeChromium(INSTALLED)
+    browser.launch(chromium.driver(), policy=browser.TRUSTED)
+    asked = chromium.asked[0]
     assert "proxy" not in asked and "chromium_sandbox" not in asked
     assert asked["env"] == child_environment()
 
@@ -554,29 +527,24 @@ def test_a_trusted_page_keeps_the_machines_own_network_and_still_gets_a_scrubbed
 def test_a_machine_that_cannot_run_the_sandbox_is_refused_and_never_falls_back(monkeypatch):
     """A fetch cannot give a machine a sandbox, so the refusal says what the machine needs instead."""
     monkeypatch.setattr(browser.chromium_fetch, "fetch_chromium", lambda: pytest.fail("must not fetch"))
-    launcher = Launcher(refuse=True)
+    chromium = FakeChromium(INSTALLED, refusal="No usable sandbox! Update your kernel.")
     with pytest.raises(ToolError, match="sandbox on") as raised:
-        browser.launch(Driver(launcher), policy=browser.UNTRUSTED)  # type: ignore[arg-type]
+        browser.launch(chromium.driver(), policy=browser.UNTRUSTED)
     assert "seccomp" in (raised.value.hint or "")
-    assert len(launcher.asked) == 1, "the sandbox was never dropped for a second try"
+    assert len(chromium.asked) == 1, "the sandbox was never dropped for a second try"
 
 
 def test_every_page_a_browser_opens_is_routed_by_the_policy_it_was_launched_under(monkeypatch, tmp_path):
     seen: list[bool] = []
     monkeypatch.setattr(browser, "route_pages", lambda *_a, trusted, **_k: seen.append(trusted))
     monkeypatch.setattr(browser, "instrument", lambda page: page)
-
-    @contextmanager
-    def playwright() -> Iterator[Driver]:
-        yield Driver(Launcher())
-
-    monkeypatch.setattr(browser, "sync_playwright", playwright)
+    monkeypatch.setattr(browser, "sync_playwright", FakeChromium(INSTALLED).started())
     allowed = Allowed.of(tmp_path, ["deck"])
     for policy in (browser.TRUSTED, browser.UNTRUSTED):
         with browser.chromium(policy=policy) as launched:
             browser.open_page(launched, allowed, width=10, height=10)  # type: ignore[arg-type]
     # A browser this module never launched is routed as a stranger's page.
-    browser.open_page(Launched(), allowed, width=10, height=10)  # type: ignore[arg-type]
+    browser.open_page(BareBrowser(), allowed, width=10, height=10)  # type: ignore[arg-type]
     assert seen == [True, False, False]
 
 

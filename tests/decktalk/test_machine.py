@@ -7,12 +7,10 @@ import logging
 import socket
 import subprocess
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from playwright.sync_api import Error as PlaywrightError
 
 from decktalk import machine as machine_module
 from decktalk.errors import ApprovalRequired, Cancel, Cancelled, ErrorCode, InputError
@@ -50,7 +48,7 @@ from decktalk.speech import VoiceContext, get_provider
 from decktalk.toolchain import assets, command_line
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
-from support.fakes import FakeVoice
+from support.fakes import BareBrowser, FakeChromium, FakeVoice
 from support.links import link
 from support.logs import data_of
 from support.paths import REPO
@@ -615,35 +613,13 @@ def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path) -> N
     assert result.bias_ms is None  # the bias is measured only when a caller asks
 
 
-def a_driver(executable: Path, launch: Callable[[], object]) -> type:
-    """A browser driver whose Chromium lives at `executable` and is launched by `launch`."""
-
-    class Driver:
-        chromium = SimpleNamespace(launch=launch, executable_path=str(executable))
-
-        def __enter__(self) -> Driver:
-            return self
-
-        def __exit__(self, *_exc: object) -> None:
-            return None
-
-    return Driver
-
-
 def test_the_browser_row_names_where_its_chromium_lives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A person told the browser is there still has to find it, so doctor names its path."""
     executable = tmp_path / "chrome"
     executable.write_bytes(b"")
-
-    class Launched:
-        version = "140.0"
-
-        def close(self) -> None:
-            return None
-
-    monkeypatch.setattr("playwright.sync_api.sync_playwright", a_driver(executable, Launched))
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(executable).started())
     row = a_machine(tmp_path)._browser_row()
-    assert (row.version, row.path) == ("140.0", executable)
+    assert (row.version, row.path) == (BareBrowser.version, executable)
 
 
 def test_a_browser_that_will_not_launch_is_a_row_and_a_warning_that_says_why(
@@ -651,10 +627,10 @@ def test_a_browser_that_will_not_launch_is_a_row_and_a_warning_that_says_why(
 ) -> None:
     """The row can only say there is no browser, so the first line of the launch error goes on the log."""
 
-    def refuse() -> object:
-        raise PlaywrightError("Executable doesn't exist\nat /nowhere/chrome")
-
-    monkeypatch.setattr("playwright.sync_api.sync_playwright", a_driver(tmp_path / "chrome", refuse))
+    executable = tmp_path / "chrome"
+    executable.write_bytes(b"")
+    refused = FakeChromium(executable, refusal="Executable doesn't exist\nat /nowhere/chrome")
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", refused.started())
     row = a_machine(tmp_path)._browser_row()
     assert (row.version, row.path) == (None, None)
     [said] = [record for record in caplog.records if record.name == "decktalk.machine"]
