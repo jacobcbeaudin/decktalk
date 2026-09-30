@@ -26,12 +26,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, get_args
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from decktalk.errors import ErrorInfo
 from decktalk.findings import Finding, Model, ProjectPath
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Elapsed, Run, SectionNumber, Spend
+from decktalk.secret import redacted
 
 MOMENT = "Which moment this line reports, which is what a reader dispatches on."
 """The one sentence the discriminator publishes, so all twelve names describe themselves alike."""
@@ -63,6 +64,12 @@ class Event(Model):
     time: datetime = Field(description="When this happened, as an instant.", json_schema_extra={"volatile": True})
     seq: int = Field(ge=0, description="This line's place in its run, counting from zero.")
     run: Run
+
+    @model_validator(mode="before")
+    @classmethod
+    def _redacted(cls, given: Any) -> Any:  # noqa: ANN401  (whatever the line is being built from)
+        """Take every registered secret out of the line before it exists, whichever path wrote it."""
+        return redacted(given)
 
 
 class RunStart(Event):

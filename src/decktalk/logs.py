@@ -20,13 +20,14 @@ renderer that logs cannot recurse into the stream it is rendering.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 
 from decktalk.events import DELIVERING, Level
 from decktalk.pipeline import Stage
+from decktalk.secret import redact, redacted
 
 LOGGER = logging.getLogger("decktalk")
 """The parent of every module logger in the package, which is where the one handler sits."""
@@ -99,6 +100,25 @@ def source_of(name: str) -> str:
     return name.removeprefix(PREFIX)
 
 
+def _redact(record: logging.LogRecord) -> None:
+    """Take every registered secret out of the record itself, before it reaches a host's own handlers.
+
+    This handler sits on the package's logger, which every record passes before the root logger's
+    handlers, so a host's formatter prints the sentence the run's line holds. A record whose message
+    cannot be rendered is left for the handler that renders it to count.
+    """
+    try:
+        said = record.getMessage()
+    except Exception:  # noqa: BLE001  (a record that cannot be rendered is counted where it is emitted)
+        return
+    cleaned = redact(said)
+    if cleaned != said:
+        record.msg, record.args = cleaned, None
+    given = getattr(record, "data", None)
+    if isinstance(given, Mapping):
+        record.data = redacted(dict(given))
+
+
 class RunHandler(logging.Handler):
     """The one handler on the `decktalk` logger, which turns a record into a line of the bound run.
 
@@ -117,6 +137,7 @@ class RunHandler(logging.Handler):
         record.decktalk_run = place.run
         record.decktalk_stage = place.stage.value if place.stage is not None else None
         record.decktalk_section = place.section
+        _redact(record)
         return super().filter(record)
 
     def handle(self, record: logging.LogRecord) -> bool:

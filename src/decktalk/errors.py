@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import threading
 from enum import Enum
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from decktalk.findings import DOCS, Location, Model
+from decktalk.secret import redact, redacted
 
 REFUSED = 2
 """A command line DeckTalk refused, which a retry as written would refuse again."""
@@ -79,8 +80,10 @@ class DeckTalkError(Exception):
     code: ClassVar[ErrorCode]
 
     def __init__(self, message: str, *, hint: str | None = None, location: Location | None = None) -> None:
-        super().__init__(message)
-        self.hint = hint
+        # A message quotes what a tool or a service said, so every registered secret is taken out of it
+        # before the exception exists, and `str()` of it, its hint and its error object hold none.
+        super().__init__(redact(message))
+        self.hint = redact(hint) if hint is not None else None
         self.location = location
 
 
@@ -179,6 +182,12 @@ class ErrorInfo(Model):
     hint: str | None = Field(None, description="The whole command that would clear this, or null.")
     location: Location | None = Field(None, description="The file and line to open, or null.")
     docs: str = Field(description="The docs page for this code.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _redacted(cls, given: Any) -> Any:  # noqa: ANN401  (whatever the error is being built from)
+        """Take every registered secret out of the error before it exists, whichever path built it."""
+        return redacted(given)
 
     @classmethod
     def of(cls, error: DeckTalkError) -> ErrorInfo:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import logging
 import os
 import socket
 import subprocess
@@ -433,6 +434,19 @@ def a_host(tmp_path: Path, **choices: object) -> Machine:
         **choices,
     }
     return Machine.of(**values)  # type: ignore[arg-type]
+
+
+def test_a_credential_a_host_hands_its_machine_never_reaches_a_line(tmp_path: Path) -> None:
+    """A host passes its key in the machine's environment rather than in `.env`, and no `Secret` wraps it there."""
+    canary = "sk_host_canary_5d0c2a9e61"
+    here = a_host(tmp_path, environ={"ELEVENLABS_API_KEY": canary, "HOST_DB_PASSWORD": "pw_host_canary_8e4b"})
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here.run() as run:
+        run.note(f"sent {canary} with pw_host_canary_8e4b")
+        logging.getLogger("decktalk.speech.http").debug("headers %s", {"xi-api-key": canary})
+    said = "".join(line.model_dump_json() for line in seen)
+    assert canary not in said and "pw_host_canary_8e4b" not in said
+    assert "<secret ELEVENLABS_API_KEY>" in said and "<secret HOST_DB_PASSWORD>" in said
 
 
 def test_what_reading_the_machine_noticed_is_a_warning_on_every_run(tmp_path: Path) -> None:

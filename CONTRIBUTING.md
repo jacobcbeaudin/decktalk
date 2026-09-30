@@ -194,9 +194,9 @@ src/decktalk/
     files.py             How DeckTalk replaces files a person owns, which is all of them together or none of them.
     pipeline.py          The run declared once: the six stages in order, the artifacts they pass between them, and how a moment ended.
     findings.py          A finding: the code a caller dispatches on, the sentence a reader meets, where it is, and the fix.
+    secret.py            A value that may be used and never shown: an API key, and every other value read from `.env`.
     errors.py            The refusals DeckTalk makes on purpose: nine codes, seven classes and the exit code each one takes.
     locate.py            Where a key sits in a TOML file, found by reading the text rather than by parsing it.
-    secret.py            A value that may be used and never shown: an API key, and every other value read from `.env`.
     page.py              The page contract as Python reads it: every attribute, every page code and every query key.
   models                 the frozen models and the settings tree, which every layer above reads
     results.py           What every call returns: one frozen result per command, each a flat object a reader can dispatch on.

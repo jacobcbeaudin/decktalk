@@ -14,7 +14,8 @@ import pytest
 from pydantic_core import PydanticSerializationError
 
 from decktalk.artifacts import Stored
-from decktalk.secret import Secret
+from decktalk.errors import ErrorInfo, ProviderError
+from decktalk.secret import Secret, redact, redacted, register, register_environment, secret_name
 
 VALUE = "sk_sentinel_key_that_must_never_print"
 
@@ -129,3 +130,66 @@ def test_two_secrets_are_equal_by_value_and_a_plain_string_is_never_one():
     assert Secret(VALUE) != Secret("other")
     assert Secret(VALUE) != VALUE
     assert len({Secret(VALUE), Secret(VALUE)}) == 1
+
+
+# ---- the registry every line and every error is built through -----------------------------------
+
+REGISTERED = "sk_registry_canary_4f1e9b2c7d"
+
+
+def test_a_secret_registers_its_value_so_a_sentence_holding_it_is_redacted():
+    Secret(REGISTERED, "ELEVENLABS_API_KEY")
+    assert redact(f"sent {REGISTERED} to the host") == "sent <secret ELEVENLABS_API_KEY> to the host"
+
+
+def test_a_published_name_read_beside_the_key_is_held_and_not_registered():
+    """The voice id is read from `.env` like the key and is a name a reader needs in every URL it is in."""
+    Secret("voice-canary-7f3b21", "ELEVENLABS_VOICE_ID")
+    assert redact("/v1/text-to-speech/voice-canary-7f3b21") == "/v1/text-to-speech/voice-canary-7f3b21"
+
+
+def test_a_short_value_is_never_registered_so_ordinary_words_survive():
+    Secret("dog", "PET_KEY")
+    assert redact("the dog barked") == "the dog barked"
+
+
+@pytest.mark.parametrize(
+    ("name", "held"),
+    [
+        ("ELEVENLABS_API_KEY", True),
+        ("GITHUB_TOKEN", True),
+        ("AWS_SECRET", True),
+        ("HOST_DB_PASSWORD", True),
+        ("password_file", True),
+        ("PATH", False),
+        ("ELEVENLABS_VOICE_ID", False),
+        ("KEYBOARD", False),
+    ],
+)
+def test_a_variable_is_a_credential_when_its_name_says_so(name: str, held: bool):
+    assert secret_name(name) is held
+
+
+def test_a_hosts_environment_registers_every_credential_it_names():
+    register_environment({"HOST_DB_PASSWORD": "hunter2-canary-77aa", "HOME": "/home/host-canary-home"})
+    assert redact("hunter2-canary-77aa") == "<secret HOST_DB_PASSWORD>"
+    assert redact("/home/host-canary-home") == "/home/host-canary-home"
+
+
+def test_a_value_inside_a_longer_one_is_replaced_after_the_longer_one():
+    register("canary-outer-canary-inner-9c", "OUTER_TOKEN")
+    register("canary-inner-9c", "INNER_TOKEN")
+    assert redact("x canary-outer-canary-inner-9c y") == "x <secret OUTER_TOKEN> y"
+
+
+def test_every_string_of_a_nested_value_is_redacted():
+    Secret(REGISTERED, "ELEVENLABS_API_KEY")
+    given = {"a": [REGISTERED, (f"x{REGISTERED}",)], "b": 3}
+    assert redacted(given) == {"a": ["<secret ELEVENLABS_API_KEY>", ("x<secret ELEVENLABS_API_KEY>",)], "b": 3}
+
+
+def test_a_refusal_quoting_a_secret_holds_only_its_name():
+    Secret(REGISTERED, "ELEVENLABS_API_KEY")
+    refused = ProviderError(f"HTTP 401: bad key {REGISTERED}", hint=f"check {REGISTERED}")
+    assert REGISTERED not in str(refused) and REGISTERED not in (refused.hint or "")
+    assert REGISTERED not in ErrorInfo.of(refused).model_dump_json()

@@ -89,6 +89,7 @@ from decktalk.results import (
     Spend,
     Voicing,
 )
+from decktalk.secret import register_environment
 from decktalk.settings import (
     ALLOW_ANY_API_BASE,
     BY_ID,
@@ -472,6 +473,7 @@ class Machine:
         `dotenv` says otherwise, and the voice key goes to ElevenLabs and nowhere else unless
         `allow_any_api_base` says otherwise, because both are what a tenant's upload would reach for.
         """
+        register_environment(environ)
         tables = read_machine_toml(config_path)
         pairs = tuple(overrides)
         mine = scoped(route(pairs), SettingScope.MACHINE)

@@ -38,9 +38,9 @@ LAYERS: dict[str, tuple[str, int]] = {
     "files": ("vocabulary", 0),
     "pipeline": ("vocabulary", 1),
     "findings": ("vocabulary", 2),
-    "errors": ("vocabulary", 3),
-    "locate": ("vocabulary", 4),
-    "secret": ("vocabulary", 5),
+    "secret": ("vocabulary", 3),
+    "errors": ("vocabulary", 4),
+    "locate": ("vocabulary", 5),
     "page": ("vocabulary", 6),
     # The frozen models and the settings tree, which every layer above reads and none of them writes.
     "results": ("models", 7),

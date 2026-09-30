@@ -14,6 +14,7 @@ from decktalk import logs
 from decktalk.events import Event, Level, Log
 from decktalk.logs import HANDLER, LOGGER, RunHandler, install, level_of, logging_into, where, within
 from decktalk.pipeline import Stage
+from decktalk.secret import Secret
 from support.runs import a_machine
 
 log = logging.getLogger("decktalk.media.ffmpeg")
@@ -198,3 +199,22 @@ def test_the_place_is_restored_when_a_block_closes() -> None:
             assert (where().run, where().stage, where().section) == ("r1", Stage.CUE, 1)
         assert (where().stage, where().section) == (None, None)
     assert where() == logs.Where()
+
+
+def test_a_hosts_own_handler_never_sees_a_registered_secret() -> None:
+    """An f-string over a revealed key reaches the root logger's handlers as well as the run's line."""
+    canary = "sk_host_handler_canary_77c1"
+    Secret(canary, "ELEVENLABS_API_KEY")
+    heard: list[str] = []
+
+    class Host(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            heard.append(f"{record.getMessage()} {getattr(record, 'data', '')}")
+
+    host = Host()
+    logging.getLogger().addHandler(host)
+    try:
+        log.warning(f"sent {canary}", extra={"data": {"header": canary}})
+    finally:
+        logging.getLogger().removeHandler(host)
+    assert heard and canary not in heard[-1] and "<secret ELEVENLABS_API_KEY>" in heard[-1]

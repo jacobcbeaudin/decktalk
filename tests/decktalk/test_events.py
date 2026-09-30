@@ -9,8 +9,11 @@ import typing
 from datetime import UTC, datetime
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from pydantic import TypeAdapter, ValidationError
 
+from decktalk.errors import ErrorCode, ErrorInfo
 from decktalk.events import (
     EVENTS,
     Event,
@@ -28,6 +31,7 @@ from decktalk.events import (
 from decktalk.findings import Code, Finding, Location
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Layer, Spend, SpendState
+from decktalk.secret import Secret
 
 NAMES = (
     "run.start",
@@ -275,3 +279,42 @@ def test_the_sink_path_travels_on_the_line_that_opens_the_run() -> None:
 def test_an_event_refuses_a_field_it_does_not_declare() -> None:
     with pytest.raises(ValidationError):
         Log(time=datetime(2026, 9, 24, 3, 0, tzinfo=UTC), seq=0, run="r1", level=Level.INFO, message="x", extra=1)
+
+
+# ---- no line can be built holding a registered secret ---------------------------------------------
+
+CANARY = "sk_event_canary_0b7d3e91aa"
+Secret(CANARY, "ELEVENLABS_API_KEY")
+
+AROUND = st.text(alphabet=st.characters(codec="ascii", exclude_characters="\r\n"), max_size=12)
+
+
+def carrying(text: str) -> dict[str, dict[str, object]]:
+    """Every event whose payload can hold free text, with `text` in every string field of it."""
+    finding = FINDING.model_copy(update={"message": text})
+    error = ErrorInfo(code=ErrorCode.PROVIDER, message=text, hint=text, docs=ErrorCode.PROVIDER.url)
+    return {
+        "run.start": {"events_path": f"build/events/{text}.jsonl"},
+        "run.done": {"outcome": Outcome.FAILED, "seconds": 1.0, "error": error},
+        "progress": {"stage": Stage.NARRATE, "done": 1, "total": 3, "unit": Unit.TAKE, "label": text},
+        "finding": {"finding": finding},
+        "fetch": {"tool": text, "bytes": 0},
+        "log": {"level": Level.ERROR, "message": text, "source": text, "data": {"said": text, "headers": {"k": text}}},
+    }
+
+
+@given(before=AROUND, after=AROUND, twice=st.booleans())
+def test_no_line_can_be_built_holding_a_registered_secret(before: str, after: str, twice: bool) -> None:
+    text = before + CANARY + after + (CANARY if twice else "")
+    for name, payload in carrying(text).items():
+        line = EVENTS[name](time=datetime.now(UTC), seq=0, run="r1", **payload)
+        assert CANARY not in line.model_dump_json(), name
+        assert "<secret ELEVENLABS_API_KEY>" in line.model_dump_json(), name
+
+
+def test_a_line_built_by_the_stream_holds_no_registered_secret() -> None:
+    stream = Events()
+    seen: list[Event] = []
+    stream.subscribe(seen.append)
+    stream.emit("r1", Log, level=Level.INFO, message=f"key={CANARY}")
+    assert seen[0].model_dump_json().count("<secret ELEVENLABS_API_KEY>") == 1
