@@ -19,12 +19,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from decktalk.artifacts import Takes
+from decktalk.artifacts import CueTimes, Takes
 from decktalk.errors import InputError
 from decktalk.events import Level
 from decktalk.findings import Code, Location
 from decktalk.inputs import Inputs, PageSection
 from decktalk.inputs.cues import SECTION_END, SECTION_START, Spoken
+from decktalk.inputs.document import MixEffect
 from decktalk.inputs.markers import Marker
 from decktalk.inputs.timeline import narration_offsets, narration_runs
 from decktalk.machine import Run
@@ -291,6 +292,12 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
     )
 
 
+def effect_second(effect: MixEffect, cue_times: CueTimes | None, starts: Mapping[int, float]) -> float | None:
+    """The film second one effect plays at, or None while its cue or its section has no place in the film."""
+    at = None if cue_times is None else cue_times.at(effect.section, effect.cue)
+    return None if effect.section not in starts or at is None else starts[effect.section] + at + effect.offset
+
+
 def _effects(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float]) -> None:
     """Each sound effect, at the second its own cue resolved to."""
     cue_times = inputs.cue_times()
@@ -299,14 +306,13 @@ def _effects(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float]
         if not path.exists():
             _missing_sound(inputs, run, effect.file, f"the effect cued at {effect.cue}", "", section=effect.section)
             continue
-        at = None if cue_times is None else cue_times.at(effect.section, effect.cue)
-        if effect.section not in starts or at is None:
+        where = effect_second(effect, cue_times, starts)
+        if where is None:
             run.note(
                 f"The cue {effect.cue!r} in section {effect.section} is unresolved, so {effect.file} does not play.",
                 level=Level.WARNING,
             )
             continue
-        where = starts[effect.section] + at + effect.offset
         chain.layer(chain.add(ONCE, str(path)), f",volume={gain(effect.db):.5f},{delay(where)}", f"effect{number}")
 
 

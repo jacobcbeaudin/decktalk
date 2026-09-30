@@ -45,6 +45,7 @@ from decktalk.pagescan import scene_entry, slide_cues
 from decktalk.results import SectionKind, Word
 from decktalk.stages import SECOND_DIGITS
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
+from decktalk.stages.assemble.mix import effect_second
 from decktalk.stages.storyboard import open_project_page
 
 SOUND_CAPTION_SECONDS = 1.0
@@ -143,10 +144,10 @@ def sound_captions(inputs: Inputs, starts: Mapping[int, float]) -> list[CaptionC
     for effect in inputs.document.mix.effects:
         if not effect.caption:
             continue
-        at = None if cue_times is None else cue_times.at(effect.section, effect.cue)
-        if effect.section not in starts or at is None:
+        at = effect_second(effect, cue_times, starts)
+        if at is None:
             continue
-        start = round(starts[effect.section] + at + effect.offset, SECOND_DIGITS)
+        start = round(at, SECOND_DIGITS)
         text = effect.caption if effect.caption.startswith("[") else f"[{effect.caption}]"
         cues.append(CaptionCue(start=start, end=round(start + SOUND_CAPTION_SECONDS, SECOND_DIGITS), lines=(text,)))
     return cues
