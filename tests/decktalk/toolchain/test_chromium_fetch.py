@@ -172,8 +172,8 @@ def test_the_installer_is_handed_the_scrubbed_environment_and_never_the_hosts_cr
     and every script it runs. It is now handed the environment every other child is handed."""
     handed: list[dict[str, str]] = []
 
-    def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        handed.append(dict(kwargs["env"]))  # type: ignore[call-overload]
+    def run(cmd: list[str], *, env: dict[str, str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        handed.append(dict(env))
         on_disk.parent.mkdir(parents=True, exist_ok=True)
         on_disk.write_text("#!/bin/sh\n", encoding="utf-8")
         return subprocess.CompletedProcess(cmd, 0, b"", b"")
@@ -200,8 +200,8 @@ def test_every_installer_run_leaves_its_command_exit_and_output_on_the_record(mo
 
 
 def test_a_fetch_that_never_finishes_is_stopped_refused_and_says_it_was_stopped(monkeypatch, caplog) -> None:
-    def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        raise subprocess.TimeoutExpired(cmd, float(kwargs["timeout"]))  # type: ignore[arg-type]
+    def run(cmd: list[str], *, timeout: float, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.TimeoutExpired(cmd, timeout)
 
     monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
     with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ToolError, match="longer than"):
@@ -234,7 +234,6 @@ def test_every_command_that_needs_a_browser_goes_through_the_one_function() -> N
     for path in sorted(SRC.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            call = isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-            if call and node.func.attr == "launch":  # type: ignore[union-attr]
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "launch":
                 starts.append(path.relative_to(SRC).as_posix())
     assert sorted(set(starts)) == ["machine.py", "media/browser.py"], starts

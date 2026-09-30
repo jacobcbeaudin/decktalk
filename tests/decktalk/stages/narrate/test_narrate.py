@@ -16,10 +16,12 @@ from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SpendState, TakeStatus, Voicing, Word
 from decktalk.speech import PROVIDERS, SpeechRequest
 from decktalk.stages import narrate as narrate_stage
-from decktalk.stages.narrate import narrate
+from decktalk.stages.narrate import _in_pool, narrate
+from decktalk.stages.narrate.plan import TakePlan
 from support.fakes import FakeVoice
 from support.logs import data_of, decisions
 from support.runs import Watched
+from support.takes import planned
 
 from .conftest import ENVIRON, SCRIPT, TOML
 
@@ -359,20 +361,15 @@ def test_a_section_that_left_the_script_leaves_the_index(
 
 def test_every_section_that_failed_is_recorded_and_the_first_is_raised(caplog: pytest.LogCaptureFixture) -> None:
     """A paid request that failed after the first failure was lost, although it may have been charged."""
-    from types import SimpleNamespace  # noqa: PLC0415
-
-    from decktalk.stages.narrate import _in_pool  # noqa: PLC0415
-
     both_sent = threading.Barrier(2)
 
-    def work(plan: SimpleNamespace) -> None:
+    def work(plan: TakePlan) -> None:
         both_sent.wait(timeout=5)
         if plan.segment.index == 2:
             threading.Event().wait(0.1)
         raise ProviderError(f"section {plan.segment.index} failed")
 
-    plans = [SimpleNamespace(segment=SimpleNamespace(index=number)) for number in (1, 2)]
     with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ProviderError, match="section 1"):
-        _in_pool(work, plans, workers=2)  # type: ignore[arg-type]
+        _in_pool(work, planned(1, 2), workers=2)
     later = [record for record in caplog.records if record.levelname == "WARNING"]
     assert [data_of(record)["section"] for record in later] == [2]

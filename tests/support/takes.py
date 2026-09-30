@@ -1,9 +1,11 @@
-"""One take row and one take index, built one way for every test that needs a narrated project."""
+"""One take row, one take index and the plans of a run, built one way for every test that needs them."""
 
 from __future__ import annotations
 
 from decktalk.artifacts import Take, Takes
-from decktalk.inputs import Inputs
+from decktalk.inputs import Inputs, Segment
+from decktalk.results import TakeStatus
+from decktalk.stages.narrate.plan import TakePlan
 
 
 def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: object) -> Take:
@@ -34,3 +36,13 @@ def write_takes(inputs: Inputs, *takes: Take) -> Takes:
     index = Takes(script="script.md", model="m", output_format="mp3_44100_128", sections=takes)
     index.write(inputs.workspace.takes_path)
     return index
+
+
+def planned(*sections: int) -> list[TakePlan]:
+    """One plan to voice each numbered section, as the narrate stage hands its pool of workers them."""
+    return [
+        TakePlan(
+            segment=Segment(index=n, title=f"Section {n}", slug=f"section-{n}", text="x"), status=TakeStatus.VOICED
+        )
+        for n in sections
+    ]

@@ -12,7 +12,6 @@ from collections.abc import Callable
 from contextvars import copy_context
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from filelock import FileLock
@@ -33,12 +32,14 @@ from decktalk.secret import Secret
 from decktalk.settings import ToolsConfig
 from decktalk.speech import http as _http
 from decktalk.stages.narrate import _in_pool
+from decktalk.stages.narrate.plan import TakePlan
 from decktalk.toolchain import chromium_fetch
 from support.fakes import FakeChromium, FakeRouter
 from support.logs import data_of
 from support.projects import write_project
 from support.runs import a_machine
 from support.service import Service
+from support.takes import planned
 
 log = logging.getLogger("decktalk.media.ffmpeg")
 
@@ -182,7 +183,8 @@ def test_a_hosts_own_handler_hears_the_record_stamped_with_the_run(
     with here.run() as run, run.section(Stage.RECORD, 4):
         log.info("stamped")
     [record] = [record for record in caplog.records if record.getMessage() == "stamped"]
-    assert (record.decktalk_run, record.decktalk_stage, record.decktalk_section) == (run.id, "record", 4)
+    stamp = vars(record)
+    assert (stamp["decktalk_run"], stamp["decktalk_stage"], stamp["decktalk_section"]) == (run.id, "record", 4)
 
 
 def test_a_level_the_host_chose_is_kept_and_the_handler_is_installed_once(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -330,8 +332,8 @@ def installer_fails(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> N
 
 
 def installer_hangs(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
-    def hang(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        raise subprocess.TimeoutExpired(cmd, float(kwargs["timeout"]))  # type: ignore[arg-type]
+    def hang(cmd: list[str], *, timeout: float, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.TimeoutExpired(cmd, timeout)
 
     monkeypatch.setattr(chromium_fetch.subprocess, "run", hang)
     chromium_fetch.fetch_chromium(env={})
@@ -358,14 +360,13 @@ def router_breaks(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None
 def two_sections_fail(_run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
     both_sent = threading.Barrier(2)
 
-    def work(plan: SimpleNamespace) -> None:
+    def work(plan: TakePlan) -> None:
         both_sent.wait(timeout=5)
         if plan.segment.index == 2:
             threading.Event().wait(0.1)
         raise ProviderError(f"section {plan.segment.index} failed")
 
-    plans = [SimpleNamespace(segment=SimpleNamespace(index=number)) for number in (1, 2)]
-    _in_pool(work, plans, workers=2)  # type: ignore[arg-type]
+    _in_pool(work, planned(1, 2), workers=2)
 
 
 def browser_is_fetched_again(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
