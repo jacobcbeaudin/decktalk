@@ -38,7 +38,7 @@ from decktalk.page import (
     WORD_STYLES,
 )
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
-from support.browser_pages import KATEX, chromium_page, script_page, write_page
+from support.browser_pages import KATEX, chromium_page, opened, script_page, settled, write_page
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -150,8 +150,7 @@ def origin(tmp_path: Path, httpserver: HTTPServer) -> Iterator[Any]:
 
 def test_the_runtime_declares_the_version_it_shipped_with(page, tmp_path):
     """The recorder writes the page's version into the recording log, so the page publishes one."""
-    page.goto(deck(tmp_path, "version.html"))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, deck(tmp_path, "version.html"))
     assert page.evaluate("() => window.__decktalk.version") == page.evaluate("() => window.DeckTalk.version")
     assert page.evaluate("() => /^\\d+\\.\\d+\\.\\d+/.test(window.__decktalk.version)")
 
@@ -159,24 +158,21 @@ def test_the_runtime_declares_the_version_it_shipped_with(page, tmp_path):
 def test_the_stylesheet_is_prepended_and_carries_no_specificity(page, tmp_path):
     """A page rule of equal weight has to win, so every runtime selector sits inside :where()."""
     head = "<style>.ball { color: rgb(1, 2, 3) }</style>"
-    page.goto(write_page(tmp_path, "weight.html", MARKUP_SCENE, head=head + KATEX))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, write_page(tmp_path, "weight.html", MARKUP_SCENE, head=head + KATEX))
     sheet = page.evaluate("() => document.getElementById('dt-style').textContent")
     assert sheet.strip().startswith(":where(")
     # A still is the one rule the page may not be argued out of, so it is the only forced one.
     forced = [line for line in sheet.splitlines() if "!important" in line]
     assert all("dt-frozen" in line for line in forced)
     assert page.evaluate("() => document.head.firstElementChild.id") == "dt-style"
-    page.goto(f"{write_page(tmp_path, 'weight-shown.html', MARKUP_SCENE, head=head + KATEX)}?slide=1.1")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{write_page(tmp_path, 'weight-shown.html', MARKUP_SCENE, head=head + KATEX)}?slide=1.1")
     assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).color") == "rgb(1, 2, 3)"
 
 
 def test_wait_for_holds_ready_until_the_pages_own_condition(page, tmp_path):
     """A deck with a condition of its own adds it to the runtime rather than replacing a global."""
     body = "<script>DeckTalk.waitFor(new Promise((r) => setTimeout(() => { window.__late = 1; r(); }, 200)));</script>"
-    page.goto(deck(tmp_path, "gate.html", body + MARKUP_SCENE))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, deck(tmp_path, "gate.html", body + MARKUP_SCENE))
     assert page.evaluate("() => window.__late") == 1
     assert not page.errors
 
@@ -186,8 +182,7 @@ def test_wait_for_holds_ready_until_the_pages_own_condition(page, tmp_path):
 
 def test_a_markup_scene_needs_no_javascript(page, tmp_path):
     """The whole contract is attributes, so a deck of templates is a deck with no script in it."""
-    page.goto(deck(tmp_path, "markup.html"))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, deck(tmp_path, "markup.html"))
     catalog = page.evaluate("() => window.__decktalk.catalog")
     assert [entry["scene"] for entry in catalog] == ["1"]
     assert catalog[0]["name"] == "Open"
@@ -197,8 +192,7 @@ def test_a_markup_scene_needs_no_javascript(page, tmp_path):
 
 def test_a_template_slide_writes_a_backslash_once(page, tmp_path):
     """Markup is parsed and not evaluated, which is the reason to prefer a template to a render string."""
-    page.goto(f"{deck(tmp_path, 'tex.html')}?slide=1.2")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{deck(tmp_path, 'tex.html')}?slide=1.2")
     assert page.evaluate("() => document.querySelector('.sum').getAttribute('data-tex')") == "\\sum_{i=1}^{n} x_i"
 
 
@@ -210,8 +204,7 @@ def test_markup_slides_join_a_scene_declared_in_script(page, tmp_path):
         { id: "1.9", owns: ["only"], render: () => "<p>built in script</p>" },
       ]});
     """
-    page.goto(deck(tmp_path, "mixed.html", f"<script>{script}</script>{MARKUP_SCENE}"))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, deck(tmp_path, "mixed.html", f"<script>{script}</script>{MARKUP_SCENE}"))
     catalog = page.evaluate("() => window.__decktalk.catalog")
     assert catalog[0]["name"] == "Scripted"
     assert catalog[0]["slides"] == ["1.1", "1.9", "1.2", "1.3"]
@@ -235,15 +228,13 @@ def test_every_moment_attribute_joins_the_cue_order(page, tmp_path, attribute, l
       </template>
     </div>
     """
-    page.goto(write_page(tmp_path, f"moment-{local}.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, write_page(tmp_path, f"moment-{local}.html", scene))
     assert f"2.1:{local}" in page.evaluate("() => window.__decktalk.catalog[0].cues['2.1']")
 
 
 def test_a_local_moment_is_qualified_with_the_slide_that_carries_it(page, tmp_path):
     """The author writes `ball` and the wire carries `1.1:ball`, which is the whole of the qualification."""
-    page.goto(deck(tmp_path, "wire.html"))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, deck(tmp_path, "wire.html"))
     cues = page.evaluate("() => window.__decktalk.catalog[0].cues")
     assert cues["1.1"] == ["1.1:ball", "1.1:step"]
     assert cues["1.3"] == ["1.3:late", "1.3:aside"]
@@ -269,8 +260,7 @@ def test_a_class_moment_joins_the_cue_order_and_declares_its_span(page, tmp_path
       </template>
     </div>
     """
-    page.goto(write_page(tmp_path, "class.html", scene, head=head))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, write_page(tmp_path, "class.html", scene, head=head))
     entry = page.evaluate("() => window.__decktalk.catalog[0]")
     assert entry["cues"]["3.1"] == ["3.1:show", "3.1:cancel"]
     assert entry["spans"]["3.1:cancel"] == pytest.approx(0.3)
@@ -283,8 +273,7 @@ def test_a_class_moment_joins_the_cue_order_and_declares_its_span(page, tmp_path
 def test_cue_mode_fires_in_order_and_reports_each_cue(page, tmp_path):
     """The recorder passes wire ids and seconds, and the page fires each at its own second."""
     url = deck(tmp_path, "cued.html")
-    page.goto(f"{url}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:step@0.3,1.2:sum@0.6")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:step@0.3,1.2:sum@0.6")
     page.wait_for_function("() => window.__decktalk.fired.length === 3")
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step", "1.2:sum"]
     assert page.evaluate("() => window.__decktalk.mode") == "cue"
@@ -293,8 +282,7 @@ def test_cue_mode_fires_in_order_and_reports_each_cue(page, tmp_path):
 def test_the_first_slide_is_mounted_before_the_clock_starts(page, tmp_path):
     """A recording that opened on an empty stage would spend its first frames on nothing."""
     url = deck(tmp_path, "first.html")
-    page.goto(f"{url}?scene=1&t0=signal&cues=1.1:ball@0.2,1.2:sum@0.6")
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, f"{url}?scene=1&t0=signal&cues=1.1:ball@0.2,1.2:sum@0.6")
     assert page.evaluate("() => window.__decktalk.slide") == "1.1"
     assert page.evaluate("() => window.__decktalk.started()") is False
     assert page.evaluate("() => window.__decktalk.fired") == []
@@ -304,8 +292,7 @@ def test_the_first_slide_is_mounted_before_the_clock_starts(page, tmp_path):
 
 def test_freeze_mode_fires_every_cue_the_slide_declares(page, tmp_path):
     """A still is the whole slide, which is what the index links and what a screenshot records."""
-    page.goto(f"{deck(tmp_path, 'frozen.html')}?slide=1.1")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{deck(tmp_path, 'frozen.html')}?slide=1.1")
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
     assert page.evaluate("() => window.__decktalk.mode") == "freeze"
     assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).opacity") == "1"
@@ -313,8 +300,7 @@ def test_freeze_mode_fires_every_cue_the_slide_declares(page, tmp_path):
 
 def test_the_index_page_lists_every_scene_and_slide(page, tmp_path):
     """A page with no query is a contents page, which is where a person starts and where boxes are measured."""
-    page.goto(deck(tmp_path, "index.html"))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, deck(tmp_path, "index.html"))
     assert page.evaluate("() => window.__decktalk.mode") == "index"
     links = page.evaluate("() => [...document.querySelectorAll('#dt-index a')].map((a) => a.getAttribute('href'))")
     assert "?scene=1" in links
@@ -628,8 +614,7 @@ def test_a_decorative_element_writes_no_line(page, tmp_path):
       <template data-slide="11.1"><p class="rule" data-in="show" data-describe="">---</p></template>
     </div>
     """
-    page.goto(f"{write_page(tmp_path, 'decorative.html', scene)}?slide=11.1")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{write_page(tmp_path, 'decorative.html', scene)}?slide=11.1")
     assert warnings_of(page) == []
 
 
@@ -699,8 +684,7 @@ def test_an_attribute_the_registry_does_not_define_is_reported(page, tmp_path):
       <template data-slide="14.1"><p data-inn="show" data-describe="the line">a line</p></template>
     </div>
     """
-    page.goto(write_page(tmp_path, "misspelled.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, write_page(tmp_path, "misspelled.html", scene))
     rows = warnings_of(page)
     assert [row["code"] for row in rows] == ["PAGE_UNKNOWN_ATTR"]
     assert rows[0]["attr"] == "data-inn"
@@ -716,8 +700,7 @@ def test_a_value_outside_its_published_set_is_reported(page, tmp_path):
       </template>
     </div>
     """
-    page.goto(write_page(tmp_path, "bad-value.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, write_page(tmp_path, "bad-value.html", scene))
     rows = [row for row in warnings_of(page) if row["code"] == "PAGE_BAD_VALUE"]
     assert {row["attr"] for row in rows} == {"data-in-style", "data-in-seconds"}
 
@@ -739,8 +722,7 @@ def test_katex_refusing_a_value_leaves_the_readable_text(page, tmp_path):
       </template>
     </div>
     """
-    page.goto(f"{write_page(tmp_path, 'katex-bad.html', scene, head=KATEX)}?slide=19.1")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{write_page(tmp_path, 'katex-bad.html', scene, head=KATEX)}?slide=19.1")
     assert "PAGE_KATEX_ERROR" in codes_of(page)
     assert page.evaluate("() => document.querySelector('.bad').textContent") == "one over"
 
@@ -798,8 +780,7 @@ that makes it. The reason each is a mistake is the comment above its row."""
 
 @pytest.mark.parametrize(("codes", "scene"), MISTAKES.values(), ids=MISTAKES.keys())
 def test_a_mistake_in_the_markup_is_reported_under_its_own_code(page, tmp_path, codes, scene):
-    page.goto(write_page(tmp_path, "mistake.html", f'<div data-scene="3">{scene}</div>'))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, write_page(tmp_path, "mistake.html", f'<div data-scene="3">{scene}</div>'))
     assert set(codes_of(page)) >= codes
 
 
@@ -873,8 +854,7 @@ def test_the_motion_scale_multiplies_the_length_and_the_declared_span(page, tmp_
     """`motion.scale` reaches the page as one declaration on the root, and it moves both numbers together."""
     head = "<style>:root { --dt-motion-scale: 1.2 }</style>"
     url = write_page(tmp_path, "scaled.html", TRAVELLED, head=head)
-    page.goto(url)
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, url)
     assert page.evaluate("() => window.__decktalk.catalog[0].spans['20.1:show']") == pytest.approx(
         ENTRANCES["rise"].seconds * 1.2
     )
@@ -895,8 +875,7 @@ def test_a_class_that_still_animates_under_reduced_motion_is_reported(quiet, tmp
       </template>
     </div>
     """
-    quiet.goto(write_page(tmp_path, "not-reduced.html", scene, head=head))
-    quiet.evaluate("() => window.__decktalk.ready")
+    opened(quiet, write_page(tmp_path, "not-reduced.html", scene, head=head))
     reported = quiet.evaluate("() => window.__decktalk.warnings")
     assert [row["code"] for row in reported] == ["PAGE_CLASS_NOT_REDUCED"]
     assert reported[0]["cue"] == "21.1:cancel"

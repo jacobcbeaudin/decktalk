@@ -67,3 +67,15 @@ def write_page(tmp_path: Path, name: str, body: str, *, head: str = "") -> str:
 def script_page(tmp_path: Path, name: str, script: str, *, head: str = "") -> str:
     """A page whose scenes come from one inline script."""
     return write_page(tmp_path, name, f"<script>{script}</script>", head=head)
+
+
+def opened(page: Page, url: str) -> None:
+    """Open `url` and wait until the runtime has read the page, which is before any cue plays."""
+    page.goto(url)
+    page.evaluate("() => window.__decktalk.ready")
+
+
+def settled(page: Page, url: str) -> None:
+    """Open `url` and wait until the page has drawn everything the query asked it for."""
+    page.goto(url)
+    page.wait_for_function("() => document.body.dataset.done === '1'")

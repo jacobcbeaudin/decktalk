@@ -26,7 +26,7 @@ from decktalk.toolchain.assets import (
     probe_path,
     runtime_path,
 )
-from support.browser_pages import chromium_page, write_page
+from support.browser_pages import chromium_page, opened, settled, write_page
 
 pytestmark = pytest.mark.browser
 
@@ -77,11 +77,9 @@ def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
     bare = page.context.browser.new_page(viewport={"width": 1920, "height": 1080})
     try:
         url = deck(tmp_path, "bare.html")
-        bare.goto(f"{url}?slide=1.1")
-        bare.wait_for_function("() => document.body.dataset.done === '1'")
+        settled(bare, f"{url}?slide=1.1")
         assert bare.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
-        bare.goto(url)
-        bare.evaluate("() => window.__decktalk.ready")
+        opened(bare, url)
         assert bare.evaluate("() => !!document.getElementById('dt-index')")
         # Nothing measures the boxes, which is the one thing a page loses with no probe.
         assert bare.evaluate("() => window.__decktalk.catalog.every((c) => c.elements === undefined)")
@@ -130,8 +128,7 @@ def test_the_wait_helper_waits_for_the_pages_own_condition(page, tmp_path):
 def test_the_catalog_measures_every_cued_element(page, tmp_path):
     """In index mode each slide is laid out once, so every element carries a box in stage pixels."""
     head = "<style>.title { position: absolute; left: 120px; top: 80px; width: 600px; height: 90px; margin: 0 }</style>"
-    page.goto(write_page(tmp_path, "boxes.html", MARKUP_SCENE, head=head))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, write_page(tmp_path, "boxes.html", MARKUP_SCENE, head=head))
     rows = page.evaluate("() => window.__decktalk.catalog[0].elements['1.1']")
     by_cue = {row["moments"].get("data-in"): row for row in rows}
     assert set(by_cue) == {"1.1:ball", "1.1:step", None}
@@ -166,8 +163,7 @@ def test_a_staggered_container_publishes_how_many_children_it_reveals(page, tmp_
       </template>
     </div>
     """
-    page.goto(write_page(tmp_path, "stagger-count.html", scene))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, write_page(tmp_path, "stagger-count.html", scene))
     rows = page.evaluate("() => window.__decktalk.catalog[0].elements['6.1']")
     counts = {row["moments"].get("data-in"): row["children"] for row in rows}
     assert counts == {"6.1:tiles": 3, "6.1:line": 0}
@@ -176,8 +172,7 @@ def test_a_staggered_container_publishes_how_many_children_it_reveals(page, tmp_
 
 def test_measuring_leaves_nothing_on_the_stage(page, tmp_path):
     """The measuring layer is hidden while it is used and gone when the index page shows."""
-    page.goto(deck(tmp_path, "clean.html"))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, deck(tmp_path, "clean.html"))
     assert page.evaluate("() => !document.getElementById('dt-measure')")
     assert page.evaluate("() => !document.getElementById('dt-spans')")
     assert page.evaluate("() => document.querySelectorAll('#dt-pan .dt-slide').length") == 0
@@ -186,8 +181,7 @@ def test_measuring_leaves_nothing_on_the_stage(page, tmp_path):
 
 def test_a_played_scene_is_not_measured(page, tmp_path):
     """Measuring mounts every slide, so it never runs in a mode a recording could be made in."""
-    page.goto(f"{deck(tmp_path, 'unmeasured.html')}?scene=1&t0=0&cues=1.1:ball@0.1")
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, f"{deck(tmp_path, 'unmeasured.html')}?scene=1&t0=0&cues=1.1:ball@0.1")
     assert page.evaluate("() => window.__decktalk.catalog.every((c) => c.elements === undefined)")
     assert page.evaluate("() => document.querySelectorAll('#dt-pan .dt-slide').length") == 1
 
@@ -239,28 +233,23 @@ def test_freeze_at_and_before_one_cue(page, tmp_path):
     """?after=ID stops after that cue, ?before=ID stops just before it, and after wins over before."""
     url = deck(tmp_path, "freezecue.html")
     on = "(sel) => document.querySelector(sel).classList.contains('dt-shown')"
-    page.goto(f"{url}?slide=1.1&after=1.1:ball")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=1.1&after=1.1:ball")
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
     assert page.evaluate(on, ".ball") is True
     assert page.evaluate(on, ".step") is False
 
-    page.goto(f"{url}?slide=1.1&before=1.1:step")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=1.1&before=1.1:step")
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
     assert page.evaluate(on, ".step") is False
 
-    page.goto(f"{url}?slide=1.1&before=1.1:ball")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=1.1&before=1.1:ball")
     assert page.evaluate("() => window.__decktalk.fired") == []
     assert page.evaluate(on, ".ball") is False
 
-    page.goto(f"{url}?slide=1.1&after=1.1:step&before=1.1:ball")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=1.1&after=1.1:step&before=1.1:ball")
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
 
-    page.goto(f"{url}?slide=1.1&after=nope")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=1.1&after=nope")
     reported = page.evaluate("() => window.__decktalk.warnings")
     assert [row["code"] for row in reported] == ["PAGE_FREEZE_CUE_UNKNOWN"]
     assert (reported[0]["slide"], reported[0]["cue"]) == ("1.1", "nope")
@@ -286,14 +275,12 @@ def test_the_frame_before_a_cue_and_the_frame_at_it_are_two_pictures(page, tmp_p
     """
     url = starter_deck(tmp_path)
     shown = "() => getComputedStyle(document.querySelector('.end')).opacity"
-    page.goto(f"{url}?slide=3.1&before=3.1:make")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=3.1&before=3.1:make")
     assert page.evaluate("() => window.__decktalk.fired") == ["3.1:idea", "3.1:again"]
     assert float(page.evaluate(shown)) == 0
     before = page.screenshot()
 
-    page.goto(f"{url}?slide=3.1&after=3.1:make")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=3.1&after=3.1:make")
     assert page.evaluate("() => window.__decktalk.fired") == ["3.1:idea", "3.1:again", "3.1:make"]
     assert float(page.evaluate(shown)) == 1
     assert page.evaluate("() => document.querySelector('.end').classList.contains('dt-shown')") is True
