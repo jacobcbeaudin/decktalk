@@ -4,8 +4,8 @@
 # ///
 """Open the built wheel on a machine that has only the wheel, and hold the tag to the version in it.
 
-    uv run scripts/check_wheel.py --check           # the smoke and the tag check
-    uv run scripts/check_wheel.py --check --tag v0.5.0-rc1
+    uv run scripts/check_wheel.py                   # the smoke, with no tag to judge
+    uv run scripts/check_wheel.py --tag v0.5.0-rc1  # the smoke and the tag check
 
 `tests/contract/test_wheel.py` reads what is inside the wheel. This reads what the wheel does, which
 is the other half of the same question and the half a file list cannot answer: a wheel whose entry
@@ -20,8 +20,8 @@ would refuse every release candidate the founder cuts. The tag is read from `--t
 release workflow passes, and when no tag is named the check says out loud that it judged nothing
 rather than passing quietly.
 
-This script has no `--write`, unlike every generator in the check table, because it writes no file.
-It reads what `uv build` already left in `dist/` and builds nothing of its own, so that what is
+This script takes no mode, unlike every generator in the check table, because it writes no file and
+has one thing to do. It reads what `uv build` already left in `dist/` and builds nothing of its own, so that what is
 judged here is the artifact that would go to PyPI.
 """
 
@@ -110,7 +110,6 @@ def tag_matches(named: str | None) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--check", action="store_true", help="run the wheel smoke and the tag check")
     parser.add_argument("--tag", help="the tag to hold the packaged version to")
     args = parser.parse_args()
     # Both run whatever the other did, because a red smoke that hid a wrong tag would cost a second

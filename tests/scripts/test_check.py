@@ -57,7 +57,7 @@ def test_a_generator_that_needs_more_to_check_needs_the_same_to_write() -> None:
     "command",
     [
         ("uv", "run", "python", "scripts/check_docs_links.py", "--check"),
-        ("uv", "run", "scripts/check_wheel.py", "--check"),
+        ("uv", "run", "scripts/check_wheel.py"),
         ("uv", "run", "ruff", "check", "src"),
     ],
     ids=["docs links", "wheel", "ruff"],

@@ -107,7 +107,7 @@ jobs:
       - name: Open the built wheel on its own and hold the tag to the version in it
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: uv run scripts/check_wheel.py --check --tag "$TAG"
+        run: uv run scripts/check_wheel.py --tag "$TAG"
       - id: tag
         name: A tag with a prerelease part is a candidate
         env:

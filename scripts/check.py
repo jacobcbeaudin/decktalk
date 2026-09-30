@@ -653,7 +653,7 @@ GROUPS: tuple[Group, ...] = (
         commands=(
             ("uv", "build"),
             (*PYTEST, WHEEL_TEST),
-            (*UV, "scripts/check_wheel.py", "--check"),
+            (*UV, "scripts/check_wheel.py"),
         ),
         runners=EVERY_PLATFORM,
         pythons=(FLOOR,),
