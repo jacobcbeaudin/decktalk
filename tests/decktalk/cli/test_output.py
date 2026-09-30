@@ -277,17 +277,7 @@ def test_the_plain_lines_renderer_writes_one_line_per_stage_that_ended() -> None
     said = heard(
         output.Lines,
         _stage_done(),
-        Progress(
-            event="progress",
-            time=_now(),
-            seq=1,
-            run="r",
-            stage=Stage.RECORD,
-            done=1,
-            total=3,
-            unit="section",
-            label="a section",
-        ),
+        _progress(Stage.RECORD, 1, 3),
     )
     assert said.count("\n") == 1
     assert "Record" in said
@@ -333,6 +323,13 @@ def _stage_done() -> StageDone:
     )
 
 
+def _progress(stage: Stage, done: int, total: int) -> Progress:
+    """How far one stage has got through its sections."""
+    return Progress(
+        event="progress", time=_now(), seq=1, run="r", stage=stage, done=done, total=total, unit="section", label="s"
+    )
+
+
 def _log(level: Level) -> Log:
     """One line the library would have printed, at the level a test is about."""
     return Log(event="log", time=_now(), seq=0, run="r", level=level, message="a debug line")
@@ -365,19 +362,7 @@ def test_the_live_region_shows_each_stage_its_progress_and_its_time() -> None:
     region.open()
     region(StageStart(event="stage.start", time=_now(), seq=0, run="r", stage=Stage.NARRATE, index=1, count=6))
     region(_stage_done())
-    region(
-        Progress(
-            event="progress",
-            time=_now(),
-            seq=2,
-            run="r",
-            stage=Stage.ASSEMBLE,
-            done=2,
-            total=5,
-            unit="section",
-            label="section 2",
-        )
-    )
+    region(_progress(Stage.ASSEMBLE, 2, 5))
     region.close()
     shown = console.export_text()
     assert "Narrate" in shown
