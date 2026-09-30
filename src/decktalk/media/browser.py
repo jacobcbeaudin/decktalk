@@ -283,8 +283,9 @@ def launch(pw: Playwright, browser_path: str = "", *, policy: str) -> Browser:
     """
     sealed = page_policy(policy)
     options = launch_options(sealed)
+    started = time.monotonic()
     try:
-        return pw.chromium.launch(executable_path=browser_path or None, **options)
+        return _launched(pw.chromium.launch(executable_path=browser_path or None, **options), sealed, started)
     except PlaywrightError as exc:
         said = str(exc).splitlines()[0]
         if browser_path:
@@ -296,10 +297,14 @@ def launch(pw: Playwright, browser_path: str = "", *, policy: str) -> Browser:
             raise ToolError(f"could not launch Chromium with its sandbox on ({said}).", hint=SANDBOX_HINT) from exc
     # A launch that failed with no executable named falls through to here, which is the fetch.
     if chromium_fetch.installed_chromium(pw) is not None:
-        log.info("Chromium is on this machine and did not launch, so the build is being fetched again")
-    chromium_fetch.fetch_chromium()
+        log.info(
+            "Chromium is on this machine and did not launch, so the build is being fetched again.",
+            extra={"data": {"reason": said}},
+        )
+    chromium_fetch.fetch_chromium(env=child_environment())
+    started = time.monotonic()
     try:
-        return pw.chromium.launch(**options)
+        return _launched(pw.chromium.launch(**options), sealed, started)
     except PlaywrightError as exc:
         raise ToolError(
             f"Chromium was fetched and still would not launch ({str(exc).splitlines()[0]}).",
@@ -308,6 +313,18 @@ def launch(pw: Playwright, browser_path: str = "", *, policy: str) -> Browser:
             else "Run `decktalk install`, which also installs the system libraries Chromium needs and is the one "
             "command that may ask for a password.",
         ) from exc
+
+
+def _launched(browser: Browser, policy: PagePolicy, started: float) -> Browser:
+    """Record which Chromium started, under which policy and how long it took, and hand it back."""
+    seconds = time.monotonic() - started
+    log.debug(
+        "Chromium %s started in %.2f seconds.",
+        browser.version,
+        seconds,
+        extra={"data": {"version": browser.version, "policy": policy, "seconds": round(seconds, 3)}},
+    )
+    return browser
 
 
 def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECONDS) -> object:

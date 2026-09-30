@@ -295,6 +295,54 @@ def test_a_call_past_the_machines_limit_is_stopped_and_refused(monkeypatch):
 
 
 @pytest.mark.usefixtures("tools")
+@pytest.mark.parametrize(
+    ("reason", "limit", "stop"),
+    [("cancel", 600.0, Cancelled), ("timeout", 0.3, ToolError), ("reader", 600.0, ValueError)],
+)
+def test_a_stopped_call_says_which_command_was_stopped_and_why(monkeypatch, caplog, reason, limit, stop):
+    # The tool writes more than one read's worth and then keeps working, so each of the three stops
+    # meets a live process and the reader has something to refuse before the process ends.
+    script = "import sys, time; sys.stdout.buffer.write(b'f' * 200000); sys.stdout.flush(); time.sleep(30)"
+
+    def working(_cmd: list[str]):
+        with children_see(os.environ):
+            return SPAWN([sys.executable, "-c", script])
+
+    monkeypatch.setattr(ffmpeg, "_spawn", working)
+    cancel = Cancel()
+    if reason == "cancel":
+        threading.Timer(0.2, cancel.cancel).start()
+
+    def refuse(_chunk: bytes) -> None:
+        if reason == "reader":
+            raise ValueError("the frame was not the size it was planned at")
+
+    with (
+        caplog.at_level("DEBUG", logger="decktalk"),
+        ffmpeg.using_tools(ToolsConfig(timeout_seconds=limit), cancel=cancel),
+        pytest.raises(stop),
+    ):
+        ffmpeg.stream("-i", "stuck.mp4", "-", into=refuse)
+    [record] = [record for record in caplog.records if record.name == "decktalk.media.ffmpeg"]
+    assert record.levelname == "WARNING"
+    assert record.data["reason"] == reason and record.data["limit"] == limit  # type: ignore[attr-defined]
+    assert record.data["argv"] == "ffmpeg -v error -i stuck.mp4 -"  # type: ignore[attr-defined]
+
+
+@pytest.mark.usefixtures("tools")
+def test_every_call_that_ends_leaves_its_command_exit_time_and_last_lines(monkeypatch, caplog):
+    answer(monkeypatch, code=0, err=COMPLAINT)
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        ffmpeg.run("-i", "a b.mp3", "out.mp3")
+    [record] = [record for record in caplog.records if record.name == "decktalk.media.ffmpeg"]
+    data = record.data  # type: ignore[attr-defined]
+    assert record.levelname == "DEBUG"
+    assert data["argv"] == "ffmpeg -hide_banner -loglevel error -y -i 'a b.mp3' out.mp3"
+    assert data["exit"] == 0 and data["seconds"] >= 0
+    assert data["output_tail"].endswith("no such file or directory")
+
+
+@pytest.mark.usefixtures("tools")
 def test_a_stream_hands_its_bytes_over_as_they_arrive_and_keeps_none(monkeypatch):
     answer(monkeypatch, code=0, out=b"frames" * 1000)
     kept: list[bytes] = []

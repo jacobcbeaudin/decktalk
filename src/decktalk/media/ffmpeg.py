@@ -44,7 +44,7 @@ from typing import IO
 from ..errors import Cancel, ToolError
 from ..findings import Location
 from ..settings import ToolsConfig
-from ..toolchain import ffmpeg_fetch, tail
+from ..toolchain import command_line, ffmpeg_fetch, tail, traced
 from ..toolchain.cache import caching_in
 from .environment import child_environment
 
@@ -165,16 +165,30 @@ def _stop(proc: subprocess.Popen[bytes], readers: Iterable[_Reader]) -> None:
         reader.join()
 
 
+def _killed(cmd: list[str], what: str, reason: str, started: float, limit: float) -> None:
+    """Record that one call was stopped and why, which is the one trace a killed call leaves behind."""
+    seconds = time.monotonic() - started
+    log.warning(
+        "%s was stopped after %.2f seconds (%s).",
+        what,
+        seconds,
+        reason,
+        extra={"data": {"argv": command_line(cmd), "reason": reason, "seconds": round(seconds, 3), "limit": limit}},
+    )
+
+
 def _watch(
     proc: subprocess.Popen[bytes],
     readers: tuple[_Reader, ...],
+    cmd: list[str],
     what: str,
     cancel: Cancel | None,
     limit: float,
     location: Location | None,
 ) -> None:
     """Wait for a call to end, and stop it when the run is cancelled, the clock runs out or a reader fails."""
-    deadline = time.monotonic() + limit
+    started = time.monotonic()
+    deadline = started + limit
     while True:
         try:
             proc.wait(timeout=POLL_SECONDS)
@@ -182,12 +196,15 @@ def _watch(
         except subprocess.TimeoutExpired:
             if cancel is not None and cancel.is_set():
                 _stop(proc, readers)
+                _killed(cmd, what, "cancel", started, limit)
                 cancel.check()
             if failed := next((reader.failed for reader in readers if reader.failed), None):
                 _stop(proc, readers)
+                _killed(cmd, what, "reader", started, limit)
                 raise failed from None
             if time.monotonic() > deadline:
                 _stop(proc, readers)
+                _killed(cmd, what, "timeout", started, limit)
                 raise ToolError(
                     f"{what} ran for longer than the {limit:g} seconds that tools.timeout_seconds allows, "
                     "so it was stopped.",
@@ -205,16 +222,18 @@ def _checked(
     limit = bound_tools().timeout_seconds
     out: list[bytes] = []
     err: list[bytes] = []
+    started = time.monotonic()
     with _spawn(cmd) as proc:
         readers = (_Reader(proc.stdout, into or out.append), _Reader(proc.stderr, err.append))
         for reader in readers:
             reader.start()
-        _watch(proc, readers, what, cancel, limit, location)
+        _watch(proc, readers, cmd, what, cancel, limit, location)
         for reader in readers:
             reader.join()
     if failed := next((reader.failed for reader in readers if reader.failed), None):
         raise failed
     stderr = b"".join(err)
+    traced(log, what, cmd, code=proc.returncode, seconds=time.monotonic() - started, said=stderr)
     if proc.returncode != 0:
         raise ToolError(f"{what} failed: {tail(stderr)}", location=location)
     return subprocess.CompletedProcess(cmd, proc.returncode, b"".join(out), stderr)
@@ -319,7 +338,12 @@ def _resolve(tools: ToolsConfig, cancel: Cancel | None) -> tuple[str, str]:
     # A digest that does not match raises ToolError and never falls back, because it must stop a run.
     except OSError as exc:
         if on_path:
-            log.warning("could not download the pinned ffmpeg (%s), so %s is used instead", exc, on_path[0])
+            log.warning(
+                "could not download the pinned ffmpeg (%s), so %s is used instead.",
+                exc,
+                on_path[0],
+                extra={"data": {"reason": str(exc), "using": on_path[0]}},
+            )
             return on_path
         raise ToolError(
             f"ffmpeg/ffprobe not found: the pinned build could not be downloaded ({exc}) and none is on PATH. "

@@ -702,7 +702,7 @@ def exits(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
     """Make every command a fix runs exit with `code`, so no test installs anything."""
     monkeypatch.setattr(
         "decktalk.machine.subprocess.run",
-        lambda argv, **_: subprocess.CompletedProcess(argv, code, "", ""),
+        lambda argv, **_: subprocess.CompletedProcess(argv, code, b"", b"Traceback\nOSError: the cache is read-only\n"),
     )
 
 
@@ -737,6 +737,22 @@ def test_a_command_that_fails_is_reported_rather_than_raised(tmp_path: Path, mon
     with here.run() as run:
         outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
     assert not outcome.applied and "exited 1" in (outcome.why or "")
+    assert "OSError: the cache is read-only" in (outcome.why or "")
+
+
+def test_a_fix_command_leaves_its_command_exit_time_and_output_on_the_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    here = a_machine(tmp_path)
+    exits(monkeypatch, 2)
+    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here.run() as run:
+        apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    [line] = [line for line in seen if isinstance(line, Log) and line.source == "machine"]
+    assert line.level is Level.WARNING and line.data is not None
+    assert line.data["exit"] == 2 and str(line.data["argv"]).endswith("-m decktalk install")
+    assert line.data["output_tail"] == "Traceback | OSError: the cache is read-only"
 
 
 def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_machines_environment(

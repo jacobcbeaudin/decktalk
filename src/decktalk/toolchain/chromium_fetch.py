@@ -18,13 +18,15 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
+import time
+from collections.abc import Mapping
 from pathlib import Path
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Playwright
 
 from ..errors import ToolError
-from . import tail
+from . import command_line, tail, traced
 from .announce import announce
 
 log = logging.getLogger(__name__)
@@ -57,8 +59,12 @@ FETCH_TIMEOUT_SECONDS = 1800
 """Calibration: half an hour, far longer than 200 MB takes on a usable connection, so only a stuck install hits it."""
 
 
-def fetch_chromium(*, with_deps: bool = False) -> None:
+def fetch_chromium(*, env: Mapping[str, str], with_deps: bool = False) -> None:
     """Run `playwright install chromium` for this machine, raising a ToolError when it fails.
+
+    `env` is the whole environment the installer runs with, which the caller builds from the
+    machine's scrubbed child environment, so a credential the host holds in its own environment
+    never reaches the installer or any script it runs.
 
     `with_deps` adds Chromium's system libraries and may ask for a root password, so only
     `decktalk install` passes it. The password prompt goes to the terminal itself, so it is seen
@@ -68,16 +74,25 @@ def fetch_chromium(*, with_deps: bool = False) -> None:
     The download is announced before it starts and never counted as it arrives, because Playwright
     reports its progress to its own output and tells this process nothing. A fetch that runs past
     `FETCH_TIMEOUT_SECONDS` is stopped and refused, so a stalled mirror cannot hold a build forever.
+    The call is traced like every tool call, with its command, exit code, time and last lines.
     """
     announce(TOOL, 0, None)
     cmd = [sys.executable, *INSTALL_ARGS, *([WITH_DEPS] if with_deps else [])]
+    started = time.monotonic()
     try:
-        done = subprocess.run(cmd, capture_output=True, timeout=FETCH_TIMEOUT_SECONDS, check=False)
+        done = subprocess.run(cmd, capture_output=True, timeout=FETCH_TIMEOUT_SECONDS, check=False, env=dict(env))
     except subprocess.TimeoutExpired as exc:
+        log.warning(
+            "playwright install was stopped after %d seconds (timeout).",
+            FETCH_TIMEOUT_SECONDS,
+            extra={"data": {"argv": command_line(cmd), "reason": "timeout", "limit": FETCH_TIMEOUT_SECONDS}},
+        )
         raise ToolError(
             f"playwright install ran for longer than {FETCH_TIMEOUT_SECONDS} seconds, so it was stopped.",
             hint="Check the network, then run `decktalk install`.",
         ) from exc
+    said = done.stderr or done.stdout or b""
+    traced(log, "playwright install", cmd, code=done.returncode, seconds=time.monotonic() - started, said=said)
     if done.returncode != 0:
         raise ToolError(
             f"playwright install failed: {tail(done.stderr or done.stdout or b'')}",

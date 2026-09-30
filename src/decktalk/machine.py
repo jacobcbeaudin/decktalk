@@ -73,7 +73,7 @@ from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
 from decktalk.logs import level_of, logging_into, source_of, where, within
-from decktalk.media.environment import children_see
+from decktalk.media.environment import child_environment, children_see
 from decktalk.media.ffmpeg import installed_paths, using_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
@@ -109,13 +109,15 @@ from decktalk.settings import (
 )
 from decktalk.settings import Scope as SettingScope
 from decktalk.speech import PROVIDERS, Voices, voicing
-from decktalk.toolchain import assets, chromium_fetch
+from decktalk.toolchain import assets, chromium_fetch, command_line, tail, traced
 from decktalk.toolchain.announce import announcing
 from decktalk.toolchain.cache import caching_in, standard_cache_dir
 from decktalk.toolchain.ffmpeg_fetch import FFMPEG_VERSION, fetch_ffmpeg
 
 if TYPE_CHECKING:  # pragma: no cover
     from decktalk.findings import Fix
+
+log = logging.getLogger(__name__)
 
 VOICE_KEY = "ELEVENLABS_API_KEY"
 """The one credential a paid run needs, which `doctor` reports as set or not and never reads."""
@@ -600,7 +602,7 @@ class Machine:
         browser's system libraries and so the one that may ask for a password.
         """
         with self.run(cancel=cancel) as run:
-            chromium_fetch.fetch_chromium(with_deps=sys.platform.startswith("linux"))
+            chromium_fetch.fetch_chromium(env=child_environment(), with_deps=sys.platform.startswith("linux"))
             # The row is asked for the way `doctor` asks for it, by launching what was just fetched,
             # so `install` cannot print the browser as missing a second after it downloaded one.
             browser = self._browser_row().model_copy(update={"fetched": True})
@@ -657,7 +659,9 @@ class Machine:
                 browser = playwright.chromium.launch()
                 version = browser.version
                 browser.close()
-            except Exception:  # noqa: BLE001  (a browser that will not launch is a row, never a traceback)
+            except Exception as failed:  # noqa: BLE001  (a browser that will not launch is a row, never a traceback)
+                # The row says only that there is no browser, so the reason goes on the run's stream.
+                log.warning("Chromium did not launch.", extra={"data": {"reason": str(failed).splitlines()[0]}})
                 return InstalledTool(tool=CHROMIUM)
             where = chromium_fetch.installed_chromium(playwright)
             path = Path(where) if where else None
@@ -836,6 +840,8 @@ def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
             hint="Run the command by hand if you mean it.",
         )
     argv = [sys.executable, "-m", *fix.command]
+    typed = command_line(fix.command)
+    started = time.monotonic()
     try:
         finished = subprocess.run(
             argv,
@@ -843,18 +849,27 @@ def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
             env=run.machine.child_environ(),
             check=False,
             capture_output=True,
-            text=True,
             timeout=FIX_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as late:
+        log.warning(
+            "`%s` was stopped after %.0f seconds (timeout).",
+            typed,
+            FIX_TIMEOUT_SECONDS,
+            extra={"data": {"argv": command_line(argv), "reason": "timeout", "limit": FIX_TIMEOUT_SECONDS}},
+        )
         raise ToolError(
-            f"`{' '.join(fix.command)}` ran for {FIX_TIMEOUT_SECONDS:.0f} seconds and was stopped.",
-            hint=f"Run `{' '.join(fix.command)}` by hand to see where it waits.",
+            f"`{typed}` ran for {FIX_TIMEOUT_SECONDS:.0f} seconds and was stopped.",
+            hint=f"Run `{typed}` by hand to see where it waits.",
         ) from late
+    said = finished.stderr or finished.stdout or b""
+    traced(log, typed, argv, code=finished.returncode, seconds=time.monotonic() - started, said=said)
     if finished.returncode != 0:
+        # What the command said is the reason it failed, and a fix outcome keeps the message alone,
+        # so the message quotes its last lines.
         raise ToolError(
-            f"{fix.command[0]} exited {finished.returncode}.",
-            hint=f"Run `{' '.join(fix.command)}` by hand to see what it says.",
+            f"{fix.command[0]} exited {finished.returncode}: {tail(said)}",
+            hint=f"Run `{typed}` by hand to see the rest of what it says.",
         )
 
 

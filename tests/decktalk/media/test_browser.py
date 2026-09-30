@@ -474,6 +474,8 @@ class Launcher:
 class Launched:
     """A launched browser that opens pages which carry nothing and closes without a sound."""
 
+    version = "0.0.0.0"
+
     def new_page(self, **_kwargs: object) -> object:
         return object()
 

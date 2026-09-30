@@ -28,6 +28,7 @@ from playwright.sync_api import Error as PlaywrightError
 
 from decktalk.errors import ToolError
 from decktalk.media import browser
+from decktalk.media.environment import children_see
 from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.announce import announcing
 from support.paths import REPO
@@ -36,6 +37,8 @@ SRC = REPO / "src" / "decktalk"
 
 
 class FakeBrowser:
+    version = "0.0.0.0"
+
     def __init__(self, executable: str) -> None:
         self.executable = executable
         self.closed = False
@@ -194,7 +197,7 @@ def test_a_fetch_that_never_finishes_is_stopped_and_refused(monkeypatch) -> None
 
     monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
     with pytest.raises(ToolError, match="longer than"):
-        chromium_fetch.fetch_chromium()
+        chromium_fetch.fetch_chromium(env={})
 
 
 def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, on_disk) -> None:
@@ -209,6 +212,48 @@ def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, 
     assert len(commands) == 1, commands
 
 
+def test_the_installer_is_handed_the_scrubbed_environment_and_never_the_hosts_credentials(monkeypatch, on_disk) -> None:
+    """The installer ran with the process's whole environment, so a host's own credentials reached it
+    and every script it runs. It is now handed the environment every other child is handed."""
+    handed: list[dict[str, str]] = []
+
+    def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        handed.append(dict(kwargs["env"]))  # type: ignore[call-overload]
+        on_disk.parent.mkdir(parents=True, exist_ok=True)
+        on_disk.write_text("#!/bin/sh\n", encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
+    host = {"PATH": "/usr/bin", "HOST_DB_PASSWORD": "pw_installer_canary_31f0", "AWS_SECRET_ACCESS_KEY": "aws-canary"}
+    with children_see(host):
+        browser.launch(FakePlaywright(FakeChromium(on_disk)), policy=browser.TRUSTED)
+    [env] = handed
+    assert env["PATH"] == "/usr/bin"
+    assert "HOST_DB_PASSWORD" not in env and "AWS_SECRET_ACCESS_KEY" not in env
+    assert "pw_installer_canary_31f0" not in env.values()
+
+
+def test_every_installer_run_leaves_its_command_exit_and_output_on_the_record(monkeypatch, on_disk, caplog) -> None:
+    fake_fetch(monkeypatch, on_disk, code=1)
+    with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ToolError):
+        chromium_fetch.fetch_chromium(env={})
+    [record] = [record for record in caplog.records if record.name == "decktalk.toolchain.chromium_fetch"]
+    assert record.levelname == "WARNING"
+    data = record.data  # type: ignore[attr-defined]
+    assert data["exit"] == 1 and "playwright install chromium" in data["argv"]
+    assert data["output_tail"] == "line 1 | ERROR: host unreachable"
+
+
+def test_an_installer_that_never_finishes_says_it_was_stopped(monkeypatch, caplog) -> None:
+    def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.TimeoutExpired(cmd, float(kwargs["timeout"]))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
+    with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ToolError):
+        chromium_fetch.fetch_chromium(env={})
+    assert [record.data["reason"] for record in caplog.records if hasattr(record, "data")] == ["timeout"]
+
+
 # ---- the one command that may ask for a password ------------------------------------------------
 
 
@@ -219,8 +264,8 @@ def test_only_a_caller_that_asks_for_them_reaches_the_system_libraries(monkeypat
     on this function and why no build passes it.
     """
     commands = fake_fetch(monkeypatch, on_disk)
-    chromium_fetch.fetch_chromium(with_deps=True)
-    chromium_fetch.fetch_chromium()
+    chromium_fetch.fetch_chromium(env={}, with_deps=True)
+    chromium_fetch.fetch_chromium(env={})
     assert chromium_fetch.WITH_DEPS in commands[0], commands[0]
     assert commands[1][1:] == list(chromium_fetch.INSTALL_ARGS), commands[1]
 
