@@ -95,13 +95,8 @@ def fake_path(
     return env
 
 
-def run(
-    args: list[str], env: dict[str, str] | None = None, script: str | None = None
-) -> subprocess.CompletedProcess[str]:
-    if script is None:
-        return subprocess.run(
-            ["/bin/sh", str(SCRIPT), *args], capture_output=True, text=True, env=env, timeout=60, check=False
-        )
+def run(args: list[str], env: dict[str, str], script: str) -> subprocess.CompletedProcess[str]:
+    """install.sh as `curl | sh` runs it, read from stdin, so a test may hand it a cut or changed copy."""
     return subprocess.run(
         ["/bin/sh", "-s", "--", *args], input=script, capture_output=True, text=True, env=env, timeout=60, check=False
     )
@@ -345,27 +340,24 @@ def run_pty(
     return os.waitstatus_to_exitcode(child.status or 0), out
 
 
-def test_a_terminal_gets_the_spinner_and_a_tick(tmp_path: Path, source: str) -> None:
-    del source
+def test_a_terminal_gets_the_spinner_and_a_tick(tmp_path: Path) -> None:
     code, out = run_pty([], fake_path(tmp_path, tmp_path / "called"))
     assert code == 0, out
     assert "\033[" in out, "a terminal got no colour at all"
     assert "✓" in out, out
 
 
-def test_no_color_is_honoured_on_a_terminal(tmp_path: Path, source: str) -> None:
+def test_no_color_is_honoured_on_a_terminal(tmp_path: Path) -> None:
     """NO_COLOR is set by people who mean it, and a terminal is exactly where it has to be obeyed."""
-    del source
     env = fake_path(tmp_path, tmp_path / "called") | {"NO_COLOR": "1"}
     code, out = run_pty([], env)
     assert code == 0, out
     assert "\033[" not in out, repr(out)
 
 
-def test_an_interrupt_puts_the_cursor_back_and_keeps_the_log(tmp_path: Path, source: str) -> None:
+def test_an_interrupt_puts_the_cursor_back_and_keeps_the_log(tmp_path: Path) -> None:
     """The spinner hides the cursor. Before there was a trap, a Ctrl-C mid-spinner left a terminal
     with no cursor in it until the next `reset`, and threw away the log of what had happened."""
-    del source
     log = tmp_path / "install.log"
     called = tmp_path / "called"
     env = fake_path(tmp_path, called, slow=("uv",)) | {"DECKTALK_INSTALL_LOG": str(log)}
