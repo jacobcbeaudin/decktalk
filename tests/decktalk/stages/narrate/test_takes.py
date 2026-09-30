@@ -23,6 +23,7 @@ from decktalk.stages.narrate.takes import (
 )
 from support.runs import Watched
 
+from ...conftest import FakeVoice
 from .conftest import VOICE_ID, a_paid_take
 
 
@@ -56,8 +57,8 @@ def test_a_row_that_carries_its_sound_end_keeps_it(inputs: Inputs) -> None:
     assert place(inputs, 1, a_paid_take().model_copy(update={"sound_end_seconds": 0.25})).sound_end_seconds == 0.25
 
 
-def test_a_placeholder_take_writes_its_audio_and_its_words(inputs: Inputs, fake_ffmpeg: object) -> None:
-    assert fake_ffmpeg is not None
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_placeholder_take_writes_its_audio_and_its_words(inputs: Inputs) -> None:
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     (segment,) = [s for s in inputs.spoken() if s.index == 1]
     plan = placeholder_plan(inputs, [segment])[0]
@@ -72,10 +73,10 @@ def test_a_placeholder_take_writes_its_audio_and_its_words(inputs: Inputs, fake_
     assert [word.word for word in words.words] == ["A", "bowl", "A", "ball"]
 
 
+@pytest.mark.usefixtures("fake_ffmpeg")
 def test_a_placeholder_take_closes_on_silence_so_its_sound_end_can_be_read(
-    inputs: Inputs, fake_ffmpeg: object, monkeypatch: pytest.MonkeyPatch
+    inputs: Inputs, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert fake_ffmpeg is not None
     asked: list[float] = []
     monkeypatch.setattr(audio, "write_clicks", lambda path, duration, times, **_k: asked.append(duration))
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
@@ -85,14 +86,14 @@ def test_a_placeholder_take_closes_on_silence_so_its_sound_end_can_be_read(
     assert asked == [pytest.approx(segment.silent_seconds(inputs.settings.narration) + PLACEHOLDER_CLOSE_SECONDS)]
 
 
+@pytest.mark.usefixtures("fake_ffmpeg")
 def test_a_voiced_take_writes_what_the_provider_answered(
-    inputs: Inputs, watched: Watched, fake_ffmpeg: object, fake_voice: object
+    inputs: Inputs, watched: Watched, fake_voice: FakeVoice
 ) -> None:
-    assert fake_ffmpeg is not None
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     (segment,) = [s for s in inputs.spoken() if s.index == 1]
     request = SpeechRequest(text=segment.tts_text, voice_id=VOICE_ID, model="m")
-    row, written = write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)  # type: ignore[arg-type]
+    row, written = write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)
     assert (inputs.workspace.takes_dir / take_file("00000000000000af")).read_bytes() == b"take"
     assert row.voiced is True
     assert row.speech_end_seconds == pytest.approx(1.0)
@@ -100,14 +101,12 @@ def test_a_voiced_take_writes_what_the_provider_answered(
     assert len(written) == 2
 
 
-def test_a_voiced_take_is_charged_on_the_stream_once(
-    inputs: Inputs, watched: Watched, fake_ffmpeg: object, fake_voice: object
-) -> None:
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_voiced_take_is_charged_on_the_stream_once(inputs: Inputs, watched: Watched, fake_voice: FakeVoice) -> None:
     """The line a host's ledger reads carries the section, the take, its characters and its price."""
-    assert fake_ffmpeg is not None and fake_voice is not None
     (segment,) = [s for s in inputs.spoken() if s.index == 1]
     request = SpeechRequest(text=segment.tts_text, voice_id=VOICE_ID, model="m")
-    write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)  # type: ignore[arg-type]
+    write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)
     (charged,) = watched.of(TakeCharged)
     assert charged.section == 1
     assert charged.take == "00000000000000af"
@@ -115,13 +114,11 @@ def test_a_voiced_take_is_charged_on_the_stream_once(
     assert charged.dollars == pytest.approx(len(segment.tts_text) / 1000 * 0.30)
 
 
-def test_the_narration_is_joined_in_the_order_the_index_holds(
-    inputs: Inputs, fake_ffmpeg: object, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_the_narration_is_joined_in_the_order_the_index_holds(inputs: Inputs, monkeypatch: pytest.MonkeyPatch) -> None:
     """The index is the one order the narration plays in, so the join never reads the script."""
     placed: list[audio.Placement] = []
     monkeypatch.setattr(audio, "concat_audio", lambda parts, _out, **_k: placed.extend(parts))
-    assert fake_ffmpeg is not None
     index = Takes(
         script="script.md",
         model="m",
@@ -151,11 +148,9 @@ def test_planned_words_estimate_a_section_nothing_has_voiced_yet(inputs: Inputs)
     assert span == pytest.approx(inputs.lead_seconds(1) + segment.silent_seconds(inputs.settings.narration) + 0.7)
 
 
-def test_planned_words_read_the_take_on_disk_when_there_is_one(
-    inputs: Inputs, fake_ffmpeg: object, fake_voice: object
-) -> None:
+@pytest.mark.usefixtures("fake_ffmpeg", "fake_voice")
+def test_planned_words_read_the_take_on_disk_when_there_is_one(inputs: Inputs) -> None:
     """A cached take already carries its own words, so a cue resolves against them and not a guess."""
-    assert fake_ffmpeg is not None and fake_voice is not None
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     targets = [s for s in inputs.spoken() if s.index == 1]
     plans, _why = voiced_plan(inputs, targets, model="m", voice_id=VOICE_ID)

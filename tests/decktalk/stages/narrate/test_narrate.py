@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -19,17 +20,15 @@ from decktalk.stages.narrate import narrate
 from support.logs import data_of, decisions
 from support.runs import Watched
 
+from ...conftest import FakeVoice
 from .conftest import ENVIRON, SCRIPT, TOML
 
-
-@pytest.fixture(autouse=True)
-def encoder(fake_ffmpeg: object) -> object:
-    """Every narrate test writes audio, and none of them may run ffmpeg to do it."""
-    return fake_ffmpeg
+pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
+"""Every narrate test writes audio, and none of them may run ffmpeg to do it."""
 
 
-def placeholder(inputs: Inputs, watched: Watched, **options: object) -> NarrateResult:
-    return narrate(inputs, watched.run, **options)  # type: ignore[arg-type]
+def placeholder(inputs: Inputs, watched: Watched, **options: Any) -> NarrateResult:  # noqa: ANN401  (narrate's own keywords)
+    return narrate(inputs, watched.run, **options)
 
 
 def test_a_run_without_voice_writes_a_take_for_every_spoken_section(inputs: Inputs, watched: Watched) -> None:
@@ -153,7 +152,7 @@ def test_the_run_reports_one_take_at_a_time(
 
 
 def test_a_paid_run_sends_one_request_per_section_and_reports_what_it_charged(
-    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: object
+    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: FakeVoice
 ) -> None:
     watched = make_run(inputs, voice=Voicing.PAID)
     result = narrate(inputs, watched.run)
@@ -167,11 +166,9 @@ def test_a_paid_run_sends_one_request_per_section_and_reports_what_it_charged(
     assert sum(line.characters for line in charged) == result.spend.characters
 
 
-def test_a_take_the_run_found_on_disk_is_never_charged(
-    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: object
-) -> None:
+@pytest.mark.usefixtures("fake_voice")
+def test_a_take_the_run_found_on_disk_is_never_charged(inputs: Inputs, make_run: Callable[..., Watched]) -> None:
     """A ledger counts what was bought, so a take the cache answered puts no charge on the stream."""
-    assert fake_voice is not None
     narrate(inputs, make_run(inputs, voice=Voicing.PAID).run)
     again = make_run(inputs, voice=Voicing.PAID)
     narrate(inputs, again.run)
@@ -179,7 +176,7 @@ def test_a_take_the_run_found_on_disk_is_never_charged(
 
 
 def test_a_paid_request_carries_the_published_voice_and_its_neighbours(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: object
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
 ) -> None:
     project = one_at_a_time(make_inputs)
     narrate(project, make_run(project, voice=Voicing.PAID).run)
@@ -191,7 +188,7 @@ def test_a_paid_request_carries_the_published_voice_and_its_neighbours(
 
 
 def test_the_price_is_approved_before_anything_is_sent(
-    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: object
+    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: FakeVoice
 ) -> None:
     watched = make_run(inputs, voice=Voicing.PAID)
     narrate(inputs, watched.run)
@@ -202,7 +199,7 @@ def test_the_price_is_approved_before_anything_is_sent(
 
 
 def test_a_run_over_its_ceiling_buys_nothing(
-    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: object
+    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: FakeVoice
 ) -> None:
     watched = make_run(inputs, voice=Voicing.PAID, max_cost=0.001)
     with pytest.raises(ApprovalRequired):
@@ -211,10 +208,8 @@ def test_a_run_over_its_ceiling_buys_nothing(
     assert not inputs.workspace.takes_path.exists()
 
 
-def test_a_run_without_voice_refuses_to_replace_a_paid_take(
-    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: object
-) -> None:
-    assert fake_voice is not None
+@pytest.mark.usefixtures("fake_voice")
+def test_a_run_without_voice_refuses_to_replace_a_paid_take(inputs: Inputs, make_run: Callable[..., Watched]) -> None:
     narrate(inputs, make_run(inputs, voice=Voicing.PAID).run)
     with pytest.raises(InputError) as refused:
         narrate(inputs, make_run(inputs).run)
@@ -223,19 +218,17 @@ def test_a_run_without_voice_refuses_to_replace_a_paid_take(
     assert "--replace-voiced" in refused.value.hint
 
 
-def test_a_run_told_to_replace_a_paid_take_does(
-    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: object
-) -> None:
-    assert fake_voice is not None
+@pytest.mark.usefixtures("fake_voice")
+def test_a_run_told_to_replace_a_paid_take_does(inputs: Inputs, make_run: Callable[..., Watched]) -> None:
     narrate(inputs, make_run(inputs, voice=Voicing.PAID).run)
     result = narrate(inputs, make_run(inputs).run, replace_voiced=True)
     assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
 
 
+@pytest.mark.usefixtures("fake_voice")
 def test_a_run_over_the_sections_nobody_paid_for_is_the_cheap_rehearsal(
-    inputs: Inputs, make_run: Callable[..., Watched], fake_voice: object
+    inputs: Inputs, make_run: Callable[..., Watched]
 ) -> None:
-    assert fake_voice is not None
     narrate(inputs, make_run(inputs, voice=Voicing.PAID).run, only=[1])
     result = narrate(inputs, make_run(inputs).run, only=[2, 3])
     assert [row.section for row in result.sections] == [2, 3]
@@ -338,7 +331,7 @@ def test_a_concurrency_of_one_voices_one_section_at_a_time(
 
 
 def test_two_sections_with_the_same_words_buy_one_take_under_a_pool(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: object
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
 ) -> None:
     """The section that shares its words is indexed after the pool, so it reads the take and buys none."""
     doubled = make_inputs(script="## 1. Open\n\nA bowl.\n\n## 2. Middle\n\nA bowl.\n\n## 3. Close\n\nA ball.\n")

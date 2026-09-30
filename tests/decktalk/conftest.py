@@ -129,7 +129,7 @@ class FakeVoice:
         self.requests.append(request)
         return self.audio, list(self.words)
 
-    def cache_key(self, _request: SpeechRequest) -> str:
+    def cache_key(self, request: SpeechRequest) -> str:  # noqa: ARG002  (the protocol names it)
         return self.name
 
 

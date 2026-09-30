@@ -155,8 +155,8 @@ def test_a_voiced_plan_with_no_voice_named_cannot_check_the_cache(make_inputs: C
     assert all(plan.digest is None for plan in plans)
 
 
-def test_a_voiced_plan_prices_what_it_will_send_and_what_it_can_cost(inputs: Inputs, fake_voice: object) -> None:
-    assert fake_voice is not None
+@pytest.mark.usefixtures("fake_voice")
+def test_a_voiced_plan_prices_what_it_will_send_and_what_it_can_cost(inputs: Inputs) -> None:
     plans, why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
     assert why is None
     spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
