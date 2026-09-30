@@ -147,6 +147,11 @@ select = [
 # so ARG005 there measures the seam rather than the test. ARG still holds over every other argument.
 "tests/**" = ["ARG005"]
 
+[tool.ruff.lint.flake8-annotations]
+# `**kwargs: Any` on a helper that forwards keywords to a typed call says nothing false, and the
+# typed call still checks them. ANN401 still holds over every named parameter and return.
+allow-star-arg-any = true
+
 [tool.ruff.lint.flake8-unused-arguments]
 # A fake of a third-party seam takes the arguments the real one takes, and reads the ones it judges.
 ignore-variadic-names = true

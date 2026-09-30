@@ -62,7 +62,7 @@ def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_
     return inputs
 
 
-def cut_a_clip(inputs: Inputs, run: Run, **options: Any) -> ClipResult:  # noqa: ANN401  (clip's own keywords)
+def cut_a_clip(inputs: Inputs, run: Run, **options: Any) -> ClipResult:
     """One clip of section one, over the whole second the fake encoder says the section runs for."""
     settings: dict[str, Any] = {"section": 1, "start": 0.0, "end": 0.8, "out": Path("media/answer.mp4")}
     settings.update(options)

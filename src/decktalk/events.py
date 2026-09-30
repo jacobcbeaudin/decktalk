@@ -347,7 +347,7 @@ class Events:
             if subscription in self._subscriptions:
                 self._subscriptions.remove(subscription)
 
-    def emit[E: Event](self, run: str, kind: type[E], **fields: Any) -> E:  # noqa: ANN401
+    def emit[E: Event](self, run: str, kind: type[E], **fields: Any) -> E:
         """Mint the four fields onto one event, hand it to every renderer, and give it back.
 
         The fields are typed Any because they are whatever the named event class declares, and the

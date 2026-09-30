@@ -27,7 +27,7 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 """Every narrate test writes audio, and none of them may run ffmpeg to do it."""
 
 
-def placeholder(inputs: Inputs, watched: Watched, **options: Any) -> NarrateResult:  # noqa: ANN401  (narrate's own keywords)
+def placeholder(inputs: Inputs, watched: Watched, **options: Any) -> NarrateResult:
     return narrate(inputs, watched.run, **options)
 
 
