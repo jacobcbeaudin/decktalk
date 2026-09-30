@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import tomlkit
+
 import generated
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -132,17 +134,6 @@ def cell(text: object) -> str:
     return str(text).replace("|", "\\|")
 
 
-def toml_value(value: object) -> str:
-    """One default as it would be written in `decktalk.toml`."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, str):
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    if isinstance(value, list):
-        return "[" + ", ".join(toml_value(x) for x in value) + "]"
-    return str(value)
-
-
 def index(rows: list[tuple[str, str, dict[str, Any]]]) -> list[str]:
     """The verdict-to-keys index, which is the lookup an agent makes with a code and nothing else."""
     by_code: dict[str, list[str]] = {}
@@ -171,8 +162,10 @@ def tables(document: dict[str, Any], rows: list[tuple[str, str, dict[str, Any]]]
         out.append("|---|---|---|---|---|---|---|---|")
         for name, prop in ((name, prop) for t, name, prop in rows if t == table):
             decides = ", ".join(f"`{code}`" for code in prop.get("x-decides", []))
+            # tomlkit writes the default as `decktalk.toml` would hold it, escapes and all.
+            default = tomlkit.item(prop["default"]).as_string()
             out.append(
-                f"| `{name}` | {prop['type']} | `{toml_value(prop['default'])}` | {cell(prop['x-range'])} "
+                f"| `{name}` | {prop['type']} | `{default}` | {cell(prop['x-range'])} "
                 f"| {prop.get('x-unit', '')} | {prop['x-scope']} | {decides} | {cell(prop['description'])} |"
             )
         out.append("")
