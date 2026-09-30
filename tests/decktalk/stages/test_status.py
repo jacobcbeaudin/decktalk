@@ -70,53 +70,37 @@ def test_every_artifact_the_pipeline_declares_says_when_it_is_built() -> None:
     assert set(BUILT) == set(Artifact)
 
 
-def test_a_project_with_nothing_built_is_told_to_rehearse_the_voice(tmp_path: Path) -> None:
-    """The first move a project is told to make never costs credits."""
-    assert next_command(a_project(tmp_path)) == "decktalk narrate --no-voice"
-
-
-def test_a_project_with_takes_is_told_to_resolve_its_cues(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path)
-    take_on_disk(inputs)
-    assert next_command(inputs) == f"decktalk {Stage.CUE.value}"
-
-
-def test_a_project_with_cue_times_is_told_to_record(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path)
-    take_on_disk(inputs)
-    inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
-    assert next_command(inputs) == f"decktalk {Stage.RECORD.value}"
-
-
-def test_a_project_that_describes_no_soundscape_is_never_told_to_generate_one(tmp_path: Path) -> None:
-    """A stage with nothing to do is not the next thing to do."""
-    inputs = a_project(tmp_path)
-    take_on_disk(inputs)
-    inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
+def built_up_to(inputs: Inputs, steps: int) -> None:
+    """The first `steps` artifacts on disk in the order a build makes them, with the take speaking the script."""
+    made = [
+        lambda: take_on_disk(inputs),
+        lambda: inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8"),
+        lambda: inputs.workspace.recording("01").write_bytes(b""),
+        lambda: inputs.workspace.film.write_bytes(b"film"),
+    ]
     inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.recording("01").write_bytes(b"")
-    assert next_command(inputs) == f"decktalk {Stage.ASSEMBLE.value}"
-
-
-def test_a_project_with_everything_built_is_told_to_measure_it(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path)
-    take_on_disk(inputs)
-    inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
-    inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.recording("01").write_bytes(b"")
     inputs.workspace.film.parent.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.film.write_bytes(b"")
-    assert next_command(inputs) == f"decktalk {Stage.VERIFY.value}"
+    for make in made[:steps]:
+        make()
 
 
-def everything_built(inputs: Inputs) -> None:
-    """Every artifact on disk, with the take speaking what the script says now."""
-    take_on_disk(inputs)
-    inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
-    inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.recording("01").write_bytes(b"")
-    inputs.workspace.film.parent.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.film.write_bytes(b"film")
+@pytest.mark.parametrize(
+    ("steps", "command"),
+    [
+        # The first move a project is told to make never costs credits.
+        pytest.param(0, "decktalk narrate --no-voice", id="nothing built rehearses the voice"),
+        pytest.param(1, f"decktalk {Stage.CUE.value}", id="takes resolve their cues"),
+        pytest.param(2, f"decktalk {Stage.RECORD.value}", id="cue times record"),
+        # A project that describes no soundscape is never told to generate one: a stage with nothing
+        # to do is not the next thing to do.
+        pytest.param(3, f"decktalk {Stage.ASSEMBLE.value}", id="recordings assemble, past the soundscape"),
+        pytest.param(4, f"decktalk {Stage.VERIFY.value}", id="a film is measured"),
+    ],
+)
+def test_a_project_is_told_the_next_stage_its_artifacts_leave(tmp_path: Path, steps: int, command: str) -> None:
+    inputs = a_project(tmp_path)
+    built_up_to(inputs, steps)
+    assert next_command(inputs) == command
 
 
 def measured(inputs: Inputs) -> None:
@@ -135,7 +119,7 @@ def test_a_film_the_last_build_measured_leaves_nothing_next(tmp_path: Path, monk
     # The recording here has no log beside it, so the recorder's own rule is told it still stands.
     monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: None)
     inputs = a_project(tmp_path)
-    everything_built(inputs)
+    built_up_to(inputs, 4)
     measured(inputs)
     assert next_command(inputs) is None
     assert status(inputs, a_run(tmp_path)).next is None
@@ -144,7 +128,7 @@ def test_a_film_the_last_build_measured_leaves_nothing_next(tmp_path: Path, monk
 def test_a_script_edit_after_the_build_names_build(tmp_path: Path) -> None:
     """A take of older words is stale, and verify would measure a film its inputs no longer describe."""
     inputs = a_project(tmp_path)
-    everything_built(inputs)
+    built_up_to(inputs, 4)
     measured(inputs)
     (tmp_path / "script.md").write_text(SCRIPT.replace("again", "once more"), encoding="utf-8")
     assert next_command(inputs) == "decktalk build"
@@ -152,14 +136,14 @@ def test_a_script_edit_after_the_build_names_build(tmp_path: Path) -> None:
 
 def test_a_stale_recording_names_build(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    everything_built(inputs)
+    built_up_to(inputs, 4)
     assert next_command(inputs, stale=True) == "decktalk build"
 
 
 def test_a_film_changed_since_the_build_names_build(tmp_path: Path) -> None:
     """A film rewritten outside the build is not the one the record vouches for."""
     inputs = a_project(tmp_path)
-    everything_built(inputs)
+    built_up_to(inputs, 4)
     measured(inputs)
     inputs.workspace.film.write_bytes(b"another film")
     assert next_command(inputs) == "decktalk build"
