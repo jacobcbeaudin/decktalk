@@ -16,6 +16,7 @@ one section it moved, and the rest of the film is read back rather than encoded 
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 from collections.abc import Sequence
@@ -342,12 +343,8 @@ def cut_list(inputs: Inputs, rows: list[Rendered]) -> Cuts:
 
 def rendered_starts(rows: list[Rendered]) -> dict[int, float]:
     """Where each section begins in the finished film, added up from the lengths the cut rendered."""
-    starts: dict[int, float] = {}
-    at = 0.0
-    for row in rows:
-        starts[row.number] = at
-        at += row.seconds
-    return starts
+    ats = itertools.accumulate((row.seconds for row in rows), initial=0.0)
+    return {row.number: at for row, at in zip(rows, ats, strict=False)}
 
 
 def concat(files: list[Path], out: Path) -> None:
