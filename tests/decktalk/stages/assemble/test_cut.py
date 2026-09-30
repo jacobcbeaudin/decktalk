@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from decktalk.artifacts import Takes
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine
@@ -29,6 +30,7 @@ from decktalk.stages.assemble.cut import (
 )
 from support.logs import decisions
 
+from ...conftest import FakeFfmpeg
 from .conftest import MID_CLIP_TOML, TITLED_TOML, draw_slate, open_run, rendered, spoken, take_index, write_project
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
@@ -135,11 +137,7 @@ def test_a_cut_the_run_did_not_name_is_kept_only_under_its_own_key(tmp_path, fak
     A section a `--section` run does not name is still cut through its key, so an unchanged cut is
     read back and one the key does not vouch for is encoded again. Only the named sections are judged.
     """
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
-    _recorded(inputs)
-    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
-    fake_ffmpeg.calls.clear()
+    inputs, takes = cut_once(tmp_path, fake_ffmpeg)
     render_sections(inputs, open_run(tmp_path).run, takes, only=[1, 3], strict=False)
     assert fake_ffmpeg.wrote(".mp4") == []
 
@@ -168,43 +166,52 @@ def test_the_join_opens_every_cut_through_the_file_protocol_and_the_closed_demux
     assert set(ahead[ahead.index("-format_whitelist") + 1].split(",")) == {"concat", "mov"}
 
 
-def _recorded(inputs, numbers=(1, 2, 3)) -> None:  # noqa: ANN001
-    """A webm on disk for each section, so every cut is encoded from a recording rather than from black."""
+def recorded(tmp_path: Path) -> tuple[Inputs, Takes]:
+    """Three narrated sections with a webm on disk for each, so every cut is encoded from a recording."""
+    inputs = write_project(tmp_path)
+    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
     inputs.workspace.recordings_dir.mkdir(parents=True, exist_ok=True)
-    for number in numbers:
+    for number in (1, 2, 3):
         inputs.workspace.recording(f"{number:02d}").write_bytes(f"webm {number}".encode())
+    return inputs, takes
+
+
+def cut_once(tmp_path: Path, fake_ffmpeg: FakeFfmpeg) -> tuple[Inputs, Takes]:
+    """Those three sections cut by one run, which encoded each of them, and the calls it made forgotten."""
+    inputs, takes = recorded(tmp_path)
+    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
+    assert len(fake_ffmpeg.wrote(".mp4")) == 3
+    fake_ffmpeg.calls.clear()
+    return inputs, takes
 
 
 def test_an_unchanged_rebuild_encodes_no_section_again(tmp_path, fake_ffmpeg):
     """A cut whose arguments and whose recording have not moved is read back rather than encoded."""
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
-    _recorded(inputs)
-    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
-    assert len(fake_ffmpeg.wrote(".mp4")) == 3
-    fake_ffmpeg.calls.clear()
+    inputs, takes = cut_once(tmp_path, fake_ffmpeg)
     render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
     assert fake_ffmpeg.wrote(".mp4") == []
 
 
-def test_a_changed_recording_encodes_its_own_section_and_no_other(tmp_path, fake_ffmpeg):
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
-    _recorded(inputs)
+@pytest.mark.parametrize(
+    ("change", "key"),
+    [
+        pytest.param(lambda inputs: inputs.workspace.recording("02").write_bytes(b"again"), "02", id="a new recording"),
+        # A cut with no key beside it may be half written, so it is never kept.
+        pytest.param(
+            lambda inputs: inputs.workspace.section_video("01").with_suffix(".json").unlink(), "01", id="a stopped run"
+        ),
+    ],
+)
+def test_a_changed_section_is_encoded_again_and_no_other(tmp_path, fake_ffmpeg, change, key):
+    inputs, takes = cut_once(tmp_path, fake_ffmpeg)
+    change(inputs)
     render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
-    fake_ffmpeg.calls.clear()
-    inputs.workspace.recording("02").write_bytes(b"recorded again")
-    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
-    assert fake_ffmpeg.wrote(".mp4") == [inputs.workspace.section_video("02")]
+    assert fake_ffmpeg.wrote(".mp4") == [inputs.workspace.section_video(key)]
 
 
 def test_a_changed_fade_encodes_the_sections_it_touches_and_keeps_the_rest(tmp_path, fake_ffmpeg):
     """The key is the whole argument list, so a setting nobody thought to name still moves it."""
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
-    _recorded(inputs)
-    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
-    fake_ffmpeg.calls.clear()
+    inputs, takes = cut_once(tmp_path, fake_ffmpeg)
     toml = (tmp_path / "decktalk.toml").read_text(encoding="utf-8") + "\n[transition]\ndips = [[2, 3]]\n"
     changed = write_project(tmp_path, toml)
     render_sections(changed, open_run(tmp_path).run, takes, only=None, strict=False)
@@ -213,23 +220,9 @@ def test_a_changed_fade_encodes_the_sections_it_touches_and_keeps_the_rest(tmp_p
     assert fake_ffmpeg.wrote(".mp4") == [changed.workspace.section_video("01")]
 
 
-def test_a_cut_left_by_a_stopped_run_is_encoded_again(tmp_path, fake_ffmpeg):
-    """A cut with no key beside it may be half written, so it is never kept."""
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
-    _recorded(inputs)
-    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
-    fake_ffmpeg.calls.clear()
-    inputs.workspace.section_video("01").with_suffix(".json").unlink()
-    render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
-    assert fake_ffmpeg.wrote(".mp4") == [inputs.workspace.section_video("01")]
-
-
 def test_every_cut_kept_or_encoded_says_why(tmp_path, fake_ffmpeg, caplog):
     del fake_ffmpeg
-    inputs = write_project(tmp_path)
-    takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
-    _recorded(inputs)
+    inputs, takes = recorded(tmp_path)
 
     with caplog.at_level("DEBUG", logger="decktalk"):
         render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
