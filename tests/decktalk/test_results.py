@@ -5,16 +5,15 @@ from __future__ import annotations
 import subprocess
 import sys
 import typing
-from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
 
 from decktalk import errors, events, findings, results
 from decktalk.results import RESULTS, Result
+from support.paths import REPO
 from support.samples import sample
 
-ROOT = Path(__file__).resolve().parents[2]
 RESERVED = ("schema", "ok", "findings", "error")
 
 # The commands that open a run, and the commands that write a file. Both directions are asserted, so
@@ -155,22 +154,10 @@ def test_a_result_is_frozen() -> None:
         built.ok = False  # type: ignore[misc]
 
 
-def test_the_committed_schemas_are_what_the_generator_writes() -> None:
+@pytest.mark.parametrize("generator", ["build_result_schemas.py", "build_api.py"])
+def test_the_committed_schemas_and_api_are_what_their_generator_writes(generator: str) -> None:
     done = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build_result_schemas.py"), "--check"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert done.returncode == 0, done.stdout + done.stderr
-
-
-def test_the_committed_api_is_what_the_generator_writes() -> None:
-    done = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build_api.py"), "--check"],
-        capture_output=True,
-        text=True,
-        check=False,
+        [sys.executable, str(REPO / "scripts" / generator), "--check"], capture_output=True, text=True, check=False
     )
     assert done.returncode == 0, done.stdout + done.stderr
 
