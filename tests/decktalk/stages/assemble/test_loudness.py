@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from decktalk.findings import Code
 from decktalk.media import audio
 from decktalk.stages.assemble.loudness import (
     LIMITER_HEADROOM_DB,
@@ -77,3 +78,30 @@ def test_the_measurement_becomes_the_one_shape_a_reader_receives(tmp_path, write
 def test_the_limiter_headroom_keeps_it_under_the_ceiling_it_guards():
     """The limiter works on oversampled samples, so it has to act before the ceiling, not at it."""
     assert LIMITER_HEADROOM_DB > 0
+
+
+SILENCE = float("-inf")
+"""What a silent mix measures, which is no loudness at all."""
+
+
+def test_a_silent_mix_is_encoded_at_unity_gain(tmp_path, write_project, monkeypatch, fake_ffmpeg):
+    inputs = write_project(tmp_path)
+    monkeypatch.setattr(audio, "measure_loudness", lambda *_a, **_k: a_measurement(i=SILENCE, tp=SILENCE))
+    normalize_loudness(inputs, tmp_path / "mix.mov", tmp_path / "work.mp4")
+    graph = next(call[call.index("-af") + 1] for call in fake_ffmpeg.calls if "-af" in call)
+    assert graph.startswith("volume=0.00dB,")
+
+
+def test_a_silent_mix_is_one_finding_that_says_it_is_silent(tmp_path, write_project, open_run):
+    inputs = write_project(tmp_path)
+    opened = open_run(tmp_path)
+    found = loudness_findings(inputs, opened.run, a_measurement(i=SILENCE, tp=SILENCE, lra=0.0))
+    assert [row.code for row in found] == [Code.MIX_LOUDNESS]
+    assert "silent" in found[0].message
+    assert "0.0 LUFS" not in found[0].message
+
+
+def test_a_silent_mix_publishes_no_loudness(tmp_path, write_project):
+    """JSON has no -inf, so the result says the mix was not measured rather than failing to write."""
+    inputs = write_project(tmp_path)
+    assert measured(inputs, a_measurement(i=SILENCE, tp=SILENCE, lra=0.0)) is None

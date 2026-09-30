@@ -14,6 +14,7 @@ audio rather than a choice about a film.
 from __future__ import annotations
 
 import array
+import json
 import math
 import re
 import shutil
@@ -21,6 +22,7 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..errors import ToolError
 from ..settings import CLICK_LEVEL_DBFS
 from . import ffmpeg
 
@@ -194,7 +196,10 @@ def crossfade_join(parts: list[Path], out: Path, *, crossfade_seconds: float, bi
 
 @dataclass(frozen=True)
 class Loudness:
-    """What one loudnorm pass measured about a file, before anything is corrected."""
+    """What one loudnorm pass measured about a file, before anything is corrected.
+
+    A silent file has no loudness, which loudnorm spells as -inf and this record keeps as -inf.
+    """
 
     i: float
     tp: float
@@ -209,14 +214,15 @@ def measure_loudness(path: Path, *, i: float, tp: float, lra: float) -> Loudness
         "-af", f"loudnorm=I={i}:TP={tp}:LRA={lra}:print_format=json", "-f", "null", "-",
     )  # fmt: skip
 
-    def field(name: str) -> float:
-        m = re.search(rf'"{name}"\s*:\s*"([-0-9.]+)"', err)
-        return float(m.group(1)) if m else 0.0
-
+    # loudnorm prints its measurement as the last JSON object on stderr, with every number a string.
+    try:
+        read = json.loads(err[err.rindex("{") : err.rindex("}") + 1])
+    except ValueError as exc:
+        raise ToolError(f"loudnorm printed no measurement for {path.name}.") from exc
     return Loudness(
-        i=field("input_i"),
-        tp=field("input_tp"),
-        lra=field("input_lra"),
-        thresh=field("input_thresh"),
-        offset=field("target_offset"),
+        i=float(read["input_i"]),
+        tp=float(read["input_tp"]),
+        lra=float(read["input_lra"]),
+        thresh=float(read["input_thresh"]),
+        offset=float(read["target_offset"]),
     )
