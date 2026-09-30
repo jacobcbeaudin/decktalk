@@ -217,6 +217,13 @@ def test_a_selection_that_names_no_section_is_refused_with_what_one_looks_like()
         section_numbers("three")
 
 
+def test_a_run_written_backwards_is_refused_rather_than_selecting_nothing() -> None:
+    """A selection of no sections would run every stage on nothing and report success."""
+    with pytest.raises(InputError, match="runs backwards") as refused:
+        section_numbers("3,9-7")
+    assert refused.value.hint == "Write the lower number first, as in 7-9."
+
+
 # ---- the calls -----------------------------------------------------------------------------------
 
 

@@ -124,6 +124,11 @@ def section_numbers(selection: str) -> tuple[int, ...]:
                 hint="Write a number such as 3, a run such as 5-7, or a list such as 3,5-7.",
             )
         first, last = int(match.group(1)), int(match.group(2) or match.group(1))
+        if last < first:
+            raise InputError(
+                f"{item!r} runs backwards, so it names no section.",
+                hint=f"Write the lower number first, as in {last}-{first}.",
+            )
         found.extend(range(first, last + 1))
     return tuple(dict.fromkeys(found))
 
