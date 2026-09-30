@@ -170,6 +170,8 @@ consider_namespace_packages = true
 # tests/ is on the path, so `tests/support/` is imported as `support.<module>` from anywhere in the suite.
 # scripts/ is on it too, so a test imports the script it tests by name, as the scripts import each other.
 pythonpath = ["tests", "scripts"]
+# A test still running after two minutes has hung, so every thread's stack is printed to say where.
+faulthandler_timeout = 120
 # Every marker names its tool in its first clause, so `pytest --markers` answers what a table used to.
 markers = [
     "browser: needs the headless Chromium that `decktalk install` fetches",
