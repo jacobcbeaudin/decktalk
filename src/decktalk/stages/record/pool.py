@@ -197,7 +197,7 @@ class Pool[R]:
                     self.halt.check()
                     opened = opened or self.opening(stack)
                     row.set_result(self.one(opened, job, self.halt))
-                except BaseException as exc:  # noqa: BLE001  (handed to the caller, who raises it on its own thread)
+                except BaseException as exc:  # handed to the caller, who raises it on its own thread
                     with self.lock:
                         later = self.first is not None
                         self.first = self.first or exc

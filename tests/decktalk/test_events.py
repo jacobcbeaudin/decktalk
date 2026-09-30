@@ -375,7 +375,7 @@ def test_pruning_survives_a_file_another_run_removed_first(tmp_path, monkeypatch
         (directory / f"{name}.jsonl").write_text("{}\n", encoding="utf-8")
     real = Path.glob
 
-    def racing(self: Path, pattern: str):  # noqa: ANN202  (Path.glob's own signature)
+    def racing(self: Path, pattern: str):  # Path.glob's own signature
         yield from real(self, pattern)
         yield self / "removed-by-another-run.jsonl"
 

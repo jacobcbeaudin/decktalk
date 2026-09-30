@@ -318,7 +318,7 @@ def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
 
 def _begin(context: Context, shared: dict[str, object], *, command: str) -> Session:
     """This command's session, which is the root's flags with the ones after the command name on top."""
-    global _current  # noqa: PLW0603  (one process runs one command, and a refusal must still render)
+    global _current  # one process runs one command, and a refusal must still render
     base = context.find_root().obj
     flags = base.flags if isinstance(base, Session) else Globals()
     merged = flags.merged({key: value for key, value in shared.items() if key in _GLOBAL_NAMES})
@@ -366,7 +366,7 @@ def root(
 ) -> int:
     """Every picture lands on its word. DeckTalk turns a markdown script, HTML slides and your voice
     into one narrated mp4."""
-    global _current  # noqa: PLW0603  (one process runs one command, and a refusal must still render)
+    global _current  # one process runs one command, and a refusal must still render
     session = Session(Globals(**cast("dict[str, Any]", flags)), command="")
     ctx.obj = session
     _current = session
@@ -409,7 +409,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     `standalone_mode` is off because Typer would otherwise print its own panel and exit 2 with no
     object on stdout, which is the one thing `--json` promises never happens.
     """
-    global _current  # noqa: PLW0603  (one process runs one command, and a refusal must still render)
+    global _current  # one process runs one command, and a refusal must still render
     arguments = list(sys.argv[1:] if argv is None else argv)
     _current = Session(Globals(json_out="--json" in arguments), command="")
     parser = get_command(app)

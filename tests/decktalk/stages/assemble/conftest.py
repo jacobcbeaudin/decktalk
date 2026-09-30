@@ -214,7 +214,7 @@ def durations(monkeypatch: pytest.MonkeyPatch, by_name: dict[str, float], defaul
 
 
 @pytest.fixture
-def rendering(fake_ffmpeg, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN001, ANN201
+def rendering(fake_ffmpeg, monkeypatch: pytest.MonkeyPatch):
     """`fake_ffmpeg` whose outputs are not empty, because a published film is checked for content.
 
     The shared fixture writes a zero-byte file at each output, and `publish` refuses to rename an

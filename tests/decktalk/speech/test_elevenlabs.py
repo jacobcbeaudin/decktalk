@@ -50,7 +50,7 @@ def answers(monkeypatch: pytest.MonkeyPatch, reply: object, *, status: int = 200
     """Answer every request with one canned reply, and give back what was asked, headers and all."""
     asked: list[dict[str, Any]] = []
 
-    def urlopen(request, *, timeout):  # noqa: ANN001, ANN202  (urllib's own signature)
+    def urlopen(request, *, timeout):  # urllib's own signature
         asked.append(
             {
                 "url": request.full_url,

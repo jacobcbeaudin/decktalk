@@ -339,7 +339,7 @@ def route_pages(
                 return
             assets.record(wanted.path, found=True)
             route.fulfill(status=HTTPStatus.OK, content_type=content_type(wanted.path), body=wanted.path.read_bytes())
-        except Exception as exc:  # noqa: BLE001  (the page must learn its request failed rather than wait for it)
+        except Exception as exc:  # the page must learn its request failed rather than wait for it
             # The query is left out, because it is where a page puts what it means to send somewhere.
             shown = request.url.split("?", 1)[0]
             log.warning("The origin could not answer %s.", shown, exc_info=exc, extra={"data": {"url": shown}})

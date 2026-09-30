@@ -23,7 +23,7 @@ Announce = Callable[[str, int, int | None], None]
 """One line about a download: what is being fetched, how much has arrived, and how much there is."""
 
 
-def silent(tool: str, done_bytes: int, total_bytes: int | None) -> None:  # noqa: ARG001  (the listener that hears nothing)
+def silent(tool: str, done_bytes: int, total_bytes: int | None) -> None:  # the listener that hears nothing
     """The listener in force when nobody is watching, which is what keeps a fetcher free of a stream."""
 
 

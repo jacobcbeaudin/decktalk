@@ -176,11 +176,11 @@ def test_every_call_carries_the_timeout_it_was_given(httpserver):
     seen: list[int] = []
     real = _http.urlopen
 
-    def timed(request, *, timeout):  # noqa: ANN001, ANN202  (the opener's own signature)
+    def timed(request, *, timeout):  # the opener's own signature
         seen.append(timeout)
         return real(request, timeout=timeout)
 
-    _http.urlopen = timed  # noqa: SLF001
+    _http.urlopen = timed
     try:
         _http.post_bytes(httpserver.url_for("/plain"), {}, {}, timeout=7, retries=0)
     finally:

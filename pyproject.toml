@@ -136,6 +136,7 @@ select = [
     "PLR0915",  # a statement count above the default is a function that wants to be two
     "PLW1510",  # a `subprocess.run` with no `check` ignores the return code, which is must 4
     "RUF046",   # `int()` around a value that is already an int is a cast that means nothing
+    "RUF100",   # a `noqa` for a rule that no longer fires hides the next finding on that line
 ]
 
 [tool.ruff.lint.per-file-ignores]

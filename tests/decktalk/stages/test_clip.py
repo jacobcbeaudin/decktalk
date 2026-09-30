@@ -100,7 +100,7 @@ def test_the_words_file_holds_every_word_wholly_inside_the_span(tmp_path: Path) 
     assert written.words[0].start == 0.1
 
 
-def test_a_word_the_span_cuts_in_two_is_said_rather_than_written(tmp_path: Path, fake_ffmpeg) -> None:  # noqa: ANN001
+def test_a_word_the_span_cuts_in_two_is_said_rather_than_written(tmp_path: Path, fake_ffmpeg) -> None:
     """No code in the frozen list names a cut word, so the run says it and the file leaves it out.
 
     The span holds the first word whole and cuts the second, which is the case a caller has to be
@@ -134,7 +134,7 @@ def test_a_clip_of_a_voiced_take_is_not_estimated(tmp_path: Path) -> None:
 # ---- what it asks ffmpeg for ----------------------------------------------------------------------
 
 
-def graph_of(fake_ffmpeg) -> str:  # noqa: ANN001
+def graph_of(fake_ffmpeg) -> str:
     """The filter graph of the one call that cut the clip."""
     return next(call[call.index("-filter_complex") + 1] for call in fake_ffmpeg.calls)
 
@@ -154,7 +154,7 @@ def graph_of(fake_ffmpeg) -> str:  # noqa: ANN001
 )
 def test_the_filter_graph_carries_what_the_clip_asked_for(
     tmp_path: Path,
-    fake_ffmpeg,  # noqa: ANN001
+    fake_ffmpeg,
     options: dict[str, object],
     fragments: tuple[str, ...],
 ) -> None:

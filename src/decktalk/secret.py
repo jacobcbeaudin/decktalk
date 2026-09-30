@@ -46,7 +46,7 @@ _lock = threading.Lock()
 
 def register(value: str, name: str = "") -> None:
     """Add one value to the registry, which `Secret` does for every value it holds."""
-    global _known  # noqa: PLW0603  (one registry per process, replaced whole so a reader never sees half of it)
+    global _known  # one registry per process, replaced whole so a reader never sees half of it
     if len(value) < SHORTEST_REGISTERED:
         return
     with _lock:

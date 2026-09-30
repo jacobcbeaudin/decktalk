@@ -179,7 +179,7 @@ class RunHandler(logging.Handler):
         finally:
             HANDLING.reset(token)
 
-    def handleError(self, record: logging.LogRecord) -> None:  # noqa: ARG002, N802  (the standard library's name)
+    def handleError(self, record: logging.LogRecord) -> None:  # noqa: ARG002  (the standard library's name)
         """Count a failure where the standard handler would print a traceback to stderr."""
         self.failures += 1
 
