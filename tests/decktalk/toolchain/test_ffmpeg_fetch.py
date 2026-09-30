@@ -86,6 +86,20 @@ def pin(monkeypatch, key: str, build: fetch.FfmpegBuild) -> None:
     monkeypatch.setattr(fetch, "platform_key", lambda: key)
 
 
+def pinned(
+    monkeypatch, key: str, archive: bytes, *, suffix: str = ".tar.xz", bin_dir: str = "bin/", sha256: str | None = None
+) -> list[str]:
+    """A pinned build of one archive at `https://example.test/<key><suffix>`, served, and the URLs asked for.
+
+    The digest is the archive's own unless a test names another.
+    """
+    url = f"https://example.test/{key}{suffix}"
+    digest = sha256 or hashlib.sha256(archive).hexdigest()
+    asset = fetch.FfmpegAsset(url=url, sha256=digest, bin_dir=bin_dir)
+    pin(monkeypatch, key, fetch.FfmpegBuild(builder="test", license="GPL-3.0-or-later", assets=(asset,)))
+    return serve(monkeypatch, {url: archive})
+
+
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
     """A machine with nothing of its own: an empty cache, no build on PATH, and no resolution kept."""
@@ -138,16 +152,10 @@ def test_fetch_verifies_each_archive_and_installs_both_executables(monkeypatch):
     tar = tar_xz_bytes(
         {"build/bin/ffmpeg": b"#!/bin/sh\necho ffmpeg\n", "build/bin/ffprobe": b"#!/bin/sh\necho ffprobe\n"}
     )
-    url = "https://example.test/ffmpeg-9.tar.xz"
-    build = fetch.FfmpegBuild(
-        builder="test", license="GPL-3.0-or-later",
-        assets=(fetch.FfmpegAsset(url=url, sha256=hashlib.sha256(tar).hexdigest(), bin_dir="build/bin/"),),
-    )  # fmt: skip
-    pin(monkeypatch, "test-one", build)
-    asked = serve(monkeypatch, {url: tar})
+    asked = pinned(monkeypatch, "test-one", tar, bin_dir="build/bin/")
     assert fetch.installed_pinned() is None
     paths = fetch.fetch_ffmpeg(wait_seconds=WAIT)
-    assert asked == [url]
+    assert asked == ["https://example.test/test-one.tar.xz"]
     dest = fetch.install_dir("test-one")
     assert paths == (str(dest / fetch._exe("ffmpeg")), str(dest / fetch._exe("ffprobe")))
     assert sorted(p.name for p in dest.iterdir()) == sorted(fetch._exe(n) for n in ("ffmpeg", "ffprobe"))
@@ -171,13 +179,7 @@ def test_fetch_takes_one_executable_per_archive_from_zip_roots(monkeypatch):
 
 def test_a_digest_mismatch_discards_the_download_and_installs_nothing(tmp_path, monkeypatch):
     tar = tar_xz_bytes({"bin/ffmpeg": b"x", "bin/ffprobe": b"y"})
-    url = "https://example.test/ffmpeg.tar.xz"
-    build = fetch.FfmpegBuild(
-        builder="test", license="GPL-3.0-or-later",
-        assets=(fetch.FfmpegAsset(url=url, sha256="0" * 64, bin_dir="bin/"),),
-    )  # fmt: skip
-    pin(monkeypatch, "test-bad", build)
-    serve(monkeypatch, {url: tar})
+    pinned(monkeypatch, "test-bad", tar, sha256="0" * 64)
     with pytest.raises(ToolError, match="does not match the SHA-256"):
         fetch.fetch_ffmpeg(wait_seconds=WAIT)
     cache = tmp_path / "cache"
@@ -190,14 +192,8 @@ def test_a_digest_mismatch_discards_the_download_and_installs_nothing(tmp_path, 
 
 
 def test_an_oversized_archive_is_refused_before_it_is_read_to_the_end(monkeypatch):
-    url = "https://example.test/huge.zip"
-    build = fetch.FfmpegBuild(
-        builder="test", license="GPL-3.0-or-later",
-        assets=(fetch.FfmpegAsset(url=url, sha256="0" * 64),),
-    )  # fmt: skip
-    pin(monkeypatch, "test-huge", build)
     monkeypatch.setattr(fetch, "MAX_ARCHIVE_BYTES", 10)
-    serve(monkeypatch, {url: b"\0" * 64})
+    pinned(monkeypatch, "test-huge", b"\0" * 64, suffix=".zip", bin_dir="", sha256="0" * 64)
     with pytest.raises(ToolError, match="larger than 10 bytes"):
         fetch.fetch_ffmpeg(wait_seconds=WAIT)
     assert not fetch.install_dir().exists()
@@ -210,13 +206,7 @@ def test_only_the_named_members_leave_the_archive(tmp_path, monkeypatch):
         f"bin/{exe('ffmpeg')}": b"real", f"bin/{exe('ffprobe')}": b"real",
         "../escaped": b"evil", "bin/../../escaped2": b"evil", "/abs/escaped3": b"evil", "bin/extra.txt": b"noise",
     })  # fmt: skip
-    url = "https://example.test/ffmpeg.zip"
-    build = fetch.FfmpegBuild(
-        builder="test", license="GPL-3.0-or-later",
-        assets=(fetch.FfmpegAsset(url=url, sha256=hashlib.sha256(archive).hexdigest(), bin_dir="bin/"),),
-    )  # fmt: skip
-    pin(monkeypatch, "test-escape", build)
-    serve(monkeypatch, {url: archive})
+    pinned(monkeypatch, "test-escape", archive, suffix=".zip")
     fetch.fetch_ffmpeg(wait_seconds=WAIT)
     written = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file() and not is_lock(p))
     prefix = f"cache/ffmpeg/{fetch.FFMPEG_VERSION}-test-escape/"
@@ -225,13 +215,7 @@ def test_only_the_named_members_leave_the_archive(tmp_path, monkeypatch):
 
 def test_an_archive_without_the_executable_is_a_tool_error(monkeypatch):
     archive = zip_bytes({"bin/README": b"no binaries here"})
-    url = "https://example.test/ffmpeg.zip"
-    build = fetch.FfmpegBuild(
-        builder="test", license="GPL-3.0-or-later",
-        assets=(fetch.FfmpegAsset(url=url, sha256=hashlib.sha256(archive).hexdigest(), bin_dir="bin/"),),
-    )  # fmt: skip
-    pin(monkeypatch, "test-empty", build)
-    serve(monkeypatch, {url: archive})
+    pinned(monkeypatch, "test-empty", archive, suffix=".zip")
     with pytest.raises(ToolError, match="holds no file bin/ffmpeg"):
         fetch.fetch_ffmpeg(wait_seconds=WAIT)
     assert not fetch.install_dir().exists()
@@ -310,13 +294,7 @@ def test_an_unpinned_platform_uses_path_or_says_so(monkeypatch):
 def pinned_tar(monkeypatch, key: str) -> bytes:
     """A pinned build of one archive, served and ready to fetch, and the bytes the host will answer with."""
     tar = tar_xz_bytes({"bin/ffmpeg": b"#!/bin/sh\n", "bin/ffprobe": b"#!/bin/sh\n"})
-    url = f"https://example.test/{key}.tar.xz"
-    build = fetch.FfmpegBuild(
-        builder="test", license="GPL-3.0-or-later",
-        assets=(fetch.FfmpegAsset(url=url, sha256=hashlib.sha256(tar).hexdigest(), bin_dir="bin/"),),
-    )  # fmt: skip
-    pin(monkeypatch, key, build)
-    serve(monkeypatch, {url: tar})
+    pinned(monkeypatch, key, tar)
     return tar
 
 
