@@ -243,10 +243,22 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, 
         gap = recording.report.worst_gap_ms
         if gap <= recorder.frame_gap_max_ms or attempt > recorder.retries:
             break
-        run.note(
-            f"Section {job.section.number} stalled for {gap} ms, which is over the "
-            f"{recorder.frame_gap_max_ms} ms limit, so it is recorded again ({attempt} of {recorder.retries}).",
-            level=Level.WARNING,
+        # A retry is a standard record, so a host's own logging hears why a section took twice as long.
+        log.warning(
+            "Section %d stalled for %d ms, which is over the %d ms limit, so it is recorded again (%d of %d).",
+            job.section.number,
+            gap,
+            recorder.frame_gap_max_ms,
+            attempt,
+            recorder.retries,
+            extra={
+                "data": {
+                    "gap_ms": gap,
+                    "limit_ms": recorder.frame_gap_max_ms,
+                    "attempt": attempt,
+                    "retries": recorder.retries,
+                }
+            },
         )
     if recording is None:  # pragma: no cover  (the loop runs at least once)
         raise InputError(f"section {job.section.number} was not recorded.")

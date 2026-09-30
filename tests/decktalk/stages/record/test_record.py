@@ -268,11 +268,16 @@ def test_a_section_the_run_passed_over_with_no_recording_at_all_is_a_missing_fil
     assert not result.ok
 
 
-def test_a_page_that_stalls_is_recorded_again_while_the_machine_is_quieter(tmp_path: Path, driven: Driven) -> None:
+def test_a_page_that_stalls_is_recorded_again_while_the_machine_is_quieter(
+    tmp_path: Path, driven: Driven, caplog: pytest.LogCaptureFixture
+) -> None:
     inputs = a_project(tmp_path)
     driven.stalls = 1
-    record(inputs, a_run(inputs.root), only=[1])
+    with caplog.at_level("WARNING", logger="decktalk"):
+        record(inputs, a_run(inputs.root), only=[1])
     assert driven.urls.count(driven.urls[0]) == 2
+    retried = [vars(record)["data"] for record in caplog.records if "recorded again" in record.getMessage()]
+    assert [(row["attempt"], row["retries"]) for row in retried] == [(1, inputs.settings.record.retries)]
 
 
 def test_what_the_page_could_not_honour_reaches_the_result_as_its_own_code(tmp_path: Path, driven: Driven) -> None:
