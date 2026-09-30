@@ -17,10 +17,9 @@ An **error** means DeckTalk could not run, so nothing was judged. It prints one 
 stops.
 
 ```text
-error[INPUT]: cue found 1 thing(s) that are certainly wrong, so the build stopped there rather than carrying them into the film.
-  hint: Fix these and run the build again:
-  CUE_UNRESOLVED at 1.1:title: the cue 1.1:title waits for 'a phrase nobody says' and section 1 speaks 38 words, none of which is that phrase.
-  docs: https://docs.decktalk.ai/reference/errors/INPUT
+error[NOT_BUILT]: takes.json has not been built.
+  hint: Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing.
+  docs: https://docs.decktalk.ai/reference/errors/NOT_BUILT
 ```
 
 A **finding** is a judgement DeckTalk made about your files or your film. The command ran, and this
