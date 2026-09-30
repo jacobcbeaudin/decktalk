@@ -13,15 +13,16 @@ The numbers every assertion is written against come from `decktalk.page`, which 
 from __future__ import annotations
 
 import json
+import re
 import shutil
-import threading
 from collections.abc import Iterator
-from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from pytest_httpserver import HTTPServer
+from werkzeug import Request, Response
+from werkzeug.utils import send_from_directory
 
 from decktalk.page import (
     APPEAR_WORDS_MAX,
@@ -109,66 +110,39 @@ def opacity_one_frame_in(page: Page, selector: str) -> float:
     )
 
 
-class _Alias(SimpleHTTPRequestHandler):
-    """A local origin that serves a directory and answers the one router alias a preview asks for."""
-
-    times: str | None = None
-
-    def do_GET(self) -> None:  # noqa: N802  (the base class spells it this way)
-        if self.path != "/__decktalk/cue-times.json":
-            super().do_GET()
-            return
-        if type(self).times is None:
-            self.send_error(404)
-            return
-        body = type(self).times.encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format: str, *args: object) -> None:
-        """A test server that printed every request would bury the failure that matters."""
+ALIAS = "/__decktalk/cue-times.json"
+"""The one router alias a preview asks its origin for, which the served directory does not hold."""
 
 
 @pytest.fixture
-def origin(tmp_path: Path) -> Iterator[Any]:
+def origin(tmp_path: Path, httpserver: HTTPServer) -> Iterator[Any]:
     """A served project directory, so a preview can ask for the cue times the last run resolved."""
+    published: list[dict[str, Any]] = []
+
+    def serve(request: Request) -> Response:
+        if request.path != ALIAS:
+            return send_from_directory(tmp_path, request.path.lstrip("/"), request.environ)
+        return Response(json.dumps(published[-1]), mimetype="application/json") if published else Response(status=404)
+
+    httpserver.expect_request(re.compile(".*")).respond_with_handler(serve)
 
     class Server:
-        def __init__(self, root: Path) -> None:
-            self.root = root
-            handler = type("Handler", (_Alias,), {})
-            self.handler = handler
-            self.server = ThreadingHTTPServer(("127.0.0.1", 0), partial(handler, directory=str(root)))
-            self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-            self.thread.start()
-
-        @property
-        def url(self) -> str:
-            return f"http://127.0.0.1:{self.server.server_address[1]}"
-
         def publish(self, document: dict[str, Any] | None) -> None:
-            self.handler.times = None if document is None else json.dumps(document)
+            published[:] = [] if document is None else [document]
 
         def write(self, name: str, body: str) -> str:
             """A page beside its own copy of the runtime and the typesetter, as a project is served."""
-            (self.root / RUNTIME_FILE).write_bytes(runtime_path().read_bytes())
-            shutil.copytree(katex_dir(), self.root / "katex", dirs_exist_ok=True)
-            (self.root / name).write_text(
+            (tmp_path / RUNTIME_FILE).write_bytes(runtime_path().read_bytes())
+            shutil.copytree(katex_dir(), tmp_path / "katex", dirs_exist_ok=True)
+            (tmp_path / name).write_text(
                 f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{name}</title>'
                 f'<link rel="stylesheet" href="katex/katex.min.css"><script src="katex/katex.min.js"></script>'
                 f'<script src="{RUNTIME_FILE}"></script></head><body>{body}</body></html>',
                 encoding="utf-8",
             )
-            return f"{self.url}/{name}"
+            return httpserver.url_for(name)
 
-    served = Server(tmp_path)
-    yield served
-    served.server.shutdown()
-    served.server.server_close()
-    served.thread.join()
+    yield Server()
 
 
 # ---- the shape of a page --------------------------------------------------------------------

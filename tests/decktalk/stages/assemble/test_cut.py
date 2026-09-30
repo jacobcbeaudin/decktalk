@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import threading
 from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -423,28 +421,11 @@ def test_a_planted_cut_that_names_another_tenants_film_is_never_followed(tmp_pat
 
 @pytest.mark.media
 @pytest.mark.usefixtures("real_ffmpeg")
-def test_a_planted_manifest_that_names_a_host_reaches_nothing(tmp_path):
+def test_a_planted_manifest_that_names_a_host_reaches_nothing(tmp_path, httpserver):
     """The segment is on a listener this test holds, so what is measured is the request that never came."""
-    asked: list[str] = []
-
-    class Listener(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            asked.append(self.path)
-            self.send_response(404)
-            self.end_headers()
-
-        def log_message(self, *_args: object) -> None:
-            """Quiet, because the list above is the whole report."""
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Listener)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
     hostile = tmp_path / "build" / "sections" / "01.mp4"
     hostile.parent.mkdir(parents=True)
-    hostile.write_text(MANIFEST.format(target=f"http://127.0.0.1:{server.server_address[1]}/seg.mp4"), encoding="utf-8")
-    try:
-        with pytest.raises(ToolError):
-            concat([hostile], hostile.with_name("picture.mp4"))
-        assert asked == []
-    finally:
-        server.shutdown()
-        server.server_close()
+    hostile.write_text(MANIFEST.format(target=httpserver.url_for("/seg.mp4")), encoding="utf-8")
+    with pytest.raises(ToolError):
+        concat([hostile], hostile.with_name("picture.mp4"))
+    assert httpserver.log == []

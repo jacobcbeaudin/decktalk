@@ -66,3 +66,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             "no test was selected, which is a failure rather than a pass. A bare `pytest` runs the "
             f"tests that need no tool, and each suite is reached by naming its marker: {', '.join(SUITE_MARKERS)}."
         )
+
+
+@pytest.fixture(scope="session")
+def httpserver_listen_address() -> tuple[str, int]:
+    """Every loopback listener binds 127.0.0.1 by number, because a page under test is given that address."""
+    return ("127.0.0.1", 0)

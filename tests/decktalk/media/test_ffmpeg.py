@@ -8,7 +8,6 @@ import shlex
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -253,40 +252,22 @@ def test_a_clip_that_is_a_playlist_naming_another_tenants_film_is_refused(tmp_pa
 
 
 @pytest.mark.media
-def test_a_playlist_that_names_a_host_reaches_nothing(tmp_path):
+def test_a_playlist_that_names_a_host_reaches_nothing(tmp_path, httpserver):
     """The segment is a `.ts` on a listener this test holds, so what is measured is the request that never came.
 
     ffmpeg's own rule already keeps a playlist read from a file off the network, which 0.5.0 relied on.
     The closed set of demuxers refuses the playlist before that rule is asked, and this holds it there.
     """
-    asked: list[str] = []
-
-    class Listener(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            asked.append(self.path)
-            self.send_response(404)
-            self.end_headers()
-
-        def log_message(self, *_args: object) -> None:
-            """Quiet, because the list above is the whole report."""
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Listener)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
     clip = tmp_path / "music.m3u8"
     clip.write_text(
-        f"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:1.0,\n"
-        f"http://127.0.0.1:{server.server_address[1]}/segment.ts\n#EXT-X-ENDLIST\n",
+        f"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:1.0,\n{httpserver.url_for('/segment.ts')}\n#EXT-X-ENDLIST\n",
         encoding="utf-8",
     )
-    try:
-        with pytest.raises(ToolError):
-            ffmpeg.probe_duration(clip)
-        with pytest.raises(ToolError):
-            ffmpeg.stderr(*ffmpeg.source(clip), "-f", "null", "-")
-        assert asked == []
-    finally:
-        server.shutdown()
-        server.server_close()
+    with pytest.raises(ToolError):
+        ffmpeg.probe_duration(clip)
+    with pytest.raises(ToolError):
+        ffmpeg.stderr(*ffmpeg.source(clip), "-f", "null", "-")
+    assert httpserver.log == []
 
 
 # ---- a call that has to stop ------------------------------------------------------------------------

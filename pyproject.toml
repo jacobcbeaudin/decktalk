@@ -94,6 +94,9 @@ dev = [
     "jsonschema>=4.23",
     "pytest>=8",
     "pytest-cov>=6",
+    # A test that needs a listener on this machine asks this plugin for one, and its request log is
+    # what a "reaches nothing" test asserts is empty, rather than a hand-written server per file.
+    "pytest-httpserver>=1.1.5",
     "pytest-timeout>=2.3",
     # The unit row runs under `-n auto`, which halves the time every push waits on.
     "pytest-xdist>=3.6",

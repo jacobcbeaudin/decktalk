@@ -8,7 +8,6 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, get_args
 
@@ -555,7 +554,7 @@ CHANNELS = {"/fetch", "/img", "/beacon", "/ws", "/worker", "udp"}
 
 @pytest.mark.browser
 @pytest.mark.parametrize("policy", ["trusted", "untrusted"])
-def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_path, monkeypatch, policy):
+def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_path, monkeypatch, httpserver, policy):
     """Routing alone let a WebSocket open and WebRTC send STUN packets, so each channel is tried here.
 
     The listeners sit on this machine, so a channel that reached one is a channel that could reach a
@@ -569,21 +568,11 @@ def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_p
         return options | {"args": [*options.get("args", []), LOCAL_NETWORK_ACCESS_OFF]}
 
     monkeypatch.setattr(browser, "launch_options", unchecked)
-    hits: set[str] = set()
+    udp_hits: set[str] = set()
 
-    class Listener(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            hits.add(self.path)
-            self.send_response(200)
-            self.end_headers()
+    def hits() -> set[str]:
+        return {request.path for request, _ in httpserver.log} | udp_hits
 
-        do_POST = do_GET
-
-        def log_message(self, *_args: object) -> None:
-            """Quiet, because the set above is the whole report."""
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Listener)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp.bind(("127.0.0.1", 0))
     udp.settimeout(0.2)
@@ -592,14 +581,14 @@ def test_an_untrusted_page_reaches_nothing_through_any_channel_it_can_open(tmp_p
         while True:
             try:
                 udp.recvfrom(2048)
-                hits.add("udp")
+                udp_hits.add("udp")
             except TimeoutError:
                 continue
             except OSError:
                 return
 
     threading.Thread(target=stun, daemon=True).start()
-    at = f"127.0.0.1:{server.server_address[1]}"
+    at = f"127.0.0.1:{httpserver.port}"
     stun_at = f"127.0.0.1:{udp.getsockname()[1]}"
     deck = tmp_path / "deck"
     deck.mkdir()
@@ -630,13 +619,11 @@ window.tried = (async () => {{
             assert page.evaluate("() => window.tried") is True
             # A beacon and a STUN packet may land after the page is done, so both sides wait as long.
             deadline = time.monotonic() + LATE_SECONDS
-            while hits != CHANNELS and time.monotonic() < deadline:
+            while hits() != CHANNELS and time.monotonic() < deadline:
                 time.sleep(0.05)
     finally:
-        server.shutdown()
-        server.server_close()
         udp.close()
-    assert hits == (CHANNELS if policy == "trusted" else set())
+    assert hits() == (CHANNELS if policy == "trusted" else set())
     assert f"http://{at}" in assets.external
 
 
