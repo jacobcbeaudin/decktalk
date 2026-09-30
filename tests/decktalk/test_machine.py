@@ -602,7 +602,7 @@ def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path, monk
     monkeypatch.setattr(
         Machine,
         "_browser_row",
-        lambda self: machine_module.InstalledTool(tool="chromium", version="140", path=None, fetched=False, bytes=None),
+        lambda self: machine_module.InstalledTool(tool="chromium", version="140", path=None, fetched=False),
     )
     result = here.doctor()
     assert [tool.tool for tool in result.tools] == ["chromium", "ffmpeg", "ffprobe", "katex"]
@@ -698,7 +698,7 @@ def test_install_reports_the_browser_it_just_fetched_rather_than_a_blank_row(
     monkeypatch.setattr(
         type(here),
         "_browser_row",
-        lambda _self: InstalledTool(tool=CHROMIUM, version="141.0.1", path=None, fetched=False, bytes=None),
+        lambda _self: InstalledTool(tool=CHROMIUM, version="141.0.1", path=None, fetched=False),
     )
     (browser, *_rest) = here.install().tools
     assert browser.version == "141.0.1"

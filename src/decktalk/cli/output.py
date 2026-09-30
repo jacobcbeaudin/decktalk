@@ -354,7 +354,7 @@ def _storyboard(result: StoryboardResult) -> Iterable[RenderableType]:
 
 
 def _serve(result: ServeResult) -> Iterable[RenderableType]:
-    yield Text(f"Serving {result.root.as_posix()} on {result.url}")
+    yield Text(f"Serving {result.url}")
 
 
 def _narrate(result: NarrateResult) -> Iterable[RenderableType]:

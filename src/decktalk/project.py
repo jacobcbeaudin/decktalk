@@ -41,7 +41,7 @@ from decktalk.events import Event, Events, Level, Subscription
 from decktalk.files import replace_all
 from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Document, Inputs, Workspace
-from decktalk.inputs.paths import at, relative
+from decktalk.inputs.paths import at
 from decktalk.machine import Machine, Run, apply_fixes, new_run
 from decktalk.pipeline import Stage
 from decktalk.results import (
@@ -484,7 +484,6 @@ class Project:
                 ServeResult,
                 url=served_url(server),
                 port=int(server.server_address[1]),
-                root=relative(self.root, self.root),
             )
             threading.Thread(target=server.serve_forever, daemon=True).start()
             return Origin(server, result)

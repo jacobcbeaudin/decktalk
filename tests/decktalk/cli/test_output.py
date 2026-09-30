@@ -124,9 +124,9 @@ key10 = value13 (project)
   sentence12
   type type11, default default14, range16
   unit unit15
-  hazard hazard36
-  decides PAGE_STAGGER_EMPTY
-  docs docs37
+  hazard hazard35
+  decides PAGE_APPEAR_TOO_LONG
+  docs docs36
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
@@ -170,10 +170,10 @@ Found 1 finding, 1 certain.
  ─────────────────────────────────
  tool11   version12   build/path13
 
-Python    python16
-Platform  platform17
+Python    python15
+Platform  platform16
 Voice key yes
-Bias      18 ms
+Bias      17 ms
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
@@ -189,7 +189,7 @@ Found 1 finding, 1 certain.
  ─────────────────────────────────
  tool11   version12   build/path13
 
-Cache  build/cache15
+Cache  build/cache14
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
@@ -213,7 +213,7 @@ Found 1 finding, 1 certain.
 Found 1 finding, 1 certain.
 """,
         "ServeResult": """\
-Serving build/root13 on url11
+Serving url11
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,

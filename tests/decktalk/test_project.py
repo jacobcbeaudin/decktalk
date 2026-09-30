@@ -561,7 +561,6 @@ def test_an_origin_is_closed_by_leaving_the_block_it_was_opened_in(tmp_path: Pat
     with project.serve(port=0) as origin:
         assert isinstance(origin, Origin)
         assert origin.result.url.startswith("http://127.0.0.1:") and origin.result.port > 0
-        assert origin.result.root == Path()
     with pytest.raises(OSError, match="Bad file descriptor|closed"):
         origin._server.socket.getsockname()
 

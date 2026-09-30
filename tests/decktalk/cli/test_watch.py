@@ -21,7 +21,7 @@ BUILT = BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spen
 class Origin:
     """A local origin that is already there, which is what the loop starts before it builds."""
 
-    result = ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000, root=Path("."))
+    result = ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000)
 
     def __init__(self) -> None:
         self.closed = False

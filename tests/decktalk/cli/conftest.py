@@ -164,7 +164,7 @@ ANSWERS: dict[str, Result] = {
     "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=a_spend()),
     "words": WordsResult(ok=True, run="r", sections=()),
     "storyboard": StoryboardResult(ok=True, run="r", storyboard=Path("build/storyboard.html"), panels=()),
-    "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000, root=Path(".")),
+    "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000),
     "build": BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=a_spend(), seconds=1.0),
 }
 """One prepared answer per command, so a client test says what it asked for rather than what it got."""

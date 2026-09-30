@@ -424,20 +424,6 @@
           "description": "True when this run downloaded it rather than finding it.",
           "title": "Fetched",
           "type": "boolean"
-        },
-        "bytes": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "How large the download was, or null when nothing was fetched.",
-          "title": "Bytes"
         }
       },
       "required": [

@@ -793,15 +793,6 @@
       "title": "Environment",
       "type": "string"
     },
-    "stages": {
-      "default": [],
-      "description": "The stages that read this key.",
-      "items": {
-        "$ref": "#/$defs/Stage"
-      },
-      "title": "Stages",
-      "type": "array"
-    },
     "decides": {
       "default": [],
       "description": "The findings whose verdict this key moves.",

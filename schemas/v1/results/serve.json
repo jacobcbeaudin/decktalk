@@ -595,20 +595,13 @@
       "minimum": 1,
       "title": "Port",
       "type": "integer"
-    },
-    "root": {
-      "description": "The directory the origin serves, project-relative.",
-      "format": "path",
-      "title": "Root",
-      "type": "string"
     }
   },
   "required": [
     "ok",
     "run",
     "url",
-    "port",
-    "root"
+    "port"
   ],
   "title": "ServeResult",
   "type": "object"

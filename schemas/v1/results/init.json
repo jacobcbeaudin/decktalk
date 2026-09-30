@@ -607,17 +607,9 @@
       "type": "string"
     },
     "example": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "The packaged example this project was written from, or null.",
-      "title": "Example"
+      "description": "The packaged example this project was written from.",
+      "title": "Example",
+      "type": "string"
     },
     "skills": {
       "description": "True when the packaged skills were written into the project.",
@@ -630,6 +622,7 @@
     "run",
     "root",
     "name",
+    "example",
     "skills"
   ],
   "title": "InitResult",

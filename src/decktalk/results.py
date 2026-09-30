@@ -157,7 +157,6 @@ class SkipReason(Enum):
     """Why one measurement was not taken, so a skipped row is never read as a passing one."""
 
     AT_SECTION_START = "at_section_start"
-    NO_CATALOG = "no_catalog"
     NO_CUES = "no_cues"
     NO_ONSET = "no_onset"
     NO_SLIDE = "no_slide"
@@ -266,7 +265,6 @@ class InstalledTool(Model):
     version: str | None = Field(None, description="The version this machine holds, or null when it cannot be read.")
     path: ProjectPath | None = Field(None, description="Where the tool is, or null when it is not there.")
     fetched: bool = Field(False, description="True when this run downloaded it rather than finding it.")
-    bytes: int | None = Field(None, ge=0, description="How large the download was, or null when nothing was fetched.")
 
 
 class SectionStatus(Model):
@@ -475,7 +473,7 @@ class InitResult(Result):
     written: Written
     root: ProjectPath = Field(description="The project directory this call created.")
     name: str = Field(description="The project's name, which its film is named after.")
-    example: str | None = Field(None, description="The packaged example this project was written from, or null.")
+    example: str = Field(description="The packaged example this project was written from.")
     skills: bool = Field(description="True when the packaged skills were written into the project.")
 
 
@@ -553,7 +551,6 @@ class ServeResult(Result):
     run: Run
     url: str = Field(description="The origin's base URL, which is where the deck is served.")
     port: int = Field(ge=1, description="The port the origin listens on.")
-    root: ProjectPath = Field(description="The directory the origin serves, project-relative.")
 
 
 class ConfigListResult(Result):
@@ -609,7 +606,6 @@ class ConfigExplainResult(Result):
     line: int | None = Field(None, ge=1, description="The line in that file, or null.")
     layers: tuple[LayerValue, ...] = Field(description="Every layer that stated this key, lowest first.")
     environment: str = Field(description="The environment variable that sets this key.")
-    stages: tuple[Stage, ...] = Field((), description="The stages that read this key.")
     decides: tuple[Code, ...] = Field((), description="The findings whose verdict this key moves.")
     numbers: tuple[NumberView, ...] = Field((), description="The published numbers this key feeds, worked out here.")
     clamped: tuple[str, ...] = Field((), description="Every cue in this project the value in force clamps.")

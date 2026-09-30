@@ -682,7 +682,6 @@
       "description": "Why one measurement was not taken, so a skipped row is never read as a passing one.",
       "enum": [
         "at_section_start",
-        "no_catalog",
         "no_cues",
         "no_onset",
         "no_slide",
