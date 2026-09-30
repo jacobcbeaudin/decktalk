@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -36,32 +37,23 @@ def test_nothing_is_found_under_a_key_nobody_kept(tmp_path: Path) -> None:
     assert a_store(tmp_path).find("k") is None
 
 
-def test_a_frame_whose_loaded_file_moved_is_not_trusted(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        lambda root, _store: (root / "deck" / "index.html").write_text("<html>edited</html>", encoding="utf-8"),
+        lambda root, _store: (root / "deck" / "index.html").unlink(),
+        # A run stopped between the picture and its manifest leaves a picture no later run may keep.
+        lambda _root, store: store.manifest("k").unlink(),
+        lambda _root, store: store.manifest("k").write_text("{", encoding="utf-8"),
+    ],
+    ids=["source-moved", "source-gone", "no-manifest", "manifest-unreadable"],
+)
+def test_a_frame_is_not_trusted_once_what_vouches_for_it_changed(
+    tmp_path: Path, spoil: Callable[[Path, Stills], object]
+) -> None:
     store = a_store(tmp_path)
     store.keep("k", drawn(tmp_path), ["deck/index.html"])
-    (tmp_path / "deck" / "index.html").write_text("<html>edited</html>", encoding="utf-8")
-    assert store.find("k") is None
-
-
-def test_a_frame_whose_loaded_file_is_gone_is_not_trusted(tmp_path: Path) -> None:
-    store = a_store(tmp_path)
-    store.keep("k", drawn(tmp_path), ["deck/index.html"])
-    (tmp_path / "deck" / "index.html").unlink()
-    assert store.find("k") is None
-
-
-def test_a_frame_with_no_manifest_beside_it_is_not_trusted(tmp_path: Path) -> None:
-    """A run stopped between the picture and its manifest leaves a picture no later run may keep."""
-    store = a_store(tmp_path)
-    store.keep("k", drawn(tmp_path), ["deck/index.html"])
-    store.manifest("k").unlink()
-    assert store.find("k") is None
-
-
-def test_a_manifest_that_will_not_parse_is_not_trusted(tmp_path: Path) -> None:
-    store = a_store(tmp_path)
-    store.keep("k", drawn(tmp_path), [])
-    store.manifest("k").write_text("{", encoding="utf-8")
+    spoil(tmp_path, store)
     assert store.find("k") is None
 
 
