@@ -11,11 +11,10 @@ from pydantic import BaseModel
 
 from decktalk import errors, events, findings, results
 from decktalk.results import RESULTS, Result
+from support.commands import RESERVED_KEYS
 from support.paths import REPO
 from support.samples import sample
 from support.spends import a_spend
-
-RESERVED = ("schema", "ok", "findings", "error")
 
 
 def models() -> list[type[BaseModel]]:
@@ -30,7 +29,7 @@ def models() -> list[type[BaseModel]]:
 
 
 def test_the_base_reserves_exactly_four_keys() -> None:
-    assert [field.alias or name for name, field in Result.model_fields.items()] == list(RESERVED)
+    assert [field.alias or name for name, field in Result.model_fields.items()] == list(RESERVED_KEYS)
 
 
 @pytest.mark.parametrize("name", sorted(RESULTS))
@@ -43,7 +42,7 @@ def test_a_result_round_trips_through_its_own_model(name: str) -> None:
 @pytest.mark.parametrize("name", sorted(RESULTS))
 def test_a_result_writes_its_reserved_keys_under_their_published_names(name: str) -> None:
     written = sample(RESULTS[name]).model_dump(mode="json")
-    assert list(written)[: len(RESERVED)] == list(RESERVED)
+    assert list(written)[: len(RESERVED_KEYS)] == list(RESERVED_KEYS)
 
 
 def test_the_two_command_facts_are_class_facts_and_never_fields() -> None:

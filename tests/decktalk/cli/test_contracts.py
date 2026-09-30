@@ -23,13 +23,6 @@ def test_bare_schema_prints_the_whole_instruction_set(run) -> None:
     assert set(written) == {"commands", "globals", "exits", "errors", "findings", "stages"}
 
 
-def test_the_contract_carries_no_envelope(run) -> None:
-    written = json.loads(run("schema").out)
-    assert "schema" not in written
-    assert "ok" not in written
-    assert "findings" not in set(written) - {"findings"} or isinstance(written["findings"], list)
-
-
 def test_a_schema_document_carries_no_reserved_keys(run) -> None:
     written = json.loads(run("schema", "finding").out)
     assert written["title"] == "Finding"
