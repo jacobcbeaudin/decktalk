@@ -12,6 +12,7 @@ from decktalk.artifacts import CueTimes, Words
 from decktalk.artifacts.words import words_file
 from decktalk.errors import ErrorCode, InputError
 from decktalk.inputs import Inputs
+from decktalk.inputs.document import ClipSection
 from decktalk.inputs.env import reading_dotenv
 from decktalk.results import CueTime, SectionCues, Word
 from support.projects import MINIMAL_TOML, write_project
@@ -237,10 +238,10 @@ def test_seamless_parses_on_any_section_but_the_first(tmp_path):
 
 
 def test_a_clip_section_reads_its_words_key(tmp_path):
-    p = Inputs.load(write_project(tmp_path, TITLED_CLIP_TOML), environ={})
-    assert p.document.sections[1].is_clip and p.document.sections[1].words == "media/before.words.json"
-    plain = Inputs.load(write_project(tmp_path, MID_CLIP_TOML), environ={})
-    assert plain.document.sections[1].words is None
+    titled = Inputs.load(write_project(tmp_path, TITLED_CLIP_TOML), environ={}).document.sections[1]
+    assert isinstance(titled, ClipSection) and titled.words == "media/before.words.json"
+    plain = Inputs.load(write_project(tmp_path, MID_CLIP_TOML), environ={}).document.sections[1]
+    assert isinstance(plain, ClipSection) and plain.words is None
 
 
 def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path):

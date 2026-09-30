@@ -29,7 +29,7 @@ from support.runs import a_run, notes
 
 from .conftest import Drawn, FakeAssets
 
-SLIDES = {"1.1": ("1.1:a", "1.1:b")}
+SLIDES: dict[str, tuple[str, ...]] = {"1.1": ("1.1:a", "1.1:b")}
 """One slide with two cues, which is enough to measure a pair and to leave one in front of it."""
 
 TIMES = {"1.1:a": 1.0, "1.1:b": 2.0}
@@ -172,7 +172,7 @@ def test_a_seam_is_a_pop_at_the_cut_only_when_it_would_show(
     inputs = a_project(tmp_path, toml=SEAMLESS)
     drawn.share = share
     first, second = inputs.document.page_sections
-    slides = {1: {"1.1": ("1.1:a",)}, 2: {"2.1": ("2.1:a",)}}
+    slides: dict[int, dict[str, tuple[str, ...]]] = {1: {"1.1": ("1.1:a",)}, 2: {"2.1": ("2.1:a",)}}
     times = {1: {"1.1:a": 1.0}, 2: {"2.1:a": 1.0}}
     found = seam_findings(a_sheet(inputs), first, second, slides, times)
     assert [one.code for one in found] == codes
