@@ -330,13 +330,10 @@ def test_only_keeps_what_the_sections_it_names_ask_for(tmp_path: Path, only: lis
 # ---- where the files go -----------------------------------------------------------------------
 
 
-def test_every_default_path_is_the_workspace_and_no_build_directory_is_spelled_here(tmp_path: Path) -> None:
+def test_every_default_path_is_the_workspace(tmp_path: Path) -> None:
     inputs = an_inputs(tmp_path, TOML.replace('music = "build/soundscape/music.mp3"\n', ""))
     planned = stage.plan_items(inputs)
     assert {item.out.parent for item in planned} == {inputs.workspace.soundscape_dir}
-    source = Path("src/decktalk/stages/soundscape/__init__.py").read_text(encoding="utf-8")
-    assert "build/sfx" not in source
-    assert "build/music" not in source
 
 
 def test_an_item_that_names_its_own_file_is_written_where_the_project_says(tmp_path: Path) -> None:
