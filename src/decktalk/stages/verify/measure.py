@@ -25,7 +25,7 @@ from decktalk.media.frames import Decoded, Size, Wanted
 from decktalk.page import MILLISECONDS
 from decktalk.pagescan import measured_rows, scene_entry
 from decktalk.pipeline import Stage
-from decktalk.results import CueCheck, SkipReason
+from decktalk.results import CueCheck, SkipReason, section_key
 from decktalk.settings import CLICK_LEVEL_DBFS, reference_lead_seconds
 from decktalk.stages.verify.plan import (
     HALF_FRAME,
@@ -68,7 +68,7 @@ def declared_spans(inputs: Inputs, section: int) -> dict[str, float]:
     than one constant that was wrong for a draw and wrong again for a cut.
     """
     found = inputs.document.section(section)
-    log = inputs.recording_log(f"{section:02d}")
+    log = inputs.recording_log(section_key(section))
     scene = getattr(found, "scene", None)
     if log is None or scene is None:
         return {}
@@ -272,7 +272,7 @@ def _planned(
     fps = inputs.settings.video.output_fps
     flags = inputs.document.fade_flags
     found = inputs.document.section(section)
-    key = found.key if found is not None else f"{section:02d}"
+    key = found.key if found is not None else section_key(section)
     dip = frame_dip(inputs.document.transition.dip_seconds, fps)
     fade_in = flags.get(key, (False, False))[0]
     before = reference_time(sec_start, at, fade_in, dip, inputs.settings, fps)

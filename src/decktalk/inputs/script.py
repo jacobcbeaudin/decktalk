@@ -18,6 +18,7 @@ from typing import Any
 
 from decktalk.errors import InputError
 from decktalk.inputs.paths import at
+from decktalk.results import section_key
 from decktalk.settings import NarrationConfig
 
 DIRECTION_MARK = "\x00DIR\x00"
@@ -48,7 +49,7 @@ class Segment:
 
     @property
     def key(self) -> str:
-        return f"{self.index:02d}"
+        return section_key(self.index)
 
     @property
     def spoken(self) -> str:

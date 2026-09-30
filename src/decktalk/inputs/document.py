@@ -22,7 +22,7 @@ from types import NoneType
 from typing import Any, cast, get_args, get_type_hints
 
 from decktalk.errors import InputError
-from decktalk.results import SectionKind
+from decktalk.results import SectionKind, section_key
 from decktalk.settings import BY_ID, PROJECT_FILE, Settings
 from decktalk.tomlmap import Table, unknown_key_message
 
@@ -48,7 +48,7 @@ class ClipSection:
 
     @property
     def key(self) -> str:
-        return f"{self.number:02d}"
+        return section_key(self.number)
 
     @property
     def is_clip(self) -> bool:
@@ -87,7 +87,7 @@ class PageSection:
 
     @property
     def key(self) -> str:
-        return f"{self.number:02d}"
+        return section_key(self.number)
 
     @property
     def is_clip(self) -> bool:

@@ -44,7 +44,7 @@ from decktalk.media.origin import page_url
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import SECOND_DIGITS, Q
 from decktalk.pagescan import scene_entry, slide_cues
-from decktalk.results import SectionKind, Word
+from decktalk.results import SectionKind, Word, section_key
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
 from decktalk.stages.assemble.mix import effect_second
 from decktalk.stages.storyboard import open_project_page
@@ -255,7 +255,7 @@ def described_cues(inputs: Inputs, section: int, at: float) -> tuple[tuple[float
     letter, which printed a step back before the arrival it belongs to, and the runtime now composes
     one sentence per cue in document order, so the order the page gave them in is already right.
     """
-    log = inputs.recording_log(f"{section:02d}")
+    log = inputs.recording_log(section_key(section))
     if log is None:
         return ()
     rows = [

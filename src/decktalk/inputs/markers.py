@@ -33,10 +33,6 @@ class Marker:
     case_sensitive: bool = False
     mute_seconds: float = 0.0
 
-    @property
-    def key(self) -> str:
-        return f"{self.section:02d}"
-
 
 @dataclass(frozen=True)
 class Markers:

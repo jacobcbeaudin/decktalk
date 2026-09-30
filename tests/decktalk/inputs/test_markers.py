@@ -29,9 +29,9 @@ def test_the_markers_file_is_parsed_into_rows_and_a_bad_one_names_its_file(tmp_p
     )
     markers = load_markers(path, tmp_path)
     assert (markers.boost_db, markers.boost_seconds) == (4.0, 1.5)
-    assert [(m.name, m.section, m.key, m.on, m.offset, m.occurrence) for m in markers.markers] == [
-        ("turn", 3, "03", "$start", 0.0, 1),
-        ("land", 4, "04", "seal", 0.2, 2),
+    assert [(m.name, m.section, m.on, m.offset, m.occurrence) for m in markers.markers] == [
+        ("turn", 3, "$start", 0.0, 1),
+        ("land", 4, "seal", 0.2, 2),
     ]
     assert markers.notes == ("markers.json: markers #2: ignoring unknown key 'zebra'.",)
 

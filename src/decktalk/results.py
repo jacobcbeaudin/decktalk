@@ -78,6 +78,11 @@ SectionKey = Annotated[str, Field(description="The section's key, which names it
 """A section's key, which is the stable name its recording, its take and its cut are filed under."""
 
 
+def section_key(number: int) -> str:
+    """The key of the section with this number, which is its number in two digits."""
+    return f"{number:02d}"
+
+
 class Voicing(Enum):
     """What a run does about the voice, which replaces a pair of flags that could contradict each other."""
 

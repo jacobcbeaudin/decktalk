@@ -20,7 +20,7 @@ from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Locat
 from decktalk.inputs.cues import SECTION_END, SECTION_START, Cue, CuedSection, Spoken, norm
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Stage
-from decktalk.results import CueTime, SectionCues, Word
+from decktalk.results import CueTime, SectionCues, Word, section_key
 from decktalk.stages import SECTION_START_SECONDS
 
 REPEATS_MIN = 2
@@ -188,7 +188,7 @@ def resolve_sections(
         sections.append(
             SectionCues(
                 section=block.number,
-                key=f"{block.number:02d}",
+                key=section_key(block.number),
                 estimated=block.number in estimated,
                 cues=tuple(rows),
             )
