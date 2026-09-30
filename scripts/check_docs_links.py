@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -48,10 +49,11 @@ EXTERNAL = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//)")
 
 @dataclass
 class Page:
-    """One .mdx file: the slug the site serves it at, and the anchors it offers."""
+    """One .mdx file: the slug the site serves it at, its text, and the anchors it offers."""
 
     slug: str
     path: Path
+    text: str
     anchors: set[str]
     links: list[str] = field(default_factory=list)
 
@@ -81,12 +83,13 @@ def read_pages() -> dict[str, Page]:
     pages: dict[str, Page] = {}
     for path in sorted(DOCS.rglob("*.mdx")):
         slug = path.relative_to(DOCS).with_suffix("").as_posix()
-        body = prose(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        body = prose(text)
         # Headings keep their code spans, because most of them are a command name in backticks.
         anchors = {slugify(m["text"]) for m in HEADING.finditer(body)}
         body = CODE_SPAN.sub("", body)  # a link inside `backticks` is a sample, not a link
         links = [m["target"] for m in MD_LINK.finditer(body)] + [m["target"] for m in ATTR_LINK.finditer(body)]
-        pages[slug] = Page(slug, path, anchors, links)
+        pages[slug] = Page(slug, path, text, anchors, links)
     return pages
 
 
@@ -139,7 +142,7 @@ def page_problems(pages: dict[str, Page], redirects: dict[str, str]) -> list[str
             if problem:
                 found.append(f"{page.path.relative_to(ROOT)}: {problem}")
         # MDX rejects an HTML comment, and Mintlify then fails to render the whole page.
-        if "<!--" in page.path.read_text(encoding="utf-8"):
+        if "<!--" in page.text:
             found.append(f"{page.path.relative_to(ROOT)}: an HTML comment, which MDX cannot parse, so use {{/* */}}")
     return found
 
@@ -156,7 +159,8 @@ def navigation_problems(pages: dict[str, Page], listed: list[str]) -> list[str]:
     ]
     found += [
         f"docs/docs.json: navigation names {slug} more than once"
-        for slug in sorted({s for s in listed if listed.count(s) > 1})
+        for slug, times in sorted(Counter(listed).items())
+        if times > 1
     ]
     return found
 
@@ -189,12 +193,12 @@ FRONT_MATTER_KEYS = ("title", "description")
 """The keys every page's front matter carries, which the site shows as the heading and the summary."""
 
 
-def front_matter_problems() -> list[str]:
+def front_matter_problems(pages: dict[str, Page]) -> list[str]:
     """Every page whose front matter is missing, does not parse as YAML, or lacks a title or a description."""
     found: list[str] = []
-    for path in sorted(DOCS.rglob("*.mdx")):
-        name = path.relative_to(DOCS).as_posix()
-        lines = path.read_text(encoding="utf-8").splitlines()
+    for page in pages.values():
+        name = page.path.relative_to(ROOT).as_posix()
+        lines = page.text.splitlines()
         if not lines or lines[0] != "---" or "---" not in lines[1:]:
             found.append(f"{name}: the page does not open with front matter between two --- lines")
             continue
@@ -217,13 +221,12 @@ def front_matter_problems() -> list[str]:
     return found
 
 
-def problems() -> list[str]:
+def problems(pages: dict[str, Page]) -> list[str]:
     """Every bad front matter, every broken link, every page outside the navigation, and every entry with no page."""
-    pages = read_pages()
     nav = json.loads(NAV.read_text(encoding="utf-8"))
     redirects = {r["source"].strip("/"): r["destination"].strip("/") for r in nav.get("redirects", [])}
     return (
-        front_matter_problems()
+        front_matter_problems(pages)
         + page_problems(pages, redirects)
         + navigation_problems(pages, nav_slugs(nav))
         + redirect_problems(pages, redirects)
@@ -235,14 +238,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="print the problems alone")
     args = ap.parse_args()
-    found = problems()
+    pages = read_pages()
+    found = problems(pages)
     for line in found:
         print(line)
     if found:
         print(f"{len(found)} front matter, link or navigation problems in docs/.")
         return 1
     if not args.check:
-        pages = read_pages()
         links = sum(len(p.links) for p in pages.values())
         print(
             f"{len(pages)} pages, {links} links, every front matter parses and every link and navigation entry resolves."
