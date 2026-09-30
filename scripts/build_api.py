@@ -32,7 +32,6 @@ TARGET = ROOT / "src" / "decktalk" / "__init__.py"
 PACKAGE = "decktalk"
 
 MODULES = (
-    "artifacts",
     "errors",
     "events",
     "explain",

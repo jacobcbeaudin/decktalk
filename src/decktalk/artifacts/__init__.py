@@ -1,8 +1,9 @@
 """The typed build artifacts and the files they are written to.
 
-These shapes are part of the published contract, because a later stage, a user's own script and the
-page runtime all read them. One module owns each file, every model is frozen, every field name is
-the JSON key, and `Stored` is the one place a file is read from disk or written to it.
+The files are part of the published contract, because a later stage, a user's own script and the
+page runtime all read them, and the reference page documents them as JSON. The classes are not, so
+`decktalk.__all__` leaves them out. One module owns each file, every model is frozen, every field
+name is the JSON key, and `Stored` is the one place a file is read from disk or written to it.
 
     build/narrate/<hash>.words.json   words.py       the time base everything shares
     build/narrate/takes.json          takes.py       the take index and the narration clock
