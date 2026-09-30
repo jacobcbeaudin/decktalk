@@ -563,10 +563,10 @@ class Machine:
         """
         run = Run(self, id=id or new_run(), cancel=cancel or Cancel(), voice=voice, max_cost=max_cost, root=root)
         events_path = events_dir / f"{run.id}{EVENTS_SUFFIX}" if events_dir is not None else None
-        sink, written = None, None
+        sink, written, pruned = None, None, ()
         if events_path is not None:
             if keep_runs is not None:
-                JsonlSink.prune(events_path.parent, keep_runs)
+                pruned = JsonlSink.prune(events_path.parent, keep_runs)
             written = JsonlSink(events_path, max_bytes=max_bytes)
             sink = self.events.subscribe(written, runs=[run.id])
         self.events.emit(run.id, RunStart, events_path=relative(events_path, root) if events_path and root else None)
@@ -589,6 +589,9 @@ class Machine:
                 reading_dotenv(self.dotenv),
                 logging_into(run.logged, run=run.id),
             ):
+                if pruned:
+                    removed = [path.name for path in pruned]
+                    log.debug("Removed %d older events files.", len(removed), extra={"data": {"removed": removed}})
                 yield run
         except BaseException as failure:
             # The reason goes on the run's last line as well as up the stack, because the file under

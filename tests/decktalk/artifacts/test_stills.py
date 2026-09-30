@@ -70,13 +70,17 @@ def idle(path: Path) -> None:
     os.utime(path, (past, past))
 
 
-def test_a_frame_nobody_asked_for_is_removed_when_another_is_kept(tmp_path: Path) -> None:
+def test_a_frame_nobody_asked_for_is_removed_when_another_is_kept(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """Every edit gives a page's frames new keys, so the old ones would otherwise stay forever."""
     store = a_store(tmp_path)
     old = store.keep("old", drawn(tmp_path), [])
     idle(old)
-    store.keep("new", drawn(tmp_path), [])
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        store.keep("new", drawn(tmp_path), [])
     assert not old.exists() and not store.manifest("old").exists()
+    assert any(getattr(record, "data", {}).get("removed") == [old.name] for record in caplog.records)
     assert store.find("new") is not None
 
 

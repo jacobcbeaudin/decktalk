@@ -110,10 +110,12 @@ class Stills:
     def _prune(self) -> None:
         """Remove every frame nobody has found or kept for `IDLE_SECONDS`, its manifest first."""
         idle = time.time() - IDLE_SECONDS
-        for image in self.directory.glob(f"*{IMAGE_SUFFIX}"):
-            if image.stat().st_mtime < idle:
-                self.manifest(image.stem).unlink(missing_ok=True)
-                image.unlink(missing_ok=True)
+        gone = [image for image in self.directory.glob(f"*{IMAGE_SUFFIX}") if image.stat().st_mtime < idle]
+        for image in gone:
+            self.manifest(image.stem).unlink(missing_ok=True)
+            image.unlink(missing_ok=True)
+        if gone:
+            log.debug("Removed %d idle frames.", len(gone), extra={"data": {"removed": [p.name for p in gone]}})
 
 
 __all__ = ["IMAGE_SUFFIX", "MANIFEST_SUFFIX", "StillManifest", "Stills", "still_key"]
