@@ -498,6 +498,10 @@ def read_value(
     return value
 
 
+SWITCHED_OFF = frozenset(("", "0", "no", "false"))
+"""The spellings of a switch variable that leave it off, so any other value turns it on."""
+
+
 def _coerce(annotation: Any, raw: str) -> Any:
     """One environment variable's string, read as the field's own type.
 
@@ -506,7 +510,7 @@ def _coerce(annotation: Any, raw: str) -> Any:
     and that is how one key answers the same way whether it was written in a file or exported.
     """
     if annotation is bool:
-        return raw.lower() not in ("false", "0", "no", "")
+        return raw.lower() not in SWITCHED_OFF
     if _is_optional(annotation):
         return _coerce(get_args(annotation)[0], raw)
     if get_origin(annotation) is tuple:
@@ -552,6 +556,7 @@ __all__ = [
     "A_PERCENT",
     "A_SHARE",
     "PUBLISHED",
+    "SWITCHED_OFF",
     "Bounds",
     "Key",
     "Table",

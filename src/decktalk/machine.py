@@ -111,6 +111,7 @@ from decktalk.settings import (
 )
 from decktalk.settings import Scope as SettingScope
 from decktalk.speech import PROVIDERS, Voices, voicing
+from decktalk.tomlmap import SWITCHED_OFF
 from decktalk.toolchain import assets, chromium_fetch, command_line, tail, traced
 from decktalk.toolchain.announce import announcing
 from decktalk.toolchain.cache import caching_in, standard_cache_dir
@@ -134,9 +135,6 @@ KATEX = "katex"
 
 FIX_TIMEOUT_SECONDS = 1800.0
 """The longest a command fix may run, which fetches a browser and an encoder in minutes and never in an hour."""
-
-SWITCHED_OFF = frozenset(("", "0", "no", "false"))
-"""The spellings of a switch variable that leave it off, so any other value turns it on."""
 
 
 def new_run() -> str:
