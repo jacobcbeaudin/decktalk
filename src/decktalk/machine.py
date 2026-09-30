@@ -88,6 +88,7 @@ from decktalk.results import (
     Scope,
     Spend,
     Voicing,
+    money,
 )
 from decktalk.secret import register_environment
 from decktalk.settings import (
@@ -371,8 +372,8 @@ class Run:
             )
         if spend.ceiling_dollars > self.max_cost:
             raise ApprovalRequired(
-                f"{spend.sentence} The most it can cost, ${spend.ceiling_dollars:.2f}, is over the "
-                f"${self.max_cost:.2f} ceiling --max-cost set.",
+                f"{spend.sentence} The most it can cost, {money(spend.ceiling_dollars)}, is over the "
+                f"{money(self.max_cost)} ceiling --max-cost set.",
                 hint=f"Raise the ceiling to --max-cost {spend.ceiling_dollars:.2f}, or narrow the run with --section.",
             )
         return spend
