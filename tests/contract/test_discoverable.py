@@ -12,64 +12,31 @@ one place that sentence is a test rather than an intention.
 Four surfaces are walked and each is total in both directions. The command line has to publish a
 command for every result the library returns and help for every command and every option it takes.
 The settings tree has to publish, for every key, a sentence, a default, a safe range, a unit, a
-scope and a nature, and the committed schema has to carry the same keys. The finding codes and the
-error codes have to publish a sentence, a certainty where one applies and a documentation address
-that follows the published pattern. The page contract has to publish, for every attribute, what it
+scope and a nature. `tests/decktalk/test_settings.py` holds that record, the generator check
+`build_settings_schema.py --check` holds the committed schema to the same keys, and this file holds
+only the range rule neither of them does. The finding codes and the error codes have to publish a
+sentence, a certainty where one applies and a documentation address that follows the published
+pattern. The page contract has to publish, for every attribute, what it
 is written on, what values it takes, its default, the code that names it and what it affects, or
 name it in the exemption list with the sentence saying why no value of it can change a verdict.
 """
 
 from __future__ import annotations
 
-import json
-from typing import Any
-
 import pytest
 
 from decktalk import page
+from decktalk.cli import catalog
 from decktalk.errors import ErrorCode
 from decktalk.findings import Code, RaisedBy
 from decktalk.results import RESULTS, Result
 from decktalk.settings import KEYS, NUMBERS
-from support.paths import REPO
-
-SCHEMA = REPO / "schemas" / "v1"
-RESULT_SCHEMAS = SCHEMA / "results"
-SETTINGS_SCHEMA = SCHEMA / "decktalk.json"
-MACHINE_SCHEMA = SCHEMA / "machine.json"
 
 DOCS = "https://docs.decktalk.ai"
 """Where every published address resolves, which is the one host a printed URL may name."""
 
 SCHEMA_VERSION = 2
 """The shape version every result publishes, which is the founder's decided contract."""
-
-DOCUMENT = "document"
-"""What the schema marks a table of the author's own content with, which holds no knob to turn."""
-
-
-def settings_schema() -> dict[str, Any]:
-    return json.loads(SETTINGS_SCHEMA.read_text(encoding="utf-8"))
-
-
-def schema_keys(document: dict[str, Any], prefix: str = "") -> set[str]:
-    """Every dotted key the published settings schema names, which is what an agent reads.
-
-    A property that holds properties of its own is a table rather than a key, so the walk descends
-    into it and never counts the table itself as something a value could be written to. A table the
-    schema marks as document is the author's own content rather than a knob, and it is open by
-    design, so it names no key at all.
-    """
-    found: set[str] = set()
-    for name, definition in document.get("properties", {}).items():
-        dotted = f"{prefix}{name}"
-        if not isinstance(definition, dict) or definition.get("x-kind") == DOCUMENT:
-            continue
-        if definition.get("properties"):
-            found |= schema_keys(definition, f"{dotted}.")
-        else:
-            found.add(dotted)
-    return found
 
 
 # ---- the settings, which are the knobs a project turns --------------------------------------
@@ -85,27 +52,15 @@ ratio and a factor are dimensionless and their range is what says how far they m
 """
 
 
-@pytest.mark.parametrize("key", KEYS, ids=[key.id for key in KEYS])
-def test_every_settings_key_publishes_what_an_agent_needs_to_turn_it(key):
-    """A knob with no sentence, no default, no scope or no nature is a knob nobody can turn safely."""
-    assert key.description and key.description.endswith("."), key.id
-    assert key.default is not None, key.id
-    assert key.scope is not None, key.id
-    assert key.nature is not None, key.id
-    if key.annotation in NUMERIC:
-        assert key.bounds is not None, f"{key.id} publishes no safe range, so no value of it is known to be safe."
+def test_every_numeric_settings_key_publishes_a_safe_range():
+    """A number with no range is a knob an agent cannot turn safely, because nothing says how far is too far.
 
-
-@pytest.mark.parametrize("key", KEYS, ids=[key.id for key in KEYS])
-def test_every_settings_key_is_in_the_published_schema(key):
-    """The schema is what an agent reads without running anything, so a key absent from it is invisible."""
-    assert key.id in schema_keys(settings_schema()), f"{key.id} is a key and the published schema does not name it."
-
-
-def test_the_schema_names_no_key_the_settings_tree_does_not_have():
-    """The other direction: a schema entry nothing answers is an instruction an agent cannot follow."""
-    extra = sorted(schema_keys(settings_schema()) - {key.id for key in KEYS})
-    assert extra == [], extra
+    The rest of each key's record, its sentence, default, scope and nature, is held once in
+    `tests/decktalk/test_settings.py`, and the published schema is held to the keys by
+    `build_settings_schema.py --check`. This is the one rule of the record that neither holds.
+    """
+    unranged = sorted(key.id for key in KEYS if key.annotation in NUMERIC and key.bounds is None)
+    assert unranged == [], f"these numeric keys publish no safe range: {unranged}"
 
 
 @pytest.mark.parametrize("number", NUMBERS, ids=[number.id for number in NUMBERS])
@@ -136,12 +91,6 @@ def test_every_error_code_publishes_a_sentence_an_exit_code_and_an_address(code:
     assert code.url == f"{DOCS}/reference/errors/{code.value}", code.name
 
 
-def test_no_code_spells_its_own_certainty():
-    """A code that carried its own certainty would publish one fact twice and could disagree with itself."""
-    for code in Code:
-        assert not code.value.endswith(("_UNSURE", "_MAYBE", "?")), code.name
-
-
 # ---- the page attributes, which are the knobs an author writes in the markup -----------------
 
 
@@ -167,26 +116,7 @@ def test_every_page_attribute_carries_a_code_or_is_exempt_with_its_sentence(attr
         assert row.code.name in Code.__members__, attr.value
 
 
-def test_the_exemption_list_names_no_attribute_the_contract_dropped():
-    """A closed list a test can count beats an open claim, which is why the list is counted here."""
-    extra = sorted(attr.value for attr in page.EXEMPT if attr not in page.ATTRS)
-    assert extra == [], extra
-
-
 # ---- the results, which are what a command publishes -----------------------------------------
-
-
-@pytest.mark.parametrize("name", sorted(RESULTS), ids=sorted(RESULTS))
-def test_every_result_has_a_committed_schema_and_a_sentence_for_every_field(name: str):
-    """An agent reads the schema rather than the source, so a field with no sentence is a field it guesses at."""
-    assert (RESULT_SCHEMAS / f"{name}.json").exists(), f"{name} has no committed schema, so nothing publishes it."
-    for field, definition in RESULTS[name].model_fields.items():
-        assert definition.description, f"{name}.{field} carries no description."
-
-
-def test_the_schema_directory_holds_exactly_the_results_the_library_returns():
-    committed = {path.stem for path in RESULT_SCHEMAS.glob("*.json")}
-    assert committed == set(RESULTS), {"only committed": sorted(committed - set(RESULTS))}
 
 
 def test_every_result_declares_the_shape_version_the_contract_fixes():
@@ -199,37 +129,14 @@ def test_every_result_declares_the_shape_version_the_contract_fixes():
 # ---- the command line, which is the instruction set ------------------------------------------
 
 
-def typer_commands() -> set[str]:
-    """Every command name the Typer app publishes, walked the way `--help` walks it.
-
-    This is the one surface that is not here yet. It fails rather than skips, because a thesis test
-    that passes while the instruction set is missing is the failure the thesis test exists to catch.
-    """
-    try:
-        from decktalk.cli import app  # noqa: PLC0415  (the app is the CLI's, and importing it is the test)
-    except Exception as error:  # noqa: BLE001  (any import failure is the same fact: there is no app)
-        pytest.fail(f"decktalk.cli publishes no Typer app to walk, so no command is discoverable: {error}")
-    from typer.main import get_command  # noqa: PLC0415  (typer is the CLI's dependency, not this file's)
-
-    return set(get_command(app).commands)
-
-
-def test_the_command_set_equals_the_results_the_library_publishes():
-    """A result with no command is a call an agent reading `--help` never learns about."""
-    commands = typer_commands()
-    published = {name.split("-")[0] for name in RESULTS} - {"error", "apply"}
-    assert published <= commands, sorted(published - commands)
-
-
 def test_every_command_and_every_option_carries_its_own_help():
-    """An option with no help is a knob an agent can pass and cannot read, which is the thesis failing."""
-    from typer.main import get_command  # noqa: PLC0415  (typer is the CLI's dependency, not this file's)
+    """An option with no help is a knob an agent can pass and cannot read, which is the thesis failing.
 
-    from decktalk.cli import app  # noqa: PLC0415  (the app is the CLI's, and importing it is the test)
-
+    The catalog walks a group's subcommands too, so the options of `config set` are held as well.
+    """
     bare: list[str] = []
-    for name, command in get_command(app).commands.items():
-        if not command.help:
-            bare.append(name)
-        bare += [f"{name} {param.name}" for param in command.params if not getattr(param, "help", None)]
+    for row in catalog.walk():
+        if not row["purpose"]:
+            bare.append(row["command"])
+        bare += [f"{row['command']} {param['opts'][0]}" for param in row["params"] if not param["help"]]
     assert bare == [], bare

@@ -35,11 +35,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from decktalk.errors import InputError
 from decktalk.events import Level, Unit
-from decktalk.findings import Code, Location
+from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, MusicSpec, SoundSpec
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
+from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Stage
 from decktalk.results import (
     SoundItem,
@@ -51,9 +53,9 @@ from decktalk.results import (
     Voicing,
 )
 from decktalk.settings import ElevenLabsConfig
-from decktalk.speech import VoiceContext
-from decktalk.speech.elevenlabs import ElevenLabs, check_api_base
-from decktalk.stages import clock, judge, selects, since
+from decktalk.speech import get_provider
+from decktalk.speech.elevenlabs import MUSIC_PATH, SOUND_PATH, ElevenLabs
+from decktalk.stages import DOLLAR_DIGITS, dollars_for, price_layer, selects, voice_context
 from decktalk.stages.soundscape.ledger import (
     LEDGER_FILE,
     UNFINISHED_DIGEST,
@@ -68,20 +70,8 @@ AMBIENCE_NAME = "ambience"
 MUSIC_NAME = "music"
 """What the music bed is called, which the `[soundscape]` table does not name either."""
 
-SOUND_PATH = "/sound-generation"
-"""Where a sound request goes on the service, which is part of what a ledger row is keyed by."""
-
-MUSIC_PATH = "/music"
-"""Where a music request goes on the service, which is the other endpoint a row may be keyed by."""
-
-PRICE_KEY = "voice.price_per_1000_characters"
-"""The key that states what speech costs, which is the only rate this project publishes."""
-
-CHARACTERS_PER_PRICE_UNIT = 1000
-"""Truth: the price is stated per thousand characters, which is the unit the key's own name carries."""
-
-MILLISECONDS = 1000
-"""Truth: milliseconds in one second, which is the unit the music service takes its length in."""
+SOUND_PROVIDER = "elevenlabs"
+"""The voice the soundscape buys from, which is the one provider that also makes sounds and music."""
 
 
 @dataclass(frozen=True)
@@ -162,12 +152,13 @@ def plan_items(inputs: Inputs) -> list[Planned]:
     """Every item the `[soundscape]` table declares, in the order the table declares them.
 
     Nothing here reads the disk or the network, so what a run would ask for can be read without
-    asking for it, which is what prices a run before it spends.
+    asking for it, which is what prices a run before it spends. The base names each request in its
+    digest and is sent nothing, so it is checked where a request is made, when the client is built.
     """
     spec = inputs.document.soundscape
     mix = inputs.document.mix
     cfg = inputs.settings.elevenlabs
-    base = check_api_base(cfg.api_base, inputs.env.environ).rstrip("/")
+    base = cfg.api_base.rstrip("/")
     sound, music = base + SOUND_PATH, base + MUSIC_PATH
     items: list[Planned] = []
     if spec.ambience is not None:
@@ -251,32 +242,32 @@ def spend_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | Non
     is the figure the spend gate holds and never an invoice.
     """
     chosen = selects(only)
-    rate = inputs.settings.voice.price_per_1000_characters
     characters = sum(item.characters for item in items)
-    dollars = round(characters / CHARACTERS_PER_PRICE_UNIT * rate, 2)
+    dollars = round(dollars_for(characters, inputs), DOLLAR_DIGITS)
     return Spend(
         state=SpendState.ESTIMATE,
         sections=tuple(section.number for section in inputs.document.sections if chosen(section.number)),
         characters=characters,
         dollars=dollars,
         ceiling_dollars=dollars,
-        price_per_1000_characters=rate,
-        price_layer=inputs.layers.winner(PRICE_KEY).layer,
+        price_per_1000_characters=inputs.settings.voice.price_per_1000_characters,
+        price_layer=price_layer(inputs),
     )
 
 
 def client_for(inputs: Inputs) -> ElevenLabs:
-    """The sound service this project buys from, built from its own settings and its own `.env`."""
-    settings = inputs.settings
-    return ElevenLabs.for_context(
-        VoiceContext(
-            secrets=inputs.env,
-            api_base=settings.elevenlabs.api_base,
-            context_chars=settings.narration.context_chars,
-            speech_timeout_seconds=settings.narration.timeout_seconds,
-            sound_timeout_seconds=settings.elevenlabs.timeout_seconds,
+    """The sound service this project buys from, which is the ElevenLabs voice the running machine answers with.
+
+    It is looked up in the machine's voices like narrate's, so a host that handed its machine another
+    voice is never billed through the shipped one, and the machine's switch and retries apply here too.
+    """
+    client = get_provider(SOUND_PROVIDER, voice_context(inputs))
+    if not isinstance(client, ElevenLabs):
+        raise InputError(
+            f"this machine's {SOUND_PROVIDER!r} voice cannot make sounds, so the soundscape has nothing to buy from.",
+            hint="Skip the soundscape stage on this machine, or give it the shipped ElevenLabs voice.",
         )
-    )
+    return client
 
 
 def _keep(ledger: Ledger, path: Path, entry: SoundEntry) -> Ledger:
@@ -289,28 +280,27 @@ def _keep(ledger: Ledger, path: Path, entry: SoundEntry) -> Ledger:
 def _buy_sound(run: Run, inputs: Inputs, client: ElevenLabs, item: Planned, ledger: Ledger, path: Path) -> Ledger:
     """Buy one ambience bed or one effect, write it, and record what it was bought with."""
     item.out.parent.mkdir(parents=True, exist_ok=True)
-    item.out.write_bytes(client.sound_effect(item.bodies[0], output_format=inputs.settings.narration.output_format))
-    run.wrote(item.out)
-    entry = SoundEntry(
-        name=item.name,
-        kind=item.kind,
-        digest=item.digest,
-        file=inputs.relative(item.out),
-        seconds=ffmpeg.probe_duration(item.out),
-        request=item.request,
+    item.out.write_bytes(
+        client.generate(SOUND_PATH, item.bodies[0], output_format=inputs.settings.narration.output_format)
     )
+    run.wrote(item.out)
     run.wrote(path)
-    return _keep(ledger, path, entry)
+    return _keep(ledger, path, _entry(inputs, item, item.digest))
 
 
-def _unfinished(inputs: Inputs, item: Planned, parts: Sequence[str]) -> SoundEntry:
-    """The row a music item carries while its parts are still being bought, which matches no request."""
+def _entry(inputs: Inputs, item: Planned, digest: str, parts: Sequence[str] = ()) -> SoundEntry:
+    """One item's ledger row, measured once its audio is whole and unmeasured while its parts are still bought.
+
+    A row whose parts are still being bought carries `UNFINISHED_DIGEST`, which matches no request, so
+    a run stopped half way through buys the rest rather than keeping a piece that was never joined.
+    """
+    whole = digest != UNFINISHED_DIGEST
     return SoundEntry(
         name=item.name,
         kind=item.kind,
-        digest=UNFINISHED_DIGEST,
+        digest=digest,
         file=inputs.relative(item.out),
-        seconds=None,
+        seconds=ffmpeg.probe_duration(item.out) if whole else None,
         parts=tuple(parts),
         request=item.request,
     )
@@ -323,7 +313,8 @@ def _buy_music(run: Run, inputs: Inputs, client: ElevenLabs, item: Planned, ledg
     keeps what it has already bought and asks only for the rest.
     """
     cfg = inputs.settings.elevenlabs
-    known = (ledger.of(item.name) or _unfinished(inputs, item, ())).parts
+    previous = ledger.of(item.name)
+    known = previous.parts if previous is not None else ()
     item.out.parent.mkdir(parents=True, exist_ok=True)
     parts: list[Path] = []
     digests: list[str] = []
@@ -334,24 +325,15 @@ def _buy_music(run: Run, inputs: Inputs, client: ElevenLabs, item: Planned, ledg
         if index < len(known) and known[index] == digest and part.is_file():
             run.note(f"{part.name} was bought before and its request is unchanged, so this run keeps it.")
         else:
-            part.write_bytes(client.music(body, output_format=inputs.settings.narration.output_format))
+            part.write_bytes(client.generate(MUSIC_PATH, body, output_format=inputs.settings.narration.output_format))
             run.wrote(part)
         digests.append(digest)
         parts.append(part)
-        ledger = _keep(ledger, path, _unfinished(inputs, item, digests))
+        ledger = _keep(ledger, path, _entry(inputs, item, UNFINISHED_DIGEST, digests))
     audio.crossfade_join(parts, item.out, crossfade_seconds=cfg.music_crossfade_seconds, bitrate=cfg.music_bitrate)
     run.wrote(item.out)
     run.wrote(path)
-    entry = SoundEntry(
-        name=item.name,
-        kind=item.kind,
-        digest=item.digest,
-        file=inputs.relative(item.out),
-        seconds=ffmpeg.probe_duration(item.out),
-        parts=tuple(digests),
-        request=item.request,
-    )
-    return _keep(ledger, path, entry)
+    return _keep(ledger, path, _entry(inputs, item, item.digest, digests))
 
 
 def _row(inputs: Inputs, item: Planned, status: SoundStatus, seconds: float | None) -> SoundItem:
@@ -386,7 +368,6 @@ def soundscape(
     not find. A request the service refuses raises `PROVIDER`, so a run that returns has nothing
     else to judge.
     """
-    started = clock()
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
     path = inputs.workspace.soundscape_dir / LEDGER_FILE
@@ -426,7 +407,7 @@ def soundscape(
                     stage=Stage.SOUNDSCAPE,
                 )
             )
-    return run.result(SoundscapeResult, items=tuple(rows), spend=spend, seconds=since(started))
+    return run.result(SoundscapeResult, items=tuple(rows), spend=spend)
 
 
 __all__ = [

@@ -9,11 +9,14 @@ reporting judgements gains `--fail-on` by saying so on its result model and in n
 from __future__ import annotations
 
 import pytest
+import typer
 
 from decktalk.cli import catalog
-from decktalk.cli.app import PROMPT_FLAGS
+from decktalk.cli.app import PROMPT_FLAGS, command
 from decktalk.cli.options import Group
-from decktalk.results import RESULTS, Result
+from decktalk.results import RESULTS, Result, WordsResult
+
+from .conftest import commands
 
 TOP_LINES = (
     "Every picture lands on its word. DeckTalk turns a markdown script, HTML",
@@ -37,7 +40,7 @@ BUILD_SENTENCES = (
     "Only these sections: 3, 3,5 or 7-9. Repeats.",
     "certain fails on a certain finding, any fails on any finding, never fails on none. Default",
     "Carry on past this finding code. Repeats.",
-    "Build again from nothing, keeping every voiced take.",
+    "Build again from nothing, keeping every voiced take, and measure the film again.",
     "Override one setting here. Repeats. See config explain.",
     "Stay running, rebuild the changed section, never spend.",
     "-p, --json, --events, --color, --no-input, -v and -q work on every command.",
@@ -46,11 +49,6 @@ BUILD_SENTENCES = (
 
 BUILD_METAVARS = ("--max-cost N", "--from STAGE", "--to STAGE", "--skip STAGE", "--section N", "--set KEY=VALUE")
 """Every metavar `build` publishes, because a metavar is what an agent writes after the flag."""
-
-
-def rows() -> dict[str, dict[str, object]]:
-    """Every command of the tree, by the words a caller types to reach it."""
-    return {str(row["command"]): row for row in catalog.walk()}
 
 
 def flat(text: str) -> str:
@@ -70,28 +68,23 @@ def test_the_build_help_says_what_it_promised(run, sentence: str) -> None:
 
 def test_every_command_sits_in_a_declared_group() -> None:
     declared = {group.value for group in Group}
-    assert {str(row["group"]) for row in rows().values()} <= declared
+    assert {str(row["group"]) for row in commands().values()} <= declared
 
 
-def test_every_command_answers_with_a_result_the_registry_knows() -> None:
-    answered = {row["result"] for row in rows().values() if row["result"]}
-    assert answered <= set(RESULTS)
-
-
-@pytest.mark.parametrize("name", sorted(rows()))
+@pytest.mark.parametrize("name", sorted(commands()))
 def test_the_finding_flags_are_exactly_on_the_commands_that_judge(name: str) -> None:
-    row = rows()[name]
-    flags = {opt for param in row["params"] for opt in param["opts"]}  # ty: ignore[not-iterable]
+    row = commands()[name]
+    flags = {opt for param in row["params"] for opt in param["opts"]}
     model = _model(row)
     judges = model is not None and model.reports_findings
     assert ("--fail-on" in flags) is judges
     assert ("--allow" in flags) is judges
 
 
-@pytest.mark.parametrize("name", sorted(rows()))
+@pytest.mark.parametrize("name", sorted(commands()))
 def test_the_spending_flags_are_exactly_on_the_commands_that_buy(name: str) -> None:
-    row = rows()[name]
-    flags = {opt for param in row["params"] for opt in param["opts"]}  # ty: ignore[not-iterable]
+    row = commands()[name]
+    flags = {opt for param in row["params"] for opt in param["opts"]}
     model = _model(row)
     spends = model is not None and model.spends
     assert ("--spend" in flags) is spends
@@ -104,9 +97,18 @@ def _model(row: dict[str, object]) -> type[Result] | None:
     return RESULTS.get(str(row["result"])) if row["result"] else None
 
 
-@pytest.mark.parametrize("name", sorted(rows()))
+@pytest.mark.parametrize("name", sorted(commands()))
+def test_every_command_help_names_every_field_its_result_carries_and_its_docs(run, name: str) -> None:
+    said = flat(run(*name.split(), "--help").out)
+    model = _model(commands()[name])
+    for field in model.model_fields.keys() - Result.model_fields.keys() if model else ():
+        assert field in said, f"{name} --help leaves out {field}"
+    assert f"#decktalk-{name.replace(' ', '-')}" in said
+
+
+@pytest.mark.parametrize("name", sorted(commands()))
 def test_every_command_carries_the_globals_after_its_own_name(name: str) -> None:
-    flags = {opt for param in rows()[name]["params"] for opt in param["opts"]}  # ty: ignore[not-iterable]
+    flags = {opt for param in commands()[name]["params"] for opt in param["opts"]}
     assert {"--json", "--events", "--color", "--no-input", "-v", "-q", "-p"} <= flags
 
 
@@ -115,6 +117,18 @@ def test_a_refused_command_line_is_one_usage_error_with_no_usage_block(run) -> N
     assert ran.exit_code == 2
     assert "error[USAGE]: decktalk build:" in ran.err
     assert "Usage:" not in ran.err
+
+
+def test_an_unknown_flag_names_the_flag_it_most_likely_meant(run) -> None:
+    said = " ".join(run("build", "--secton", "3").err.split())
+    assert "--secton is not a flag of this command. Did you mean --section?" in said
+
+
+def test_an_unknown_flag_like_no_real_one_is_refused_without_a_guess(run) -> None:
+    """Click offered --verbose for --bogus, which is a guess a reader would follow and regret."""
+    said = run("build", "--bogus").err
+    assert "--bogus is not a flag of this command." in said
+    assert "--verbose" not in said
 
 
 def test_yes_is_recognised_and_refused_naming_this_command_s_own_flags(run) -> None:
@@ -139,5 +153,19 @@ def test_a_global_works_before_and_after_the_command_name(run, project, answers)
 
 
 def test_every_flag_that_answers_a_prompt_is_one_the_tree_really_has() -> None:
-    flags = {opt for row in rows().values() for param in row["params"] for opt in param["opts"]}
+    flags = {opt for row in commands().values() for param in row["params"] for opt in param["opts"]}
     assert PROMPT_FLAGS <= flags
+
+
+def test_a_sentence_for_a_flag_the_command_does_not_take_is_refused() -> None:
+    def words(ctx: object) -> WordsResult:  # pragma: no cover  (refused before it is registered)
+        raise AssertionError(ctx)
+
+    with pytest.raises(TypeError, match="spend"):
+        command(group=Group.PROJECT, to=typer.Typer(), helps={"spend": "Buy it."})(words)
+
+
+def test_the_root_shows_the_globals_every_command_hides() -> None:
+    shown = {opt for param in catalog.globals_() if not param["hidden"] for opt in param["opts"]}
+    assert {"--project", "--json", "--events", "--color", "--no-input", "--verbose", "--quiet", "--version"} <= shown
+    assert "--yes" not in shown

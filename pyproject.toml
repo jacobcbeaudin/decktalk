@@ -45,6 +45,12 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
+    # Every fingerprint of a file's content is BLAKE3, which hashes a large recording or film on every
+    # core where SHA-256 reads it on one. 1.0 is the first stable release of the mapped, threaded reader.
+    "blake3>=1.0",
+    # 3.20.1 is the first release that opens the lock file without following a link, which is what
+    # refuses a `build/.lock` planted as a link inside the build directory.
+    "filelock>=3.20.1",
     "playwright>=1.63.0,<2",
     "pydantic>=2.11",
     "rich>=13",
@@ -76,19 +82,49 @@ wheel-exclude = ["**/.DS_Store", "**/runtime/src/**", "**/tsconfig.json"]
 
 [dependency-groups]
 dev = [
-    # `contract/test_results.py` validates every real output against the committed JSON Schema, so the
-    # validator is a development dependency rather than something the schema generator reimplements.
+    # A property test states a rule over every input and draws the examples, where a list of cases
+    # names the ones its author thought of. `tests/conftest.py` fixes the seed, so every run agrees.
+    "hypothesis>=6.168",
+    # `scripts/build_assets.py` traces the wordmark's letters out of a WOFF2 face, and fontTools reads
+    # WOFF2 only with the Brotli decoder its `woff` extra brings.
+    "fonttools[woff]>=4.50",
+    # What a renderer writes is held as the literal text in the test. CI only ever compares: the `CI`
+    # variable turns the plugin's writing off, and under `-n auto` asking it to write is refused.
+    # `pytest -p no:xdist --inline-snapshot=create,fix <file>` is how a person writes one.
+    "inline-snapshot>=0.35",
+    # `scripts/build_outbound_reference.py` renders its page from a template that reads as the page
+    # does, with a loop where each table is written from the data file.
+    "jinja2>=3.1",
+    # The suite validates every command's real output and every setting's default against the
+    # committed JSON Schema, so the validator is a development dependency rather than something the
+    # schema generator reimplements.
     "jsonschema>=4.23",
+    # `contract/test_installer.py` runs install.sh under a terminal of its own, because the script
+    # branches on `[ -t 1 ]`, and pexpect is that terminal and the Ctrl-C it sends.
+    "pexpect>=4.9.0",
     "pytest>=8",
     "pytest-cov>=6",
+    # A test that needs a listener on this machine asks this plugin for one, and its request log is
+    # what a "reaches nothing" test asserts is empty, rather than a hand-written server per file.
+    "pytest-httpserver>=1.1.5",
     "pytest-timeout>=2.3",
+    # The unit row runs under `-n auto`, which halves the time every push waits on.
+    "pytest-xdist>=3.6",
+    # `scripts/check_docs_links.py` parses each page's front matter, and `tests/scripts/test_check.py` reads
+    # `ci.yml` against the check table, so both read YAML as the YAML it is rather than search it as text.
+    "pyyaml>=6",
     "ruff>=0.16.8",
+    # `contract/test_imports.py` reads every import as a graph and asks it for its cycles, which is a
+    # graph algorithm rather than a loop the test should carry. It never reaches the wheel.
+    "rustworkx>=0.17",
     "ty>=0.0.83",
 ]
 
 [tool.ruff]
 line-length = 120
-target-version = "py312"
+# The three roots a module is imported from, so `decktalk`, the suite's `support` and every script
+# sort as first-party without a list of names that a new script would have to join by hand.
+src = ["src", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = [
@@ -101,6 +137,7 @@ select = [
     "PLR0915",  # a statement count above the default is a function that wants to be two
     "PLW1510",  # a `subprocess.run` with no `check` ignores the return code, which is must 4
     "RUF046",   # `int()` around a value that is already an int is a cast that means nothing
+    "RUF100",   # a `noqa` for a rule that no longer fires hides the next finding on that line
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -112,27 +149,27 @@ select = [
 # so ARG005 there measures the seam rather than the test. ARG still holds over every other argument.
 "tests/**" = ["ARG005"]
 
-# `tests/support` is on the path as `support`, so it sorts beside `decktalk` rather than with the
-# third-party packages, which is where a reader looks for it.
-[tool.ruff.lint.isort]
-known-first-party = ["decktalk", "support"]
+[tool.ruff.lint.flake8-annotations]
+# `**kwargs: Any` on a helper that forwards keywords to a typed call says nothing false, and the
+# typed call still checks them. ANN401 still holds over every named parameter and return.
+allow-star-arg-any = true
 
 [tool.ruff.lint.flake8-unused-arguments]
 # A fake of a third-party seam takes the arguments the real one takes, and reads the ones it judges.
 ignore-variadic-names = true
 
-[tool.ruff.format]
-quote-style = "double"
-
 [tool.ty.environment]
-python-version = "3.12"
+# pytest puts scripts/ on the path so a test imports the script it tests by name, and ty reads the
+# same root, so those imports resolve to the scripts rather than to nothing.
+extra-paths = ["scripts"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Two modules of the tree are named plan.py, so their mirrored test files share a basename.
 consider_namespace_packages = true
 # tests/ is on the path, so `tests/support/` is imported as `support.<module>` from anywhere in the suite.
-pythonpath = ["tests"]
+# scripts/ is on it too, so a test imports the script it tests by name, as the scripts import each other.
+pythonpath = ["tests", "scripts"]
 # Every marker names its tool in its first clause, so `pytest --markers` answers what a table used to.
 markers = [
     "browser: needs the headless Chromium that `decktalk install` fetches",
@@ -160,5 +197,4 @@ parallel = true
 # from a real run and gated by `scripts/check_coverage.py`, and a second floor typed into this file
 # would be a number nobody measured that fails `coverage report` on its own.
 [tool.coverage.report]
-show_missing = false
 skip_empty = true

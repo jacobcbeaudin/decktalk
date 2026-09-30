@@ -10,17 +10,21 @@ used to admit the five-minute scaffold build and `-m unit` used to select nothin
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
+from hypothesis import settings
+
+from support.tools import FETCHED, SUITE_MARKERS, machine_tools
 
 pytest_plugins = ["pytester"]
 
-SUITE_MARKERS = ("browser", "media", "e2e", "scaffold", "platform")
-"""The markers that name what a test needs beyond Python. Every one is registered in `pyproject.toml`.
-
-`platform` is the machine itself rather than a tool: those tests assert what this filesystem and
-this fetched toolchain really do, so a runner that has fetched nothing would fail them and the
-default suite may not collect them.
-"""
+# A property test draws its examples from a seed derived from the test itself and keeps no example
+# database, so every machine and every CI run tries the same examples in the same order and a
+# failure seen once is seen again. No deadline is set, because under `-n auto` a slow worker would
+# turn the time an example took into a failure that says nothing about the code.
+settings.register_profile("decktalk", derandomize=True, database=None, deadline=None, print_blob=True)
+settings.load_profile("decktalk")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -58,3 +62,22 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             "no test was selected, which is a failure rather than a pass. A bare `pytest` runs the "
             f"tests that need no tool, and each suite is reached by naming its marker: {', '.join(SUITE_MARKERS)}."
         )
+
+
+@pytest.fixture(scope="session")
+def httpserver_listen_address() -> tuple[str, int]:
+    """Every loopback listener binds 127.0.0.1 by number, because a page under test is given that address.
+
+    It also leaves `localhost` a second host on the same machine, which a redirect test needs.
+    """
+    return ("127.0.0.1", 0)
+
+
+@pytest.fixture(autouse=True)
+def fetched_tools(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Bind this process's machine's tools for every test that runs a fetched tool, and for no other."""
+    if not any(request.node.get_closest_marker(name) for name in FETCHED):
+        yield
+        return
+    with machine_tools():
+        yield

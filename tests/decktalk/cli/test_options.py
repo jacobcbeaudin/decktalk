@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import get_args
+
 import pytest
 import typer
 
-from decktalk.cli.options import GLOBALS, allowed, one_section, pairs, sections_of, shared_for
-from decktalk.findings import Code
-from decktalk.results import RESULTS, BuildResult, InitResult, StatusResult, WordsResult
+from decktalk.cli.options import GLOBALS, FailOn, Force, one_section, pairs, restated, sections_of, shared_for
+from decktalk.findings import Certainty
+from decktalk.results import BuildResult, StatusResult, WordsResult
 
 
 def test_a_section_selection_is_parsed_by_the_library_and_kept_in_order() -> None:
@@ -40,11 +42,6 @@ def test_an_override_that_is_not_a_pair_is_refused_before_anything_loads() -> No
     assert refused.value.param_hint == "--set"
 
 
-def test_allowed_codes_are_a_set_whatever_the_flag_repeated() -> None:
-    assert allowed([Code.CUE_UNKNOWN, Code.CUE_UNKNOWN]) == frozenset({Code.CUE_UNKNOWN})
-    assert allowed(None) == frozenset()
-
-
 def test_the_globals_are_derived_onto_every_command() -> None:
     names = {param.name for param in shared_for(StatusResult)}
     assert {name for name, _, _ in GLOBALS} <= names
@@ -64,9 +61,20 @@ def test_a_result_that_is_not_a_result_gains_the_globals_alone() -> None:
     assert {param.name for param in shared_for(dict)} == {name for name, _, _ in GLOBALS}
 
 
-def test_every_published_result_answers_both_questions_about_its_command() -> None:
-    """The derivation reads two facts off the model, so every published result has to state them."""
-    for model in RESULTS.values():
-        assert isinstance(model.reports_findings, bool)
-        assert isinstance(model.spends, bool)
-    assert InitResult.reports_findings is False
+def test_a_command_can_restate_a_flag_without_touching_the_shared_one() -> None:
+    """A flag that means something narrower on one command says so there and nowhere else."""
+    mine = restated(Force, help="Buy it.", hidden=True)
+    assert _help(mine) == "Buy it."
+    assert _help(Force) != "Buy it."
+    assert not getattr(get_args(Force)[1], "hidden", False)
+
+
+def _help(annotation: object) -> str:
+    """The help sentence an Annotated flag carries, which is what its help row prints."""
+    return next(meta.help for meta in get_args(annotation)[1:] if hasattr(meta, "help"))
+
+
+def test_a_threshold_names_the_least_certain_finding_a_build_stops_on() -> None:
+    assert FailOn.CERTAIN.stops_on is Certainty.CERTAIN
+    assert FailOn.ANY.stops_on is Certainty.UNCERTAIN
+    assert FailOn.NEVER.stops_on is None

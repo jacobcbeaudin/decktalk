@@ -4,10 +4,11 @@
 """Every check DeckTalk runs, in one table, spelled once.
 
     uv run scripts/check.py                  # every group a pull request runs, in order
-    uv run scripts/check.py --fast           # lint and unit alone, in a few seconds
+    uv run scripts/check.py --fast           # lint and unit alone, the two a change most often fails
     uv run scripts/check.py --group browser  # one group, by name, repeatable and comma-separated
     uv run scripts/check.py --list           # the table, for a person
     uv run scripts/check.py --group generated --write  # every generator in the group, writing
+    uv run scripts/check.py --group e2e --prepare      # only what fetches the group's cached tools
     uv run scripts/check.py --json --when pr # the matrix, for a workflow
 
 `GROUPS` below is the only place any check is written down. A workflow reads this table at runtime and
@@ -21,6 +22,9 @@ group runs as `--write` instead, the commands that prepare the machine run as th
 command that only judges is left out. The write commands are read from the same rows, so the one
 command that regenerates what a release made stale cannot forget a generator the check remembers.
 
+`--prepare` runs only the commands at the head of a row that fetch what the tools cache keeps. CI
+runs it before it saves that cache, so a cache is only ever saved from a fetch that finished.
+
 The first run may download headless Chromium and ffmpeg through `decktalk install`, once per machine.
 No check needs an ElevenLabs key, and after `decktalk install` no check needs the network.
 """
@@ -28,22 +32,86 @@ No check needs an ElevenLabs key, and after `decktalk install` no check needs th
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import shutil
 import subprocess
 import sys
 import time
+import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 
 UV = ("uv", "run")
 """Every Python command runs in the project environment, so the lockfile decides what it runs."""
 
+PYTEST = (*UV, "pytest", "-q", "-rs")
+"""How every suite is run. `-rs` prints the reason of every skip, so a skipped test is never silent in a log."""
+
+PARALLEL = ("-n", "auto")
+"""What a suite adds to run on every core, which pytest-xdist reads and only the unit row passes.
+
+The suites that drive a real tool stay serial, because a recording shares the machine's compositor
+and two at once is a timing measurement of the runner rather than of the deck.
+"""
+
 MEASURE = ("--cov", "--cov-report=")
 """What a suite adds to measure itself, which is the data file and no report of its own."""
+
+REPORTS = ROOT / "tests" / "out" / "junit"
+"""Where every measuring suite writes the JUnit report of what it ran, one file named after the group.
+
+Coverage data says which lines a suite reached, and a suite whose every test skipped still reaches
+the lines its imports run, so the data alone called such a suite reporting. The report says how
+many tests ran and how many skipped, which is what `check_coverage.py` needs to call it silent.
+"""
+
+
+def measuring(name: str, *selection: str) -> tuple[str, ...]:
+    """The suite of the group `name`, measuring its coverage and writing the report of what it ran."""
+    return (*PYTEST, *selection, *MEASURE, f"--junitxml={REPORTS / f'{name}.xml'}")
+
+
+WHEEL_TEST = "tests/contract/test_wheel.py"
+"""The test of the built wheel, which only the wheel group runs, right after `uv build` writes one."""
+
+LINT_TESTS = (
+    "tests/contract/test_prose.py",
+    "tests/contract/test_vocabulary.py",
+    "tests/contract/test_numbers.py",
+)
+"""The house rules for prose, vocabulary and numbers, which read the repository's files as text.
+
+They are lint rather than behaviour, so they run once in the lint row. In the unit suite they ran
+on three Pythons for one answer and counted as a fifth of the tests the suite claimed.
+"""
+
+ELSEWHERE: dict[str, str] = {
+    WHEEL_TEST: "wheel",
+    **dict.fromkeys(LINT_TESTS, "lint"),
+}
+"""Every test file the unit suite leaves to another row, and the row that runs it instead.
+
+A contract held by two rows runs twice for one answer, and the wheel test built a wheel of its own in
+unit on three Pythons and again in the wheel row on three platforms, which was nine builds per pull
+request. Each file named here runs in its row alone, and a test holds every name to that row.
+"""
+
+
+def ignoring_elsewhere() -> tuple[str, ...]:
+    """What the unit suite passes so that it leaves every file in `ELSEWHERE` to the row that owns it."""
+    return tuple(f"--ignore={path}" for path in ELSEWHERE)
+
+
+def selected_marker(command: tuple[str, ...]) -> str | None:
+    """The marker a suite's command names with `-m`, or None for the suite that needs no tool."""
+    if "pytest" not in command or "-m" not in command:
+        return None
+    return command[command.index("-m") + 1]
 
 
 def measured(name: str) -> tuple[tuple[str, str], ...]:
@@ -68,18 +136,18 @@ FLOOR = "3.12"
 
 EVERY_PYTHON = (FLOOR, "3.13", "3.14")
 
+NODE = "22"
+"""The Node every leg that lists npm runs, which is the floor `package.json` sets and ci.yml reads from the matrix."""
+
 TOOLS = {
-    "ruff": "0.16.8",
-    "biome": "2.5.13",
     "shellcheck": "0.11.0.1",
     "zizmor": "1.30.1",
 }
-"""Every tool pinned outside the lockfile, and the version every other file must agree on.
+"""Every tool the lint row fetches by version, because neither the lockfile nor `package.json` holds it.
 
-`ruff` is the dev group's floor in `pyproject.toml` and the `ruff-pre-commit` rev, `biome` is
-`biome.json`'s `$schema` and the `@biomejs/biome` entry in `package.json`, `shellcheck` is the
-`shellcheck-py` rev, and `zizmor` is named here alone. A tool fetched without a version is a
-different tool on the day it releases, which is a check that changes its mind on its own.
+`shellcheck` is also the `shellcheck-py` rev in `.pre-commit-config.yaml`, and `zizmor` is named here
+alone. A tool fetched without a version is a different tool on the day it releases, which is a check
+that changes its mind on its own. Ruff is pinned by the lockfile and Biome by `package.json`.
 """
 
 PYPI_DECKTALK = "https://pypi.org/pypi/decktalk/json"
@@ -89,8 +157,7 @@ RUNTIME_TESTS = "tests/decktalk/runtime/src/*.test.ts"
 
 `node --test <dir>` searches the directory on Node 24 and later and runs the directory itself as a
 module on Node 22, which is the version `package.json` sets as the floor and the version CI has. A
-pattern is expanded by the test runner on every version, so this one string is what both this table
-and the `test` script in `package.json` name.
+pattern is expanded by the test runner on every version.
 """
 
 SCRIPT_TESTS = "tests/scripts/*.test.mjs"
@@ -181,13 +248,98 @@ def in_image(image: str, script: str) -> tuple[str, ...]:
 NPM_CI = ("npm", "ci")
 """The pinned Node toolchain, which the runtime generator compiles with and the linters run from."""
 
-FETCH_CHROMIUM = (*UV, "python", "-m", "playwright", "install", "chromium")
-"""The browser `build_assets.py` measures the hero in, fetched the way `media/browser.py` fetches it."""
+INSTALL = (*UV, "decktalk", "install")
+"""Chromium and ffmpeg, fetched by the command a person runs, which is a no-op on a machine that has both."""
 
-PREPARES = (NPM_CI, FETCH_CHROMIUM)
-"""The commands that prepare a machine rather than judge it, which a write needs as much as a check."""
 
-CHECK, WRITE = "--check", "--write"
+@dataclass(frozen=True)
+class Need:
+    """One thing a group needs on its runner, and what provides it.
+
+    `prepare` is the command at the head of the row that provides it, or None when the workflow
+    provides it before the row starts, which ci.yml does by reading the need's name from the matrix.
+    A need that neither a command nor the workflow provides is a promise nothing keeps, which is how
+    the browser and e2e rows once passed in CI with every test skipped.
+    """
+
+    def __post_init__(self) -> None:
+        if self.prepare is None and not self.workflow:
+            raise ValueError(f"nothing provides the need described as: {self.why}")
+
+    why: str
+    prepare: tuple[str, ...] | None = None
+    cached: bool = False  # whether the workflow keeps what `prepare` downloaded, keyed by `tools_key`
+    workflow: bool = False  # whether ci.yml acts on this need before the row starts
+
+
+NEEDS: dict[str, Need] = {
+    "npm": Need(
+        why="Node, which the workflow installs, and the pinned packages, which the row installs.",
+        prepare=NPM_CI,
+        workflow=True,
+    ),
+    "chromium": Need(
+        why="The headless Chromium the recorder drives and `build_assets.py` measures the hero in.",
+        prepare=INSTALL,
+        cached=True,
+    ),
+    "ffmpeg": Need(
+        why="The pinned ffmpeg and ffprobe every media measurement runs through.",
+        prepare=INSTALL,
+        cached=True,
+    ),
+    "history": Need(
+        why="Every commit and tag since the last release, which the workflow's checkout fetches in full.",
+        workflow=True,
+    ),
+}
+"""Every need a row may declare. uv is not one of them, because every row runs through it."""
+
+MOMENTS = ("pr", "main", "schedule")
+"""The moments a row can gate at, which are the three ci.yml computes from the event that started it.
+
+A pull request is `pr`, a push to `main` and a manual run are `main`, and the weekly run is
+`schedule`. A release runs no check of its own, because release.yml consumes the verdict of the run
+on the tip of `main`, so a release gates on exactly what `main` gates on and has no column here.
+"""
+
+LOCKFILE = ROOT / "uv.lock"
+FFMPEG_PIN = ROOT / "src" / "decktalk" / "toolchain" / "ffmpeg_fetch.py"
+FFMPEG_VERSION = "FFMPEG_VERSION"
+"""The name `ffmpeg_fetch.py` gives its pin, read from the source because this script imports no package."""
+
+
+def locked_version(package: str) -> str:
+    """The version of `package` the lockfile resolves, which decides the Chromium revision Playwright fetches."""
+    lock = tomllib.loads(LOCKFILE.read_text(encoding="utf-8"))
+    return next(str(entry["version"]) for entry in lock["package"] if entry["name"] == package)
+
+
+def ffmpeg_pin() -> str:
+    """The ffmpeg release `decktalk install` fetches, read from the assignment in `ffmpeg_fetch.py`."""
+    tree = ast.parse(FFMPEG_PIN.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == FFMPEG_VERSION for target in node.targets
+        ):
+            return str(ast.literal_eval(node.value))
+    raise SystemExit(f"{FFMPEG_PIN.relative_to(ROOT)} no longer assigns {FFMPEG_VERSION}, so no cache key can name it.")
+
+
+def tools_key(group: Group, runner: str) -> str:
+    """The cache key of the tools one leg fetches, or an empty string when the leg fetches nothing to keep.
+
+    The key names the leg and the two pins that decide what `decktalk install` downloads, and nothing
+    else. A key shared by every leg let whichever leg saved first decide the cache for every later
+    run, so one suite ran 102 tests on one run and 5 on the next. A key on the whole lockfile threw
+    the download away on every unrelated dependency bump.
+    """
+    if not any(NEEDS[tool].cached for tool in group.tools):
+        return ""
+    return f"tools-{group.name}-{runner}-playwright-{locked_version('playwright')}-ffmpeg-{ffmpeg_pin()}"
+
+
+CHECK, WRITE, PREPARE = "--check", "--write", "--prepare"
 
 GENERATES = "build_"
 """The prefix every generator's script carries, and the one thing that tells a generator from a check."""
@@ -196,23 +348,37 @@ GENERATES = "build_"
 def generator(name: str) -> tuple[str, ...]:
     """A generated file held to its source. Every generator takes `--check` and `--write` alike.
 
-    The script is named to the project's own interpreter rather than run as a file, because a file
-    run by `uv run` is resolved as a standalone script in an environment of its own and six of these
-    read the package they generate from. The lockfile decides what a generator sees, the same way it
-    decides what a test sees.
+    The script is named to the project's own interpreter rather than run as a file. No generator
+    carries an inline script header, so either form runs in the project environment today, and
+    naming the interpreter keeps it there even if one gains a header, because a file with a header
+    is resolved by `uv run` in an environment of its own and most generators read the package they
+    generate from. The lockfile decides what a generator sees, the same way it decides what a test
+    sees.
     """
     return (*UV, "python", f"scripts/{name}.py", CHECK)
 
 
+FIRST_GENERATOR = "build_runtime"
+"""The generator that runs before the others, because it writes `page.py`, which every other one imports."""
+
+GENERATORS = (
+    FIRST_GENERATOR,
+    *sorted(path.stem for path in (ROOT / "scripts").glob(f"{GENERATES}*.py") if path.stem != FIRST_GENERATOR),
+)
+"""Every generator the generated row runs, read from the directory so a new one gates from the commit that adds it.
+
+A write runs each in a process of its own, in this order, so each one imports the `page.py` the
+runtime's generator has just written rather than the one the run started with.
+"""
+
+
 def writing(command: tuple[str, ...]) -> tuple[str, ...] | None:
-    """The command that writes what `command` checks, the command itself when it prepares, or None.
+    """The command that writes what `command` checks, or None when it only judges.
 
     A generator is a `scripts/build_*.py` run with `--check`, and its write is the same command with
     `--write`, so a generator that needs `uv run --with` to check needs it to write as well. A check
     that generates nothing, such as `check_docs_links.py` or `check_wheel.py`, has no write at all.
     """
-    if command in PREPARES:
-        return command
     generates = any(Path(part).name.startswith(GENERATES) for part in command)
     if not generates or command[-1] != CHECK:
         return None
@@ -220,9 +386,12 @@ def writing(command: tuple[str, ...]) -> tuple[str, ...] | None:
 
 
 def writer(group: Group) -> Group:
-    """The same group with every generator writing, every preparation kept and every check left out."""
+    """The same group with every generator writing and every check left out.
+
+    The preparations stay where they are, because the row still declares the tools they fetch.
+    """
     commands = tuple(written for command in group.commands if (written := writing(command)) is not None)
-    if all(command in PREPARES for command in commands):
+    if not commands:
         raise SystemExit(f"the group {group.name} generates nothing, so --write has nothing to write.")
     return replace(group, why=f"{group.why} This run writes what those checks judge.", commands=commands)
 
@@ -236,11 +405,33 @@ class Group:
     commands: tuple[tuple[str, ...], ...]
     runners: tuple[str, ...]
     pythons: tuple[str, ...]
-    tools: tuple[str, ...]
+    tools: tuple[str, ...]  # names in NEEDS, each provided by a command at the head of the row or by the workflow
     timeout: int  # minutes, which is the CI job's timeout-minutes
     when: tuple[str, ...]
-    wall_seconds: int  # measured on the author's machine, and 0 where nobody has measured it yet
     env: tuple[tuple[str, str], ...] = ()  # what this group's commands need in the environment
+
+    def __post_init__(self) -> None:
+        unknown = [tool for tool in self.tools if tool not in NEEDS]
+        if unknown:
+            raise ValueError(f"the group {self.name} needs {', '.join(unknown)}, which no row can provide.")
+        never = [moment for moment in self.when if moment not in MOMENTS]
+        if never:
+            raise ValueError(f"the group {self.name} gates at {', '.join(never)}, which no run of ci.yml is.")
+
+    @property
+    def preparations(self) -> tuple[tuple[str, ...], ...]:
+        """The commands that provide what this row needs, once each, in the order the row names them."""
+        commands: list[tuple[str, ...]] = []
+        for tool in self.tools:
+            prepare = NEEDS[tool].prepare
+            if prepare is not None and prepare not in commands:
+                commands.append(prepare)
+        return tuple(commands)
+
+    @property
+    def steps(self) -> tuple[tuple[str, ...], ...]:
+        """Everything a run of this row executes, which is its preparations and then its checks."""
+        return (*self.preparations, *self.commands)
 
 
 REPORT_TIMING = "--timing=report"
@@ -249,8 +440,9 @@ REPORT_TIMING = "--timing=report"
 A hosted macOS or Windows runner composites through a stack DeckTalk does not own, and a hosted
 Linux runner that renders in software presents a frame tens of milliseconds after the paint it
 answers. Either way the measurement moves and the deck did not, so these legs report a late reveal
-and Linux stays the one that gates it. This weakens nothing else: `tests/support/timing_policy.py`
-tolerates a late landing alone, and a cue that never changed the picture still fails every runner.
+and Linux is the one meant to gate it, once `LINUX_GATES_TIMING` says it may. This weakens nothing
+else: `tests/support/timing_policy.py` tolerates a late landing alone, and a cue that never changed
+the picture still fails every runner.
 """
 
 
@@ -260,7 +452,22 @@ def reports_timing(command: tuple[str, ...]) -> tuple[str, ...]:
     The flag is `tests/conftest.py`'s own option, so it is added to the suites and to nothing else.
     A tool that never collected a test would exit on an argument it has never heard of.
     """
-    return (*command, REPORT_TIMING) if "pytest" in command else command
+    return (*command, REPORT_TIMING) if "pytest" in command and REPORT_TIMING not in command else command
+
+
+LINUX_GATES_TIMING = False
+"""Whether a late reveal fails the Linux e2e row, which is the one row meant to gate cue timing.
+
+It reports for now. Until every row fetched the tools it declares, that row skipped every test, so
+cue timing has never been measured on a GitHub Linux runner and nobody knows yet whether its
+compositor is trustworthy. When three runs of ci in a row on `main` show the row's log with no late
+reveal, this becomes True and the row gates from then on, as `REPORT_TIMING` describes.
+"""
+
+
+def linux_timing(command: tuple[str, ...]) -> tuple[str, ...]:
+    """The Linux row's suite with cue timing gated or reported, as `LINUX_GATES_TIMING` decides."""
+    return command if LINUX_GATES_TIMING else reports_timing(command)
 
 
 def elsewhere(group: Group) -> Group:
@@ -272,7 +479,7 @@ def elsewhere(group: Group) -> Group:
     which is still before a user meets it.
 
     These two runners are also the ones whose compositor is not trustworthy, so cue timing is
-    reported here and gated on the Linux row of the same group.
+    reported here, and the Linux row of the same group is the one meant to gate it.
     """
     return replace(
         group,
@@ -280,7 +487,7 @@ def elsewhere(group: Group) -> Group:
         why=f"{group.why} This row is macOS and Windows, which gate a merge rather than a pull request.",
         commands=tuple(reports_timing(command) for command in group.commands),
         runners=(MACOS, WINDOWS),
-        when=("main", "release"),
+        when=("main",),
     )
 
 
@@ -288,37 +495,34 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     Group(
         name="browser",
         why="Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.",
-        commands=((*UV, "pytest", "-q", "-m", "browser", *MEASURE),),
+        commands=(measuring("browser", "-m", "browser"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "chromium"),
+        tools=("chromium",),
         timeout=25,
-        when=("pr", "main", "release"),
-        wall_seconds=52,
+        when=("pr", "main"),
         env=measured("browser"),
     ),
     Group(
         name="media",
         why="Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.",
-        commands=((*UV, "pytest", "-q", "-m", "media", *MEASURE),),
+        commands=(measuring("media", "-m", "media"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "ffmpeg"),
+        tools=("ffmpeg",),
         timeout=25,
-        when=("pr", "main", "release"),
-        wall_seconds=9,
+        when=("pr", "main"),
         env=measured("media"),
     ),
     Group(
         name="e2e",
         why="The pipeline fixture built end to end, which samples the joint behaviour of every tool.",
-        commands=((*UV, "pytest", "-q", "-m", "e2e", *MEASURE),),
+        commands=(linux_timing(measuring("e2e", "-m", "e2e")),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "chromium", "ffmpeg"),
+        tools=("chromium", "ffmpeg"),
         timeout=30,
-        when=("pr", "main", "release"),
-        wall_seconds=117,
+        when=("pr", "main"),
         # This suite drives the command line as a subprocess, and a subprocess measures nothing
         # unless it is told where the configuration is. Without this the leg reports no coverage at
         # all, which reads exactly like a leg that passed.
@@ -340,29 +544,29 @@ GROUPS: tuple[Group, ...] = (
             ("uv", "lock", "--check"),
             (*UV, "ruff", "check", "src", "tests", "scripts"),
             (*UV, "ruff", "format", "--check", "src", "tests", "scripts"),
-            (*UV, "ty", "check", "src"),
-            NPM_CI,
+            (*UV, "ty", "check", "src", "tests", "scripts"),
             ("npm", "exec", "--no", "--", "biome", "ci", "."),
             ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "install.sh"),
             ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
+            (*PYTEST, *LINT_TESTS),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "npm"),
+        tools=("npm",),
         timeout=10,
-        when=("pr", "main", "release"),
-        wall_seconds=0,
+        when=("pr", "main"),
     ),
     Group(
         name="unit",
         why="Every test that needs no tool, which the collection hook makes the default suite.",
-        commands=((*UV, "pytest", "-q", *MEASURE),),
+        # The suite runs on every core the runner has, which halves the leg every push waits on.
+        # pytest-cov combines what each worker measured into the one data file the floor reads.
+        commands=(measuring("unit", *PARALLEL, *ignoring_elsewhere()),),
         runners=(LINUX,),
         pythons=EVERY_PYTHON,
-        tools=("uv",),
+        tools=(),
         timeout=15,
-        when=("pr", "main", "release"),
-        wall_seconds=17,
+        when=("pr", "main"),
         # The floor is one number over every suite, and this is the suite that reaches most of the
         # package, so a floor combined without it is a floor no complete run could meet.
         env=measured("unit"),
@@ -370,66 +574,46 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="node",
         why="The runtime's pure functions and the release's next version, under node --test, with no framework.",
-        commands=(NPM_CI, ("node", "--test", RUNTIME_TESTS, SCRIPT_TESTS)),
+        commands=(("node", "--test", RUNTIME_TESTS, SCRIPT_TESTS),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("npm",),
         timeout=10,
-        when=("pr", "main", "release"),
-        wall_seconds=0,
+        when=("pr", "main"),
     ),
     *ON_A_REAL_TOOL,
     *(elsewhere(group) for group in ON_A_REAL_TOOL),
     Group(
         name="platform",
         why="The short list only macOS or Windows can prove, plus the two commands every machine runs.",
+        # `decktalk install` is this row's preparation, so every run of it proves the fetch works
+        # unattended on all three platforms before the suite asserts what the fetch left behind.
         commands=(
-            (*UV, "pytest", "-q", "-m", "platform"),
-            (*UV, "decktalk", "install"),
+            (*PYTEST, "-m", "platform"),
             (*UV, "decktalk", "doctor"),
         ),
         runners=EVERY_PLATFORM,
         pythons=(FLOOR,),
-        tools=("uv", "chromium", "ffmpeg"),
+        tools=("chromium", "ffmpeg"),
         timeout=20,
-        when=("pr", "main", "release"),
-        wall_seconds=0,
+        when=("pr", "main"),
     ),
     Group(
         name="generated",
         why="Every generated file held to the source it is generated from, and every link in them.",
+        # The runtime bundles are compiled by the pinned TypeScript, so the row needs npm.
+        # `build_assets.py` measures the hero's word widths in the real Chromium with the real font,
+        # and a generator that launches Playwright directly reaches nothing that would fetch it, so
+        # the row needs Chromium as much as the browser group does.
         commands=(
-            # The runtime bundles are compiled by the pinned TypeScript, so the group that judges
-            # them installs it first, the way every other group that lists npm does.
-            NPM_CI,
-            # `build_assets.py` measures the hero's word widths in the real Chromium with the real
-            # font, so this group needs a browser as much as the browser group does. The suites
-            # fetch their own through `media/browser.py`, and a generator that launches Playwright
-            # directly reaches nothing that would, so this row fetches it the way that module does.
-            # Playwright resolves the revision from its own version and the call is a no-op on a
-            # machine that already has it.
-            FETCH_CHROMIUM,
-            generator("build_runtime"),
-            generator("build_result_schemas"),
-            generator("build_settings_schema"),
-            generator("build_settings_reference"),
-            generator("build_cli_reference"),
-            generator("build_api"),
-            generator("build_code_pages"),
-            generator("build_agents_doc"),
-            generator("build_outbound_reference"),
-            generator("build_skills_list"),
-            generator("build_contributing"),
-            generator("build_changelog"),
-            ("uv", "run", "--with", "fonttools[woff]>=4.50", "python", "scripts/build_assets.py", "--check"),
-            ("uv", "run", "--with", "pyyaml>=6", "python", "scripts/check_docs_links.py", "--check"),
+            *(generator(name) for name in GENERATORS),
+            (*UV, "python", "scripts/check_docs_links.py"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "npm", "chromium"),
+        tools=("npm", "chromium"),
         timeout=20,
-        when=("pr", "main", "release"),
-        wall_seconds=0,
+        when=("pr", "main"),
     ),
     Group(
         name="rehearsal",
@@ -440,13 +624,12 @@ GROUPS: tuple[Group, ...] = (
         # version is computed by release-please's own code from the history since the last tag, so
         # the row needs the Node packages in the checkout and the whole history, which `history`
         # asks the workflow's checkout for.
-        commands=(NPM_CI, (*UV, "python", "scripts/rehearse_release.py")),
+        commands=((*UV, "python", "scripts/rehearse_release.py"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "npm", "chromium", "history"),
+        tools=("npm", "chromium", "history"),
         timeout=20,
-        when=("pr", "main", "release"),
-        wall_seconds=15,
+        when=("pr", "main"),
     ),
     Group(
         name="coverage",
@@ -463,41 +646,42 @@ GROUPS: tuple[Group, ...] = (
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv",),
+        tools=(),
         timeout=10,
-        when=("pr", "main", "release"),
-        wall_seconds=0,
+        when=("pr", "main"),
     ),
     Group(
         name="wheel",
         why="What `uv build` writes, opened on a machine that has only the wheel and the tag.",
         commands=(
             ("uv", "build"),
-            (*UV, "pytest", "-q", "tests/contract/test_wheel.py"),
-            (*UV, "scripts/check_wheel.py", "--check"),
+            (*PYTEST, WHEEL_TEST),
+            (*UV, "scripts/check_wheel.py"),
         ),
         runners=EVERY_PLATFORM,
         pythons=(FLOOR,),
-        tools=("uv",),
+        tools=(),
         timeout=15,
-        when=("pr", "main", "release"),
-        wall_seconds=0,
+        when=("pr", "main"),
     ),
     Group(
         name="scaffold",
         why="Every packaged project recorded and verified without a voice, which is the scaffold's promise.",
+        # The row judges what was already released rather than gating the release: it runs weekly,
+        # because seven minutes on every merge bought one answer that the template's own data tests
+        # give on every pull request. A release is never more than a week from its first scaffold run.
+        #
         # This row records five projects in one job, so the runner renders in software throughout and
         # presents a reveal tens of milliseconds after the frame it belongs on. The promise being
         # judged is that a project out of the wheel builds and verifies, which the cue timing of the
         # machine it was built on is no part of, so this row reports a late landing and fails on
         # every other finding exactly as the gated rows do.
-        commands=(reports_timing((*UV, "pytest", "-q", "-m", "scaffold")),),
+        commands=(reports_timing((*PYTEST, "-m", "scaffold")),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("uv", "chromium", "ffmpeg"),
+        tools=("chromium", "ffmpeg"),
         timeout=30,
-        when=("main", "schedule"),
-        wall_seconds=0,
+        when=("schedule",),
     ),
     Group(
         name="installer",
@@ -512,10 +696,9 @@ GROUPS: tuple[Group, ...] = (
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("docker",),
+        tools=(),
         timeout=25,
         when=("main", "schedule"),
-        wall_seconds=0,
     ),
 )
 
@@ -535,9 +718,9 @@ def shell(command: tuple[str, ...]) -> str:
     return " ".join(parts)
 
 
-def legs(groups: tuple[Group, ...]) -> list[dict[str, object]]:
+def legs(groups: tuple[Group, ...]) -> list[dict[str, Any]]:
     """One matrix row per group, runner and Python, which is what a workflow consumes."""
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, Any]] = []
     for group in groups:
         for runner in group.runners:
             pythons = group.pythons if runner == LINUX else (FLOOR,)
@@ -549,6 +732,8 @@ def legs(groups: tuple[Group, ...]) -> list[dict[str, object]]:
                         "python": python,
                         "timeout-minutes": group.timeout,
                         "tools": list(group.tools),
+                        "node": NODE,
+                        "cache": tools_key(group, runner),
                         "leg": f"{group.name} ({runner}, {python})",
                     }
                 )
@@ -590,21 +775,44 @@ def run_group(group: Group, mode: str = "") -> bool:
     print(f"   {group.why}", flush=True)
     for name, value in group.env:
         print(f"   {name}={value.replace(f'{ROOT}/', '')}", flush=True)
-    return all(run(command, group.env) for command in group.commands)
+    return all(run(command, group.env) for command in group.steps)
+
+
+NO_TOOLS = "nothing beyond uv"
+"""What a row that fetches nothing says it needs, because an empty cell reads as a gap."""
+
+PLATFORM_NAMES = {LINUX: "Linux", MACOS: "macOS", WINDOWS: "Windows"}
+"""The runners as the words a contributor uses rather than the labels GitHub uses."""
+
+
+def summary(group: Group) -> tuple[str, str, str, str]:
+    """A row's first check with how many follow it, what it needs, where it runs and when it gates.
+
+    The table below and the one `build_contributing.py` writes into CONTRIBUTING.md are two renderings
+    of these four facts, so a person reading either reads the same row.
+    """
+    more = f", and {len(group.commands) - 1} more" if len(group.commands) > 1 else ""
+    return (
+        f"`{shell(group.commands[0])}`{more}",
+        ", ".join(group.tools) or NO_TOOLS,
+        ", ".join(PLATFORM_NAMES[runner] for runner in group.runners),
+        ", ".join(group.when),
+    )
 
 
 def table() -> str:
-    """Every group with its first command, what it needs, its measured wall time and the job that calls it."""
+    """Every group with its first check, what it needs and the job that calls it.
+
+    No wall time is printed. A time typed into this table was a number nothing checked, and every one
+    that was measured against CI was wrong by a factor of two or more, so the time a group takes is
+    read from the job that ran it rather than from here.
+    """
     rows = []
     for group in GROUPS:
-        measured = f"about {group.wall_seconds}s" if group.wall_seconds else "not measured yet"
-        more = f" and {len(group.commands) - 1} more" if len(group.commands) > 1 else ""
+        runs, needs, where, when = summary(group)
         rows.append(
-            f"  {group.name}\n"
-            f"      {shell(group.commands[0])}{more}\n"
-            f"      needs {', '.join(group.tools)} on {', '.join(group.runners)}, {measured}, "
-            f"gates on {', '.join(group.when)}, run by ci / run ({group.name})\n"
-            f"      {group.why}"
+            f"  {group.name}\n      {runs}\n      needs {needs} on {where}, gates on {when}, "
+            f"run in ci as {group.name} (runner, python)\n      {group.why}"
         )
     return "\n".join(rows)
 
@@ -618,7 +826,8 @@ def epilog() -> str:
     )
 
 
-def main() -> int:
+def arguments() -> argparse.ArgumentParser:
+    """The command line, whose two modes that change what a row runs cannot be combined."""
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -632,25 +841,76 @@ def main() -> int:
         help="run this group, repeatable and comma-separated",
     )
     parser.add_argument("--fast", action="store_true", help=f"an alias for --group {','.join(FAST)}")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         WRITE,
         action="store_true",
         help="run each named group's generators with --write instead of --check, and its other checks not at all",
+    )
+    mode.add_argument(
+        PREPARE,
+        action="store_true",
+        help="run only the commands that fetch what each named group keeps in the tools cache",
     )
     parser.add_argument("--list", action="store_true", help="print the table and run nothing")
     parser.add_argument("--json", action="store_true", help="print the matrix a workflow consumes, and run nothing")
     parser.add_argument(
         "--when",
-        choices=("pr", "main", "release", "schedule"),
+        choices=MOMENTS,
         help=f"the groups that gate at this moment, default {DEFAULT_WHEN}",
     )
+    return parser
+
+
+def counted(groups: tuple[Group, ...]) -> str:
+    """How many groups a run covered, as a reader says it."""
+    return f"{len(groups)} group" + ("s" if len(groups) != 1 else "")
+
+
+def run_writes(groups: tuple[Group, ...]) -> int:
+    """Run every named group with its generators writing, which is what a release pull request needs."""
+    writers = tuple(writer(group) for group in groups)
+    started = time.monotonic()
+    if not all(run_group(group, f" {WRITE}") for group in writers):
+        return 1
+    print(f"\nwrote every generated file of {counted(writers)} in {time.monotonic() - started:.0f}s", flush=True)
+    return 0
+
+
+def run_preparations(groups: tuple[Group, ...]) -> int:
+    """Run only what fetches each named group's cached tools, which CI does before it saves the tools cache.
+
+    A need the cache does not keep, such as the Node packages, is left to the row's own run, so a leg
+    never installs it twice.
+    """
+    preparing = tuple(
+        replace(group, tools=tuple(tool for tool in group.tools if NEEDS[tool].cached), commands=()) for group in groups
+    )
+    return 0 if all(run_group(group, f" {PREPARE}") for group in preparing) else 1
+
+
+def run_checks(groups: tuple[Group, ...]) -> int:
+    """Run every named group in order, stopping at the first that fails, and name the rows not run."""
+    started = time.monotonic()
+    for group in groups:
+        if not run_group(group):
+            return 1
+    print(f"\n{counted(groups)} passed in {time.monotonic() - started:.0f}s", flush=True)
+    for group in GROUPS:
+        if group not in groups:
+            print(f"not run: {group.name:<10} {group.why}", flush=True)
+    return 0
+
+
+def main() -> int:
+    parser = arguments()
     args = parser.parse_args()
 
     names = [name for value in args.group for name in value.split(",") if name]
     if args.fast:
         names = [*FAST, *names]
-    if args.write and not names:
-        parser.error("--write rewrites committed files, so it runs only the groups --group names.")
+    if (args.write or args.prepare) and not names:
+        parser.error("--write and --prepare change what a row runs, so they run only the groups --group names.")
     groups = selected(names, args.when)
 
     # `--list` and `--json` are the same answer in two renderings, so asking for both is asking for
@@ -658,26 +918,11 @@ def main() -> int:
     if args.list or args.json:
         print(json.dumps(legs(groups)) if args.json else epilog())
         return 0
-
+    if args.prepare:
+        return run_preparations(groups)
     if args.write:
-        writers = tuple(writer(group) for group in groups)
-        started = time.monotonic()
-        if not all(run_group(group, f" {WRITE}") for group in writers):
-            return 1
-        count = f"{len(writers)} group" + ("s" if len(writers) != 1 else "")
-        print(f"\nwrote every generated file of {count} in {time.monotonic() - started:.0f}s", flush=True)
-        return 0
-
-    started = time.monotonic()
-    for group in groups:
-        if not run_group(group):
-            return 1
-    count = f"{len(groups)} group" + ("s" if len(groups) != 1 else "")
-    print(f"\n{count} passed in {time.monotonic() - started:.0f}s", flush=True)
-    for group in GROUPS:
-        if group not in groups:
-            print(f"not run: {group.name:<10} {group.why}", flush=True)
-    return 0
+        return run_writes(groups)
+    return run_checks(groups)
 
 
 if __name__ == "__main__":

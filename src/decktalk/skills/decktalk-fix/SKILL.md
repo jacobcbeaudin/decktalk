@@ -49,6 +49,8 @@ touching anything, and never parse a printed table when the JSON is right there.
   line that types rather than a shape that arrives.
 - A phrase that will not resolve is usually a digit, a symbol or a possessive that the script writes
   differently from the cue.
+- Cue times reported as older than the cue file are a film nobody built again after the cue file
+  changed, not a phrase in the wrong place. Build again before editing anything.
 - A cue nothing owns and an element nothing cues are the same mistake seen from the two sides, so
   read both counts together.
 - A page that opens black is usually a scene number that does not match its section, or a first

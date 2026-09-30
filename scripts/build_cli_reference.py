@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate docs/reference/cli.mdx from the command line itself.
 
     uv run scripts/build_cli_reference.py --write    # write the page
@@ -14,16 +11,15 @@ then run this.
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+import generated
+from decktalk.cli import catalog
+from decktalk.cli.options import Group
 
-from decktalk.cli import catalog  # noqa: E402  (after sys.path, so a checkout needs no install)
-from decktalk.cli.options import Group  # noqa: E402
+ROOT = Path(__file__).resolve().parent.parent
 
 TARGET = ROOT / "docs" / "reference" / "cli.mdx"
 
@@ -43,7 +39,9 @@ commands that open a run or write a file.
 GLOBALS = """
 ## Global options
 
-These work with every command, before or after the command name.
+These work with every command, before the command name or after the whole command, as in
+`decktalk --json status` or `decktalk config list --json`. `--version` is the one exception, and it
+works before a command name alone.
 """
 
 EXITS = """
@@ -92,9 +90,15 @@ def _command(row: dict[str, Any]) -> str:
 
 
 def _usage(row: dict[str, Any]) -> str:
-    """The usage line, which names the arguments a command takes and nothing it does not."""
-    arguments = [param["metavar"] or param["opts"][0].upper() for param in row["params"] if _positional(param)]
-    return " ".join(["decktalk", row["command"], "[OPTIONS]", *arguments])
+    """The usage line, which names the arguments a command takes and brackets the ones it can do without."""
+    return " ".join(["decktalk", row["command"], "[OPTIONS]", *map(_argument, filter(_positional, row["params"]))])
+
+
+def _argument(param: dict[str, Any]) -> str:
+    """One positional argument as a usage line writes it, bracketed when optional and dotted when it repeats."""
+    name = param["metavar"] or param["opts"][0].upper()
+    name = f"{name}..." if param["repeatable"] else name
+    return name if param["required"] else f"[{name}]"
 
 
 def _positional(param: dict[str, Any]) -> bool:
@@ -142,25 +146,10 @@ def _schema_names() -> str:
     return f"\n## The contract\n\n`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes {names}.\n"
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Write the page, or say that the committed one would change."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write the page")
-    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
-    args = parser.parse_args(argv)
-    written = page()
-    if args.check:
-        current = TARGET.read_text(encoding="utf-8") if TARGET.exists() else ""
-        if current != written:
-            print(f"{TARGET.relative_to(ROOT)} is out of date. Run `uv run scripts/build_cli_reference.py --write`.")
-            return 1
-        return 0
-    TARGET.parent.mkdir(parents=True, exist_ok=True)
-    TARGET.write_text(written, encoding="utf-8")
-    print(f"Wrote {TARGET.relative_to(ROOT)}.")
-    return 0
+def documents() -> dict[Path, str]:
+    """The CLI reference, which is the one file this generator owns."""
+    return {TARGET: page()}
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(generated.run(documents))

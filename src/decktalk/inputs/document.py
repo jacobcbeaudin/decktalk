@@ -16,16 +16,15 @@ named, rather than deep inside ffmpeg.
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import MISSING, dataclass, field, fields
+from pathlib import PurePosixPath
+from types import NoneType
+from typing import Any, cast, get_args, get_type_hints
 
 from decktalk.errors import InputError
-from decktalk.results import SectionKind
+from decktalk.results import SectionKind, section_key
 from decktalk.settings import BY_ID, PROJECT_FILE, Settings
 from decktalk.tomlmap import Table, unknown_key_message
-
-log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -49,7 +48,7 @@ class ClipSection:
 
     @property
     def key(self) -> str:
-        return f"{self.number:02d}"
+        return section_key(self.number)
 
     @property
     def is_clip(self) -> bool:
@@ -88,7 +87,7 @@ class PageSection:
 
     @property
     def key(self) -> str:
-        return f"{self.number:02d}"
+        return section_key(self.number)
 
     @property
     def is_clip(self) -> bool:
@@ -202,18 +201,20 @@ class Document:
     transition: Transition
     mix: Mix
     soundscape: Soundscape
+    notes: tuple[str, ...] = ()
+    """One sentence per key the parser read past, which a run reports rather than a log line nobody sees."""
 
     @classmethod
     def from_toml(cls, doc: dict[str, Any], *, default_name: str) -> Document:
-        """Parse the whole document. An unknown table is an error, and an unknown key a warning."""
+        """Parse the whole document. An unknown table is an error, and an unknown key a note."""
         top = Table(doc, PROJECT_FILE)
         known = TOP_TABLES | set(Settings.__dataclass_fields__)
         unknown = top.unknown(known)
         if unknown:
             raise InputError(f"{PROJECT_FILE}: unknown table(s) {unknown}. The known tables are {sorted(known)}.")
         project = Table(top.get_table("project") or {}, f"{PROJECT_FILE}: [project]")
-        warn(project.note_unknown(PROJECT_KEYS))
-        sections = parse_sections(doc)
+        notes = project.note_unknown(PROJECT_KEYS)
+        sections = parse_sections(doc, notes)
         numbers = {s.number for s in sections}
         return cls(
             name=project.get_str("name", default_name),
@@ -222,10 +223,11 @@ class Document:
             build=project.get_path("build", "build"),
             language=project.get_str("language", "en"),
             sections=sections,
-            voice=parse_voice(doc),
-            transition=parse_transition(doc, numbers),
-            mix=parse_mix(doc, numbers),
-            soundscape=parse_soundscape(doc),
+            voice=parse_voice(doc, notes),
+            transition=parse_transition(doc, numbers, notes),
+            mix=parse_mix(doc, numbers, notes),
+            soundscape=parse_soundscape(doc, notes),
+            notes=tuple(notes),
         )
 
     def section(self, number: int) -> Section | None:
@@ -260,23 +262,9 @@ class Document:
         return flags
 
     @property
-    def cut_summary(self) -> str:
-        """What happens at the section cuts: straight cuts, or dips at some or all of them."""
-        dips = sum(1 for _fade_in, fade_out in self.fade_flags.values() if fade_out)
-        if dips == 0:
-            return "straight cuts"
-        if self.transition.dips is None:
-            return "dips at every cut"
-        return f"dips at {dips} cut{'s' if dips != 1 else ''}"
-
-    @property
     def page_files(self) -> list[str]:
         """Each page file once, in section order."""
-        seen: list[str] = []
-        for s in self.page_sections:
-            if s.page not in seen:
-                seen.append(s.page)
-        return seen
+        return list(dict.fromkeys(s.page for s in self.page_sections))
 
 
 def tuning_keys(table: str) -> set[str]:
@@ -285,46 +273,63 @@ def tuning_keys(table: str) -> set[str]:
     `[voice]` and `[mix]` each hold knobs beside the content this module parses, so a reader of one
     of them has to know both halves before it can call a key unknown.
     """
-    return {key.id.rsplit(".", 1)[1] for key in BY_ID.values() if key.id.rsplit(".", 1)[0] == table}
+    return {key.name for key in BY_ID.values() if key.table == table}
 
 
-def warn(notes: list[str]) -> None:
-    """Say what the document parser found, which is where an ignored key reaches a person today."""
-    for note in notes:
-        log.warning(note)
+PATH_KEYS = ("clip", "words", "page", "file", "music", "music_markers", "ambience", "slate", "out")
+"""The text keys of the project tables that name a project file, which `get_path` keeps inside the project."""
 
 
-def warn_section_keys(t: Table, *, clip: bool) -> None:
-    """Warn about keys a section does not read, and name the section kind a misplaced key belongs to."""
+def fill[T](t: Table, cls: type[T], **given: object) -> T:
+    """One dataclass read from a table, each field through the getter its type names and with the default it declares.
+
+    A field in `given` is read by the caller, which is how a key with a rule of its own stays
+    explicit, and a text field named in `PATH_KEYS` is read as a project path.
+    """
+    hints = get_type_hints(cls)
+    readers: dict[type, Any] = {str: t.get_str, float: t.get_num, int: t.get_int, bool: t.get_bool}
+    values = dict(given)
+    for each in fields(cast("Any", cls)):
+        if each.name in values:
+            continue
+        kind = next(arg for arg in get_args(hints[each.name]) or (hints[each.name],) if arg is not NoneType)
+        read = t.get_path if kind is str and each.name in PATH_KEYS else readers[kind]
+        missing = each.default is MISSING
+        values[each.name] = read(each.name, required=True) if missing else read(each.name, each.default)
+    return cls(**values)
+
+
+def section_key_notes(t: Table, *, clip: bool) -> list[str]:
+    """One note per key a section does not read, naming the section kind a misplaced key belongs to."""
     own, other, kind = (CLIP_KEYS, PAGE_KEYS, SectionKind.PAGE) if clip else (PAGE_KEYS, CLIP_KEYS, SectionKind.CLIP)
-    for key in sorted(set(t.data) - own):
-        if key in other:
-            log.warning("%s: ignoring '%s', which applies only to a %s section", t.where, key, kind.value)
-        else:
-            log.warning(unknown_key_message(key, own, t.where))
+    return [
+        f"{t.where}: ignoring '{key}', which applies only to a {kind.value} section"
+        if key in other
+        else unknown_key_message(key, own, t.where)
+        for key in sorted(set(t.data) - own)
+    ]
 
 
-def parse_section(raw: dict[str, Any], index: int) -> Section:
+def parse_section(raw: dict[str, Any], index: int, notes: list[str]) -> Section:
     t = Table(raw, f"{PROJECT_FILE}: [[section]] #{index}")
     number = t.get_int("number", required=True)
     t.where = f"{PROJECT_FILE}: [[section]] number={number}"
-    chapter = t.get_str("chapter", "")
     if "clip" in raw and "page" in raw:
         raise InputError(f"{t.where}: give either 'clip' or 'page', not both")
     if "clip" in raw:
-        warn_section_keys(t, clip=True)
-        return ClipSection(
-            number=number,
-            clip=t.get_path("clip", ""),
-            chapter=chapter,
-            slate_seconds=t.get_num("slate_seconds", 5.0),
-            optional=t.get_bool("optional"),
-            words=t.get_path("words"),
-            seamless=t.get_bool("seamless"),
-        )
+        notes += section_key_notes(t, clip=True)
+        return fill(t, ClipSection, number=number)
     if "page" not in raw:
         raise InputError(f"{t.where}: needs 'page' (an HTML file) or 'clip' (a video file)")
-    warn_section_keys(t, clip=False)
+    notes += section_key_notes(t, clip=False)
+    page = t.get_path("page", "")
+    # The origin serves a page's whole directory, so a page at the root would be handed the
+    # script, the cue file, the build directory and everything else the project holds.
+    if PurePosixPath(page.replace("\\", "/")).parent == PurePosixPath("."):
+        raise InputError(
+            f"{t.where}: 'page' sits at the project root, and a page is served with its whole directory.",
+            hint="Move the page into a directory of its own, such as deck/index.html, and name that path.",
+        )
     params_raw = t.get_table("params") or {}
     scene = raw.get("scene", number)
     if isinstance(scene, bool) or not isinstance(scene, (int, str)):
@@ -333,26 +338,15 @@ def parse_section(raw: dict[str, Any], index: int) -> Section:
         value = t.get_num(key)
         if value is not None and value < 0:
             raise InputError(f"{t.where}: '{key}' must be 0 or more, got {value:g}")
-    return PageSection(
-        number=number,
-        page=t.get_path("page", ""),
-        scene=str(scene),
-        chapter=chapter,
-        record_margin_seconds=t.get_num("record_margin_seconds", 0.3),
-        hold_seconds=t.get_num("hold_seconds", 0.0),
-        ambience=t.get_bool("ambience"),
-        params={str(k): str(v) for k, v in params_raw.items()},
-        seamless=t.get_bool("seamless"),
-        lead_seconds=t.get_num("lead_seconds"),
-        tail_seconds=t.get_num("tail_seconds"),
-    )
+    params = {str(k): str(v) for k, v in params_raw.items()}
+    return fill(t, PageSection, number=number, page=page, scene=str(scene), params=params)
 
 
-def parse_sections(doc: dict[str, Any]) -> list[Section]:
+def parse_sections(doc: dict[str, Any], notes: list[str]) -> list[Section]:
     raw = Table(doc, PROJECT_FILE).get_tables("section")
     if not raw:
         raise InputError(f"{PROJECT_FILE}: no [[section]] tables. Add one per '## N.' section of the script.")
-    sections = [parse_section(item, i + 1) for i, item in enumerate(raw)]
+    sections = [parse_section(item, i + 1, notes) for i, item in enumerate(raw)]
     numbers = [s.number for s in sections]
     dupes = sorted({n for n in numbers if numbers.count(n) > 1})
     if dupes:
@@ -366,21 +360,21 @@ def parse_sections(doc: dict[str, Any]) -> list[Section]:
     return sections
 
 
-def parse_voice(doc: dict[str, Any]) -> Voice:
+def parse_voice(doc: dict[str, Any], notes: list[str]) -> Voice:
     raw = doc.get("voice")
     if raw is None:
         return Voice()
     t = Table(raw, f"{PROJECT_FILE}: [voice]", table="voice")
-    warn(t.note_unknown(set(Voice.__dataclass_fields__) | tuning_keys("voice")))
-    return Voice(provider=t.get_str("provider", "elevenlabs"), model=t.get_str("model"))
+    notes += t.note_unknown(set(Voice.__dataclass_fields__) | tuning_keys("voice"))
+    return fill(t, Voice)
 
 
-def parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
+def parse_transition(doc: dict[str, Any], numbers: set[int], notes: list[str]) -> Transition:
     raw = doc.get("transition")
     if raw is None:
         return Transition()
     t = Table(raw, f"{PROJECT_FILE}: [transition]")
-    warn(t.note_unknown(Transition.__dataclass_fields__))
+    notes += t.note_unknown(Transition.__dataclass_fields__)
     dips_raw = raw.get("dips")
     dips: tuple[tuple[int, int], ...] | None = None
     if dips_raw is not None:
@@ -394,86 +388,52 @@ def parse_transition(doc: dict[str, Any], numbers: set[int]) -> Transition:
                 raise InputError(f"{t.where}: dips entry {pair!r} names a section that does not exist")
             pairs.append((pair[0], pair[1]))
         dips = tuple(pairs)
-    return Transition(
-        dips=dips, dip_seconds=t.get_num("dip_seconds", 0.15), page_fades_in=t.get_bool("page_fades_in", True)
-    )
+    return fill(t, Transition, dips=dips)
 
 
-def parse_mix(doc: dict[str, Any], numbers: set[int]) -> Mix:
+def parse_mix(doc: dict[str, Any], numbers: set[int], notes: list[str]) -> Mix:
     raw = doc.get("mix")
     if raw is None:
         return Mix()
     t = Table(raw, f"{PROJECT_FILE}: [mix]", table="mix")
-    warn(t.note_unknown(set(Mix.__dataclass_fields__) | tuning_keys("mix") | {"loudness"}))
+    notes += t.note_unknown(set(Mix.__dataclass_fields__) | tuning_keys("mix") | {"loudness"})
     effects: list[MixEffect] = []
     for i, item in enumerate(t.get_tables("effects")):
         s = Table(item, f"{PROJECT_FILE}: [[mix.effects]] #{i + 1}")
-        warn(s.note_unknown(MixEffect.__dataclass_fields__))
+        notes += s.note_unknown(MixEffect.__dataclass_fields__)
         section = s.get_int("section", required=True)
         if section not in numbers:
             raise InputError(f"{s.where}: section {section} does not exist")
-        effects.append(
-            MixEffect(
-                file=s.get_path("file", required=True),
-                section=section,
-                cue=s.get_str("cue", required=True),
-                db=s.get_num("db", -16.0),
-                offset=s.get_num("offset", 0.0),
-                caption=s.get_str("caption", ""),
-            )
-        )
-    return Mix(
-        music=t.get_path("music"),
-        music_db=t.get_num("music_db", -24.0),
-        music_duck_db=t.get_num("music_duck_db", -6.0),
-        music_fade_in_seconds=t.get_num("music_fade_in_seconds", 2.0),
-        music_fade_out_seconds=t.get_num("music_fade_out_seconds", 3.0),
-        music_markers=t.get_path("music_markers"),
-        ambience=t.get_path("ambience"),
-        ambience_db=t.get_num("ambience_db", -20.0),
-        slate=t.get_path("slate"),
-        effects=tuple(effects),
-    )
+        effects.append(fill(s, MixEffect, section=section))
+    return fill(t, Mix, effects=tuple(effects))
 
 
-def parse_sound(raw: dict[str, Any], where: str) -> SoundSpec:
+def parse_sound(raw: dict[str, Any], where: str, notes: list[str]) -> SoundSpec:
     t = Table(raw, where)
-    warn(t.note_unknown(SoundSpec.__dataclass_fields__))
-    return SoundSpec(
-        text=t.get_str("text", required=True),
-        out=t.get_path("out"),
-        duration_seconds=t.get_num("duration_seconds"),
-        prompt_influence=t.get_num("prompt_influence"),
-        model_id=t.get_str("model_id"),
-    )
+    notes += t.note_unknown(SoundSpec.__dataclass_fields__)
+    return fill(t, SoundSpec)
 
 
-def parse_soundscape(doc: dict[str, Any]) -> Soundscape:
+def parse_soundscape(doc: dict[str, Any], notes: list[str]) -> Soundscape:
     raw = doc.get("soundscape")
     if raw is None:
         return Soundscape()
     t = Table(raw, f"{PROJECT_FILE}: [soundscape]")
-    warn(t.note_unknown(Soundscape.__dataclass_fields__))
+    notes += t.note_unknown(Soundscape.__dataclass_fields__)
     amb_raw = t.get_table("ambience")
     effects: dict[str, SoundSpec] = {}
     for name, item in (t.get_table("effects") or {}).items():
         if not isinstance(item, dict):
             raise InputError(f"{PROJECT_FILE}: [soundscape.effects.{name}] must be a table")
-        effects[str(name)] = parse_sound(item, f"{PROJECT_FILE}: [soundscape.effects.{name}]")
+        effects[str(name)] = parse_sound(item, f"{PROJECT_FILE}: [soundscape.effects.{name}]", notes)
     music_raw = t.get_table("music")
     music = None
     if music_raw is not None:
         m = Table(music_raw, f"{PROJECT_FILE}: [soundscape.music]")
-        warn(m.note_unknown(MusicSpec.__dataclass_fields__))
-        music = MusicSpec(
-            prompt=m.get_str("prompt", required=True),
-            seconds=m.get_int("seconds", 360),
-            force_instrumental=m.get_bool("force_instrumental", True),
-            out=m.get_path("out"),
-            model_id=m.get_str("model_id"),
-        )
+        notes += m.note_unknown(MusicSpec.__dataclass_fields__)
+        music = fill(m, MusicSpec)
     return Soundscape(
-        ambience=parse_sound(amb_raw, f"{PROJECT_FILE}: [soundscape.ambience]") if amb_raw is not None else None,
+        ambience=parse_sound(amb_raw, f"{PROJECT_FILE}: [soundscape.ambience]", notes) if amb_raw is not None else None,
         effects=effects,
         music=music,
     )

@@ -2,44 +2,94 @@
 
 from __future__ import annotations
 
+import ast
+import logging
+import socket
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 from decktalk import machine as machine_module
-from decktalk.errors import ApprovalRequired, Cancel, Cancelled, ErrorCode
-from decktalk.events import Event, Level, Log, RunDone, RunStart, StageDone, StageStart
-from decktalk.findings import Applicability, Certainty, Code, CommandFix, Finding, Location, SettingFix
-from decktalk.machine import CHROMIUM, InstalledTool, Machine, Toolchain, apply_fix, fixes_of, init
+from decktalk.errors import ApprovalRequired, Cancel, Cancelled, ErrorCode, InputError
+from decktalk.events import Event, Fetch, Level, Log, RunDone, RunStart, StageDone, StageStart
+from decktalk.findings import (
+    Applicability,
+    Certainty,
+    Code,
+    CommandFix,
+    Edit,
+    EditFix,
+    Finding,
+    Location,
+    RuntimeFix,
+    SettingFix,
+)
+from decktalk.machine import (
+    CHROMIUM,
+    FIX_TIMEOUT_SECONDS,
+    InstalledTool,
+    Machine,
+    Toolchain,
+    apply_fix,
+    fixes_of,
+    init,
+)
+from decktalk.media import ffmpeg as ffmpeg_module
+from decktalk.media.environment import child_environment
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Layer, Scope, Spend, SpendState, StatusResult, Voicing
-from decktalk.settings import ToolsConfig
+from decktalk.project import open as open_project
+from decktalk.results import FixOutcome, Layer, Scope, StatusResult, Voicing
+from decktalk.settings import BY_ID, ToolsConfig
+from decktalk.speech import VoiceContext, get_provider
+from decktalk.toolchain import assets, command_line
 from decktalk.toolchain.announce import announce
+from decktalk.toolchain.cache import cache_dir, standard_cache_dir
+from support.fakes import BareBrowser, FakeChromium, FakeVoice
+from support.links import link
+from support.logs import data_of
+from support.paths import REPO
+from support.runs import a_machine
+from support.speech import NoSecrets
+from support.spends import a_spend
+
+# ---- the one reader of the environment -------------------------------------------------------
+
+SRC = REPO / "src" / "decktalk"
+
+READERS = ("machine.py", "cli")
+"""Where the process environment and the home directory may be read: the machine, and its first client."""
 
 
-def a_machine(tmp_path: Path, **environ: str) -> Machine:
-    """A machine that read nothing, which is what every test here is handed rather than the real one."""
-    return Machine(
-        environ=environ,
-        tables={},
-        config_path=tmp_path / "config.toml",
-        cwd=tmp_path,
-        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
-    )
+PROCESS_READS = {("os", "environ"), ("os", "getenv"), ("Path", "home")}
+"""The three ways a module reaches past its arguments for the process's environment or home directory."""
 
 
-def spend(dollars: float, ceiling: float, *, layer: Layer = Layer.PROJECT) -> Spend:
-    return Spend(
-        state=SpendState.ESTIMATE,
-        sections=(1,),
-        characters=1000,
-        dollars=dollars,
-        ceiling_dollars=ceiling,
-        price_per_1000_characters=0.3,
-        price_layer=layer,
-    )
+def reads_the_process(path: Path) -> bool:
+    """Whether one module names any of the three process reads, as an attribute or as an import."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            if (node.value.id, node.attr) in PROCESS_READS:
+                return True
+        if isinstance(node, ast.ImportFrom) and node.module == "os":
+            if any(("os", alias.name) in PROCESS_READS for alias in node.names):
+                return True
+    return False
+
+
+def test_only_the_machine_and_the_command_line_read_the_process() -> None:
+    """A setting, a switch or a directory read from the process follows the host rather than the tenant."""
+    offenders = {
+        path.relative_to(SRC).as_posix()
+        for path in SRC.rglob("*.py")
+        if path.relative_to(SRC).parts[0] not in READERS and reads_the_process(path)
+    }
+    assert offenders == set()
 
 
 # ---- the toolchain ------------------------------------------------------------------------
@@ -50,11 +100,47 @@ def test_a_toolchain_takes_what_the_settings_name(tmp_path: Path) -> None:
     named = ToolsConfig(ffmpeg=str(tmp_path / "ff"), ffprobe=str(tmp_path / "fp"))
     for path in (tmp_path / "ff", tmp_path / "fp"):
         path.write_bytes(b"")
-    assert Toolchain.of(named).ffmpeg == tmp_path / "ff"
+    assert Toolchain.of(named, cache=tmp_path / "cache").ffmpeg == tmp_path / "ff"
 
 
 def test_the_cache_a_run_fetches_into_is_the_one_its_keys_name(tmp_path: Path) -> None:
-    assert Toolchain.of(ToolsConfig(cache_dir=str(tmp_path / "elsewhere"))).cache_dir == tmp_path / "elsewhere"
+    named = ToolsConfig(cache_dir=str(tmp_path / "elsewhere"))
+    assert Toolchain.of(named, cache=tmp_path / "standard").cache_dir == tmp_path / "elsewhere"
+
+
+def test_the_cache_is_the_machines_own_when_no_key_moves_it(tmp_path: Path) -> None:
+    here = Machine(
+        environ={},
+        tables={},
+        config_path=tmp_path / "config.toml",
+        cwd=tmp_path,
+        toolchain=Toolchain(cache=tmp_path / "standard"),
+    )
+    with here.run():
+        assert cache_dir() == tmp_path / "standard"
+    assert here.cache_dir == tmp_path / "standard"
+
+
+def test_a_fetch_that_no_machine_bound_is_refused_rather_than_guessed() -> None:
+    """A directory worked out from the process would put a host's tools where the host never said."""
+    with pytest.raises(machine_module.ToolError, match="no machine named a directory"):
+        cache_dir()
+
+
+@pytest.mark.parametrize(
+    ("platform", "environ", "expected"),
+    [
+        ("darwin", {"XDG_CACHE_HOME": "/ignored"}, "home/Library/Caches/decktalk"),
+        ("linux", {}, "home/.cache/decktalk"),
+        ("linux", {"XDG_CACHE_HOME": "/xdg"}, "/xdg/decktalk"),
+        ("win32", {"LOCALAPPDATA": "/local"}, "/local/decktalk"),
+        ("win32", {}, "home/AppData/Local/decktalk"),
+    ],
+)
+def test_the_standard_cache_is_worked_out_from_the_environment_the_machine_holds(
+    platform: str, environ: dict[str, str], expected: str
+) -> None:
+    assert standard_cache_dir(environ, Path("home"), platform) == Path(expected)
 
 
 def test_a_toolchain_that_is_not_there_names_the_command_that_fetches_it() -> None:
@@ -71,6 +157,47 @@ def test_a_toolchain_that_is_there_fetches_nothing(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(machine_module, "fetch_ffmpeg", refuse)
     chain = Toolchain(ffmpeg=tmp_path / "a", ffprobe=tmp_path / "b")
     assert chain.fetched() is chain
+
+
+def test_a_fetch_the_network_refuses_is_a_tool_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`decktalk install` offline is the machine's problem, so it must never read as a bug to report."""
+
+    def offline(**_: object) -> tuple[str, str]:
+        raise OSError("offline")
+
+    monkeypatch.setattr(machine_module, "fetch_ffmpeg", offline)
+    with pytest.raises(machine_module.ToolError, match="offline") as refused:
+        Toolchain().fetched()
+    assert refused.value.code is ErrorCode.TOOL
+    assert "network access" in (refused.value.hint or "")
+
+
+def test_a_run_hands_its_pair_and_its_cancel_to_every_ffmpeg_call(tmp_path: Path) -> None:
+    """A run that could not reach ffmpeg with its cancel token would wait out an encode it was told to stop."""
+    pair = (tmp_path / "ff", tmp_path / "fp")
+    here = Machine(
+        environ={},
+        tables={},
+        config_path=tmp_path / "config.toml",
+        cwd=tmp_path,
+        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache")), ffmpeg=pair[0], ffprobe=pair[1]),
+    )
+    with here.run() as run:
+        bound = ffmpeg_module.TOOLS.get()
+        assert bound is not None
+        assert bound.cancel is run.cancel
+        assert bound.paths() == (str(pair[0]), str(pair[1]))
+
+
+def test_a_browser_is_built_from_the_machines_environment_and_never_the_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("LANG", "the-process-language")
+    here = a_machine(tmp_path, LANG="the-machines-language", ELEVENLABS_API_KEY="sk-not-a-key")
+    with here.run():
+        seen = child_environment()
+    assert seen["LANG"] == "the-machines-language"
+    assert "ELEVENLABS_API_KEY" not in seen
 
 
 # ---- the run ------------------------------------------------------------------------------
@@ -93,6 +220,55 @@ def test_a_run_that_fails_closes_as_failed_and_lets_the_failure_through(tmp_path
     with here.events.subscribe(seen.append), pytest.raises(ZeroDivisionError), here.run():
         raise ZeroDivisionError
     assert isinstance(seen[-1], RunDone) and seen[-1].outcome is Outcome.FAILED
+    assert seen[-1].error is not None and seen[-1].error.code is ErrorCode.INTERNAL
+    assert seen[-1].error.message == "ZeroDivisionError: "
+
+
+def test_a_refused_run_names_its_refusal_on_its_last_line(tmp_path: Path) -> None:
+    """The events file is read after the process is gone, so its last line has to say why the run failed."""
+    here = a_machine(tmp_path)
+    events = tmp_path / "build" / "events"
+    with pytest.raises(InputError), here.run(root=tmp_path, events_dir=events) as run:
+        raise InputError("cues.json is not JSON.", hint="Fix cues.json.")
+    last = RunDone.model_validate_json((events / f"{run.id}.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert last.outcome is Outcome.FAILED
+    assert last.error is not None
+    assert (last.error.code, last.error.message, last.error.hint) == (
+        ErrorCode.INPUT,
+        "cues.json is not JSON.",
+        "Fix cues.json.",
+    )
+
+
+def test_a_run_says_on_its_last_line_how_many_lines_its_bounded_file_left_out(tmp_path: Path) -> None:
+    here = a_machine(tmp_path)
+    events = tmp_path / "build" / "events"
+    with here.run(root=tmp_path, events_dir=events, max_bytes=1) as run:
+        for number in range(5):
+            logging.getLogger("decktalk.media.ffmpeg").debug("call %d", number)
+    lines = (events / f"{run.id}.jsonl").read_text(encoding="utf-8").splitlines()
+    last = RunDone.model_validate_json(lines[-1])
+    assert last.dropped == 5 and [line for line in lines if '"log"' in line] == []
+
+
+def test_a_finished_run_carries_no_error(tmp_path: Path) -> None:
+    here = a_machine(tmp_path)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here.run():
+        pass
+    assert isinstance(seen[-1], RunDone) and seen[-1].error is None
+
+
+@pytest.mark.parametrize("stop", [Cancelled("The caller stopped this run."), KeyboardInterrupt()])
+def test_a_cancelled_or_interrupted_run_ends_as_stopped_rather_than_failed(tmp_path: Path, stop: BaseException) -> None:
+    here = a_machine(tmp_path)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), pytest.raises(type(stop)), here.run() as run, run.section(Stage.RECORD, 1):
+        raise stop
+    section = next(line for line in seen if line.event == "section.done")
+    assert getattr(section, "outcome", None) is Outcome.STOPPED
+    assert isinstance(seen[-1], RunDone) and seen[-1].outcome is Outcome.STOPPED
+    assert seen[-1].error is not None and seen[-1].error.code is ErrorCode.CANCELLED
 
 
 def test_a_run_with_a_project_writes_its_own_file_and_says_where(tmp_path: Path) -> None:
@@ -193,29 +369,42 @@ def test_a_certain_judgement_is_what_makes_a_result_not_ok(tmp_path: Path) -> No
 def test_nothing_is_bought_without_a_paid_voicing(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     with here.run() as run, pytest.raises(ApprovalRequired) as refused:
-        run.approve(spend(0.42, 0.42))
+        run.approve(a_spend(0.42, 0.42))
     assert refused.value.code is ErrorCode.APPROVAL
     assert "--spend" in (refused.value.hint or "")
+
+
+def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_path: Path) -> None:
+    """A run whose certain part is zero must not be said to spend $0.00, which its ceiling contradicts."""
+    here = a_machine(tmp_path)
+    unmatched = a_spend(0.0, 0.3)
+    with here.run() as run, pytest.raises(ApprovalRequired) as unvoiced:
+        run.approve(unmatched)
+    with here.run(voice=Voicing.PAID, max_cost=0.1) as run, pytest.raises(ApprovalRequired) as capped:
+        run.approve(unmatched)
+    for refused in (unvoiced, capped):
+        assert str(refused.value).startswith(unmatched.sentence)
+        assert "$0.00" not in str(refused.value)
 
 
 def test_a_paid_run_inside_its_ceiling_goes_through(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     with here.run(voice=Voicing.PAID, max_cost=1.0) as run:
-        assert run.approve(spend(0.42, 0.9)).dollars == 0.42
+        assert run.approve(a_spend(0.42, 0.9)).dollars == 0.42
 
 
 def test_the_ceiling_is_compared_against_the_most_a_run_can_cost(tmp_path: Path) -> None:
     """Credits go one request at a time, so a cap that stopped a run halfway would be a lie."""
     here = a_machine(tmp_path)
     with here.run(voice=Voicing.PAID, max_cost=0.5) as run, pytest.raises(ApprovalRequired) as refused:
-        run.approve(spend(0.42, 0.9))
+        run.approve(a_spend(0.42, 0.9))
     assert "0.90" in str(refused.value)
 
 
 def test_a_cap_is_refused_while_nobody_has_stated_the_price(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     with here.run(voice=Voicing.PAID, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
-        run.approve(spend(0.42, 0.9, layer=Layer.DEFAULT))
+        run.approve(a_spend(0.42, 0.9, layer=Layer.DEFAULT))
     assert "price_per_1000_characters" in (refused.value.hint or "")
 
 
@@ -223,7 +412,7 @@ def test_every_priced_request_reaches_the_stream_before_it_is_judged(tmp_path: P
     here = a_machine(tmp_path)
     seen: list[Event] = []
     with here.events.subscribe(seen.append), here.run(voice=Voicing.PAID) as run:
-        run.approve(spend(0.42, 0.42))
+        run.approve(a_spend(0.42, 0.42))
     assert [line.event for line in seen if line.event == "spend"] == ["spend"]
 
 
@@ -243,67 +432,261 @@ def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest
     assert here.tables == {}
 
 
-def test_a_provider_a_caller_supplied_answers_before_the_shipped_one(tmp_path: Path) -> None:
-    """The map is a field, so two projects in one process cannot swap each other's voice."""
-    mine = object()
-    here = a_machine(tmp_path)
-    assert object.__getattribute__(here, "providers") == {}
-    swapped = Machine(
-        environ={},
-        tables={},
-        config_path=tmp_path / "c.toml",
-        cwd=tmp_path,
-        toolchain=Toolchain(),
-        providers={"elevenlabs": mine},
+# ---- a machine a host builds -----------------------------------------------------------------
+
+HOST_SECRETS = {"ELEVENLABS_API_KEY": "sk-host-owned", "ELEVENLABS_VOICE_ID": "house-voice"}
+"""What a host hands its voice job: the key and the voice, and nothing else from its own process."""
+
+
+def a_host(tmp_path: Path, **choices: object) -> Machine:
+    """A machine a host built from values it chose, with the voice job's two variables by default."""
+    values: dict[str, Any] = {
+        "environ": HOST_SECRETS,
+        "config_path": tmp_path / "host" / "machine.toml",
+        "cwd": tmp_path,
+        "cache_dir": tmp_path / "host" / "cache",
+        **choices,
+    }
+    return Machine.of(**values)
+
+
+def test_a_credential_a_host_hands_its_machine_never_reaches_a_line(tmp_path: Path) -> None:
+    """A host passes its key in the machine's environment rather than in `.env`, and no `Secret` wraps it there."""
+    canary = "sk_host_canary_5d0c2a9e61"
+    here = a_host(tmp_path, environ={"ELEVENLABS_API_KEY": canary, "HOST_DB_PASSWORD": "pw_host_canary_8e4b"})
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here.run() as run:
+        run.note(f"sent {canary} with pw_host_canary_8e4b")
+        logging.getLogger("decktalk.speech.http").debug("headers %s", {"xi-api-key": canary})
+    said = "".join(line.model_dump_json() for line in seen)
+    assert canary not in said and "pw_host_canary_8e4b" not in said
+    assert "<secret ELEVENLABS_API_KEY>" in said and "<secret HOST_DB_PASSWORD>" in said
+
+
+def test_what_reading_the_machine_noticed_is_a_warning_on_every_run(tmp_path: Path) -> None:
+    """A misspelled variable or machine key in a log line never reached `--json`, so it is a line of the run."""
+    config = tmp_path / "host" / "machine.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text("[video]\npresett = 'veryfast'\n", encoding="utf-8")
+    here = a_host(tmp_path, environ={"DECKTALK_VIDEO_CRV": "20"}, config_path=config)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here.run():
+        pass
+    warned = [line.message for line in seen if isinstance(line, Log) and line.level is Level.WARNING]
+    assert tuple(warned) == here.notes
+    assert [("CRV" in note, "presett" in note) for note in warned] == [(True, False), (False, True)]
+
+
+def test_tools_that_name_half_a_build_are_a_note_that_names_the_key_rather_than_a_missing_encoder(
+    tmp_path: Path,
+) -> None:
+    """`install` cannot mend a key that names one half, so `doctor` must say which key to mend."""
+    config = tmp_path / "host" / "machine.toml"
+    config.parent.mkdir(parents=True)
+    (tmp_path / "ffmpeg").write_bytes(b"")
+    config.write_text(f"[tools]\nffmpeg = '{(tmp_path / 'ffmpeg').as_posix()}'\n", encoding="utf-8")
+    here = a_host(tmp_path, config_path=config)
+    assert here.toolchain.ffmpeg is None
+    assert any("tools.ffprobe is not set" in note for note in here.notes)
+
+
+@pytest.fixture
+def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail the test the moment anything opens a connection or looks up a host name."""
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("a host-supplied voice must never reach the network")
+
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket.socket, "connect_ex", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+
+
+def a_starter(tmp_path: Path, here: Machine) -> Path:
+    root = tmp_path / "tenant"
+    init(root, machine=here, skills=False)
+    return root
+
+
+def test_a_host_machine_reads_nothing_from_the_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "the-process-file.toml"))
+    monkeypatch.setenv("DECKTALK_ALLOW_ANY_API_BASE", "1")
+    monkeypatch.setenv("DECKTALK_TOOLS_TIMEOUT_SECONDS", "11")
+    here = a_host(tmp_path)
+    assert here.environ == HOST_SECRETS
+    assert here.config_path == tmp_path / "host" / "machine.toml"
+    assert here.cache_dir == tmp_path / "host" / "cache"
+    assert here.allow_any_api_base is False and here.dotenv is False
+    assert here.toolchain.tools.timeout_seconds == BY_ID["tools.timeout_seconds"].default
+
+
+def test_a_project_opened_on_a_host_machine_keeps_the_hosts_overrides(tmp_path: Path) -> None:
+    """A host enforces the page policy through its machine, so a caller's own override must not drop it."""
+    here = a_host(tmp_path, overrides=["record.page_policy=untrusted"])
+    project = open_project(a_starter(tmp_path, here), machine=here, overrides=["video.crf=20"])
+    assert project.settings.record.page_policy == "untrusted"
+    assert project.settings.video.crf == 20
+
+
+@pytest.mark.usefixtures("no_network", "fake_ffmpeg")
+def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> None:
+    """A host that hands its machine a fake voice must never have a request reach the real one."""
+    voice = FakeVoice()
+    contexts: list[VoiceContext] = []
+
+    def build(context: VoiceContext) -> FakeVoice:
+        contexts.append(context)
+        return voice
+
+    here = a_host(tmp_path, providers={"elevenlabs": build})
+    project = open_project(a_starter(tmp_path, here), machine=here)
+    result = project.narrate(voice=Voicing.PAID)
+    assert result.ok
+    assert voice.requests, "the host's voice was never asked for a take"
+    assert {request.voice_id for request in voice.requests} == {"house-voice"}
+    assert [context.allow_any_api_base for context in contexts] == [False] * len(contexts)
+
+
+@pytest.mark.usefixtures("no_network")
+def test_a_host_machine_answers_no_voice_its_host_left_out(tmp_path: Path) -> None:
+    here = a_host(tmp_path, providers={"house": lambda _context: FakeVoice()})
+    with here.run(), pytest.raises(InputError, match="not a voice this machine answers for"):
+        get_provider("elevenlabs", a_context())
+
+
+def test_two_machines_in_one_process_answer_with_their_own_voices(tmp_path: Path) -> None:
+    first, second = FakeVoice(name="first"), FakeVoice(name="second")
+    one = a_host(tmp_path, providers={"elevenlabs": lambda _context: first})
+    two = a_host(tmp_path, providers={"elevenlabs": lambda _context: second})
+    with one.run():
+        with two.run():
+            assert get_provider("elevenlabs", a_context()) is second
+        assert get_provider("elevenlabs", a_context()) is first
+
+
+def test_the_machines_switch_is_stamped_on_every_voice_it_builds(tmp_path: Path) -> None:
+    """A stage cannot widen where the key goes, and neither can a context built without the machine."""
+    seen: list[VoiceContext] = []
+    here = a_host(tmp_path, providers={"elevenlabs": seen.append}, allow_any_api_base=True)
+    with here.run():
+        get_provider("elevenlabs", a_context())
+    assert seen[0].allow_any_api_base is True
+
+
+def test_the_machines_retries_are_stamped_on_every_voice_it_builds(tmp_path: Path) -> None:
+    """A busy voice is asked again as often as the machine says, which no project may change."""
+    seen: list[VoiceContext] = []
+    here = a_host(tmp_path, providers={"elevenlabs": seen.append}, overrides=("narration.retries=5",))
+    with here.run():
+        get_provider("elevenlabs", a_context())
+    assert seen[0].retries == 5
+
+
+@pytest.mark.usefixtures("no_network")
+def test_a_tenants_env_file_is_never_read_under_a_host_machine(tmp_path: Path) -> None:
+    """An upload could carry a `.env`, and the key it names would then pay for the tenant's take."""
+    here = a_host(tmp_path, environ={}, providers={"elevenlabs": lambda _context: FakeVoice()})
+    root = a_starter(tmp_path, here)
+    (root / ".env").write_text("ELEVENLABS_API_KEY=sk-tenant\nELEVENLABS_VOICE_ID=tenant-voice\n", encoding="utf-8")
+    project = open_project(root, machine=here)
+    with pytest.raises(InputError, match="ELEVENLABS_VOICE_ID is not set"):
+        project.narrate(voice=Voicing.PAID)
+
+
+@pytest.mark.usefixtures("no_network", "fake_ffmpeg")
+def test_the_authors_own_env_file_is_read_under_a_machine_that_allows_it(tmp_path: Path) -> None:
+    voice = FakeVoice()
+    here = a_host(tmp_path, environ={}, providers={"elevenlabs": lambda _context: voice}, dotenv=True)
+    root = a_starter(tmp_path, here)
+    (root / ".env").write_text("ELEVENLABS_API_KEY=sk-author\nELEVENLABS_VOICE_ID=author-voice\n", encoding="utf-8")
+    assert open_project(root, machine=here).narrate(voice=Voicing.PAID).ok
+    assert {request.voice_id for request in voice.requests} == {"author-voice"}
+
+
+def a_context() -> VoiceContext:
+    """A context no machine stamped, which is what a stage builds from its project's values."""
+    return VoiceContext(
+        secrets=NoSecrets(),
+        api_base="https://api.elevenlabs.io/v1",
+        context_chars=1,
+        speech_timeout_seconds=1,
+        sound_timeout_seconds=1,
     )
-    assert swapped.provider("elevenlabs") is mine
 
 
 def test_an_override_reaches_the_machine_by_its_own_scope(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Every pair reaches both the machine and the project, and each takes the keys it owns."""
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "none.toml"))
-    here = Machine.from_environment(overrides=(("tools.cache_dir", str(tmp_path / "elsewhere")),))
+    here = Machine.from_environment(overrides=(f"tools.cache_dir={tmp_path / 'elsewhere'}",))
     assert here.cache_dir == tmp_path / "elsewhere"
 
 
-def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    here = a_machine(tmp_path)
+@pytest.fixture
+def launched(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A browser row that answers without launching Chromium, which the rows below have no need of."""
     monkeypatch.setattr(
         Machine,
         "_browser_row",
-        lambda self: machine_module.InstalledTool(tool="chromium", version="140", path=None, fetched=False, bytes=None),
+        lambda self: machine_module.InstalledTool(tool="chromium", version="140", path=None, fetched=False),
     )
-    result = here.doctor()
+
+
+@pytest.mark.usefixtures("launched")
+def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path) -> None:
+    result = a_machine(tmp_path).doctor()
     assert [tool.tool for tool in result.tools] == ["chromium", "ffmpeg", "ffprobe", "katex"]
     assert not result.ok  # this machine has no encoder, which a build needs
     assert {found.code for found in result.findings} == {Code.FILE_MISSING}
     assert result.bias_ms is None  # the bias is measured only when a caller asks
 
 
-def test_a_measured_doctor_keeps_the_number_it_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The one key no person may type is written by the one command that holds an honest value for it."""
+def test_the_browser_row_names_where_its_chromium_lives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A person told the browser is there still has to find it, so doctor names its path."""
+    executable = tmp_path / "chrome"
+    executable.write_bytes(b"")
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(executable).started())
+    row = a_machine(tmp_path)._browser_row()
+    assert (row.version, row.path) == (BareBrowser.version, executable)
+
+
+def test_a_browser_that_will_not_launch_is_a_row_and_a_warning_that_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The row can only say there is no browser, so the first line of the launch error goes on the log."""
+
+    executable = tmp_path / "chrome"
+    executable.write_bytes(b"")
+    refused = FakeChromium(executable, refusal="Executable doesn't exist\nat /nowhere/chrome")
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", refused.started())
+    row = a_machine(tmp_path)._browser_row()
+    assert (row.version, row.path) == (None, None)
+    [said] = [record for record in caplog.records if record.name == "decktalk.machine"]
+    assert (said.levelname, said.getMessage()) == ("WARNING", "Chromium did not launch.")
+    assert data_of(said) == {"reason": "Executable doesn't exist"}
+
+
+@pytest.mark.usefixtures("launched")
+def test_a_measured_doctor_reports_the_number_and_keeps_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No stage reads the bias, so it is read off the report and never written into a settings file."""
     here = a_machine(tmp_path)
     monkeypatch.setattr(
         machine_module,
         "import_module",
         lambda _name: SimpleNamespace(measure_presentation_bias=lambda: 12.5),
     )
-    result = here.doctor(measure=True)
-    assert result.bias_ms == 12.5
-    assert result.written == (here.config_path,)
-    assert "presentation_bias_ms = 12.5" in here.config_path.read_text(encoding="utf-8")
-
-
-def test_a_doctor_that_measured_nothing_writes_nothing(tmp_path: Path) -> None:
-    here = a_machine(tmp_path)
-    assert here.doctor().written == ()
+    assert here.doctor(measure=True).bias_ms == 12.5
     assert not here.config_path.exists()
 
 
 def test_install_fetches_the_browser_and_the_encoder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fetched: list[str] = []
     monkeypatch.setattr(machine_module.chromium_fetch, "fetch_chromium", lambda **_kw: fetched.append("chromium"))
-    monkeypatch.setattr(machine_module, "fetch_ffmpeg", lambda: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe")))
+    monkeypatch.setattr(
+        machine_module, "fetch_ffmpeg", lambda **_: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe"))
+    )
     result = a_machine(tmp_path).install()
     assert fetched == ["chromium"]
     assert [tool.tool for tool in result.tools] == ["chromium", "ffmpeg", "ffprobe"]
@@ -317,12 +700,14 @@ def test_install_reports_the_browser_it_just_fetched_rather_than_a_blank_row(
     """The row said version null, so `install` printed the browser as missing while `doctor` run
     straight afterwards read the real version off the very browser the fetch had left behind."""
     monkeypatch.setattr(machine_module.chromium_fetch, "fetch_chromium", lambda **_kw: None)
-    monkeypatch.setattr(machine_module, "fetch_ffmpeg", lambda: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe")))
+    monkeypatch.setattr(
+        machine_module, "fetch_ffmpeg", lambda **_: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe"))
+    )
     here = a_machine(tmp_path)
     monkeypatch.setattr(
         type(here),
         "_browser_row",
-        lambda _self: InstalledTool(tool=CHROMIUM, version="141.0.1", path=None, fetched=False, bytes=None),
+        lambda _self: InstalledTool(tool=CHROMIUM, version="141.0.1", path=None, fetched=False),
     )
     (browser, *_rest) = here.install().tools
     assert browser.version == "141.0.1"
@@ -332,48 +717,385 @@ def test_install_reports_the_browser_it_just_fetched_rather_than_a_blank_row(
 # ---- applying a fix ---------------------------------------------------------------------------
 
 
+INSTALL = ("decktalk", "install")
+"""The one command a fix may run, which these tests stand in for with a fake subprocess."""
+INSTALL_FIX = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
+
+
 def a_finding(fix: object) -> Finding:
     return Finding(code=Code.FILE_MISSING, message="x", location=Location(where="a"), fix=fix)
 
 
+def ran(here: Machine, fix: CommandFix, *, unsafe: bool = False) -> FixOutcome:
+    """What applying a machine's fix in a run of its own came to."""
+    with here.run() as run:
+        return apply_fix(run, Code.FILE_MISSING, fix, root=here.cwd, scope=Scope.MACHINE, unsafe=unsafe)
+
+
+def exits(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
+    """Make every command a fix runs exit with `code`, so no test installs anything."""
+    monkeypatch.setattr(
+        "decktalk.machine.subprocess.run",
+        lambda argv, **_: subprocess.CompletedProcess(argv, code, b"", b"Traceback\nOSError: the cache is read-only\n"),
+    )
+
+
 def test_a_fix_is_taken_from_the_finding_whose_code_it_resolves() -> None:
-    edit = CommandFix(title="t", applicability=Applicability.SAFE, command=("true",))
-    assert fixes_of(a_finding(edit)) == ((Code.FILE_MISSING, edit),)
-    assert fixes_of([a_finding(None), a_finding(edit)]) == ((Code.FILE_MISSING, edit),)
+    assert fixes_of(a_finding(INSTALL_FIX)) == ((Code.FILE_MISSING, INSTALL_FIX),)
+    assert fixes_of([a_finding(None), a_finding(INSTALL_FIX)]) == ((Code.FILE_MISSING, INSTALL_FIX),)
 
 
 def test_a_fix_only_a_person_can_make_is_reported_and_never_applied(tmp_path: Path) -> None:
-    here = a_machine(tmp_path)
-    fix = CommandFix(title="t", applicability=Applicability.DISPLAY, command=("false",))
-    with here.run() as run:
-        outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    outcome = ran(a_machine(tmp_path), INSTALL_FIX.model_copy(update={"applicability": Applicability.DISPLAY}))
     assert not outcome.applied and "only a person" in (outcome.why or "")
 
 
-def test_a_fix_that_can_lose_work_is_applied_only_on_request(tmp_path: Path) -> None:
+def test_a_fix_left_alone_is_a_warning_that_says_why(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`doctor --fix` and `check --fix` print the stream, not the result, so the reason has to be a line."""
     here = a_machine(tmp_path)
-    fix = CommandFix(title="t", applicability=Applicability.UNSAFE, command=("true",))
-    with here.run() as run:
-        held = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
-        asked = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=True)
-    assert not held.applied and asked.applied
+    exits(monkeypatch, 1)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append):
+        here.apply(a_finding(INSTALL_FIX))
+    warned = [line.message for line in seen if isinstance(line, Log) and line.level is Level.WARNING]
+    assert any(INSTALL_FIX.title in message and "exited 1" in message for message in warned)
 
 
-def test_a_command_that_fails_is_reported_rather_than_raised(tmp_path: Path) -> None:
+def test_a_fix_that_can_lose_work_is_applied_only_on_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     here = a_machine(tmp_path)
-    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=("false",))
-    with here.run() as run:
-        outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    exits(monkeypatch, 0)
+    fix = INSTALL_FIX.model_copy(update={"applicability": Applicability.UNSAFE})
+    assert not ran(here, fix).applied and ran(here, fix, unsafe=True).applied
+
+
+def test_a_command_that_fails_is_reported_rather_than_raised(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    exits(monkeypatch, 1)
+    outcome = ran(a_machine(tmp_path), INSTALL_FIX)
     assert not outcome.applied and "exited 1" in (outcome.why or "")
+    assert "OSError: the cache is read-only" in (outcome.why or "")
 
 
-def test_a_knob_a_fix_names_is_written_into_the_machine_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_fix_command_leaves_its_command_exit_time_and_output_on_the_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     here = a_machine(tmp_path)
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "machine.toml"))
+    exits(monkeypatch, 2)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append):
+        ran(here, INSTALL_FIX)
+    [line] = [line for line in seen if isinstance(line, Log) and line.source == "machine"]
+    assert line.level is Level.WARNING and line.data is not None
+    assert line.data["exit"] == 2 and str(line.data["argv"]).endswith("-m decktalk install")
+    assert line.data["output_tail"] == "Traceback | OSError: the cache is read-only"
+
+
+def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_machines_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`decktalk` on `PATH` may be another install, and an unbounded command holds `apply` for ever."""
+    here = a_machine(tmp_path, ONLY_THIS="1")
+    asked: dict[str, object] = {}
+
+    def record(argv: list[str], **options: object) -> subprocess.CompletedProcess[str]:
+        asked.update(options, argv=argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr("decktalk.machine.subprocess.run", record)
+    assert ran(here, INSTALL_FIX).applied
+    assert asked["argv"] == [sys.executable, "-m", "decktalk", "install"]
+    assert asked["timeout"] == FIX_TIMEOUT_SECONDS
+    assert asked["env"] == {
+        "ONLY_THIS": "1",
+        "DECKTALK_CONFIG": str(here.config_path),
+        "DECKTALK_TOOLS_CACHE_DIR": str(here.cache_dir),
+    }
+
+
+def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def hang(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(argv, FIX_TIMEOUT_SECONDS)
+
+    monkeypatch.setattr("decktalk.machine.subprocess.run", hang)
+    outcome = ran(a_machine(tmp_path), INSTALL_FIX)
+    assert not outcome.applied and "was stopped" in (outcome.why or "")
+    [said] = [record for record in caplog.records if record.name == "decktalk.machine"]
+    assert said.levelname == "WARNING" and "(timeout)" in said.getMessage()
+    assert data_of(said) == {
+        "argv": command_line([sys.executable, "-m", *INSTALL]),
+        "reason": "timeout",
+        "limit": FIX_TIMEOUT_SECONDS,
+    }
+
+
+def test_a_command_built_without_validation_is_still_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The model refuses a foreign argv, and a model built past its validator meets the same refusal here."""
+    marker = tmp_path / "ran"
+
+    def run_it(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        marker.write_text(" ".join(argv), encoding="utf-8")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr("decktalk.machine.subprocess.run", run_it)
+    hostile = CommandFix.model_construct(
+        kind="command", title="t", applicability=Applicability.SAFE, command=("sh", "-c", f"touch {marker}")
+    )
+    outcome = ran(a_machine(tmp_path), hostile)
+    assert not outcome.applied and "not one of DeckTalk's own commands" in (outcome.why or "")
+    assert not marker.exists()
+
+
+def edit_fix(*edits: Edit) -> EditFix:
+    """A safe fix of these edits, made in order."""
+    return EditFix(title="t", applicability=Applicability.SAFE, edits=edits)
+
+
+def an_edit(file: str | Path, **locator: object) -> EditFix:
+    """A safe fix of one edit, which is the shape a finding read from JSON hands `apply`."""
+    return edit_fix(Edit.model_validate({"file": file, "new": "written by a fix", **locator}))
+
+
+def applied(here: Machine, fix: EditFix | RuntimeFix, root: Path) -> tuple[bool, str]:
+    with here.run() as run:
+        outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
+    return outcome.applied, outcome.why or ""
+
+
+@pytest.mark.parametrize("escape", ["../outside.txt", "deeper/../../outside.txt"])
+def test_an_edit_that_climbs_out_of_the_project_is_refused(tmp_path: Path, escape: str) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    done, why = applied(a_machine(tmp_path), an_edit(escape, line=1), root)
+    assert not done and "outside the project" in why
+    assert not (tmp_path / "outside.txt").exists()
+
+
+def test_an_edit_that_names_an_absolute_path_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    target = tmp_path / "elsewhere.txt"
+    done, why = applied(a_machine(tmp_path), an_edit(target, line=1), root)
+    assert not done and "outside the project" in why
+    assert not target.exists()
+
+
+def test_an_edit_through_a_link_that_leaves_the_project_is_refused(tmp_path: Path) -> None:
+    """A link spells a path inside the project and writes outside it, so the check follows the link."""
+    root = tmp_path / "project"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "notes.txt").write_text("mine\n", encoding="utf-8")
+    link(root / "shared", outside)
+    done, why = applied(a_machine(tmp_path), an_edit("shared/notes.txt", line=1, old="mine"), root)
+    assert not done and "outside the project" in why
+    assert (outside / "notes.txt").read_text(encoding="utf-8") == "mine\n"
+
+
+def a_runtime_fix(file: str) -> RuntimeFix:
+    return RuntimeFix(title="t", applicability=Applicability.SAFE, file=Path(file))
+
+
+@pytest.mark.parametrize("named", ["script.md", "../decktalk-runtime.js"])
+def test_a_runtime_fix_replaces_no_file_but_a_runtime_copy_inside_the_project(tmp_path: Path, named: str) -> None:
+    """A runtime fix arrives as JSON, so it may not turn the engine's runtime into any other file."""
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "script.md").write_text("mine\n", encoding="utf-8")
+    done, why = applied(a_machine(tmp_path), a_runtime_fix(named), root)
+    assert not done and ("not a copy of the runtime" in why or "outside the project" in why)
+    assert (root / "script.md").read_text(encoding="utf-8") == "mine\n"
+    assert not (tmp_path / assets.RUNTIME_FILE).exists()
+
+
+def test_a_runtime_copy_that_links_to_another_file_is_never_written_through(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    (root / "deck").mkdir(parents=True)
+    (root / "script.md").write_text("mine\n", encoding="utf-8")
+    link(root / "deck" / assets.RUNTIME_FILE, root / "script.md")
+    done, why = applied(a_machine(tmp_path), a_runtime_fix(f"deck/{assets.RUNTIME_FILE}"), root)
+    assert not done and "not a copy of the runtime" in why
+    assert (root / "script.md").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_a_fix_with_one_refused_edit_writes_none_of_its_edits(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    fix = edit_fix(Edit(file=Path("inside.txt"), line=1, new="x"), Edit(file=Path("../outside.txt"), line=1, new="x"))
+    done, _why = applied(a_machine(tmp_path), fix, root)
+    assert not done
+    assert not (root / "inside.txt").exists()
+
+
+def test_a_fix_whose_second_edit_is_stale_leaves_its_first_file_whole(tmp_path: Path) -> None:
+    """Every edit is checked before any file is written, so a fix changes all of its files or none."""
+    (tmp_path / "first.txt").write_text("one\n", encoding="utf-8")
+    (tmp_path / "second.txt").write_text("moved\n", encoding="utf-8")
+    fix = edit_fix(
+        Edit(file=Path("first.txt"), line=1, old="one", new="changed"),
+        Edit(file=Path("second.txt"), line=1, old="two", new="changed"),
+    )
+    done, why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert not done and "no longer reads" in why
+    assert (tmp_path / "first.txt").read_text(encoding="utf-8") == "one\n"
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.endswith(".fixing")) == []
+
+
+def test_two_edits_to_one_file_are_made_in_order_and_written_once(tmp_path: Path) -> None:
+    (tmp_path / "notes.txt").write_text("one\ntwo\n", encoding="utf-8")
+    fix = edit_fix(
+        Edit(file=Path("notes.txt"), line=1, old="one", new="first"),
+        Edit(file=Path("notes.txt"), line=2, old="two", new="second"),
+    )
+    done, _why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert done
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "first\nsecond\n"
+
+
+def test_a_link_planted_where_a_fix_writes_its_draft_is_a_refusal_and_is_never_written_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A draft's name is random, and a name a project did plant is refused in a sentence, never followed."""
+    monkeypatch.setattr("decktalk.files.secrets.token_hex", lambda _size: "planted")
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "notes.txt").write_text("one\n", encoding="utf-8")
+    elsewhere = tmp_path / "elsewhere.txt"
+    elsewhere.write_text("mine\n", encoding="utf-8")
+    link(root / ".notes.txt.planted.draft", elsewhere)
+    done, why = applied(a_machine(tmp_path), an_edit("notes.txt", line=1, old="one"), root)
+    assert not done and "could not be read or written" in why
+    assert elsewhere.read_text(encoding="utf-8") == "mine\n"
+    assert (root / "notes.txt").read_text(encoding="utf-8") == "one\n"
+    assert (root / ".notes.txt.planted.draft").is_symlink()
+
+
+def test_a_fix_that_breaks_the_project_file_and_sets_a_key_in_it_changes_nothing(tmp_path: Path) -> None:
+    """A key edit is staged with the line edits, so the file both change is judged whole before any lands."""
+    (tmp_path / "script.md").write_text("one\n", encoding="utf-8")
+    (tmp_path / "decktalk.toml").write_text('[project]\nname = "t"\n', encoding="utf-8")
+    fix = edit_fix(
+        Edit(file=Path("script.md"), line=1, old="one", new="changed"),
+        Edit(file=Path("decktalk.toml"), line=1, old="[project]", new="[project"),
+        Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
+    )
+    done, why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert not done and "not valid TOML" in why
+    assert (tmp_path / "script.md").read_text(encoding="utf-8") == "one\n"
+    assert (tmp_path / "decktalk.toml").read_text(encoding="utf-8") == '[project]\nname = "t"\n'
+
+
+def test_a_line_edit_and_a_key_edit_of_the_project_file_both_land_in_one_write(tmp_path: Path) -> None:
+    (tmp_path / "decktalk.toml").write_text('[project]\nname = "t"\n', encoding="utf-8")
+    fix = edit_fix(
+        Edit(file=Path("decktalk.toml"), line=2, old='name = "t"', new='name = "renamed"'),
+        Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
+    )
+    done, why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert done, why
+    written = (tmp_path / "decktalk.toml").read_text(encoding="utf-8")
+    assert 'name = "renamed"' in written and "width = 1280" in written
+
+
+def test_a_file_the_system_refuses_to_replace_puts_back_every_file_already_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second move that fails, as a full disk or an editor holding a file open makes it, is a refusal."""
+    (tmp_path / "first.txt").write_text("one\n", encoding="utf-8")
+    (tmp_path / "second.txt").write_text("two\n", encoding="utf-8")
+    moves: list[Path] = []
+    real = Path.replace
+
+    def full(self: Path, target: Path) -> Path:
+        moves.append(Path(target))
+        if len(moves) == 2:
+            raise OSError(28, "No space left on device", str(target))
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", full)
+    fix = edit_fix(
+        Edit(file=Path("first.txt"), line=1, old="one", new="changed"),
+        Edit(file=Path("second.txt"), line=1, old="two", new="changed"),
+    )
+    done, why = applied(a_machine(tmp_path), fix, tmp_path)
+    assert (
+        not done
+        and why
+        == "second.txt could not be read or written (No space left on device), so every file was left as it was."
+    )
+    assert (tmp_path / "first.txt").read_text(encoding="utf-8") == "one\n"
+    assert (tmp_path / "second.txt").read_text(encoding="utf-8") == "two\n"
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.endswith(".draft")) == []
+
+
+def test_a_runtime_fix_aimed_at_a_directory_is_a_refusal(tmp_path: Path) -> None:
+    (tmp_path / "deck" / assets.RUNTIME_FILE).mkdir(parents=True)
+    done, why = applied(a_machine(tmp_path), a_runtime_fix(f"deck/{assets.RUNTIME_FILE}"), tmp_path)
+    assert not done and "could not be read or written" in why
+
+
+@pytest.mark.parametrize("kind", ["symbolic", "hard"])
+def test_a_settings_fix_never_writes_through_a_project_file_linked_out_of_the_project(
+    tmp_path: Path, kind: str
+) -> None:
+    """A project that arrives with its `decktalk.toml` linked elsewhere chose where a settings fix writes."""
+    root = tmp_path / "project"
+    root.mkdir()
+    outside = tmp_path / "victim.toml"
+    outside.write_text('[project]\nname = "victim"\n', encoding="utf-8")
+    link(root / "decktalk.toml", outside, hard=kind == "hard")
+    fix = SettingFix(title="t", applicability=Applicability.SAFE, key="video.width", value="1280")
+    with a_machine(tmp_path).run() as run:
+        outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
+    assert outside.read_text(encoding="utf-8") == '[project]\nname = "victim"\n'
+    if kind == "symbolic":
+        assert not outcome.applied and "outside the project" in (outcome.why or "")
+    else:
+        assert outcome.applied and "width = 1280" in (root / "decktalk.toml").read_text(encoding="utf-8")
+
+
+def test_a_line_that_no_longer_reads_what_the_fix_expected_is_left_alone(tmp_path: Path) -> None:
+    """A file edited after its finding was raised has moved its lines, and line n is now another line."""
+    (tmp_path / "notes.txt").write_text("one\ninserted\ntwo\n", encoding="utf-8")
+    done, why = applied(a_machine(tmp_path), an_edit("notes.txt", line=2, old="two"), tmp_path)
+    assert not done and "no longer reads" in why
+    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "one\ninserted\ntwo\n"
+
+
+def test_a_line_past_the_end_of_the_file_is_left_alone(tmp_path: Path) -> None:
+    (tmp_path / "notes.txt").write_text("one\n", encoding="utf-8")
+    done, why = applied(a_machine(tmp_path), an_edit("notes.txt", line=5, old="five"), tmp_path)
+    assert not done and "no longer reads" in why
+
+
+def test_a_knob_a_fix_names_is_written_into_the_file_the_machine_holds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The process may name another file, and the machine a host built by hand is the one being fixed."""
+    here = a_machine(tmp_path)
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "the-process-file.toml"))
     fix = SettingFix(title="t", applicability=Applicability.SAFE, key="tools.ffmpeg", value="/usr/bin/ffmpeg")
     result = here.apply(a_finding(fix))
     assert result.fixes[0].applied, result.fixes[0].why
-    assert "/usr/bin/ffmpeg" in (tmp_path / "machine.toml").read_text(encoding="utf-8")
+    assert "/usr/bin/ffmpeg" in here.config_path.read_text(encoding="utf-8")
+    assert not (tmp_path / "the-process-file.toml").exists()
+
+
+@pytest.mark.parametrize(("spelled", "allowed"), [("1", True), ("yes", True), ("0", False), ("false", False)])
+def test_the_api_base_switch_is_read_once_into_a_field_of_the_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spelled: str, allowed: bool
+) -> None:
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "machine.toml"))
+    monkeypatch.setenv("DECKTALK_ALLOW_ANY_API_BASE", spelled)
+    assert Machine.from_environment().allow_any_api_base is allowed
+
+
+def test_a_machine_built_by_hand_keeps_the_key_on_elevenlabs_whatever_the_process_says(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DECKTALK_ALLOW_ANY_API_BASE", "1")
+    assert a_machine(tmp_path, DECKTALK_ALLOW_ANY_API_BASE="1").allow_any_api_base is False
 
 
 def test_a_subscriber_that_raises_becomes_a_line_and_never_stops_the_run(tmp_path: Path) -> None:
@@ -381,7 +1103,7 @@ def test_a_subscriber_that_raises_becomes_a_line_and_never_stops_the_run(tmp_pat
     seen: list[Event] = []
 
     def angry(event: Event) -> None:
-        if event.event == "log" and event.message == "one":
+        if isinstance(event, Log) and event.message == "one":
             raise RuntimeError("no")
         seen.append(event)
 
@@ -407,5 +1129,5 @@ def test_a_run_binds_the_toolchain_and_the_download_listener_for_its_own_length(
         assert bound_tools().cache_dir == str(tmp_path / "cache")
         announce("ffmpeg", 10, 100)
     assert bound_tools().cache_dir == ""
-    fetched = [line for line in seen if line.event == "fetch"]
+    fetched = [line for line in seen if isinstance(line, Fetch)]
     assert [(line.tool, line.bytes, line.total_bytes) for line in fetched] == [("ffmpeg", 10, 100)]

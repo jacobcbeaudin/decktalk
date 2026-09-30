@@ -19,15 +19,13 @@ that flag, so every hosted runner gated and the founder's decision lived only in
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from types import ModuleType, SimpleNamespace
-from typing import Any, Protocol, cast
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
+import check
 from decktalk.findings import Certainty, Code
-from support.paths import REPO
 from support.timing_policy import (
     BASE_BUDGET_SECONDS,
     LATE_FRAME,
@@ -45,68 +43,52 @@ STATED_LIMIT_MS = 80.0
 """A project's own cue offset limit, which stands here for whatever a real project states."""
 
 
-def check_table() -> ModuleType:
-    """`scripts/check.py` as a module, because `GROUPS` is the one place a leg is written down.
-
-    The script is loaded from its path rather than imported by name, because `scripts/` is not a
-    package and putting it on the path would make every check script importable from every test.
-    """
-    spec = importlib.util.spec_from_file_location("check_table", REPO / "scripts" / "check.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-CHECK = check_table()
-
-REPORTS_TIMING = ("browser-platforms", "media-platforms", "e2e-platforms", "scaffold")
+REPORTS_TIMING = (
+    "browser-platforms",
+    "media-platforms",
+    "e2e-platforms",
+    "scaffold",
+    *(() if check.LINUX_GATES_TIMING else ("e2e",)),
+)
 """Every leg whose compositor is not trustworthy, which is the founder's decision written as names.
 
 The three `-platforms` rows are the hosted macOS and Windows runners, which composite through a
 stack DeckTalk does not own. `scaffold` is a hosted Linux runner rendering five whole projects in
-software, where a frame is presented tens of milliseconds after the paint it answers. Every other
-leg gates, which is what keeps the Linux row of each pair the one that holds a deck to its limit.
+software, where a frame is presented tens of milliseconds after the paint it answers. The Linux
+`e2e` row reports too until `LINUX_GATES_TIMING` says three runs in a row have trusted it. Every
+other leg gates, which is what keeps the Linux row of each pair the one that holds a deck to its limit.
 """
 
 
-def test_an_exit_code_of_zero_settles_it_whatever_was_reported() -> None:
-    """The rule reads the exit code, not the rows: a reported row that did not fail the build is news."""
-    assert tolerated(0, [Code.CUE_OFF], gate=True) is None
+UNCERTAIN = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
+"""One finding a run is not sure of, for the rows where an uncertain finding rides along."""
 
 
-def test_late_reveals_alone_are_tolerated_where_timing_is_not_gated() -> None:
-    """A runner whose compositor is not trustworthy reports a late reveal and does not fail on it."""
-    assert tolerated(1, [Code.CUE_OFF], gate=False) is None
-
-
-def test_late_reveals_fail_where_timing_is_gated() -> None:
-    """Gating is the default everywhere, so the same build is a failure unless a step asked otherwise."""
-    why = tolerated(1, [Code.CUE_OFF], gate=True)
-    assert why is not None and Code.CUE_OFF.name in why
-
-
-@pytest.mark.parametrize("other", [Code.CUT_SPEECH, Code.PAGE_STALLED])
-def test_any_other_fault_fails_even_where_timing_is_not_gated(other: Code) -> None:
-    """The tolerance is for late reveals only. A stalled page is the near miss: it is also a timing
-    fault and it is deliberately not tolerated, because it means the recorder stopped presenting
-    frames rather than the runner being slow."""
-    why = tolerated(1, [Code.CUE_OFF, other], gate=False)
-    assert why is not None and other.name in why
-
-
-def test_an_uncertain_finding_riding_along_is_not_a_fault() -> None:
-    """Only a certain finding exits a build that is not strict, so an uncertain one explains nothing."""
-    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
-    assert tolerated(1, [Code.CUE_OFF, uncertain], gate=False) is None
-
-
-def test_a_non_zero_exit_with_nothing_to_explain_it_fails() -> None:
-    """An exit code with no certain finding row is a bug in the command, not a slow runner."""
-    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
-    why = tolerated(1, [uncertain], gate=False)
-    assert why is not None
+@pytest.mark.parametrize(
+    ("code", "codes", "gate", "named"),
+    [
+        # The rule reads the exit code, not the rows: a reported row that did not fail the build is news.
+        pytest.param(0, [Code.CUE_OFF], True, None, id="an exit code of zero settles it"),
+        # A runner whose compositor is not trustworthy reports a late reveal and does not fail on it.
+        pytest.param(1, [Code.CUE_OFF], False, None, id="late reveals alone where timing is not gated"),
+        # Gating is the default everywhere, so the same build is a failure unless a step asked otherwise.
+        pytest.param(1, [Code.CUE_OFF], True, Code.CUE_OFF.name, id="late reveals where timing is gated"),
+        # The tolerance is for late reveals only. A stalled page is the near miss: it is also a timing
+        # fault and it is deliberately not tolerated, because it means the recorder stopped presenting
+        # frames rather than the runner being slow.
+        pytest.param(1, [Code.CUE_OFF, Code.CUT_SPEECH], False, Code.CUT_SPEECH.name, id="cut speech"),
+        pytest.param(1, [Code.CUE_OFF, Code.PAGE_STALLED], False, Code.PAGE_STALLED.name, id="a stalled page"),
+        # Only a certain finding exits a build that is not strict, so an uncertain one explains nothing.
+        pytest.param(1, [Code.CUE_OFF, UNCERTAIN], False, None, id="an uncertain finding riding along"),
+        # An exit code with no certain finding row is a bug in the command, not a slow runner.
+        pytest.param(1, [UNCERTAIN], False, "", id="a non-zero exit with nothing to explain it"),
+    ],
+)
+def test_a_build_is_tolerated_only_for_late_reveals_where_timing_is_not_gated(
+    code: int, codes: list[Code], gate: bool, named: str | None
+) -> None:
+    why = tolerated(code, codes, gate=gate)
+    assert why is None if named is None else why is not None and named in why
 
 
 def test_a_reading_with_no_exit_code_is_judged_on_the_same_rule() -> None:
@@ -124,8 +106,7 @@ def test_a_finding_that_is_not_a_late_landing_is_judged_wherever_it_is_read(othe
 
 def test_the_starter_rule_reads_every_row_and_not_only_the_certain_ones() -> None:
     """The starter may publish no finding at all, so an uncertain row is judged there as well."""
-    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
-    assert judged([uncertain], gate=True) == [uncertain]
+    assert judged([UNCERTAIN], gate=True) == [UNCERTAIN]
     assert judged(LATE_FRAME, gate=False) == []
 
 
@@ -214,9 +195,8 @@ def test_every_other_certain_finding_is_returned_on_either_leg(other: Code) -> N
 
 def test_an_uncertain_row_is_not_a_certain_finding_on_either_leg() -> None:
     """The seam answers what a run is sure about, so a row it is unsure of is neither held nor news."""
-    uncertain = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
-    assert seam("gate", row(uncertain))[0] == []
-    assert seam("report", row(uncertain, Certainty.UNCERTAIN)) == ([], [])
+    assert seam("gate", row(UNCERTAIN))[0] == []
+    assert seam("report", row(UNCERTAIN, Certainty.UNCERTAIN)) == ([], [])
 
 
 def test_a_run_with_no_reporter_still_holds_the_deck_to_every_other_finding() -> None:
@@ -242,37 +222,28 @@ def test_every_platform_the_project_runs_on_has_a_factor() -> None:
 # ---- the leg that carries the decision ---------------------------------------------------------
 
 
-class Row(Protocol):
-    """What this file reads of a `GROUPS` row, which is a structural type because the table is a
-    module loaded from a path and its own dataclass is therefore not a name this file can import."""
-
-    name: str
-    runners: tuple[str, ...]
-    commands: tuple[tuple[str, ...], ...]
-
-
-def suites(group: Row) -> list[tuple[str, ...]]:
+def suites(group: check.Group) -> list[tuple[str, ...]]:
     """Every command of a group that runs the suite, which is the only kind `--timing` reaches."""
     return [command for command in group.commands if "pytest" in command]
 
 
 def test_the_table_passes_the_flag_on_every_leg_the_founder_named_and_on_no_other() -> None:
     """One assertion in both directions, because a flag on a trusted runner is as wrong as none here."""
-    for group in CHECK.GROUPS:
+    for group in check.GROUPS:
         for command in suites(group):
-            reports = CHECK.REPORT_TIMING in command
+            reports = check.REPORT_TIMING in command
             assert reports == (group.name in REPORTS_TIMING), f"{group.name}: {' '.join(command)}"
 
 
 def test_a_second_platform_row_can_never_be_added_without_the_flag() -> None:
     """`elsewhere()` makes these rows, so a group added to `ON_A_REAL_TOOL` is covered by being added."""
-    hosted = {group.name for group in CHECK.GROUPS if suites(group) and CHECK.LINUX not in group.runners}
+    hosted = {group.name for group in check.GROUPS if suites(group) and check.LINUX not in group.runners}
     assert hosted, "the table names no suite on macOS or Windows, so this rule guards nothing"
     assert hosted <= set(REPORTS_TIMING), sorted(hosted - set(REPORTS_TIMING))
 
 
 def test_the_flag_the_table_passes_is_the_option_the_suite_registers() -> None:
     """A flag spelled in one file and read in another is two spellings until something holds them."""
-    name, _, value = CHECK.REPORT_TIMING.partition("=")
+    name, _, value = check.REPORT_TIMING.partition("=")
     assert name == "--timing"
     assert value == "report"

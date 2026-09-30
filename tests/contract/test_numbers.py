@@ -22,19 +22,18 @@ that no walk of Python can see, which is exactly the class of number this rule e
 from __future__ import annotations
 
 import ast
-import json
 import re
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 # `--write` is run as a plain script, where pytest's own `pythonpath` is not in force yet.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from decktalk.settings import KEYS
-from support.paths import REPO
+from support import ratchet
+from support.paths import REPO, SRC
 
 BASELINE = Path(__file__).resolve().parent / "numbers-baseline.json"
 """The committed per-file count of literals still waiting for a door, which only ever shrinks."""
@@ -79,7 +78,7 @@ def walked() -> list[Path]:
     """Every Python file the rule holds over, in a stable order."""
     out: list[Path] = []
     for name in WALKED:
-        here = REPO / "src" / "decktalk" / name
+        here = SRC / name
         out += sorted(here.rglob("*.py")) if here.is_dir() else [here]
     return out
 
@@ -139,8 +138,8 @@ def _admitted(tree: ast.Module) -> Iterator[ast.Constant]:
         elif isinstance(node, ast.Call):
             yield from _from_call(node)
     for node, following in zip(tree.body, [*tree.body[1:], None], strict=True):
-        if _is_a_door(node, following):
-            yield from _literals(cast("ast.Assign | ast.AnnAssign", node).value)
+        if (door := _door(node, following)) is not None:
+            yield from _literals(door)
 
 
 def _from_call(node: ast.Call) -> Iterator[ast.Constant]:
@@ -154,8 +153,8 @@ def _from_call(node: ast.Call) -> Iterator[ast.Constant]:
         yield from _literals(node.args[1])
 
 
-def _is_a_door(node: ast.stmt, following: ast.stmt | None) -> bool:
-    """Whether a module-level statement is the third door, which is a name and its sentence together.
+def _door(node: ast.stmt, following: ast.stmt | None) -> ast.expr | None:
+    """The value a module-level statement names when it is the third door, a name and its sentence together.
 
     A name with no sentence is half a door. The next reader meets the number and still has to work
     out whether it follows from a standard, from arithmetic, or from a measurement of a tool, which
@@ -166,11 +165,11 @@ def _is_a_door(node: ast.stmt, following: ast.stmt | None) -> bool:
     elif isinstance(node, ast.AnnAssign):
         targets, value = [node.target], node.value
     else:
-        return False
+        return None
     if value is None or not all(_named(target) for target in targets):
-        return False
+        return None
     sentence = _sentence(following) if following is not None else None
-    return sentence is not None and sentence.split(":")[0].strip().lower() in OPENERS
+    return value if sentence is not None and sentence.split(":")[0].strip().lower() in OPENERS else None
 
 
 OPENERS = ("truth", "derived", "calibration")
@@ -228,11 +227,6 @@ def measured() -> dict[str, int]:
     return found
 
 
-def baseline() -> dict[str, int]:
-    """The committed to-do list, which is the only thing that excuses a literal."""
-    return json.loads(BASELINE.read_text(encoding="utf-8"))["files"]
-
-
 SOURCE = '''
 LIMIT_MS = 42
 """Truth: a fact about a codec, which is what a name and a sentence together admit."""
@@ -283,35 +277,18 @@ def test_the_typescript_scan_finds_the_cap_a_python_walk_cannot_see(tmp_path: Pa
     assert [bare.value for bare in bare_typescript(path)] == ["100"]
 
 
-def test_no_file_outside_the_baseline_holds_a_bare_number() -> None:
-    """A file with no entry has to go through a door, which is the whole rule for new code."""
-    excused = baseline()
-    added = {name: count for name, count in measured().items() if name not in excused}
-    assert not added, (
-        "these files hold a number that went through no door: "
-        + ", ".join(f"{name} ({count})" for name, count in sorted(added.items()))
-        + ". Make it a settings key, write it as the expression it is, or bind it to a module-level "
-        "upper-case name with one sentence opening with truth, derived or calibration."
-    )
+def test_the_baseline_only_shrinks() -> None:
+    """A file off the list holds no bare number, a file on it never grows, and a beaten count is written down.
 
-
-def test_no_file_on_the_baseline_holds_more_than_it_did() -> None:
-    """The list only shrinks, so a release that adds a literal to a file already on it is refused."""
-    found = measured()
-    grown = {name: (count, found[name]) for name, count in baseline().items() if found.get(name, 0) > count}
-    assert not grown, "these files grew a number: " + ", ".join(
-        f"{name} {was} to {now}" for name, (was, now) in sorted(grown.items())
-    )
-
-
-def test_a_baseline_entry_no_file_needs_any_more_is_removed() -> None:
-    """A count the code has beaten is a debt list rather than a rule, so it is written down as zero."""
-    found = measured()
-    stale = {name: count for name, count in baseline().items() if found.get(name, 0) < count}
-    assert not stale, (
-        "these files hold fewer numbers than the baseline excuses, so the baseline is stale: "
-        + ", ".join(f"{name} {count} to {found.get(name, 0)}" for name, count in sorted(stale.items()))
-        + ". Run `uv run python tests/contract/test_numbers.py --write`."
+    One walk of the tree answers all three, so the message names every kind of drift at once.
+    """
+    added, grown, stale = ratchet.drift(measured(), ratchet.baseline(BASELINE))
+    assert not (added or grown or stale), (
+        f"These files hold a number that went through no door: {added}. Make it a settings key, write "
+        "it as the expression it is, or bind it to a module-level upper-case name with one sentence "
+        f"opening with truth, derived or calibration. These files grew a number: {grown}. These files "
+        f"hold fewer numbers than the baseline excuses: {stale}. Run "
+        "`uv run python tests/contract/test_numbers.py --write` to lower a beaten count."
     )
 
 
@@ -322,20 +299,9 @@ def _sentence(node: ast.stmt) -> str | None:
     return None
 
 
-def _write() -> int:
-    """Lower every count the code has beaten, and refuse to raise one, which is the ratchet."""
-    committed = baseline()
-    found = measured()
-    lowered = {name: min(count, found.get(name, 0)) for name, count in committed.items()}
-    kept = {name: count for name, count in sorted(lowered.items()) if count}
-    raised = sorted(name for name, count in found.items() if count > committed.get(name, 0))
-    BASELINE.write_text(json.dumps({"files": kept}, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {BASELINE.name} with {len(kept)} files and {sum(kept.values())} numbers")
-    if raised:
-        print("these files are not excused and must go through a door: " + ", ".join(raised))
-        return 1
-    return 0
-
-
 if __name__ == "__main__":
-    sys.exit(_write())
+    sys.exit(
+        ratchet.write(
+            BASELINE, measured(), noun="numbers", refusal="these files are not excused and must go through a door"
+        )
+    )

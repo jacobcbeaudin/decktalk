@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 from pathlib import Path
 
 import pytest
 
 from decktalk.errors import InputError
-from decktalk.inputs.env import Env, read_dotenv
+from decktalk.inputs.env import DOTENV, Env, read_dotenv, reading_dotenv
+
+
+@pytest.fixture(autouse=True)
+def author_machine():
+    """Every test here reads `.env` as the author's own machine does, inside a run that allows it."""
+    with reading_dotenv(True):
+        yield
 
 
 def write_env(tmp_path: Path, text: str) -> Path:
@@ -98,8 +106,13 @@ def test_a_byte_order_mark_does_not_hide_the_first_key(tmp_path):
     assert Env(path, environ={}).get("ELEVENLABS_API_KEY").reveal() == "sk_real"
 
 
-def test_a_project_holding_every_variable_it_needs_says_so_without_revealing_one(tmp_path):
-    """`doctor` reports whether the credential is set, which is a question and never a read."""
-    env = Env(write_env(tmp_path, "ELEVENLABS_API_KEY=sk_real\n"), environ={})
-    assert env.has("ELEVENLABS_API_KEY")
-    assert not env.has("ELEVENLABS_API_KEY", "MISSING_ONE")
+def test_a_caller_outside_any_run_reads_no_env_file(tmp_path):
+    """A host that reaches this layer without a machine gets the host's rule, which leaves `.env` unread."""
+    env = Env(write_env(tmp_path, "ELEVENLABS_API_KEY=sk_tenant\n"), environ={})
+    with reading_dotenv(False):
+        assert not env.get("ELEVENLABS_API_KEY")
+
+
+def test_the_default_is_to_leave_env_unread():
+    """The default is what a fresh thread or a bare call sees, so it is the closed one."""
+    assert contextvars.Context().run(DOTENV.get) is False

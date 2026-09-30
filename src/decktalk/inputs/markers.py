@@ -11,16 +11,14 @@ reported by `assemble` and skipped.
 
 from __future__ import annotations
 
-import json
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from decktalk.errors import InputError
+from decktalk.inputs.cues import SECTION_START, json_of
+from decktalk.inputs.document import fill
 from decktalk.inputs.paths import at, relative
 from decktalk.tomlmap import Table
-
-log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -29,15 +27,11 @@ class Marker:
 
     name: str
     section: int
-    on: str = "$start"
+    on: str = SECTION_START
     offset: float = 0.0
     occurrence: int = 1
     case_sensitive: bool = False
     mute_seconds: float = 0.0
-
-    @property
-    def key(self) -> str:
-        return f"{self.section:02d}"
 
 
 @dataclass(frozen=True)
@@ -47,18 +41,13 @@ class Markers:
     boost_db: float = 3.0
     boost_seconds: float = 2.0
     markers: tuple[Marker, ...] = field(default_factory=tuple)
+    notes: tuple[str, ...] = ()
+    """One sentence per key the file holds and nothing reads, which the run that loads it reports."""
 
 
 def load_markers(path: Path, root: Path) -> Markers:
     """The parsed markers file. A malformed file fails here, with the file and the row named."""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise InputError(
-            f"{path.name} is not valid JSON: {exc.msg}.",
-            hint="Check the brackets and the commas on the line named here.",
-            location=at(path, root, line=exc.lineno),
-        ) from exc
+    data = json_of(path.read_text(encoding="utf-8"), path, root)
     if not isinstance(data, dict):
         raise InputError(
             f"{path.name} has no top-level 'markers' array.",
@@ -68,23 +57,9 @@ def load_markers(path: Path, root: Path) -> Markers:
     shown = relative(path, root)
     top = Table(data, path.name, shown)
     rows: list[Marker] = []
+    notes: list[str] = []
     for i, raw in enumerate(top.get_tables("markers")):
         t = Table(raw, f"{path.name}: markers #{i + 1}", shown)
-        for note in t.note_unknown(Marker.__dataclass_fields__):
-            log.warning(note)
-        rows.append(
-            Marker(
-                name=t.get_str("name", ""),
-                section=t.get_int("section", required=True),
-                on=t.get_str("on", "$start"),
-                offset=t.get_num("offset", 0.0),
-                occurrence=t.get_int("occurrence", 1),
-                case_sensitive=t.get_bool("case_sensitive"),
-                mute_seconds=t.get_num("mute_seconds", 0.0),
-            )
-        )
-    return Markers(
-        boost_db=top.get_num("boost_db", 3.0),
-        boost_seconds=top.get_num("boost_seconds", 2.0),
-        markers=tuple(rows),
-    )
+        notes += t.note_unknown(Marker.__dataclass_fields__)
+        rows.append(fill(t, Marker, name=t.get_str("name", "")))
+    return fill(top, Markers, markers=tuple(rows), notes=tuple(notes))

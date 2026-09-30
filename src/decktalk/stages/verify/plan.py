@@ -17,17 +17,31 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import cast
 
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
-from decktalk.settings import NUMBERS_BY_ID, Settings, VerifyConfig
+from decktalk.media.frames import Size
+from decktalk.page import MILLISECONDS
+from decktalk.settings import (
+    Settings,
+    VerifyConfig,
+    block_height,
+    block_width,
+    probe_height,
+    probe_width,
+    reference_lead_seconds,
+)
+from decktalk.stages import selects
 
 EPSILON = 1e-6
 """Truth: the slack two measured seconds need to compare equal, which is far under one frame."""
 
-MILLISECONDS = 1000
-"""Truth: milliseconds in one second, which is the one conversion between a limit and a measurement."""
+HALF_FRAME = 0.5
+"""Truth: half a frame, which a read aims inside its frame by and a limit written in frames is read with.
+
+A frame is the first one at or after its time, so a read aimed half a frame inside it never lands on
+its neighbour, and a limit that allows half a frame more is not failed by its own rounding.
+"""
 
 PROBE_TAIL_SECONDS = 0.05
 """Calibration: how close to the end of a section a probe may still fall, so a probe never reads the next one.
@@ -36,39 +50,15 @@ A probe at the very last frame of a section reads the cut rather than the reveal
 a second is over one frame at every rate DeckTalk encodes at.
 """
 
-REFERENCE_LEAD = "verify.reference_lead_seconds"
-"""The published number that says how far before its cue the reference frame is read."""
 
-PROBE_WIDTH = "verify.probe_width"
-PROBE_HEIGHT = "verify.probe_height"
-BLOCK_WIDTH = "verify.block_width"
-BLOCK_HEIGHT = "verify.block_height"
-"""The published numbers that say what size a frame is compared at, which no key states."""
+def frame_size(settings: Settings) -> Size:
+    """The size every probe, control and seam comparison is made at."""
+    return Size(probe_width(settings), probe_height(settings))
 
 
-def reference_lead(settings: Settings) -> float:
-    """How far before its cue the reference frame is read, which is a published derived number.
-
-    The formula lives once, in the settings layer's own `NUMBERS` table, so a reader who asks what
-    decides the lead meets the arithmetic rather than a second copy of it here.
-    """
-    return cast("float", NUMBERS_BY_ID[REFERENCE_LEAD].at(settings))
-
-
-def frame_size(settings: Settings) -> dict[str, int]:
-    """The width and the height every probe comparison is made at, as `frames` takes them."""
-    return {
-        "width": cast("int", NUMBERS_BY_ID[PROBE_WIDTH].at(settings)),
-        "height": cast("int", NUMBERS_BY_ID[PROBE_HEIGHT].at(settings)),
-    }
-
-
-def block_size(settings: Settings) -> dict[str, int]:
-    """The width and the height of the block-averaged copy, which cancels the encoder's ringing."""
-    return {
-        "width": cast("int", NUMBERS_BY_ID[BLOCK_WIDTH].at(settings)),
-        "height": cast("int", NUMBERS_BY_ID[BLOCK_HEIGHT].at(settings)),
-    }
+def block_size(settings: Settings) -> Size:
+    """The size of the block-averaged copy the onset scan reads, which cancels the encoder's ringing."""
+    return Size(block_width(settings), block_height(settings))
 
 
 @dataclass(frozen=True)
@@ -108,7 +98,7 @@ def reference_time(
     """
     floor = sec_start + (dip if fade_in else 0.0)
     latest = sec_start + cue_t - 1.0 / fps
-    reference = max(floor, sec_start + cue_t - reference_lead(settings))
+    reference = max(floor, sec_start + cue_t - reference_lead_seconds(settings))
     if reference > latest + EPSILON:
         return None
     return round(reference, 4)
@@ -159,12 +149,11 @@ def probe_plan(
     if not any(spoiled(d) for d in configured):
         return configured, False
     shortest = settings.cue_offset_max_ms / MILLISECONDS + 1.0 / fps
-    delays: list[float] = []
-    for delay in configured:
-        fit = delay if not spoiled(delay) else _fitted(delay, cue_at, before, others, lead, fps, shortest, spoiled)
-        if fit is not None and round(fit, 4) not in delays:
-            delays.append(round(fit, 4))
-    return (sorted(delays), True) if delays else (configured, False)
+    fits = (
+        d if not spoiled(d) else _fitted(d, cue_at, before, others, lead, fps, shortest, spoiled) for d in configured
+    )
+    delays = sorted({round(fit, 4) for fit in fits if fit is not None})
+    return (delays, True) if delays else (configured, False)
 
 
 def _fitted(
@@ -217,10 +206,10 @@ def default_checks(cue_times: CueTimes | None, only: Sequence[int] | None = None
     """Every resolved cue as (section number, cue id), in section order and then cue time."""
     if cue_times is None:
         return []
-    wanted = set(only or ())
+    wanted = selects(only)
     checks: list[tuple[int, str]] = []
     for block in sorted(cue_times.sections, key=lambda row: row.section):
-        if wanted and block.section not in wanted:
+        if not wanted(block.section):
             continue
         times = cue_times.times(block.section)
         checks += [(block.section, cue) for cue, _at in sorted(times.items(), key=lambda item: item[1])]
@@ -265,7 +254,7 @@ def onset_offset_seconds(
 
 __all__ = [
     "EPSILON",
-    "MILLISECONDS",
+    "HALF_FRAME",
     "PROBE_TAIL_SECONDS",
     "Neighbour",
     "apart",
@@ -276,7 +265,6 @@ __all__ = [
     "onset_offset_seconds",
     "opted_out",
     "probe_plan",
-    "reference_lead",
     "reference_time",
     "thin_change",
 ]

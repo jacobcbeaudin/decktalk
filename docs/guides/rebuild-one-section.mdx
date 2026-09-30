@@ -43,7 +43,8 @@ What the flag does depends on the stage, and the difference is the point of the 
   or its cut when nothing about it changed, because naming a section says which sections a run is
   about and never that its work has to be redone.
 - On `assemble` it never shortens the film. A film is always whole, so every section is in the
-  answer, and `--section` decides only which of them are cut again rather than kept.
+  answer, and every cut is kept only while its key matches, named or not. `--section` decides which
+  sections the run judges, so a missing file in a section you left out is not reported again.
 
 A section you leave out of `record` whose recording no longer matches the project is reported by
 name, with the reason, so a run never leaves an out-of-date picture in the film silently. A section
@@ -73,9 +74,10 @@ Nothing else is in it, and each absence is a decision you can rely on.
   twice.
 
 A take file is named by its digest, so `narrate` sends nothing for a section whose take and words
-file are both on disk. Set [`[narration] cache_dir`](/reference/configuration#narration) to keep
+file are both on disk. Set [`narration.cache_dir`](/reference/configuration#narration) to keep
 those files outside `build/`, where a fresh clone and a second worktree find them again and several
-projects may share one directory. The take index and the joined narration stay under
+projects may share one directory. It is a machine key, so it is set with
+`decktalk config set narration.cache_dir DIR --where machine` and never in `decktalk.toml`. The take index and the joined narration stay under
 `build/narrate/`, because they belong to one project.
 
 A section that is voiced again costs the characters of its whole text and not only the changed
@@ -192,9 +194,33 @@ Two fields carry the two caches.
   and the stream carries the sentence, so a reader that dispatches on the boolean is still told which
   of the several things moved.
 
-`next` is the whole command to run next, read off the pipeline rather than guessed, and `runs` lists
-any run whose events file is still open, which is how a caller finds a build it started in the
-background.
+`next` is the whole command to run next, read off the pipeline rather than guessed. It is
+`decktalk build` whenever anything on disk is stale, and null once the film on disk is the one the
+last build measured, because then there is nothing to do. `runs` lists any run whose events file is
+still open, which is how a caller finds a build it started in the background.
+
+## A build that finds nothing changed
+
+`assemble` and `verify` are pure functions of files already on disk, so when nothing either of them
+reads has moved since the last build ran them, a build keeps both rather than doing them again. It
+reports each with the outcome `kept` and reports its findings again, so the result reads as the run
+that made the film did.
+
+{/* sample: a second decktalk build --no-voice on an unchanged starter named my-lesson */}
+
+```text
+Assemble kept what it made last time, because nothing it reads has changed.
+    Assemble    0:00
+Verify kept what it made last time, because nothing it reads has changed.
+      Verify    0:00
+       Built build/final/my-lesson.mp4, $0.00, nothing found
+```
+
+On the starter that second build took under half a second. What a build compares is a digest of every
+file the two stages read and the options they ran with, kept in
+[`build/kept.json`](/reference/artifacts#build-kept-json), never a file time. Inside `assemble` each
+section cut has a key of its own in `build/sections/NN.json`, so an edit to one section cuts that
+section again and keeps the others.
 
 ## Ask for work you were not offered
 
@@ -202,7 +228,8 @@ Two flags redo work, and only one of them can cost you anything you cannot get b
 
 `--force` builds again from nothing and keeps every voiced take. It ignores each stage's own cache,
 so `narrate` plans every section it was given as one to make, `record` records every section it
-planned, and `soundscape` asks for every item again. On a run with the voice, forcing therefore buys
+planned, `soundscape` asks for every item again, and `assemble` and `verify` run and measure again
+even when nothing they read has moved. On a run with the voice, forcing therefore buys
 the speech again, and it buys the same words, so the take that lands is the take that was there.
 
 ```console
@@ -216,7 +243,7 @@ sections nobody has paid for, so a film you have already voiced still rehearses 
 nothing.
 
 ```text
-error[INPUT]: the take index holds paid takes for section(s) 1, and a run without voice would replace them, so the next voiced build would buy all of them again.
+error[INPUT]: The take index holds paid takes for section(s) 1, and a run without voice would replace them, so the next voiced build would buy all of them again.
   hint: Rehearse the sections nobody has paid for: --section 2 --section 3. Pass --replace-voiced to replace them anyway.
   docs: https://docs.decktalk.ai/reference/errors/INPUT
 ```

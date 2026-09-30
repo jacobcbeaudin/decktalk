@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from decktalk.inputs import Inputs
-from decktalk.inputs.document import frame_dip
+from decktalk.inputs.document import ClipSection, Document, Mix, PageSection, Transition, frame_dip
 from support.projects import MINIMAL_TOML, write_project
 
 
@@ -17,11 +17,8 @@ def test_fade_flags_follow_dips_and_page_fade_in(tmp_path):
     assert flags["02"] == (False, False)
     p2 = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})  # no dips key: every cut dips
     assert p2.document.fade_flags["01"] == (False, True)
-    # The assemble log names what the cuts do rather than always saying "straight cuts".
-    assert p.document.cut_summary == "dips at 1 cut"
-    assert p2.document.cut_summary == "dips at every cut"
     p3 = Inputs.load(write_project(tmp_path, MINIMAL_TOML + "\n[transition]\ndips = []\n"), environ={})
-    assert p3.document.cut_summary == "straight cuts"
+    assert set(p3.document.fade_flags.values()) == {(False, False)}  # an empty list is straight cuts
 
 
 def test_frame_dip_quantizes_to_whole_frames():
@@ -29,3 +26,21 @@ def test_frame_dip_quantizes_to_whole_frames():
     assert frame_dip(0.15, 30) == 0.1333  # 4.5 frames rounds to the even 4
     assert frame_dip(0.001, 25) == 0.04  # never shorter than one frame
     assert frame_dip(0.0, 25) == 0.0
+
+
+def test_a_project_that_writes_no_value_gets_the_default_its_field_declares() -> None:
+    """The parse call and the field used to spell every default twice, so the two could disagree."""
+    doc = Document.from_toml(
+        {
+            "section": [{"number": 1, "clip": "a.mp4"}, {"number": 2, "page": "deck/a.html"}],
+            "mix": {},
+            "transition": {},
+        },
+        default_name="t",
+    )
+    clip, page = doc.sections
+    assert isinstance(clip, ClipSection) and clip.slate_seconds == ClipSection(number=1, clip="a.mp4").slate_seconds
+    assert (
+        isinstance(page, PageSection) and page.record_margin_seconds == PageSection(1, "a", "1").record_margin_seconds
+    )
+    assert doc.mix == Mix() and doc.transition == Transition()

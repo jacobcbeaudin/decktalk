@@ -3,106 +3,81 @@
 Everything about a key that can be looked up is in the published schema, so this module is only
 what has to be computed. Three things are: which of the five layers actually set the value here,
 what the derived numbers this key feeds work out to at the values in force, and which cues in this
-project a candidate value would clamp. The last one is why the explainer sits above the settings
-layer rather than inside it, because naming a cue means reading the project's own resolved times.
+project a candidate value would clamp. The last one is why the explainer sits in the SDK layer
+beside the machine rather than inside the settings, because naming a cue means reading the project's
+own resolved times, through the artifact that holds them and the build directory the project names.
 """
 
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping
-from dataclasses import dataclass
+import itertools
+import logging
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from pydantic import BaseModel, Field, JsonValue
-
-from .errors import InputError
-from .findings import DOCS, MODEL, Code
-from .results import Layer, LayerValue, NumberView, Scope
+from .errors import DeckTalkError, InputError
+from .findings import DOCS
+from .inputs import Inputs
+from .machine import Machine
+from .results import ConfigExplainResult, Layer, NumberView, Scope, SectionCues
 from .settings import (
-    BY_ID,
     NUMBERS,
+    NUMBERS_BY_ID,
     Loaded,
     Settings,
+    effective,
+    json_value,
+    key_named,
     load,
+    nested,
     value_of,
 )
-from .tomlmap import Key, Nature, Source, did_you_mean
+from .tomlmap import Key
 
-CUE_TIMES = Path("build") / "cue-times.json"
-"""Where `cue` writes the resolved times the explainer reads, project-relative."""
+log = logging.getLogger(__name__)
 
+Cue = tuple[float, str]
+"""One resolved cue as the explainer reads it, which is its second and its wire id, in that order so it sorts."""
 
-class Explanation(BaseModel):
-    """One knob read whole, with the layers under it and the arithmetic above it.
+TYPE_NAMES: dict[object, str] = {bool: "boolean", int: "integer", float: "number", str: "string"}
+"""A scalar key's type as the schema names it."""
 
-    It is the explainer's own result rather than a command's, because the same three computations
-    serve `config explain`, a fix an agent applies and a renderer that shows a knob beside the
-    finding it moves.
-    """
-
-    model_config = MODEL
-
-    key: str = Field(description="The key's dotted name.")
-    description: str = Field(description="What this key changes, in one sentence.")
-    type: str = Field(description="The key's type, as the schema names it.")
-    unit: str | None = Field(None, description="The true unit of the value, or null when it has none.")
-    default: JsonValue = Field(description="The value that would be in force with no override at all.")
-    value: JsonValue = Field(description="The value in force for this project on this machine.")
-    range: str = Field(description="The safe range in words, which is the range the loader enforces.")
-    typed_range: str | None = Field(None, description="The wider range the type admits, which is not enforced.")
-    scope: Scope = Field(description="Which file this key belongs in.")
-    nature: Nature = Field(description="Why this number is a key at all, taste or apparatus.")
-    source: Source = Field(description="Where the value is expected to come from.")
-    evidence: str | None = Field(None, description="What produces the value, for a stated or measured key.")
-    hazard: str | None = Field(None, description="What a value at the edge of the range risks, or null.")
-    requires: str | None = Field(None, description="A relation to another key or number, enforced at load.")
-    see_also: tuple[str, ...] = Field((), description="Keys and published numbers that move with this one.")
-    decides: tuple[Code, ...] = Field((), description="The findings whose verdict this key moves.")
-    environment: str = Field(description="The environment variable that sets this key.")
-    layers: tuple[LayerValue, ...] = Field(description="Every layer that stated this key, lowest first.")
-    winner: Layer = Field(description="The layer the value in force comes from.")
-    numbers: tuple[NumberView, ...] = Field((), description="The derived numbers this key feeds.")
-    candidate: JsonValue | None = Field(None, description="The value asked about, or null when none was.")
-    clamped: tuple[str, ...] = Field((), description="Cues in this project the candidate would clamp.")
-    measured: bool = Field(description="True when this project's resolved cue times were there to read.")
-    docs: str = Field(description="The docs page for this key.")
+ARRAY_TYPE = "array of numbers"
+"""The type of every key that is not a scalar, which is a TOML array of numbers."""
 
 
-@dataclass(frozen=True)
-class _Cue:
-    """One resolved cue as the explainer reads it, which is its wire id and its second."""
-
-    id: str
-    at: float
-
-
-def explain(key: str, *, project: Path | None = None, value: str | None = None) -> Explanation:
+def explain(
+    key: str, *, project: Path | None = None, value: str | None = None, machine: Machine | None = None
+) -> ConfigExplainResult:
     """One knob, its layers, the numbers it feeds and what a candidate would clamp in this project.
 
     `project` is a project directory. Without one the answer is about the defaults and the machine
     alone, which is what an agent reading the instruction set before it has a project needs.
+    `machine` is the machine whose file and environment are the layers under and over the project,
+    which is this process's own when none is given, as it is for `init`.
     `value` is a candidate spelled the way a command line spells it, held to the same safe range as
     a value that is written, because an explanation of a value the loader would refuse is a lie
     with arithmetic in it.
     """
-    known = BY_ID.get(key)
-    if known is None:
-        raise InputError(
-            f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
-            hint="Run `decktalk schema settings` for every key DeckTalk reads.",
-        )
-    here = load(project)
+    known = key_named(key)
+    on = machine or Machine.from_environment()
+    opened = _opened(project, on) if project else None
+    here = (
+        Loaded(settings=opened.settings, layers=opened.layers)
+        if opened
+        else load(project, machine=on.tables, machine_path=on.config_path, environ=on.environ)
+    )
     candidate = _candidate(known, here, value)
-    cues = _cues(project) if project else ()
-    return Explanation(
+    cues = _cues(opened) if opened else ()
+    layers = here.layers.of(known.id)
+    return ConfigExplainResult(
+        ok=True,
         key=known.id,
-        description=known.description,
-        type=_type_name(known),
+        sentence=known.description,
+        type=TYPE_NAMES.get(known.annotation, ARRAY_TYPE),
         unit=known.unit,
-        default=_json(known.default),
-        value=_json(value_of(here.settings, known.id)),
+        default=json_value(known.default),
+        value=json_value(value_of(here.settings, known.id)),
         range=known.range,
         typed_range=known.typed.sentence if known.typed else None,
         scope=known.scope,
@@ -114,14 +89,28 @@ def explain(key: str, *, project: Path | None = None, value: str | None = None) 
         see_also=known.see_also,
         decides=known.decides,
         environment=known.environment,
-        layers=here.layers.of(known.id),
-        winner=here.layers.winner(known.id).layer,
+        layers=layers,
+        layer=here.layers.winner(known.id).layer,
         numbers=_numbers(known, here.settings, candidate),
-        candidate=None if candidate is None else _json(value_of(candidate, known.id)),
+        candidate=None if candidate is None else json_value(value_of(candidate, known.id)),
         clamped=_clamped(known, candidate or here.settings, cues),
         measured=bool(cues),
-        docs=f"{DOCS}/configuration#{known.id.rsplit('.', 1)[0].replace('.', '-')}",
+        docs=f"{DOCS}/configuration#{known.table.replace('.', '-')}",
     )
+
+
+def _opened(project: Path, machine: Machine) -> Inputs | None:
+    """The project whole, or None while its document does not parse yet.
+
+    A knob is explainable in a project whose sections are still being written, so a document the
+    loader refuses costs the answer its cues and nothing else. A refused setting is not swallowed,
+    because the settings-only load that follows meets the same refusal and raises it.
+    """
+    try:
+        return Inputs.load(project, environ=machine.environ, machine=machine.tables)
+    except InputError as refused:
+        log.info("The project did not load (%s), so the key is explained without the project's own layer.", refused)
+        return None
 
 
 def _candidate(key: Key, here: Loaded, value: str | None) -> Settings | None:
@@ -138,17 +127,10 @@ def _candidate(key: Key, here: Loaded, value: str | None) -> Settings | None:
 
 def _layer(here: Loaded, scope: Scope) -> dict[str, Any]:
     """The project's own stated keys, so a candidate is explained against the file rather than the defaults."""
-    out: dict[str, Any] = {}
-    for dotted, rows in here.layers.rows.items():
-        stated = [row for row in rows if row.layer is Layer.PROJECT] if scope is Scope.PROJECT else []
-        if not stated:
-            continue
-        table = out
-        parts = dotted.split(".")
-        for part in parts[:-1]:
-            table = table.setdefault(part, {})
-        table[parts[-1]] = stated[-1].value
-    return out
+    if scope is not Scope.PROJECT:
+        return {}
+    rows = here.layers.rows.items()
+    return nested({key: said[-1].value for key, row in rows if (said := [r for r in row if r.layer is Layer.PROJECT])})
 
 
 def _numbers(key: Key, here: Settings, candidate: Settings | None) -> tuple[NumberView, ...]:
@@ -157,9 +139,9 @@ def _numbers(key: Key, here: Settings, candidate: Settings | None) -> tuple[Numb
         NumberView(
             id=number.id,
             formula=number.formula,
-            reads={name: _json(_read(here, name)) for name in number.reads},
-            value=_json(number.at(here)),
-            candidate=None if candidate is None else _json(number.at(candidate)),
+            reads={name: json_value(effective(here, name)) for name in number.reads},
+            value=json_value(number.at(here)),
+            candidate=None if candidate is None else json_value(number.at(candidate)),
             unit=number.unit,
             sentence=number.sentence,
         )
@@ -168,14 +150,7 @@ def _numbers(key: Key, here: Settings, candidate: Settings | None) -> tuple[Numb
     )
 
 
-def _read(settings: Settings, name: str) -> object:
-    """One input of a formula at its effective value, whether it is a key or a published number."""
-    if name in BY_ID:
-        return value_of(settings, name)
-    return next(number.at(settings) for number in NUMBERS if number.id == name)
-
-
-def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[_Cue, ...]], ...]) -> tuple[str, ...]:
+def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[Cue, ...]], ...]) -> tuple[str, ...]:
     """The cues whose reference frame this value pulls back into the cue before them.
 
     The reference frame is read one lead before a cue, so two cues closer together than that lead
@@ -183,65 +158,39 @@ def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[_Cue, ..
     against a frame the same change had already reached. Only the keys the lead is computed from
     can do that, which is why every other key names no cue rather than guessing at one.
     """
-    feeds = next((number for number in NUMBERS if number.id == "verify.reference_lead_seconds"), None)
+    feeds = NUMBERS_BY_ID.get("verify.reference_lead_seconds")
     if feeds is None or key.id not in feeds.reads:
         return ()
-    lead = float(cast("float", feeds.at(settings)))
+    lead = feeds.at(settings)
     out: list[str] = []
     for _section, rows in cues:
-        for earlier, later in zip(rows, rows[1:], strict=False):
-            if later.at - earlier.at < lead:
-                out.append(later.id)
+        for (earlier, _), (later, cue) in itertools.pairwise(rows):
+            if later - earlier < lead:
+                out.append(cue)
     return tuple(out)
 
 
-def _cues(project: Path) -> tuple[tuple[str, tuple[_Cue, ...]], ...]:
+def _cues(project: Inputs) -> tuple[tuple[str, tuple[Cue, ...]], ...]:
     """Every resolved cue of this project in section order, or nothing when the stage has not run.
 
-    The file is `cue`'s own artifact, so it is one block per section, in section order, and each
-    block holds the rows that section resolved. A row whose second is null was never resolved
-    against a word, so it is left out rather than read as a cue at zero. The file is read leniently
-    and by hand, because a project that has never been cued is the common case, a knob is
-    explainable without one, and the artifact layer sits above this module rather than below it.
+    The times are read through `CueTimes`, the model `cue` writes them with, from the build directory
+    the project names, so a moved build directory is read where it is. A row whose second is null was
+    never resolved against a word, so it is left out rather than read as a cue at zero. A file that is
+    there and cannot be read explains nothing about cues, because a knob is explainable without them.
     """
-    path = project / CUE_TIMES
-    if not path.exists():
-        return ()
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-        blocks = [_block(one) for one in document["sections"]]
-    except (OSError, ValueError, KeyError, TypeError):
+        resolved = project.cue_times()
+    except DeckTalkError as refused:
+        log.info("The cue times could not be read (%s), so no cue is weighed against the key.", refused)
         return ()
-    return tuple(blocks)
+    if resolved is None:
+        return ()
+    return tuple(_block(block) for block in resolved.sections)
 
 
-def _block(section: Mapping[str, Any]) -> tuple[str, tuple[_Cue, ...]]:
+def _block(section: SectionCues) -> tuple[str, tuple[Cue, ...]]:
     """One section of the artifact as the explainer reads it, which is its key and its resolved cues."""
-    rows = tuple(
-        _Cue(id=str(row["cue"]), at=float(row["seconds"])) for row in section["cues"] if row["seconds"] is not None
-    )
-    return str(section["key"]), tuple(sorted(rows, key=lambda row: row.at))
+    return section.key, tuple(sorted((row.seconds, row.cue) for row in section.cues if row.seconds is not None))
 
 
-def _type_name(key: Key) -> str:
-    """The key's type as the schema names it, which is one word for a scalar and a phrase for an array."""
-    annotation = key.annotation
-    if annotation is bool:
-        return "boolean"
-    if annotation is int:
-        return "integer"
-    if annotation is float:
-        return "number"
-    if annotation is str:
-        return "string"
-    return "array of numbers"
-
-
-def _json(value: object) -> JsonValue:
-    """One value as JSON carries it, which turns the tuple a TOML array becomes into a list."""
-    if isinstance(value, tuple):
-        return [_json(item) for item in value]
-    return cast("JsonValue", value)
-
-
-__all__ = ["Explanation", "explain"]
+__all__ = ["explain"]

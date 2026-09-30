@@ -21,6 +21,9 @@ import wave
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic_core import from_json
+
+from ..errors import ToolError
 from ..settings import CLICK_LEVEL_DBFS
 from . import ffmpeg
 
@@ -45,27 +48,25 @@ CLICK_SECONDS = 0.008
 PCM_BYTES_PER_SAMPLE = 2
 """Truth: the width of one signed 16-bit sample, which is what the s16le calls below read and write."""
 
+FULL_SCALE = 32767
+"""Truth: the largest magnitude a sixteen bit sample can carry, which every level is measured against."""
 
-def write_silence(out: Path, seconds: float, *, sample_rate: int, bitrate: str) -> None:
-    ffmpeg.run(
-        "-f",
-        "lavfi",
-        "-i",
-        f"anullsrc=r={sample_rate}:cl=mono",
-        "-t",
-        f"{seconds:.3f}",
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        bitrate,
-        str(out),
-    )
+DECIBEL_BASE = 10
+"""Truth: a decibel is a base ten ratio, so a level becomes an amplitude through ten to a power."""
+
+DECIBEL_DECADE = 20.0
+"""Truth: twenty decibels is one decade of amplitude, which is what converts a level to a factor."""
+
+
+def gain(level_db: float) -> float:
+    """The amplitude factor one level in decibels asks for, which is what `volume` reads."""
+    return DECIBEL_BASE ** (level_db / DECIBEL_DECADE)
 
 
 def rms_db(path: Path, start: float, seconds: float) -> float:
     """The RMS level in dBFS of the audio between start and start + seconds."""
     err = ffmpeg.stderr(
-        "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", "-i", str(path), "-vn",
+        "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", *ffmpeg.source(path), "-vn",
         "-af", "astats=measure_perchannel=none:measure_overall=RMS_level", "-f", "null", "-",
     )  # fmt: skip
     m = re.findall(r"RMS level dB: (-?[0-9.]+|-inf)", err)
@@ -89,7 +90,7 @@ def sound_end(path: Path, *, noise_dbfs: float, min_run_seconds: float) -> float
     """
     duration = ffmpeg.probe_duration(path)
     detect = f"silencedetect=noise={noise_dbfs}dB:d={min_run_seconds}"
-    err = ffmpeg.stderr("-i", str(path), "-af", detect, "-f", "null", "-")
+    err = ffmpeg.stderr(*ffmpeg.source(path), "-af", detect, "-f", "null", "-")
     starts = re.findall(r"silence_start: ([0-9.]+)", err)
     ends = re.findall(r"silence_end: ([0-9.]+)", err)
     if not starts:
@@ -110,7 +111,7 @@ def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate
     """
     n = round(duration * sample_rate)
     samples = array.array("h", bytes(PCM_BYTES_PER_SAMPLE * n))
-    amp = int(32767 * 10 ** (CLICK_LEVEL_DBFS / 20))
+    amp = int(FULL_SCALE * gain(CLICK_LEVEL_DBFS))
     click = round(CLICK_SECONDS * sample_rate)
     for t in times:
         start = round(t * sample_rate)
@@ -125,14 +126,14 @@ def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate
         fh.setsampwidth(PCM_BYTES_PER_SAMPLE)
         fh.setframerate(sample_rate)
         fh.writeframes(samples.tobytes())
-    ffmpeg.run("-i", str(wav), "-c:a", "libmp3lame", "-b:a", bitrate, str(path))
+    ffmpeg.run(*ffmpeg.source(wav), "-c:a", "libmp3lame", "-b:a", bitrate, str(path))
     wav.unlink()
 
 
 def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int) -> list[int]:
     """Mono 16-bit samples of the audio between start and start + seconds, at `[video] sample_rate`."""
     out = ffmpeg.raw(
-        "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", "-i", str(path), "-vn",
+        "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", *ffmpeg.source(path), "-vn",
         "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-",
     )  # fmt: skip
     samples = array.array("h")
@@ -158,9 +159,7 @@ def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate
     silence after that, whatever the file holds past the cut. Where every file lands, and what sounds
     there, is therefore arithmetic over the placements and never depends on the files around it.
     """
-    inputs: list[str] = []
-    for part in parts:
-        inputs += ["-i", str(part.path)]
+    inputs = [arg for part in parts for arg in ffmpeg.source(part.path)]
     steps, shaped = [], set()
     for i, part in enumerate(parts):
         chain = []
@@ -185,28 +184,16 @@ def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate
     pads = "".join(steps)
     labels = "".join(f"[l{i}]" if i in shaped else f"[{i}:a]" for i in range(len(parts)))
     ffmpeg.run(
-        *inputs,
-        "-filter_complex",
-        f"{pads}{labels}concat=n={len(parts)}:v=0:a=1[a]",
-        "-map",
-        "[a]",
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        bitrate,
-        "-ar",
-        str(sample_rate),
-        str(out),
-    )
+        *inputs, "-filter_complex", f"{pads}{labels}concat=n={len(parts)}:v=0:a=1[a]",
+        "-map", "[a]", "-c:a", "libmp3lame", "-b:a", bitrate, "-ar", str(sample_rate), str(out),
+    )  # fmt: skip
 
 
 def crossfade_join(parts: list[Path], out: Path, *, crossfade_seconds: float, bitrate: str) -> None:
     if len(parts) == 1:
         shutil.copyfile(parts[0], out)
         return
-    inputs: list[str] = []
-    for p in parts:
-        inputs += ["-i", str(p)]
+    inputs = [arg for part in parts for arg in ffmpeg.source(part)]
     chain, prev = "", "[0:a]"
     for i in range(1, len(parts)):
         label = "[a]" if i == len(parts) - 1 else f"[m{i}]"
@@ -220,7 +207,10 @@ def crossfade_join(parts: list[Path], out: Path, *, crossfade_seconds: float, bi
 
 @dataclass(frozen=True)
 class Loudness:
-    """What one loudnorm pass measured about a file, before anything is corrected."""
+    """What one loudnorm pass measured about a file, before anything is corrected.
+
+    A silent file has no loudness, which loudnorm spells as -inf and this record keeps as -inf.
+    """
 
     i: float
     tp: float
@@ -231,17 +221,19 @@ class Loudness:
 
 def measure_loudness(path: Path, *, i: float, tp: float, lra: float) -> Loudness:
     err = ffmpeg.stderr(
-        "-i", str(path), "-map", "0:a", "-af", f"loudnorm=I={i}:TP={tp}:LRA={lra}:print_format=json", "-f", "null", "-"
-    )
+        *ffmpeg.source(path), "-map", "0:a",
+        "-af", f"loudnorm=I={i}:TP={tp}:LRA={lra}:print_format=json", "-f", "null", "-",
+    )  # fmt: skip
 
-    def field(name: str) -> float:
-        m = re.search(rf'"{name}"\s*:\s*"([-0-9.]+)"', err)
-        return float(m.group(1)) if m else 0.0
-
+    # loudnorm prints its measurement as the last JSON object on stderr, with every number a string.
+    try:
+        read = from_json(err[err.rindex("{") : err.rindex("}") + 1])
+    except ValueError as exc:
+        raise ToolError(f"loudnorm printed no measurement for {path.name}.") from exc
     return Loudness(
-        i=field("input_i"),
-        tp=field("input_tp"),
-        lra=field("input_lra"),
-        thresh=field("input_thresh"),
-        offset=field("target_offset"),
+        i=float(read["input_i"]),
+        tp=float(read["input_tp"]),
+        lra=float(read["input_lra"]),
+        thresh=float(read["input_thresh"]),
+        offset=float(read["target_offset"]),
     )

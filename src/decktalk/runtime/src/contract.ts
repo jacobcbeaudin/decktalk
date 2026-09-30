@@ -55,11 +55,22 @@ export const FRAME_STEP_MS = 40;
  * The longest motion a cue may still be playing, in seconds.
  *
  * This one number is three things the design keeps together on purpose. It is the point at which an
- * effect marks its own cue unmeasurable, it is the ceiling `motion.scale` is clamped against, and it
- * is the total a staggered container may not pass. A page range that admitted a value above it would
+ * effect marks its own cue unmeasurable, it is the ceiling `motion.scale` is clamped one frame under,
+ * and it is the total a staggered container may not pass. A page range that admitted a value above it would
  * let an author delete a check by turning a knob.
  */
 export const MEASURABLE_SPAN_SECONDS = 0.5;
+
+/**
+ * The longest motion the page plays, in seconds, which is one captured frame under the ceiling.
+ *
+ * The frame of headroom is on purpose. A motion that ended exactly at the ceiling would be decided by
+ * whichever side of one frame boundary the recorder happened to stamp it on, so `scaled()` clamps
+ * here and every span the contract declares sits at or below it, which is what makes the length the
+ * catalog publishes the length the page plays. It is written out for the reason the frame step is,
+ * and a test holds it equal to the ceiling less one frame.
+ */
+export const PLAYABLE_SPAN_SECONDS = 0.46;
 
 /** The share of an entrance that must be drawn in its first captured frame, so verify reads an onset. */
 export const ONSET_FIRST_FRAME_PERCENT = 25;
@@ -83,7 +94,7 @@ export const ENTRANCES = {
   settle: { seconds: 0.28, liftPixels: 4, overshootPercent: 0 },
   fade: { seconds: 0.24, liftPixels: 0, overshootPercent: 0 },
   pop: { seconds: 0.2, liftPixels: 0, overshootPercent: 4 },
-  draw: { seconds: 0.48, liftPixels: 0, overshootPercent: 0 },
+  draw: { seconds: 0.44, liftPixels: 0, overshootPercent: 0 },
   cut: { seconds: 0, liftPixels: 0, overshootPercent: 0 },
 } as const;
 
@@ -107,8 +118,8 @@ export const WORD_STYLES = {
 
 /** Which number in the text counts up from zero, and how long the count runs. */
 export const COUNTS = {
-  last: { seconds: 0.48 },
-  first: { seconds: 0.48 },
+  last: { seconds: 0.44 },
+  first: { seconds: 0.44 },
 } as const;
 
 /** How long a step back and a return to the front play. */
@@ -291,11 +302,6 @@ export const CODES = {
     certainty: "certain",
     raisedBy: "python",
   },
-  PAGE_WORD_LATE: {
-    message: "The first synced word of {value} was shown after the voice reached it, so the line trails the speech.",
-    certainty: "uncertain",
-    raisedBy: "python",
-  },
   PAGE_THIN_DRAW: {
     message: "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
     certainty: "uncertain",
@@ -328,6 +334,12 @@ export const CODES = {
   },
   PAGE_CDN_ASSET: {
     message: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
+    certainty: "certain",
+    raisedBy: "python",
+  },
+  PAGE_RUNTIME_STALE: {
+    message:
+      "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
     certainty: "certain",
     raisedBy: "python",
   },
@@ -386,8 +398,8 @@ export type AttrRow = {
  */
 const READ_FROM_THE_PAGE = null;
 
-/** How long an entrance may play, which is three to twelve captured frames. */
-const IN_SECONDS_RANGE: Range = { min: 0.12, max: 0.48, step: 0.04, unit: "seconds" };
+/** How long an entrance may play, which is three to eleven captured frames and never past the playable span. */
+const IN_SECONDS_RANGE: Range = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
 
 /** How far apart a container's children arrive, which is one to five captured frames. */
 const STAGGER_RANGE: Range = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
@@ -762,6 +774,32 @@ export const PAIR_MARK = ":";
 /** The separator between a slide id and a local moment name in the wire id that cues.json carries. */
 export const WIRE_MARK = ":";
 
+/** What joins a cue's wire id, or a spoken word, to its second in `?cues=` and `?words=`. */
+export const TIME_MARK = "@";
+
+/** What separates two entries of `?cues=` and of `?words=`. */
+export const LIST_SEPARATOR = ",";
+
+/**
+ * The path a previewed page asks its own origin for, which answers with the cue times the last run resolved.
+ *
+ * A recorded page is handed its seconds in its URL, and an author previewing in a browser is not, so
+ * the origin answers this one alias from the build directory and the page plays the film's timing.
+ */
+export const PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json";
+
+/** The custom property on the root element that carries `motion.scale` into a page, from the recorder or the author. */
+export const MOTION_SCALE_PROPERTY = "--dt-motion-scale";
+
+/**
+ * The name the runtime bundle's first line gives, followed by the engine version that shipped it.
+ *
+ * `decktalk init` copies the runtime into a project, and a copy an older engine wrote keeps playing
+ * with the older contract. The line is a legal comment every minifier keeps, so a reader holding the
+ * file can tell which engine wrote it without opening a browser.
+ */
+export const RUNTIME_MARK = "decktalk-runtime";
+
 // ---- the pure readers -----------------------------------------------------------------------
 
 /** The wire id of a local moment, which is the slide it was written in and the name the author wrote. */
@@ -838,13 +876,14 @@ export function measurable(span: number): boolean {
 }
 
 /**
- * A declared span under a reduced-motion render, clamped so no scaled span crosses the ceiling.
+ * A declared span under a reduced-motion render, clamped so no scaled span passes the playable span.
  *
  * The scale multiplies the declared span as well as the duration, so a project that slows its motion
- * down cannot slow it past the point where its own cues stop being measurable.
+ * down cannot slow it past the point where its own cues stop being measurable. Every span the
+ * contract declares is at or below the clamp, so at a scale of one this returns the span unchanged.
  */
 export function scaled(span: number, scale: number): number {
-  return Math.min(span * scale, MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1000);
+  return Math.min(span * scale, PLAYABLE_SPAN_SECONDS);
 }
 
 // ---- the document the Python side reads ---------------------------------------------------------
@@ -857,12 +896,20 @@ export function scaled(span: number, scale: number): number {
  * the JSON the skills quote.
  */
 export const CONTRACT = {
+  milliseconds: MILLISECONDS,
+  secondDigits: SECOND_DIGITS,
   captureFps: CAPTURE_FPS,
   pairSeparator: PAIR_SEPARATOR,
   pairMark: PAIR_MARK,
   wireMark: WIRE_MARK,
+  timeMark: TIME_MARK,
+  listSeparator: LIST_SEPARATOR,
+  previewCueTimes: PREVIEW_CUE_TIMES,
+  motionScaleProperty: MOTION_SCALE_PROPERTY,
+  runtimeMark: RUNTIME_MARK,
   frameStepMs: FRAME_STEP_MS,
   measurableSpanSeconds: MEASURABLE_SPAN_SECONDS,
+  playableSpanSeconds: PLAYABLE_SPAN_SECONDS,
   onsetFirstFramePercent: ONSET_FIRST_FRAME_PERCENT,
   appearWordsMax: APPEAR_WORDS_MAX,
   backOpacity: BACK_OPACITY,

@@ -191,12 +191,16 @@ every key a row may carry.
 
 ## Prove it before you spend anything
 
-Two commands read the clock without buying a take.
+Three commands read the clock without buying a take.
 
 ```console
+decktalk narrate --no-voice
 decktalk words --section 1
 decktalk check
 ```
+
+`decktalk narrate --no-voice` writes a placeholder take and a word clock for every section, and it
+spends nothing. On a project that has never been built, `words` has no clock to read until this runs.
 
 `decktalk words` prints every spoken word with its start and its end, which is the clock every phrase
 is written against. Before a voiced run the words are estimated from the text, and after one they are

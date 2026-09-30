@@ -154,9 +154,10 @@ play it and leaves the other sections of that page alone, an edit to the page's 
 records every section of it, and swapping one picture for another records the sections that show it
 although no line of HTML changed.
 
-`--section N` records section N whether it changed or not, and `--force` builds again from nothing
-while keeping every voiced take. [Rebuild one section](/guides/rebuild-one-section) says what each
-edit runs again.
+`--section N` records section N whether it changed or not. A build that finds nothing moved keeps
+the film and its measurement, and reports `assemble` and `verify` as `kept`. `--force` builds again
+from nothing, measures again, and keeps every voiced take. [Rebuild one
+section](/guides/rebuild-one-section) says what each edit runs again.
 
 ## Next
 

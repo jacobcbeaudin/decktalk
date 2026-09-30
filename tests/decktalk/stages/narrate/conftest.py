@@ -9,16 +9,15 @@ through the run and a test that replaced the run would measure a fake instead of
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
-from decktalk.errors import Cancel
-from decktalk.events import Event
+from decktalk.artifacts import Take
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
-from decktalk.results import Voicing
+from decktalk.media import audio
+from support.projects import load_project
+from support.takes import a_take
 
 VOICE_ID = "voice-under-test"
 """The voice every project here is read in, which is one of the inputs a take's digest is over."""
@@ -72,31 +71,24 @@ Every picture waited for its word.
 """
 
 
-@dataclass
-class Watched:
-    """One run and every line it put on the stream, which is how a test reads what a stage reported."""
-
-    run: Run
-    lines: list[Event] = field(default_factory=list)
-
-    def of(self, event: str) -> list[Event]:
-        """Every line of one kind, in the order the stage emitted them."""
-        return [line for line in self.lines if line.event == event]
-
-
 @pytest.fixture
 def make_inputs(tmp_path: Path) -> Callable[..., Inputs]:
     """Write a project into its own directory and load it, so a rewrite reloads the same root."""
 
     def build(*, toml: str = TOML, script: str | None = SCRIPT, name: str = "proj") -> Inputs:
-        root = tmp_path / name
-        root.mkdir(parents=True, exist_ok=True)
-        (root / "decktalk.toml").write_text(toml, encoding="utf-8")
-        if script is not None:
-            (root / "script.md").write_text(script, encoding="utf-8")
-        return Inputs.load(root, environ=ENVIRON)
+        return load_project(tmp_path / name, toml, script=script, environ=ENVIRON)
 
     return build
+
+
+@pytest.fixture(autouse=True)
+def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where a take's sound ends is read from real bytes, which no take written here has.
+
+    The fake encoder writes an empty file, so the scan is answered at the seam the stage reads it
+    through, and every placement test measures the arithmetic rather than ffmpeg.
+    """
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
 
 
 @pytest.fixture
@@ -105,33 +97,21 @@ def inputs(make_inputs: Callable[..., Inputs]) -> Inputs:
 
 
 @pytest.fixture
-def make_run(tmp_path: Path) -> Callable[..., Watched]:
-    """A run on a machine that holds nothing but a stream, with every line it emits kept."""
-
-    def build(project: Inputs, *, voice: Voicing = Voicing.PLACEHOLDER, max_cost: float | None = None) -> Watched:
-        machine = Machine(
-            environ=ENVIRON,
-            tables={},
-            config_path=tmp_path / "decktalk-machine.toml",
-            cwd=project.root,
-            toolchain=Toolchain(),
-        )
-        watched = Watched(
-            run=Run(
-                machine,
-                id="run-under-test",
-                cancel=Cancel(),
-                voice=voice,
-                max_cost=max_cost,
-                root=project.root,
-            )
-        )
-        machine.events.subscribe(watched.lines.append)
-        return watched
-
-    return build
+def run_environ() -> dict[str, str]:
+    """The credential and the voice name, which every narrate run finds on its machine."""
+    return ENVIRON
 
 
-@pytest.fixture
-def watched(inputs: Inputs, make_run: Callable[..., Watched]) -> Watched:
-    return make_run(inputs)
+def a_paid_take(section: int = 1, *, digest: str = "0000000000000abc", seconds: float = 1.0) -> Take:
+    """A take index row a provider was paid for, whose voice nobody on this machine can name."""
+    return a_take(
+        section,
+        seconds=seconds,
+        chapter="Open",
+        hash=digest,
+        characters=8,
+        estimated_seconds=1.0,
+        speech_end_seconds=None,
+        sound_end_seconds=None,
+        spoken="A bowl.",
+    )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import json
 import re
 from pathlib import Path
 
@@ -10,8 +10,10 @@ import pytest
 
 from decktalk.artifacts import CueTimes, Words
 from decktalk.artifacts.words import words_file
-from decktalk.errors import InputError
+from decktalk.errors import ErrorCode, InputError
 from decktalk.inputs import Inputs
+from decktalk.inputs.document import ClipSection
+from decktalk.inputs.env import reading_dotenv
 from decktalk.results import CueTime, SectionCues, Word
 from support.projects import MINIMAL_TOML, write_project
 
@@ -76,15 +78,18 @@ def test_project_loads_sections_in_order(tmp_path):
     "toml, message",
     [
         ("[[section]]\nnumber = 1\n", "needs 'page'"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\nclip = 'b.mp4'\n", "either 'clip' or 'page'"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 1\npage = 'a.html'\n", "duplicate"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\nlead_seconds = -1\n", "'lead_seconds' must be 0 or more, got -1"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\nhold_seconds = -0.5\n", "'hold_seconds' must be 0 or more"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\nrecord_margin_seconds = 'lots'\n", "must be"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\n[transition]\ndips = [[1, 9]]\n", "does not exist"),
-        ("[[section]]\nnumber = 1\npage = 'a.html'\n[bogus]\nx = 1\n", "unknown table"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nclip = 'b.mp4'\n", "either 'clip' or 'page'"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[section]]\nnumber = 1\npage = 'deck/a.html'\n", "duplicate"),
         (
-            "[[section]]\nnumber = 1\npage = 'a.html'\n[[mix.effects]]\nfile = 'x.mp3'\nsection = 1\n",
+            "[[section]]\nnumber = 1\npage = 'deck/a.html'\nlead_seconds = -1\n",
+            "'lead_seconds' must be 0 or more, got -1",
+        ),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nhold_seconds = -0.5\n", "'hold_seconds' must be 0 or more"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\nrecord_margin_seconds = 'lots'\n", "must be"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[transition]\ndips = [[1, 9]]\n", "does not exist"),
+        ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[bogus]\nx = 1\n", "unknown table"),
+        (
+            "[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[mix.effects]]\nfile = 'x.mp3'\nsection = 1\n",
             "'cue' is required and is not there.",
         ),
     ],
@@ -96,8 +101,8 @@ def test_project_validation_messages(tmp_path, toml, message):
 
 def test_project_allows_clips_at_both_edges(tmp_path):
     toml = (
-        "[[section]]\nnumber = 0\nclip = 'open.mp4'\n[[section]]\nnumber = 1\npage = 'a.html'\n"
-        "[[section]]\nnumber = 2\npage = 'a.html'\n[[section]]\nnumber = 9\nclip = 'close.mp4'\n"
+        "[[section]]\nnumber = 0\nclip = 'open.mp4'\n[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'deck/a.html'\n[[section]]\nnumber = 9\nclip = 'close.mp4'\n"
     )
     p = Inputs.load(write_project(tmp_path, toml), environ={})
     assert p.document.clip_numbers == {0, 9} and [s.number for s in p.document.page_sections] == [1, 2]
@@ -105,8 +110,8 @@ def test_project_allows_clips_at_both_edges(tmp_path):
 
 def test_project_allows_clips_between_page_sections(tmp_path):
     toml = (
-        "[[section]]\nnumber = 1\npage = 'a.html'\n[[section]]\nnumber = 2\nclip = 'broll.mp4'\n"
-        "[[section]]\nnumber = 3\nclip = 'more.mp4'\n[[section]]\nnumber = 4\npage = 'a.html'\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[section]]\nnumber = 2\nclip = 'broll.mp4'\n"
+        "[[section]]\nnumber = 3\nclip = 'more.mp4'\n[[section]]\nnumber = 4\npage = 'deck/a.html'\n"
         "hold_seconds = 1\n"
     )
     p = Inputs.load(write_project(tmp_path, toml), environ={})
@@ -120,6 +125,7 @@ def test_project_missing_file_names_the_file_and_the_next_action(tmp_path):
         Inputs.load(tmp_path, environ={})
     error = raised.value
     assert str(error) == "decktalk.toml is not there."
+    assert error.location is not None
     assert error.location.file == Path("decktalk.toml") and error.location.line is None
     assert "decktalk init" in (error.hint or "")
 
@@ -134,30 +140,31 @@ def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch
     root = write_project(tmp_path)
     (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nELEVENLABS_VOICE_ID='abc' # comment\n", encoding="utf-8")
     p = Inputs.load(root, environ={})
-    assert not p.env.get("ELEVENLABS_API_KEY")  # the placeholder counts as unset
-    assert p.env.get("ELEVENLABS_VOICE_ID").reveal() == "abc"
-    # A secret is named by its variable and never by its value, in a repr as in an error.
-    assert repr(p.env.get("ELEVENLABS_VOICE_ID")) == "<secret ELEVENLABS_VOICE_ID>"
-    with pytest.raises(InputError, match="ELEVENLABS_API_KEY") as info:
-        p.env.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
+    with reading_dotenv(True):
+        assert not p.env.get("ELEVENLABS_API_KEY")  # the placeholder counts as unset
+        assert p.env.get("ELEVENLABS_VOICE_ID").reveal() == "abc"
+        # A secret is named by its variable and never by its value, in a repr as in an error.
+        assert repr(p.env.get("ELEVENLABS_VOICE_ID")) == "<secret ELEVENLABS_VOICE_ID>"
+        with pytest.raises(InputError, match="ELEVENLABS_API_KEY") as info:
+            p.env.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
     assert "abc" not in str(info.value)
 
 
-def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, monkeypatch, caplog):
+def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monkeypatch):
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
     toml = (
         "[project]\nname = 't'\nscirpt = 'script.md'\n"
         "[voice]\nstabilty = 0.4\n"
-        "[[section]]\nnumber = 1\npage = 'a.html'\nscnee = 2\nslate_seconds = 3\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\nscnee = 2\nslate_seconds = 3\n"
         "[[section]]\nnumber = 2\nclip = 'b.mp4'\nzebra = 1\n"
         "[mix]\nmusic_dbb = -20\n"
         "[soundscape.music]\nprompt = 'calm'\nsecond = 60\n"
         "[video]\npresett = 'veryfast'\n"
     )
-    with caplog.at_level("WARNING", logger="decktalk"):
-        p = Inputs.load(write_project(tmp_path, toml), environ={})
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
     page = "."
-    assert [r.getMessage() for r in caplog.records] == [
+    # Each is a note the caller reports on its run, because the library never prints.
+    assert p.notes == (
         f"decktalk.toml: [project]: ignoring unknown key 'scirpt' (did you mean 'script'?){page}",
         f"decktalk.toml: [[section]] number=1: ignoring unknown key 'scnee' (did you mean 'scene'?){page}",
         "decktalk.toml: [[section]] number=1: ignoring 'slate_seconds', which applies only to a clip section",
@@ -166,23 +173,22 @@ def test_project_warns_about_unknown_keys_and_suggests_the_closest(tmp_path, mon
         f"decktalk.toml: [mix]: ignoring unknown key 'music_dbb' (did you mean 'music_db'?){page}",
         f"decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'seconds'?){page}",
         f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",
-    ]
-    # A tuning table's own misspelling is also a note the caller reports, because the library never prints.
-    assert p.notes == (f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",)
+    )
     # A warning, not an error: the load succeeds and every misspelled key keeps its default.
     assert p.settings.voice.stability == 0.55
     assert p.settings.video.preset == "medium"
-    assert p.document.soundscape.music.seconds == 360
+    music = p.document.soundscape.music
+    assert music is not None and music.seconds == 360
 
 
-def test_a_table_reads_every_key_its_dataclass_declares(tmp_path, caplog):
+def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     """Each key is written once, as a field, so a table's reader and its class cannot drift apart."""
     toml = (
         "[project]\nname = 't'\nscript = 'script.md'\ncues = 'cues.json'\nbuild = 'build'\nlanguage = 'fr'\n"
         "[voice]\nprovider = 'elevenlabs'\nmodel = 'm'\nstability = 0.5\nprice_per_1000_characters = 0.3\n"
         "[transition]\ndips = [[1, 2]]\ndip_seconds = 0.2\npage_fades_in = true\n"
-        "[[section]]\nnumber = 1\npage = 'a.html'\n"
-        "[[section]]\nnumber = 2\npage = 'b.html'\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'deck/b.html'\n"
         "[mix]\nmusic_db = -20\n"
         "[mix.loudness]\ntarget_lufs = -16\ntrue_peak_max_dbtp = -1.5\nrange_max_lu = 9\n"
         "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\noffset = 0.1\ncaption = 'a chime'\n"
@@ -191,9 +197,8 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path, caplog):
         "[soundscape.music]\nprompt = 'calm'\nseconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
         "model_id = 'music'\n"
     )
-    with caplog.at_level("WARNING", logger="decktalk"):
-        p = Inputs.load(write_project(tmp_path, toml), environ={})
-    assert [r.getMessage() for r in caplog.records] == []
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
+    assert p.notes == ()
     assert p.document.language == "fr"
     # `[voice]` and `[mix]` are shared, so the document reads its half and neither warns about the other.
     assert (p.document.voice.provider, p.document.voice.model) == ("elevenlabs", "m")
@@ -206,8 +211,8 @@ def test_a_section_with_no_chapter_is_titled_by_its_script_heading(tmp_path):
     """The author already wrote a heading, so the mp4's chapter carries it rather than a number."""
     toml = (
         "[project]\nname = 't'\n"
-        "[[section]]\nnumber = 1\npage = 'a.html'\n"
-        "[[section]]\nnumber = 2\npage = 'b.html'\nchapter = 'Its own'\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
+        "[[section]]\nnumber = 2\npage = 'deck/b.html'\nchapter = 'Its own'\n"
     )
     root = write_project(tmp_path, toml)
     (root / "script.md").write_text("## 1. What a cue is\n\nOne.\n\n## 2. The edit\n\nTwo.\n", encoding="utf-8")
@@ -217,16 +222,15 @@ def test_a_section_with_no_chapter_is_titled_by_its_script_heading(tmp_path):
     assert Inputs.load(root, environ={}).chapters() == {1: "Section 1", 2: "Its own"}
 
 
-def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
+def test_seamless_parses_on_any_section_but_the_first(tmp_path):
     toml = (
-        "[[section]]\nnumber = 1\npage = 'a.html'\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
         "[[section]]\nnumber = 2\nclip = 'b.mp4'\nseamless = true\n"
-        "[[section]]\nnumber = 3\npage = 'a.html'\nseamless = true\n"
+        "[[section]]\nnumber = 3\npage = 'deck/a.html'\nseamless = true\n"
     )
-    with caplog.at_level("WARNING", logger="decktalk"):
-        p = Inputs.load(write_project(tmp_path, toml), environ={})
-    assert [s.seamless for s in p.document.sections] == [False, True, True] and not caplog.records
-    first = toml.replace("number = 1\npage = 'a.html'\n", "number = 1\npage = 'a.html'\nseamless = true\n")
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
+    assert [s.seamless for s in p.document.sections] == [False, True, True] and not p.notes
+    first = toml.replace("number = 1\npage = 'deck/a.html'\n", "number = 1\npage = 'deck/a.html'\nseamless = true\n")
     with pytest.raises(InputError, match="number=1: seamless is set on the first section"):
         Inputs.load(write_project(tmp_path, first), environ={})
     with pytest.raises(InputError, match="'seamless' must be bool"):
@@ -234,24 +238,23 @@ def test_seamless_parses_on_any_section_but_the_first(tmp_path, caplog):
 
 
 def test_a_clip_section_reads_its_words_key(tmp_path):
-    p = Inputs.load(write_project(tmp_path, TITLED_CLIP_TOML), environ={})
-    assert p.document.sections[1].is_clip and p.document.sections[1].words == "media/before.words.json"
-    plain = Inputs.load(write_project(tmp_path, MID_CLIP_TOML), environ={})
-    assert plain.document.sections[1].words is None
+    titled = Inputs.load(write_project(tmp_path, TITLED_CLIP_TOML), environ={}).document.sections[1]
+    assert isinstance(titled, ClipSection) and titled.words == "media/before.words.json"
+    plain = Inputs.load(write_project(tmp_path, MID_CLIP_TOML), environ={}).document.sections[1]
+    assert isinstance(plain, ClipSection) and plain.words is None
 
 
-def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path, monkeypatch, caplog):
-    monkeypatch.setattr(logging.getLogger("decktalk"), "propagate", True)
+def test_section_lead_and_tail_keys_parse_on_page_sections_only(tmp_path):
     toml = (
-        "[[section]]\nnumber = 1\npage = 'a.html'\nlead_seconds = 1.5\ntail_seconds = 2\n"
+        "[[section]]\nnumber = 1\npage = 'deck/a.html'\nlead_seconds = 1.5\ntail_seconds = 2\n"
         "[[section]]\nnumber = 2\nclip = 'c.mp4'\nlead_seconds = 1\n"
     )
-    with caplog.at_level(logging.WARNING, logger="decktalk"):
-        p = Inputs.load(write_project(tmp_path, toml), environ={})
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
     page = p.document.page_sections[0]
     assert (page.lead_seconds, page.tail_seconds) == (1.5, 2.0)
     assert p.lead_seconds(1) == 1.5 and p.lead_seconds(2) == 0.0
-    assert "ignoring 'lead_seconds', which applies only to a page section" in caplog.text
+    said = "decktalk.toml: [[section]] number=2: ignoring 'lead_seconds', which applies only to a page section"
+    assert p.notes == (said,)
     assert Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={}).document.page_sections[0].tail_seconds is None
 
 
@@ -409,3 +412,94 @@ def test_the_origin_never_offers_the_project_file_the_credential_or_the_build(tm
     assert "decktalk.toml" not in served
     assert ".env" not in served
     assert "build" not in served
+
+
+@pytest.mark.parametrize("page", ["index.html", "./index.html"])
+def test_a_page_at_the_project_root_is_refused_because_its_directory_is_the_whole_project(tmp_path, page):
+    """The origin serves a page's directory, and this one holds the script, the cues, `.env` and `build/`."""
+    toml = SERVED_TOML.replace('page = "deck/one.html"', f'page = "{page}"')
+    with pytest.raises(InputError, match="sits at the project root"):
+        Inputs.load(write_project(tmp_path, toml), environ={})
+
+
+@pytest.mark.parametrize(
+    ("build", "page"),
+    [
+        ("deck", "deck/one.html"),
+        ("deck/out", "deck/one.html"),
+        ("build", "build/one.html"),
+        ("out", "out/deck/one.html"),
+    ],
+)
+def test_a_build_directory_that_shares_a_served_directory_is_refused(tmp_path, build, page):
+    """A page reads what its origin serves, and the build holds the takes, the event lines and the recordings."""
+    toml = SERVED_TOML.replace('name = "demo"', f'name = "demo"\nbuild = "{build}"').replace(
+        'page = "deck/one.html"', f'page = "{page}"'
+    )
+    with pytest.raises(InputError, match="build directory") as refused:
+        Inputs.load(write_project(tmp_path, toml), environ={})
+    assert refused.value.code is ErrorCode.INPUT
+
+
+def test_a_declared_name_that_folds_to_the_project_root_is_never_offered(tmp_path):
+    toml = SERVED_TOML.replace('music = "media/bed.mp3"', 'music = "./"').replace(
+        'slate = "media/slate.png"', 'slate = "./media/slate.png"'
+    )
+    served = Inputs.load(write_project(tmp_path, toml), environ={}).served_paths()
+    assert served == ("deck", "media/broll.mp4", "media/broll.words.json", "media/slate.png", "media/chime.wav")
+
+
+# ---- every path the project names stays inside it ----------------------------------------------
+
+LINKED_TOML = """
+[project]
+name = "t"
+
+[[section]]
+number = 1
+page = "deck/index.html"
+"""
+
+
+def _outside(tmp_path: Path) -> tuple[Path, Path]:
+    """A project directory and a file beside it that no project file may reach."""
+    root, secret = tmp_path / "project", tmp_path / "host.txt"
+    root.mkdir()
+    secret.write_text("## 1. Stolen\n\nSECRET-HOST-LINE\n", encoding="utf-8")
+    return write_project(root, LINKED_TOML), secret
+
+
+def test_a_script_linked_out_of_the_project_is_refused_before_a_line_is_read(tmp_path: Path) -> None:
+    root, secret = _outside(tmp_path)
+    (root / "script.md").symlink_to(secret)
+    with pytest.raises(InputError, match="outside the project"):
+        Inputs.load(root, environ={}).script()
+
+
+def test_a_cue_file_linked_out_of_the_project_is_refused(tmp_path: Path) -> None:
+    """The file it links to is a valid cue file, so the refusal is the link's and not the parser's."""
+    root, _secret = _outside(tmp_path)
+    elsewhere = tmp_path / "host-cues.json"
+    elsewhere.write_text(json.dumps({"sections": {"1": {"cues": []}}}), encoding="utf-8")
+    (root / "cues.json").symlink_to(elsewhere)
+    with pytest.raises(InputError) as refused:
+        Inputs.load(root, environ={}).cues()
+    assert refused.value.location is not None and refused.value.location.file == Path("cues.json")
+
+
+def test_a_page_linked_out_of_the_project_is_refused(tmp_path: Path) -> None:
+    root, secret = _outside(tmp_path)
+    (root / "deck").mkdir()
+    (root / "deck" / "index.html").symlink_to(secret)
+    inputs = Inputs.load(root, environ={})
+    with pytest.raises(InputError, match="outside the project"):
+        inputs.path(inputs.document.page_sections[0].page)
+
+
+def test_a_build_directory_linked_out_of_the_project_is_refused_at_load(tmp_path: Path) -> None:
+    root, _secret = _outside(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (root / "build").symlink_to(elsewhere, target_is_directory=True)
+    with pytest.raises(InputError, match="outside the project"):
+        Inputs.load(root, environ={})

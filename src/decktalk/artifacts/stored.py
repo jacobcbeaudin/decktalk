@@ -9,50 +9,110 @@ A file is written under a temporary name in the same directory and renamed over 
 is atomic on every platform DeckTalk ships on, so a reader never opens a half-written artifact and
 a run interrupted mid-write leaves the previous file whole.
 
-An artifact that will not parse is reported as one that was never built, because the recovery is
-the same: run the stage that writes it again. The hint names that stage, read from `PIPELINE`, so
-no module here spells a "run this first" sentence of its own.
+A stage that needs an artifact as its input refuses one that will not parse as one that was never
+built. The hint names the stage that writes it, read from `PIPELINE` through `Artifact.next_step`,
+so no stage spells a "run this first" sentence of its own. A refusal names the file it looked for
+rather than the artifact's default path, because a project may move its build directory.
+
+A stage that reads its own earlier output reads it through `previous`, which counts a file it cannot
+read as absent. `build/` is DeckTalk's cache and that stage is about to write the file again, so an
+engine that changed the file's shape builds it again rather than asking a person to delete it. A
+paid record, the take index and the sound ledger, is never read this way, because counting one of
+those as absent would buy what it records again.
+
+Every fingerprint of a file's content is `file_digest`, and every fingerprint of content held in
+memory is `content_digest`, which are one hash: BLAKE3. The files a build fingerprints are the
+recordings, the section cuts and the film, which grow with the film, and BLAKE3 spreads one large
+file across every core where SHA-256 reads it on one. The keys taken over those fingerprints stay
+the SHA-256 of `engine_digest`, because a key is a few lines of text, and the paid voice takes keep
+the SHA-256 their names are published as, because a changed take name would buy the take again.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Self
 
-from pydantic import BaseModel, ValidationError
+from blake3 import blake3
+from pydantic import ValidationError
 
 from decktalk.errors import NotBuiltError
-from decktalk.findings import MODEL
+from decktalk.files import replace_all
+from decktalk.findings import Model
 from decktalk.pipeline import Artifact
+
+log = logging.getLogger(__name__)
 
 INDENT = 2
 """How the artifacts are indented, which keeps a diff of one readable in a terminal."""
 
+DIGEST_BYTES = 8
+"""How much of a BLAKE3 names some content, sixteen hex characters, which never collide within one project."""
 
-class Stored(BaseModel):
+THREADED_BYTES = 1 << 20
+"""Measured: below a mebibyte, handing a file to several threads costs more than hashing it on one does."""
+
+GONE = "gone"
+"""What a file that is not on disk is digested as, so a key over a missing file still names it."""
+
+UNINSTALLED = "0+unknown"
+"""The engine version a checkout that was never installed reports, which is still one fixed name."""
+
+
+def engine_version() -> str:
+    """The version of the engine writing the artifacts, which a cache key carries.
+
+    An artifact kept across an upgrade was made by the older engine's recorder, probe and encoder, so
+    every key that decides whether to keep one names the engine that would keep it.
+    """
+    try:
+        return version("decktalk")
+    except PackageNotFoundError:
+        # silent: an engine run from a checkout has no installed version to read.
+        return UNINSTALLED
+
+
+ENGINE_VERSION = engine_version()
+"""The version of the engine this process runs, read once, because it cannot change under a run."""
+
+
+def engine_digest(*lines: str) -> str:
+    """The sha256 of these lines under the engine's own, which is how every kept artifact is keyed."""
+    return hashlib.sha256("\n".join([f"engine:{ENGINE_VERSION}", *lines]).encode("utf-8")).hexdigest()
+
+
+def content_digest(data: bytes) -> str:
+    """The BLAKE3 of these bytes, which is how content held in memory joins a key."""
+    return blake3(data).hexdigest(length=DIGEST_BYTES)
+
+
+def file_digest(path: Path) -> str:
+    """The BLAKE3 of a file's bytes, or `gone` when there is no file there.
+
+    The file is mapped rather than read, and a large one is hashed on every core, which is what keeps
+    a film's worth of recordings from costing a build more time the longer the film runs.
+    """
+    if not path.is_file():
+        return GONE
+    threads = blake3.AUTO if path.stat().st_size >= THREADED_BYTES else 1
+    return blake3(max_threads=threads).update_mmap(path).hexdigest(length=DIGEST_BYTES)
+
+
+class Stored(Model):
     """One file under `build/`, which knows how to read itself and how to write itself."""
-
-    model_config = MODEL
 
     @classmethod
     def read(cls, path: Path) -> Self | None:
-        """The artifact at `path`, or None when nothing has written one there yet."""
+        """The artifact at `path`, or None when nothing has written one there yet.
+
+        A file that is there and cannot be read as this shape is refused as `NOT_BUILT`.
+        """
         if not path.is_file():
             return None
-        return cls.parse(path)
-
-    @classmethod
-    def require(cls, path: Path, artifact: Artifact) -> Self:
-        """The artifact at `path`, or a `NOT_BUILT` refusal naming the stage that writes it."""
-        found = cls.read(path)
-        if found is None:
-            raise NotBuiltError(f"{artifact.value} has not been built.", hint=_rebuild(artifact))
-        return found
-
-    @classmethod
-    def parse(cls, path: Path) -> Self:
-        """The artifact at `path`, refusing a file that is there and cannot be read as this shape."""
         try:
             return cls.model_validate_json(path.read_bytes())
         except (ValidationError, ValueError, OSError) as exc:
@@ -61,20 +121,32 @@ class Stored(BaseModel):
                 hint=f"Delete {path.name} and build it again.",
             ) from exc
 
+    @classmethod
+    def previous(cls, path: Path) -> Self | None:
+        """What the stage that writes `path` wrote there last, or None when there is none it can read.
+
+        Only the writer reads its own file this way, so a file it cannot read is built again, and the
+        record this leaves is how a person learns why a kept section was made again.
+        """
+        try:
+            return cls.read(path)
+        except NotBuiltError as exc:
+            log.info("%s It will be built again.", exc, extra={"data": {"file": path.name}})
+            return None
+
+    @classmethod
+    def require(cls, path: Path, artifact: Artifact) -> Self:
+        """The artifact at `path`, or a `NOT_BUILT` refusal naming the stage that writes it."""
+        found = cls.read(path)
+        if found is None:
+            raise NotBuiltError(f"{path.name} has not been built.", hint=artifact.next_step)
+        return found
+
     def write(self, path: Path) -> Path:
         """Write this artifact over `path` in one step, and give back the path it was written to."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.writing")
         text = json.dumps(self.model_dump(mode="json"), indent=INDENT, allow_nan=False)
-        temporary.write_text(text + "\n", encoding="utf-8")
-        temporary.replace(path)
+        replace_all({path: text + "\n"})
         return path
-
-
-def _rebuild(artifact: Artifact) -> str:
-    """The command that writes this artifact, which is the one next step a reader needs."""
-    stage = artifact.written_by
-    return f"Run `decktalk {stage.value}` first." if stage else f"Nothing in the pipeline writes {artifact.value}."
 
 
 def _first_line(error: Exception) -> str:
@@ -82,4 +154,4 @@ def _first_line(error: Exception) -> str:
     return next((line.strip() for line in str(error).splitlines() if line.strip()), type(error).__name__)
 
 
-__all__ = ["Stored"]
+__all__ = ["ENGINE_VERSION", "GONE", "Stored", "content_digest", "engine_digest", "engine_version", "file_digest"]

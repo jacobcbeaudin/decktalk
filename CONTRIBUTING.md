@@ -53,14 +53,12 @@ You need no ElevenLabs key. No check calls the speech API, and no key is a CI se
 
 ## Checks
 
-One table holds every check DeckTalk has. It lives in `scripts/check.py`, and it is the only place
-any check is written down: a workflow reads it at runtime and names no command of its own, so a
-workflow cannot disagree with it. There is no switch that skips a check and no way to mark one
-advisory, because a knob that exists becomes permanent.
+Every check DeckTalk has is one row of the `GROUPS` table in `scripts/check.py`, whose docstring
+says why a workflow names no command of its own and why no check can be skipped.
 
 ```console
 uv run scripts/check.py          # every group a pull request gates on, in order
-uv run scripts/check.py --fast   # an alias for --group lint,unit, in a few seconds
+uv run scripts/check.py --fast   # an alias for --group lint,unit
 uv run scripts/check.py --list   # the table, with what each group needs and what calls it
 uv run scripts/check.py --group browser,media
 ```
@@ -74,43 +72,22 @@ command that reproduces it, because a job name scrolls away and the first line o
 
 | Group | What it runs | Needs | Where | Gates on |
 |---|---|---|---|---|
-| `lint` | `uv lock --check`, and 7 more | uv, npm | Linux | pr, main, release |
-| `unit` | `uv run pytest -q --cov --cov-report=` | uv | Linux | pr, main, release |
-| `node` | `npm ci`, and 1 more | npm | Linux | pr, main, release |
-| `browser` | `uv run pytest -q -m browser --cov --cov-report=` | uv, chromium | Linux | pr, main, release |
-| `media` | `uv run pytest -q -m media --cov --cov-report=` | uv, ffmpeg | Linux | pr, main, release |
-| `e2e` | `uv run pytest -q -m e2e --cov --cov-report=` | uv, chromium, ffmpeg | Linux | pr, main, release |
-| `browser-platforms` | `uv run pytest -q -m browser --cov --cov-report= --timing=report` | uv, chromium | macOS, Windows | main, release |
-| `media-platforms` | `uv run pytest -q -m media --cov --cov-report= --timing=report` | uv, ffmpeg | macOS, Windows | main, release |
-| `e2e-platforms` | `uv run pytest -q -m e2e --cov --cov-report= --timing=report` | uv, chromium, ffmpeg | macOS, Windows | main, release |
-| `platform` | `uv run pytest -q -m platform`, and 2 more | uv, chromium, ffmpeg | Linux, macOS, Windows | pr, main, release |
-| `generated` | `npm ci`, and 15 more | uv, npm, chromium | Linux | pr, main, release |
-| `rehearsal` | `npm ci`, and 1 more | uv, npm, chromium, history | Linux | pr, main, release |
-| `coverage` | `uv run coverage combine --keep`, and 2 more | uv | Linux | pr, main, release |
-| `wheel` | `uv build`, and 2 more | uv | Linux, macOS, Windows | pr, main, release |
-| `scaffold` | `uv run pytest -q -m scaffold --timing=report` | uv, chromium, ffmpeg | Linux | main, schedule |
-| `installer` | `docker run --rm -v install.sh:/install.sh:ro debian:13-slim sh -euc <shell script>`, and 5 more | docker | Linux | main, schedule |
-
-Every group, one at a time:
-
-```console
-uv run scripts/check.py --group lint              # Style, types and shell held to one set of rules, so no review spends a comment on them.
-uv run scripts/check.py --group unit              # Every test that needs no tool, which the collection hook makes the default suite.
-uv run scripts/check.py --group node              # The runtime's pure functions and the release's next version, under node --test, with no framework.
-uv run scripts/check.py --group browser           # Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches.
-uv run scripts/check.py --group media             # Frame and audio measurement against the real ffmpeg, on synthetic files the tests build.
-uv run scripts/check.py --group e2e               # The pipeline fixture built end to end, which samples the joint behaviour of every tool.
-uv run scripts/check.py --group browser-platforms # Everything that needs layout or a compositor, in the Chromium `decktalk install` fetches. This row is macOS and Windows, which gate a merge rather than a pull request.
-uv run scripts/check.py --group media-platforms   # Frame and audio measurement against the real ffmpeg, on synthetic files the tests build. This row is macOS and Windows, which gate a merge rather than a pull request.
-uv run scripts/check.py --group e2e-platforms     # The pipeline fixture built end to end, which samples the joint behaviour of every tool. This row is macOS and Windows, which gate a merge rather than a pull request.
-uv run scripts/check.py --group platform          # The short list only macOS or Windows can prove, plus the two commands every machine runs.
-uv run scripts/check.py --group generated         # Every generated file held to the source it is generated from, and every link in them.
-uv run scripts/check.py --group rehearsal         # The version bump release-please makes, rehearsed in a copy, then every generator written and checked.
-uv run scripts/check.py --group coverage          # One floor, measured on Linux, failing when a suite it combines never reported.
-uv run scripts/check.py --group wheel             # What `uv build` writes, opened on a machine that has only the wheel and the tag.
-uv run scripts/check.py --group scaffold          # Every packaged project recorded and verified without a voice, which is the scaffold's promise.
-uv run scripts/check.py --group installer         # The one-line installer run for real, on images that start with nothing but a package manager.
-```
+| `lint` | `uv lock --check`, and 7 more | npm | Linux | pr, main |
+| `unit` | `uv run pytest -q -rs -n auto --ignore=tests/contract/test_wheel.py --ignore=tests/contract/test_prose.py --ignore=tests/contract/test_vocabulary.py --ignore=tests/contract/test_numbers.py --cov --cov-report= --junitxml=tests/out/junit/unit.xml` | nothing beyond uv | Linux | pr, main |
+| `node` | `node --test tests/decktalk/runtime/src/*.test.ts tests/scripts/*.test.mjs` | npm | Linux | pr, main |
+| `browser` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | Linux | pr, main |
+| `media` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | Linux | pr, main |
+| `e2e` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report` | chromium, ffmpeg | Linux | pr, main |
+| `browser-platforms` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml --timing=report` | chromium | macOS, Windows | main |
+| `media-platforms` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml --timing=report` | ffmpeg | macOS, Windows | main |
+| `e2e-platforms` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report` | chromium, ffmpeg | macOS, Windows | main |
+| `platform` | `uv run pytest -q -rs -m platform`, and 1 more | chromium, ffmpeg | Linux, macOS, Windows | pr, main |
+| `generated` | `uv run python scripts/build_runtime.py --check`, and 13 more | npm, chromium | Linux | pr, main |
+| `rehearsal` | `uv run python scripts/rehearse_release.py` | npm, chromium, history | Linux | pr, main |
+| `coverage` | `uv run coverage combine --keep`, and 2 more | nothing beyond uv | Linux | pr, main |
+| `wheel` | `uv build`, and 2 more | nothing beyond uv | Linux, macOS, Windows | pr, main |
+| `scaffold` | `uv run pytest -q -rs -m scaffold --timing=report` | chromium, ffmpeg | Linux | schedule |
+| `installer` | `docker run --rm -v install.sh:/install.sh:ro debian:13-slim sh -euc <shell script>`, and 5 more | nothing beyond uv | Linux | main, schedule |
 <!-- checks:end -->
 
 ### The test suites
@@ -214,19 +191,19 @@ from the same table, so what you read here is what the suite enforces.
 ```text
 src/decktalk/
   vocabulary             the names every layer above shares, which import nothing but each other
+    files.py             How DeckTalk replaces files a person owns, which is all of them together or none of them.
     pipeline.py          The run declared once: the six stages in order, the artifacts they pass between them, and how a moment ended.
     findings.py          A finding: the code a caller dispatches on, the sentence a reader meets, where it is, and the fix.
+    secret.py            A value that may be used and never shown: an API key, and every other value read from `.env`.
     errors.py            The refusals DeckTalk makes on purpose: nine codes, seven classes and the exit code each one takes.
     locate.py            Where a key sits in a TOML file, found by reading the text rather than by parsing it.
-    secret.py            A value that may be used and never shown: an API key, and every other value read from `.env`.
-    page.py              The page contract as Python reads it: every attribute, every page code and every query key.
+    page.py              The page contract as Python reads it: every attribute, the code that judges it and every query key.
   models                 the frozen models and the settings tree, which every layer above reads
     results.py           What every call returns: one frozen result per command, each a flat object a reader can dispatch on.
-    events.py            One stream of progress: eleven moments, the four fields the library mints onto each, and the subscribers that render them.
-    catalog.py           The library's own contract, walked once so every rendering of it reads the same rows.
+    events.py            One stream of progress: twelve moments, the four fields the library mints onto each, and the subscribers that render them.
+    logs.py              The bridge from Python's standard logging to the run's event stream, which is the one output there is.
     tomlmap.py           One loader from a mapping to typed values, with located errors and "did you mean" hints.
     settings.py          Every knob DeckTalk publishes, with the range that is safe to turn it through.
-    explain.py           One knob explained: what set it, what it feeds, and what a candidate value would do to this project.
   leaves                 one job each, and no knowledge of a project
     toolchain/           What DeckTalk fetches or ships for one machine, and where it keeps it.
       announce.py        How a download says it is happening, so a run that stops for the network says so as it happens.
@@ -244,6 +221,7 @@ src/decktalk/
       audio.py           Audio work on top of ffmpeg, so nothing above this module spells an audio filter by hand.
       browser.py         Headless Chromium through Playwright: recording a page, taking screenshots and drawing slates.
       encode.py          The settings and the tags every output shares, so each file DeckTalk writes is made the same way.
+      environment.py     The environment a browser or an encoder DeckTalk starts is given, which is never the one the process holds.
       ffmpeg.py          Finding ffmpeg and ffprobe for this machine, running them, and probing what they read.
       frames.py          Frame statistics on top of ffmpeg: luma, single frames, and changed-pixel comparisons.
       origin.py          The local origin every page is opened at, its request routing, and the server `decktalk serve` runs.
@@ -252,8 +230,9 @@ src/decktalk/
     template.py          The projects and the skills packaged in the wheel, and writing one of them into a directory.
     artifacts/           The typed build artifacts and the files they are written to.
       cue_times.py       Every cue resolved to a second on its section's own clock.
-      cuts.py            The cut list: where every section sits in the finished film.
+      cuts.py            The cut list: where every section sits in the finished film, and what each section cut was made from.
       recordings.py      Everything `record` did for one section, and everything it judged about the result.
+      stills.py          Frozen frames kept by what drew them, so one state of a page is drawn once whoever asks for it.
       stored.py          A build artifact as a file: one frozen model per file, read once and written atomically.
       takes.py           The take index, and the frozen inputs a take's name is taken over.
       words.py           The words of one take, which is the time base every other artifact is measured against.
@@ -268,6 +247,7 @@ src/decktalk/
       timeline.py        Where the narration plays in the final film: the narration clock placed on the film's clock.
       workspace.py       Every path under `build/`, named once.
     machine.py           This computer and this process, as one value, and the run every call opens on it.
+    explain.py           One knob explained: what set it, what it feeds, and what a candidate value would do to this project.
     stages/              The pipeline, one package per stage and one module per call that reports or cuts.
       build.py           The whole pipeline in order, or the span of it one run asked for.
       clip.py            A span of one built section, cut into its own file with its own sound and its own words.
@@ -293,11 +273,12 @@ src/decktalk/
       record/            Stage 3: record each page section in a headless browser, find narration t=0, and judge the result.
         capture.py       The URL a page section is opened at, and what its recording is keyed on.
         checks.py        What one finished recording is judged on, before anything is assembled from it.
+        pool.py          How many page sections record at once, and the workers that record them.
         start.py         Where narration t=0 sits in a recording.
       soundscape/        Stage 4: the music, the ambience bed and the effects this project describes are generated.
         ledger.py        What this project has already bought from the sound service, as one typed file it reads and writes.
       verify/            Stage six: the one read-only stage, over the finished film and the logs that made it.
-        measure.py       The ffmpeg calls behind the cue plan: the probes, the onset scan and the click search.
+        measure.py       The measurements behind the cue plan: the probes, the onset scan and the click search.
         plan.py          The arithmetic behind a cue check, with no ffmpeg, no file and no project.
         seams.py         The three checks that read the shape of the film rather than one cue: starts, cuts and seams.
     project.py           A project is a directory, one object opens it, and every call on it opens a run.
@@ -403,10 +384,10 @@ People and agents read these docs. Write so that neither has to guess.
 - Use American spelling.
 
 Everything mechanical is generated. Do not edit a generated file. Change its source and run its
-script, which is what the `generated` group checks. Every generator requires one of `--check` and
-`--write`, and every one fails with the same sentence naming the file and the command that fixes it.
-`uv run scripts/check.py --group generated --write` runs every generator in the group in write mode,
-which is the one command that brings every generated file up to date at once.
+script, which is what the `generated` group checks. Every generator runs through
+`scripts/generated.py`, so every one requires one of `--check` and `--write`, writes only what is
+stale, and fails with the same sentence naming the file, why it is stale and the command that fixes it.
+`uv run scripts/check.py --group generated --write` brings every generated file up to date at once.
 
 | What is generated | From | Command |
 |---|---|---|
@@ -425,7 +406,7 @@ which is the one command that brings every generated file up to date at once.
 | `assets/*.svg`, `assets/tokens.css` and `docs/images/` | `scripts/figure-data/` and the palette maps | `uv run scripts/build_assets.py --write` |
 | The coverage floor | A real run on Linux | `uv run scripts/check_coverage.py --write` |
 
-`uv run scripts/check_docs_links.py --check` checks the rest of the site: every page opens with
+`uv run scripts/check_docs_links.py` checks the rest of the site: every page opens with
 front matter that YAML parses into a title and a description, every internal link resolves, every
 page sits in exactly one navigation group in `docs/docs.json`, and every redirect points at a page
 that exists. It fetches nothing.
@@ -455,19 +436,9 @@ and a job in `ci.yml` runs `uv run scripts/check.py --group generated --write` o
 commits every file that changed, so the merge commit already carries them and no bot ever writes to
 `main`.
 
-The release path runs for real only on that pull request, so every pull request rehearses it first.
-The `rehearsal` group runs `uv run scripts/rehearse_release.py`. It asks `node
-scripts/next_version.mjs` what release-please would propose next. That script reads the history
-since the last release tag and runs release-please's own code over it, pinned in `package.json` to
-the version the release workflow's action bundles. When nothing releasable has landed, the answer is
-the version one fix would bring. The rehearsal holds that version to the rules of the cycle below,
-copies the checkout into a temporary directory, and makes release-please's bump there: the version
-in `.release-please-manifest.json`, `pyproject.toml` and every entry of `extra-files`, and the
-changelog entry release-please would write. It then runs `uv run scripts/check.py --group generated
---write` and `--group generated` in the copy, and fails when a file cannot take the version, a
-generator cannot write, or anything is still stale. It never commits or pushes anything. On
-release-please's own pull request it checks the version and bumps nothing, because the regenerate
-job writes that branch for real.
+The release path runs for real only on that pull request, so the `rehearsal` group runs it first on
+every pull request, in a copy of the checkout, with release-please's own code. The docstring of
+`scripts/rehearse_release.py` says what it bumps, what it refuses and why.
 
 The version answers for the wheel, and the wheel is `src/decktalk` alone, so `exclude-paths` in
 `release-please-config.json` lists the directories that ship to nobody: `docs`, `assets`, `scripts`,
@@ -512,19 +483,11 @@ The next release pull request is then `0.5.0`. On merge, the release workflow ma
 release and replaces its notes, which release-please wrote from the commits since the last
 candidate, with the notes of the whole series from `scripts/release_notes.py`.
 
-The rehearsal refuses three mistakes on the pull request that makes them:
-
-- **A final version nobody named.** A final release is a person's decision, so a version with no
-  prerelease part must match a `Release-As` footer.
-- **A candidate with no number.** A `prerelease-type` without a number starts the next series at
-  `0.6.0-rc`, and the one after at `0.6.0-rc.1`.
-- **A footer release-please never reads.** release-please drops a commit when every file it changes
-  sits under an excluded path, and a commit that changes no file passes that test vacuously. An
-  empty commit is dropped before its footer is read.
+The rehearsal refuses a final version nobody named, a candidate with no number and a footer
+release-please never reads, on the pull request that makes the mistake.
 
 The tag is semver and the package is PEP 440, so the tag is `v0.5.0-rc2`, the wheel is
-`decktalk-0.5.0rc2-py3-none-any.whl` and `uv version --short` prints `0.5.0rc2`. The release
-workflow compares them as versions rather than as strings, which is right under either spelling.
+`decktalk-0.5.0rc2-py3-none-any.whl` and `uv version --short` prints `0.5.0rc2`.
 `uv lock` writes the PEP 440 spelling into `uv.lock`, and release-please writes the semver one, and
 `tests/contract/test_release_versions.py` accepts both as long as every file names one version.
 

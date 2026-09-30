@@ -13,21 +13,22 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import CueTimes, RecordingLog
-from decktalk.errors import InputError
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs, PageSection
-from decktalk.media.pagereport import PageReport
 from decktalk.page import Q
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages.record.capture import (
     as_query,
     page_parts,
+    page_source,
     plan_job,
     scene_params,
     scene_url,
     section_hash,
     words_param,
 )
-from support.projects import write_project
+from support.pages import TWO_SCENE_PAGE, a_recording
+from support.projects import load_project
 
 TOML = """
 [project]
@@ -58,20 +59,9 @@ section = 1
 cue = "1.1:open"
 """
 
-PAGE = """<!doctype html><html><body>
-<div data-scene="1"><template data-slide="1.1"><p data-in="open">one</p></template></div>
-<div data-scene="2"><template data-slide="2.1"><p data-in="open">two</p></template></div>
-</body></html>
-"""
 
-
-def a_project(tmp_path: Path, toml: str = TOML, page: str = PAGE) -> Inputs:
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    write_project(tmp_path, toml)
-    deck = tmp_path / "deck"
-    deck.mkdir(exist_ok=True)
-    (deck / "index.html").write_text(page, encoding="utf-8")
-    return Inputs.load(tmp_path, environ={})
+def a_project(tmp_path: Path, toml: str = TOML, page: str = TWO_SCENE_PAGE) -> Inputs:
+    return load_project(tmp_path, toml, page=page)
 
 
 def section_of(inputs: Inputs, number: int) -> PageSection:
@@ -115,8 +105,7 @@ def test_the_page_url_carries_the_scene_and_the_recorder_signal(tmp_path: Path) 
 
 
 def test_a_section_whose_page_is_not_there_is_refused(tmp_path: Path) -> None:
-    write_project(tmp_path, TOML)
-    inputs = Inputs.load(tmp_path, environ={})
+    inputs = load_project(tmp_path, TOML)
     with pytest.raises(InputError, match="deck/index.html"):
         scene_url(inputs, section_of(inputs, 1), {})
 
@@ -131,7 +120,7 @@ def test_no_words_is_no_query_value() -> None:
 
 
 def test_a_page_is_cut_into_the_scene_a_section_plays_and_the_part_every_scene_shares() -> None:
-    parts = page_parts(PAGE, "1")
+    parts = page_parts(TWO_SCENE_PAGE, "1")
     assert 'data-slide="1.1"' in parts.scene
     # Every scene is cut out of the shared part, so an edit inside scene two moves scene two's key
     # and no other section's, which is the whole reason the page is keyed in two pieces.
@@ -153,7 +142,7 @@ def test_editing_one_scene_moves_only_the_sections_that_play_it(tmp_path: Path) 
         section_hash(inputs, one, "url", 10.0, ()),
         section_hash(inputs, two, "url", 10.0, ()),
     )
-    edited = a_project(tmp_path, page=PAGE.replace("two</p>", "two and a half</p>"))
+    edited = a_project(tmp_path, page=TWO_SCENE_PAGE.replace("two</p>", "two and a half</p>"))
     after = (
         section_hash(edited, one, "url", 10.0, ()),
         section_hash(edited, two, "url", 10.0, ()),
@@ -167,6 +156,15 @@ def test_the_motion_a_render_asks_for_joins_the_key(tmp_path: Path) -> None:
     reduced = a_project(tmp_path / "other", TOML + "\n[motion]\nreduce = true\n")
     assert section_hash(plain, section_of(plain, 1), "url", 10.0, ()) != section_hash(
         reduced, section_of(reduced, 1), "url", 10.0, ()
+    )
+
+
+def test_the_page_policy_a_render_runs_under_joins_the_key(tmp_path: Path) -> None:
+    """A recording made trusted is never kept for an untrusted run, whose page may draw without its other origins."""
+    trusted = a_project(tmp_path)
+    sealed = Inputs.load(tmp_path, environ={}, machine={"record": {"page_policy": "untrusted"}})
+    assert section_hash(trusted, section_of(trusted, 1), "url", 10.0, ()) != section_hash(
+        sealed, section_of(sealed, 1), "url", 10.0, ()
     )
 
 
@@ -192,13 +190,29 @@ def test_a_log_with_no_narration_start_in_it_is_a_recording_that_never_finished(
     job.out.parent.mkdir(parents=True, exist_ok=True)
     job.out.write_bytes(b"webm")
     RecordingLog(
-        section=1,
-        url="http://project.localhost/deck/index.html",
-        input_hash=job.input_hash,
-        requested_seconds=10.0,
-        settle_seconds=0.5,
-        load_seconds=0.2,
-        clock_start_seconds=1.5,
-        report=PageReport(),
+        section=1, input_hash=job.input_hash, recording=a_recording(requested_seconds=10.0, clock_start_seconds=1.5)
     ).write(job.log_path)
     assert not plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0).unchanged
+
+
+def test_a_log_an_earlier_engine_wrote_is_recorded_again_and_refused_by_a_stage_that_reads_it(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The recorder rewrites its own log, so only a stage that needs the log as its input refuses it."""
+    inputs = a_project(tmp_path)
+    path = inputs.workspace.recording_log("01")
+    path.parent.mkdir(parents=True)
+    path.write_text('{"section": 1, "input_hash": "abc", "trim_seconds": 1.5}', encoding="utf-8")
+    with caplog.at_level("INFO", logger="decktalk"):
+        job = plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0)
+    assert job.previous is None and not job.unchanged
+    assert any("01.json" in record.getMessage() and "built again" in record.getMessage() for record in caplog.records)
+    with pytest.raises(NotBuiltError, match=r"01\.json is there and cannot be read"):
+        inputs.recording_log("01")
+
+
+def test_a_page_that_could_not_be_read_is_hashed_as_empty_and_says_so(tmp_path: Path, caplog) -> None:
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        assert page_source(tmp_path / "gone.html") == ""
+    [record] = [record for record in caplog.records if record.name == "decktalk.stages.record.capture"]
+    assert "gone.html" in record.getMessage()

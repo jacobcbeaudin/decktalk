@@ -19,8 +19,9 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from decktalk.pagescan import Slides
 from decktalk.results import SkipReason
-from decktalk.stages.storyboard import Freeze, Slides
+from decktalk.stages.storyboard import Freeze
 
 ORDER_NOTE = "the slide's cues fire in another order when frozen, so these frames may differ from the recording."
 """Why a pair of frames may not be the pair the recorder would show, said once where it is noticed."""
@@ -131,10 +132,7 @@ def _pair(
 
 def _previous_state(slides: Slides, times: Mapping[str, float], slide: str, second: float) -> Freeze:
     """The state the slide before this one was left in, which is what a viewer was looking at."""
-    fired = fired_by(slides, times, slide, second, inclusive=False)
-    if fired:
-        return Freeze(slide, cue=fired[-1])
-    return Freeze(slide, before=slides[slide][0]) if slides[slide] else Freeze(slide)
+    return Freeze.state(slide, fired_by(slides, times, slide, second, inclusive=False), slides[slide])
 
 
 def last_state(slides: Slides, times: Mapping[str, float]) -> Freeze | None:
@@ -153,10 +151,7 @@ def first_state(slides: Slides, times: Mapping[str, float], fps: int) -> Freeze 
     if not order:
         return None
     slide = order[0][0]
-    fired = fired_by(slides, times, slide, FIRST_FRAME / fps, inclusive=False)
-    if fired:
-        return Freeze(slide, cue=fired[-1])
-    return Freeze(slide, before=slides[slide][0]) if slides[slide] else Freeze(slide)
+    return Freeze.state(slide, fired_by(slides, times, slide, FIRST_FRAME / fps, inclusive=False), slides[slide])
 
 
 __all__ = [

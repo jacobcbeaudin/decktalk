@@ -27,10 +27,8 @@ On release-please's own pull request the tree already carries the version it pro
 then checks that version against the same rules and bumps nothing, because the regenerate job in
 ci.yml writes that branch for real.
 
-Where the version goes is read from `release-please-config.json` and `.release-please-manifest.json`
-rather than listed here. Each package's manifest entry and its changelog are bumped, its release
-type decides the project file, and every entry of its `extra-files` is bumped by the updater its
-`type` names. A new extra file is therefore rehearsed on the pull request that adds it to the config.
+The bump itself is `node scripts/next_version.mjs --bump`, which runs release-please's own updaters
+over every file its config names, so a new extra file is rehearsed on the pull request that adds it.
 """
 
 from __future__ import annotations
@@ -42,31 +40,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
-from functools import partial
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG = "release-please-config.json"
-MANIFEST = ".release-please-manifest.json"
-
-SEMVER = re.compile(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
-"""A version as release-please's generic updater finds one on a marked line."""
-
-LINE_MARKER = "x-release-please-version"
-BLOCK_START, BLOCK_END = "x-release-please-start-version", "x-release-please-end"
-
-JSONPATH = re.compile(
-    r"^\$\.(?P<table>[\w-]+)"
-    r"(?:\[\?\(@\.(?P<key>[\w-]+)(?:\.value)?==['\"](?P<match>[^'\"]+)['\"]\)\])?"
-    r"\.(?P<field>[\w-]+)$"
-)
-"""The jsonpath shapes this rehearsal can follow: a field of a table, or of the array rows one key picks.
-
-release-please parses TOML into `{value, start, end}` nodes, which is why a filter on a TOML key is
-written `@.name.value`. The `.value` is accepted and dropped, because here the file is read as text.
-"""
 
 GENERATED = ("uv", "run", "scripts/check.py", "--group", "generated")
 NEXT_VERSION = ("node", "scripts/next_version.mjs")
@@ -83,6 +60,7 @@ def next_versions(root: Path) -> dict[str, dict[str, Any]]:
     found = subprocess.run(NEXT_VERSION, cwd=root, capture_output=True, text=True, check=False)
     if found.returncode != 0:
         raise Refused(f"the next version cannot be computed: {found.stderr.strip()}")
+    sys.stderr.write(found.stderr)  # release-please's own warnings, which a green run still shows
     return json.loads(found.stdout)
 
 
@@ -113,130 +91,28 @@ def judged(path: str, report: dict[str, Any]) -> str | None:
     return None if unreleased else version
 
 
-def bump_generic(text: str, version: str) -> str:
-    """Every version on a marked line or inside a marked block, replaced as release-please's generic updater does."""
-    lines, inside = [], False
-    for line in text.splitlines(keepends=True):
-        if BLOCK_START in line:
-            inside = True
-        if inside or LINE_MARKER in line:
-            line = SEMVER.sub(version, line)
-        if BLOCK_END in line:
-            inside = False
-        lines.append(line)
-    return "".join(lines)
-
-
-def bump_toml(text: str, jsonpath: str, version: str) -> str:
-    """The field `jsonpath` names, set to `version` in every table or array row it selects."""
-    path = JSONPATH.match(jsonpath)
-    if path is None:
-        raise Refused(f"the jsonpath {jsonpath!r} is not a shape this rehearsal can follow")
-    rows: list[list[str]] = [[]]
-    for line in text.splitlines(keepends=True):
-        if line.startswith("["):
-            rows.append([])
-        rows[-1].append(line)
-    headers = (f"[{path['table']}]", f"[[{path['table']}]]")
-    field = re.compile(rf"^{re.escape(path['field'])}\s*=\s*\"[^\"]*\"", re.MULTILINE)
-    picked = None
-    if path["key"]:
-        picked = re.compile(rf"^{re.escape(path['key'])}\s*=\s*\"{re.escape(path['match'])}\"", re.MULTILINE)
-    for row in rows:
-        block = "".join(row)
-        if not row or row[0].strip() not in headers:
-            continue
-        if picked is not None and not picked.search(block):
-            continue
-        row[:] = field.sub(f'{path["field"]} = "{version}"', block, count=1).splitlines(keepends=True)
-    return "".join(line for row in rows for line in row)
-
-
-def bump_json(text: str, jsonpath: str, version: str) -> str:
-    """The field `jsonpath` names, set to `version` in the object or array rows it selects."""
-    path = JSONPATH.match(jsonpath)
-    if path is None:
-        raise Refused(f"the jsonpath {jsonpath!r} is not a shape this rehearsal can follow")
-    data = json.loads(text)
-    found = data[path["table"]]
-    for row in found if isinstance(found, list) else [found]:
-        if path["key"] is None or row.get(path["key"]) == path["match"]:
-            row[path["field"]] = version
-    return json.dumps(data, indent=2) + "\n"
-
-
-def bump_extra_file(text: str, entry: str | dict[str, str], version: str) -> str:
-    """One entry of `extra-files`, bumped by the updater its `type` names, as release-please does."""
-    if isinstance(entry, str) or entry.get("type", "generic") == "generic":
-        return bump_generic(text, version)
-    kind = entry["type"]
-    if kind == "toml":
-        return bump_toml(text, entry["jsonpath"], version)
-    if kind == "json":
-        return bump_json(text, entry["jsonpath"], version)
-    raise Refused(f"{entry['path']} is a {kind} extra file, and this rehearsal bumps generic, toml and json alone")
-
-
-def bump_pyproject(text: str, version: str) -> str:
-    """The `version` line of the `[project]` table, which the python release type bumps."""
-    head, marker, rest = text.partition("[project]\n")
-    bumped = re.sub(r'^version\s*=\s*"[^"]*"', f'version = "{version}"', rest, count=1, flags=re.MULTILINE)
-    return head + marker + bumped
-
-
-def bump_changelog(text: str, notes: str) -> str:
-    """The changelog with release-please's entry for the next release above its newest one."""
-    head, marker, rest = text.partition("\n## ")
-    entry = notes.strip("\n") + "\n"
-    if not marker:
-        return text.rstrip("\n") + "\n\n" + entry
-    return f"{head}\n{entry}\n## {rest}"
-
-
-def rewrite(base: Path, relative: str, bump: Callable[[str], str]) -> None:
-    """Rewrite one file with `bump`, refusing a file the bump would leave exactly as it was."""
-    path = base / relative
-    if not path.exists():
-        raise Refused(f"{relative} does not exist, and release-please would bump it")
-    before = path.read_text(encoding="utf-8")
-    after = bump(before)
-    if after == before:
-        raise Refused(f"the bump changed nothing in {relative}, so release-please would leave its version behind")
-    path.write_text(after, encoding="utf-8")
-    print(f"bumped {relative}")
-
-
-def bump_package(base: Path, package: dict[str, Any], version: str, notes: str) -> None:
-    """Make in one package every edit release-please makes to it: the project file, the changelog, the extras."""
-    rewrite(base, "pyproject.toml", lambda text: bump_pyproject(text, version))
-    changelog = package.get("changelog-path", "CHANGELOG.md")
-    rewrite(base, changelog, lambda text: bump_changelog(text, notes))
-    for entry in package.get("extra-files", ()):
-        relative = entry if isinstance(entry, str) else entry["path"]
-        rewrite(base, relative, partial(bump_extra_file, entry=entry, version=version))
-
-
 def bump(tree: Path, reports: dict[str, dict[str, Any]]) -> dict[str, str]:
     """Make in `tree` every edit release-please makes for a release, and return each package's new version.
 
-    A package on release-please's own pull request is judged and left as it is.
+    The edits are made by release-please's own updaters, through `next_version.mjs --bump`, so the
+    rehearsal makes the bump release-please makes rather than a model of it. A package on
+    release-please's own pull request is judged and left as it is.
     """
-    config = json.loads((tree / CONFIG).read_text(encoding="utf-8"))
-    manifest = json.loads((tree / MANIFEST).read_text(encoding="utf-8"))
     bumped: dict[str, str] = {}
-    for name, package in config["packages"].items():
-        release_type = package.get("release-type", config.get("release-type"))
-        if release_type != "python":
-            raise Refused(f"the package {name} is released as {release_type}, and this rehearsal knows python alone")
-        version = judged(name, reports[name])
+    for name, report in reports.items():
+        version = judged(name, report)
         if version is None:
-            print(f"{name} carries the unreleased {reports[name]['tree']}, which the regenerate job writes")
+            print(f"{name} carries the unreleased {report['tree']}, which the regenerate job writes")
             continue
         bumped[name] = version
-        bump_package(tree / name, package, version, reports[name]["rehearseNotes"])
     if bumped:
-        (tree / MANIFEST).write_text(json.dumps(manifest | bumped, indent=2) + "\n", encoding="utf-8")
-        print(f"bumped {MANIFEST}")
+        done = subprocess.run(
+            (*NEXT_VERSION, "--bump", str(tree), *bumped), cwd=ROOT, capture_output=True, text=True, check=False
+        )
+        if done.returncode != 0:
+            raise Refused(done.stderr.strip())
+        sys.stderr.write(done.stderr)
+        print(done.stdout, end="")
     return bumped
 
 

@@ -4,8 +4,8 @@
 # ///
 """Open the built wheel on a machine that has only the wheel, and hold the tag to the version in it.
 
-    uv run scripts/check_wheel.py --check           # the smoke and the tag check
-    uv run scripts/check_wheel.py --check --tag v0.5.0-rc1
+    uv run scripts/check_wheel.py                   # the smoke, with no tag to judge
+    uv run scripts/check_wheel.py --tag v0.5.0-rc1  # the smoke and the tag check
 
 `tests/contract/test_wheel.py` reads what is inside the wheel. This reads what the wheel does, which
 is the other half of the same question and the half a file list cannot answer: a wheel whose entry
@@ -16,21 +16,18 @@ smoke installs the wheel into an environment with no project and nothing else in
 
 The tag check is a version comparison and never a string comparison. A git tag is semver and a wheel
 is PEP 440, so `v0.5.0-rc1` and `0.5.0rc1` are one version spelled two ways, and comparing the text
-would refuse every release candidate the founder cuts. The tag is read from `--tag`, or from
-`GITHUB_REF_NAME` when the ref a workflow is building really is a tag, and when neither names one
-the check says out loud that it judged nothing rather than passing quietly. A branch is never read
-as a tag: `GITHUB_REF_NAME` is `33/merge` on a pull request and `gen5` on a branch push, and reading
-either as a version failed the wheel group on every change rather than at a release.
+would refuse every release candidate the founder cuts. The tag is read from `--tag`, which the
+release workflow passes, and when no tag is named the check says out loud that it judged nothing
+rather than passing quietly.
 
-This script has no `--write`, unlike every generator in the check table, because it writes no file.
-It reads what `uv build` already left in `dist/` and builds nothing of its own, so that what is
+This script takes no mode, unlike every generator in the check table, because it writes no file and
+has one thing to do. It reads what `uv build` already left in `dist/` and builds nothing of its own, so that what is
 judged here is the artifact that would go to PyPI.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 import tempfile
@@ -46,15 +43,6 @@ SMOKE_PROJECT = "wheelcheck"
 
 WRITTEN_BY_INIT = ("decktalk.toml", "script.md", "cues.json")
 """The files every new project holds, so a wheel that ships no template fails here rather than later."""
-
-TAG_VARIABLE = "GITHUB_REF_NAME"
-"""Where a workflow puts the ref it is building, which names a tag only when the type below says so."""
-
-TAG_TYPE_VARIABLE = "GITHUB_REF_TYPE"
-"""What kind of ref a workflow is building, which is `tag` for a release and `branch` for everything else."""
-
-TAG = "tag"
-"""The one value of that variable this check reads a version out of."""
 
 
 def wheel() -> Path:
@@ -91,7 +79,8 @@ def smoke(built: Path) -> int:
         )
         if run.returncode:
             print(f"the wheel could not write a project: `decktalk init` exited {run.returncode}")
-            print(run.stdout.strip() or run.stderr.strip())
+            # Both streams, because a refusal goes to stderr and anything printed before it to stdout.
+            print(f"{run.stdout}{run.stderr}".strip())
             return 1
         missing = [name for name in WRITTEN_BY_INIT if not (target / name).is_file()]
         if missing:
@@ -101,18 +90,10 @@ def smoke(built: Path) -> int:
     return 0
 
 
-def tag_in_the_environment() -> str:
-    """The tag a workflow is building, which is empty unless the ref it checked out is a tag."""
-    if os.environ.get(TAG_TYPE_VARIABLE) != TAG:
-        return ""
-    return os.environ.get(TAG_VARIABLE, "")
-
-
 def tag_matches(named: str | None) -> int:
     """Hold the tag and the packaged version to the same version, whichever way each one spells it."""
-    tag = named or tag_in_the_environment()
-    if not tag:
-        print(f"no tag was named and {TAG_VARIABLE} names no tag, so the tag was not judged.")
+    if not (tag := named):
+        print("no tag was named, so the tag was not judged.")
         return 0
     try:
         wanted = Version(tag.removeprefix("v"))
@@ -129,8 +110,7 @@ def tag_matches(named: str | None) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--check", action="store_true", help="run the wheel smoke and the tag check")
-    parser.add_argument("--tag", help=f"the tag to hold the version to, default the value of {TAG_VARIABLE}")
+    parser.add_argument("--tag", help="the tag to hold the packaged version to")
     args = parser.parse_args()
     # Both run whatever the other did, because a red smoke that hid a wrong tag would cost a second
     # run of the release to learn the second fact.

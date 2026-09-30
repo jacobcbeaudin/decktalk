@@ -17,19 +17,20 @@ cuts are the same kind of thing under the same name.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import WORDS_SUFFIX, Take, Takes, Words
-from decktalk.errors import InputError
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
 from decktalk.inputs import Inputs, PageSection
 from decktalk.inputs.paths import at
 from decktalk.machine import Run
 from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
+from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact
 from decktalk.results import ClipResult, SectionWords, Word
-from decktalk.stages import SECOND_DIGITS
 from decktalk.stages.words import section_words
 
 FRAME_SLACK = 0.5
@@ -113,14 +114,14 @@ def clip(
     )
 
 
+@dataclass(frozen=True)
 class _Span:
     """The whole frames one clip plays, and the silence it holds after them."""
 
-    def __init__(self, first: int, last: int, hold: int, fps: int) -> None:
-        self.first = first
-        self.last = last
-        self.hold = hold
-        self.fps = fps
+    first: int
+    last: int
+    hold: int
+    fps: int
 
     @property
     def first_seconds(self) -> float:
@@ -163,9 +164,9 @@ def _section_video(inputs: Inputs, section: PageSection) -> Path:
     """The cut of one section, or a refusal naming the command that makes it."""
     video = inputs.workspace.section_video(section.key)
     if not video.is_file():
-        raise InputError(
+        raise NotBuiltError(
             f"section {section.number} has no cut at {inputs.relative(video)}.",
-            hint="Run `decktalk assemble` first.",
+            hint=Artifact.FINAL.next_step,
             location=at(video, inputs.root, section=section.number),
         )
     return video
@@ -176,16 +177,16 @@ def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
     takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
     take = takes.of(number)
     if take is None:
-        raise InputError(
+        raise NotBuiltError(
             f"section {number} has no take in {inputs.relative(inputs.workspace.takes_path)}.",
-            hint="Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing.",
+            hint=Artifact.TAKES.next_step,
             location=at(inputs.workspace.takes_path, inputs.root, section=number),
         )
     source = inputs.workspace.takes_dir / take.file
     if not source.is_file():
-        raise InputError(
+        raise NotBuiltError(
             f"section {number} names the take {take.file}, which is not on disk.",
-            hint="Run `decktalk narrate` again to write it.",
+            hint=Artifact.TAKES.next_step,
             location=at(source, inputs.root, section=number),
         )
     return take, source
@@ -200,8 +201,8 @@ def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds
         )
     if hold_seconds < 0:
         raise InputError(
-            f"--hold is {hold_seconds:g}s, which is less than no time at all.",
-            hint="Write --hold 0 or more.",
+            f"--hold-seconds is {hold_seconds:g}s, which is less than no time at all.",
+            hint="Write --hold-seconds 0 or more.",
         )
     length = ffmpeg.probe_duration(video)
     if end > length + FRAME_SLACK / fps:
@@ -221,7 +222,7 @@ def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds
 
 def _out_path(inputs: Inputs, out: Path, video: Path) -> Path:
     """Where the clip is written, refusing a name that is the section cut it reads."""
-    film = inputs.path(out)
+    film = out if out.is_absolute() else inputs.root / out
     if film.resolve() == video.resolve():
         raise InputError(
             f"--out names {inputs.relative(video)}, which is the section cut this clip is read from.",
@@ -260,7 +261,7 @@ def _render(
     )
     encoder = Encoder(settings)
     ffmpeg.run(
-        "-i", str(video), "-i", str(source),
+        *ffmpeg.source(video), *ffmpeg.source(source),
         "-filter_complex", f"{picture};{sound}",
         "-map", "[v]", "-map", "[a]", "-r", str(fps), *encoder.venc, *encoder.aenc,
         "-t", f"{total:.6f}", "-movflags", "+faststart", str(film),

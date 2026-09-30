@@ -15,23 +15,25 @@ refused `--set` as cheap as reading a signature.
 
 from __future__ import annotations
 
+import difflib
 import functools
 import inspect
 import itertools
 import sys
-from collections.abc import Callable, Sequence
+import textwrap
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 import typer
 from typer._click import Context, HelpFormatter, Parameter
 from typer._click.core import Command
-from typer._click.exceptions import ClickException, UsageError
+from typer._click.exceptions import ClickException, NoSuchOption, UsageError
 from typer.core import TyperCommand, TyperGroup, TyperOption
 from typer.main import get_command
 
 from decktalk import __version__
-from decktalk.cli.options import DOCS, GLOBALS, SHARED, FailOn, Group, Panel, When, allowed, shared_for
+from decktalk.cli.options import DOCS, GLOBALS, SHARED, FailOn, Group, Panel, restated, shared_for
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import Cancelled, DeckTalkError, ErrorCode, ErrorInfo
 from decktalk.findings import Code
@@ -98,6 +100,9 @@ _current: Session | None = None
 _order = itertools.count()
 """Where each command sits in the source, which is the order its group prints it in."""
 
+EPILOG_WIDTH = 78
+"""How wide a command's closing paragraph is wrapped, which is the width the tree's own footer is written at."""
+
 CONTEXT = {"help_option_names": ["-h", "--help"], "show_default": False}
 """Settings every command shares. A default is written into its own sentence, never in brackets."""
 
@@ -117,6 +122,10 @@ class Quiet:
             if isinstance(param, TyperOption):
                 param.show_default = False
         return params
+
+    def get_help_option(self, ctx: Context) -> TyperOption | None:
+        """The help option with our own sentence on it."""
+        return _help_option(super().get_help_option(ctx))  # ty: ignore[unresolved-attribute]
 
 
 class DeckTalkCommand(Quiet, TyperCommand):
@@ -140,10 +149,6 @@ class DeckTalkCommand(Quiet, TyperCommand):
         _write_block(formatter, SHARED_LINE, indent=True)
         if self.epilog:
             _write_block(formatter, self.epilog, indent=False)
-
-    def get_help_option(self, ctx: Context) -> TyperOption | None:
-        """The help option with our own sentence on it."""
-        return _help_option(super().get_help_option(ctx))
 
 
 class DeckTalkGroup(Quiet, TyperGroup):
@@ -172,10 +177,6 @@ class DeckTalkGroup(Quiet, TyperGroup):
         """Write the footer as it was written, which is the contract a reader leaves the page with."""
         if self.epilog:
             _write_block(formatter, self.epilog, indent=False)
-
-    def get_help_option(self, ctx: Context) -> TyperOption | None:
-        """The help option with our own sentence on it."""
-        return _help_option(super().get_help_option(ctx))
 
 
 def written(command: Command) -> int:
@@ -222,18 +223,22 @@ def command[F: Callable[..., object]](
     to: typer.Typer | None = None,
     epilog: str = "",
     short_help: str = "",
+    helps: Mapping[str, str] | None = None,
 ) -> Callable[[F], F]:
     """Register one command, whose parameters are its own and whose shared flags are derived.
 
     `eval_str` is load bearing: the modules are written under postponed annotations, so the return
     annotation is the string `"BuildResult"` until it is evaluated, and the shared flags are chosen
-    from the model it names.
+    from the model it names. `epilog` is the command's own lead sentence, which the closing
+    paragraph follows with the fields of that model and the command's docs link. `helps` gives a
+    flag this command's own sentence, because a flag that means something narrower here has to say
+    so on the one help screen a reader of this command sees.
     """
 
     def register(fn: F) -> F:
         signature = inspect.signature(fn, eval_str=True)
         result = signature.return_annotation
-        parameters = [*signature.parameters.values(), *shared_for(result)]
+        parameters = _reworded([*signature.parameters.values(), *shared_for(result)], helps or {})
         wrapper = _client(fn, name or str(getattr(fn, "__name__", "")))
         wrapper.__signature__ = signature.replace(  # ty: ignore[unresolved-attribute]
             parameters=parameters, return_annotation=inspect.Signature.empty
@@ -241,16 +246,43 @@ def command[F: Callable[..., object]](
         wrapper.__annotations__ = {param.name: param.annotation for param in parameters}
         wrapper.result = result  # ty: ignore[unresolved-attribute]
         wrapper.order = next(_order)  # ty: ignore[unresolved-attribute]
+        called = name or str(getattr(fn, "__name__", ""))
+        path = (str(to.info.name), called) if to is not None else (called,)
         (to or app).command(
-            name or str(getattr(fn, "__name__", "")),
+            called,
             cls=DeckTalkCommand,
             rich_help_panel=group.value,
-            epilog=epilog or None,
+            epilog=_epilog(epilog, result, path),
             short_help=short_help or None,
         )(wrapper)
         return fn
 
     return register
+
+
+def _epilog(lead: str, result: object, path: tuple[str, ...]) -> str:
+    """A command's closing paragraph: its lead, the fields its JSON object carries, and its docs link.
+
+    The fields are read off the result model, beside the envelope every result shares, because a
+    list written by hand beside the command drifts the moment the model gains a field.
+    """
+    fields = result.model_fields if isinstance(result, type) and issubclass(result, Result) else {}
+    own = [field.alias or name for name, field in fields.items() if name not in Result.model_fields]
+    listed = f"{', '.join(own[:-1])} and {own[-1]}" if len(own) > 1 else "".join(own)
+    carried = f"The JSON object carries {listed}." if own else ""
+    said = textwrap.fill(" ".join(filter(None, (lead, carried))), width=EPILOG_WIDTH, break_on_hyphens=False)
+    return "\n".join(filter(None, (said, f"Docs: {docs_for(*path)}")))
+
+
+def _reworded(parameters: list[inspect.Parameter], helps: Mapping[str, str]) -> list[inspect.Parameter]:
+    """The parameters with this command's own sentences on them, refusing a sentence for a flag it lacks."""
+    stray = sorted(set(helps) - {param.name for param in parameters})
+    if stray:
+        raise TypeError(f"help was reworded for {', '.join(stray)}, which this command does not take")
+    return [
+        param.replace(annotation=restated(param.annotation, help=helps[param.name])) if param.name in helps else param
+        for param in parameters
+    ]
 
 
 def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
@@ -269,7 +301,7 @@ def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
             raise _yes_refused(context)
         session.judging(
             fail_on=cast("FailOn", shared.get("fail_on") or FailOn.CERTAIN),
-            allow=allowed(cast("Sequence[Code] | None", shared.get("allow"))),
+            allow=frozenset(cast("Sequence[Code] | None", shared.get("allow")) or ()),
         )
         session.spending(
             no_voice=bool(shared.get("no_voice")),
@@ -286,7 +318,7 @@ def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
 
 def _begin(context: Context, shared: dict[str, object], *, command: str) -> Session:
     """This command's session, which is the root's flags with the ones after the command name on top."""
-    global _current  # noqa: PLW0603  (one process runs one command, and a refusal must still render)
+    global _current  # one process runs one command, and a refusal must still render
     base = context.find_root().obj
     flags = base.flags if isinstance(base, Session) else Globals()
     merged = flags.merged({key: value for key, value in shared.items() if key in _GLOBAL_NAMES})
@@ -324,63 +356,51 @@ def _version(value: bool) -> None:
     raise typer.Exit(0)
 
 
-@app.callback()
 def root(
     ctx: Context,
-    project: Annotated[
-        str | None,
-        typer.Option(
-            "-p",
-            "--project",
-            metavar="DIR",
-            help="The project directory. Default: DECKTALK_PROJECT, else the current directory.",
-        ),
-    ] = None,
-    json_out: Annotated[
-        bool, typer.Option("--json", help="Print one JSON object on stdout and nothing else there.")
-    ] = False,
-    events: Annotated[bool, typer.Option("--events", help="Print one JSON line per progress event on stderr.")] = False,
-    color: Annotated[
-        When, typer.Option("--color", metavar="WHEN", help="auto, always or never. Default: auto.")
-    ] = When.AUTO,
-    no_input: Annotated[
-        bool,
-        typer.Option(
-            "--no-input",
-            help="Never prompt. Take the safe default, or refuse and name the flag that would have answered.",
-        ),
-    ] = False,
-    verbose: Annotated[
-        bool, typer.Option("-v", "--verbose", help="Debug lines on stderr, and the traceback of a bug.")
-    ] = False,
-    quiet: Annotated[bool, typer.Option("-q", "--quiet", help="Warnings and errors only on stderr.")] = False,
     version: Annotated[  # noqa: ARG001  (the eager callback reads it and exits before the body runs)
         bool,
         typer.Option("--version", callback=_version, is_eager=True, help="Print the version and exit."),
     ] = False,
+    **flags: object,
 ) -> int:
     """Every picture lands on its word. DeckTalk turns a markdown script, HTML slides and your voice
     into one narrated mp4."""
-    global _current  # noqa: PLW0603  (one process runs one command, and a refusal must still render)
-    flags = Globals(
-        project=Path(project) if project else None,
-        json_out=json_out,
-        events=events,
-        color=color,
-        no_input=no_input,
-        verbose=verbose,
-        quiet=quiet,
-    )
-    session = Session(flags, command="")
+    global _current  # one process runs one command, and a refusal must still render
+    session = Session(Globals(**cast("dict[str, Any]", flags)), command="")
     ctx.obj = session
     _current = session
     if ctx.invoked_subcommand is None:
         # The help is written as Click formatted it, because a renderer that rewrapped it would
         # print a different page from the one `--help` prints.
         session.err.file.write(ctx.get_help() + "\n")
-        session.err.file.write(f"\nProject: {(flags.project or Path.cwd()).as_posix()}\n")
+        session.err.file.write(f"\nProject: {(session.flags.project or Path.cwd()).as_posix()}\n")
         raise typer.Exit(0)
     return 0
+
+
+def _rooted(fn: Callable[..., int]) -> Callable[..., int]:
+    """The root callback with the globals put in place of its `**flags`, shown on the root's own help.
+
+    They are read from the one declaration every command takes them from, and `--yes` stays off the
+    root because the root asks nothing for it to refuse.
+    """
+    signature = inspect.signature(fn, eval_str=True)
+    ctx, version = signature.parameters["ctx"], signature.parameters["version"]
+    flags = [
+        inspect.Parameter(
+            name, inspect.Parameter.KEYWORD_ONLY, annotation=restated(annotation, hidden=False), default=default
+        )
+        for name, annotation, default in GLOBALS
+        if name != "yes"
+    ]
+    fn.__signature__ = signature.replace(  # ty: ignore[unresolved-attribute]
+        parameters=[ctx, *flags, version.replace(kind=inspect.Parameter.KEYWORD_ONLY)]
+    )
+    return fn
+
+
+app.callback()(_rooted(root))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -389,7 +409,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     `standalone_mode` is off because Typer would otherwise print its own panel and exit 2 with no
     object on stdout, which is the one thing `--json` promises never happens.
     """
-    global _current  # noqa: PLW0603  (one process runs one command, and a refusal must still render)
+    global _current  # one process runs one command, and a refusal must still render
     arguments = list(sys.argv[1:] if argv is None else argv)
     _current = Session(Globals(json_out="--json" in arguments), command="")
     parser = get_command(app)
@@ -398,12 +418,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (UsageError, ClickException) as refused:
         return _session().reported(_usage(refused))
     except (typer.Abort, KeyboardInterrupt):
-        return _session().failed(Cancelled("the caller stopped the run."))
+        # silent: the interrupt is reported as the CANCELLED refusal below.
+        return _session().failed(Cancelled("The caller stopped the run."))
     except DeckTalkError as refused:
         return _session().failed(refused)
     except Exception as failure:  # noqa: BLE001  (anything else is a bug, reported as one)
         return _session().bug(failure)
     return int(answered or 0)
+
+
+SUGGESTION_CUTOFF = 0.75
+"""How alike an unknown flag and a real one must be before the refusal names the real one.
+
+Click's own cutoff of 0.6 offered `--verbose` for `--bogus`, which is a guess rather than a
+suggestion, while every one-letter slip of a real flag scores well above this.
+"""
+
+
+def _unknown_option(refused: NoSuchOption, where: Context | None) -> str:
+    """The refusal of a flag this command does not take, naming the one flag it most likely meant."""
+    flags = sorted(
+        flag
+        for param in (where.command.get_params(where) if where is not None else ())
+        for flag in (*param.opts, *param.secondary_opts)
+        if flag.startswith("--")
+    )
+    close = difflib.get_close_matches(refused.option_name, flags, n=1, cutoff=SUGGESTION_CUTOFF)
+    meant = f" Did you mean {close[0]}?" if close else ""
+    return f"{refused.option_name} is not a flag of this command.{meant}"
 
 
 def _session() -> Session:
@@ -419,9 +461,10 @@ def _usage(refused: ClickException) -> ErrorInfo:
     """
     where = getattr(refused, "ctx", None)
     path = where.command_path if where is not None else PROGRAM
+    said = _unknown_option(refused, where) if isinstance(refused, NoSuchOption) else refused.format_message()
     return ErrorInfo(
         code=ErrorCode.USAGE,
-        message=f"{path}: {refused.format_message()}",
+        message=f"{path}: {said}",
         hint=f"Run {path} --help for this command's flags, or decktalk schema for the whole contract.",
         docs=ErrorCode.USAGE.url,
     )

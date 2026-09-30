@@ -8,7 +8,7 @@ and the published record from the fields, which is how a tuning table is written
 the loader, by the schema, by the reference page and by `config explain`.
 
 `tune()` is the one way a key is declared and `Bounds` is the one way a range is stated. Both are
-declarative: `Bounds` carries numbers and word sets rather than a function, so the same range the
+declarative: `Bounds` carries numbers, word sets and patterns rather than a function, so the same range the
 loader enforces is the range the JSON Schema publishes, and a reader of either can never meet a
 bound the other does not have.
 """
@@ -16,10 +16,9 @@ bound the other does not have.
 from __future__ import annotations
 
 import difflib
-import os
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
-from enum import Enum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import UnionType
 from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints, overload
@@ -27,38 +26,7 @@ from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hin
 from .errors import InputError
 from .findings import Code, Location
 from .locate import locate
-from .results import Scope
-
-
-class Nature(Enum):
-    """The four-way test every number takes, which decides whether it can be a key at all.
-
-    A number is a key when a project could hold another value for a reason a sentence can state.
-    Taste and apparatus are the two answers that make one, and truth and derived are the two that
-    make a published number instead, so an agent that cannot find a knob learns the number is
-    deliberately not one rather than proposing a setting that cannot exist. Calibration is the
-    fifth answer and belongs to a published number alone: it is a fact measured once from a tool
-    DeckTalk drives, so it is neither a standard nor arithmetic and no project may state it.
-    """
-
-    TASTE = "taste"
-    APPARATUS = "apparatus"
-    TRUTH = "truth"
-    DERIVED = "derived"
-    CALIBRATION = "calibration"
-
-
-class Source(Enum):
-    """Where the value in force is expected to come from, which decides who may write it.
-
-    A stated key is one DeckTalk cannot know and the operator must supply, and a measured key is
-    one a run writes, which is why `config set` refuses to take a measured value by hand and names
-    the command that takes it instead.
-    """
-
-    CHOSEN = "chosen"
-    STATED = "stated"
-    MEASURED = "measured"
+from .results import Nature, Scope, Source
 
 
 @dataclass(frozen=True)
@@ -74,10 +42,11 @@ class Bounds:
     ge: float | None = None
     gt: float | None = None
     le: float | None = None
-    lt: float | None = None
     enum: tuple[Any, ...] | None = None
     items: Bounds | None = None
     min_items: int | None = None
+    pattern: str | None = None
+    """A regular expression the whole of a string must match, for a word whose spellings no set can list."""
 
     def holds(self, value: Any) -> bool:
         """True when this value sits inside the range, arrays being judged element by element."""
@@ -87,13 +56,14 @@ class Bounds:
             return all(self.items is None or self.items.holds(item) for item in value)
         if self.enum is not None and value not in self.enum:
             return False
+        # The whole string must match, so a value that is a colour followed by a newline and more is refused.
+        if self.pattern is not None and not (isinstance(value, str) and re.fullmatch(self.pattern, value)):
+            return False
         if self.ge is not None and value < self.ge:
             return False
         if self.gt is not None and value <= self.gt:
             return False
-        if self.le is not None and value > self.le:
-            return False
-        return not (self.lt is not None and value >= self.lt)
+        return not (self.le is not None and value > self.le)
 
     @property
     def sentence(self) -> str:
@@ -101,6 +71,8 @@ class Bounds:
         if self.enum is not None:
             return "must be one of " + ", ".join(str(v) for v in self.enum)
         parts: list[str] = []
+        if self.pattern is not None:
+            parts.append(f"must match the pattern {self.pattern}")
         if self.min_items is not None:
             parts.append(f"must hold at least {self.min_items}")
         if self.items is not None:
@@ -114,8 +86,6 @@ class Bounds:
                 parts.append(f"must be above {_number(self.gt)}")
             if self.le is not None:
                 parts.append(f"must be at most {_number(self.le)}")
-            if self.lt is not None:
-                parts.append(f"must be below {_number(self.lt)}")
         return " and ".join(parts) if parts else "takes any value of its type"
 
     def json_schema(self) -> dict[str, Any]:
@@ -129,8 +99,8 @@ class Bounds:
             out["exclusiveMinimum"] = self.gt
         if self.le is not None:
             out["maximum"] = self.le
-        if self.lt is not None:
-            out["exclusiveMaximum"] = self.lt
+        if self.pattern is not None:
+            out["pattern"] = self.pattern
         if self.min_items is not None:
             out["minItems"] = self.min_items
         if self.items is not None:
@@ -143,8 +113,6 @@ def _number(value: float) -> str:
     return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
 
 
-ABOVE_ZERO = Bounds(gt=0)
-NOT_NEGATIVE = Bounds(ge=0)
 A_PERCENT = Bounds(ge=0, le=100)
 A_SHARE = Bounds(ge=0, le=1)
 A_LUMA = Bounds(ge=0, le=255)
@@ -248,12 +216,13 @@ def tune[T](
     The record lives beside the default because every other spelling of a key is generated from it:
     the loader reads `bounds`, the schema reads all of it, the reference page renders it and a
     finding that names a knob quotes `decides` in reverse. A key declared here and nowhere else
-    cannot drift from the value the code actually reads.
+    cannot drift from the value the code actually reads. The metadata is named after `Key`'s own
+    fields, so `registry` builds each key from it whole.
     """
     return field(
         default=default,
         metadata={
-            "doc": doc,
+            "description": doc,
             "unit": unit,
             "scope": scope,
             "nature": nature,
@@ -272,9 +241,8 @@ def tune[T](
 def registry(cls: type[Any], *, prefix: tuple[str, ...] = ()) -> tuple[Key, ...]:
     """Every key of a dataclass tree, in declaration order, with its dotted id.
 
-    The walk is the same recursion `from_mapping` and `env_names` make, so a nested table is
-    published, loaded and named from one reading of the fields and a table added later needs no
-    second edit anywhere.
+    The walk is the same recursion `from_mapping` makes, so a nested table is published, loaded and
+    named from one reading of the fields and a table added later needs no second edit anywhere.
     """
     out: list[Key] = []
     hints = get_type_hints(cls)
@@ -283,25 +251,7 @@ def registry(cls: type[Any], *, prefix: tuple[str, ...] = ()) -> tuple[Key, ...]
         if is_dataclass(annotation):
             out += registry(cast("type[Any]", annotation), prefix=(*prefix, f.name))
             continue
-        out.append(
-            Key(
-                id=".".join((*prefix, f.name)),
-                description=str(f.metadata.get("doc", "")),
-                default=f.default,
-                annotation=annotation,
-                bounds=f.metadata.get("bounds"),
-                typed=f.metadata.get("typed"),
-                unit=f.metadata.get("unit"),
-                scope=f.metadata.get("scope", Scope.PROJECT),
-                nature=f.metadata.get("nature", Nature.TASTE),
-                source=f.metadata.get("source", Source.CHOSEN),
-                evidence=f.metadata.get("evidence"),
-                hazard=f.metadata.get("hazard"),
-                requires=f.metadata.get("requires"),
-                see_also=tuple(f.metadata.get("see_also", ())),
-                decides=tuple(f.metadata.get("decides", ())),
-            )
-        )
+        out.append(Key(id=".".join((*prefix, f.name)), default=f.default, annotation=annotation, **f.metadata))
     return tuple(out)
 
 
@@ -318,9 +268,26 @@ def unknown_key_warnings(table: Mapping[str, Any], known: Iterable[str], where: 
     return [unknown_key_message(key, names, where) for key in sorted(set(table) - names)]
 
 
+NAMED_PART_MIN = 3
+"""How long the last part of a mistyped key must be before a key whose own last part holds it is offered.
+
+A shorter part, such as `db` or `a`, sits inside too many names to say which one was meant.
+"""
+
+
 def did_you_mean(key: str, known: Iterable[str]) -> str:
-    """The closest key to one nobody knows, as a clause a refusal appends, or nothing when none is near."""
-    close = difflib.get_close_matches(key, sorted(known), n=1)
+    """The key one nobody knows most likely meant, as a clause a refusal appends, or nothing when none is near.
+
+    The last part of a key names the thing it sets, and a person who remembers that thing and not
+    its table writes it under the wrong one, as `record.fps` for `video.output_fps`. So a key whose
+    last part holds the typed one is offered first, the closest spelling among them when there are
+    several, and the closest spelling of the whole key is offered only when no such key exists.
+    """
+    names = sorted(known)
+    part = key.rsplit(".", 1)[-1]
+    holding = [name for name in names if len(part) >= NAMED_PART_MIN and part in name.rsplit(".", 1)[-1]]
+    close = difflib.get_close_matches(key, holding, n=1, cutoff=0) if holding else []
+    close = close or difflib.get_close_matches(key, names, n=1)
     return f" Did you mean '{close[0]}'?" if close else ""
 
 
@@ -347,9 +314,6 @@ class Table:
         # The dotted name of this table inside the file, which a key's own name is not enough to
         # find, because the same key name sits in several tables.
         self.table = table
-        # Every sentence this table has to say about keys it does not read, in the order it read
-        # them, which the caller folds into what it returns.
-        self.notes: list[str] = []
 
     def _refuse(self, message: str, key: str, hint: str | None = None) -> InputError:
         dotted = f"{self.table}.{key}" if self.table else key
@@ -455,16 +419,14 @@ class Table:
         return sorted(set(self.data) - set(known))
 
     def note_unknown(self, known: Iterable[str]) -> list[str]:
-        """Every key this table does not read, as one sentence each, collected on the table.
+        """Every key this table does not read, as one sentence each.
 
         An unknown key is ignored rather than refused, so the sentence is a note a caller carries
         into what it returns. It is not written anywhere here, because a library that decided where
         a note went would decide it for every caller, and a note nobody can read is a note nobody
         acts on.
         """
-        found = unknown_key_warnings(self.data, known, self.where)
-        self.notes += found
-        return found
+        return unknown_key_warnings(self.data, known, self.where)
 
 
 def _is_optional(annotation: Any) -> bool:
@@ -478,18 +440,18 @@ def from_mapping[T](
     *,
     base: Mapping[str, Any] | None = None,
     prefixes: list[str] | None = None,
-    environ: Mapping[str, str] | None = None,
+    environ: Mapping[str, str],
 ) -> T:
     """Build a dataclass tree from its own defaults, a nested mapping, and the environment.
 
     Precedence, lowest to highest: the field's default, `base` (a nested mapping keyed by field
-    name, such as a parsed TOML file with one table per nested dataclass), then the environment
-    variable named PREFIX_FIELD, upper case, with nested names joined by `_`. `environ`
-    replaces os.environ, for tests.
+    name, such as a parsed TOML file with one table per nested dataclass), then the variable in
+    `environ` named PREFIX_FIELD, upper case, with nested names joined by `_`. `environ` is
+    required and never the process's own, because the machine is the one reader of the process.
     """
     names = prefixes or []
     table = base or {}
-    env = os.environ if environ is None else environ
+    env = environ
     hints = get_type_hints(cls)
     args: dict[str, Any] = {}
     for f in fields(cast("Any", cls)):
@@ -510,38 +472,34 @@ def from_mapping[T](
         if raw is None:
             continue
         where = ".".join([*names[1:], f.name])
-        args[f.name] = _checked(annotation, raw, where=where, field=f, from_env=from_env)
+        bounds, hazard = f.metadata.get("bounds"), f.metadata.get("hazard")
+        args[f.name] = read_value(annotation, raw, where=where, bounds=bounds, hazard=hazard, from_env=from_env)
     return cls(**args)
 
 
-def _checked(annotation: Any, raw: Any, *, where: str, field: Any, from_env: bool) -> Any:
-    """One value read as its field's type and measured against its safe range, or a refusal.
+def read_value(
+    annotation: Any, raw: Any, *, where: str, bounds: Bounds | None, hazard: str | None, from_env: bool
+) -> Any:
+    """One value read as its type and measured against its safe range, or a refusal.
 
     An environment variable carries a string and nothing else, so its value is converted. A mapping
     carries the type its author wrote, so a value of the wrong type is refused rather than converted,
     which is what keeps `[video] output_fps = "25"` and `[video] output_fps = 25.7` from becoming a
-    number nobody typed.
+    number nobody typed. `config set` and `--set` hand over the string a command line carried, so
+    both read it the way an environment variable is read, and the loader and the writer meet one rule.
     """
     try:
         value = _coerce(annotation, raw) if from_env else _as_written(annotation, raw)
     except (TypeError, ValueError) as exc:
         wanted = getattr(annotation, "__name__", str(annotation))
-        raise InputError(f"{where}: expected {wanted}, got {raw!r} ({exc})") from exc
-    bounds = field.metadata.get("bounds")
+        raise InputError(f"{where}: expected {wanted}, got {raw!r} ({exc}).") from exc
     if bounds is not None and not bounds.holds(value):
-        hazard = field.metadata.get("hazard")
-        raise InputError(f"{where}: {bounds.sentence}, got {value!r}", hint=hazard)
+        raise InputError(f"{where}: {bounds.sentence}, got {value!r}.", hint=hazard)
     return value
 
 
-def read_value(annotation: Any, raw: Any, *, where: str, field: Any, from_env: bool) -> Any:
-    """One value read as a field's type and held to its safe range, which the writer shares with the loader.
-
-    `config set` and `--set` both hand over the string a command line carried, so both read it the
-    way an environment variable is read, and a value no layer could hold is refused by one rule
-    rather than by three that could disagree.
-    """
-    return _checked(annotation, raw, where=where, field=field, from_env=from_env)
+SWITCHED_OFF = frozenset(("", "0", "no", "false"))
+"""The spellings of a switch variable that leave it off, so any other value turns it on."""
 
 
 def _coerce(annotation: Any, raw: str) -> Any:
@@ -552,7 +510,7 @@ def _coerce(annotation: Any, raw: str) -> Any:
     and that is how one key answers the same way whether it was written in a file or exported.
     """
     if annotation is bool:
-        return raw.lower() not in ("false", "0", "no", "")
+        return raw.lower() not in SWITCHED_OFF
     if _is_optional(annotation):
         return _coerce(get_args(annotation)[0], raw)
     if get_origin(annotation) is tuple:
@@ -584,38 +542,25 @@ def _as_written(annotation: Any, raw: Any) -> Any:
         raise TypeError("a boolean is not a number")
     if annotation is float and isinstance(raw, int):
         return float(raw)
+    # JSON Schema counts a float with no fraction as an integer, so a file an editor validated
+    # against the published schema reads the same here rather than being refused as a float.
+    if annotation is int and isinstance(raw, float) and raw.is_integer():
+        return int(raw)
     if isinstance(annotation, type) and not isinstance(raw, annotation):
         raise TypeError(f"a {type(raw).__name__} is not {'an' if annotation is int else 'a'} {annotation.__name__}")
     return raw
-
-
-def env_names(cls: type[Any], prefix: str) -> set[str]:
-    """Every environment variable `from_mapping` reads for this dataclass tree, so a typo can be named."""
-    out: set[str] = set()
-    hints = get_type_hints(cls)
-    for f in fields(cast("Any", cls)):
-        annotation = hints.get(f.name, f.type)
-        if is_dataclass(annotation):
-            out |= env_names(cast("type[Any]", annotation), f"{prefix}_{f.name}")
-        else:
-            out.add(f"{prefix}_{f.name}".upper())
-    return out
 
 
 __all__ = [
     "A_LUMA",
     "A_PERCENT",
     "A_SHARE",
-    "ABOVE_ZERO",
-    "NOT_NEGATIVE",
     "PUBLISHED",
+    "SWITCHED_OFF",
     "Bounds",
     "Key",
-    "Nature",
-    "Source",
     "Table",
     "did_you_mean",
-    "env_names",
     "from_mapping",
     "read_value",
     "registry",

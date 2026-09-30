@@ -3,7 +3,7 @@ title: Troubleshooting
 description: Take the code DeckTalk printed from the symptom you saw to the change that clears it.
 ---
 
-DeckTalk answers in codes. There are nine error codes and fifty-one finding codes, every one of them
+DeckTalk answers in codes. There are nine error codes and fifty-two finding codes, every one of them
 carries its own page, and this page is the map from what you saw to which code it was.
 
 Each code's page carries its sentence, its certainty and the settings keys that move it. They are
@@ -17,10 +17,9 @@ An **error** means DeckTalk could not run, so nothing was judged. It prints one 
 stops.
 
 ```text
-error[INPUT]: cue found 1 thing(s) that are certainly wrong, so the build stopped there rather than carrying them into the film.
-  hint: Fix these and run the build again:
-  CUE_UNRESOLVED at 1.1:title: the cue 1.1:title waits for 'a phrase nobody says' and section 1 speaks 38 words, none of which is that phrase.
-  docs: https://docs.decktalk.ai/reference/errors/INPUT
+error[NOT_BUILT]: takes.json has not been built.
+  hint: Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing.
+  docs: https://docs.decktalk.ai/reference/errors/NOT_BUILT
 ```
 
 A **finding** is a judgement DeckTalk made about your files or your film. The command ran, and this
@@ -72,13 +71,14 @@ half when you only want the reading of the files and the page.
 
 ## Apply the fix a finding carries
 
-A finding may carry a `fix`. It is one of three kinds, and it declares how far it may be trusted.
+A finding may carry a `fix`. It is one of four kinds, and it declares how far it may be trusted.
 
 | Kind | What it is |
 |---|---|
 | `edit` | One or more changes to files, each naming exactly one of a JSON pointer, a TOML key or a line. |
 | `setting` | A settings key and the value that clears the judgement. |
 | `command` | The whole command line to run, one argument per element. |
+| `runtime` | A project's copy of the runtime, which is replaced with the one this engine ships. |
 
 | Applicability | What happens |
 |---|---|
@@ -95,8 +95,8 @@ The count line tells you before you run it: `Found 1 finding, 1 certain. 1 fixab
 
 A safe fix does the boring part and leaves the judgement to you. `check --fix` on a project with no
 cue file writes every row the deck declares with an empty `on`, so the next `check` reports a
-`CUE_UNRESOLVED` for each empty phrase and a build refuses with an `INPUT` error that lists them. That
-is the fix working. Fill in the phrases and run it again.
+`CUE_UNRESOLVED` for each empty phrase and a build stops at `cue` on them. That is the fix working.
+Fill in the phrases and run it again.
 
 ## Carry on past a code, or change what fails a run
 
@@ -110,17 +110,42 @@ is the fix working. Fill in the phrases and run it again.
 Both work on every command that judges, which is `doctor`, `check`, `storyboard`, `narrate`, `cue`,
 `record`, `soundscape`, `assemble`, `verify` and `build`.
 
-`build` is stricter than its parts, and this catches people out. When a stage inside a build judges
-something certain about its own work, the build stops there and reports an `INPUT` error whose hint
-lists those codes, because carrying on would deliver a film that is wrong in a way nobody has to
-watch it to discover. `--fail-on never` does not lift that, and `--allow` lifts it for exactly one
-code, `CUE_UNKNOWN`, which is the one certain judgement an author may knowingly keep while a deck is
-under construction.
+`build` also stops on what fails it. When a stage inside a build judges something at the `--fail-on`
+threshold, the build stops after that stage rather than carry the finding into the film, because a
+film that is wrong in a way nobody has to watch it to discover is not worth recording. The stages it
+did not reach are reported as skipped, and the run still returns everything it knows: it exits 1,
+its findings are printed and in the JSON, the money narrate already spent is in `spend`, and
+`stopped_at` names the stage it stopped after.
 
-So when a build stops on a code, run that stage alone to get the findings back as data:
+{/* sample: decktalk build --no-voice on a built starter whose cue 3.1:idea waits for a phrase nobody says */}
 
-```bash
-decktalk cue --json | jq '.findings'
+```text
+     Narrate    0:00
+         Cue    0:00
+Cue made one finding that the build stops on, so the build stopped before record rather than carry it into the film.
+      Record    0:00
+  Soundscape    0:00
+    Assemble    0:00
+      Verify    0:00
+     Stopped at cue, $0.00, 1 finding
+cues.json:30: CUE_UNRESOLVED the cue 3.1:idea waits for 'a phrase nobody says' and section 3 speaks 25 words, none of which is that phrase.
+Found 1 finding, 1 certain.
+```
+
+The two flags that decide what fails a run decide what stops a build, because a build that carried
+on past a finding its exit fails on would spend on a film already called wrong.
+
+- `--allow CODE` carries the build past that code, and it works for every code. The finding is still
+  printed and still in the JSON, and it no longer stops the build or counts toward the exit.
+- `--fail-on any` stops on an uncertain finding as well, and `--fail-on never` runs every stage
+  whatever it finds.
+
+`verify` is the last stage, so its findings end a build rather than stop it. Reach for `--allow` only
+for a code you mean to keep, and say why, because the film it lets through carries that finding.
+A cue a deck under construction has not drawn yet is the usual case:
+
+```console
+decktalk build --no-voice --allow CUE_UNKNOWN
 ```
 
 ## From a symptom to a code
@@ -137,14 +162,16 @@ decktalk cue --json | jq '.findings'
 | A command said another writer holds the build directory | [LOCKED](/reference/errors/LOCKED) | [A locked project](#a-locked-project) |
 | A reveal never happened, and the message names a cue | [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED), [CUE_MISSING](/reference/findings/CUE_MISSING), [CUE_UNKNOWN](/reference/findings/CUE_UNKNOWN), [PAGE_CUE_UNKNOWN](/reference/findings/PAGE_CUE_UNKNOWN) | [An unresolved cue](#an-unresolved-cue) |
 | Two reveals ran into each other | [CUE_OVERLAP](/reference/findings/CUE_OVERLAP) | [An unresolved cue](#an-unresolved-cue) |
+| `verify` says the cue times are older than cues.json | [CUE_STALE](/reference/findings/CUE_STALE) | [An unresolved cue](#an-unresolved-cue) |
 | A cue resolved and nothing on screen changed | [CUE_NO_CHANGE](/reference/findings/CUE_NO_CHANGE), [CUE_THIN_CHANGE](/reference/findings/CUE_THIN_CHANGE), [PAGE_THIN_DRAW](/reference/findings/PAGE_THIN_DRAW) | [A picture that does not change](#a-picture-that-does-not-change) |
 | The film is black somewhere, stops moving, or a section is short | [PAGE_BLACK](/reference/findings/PAGE_BLACK), [PAGE_STALLED](/reference/findings/PAGE_STALLED), [PAGE_TRUNCATED](/reference/findings/PAGE_TRUNCATED) | [A recording that opens black or stalls](#a-recording-that-opens-black-or-stalls) |
 | Something on the page threw, or a wait never settled | [PAGE_RENDER_THREW](/reference/findings/PAGE_RENDER_THREW), [PAGE_ENTER_THREW](/reference/findings/PAGE_ENTER_THREW), [PAGE_HANDLER_THREW](/reference/findings/PAGE_HANDLER_THREW), [PAGE_SLIDE_HANDLER_THREW](/reference/findings/PAGE_SLIDE_HANDLER_THREW), [PAGE_WAIT_REJECTED](/reference/findings/PAGE_WAIT_REJECTED), [PAGE_WAIT_UNSETTLED](/reference/findings/PAGE_WAIT_UNSETTLED) | [A recording that opens black or stalls](#a-recording-that-opens-black-or-stalls) |
-| A reveal arrived after its word | [CUE_OFF](/reference/findings/CUE_OFF), [PAGE_WORD_LATE](/reference/findings/PAGE_WORD_LATE), [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | [A late landing](#a-late-landing) |
+| A reveal arrived after its word | [CUE_OFF](/reference/findings/CUE_OFF), [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | [A late landing](#a-late-landing) |
 | A motion was still playing when the next cue was read | [PAGE_MOTION_OVERRUN](/reference/findings/PAGE_MOTION_OVERRUN), [PAGE_STAGGER_OVERRUN](/reference/findings/PAGE_STAGGER_OVERRUN), [PAGE_APPEAR_TOO_LONG](/reference/findings/PAGE_APPEAR_TOO_LONG) | [A late landing](#a-late-landing) |
 | A cut slices a word, or the picture pops at a seam | [CUT_SPEECH](/reference/findings/CUT_SPEECH), [CUT_POP](/reference/findings/CUT_POP) | [A late landing](#a-late-landing) |
 | The film is too quiet, too loud or too peaky | [MIX_LOUDNESS](/reference/findings/MIX_LOUDNESS) | [A loudness miss](#a-loudness-miss) |
 | The page fetched something from another server | [PAGE_CDN_ASSET](/reference/findings/PAGE_CDN_ASSET) | [A page that loads an asset from a network origin](#a-page-that-loads-an-asset-from-a-network-origin) |
+| Chromium would not start with its sandbox on | [TOOL](/reference/errors/TOOL) | [A sandbox that will not start](#a-sandbox-that-will-not-start) |
 | An attribute or a value the contract does not declare | [PAGE_UNKNOWN_ATTR](/reference/findings/PAGE_UNKNOWN_ATTR), [PAGE_BAD_VALUE](/reference/findings/PAGE_BAD_VALUE) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A slide, a scene or a template is wrong in the markup | [PAGE_SLIDE_NO_ID](/reference/findings/PAGE_SLIDE_NO_ID), [PAGE_SLIDE_DOUBLED](/reference/findings/PAGE_SLIDE_DOUBLED), [PAGE_SLIDE_UNUSED](/reference/findings/PAGE_SLIDE_UNUSED), [PAGE_TEMPLATE_IGNORED](/reference/findings/PAGE_TEMPLATE_IGNORED), [PAGE_SCENE_EMPTY](/reference/findings/PAGE_SCENE_EMPTY) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A moment has no owner, no element or the wrong order | [PAGE_MOMENT_UNKNOWN](/reference/findings/PAGE_MOMENT_UNKNOWN), [PAGE_MOMENT_ORDER](/reference/findings/PAGE_MOMENT_ORDER), [PAGE_NO_OWNER](/reference/findings/PAGE_NO_OWNER), [PAGE_FREEZE_CUE_UNKNOWN](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN) | [A page the contract refuses](#a-page-the-contract-refuses) |
@@ -179,7 +206,9 @@ fetches both the first time a command needs them and keeps them in a per-user ca
 
 **The knobs.** `[tools] ffmpeg` and `[tools] ffprobe` name binaries the machine already has.
 `[tools] cache_dir` moves what DeckTalk fetches. `[record] browser_path` records with a browser the
-machine already has and skips the Chromium download entirely. Set
+machine already has and skips the Chromium download entirely. All four are machine keys, so set them
+with `decktalk config set KEY VALUE --where machine`, because a `decktalk.toml` that sets one is
+refused. Set
 `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror when a proxy blocks Playwright's own host, and
 `PLAYWRIGHT_BROWSERS_PATH` when the home directory is read-only or the browser is shared.
 
@@ -244,16 +273,18 @@ the reason when it could not be reached.
 **What you see.** `error[LOCKED]`, naming the process and the run that holds the directory, with the
 hint to wait for that run or stop it.
 
-One writing run at a time holds `build/.lock`, which carries the process id and the run id of the
-writer. A second writing run is refused rather than allowed to overwrite the first one's work.
+One writing run at a time holds an operating system lock on `build/.lock`, and the file names the
+process id and the run id of the writer while it holds it. A second writing run is refused rather
+than allowed to overwrite the first one's work.
 
 **What to do.**
 
 1. Find the run named in the message. It is usually a `--watch` build in another terminal.
-2. Let it finish, or stop it. The lock file is removed when the run ends, including when it is
-   interrupted.
-3. A lock left behind by a process that is gone is not an obstacle. The next run notices, prints a
-   warning saying it took the lock, and carries on.
+2. Let it finish, or stop it. The system releases the lock the moment the run ends, including when
+   it is killed. The empty file stays in `build/`, and that is expected.
+3. A lock is never left behind by a process that is gone, because the lock belongs to the process
+   and not to the file. When a killed run left its name in the file, the next run takes the lock,
+   prints a warning saying so, and carries on. Deleting the file is never needed.
 4. To read the project while a build is running, use `decktalk status` or
    `decktalk check --no-pages`. Neither writes, so neither takes the lock.
 
@@ -284,14 +315,27 @@ matched without case by default, and the row's own keys narrow it: `occurrence` 
 several matches to take, `case_sensitive` makes the match exact, `offset` moves the second the cue
 fires, and `verify` set to false leaves the cue out of the measurement.
 
+**Reading `CUE_STALE`.** `verify` measures the film on disk against the cue times the last build
+placed. Edit `cues.json` and run `verify` alone, and the times no longer match the file:
+
+{/* sample: decktalk verify on a built starter after changing the phrase of 3.1:idea and back */}
+
+```text
+cues.json: CUE_STALE cues.json asks for 3.1:idea on 'the whole idea' and the cue times hold a second placed for 'a phrase nobody says', so the cue times are older than cues.json and the film was cut to moments nobody asks for now. Run `decktalk build` to place them again.
+```
+
+The phrase is not the problem, so leave it alone. Run `decktalk build`. It places every cue again,
+records only the sections whose cue times moved, and keeps the rest. `decktalk status` names `build`
+as the next step for the same reason.
+
 **Reading `CUE_MISSING`.** This one carries a safe `edit` fix that writes a row per declared moment
 with an empty `on` for you to fill. On a `cues.json` laid out in a way DeckTalk cannot place a row
 into, the fix is `display` instead and prints the rows for you to paste.
 
 **Reading `CUE_UNKNOWN`.** When DeckTalk can see which cue the row was probably meant to be, it
 offers an `unsafe` rename fix, which is unsafe because renaming an id the author typed is a reading
-rather than a fact. `--allow CUE_UNKNOWN` is the one way to carry a certain code through a build,
-because a deck under construction lists the cues of slides nobody has drawn yet.
+rather than a fact. `--allow CUE_UNKNOWN` carries a build past it, which is the usual choice for a
+deck under construction that lists the cues of slides nobody has drawn yet.
 
 **Which command sees what.** The `cue` stage compares `cues.json` against the catalog the page
 published into its recordings, so a section whose page has never been recorded is left unjudged
@@ -399,7 +443,6 @@ picture did not.
 | Code | Certainty | What a viewer would notice |
 |---|---|---|
 | [CUE_OFF](/reference/findings/CUE_OFF) | certain | The picture arrives on the wrong word, or visibly after the right one. |
-| [PAGE_WORD_LATE](/reference/findings/PAGE_WORD_LATE) | uncertain | A line being shown word by word trails the voice reading it. |
 | [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | uncertain | Nothing, yet. The measurement had no onset to work from, so the number is not trustworthy. |
 | [CUT_SPEECH](/reference/findings/CUT_SPEECH) | certain | A word is cut in half at a section boundary. |
 | [CUT_POP](/reference/findings/CUT_POP) | certain | The picture jumps at a boundary that promised to be seamless. |
@@ -408,8 +451,8 @@ picture did not.
 
 1. Read the number in the message. It says how far off the change landed and what the limit is.
 2. A whole section that is late by the same amount is a machine bias rather than a deck problem. Run
-   `decktalk doctor --measure`, which drives a browser to measure this host's presentation bias and
-   writes `host.presentation_bias_ms`, and read the offsets the message names against that number.
+   `decktalk doctor --measure`, which drives a browser to measure this host's presentation bias, and
+   read the offsets the message names against that number.
 3. One cue that is late on its own is usually a phrase that resolves to the wrong word. Run
    `decktalk words` and read what the section really says around it. Set `occurrence` on the row
    when the phrase repeats.
@@ -429,7 +472,7 @@ it.
 | [PAGE_STAGGER_OVERRUN](/reference/findings/PAGE_STAGGER_OVERRUN) | `data-stagger`, or the number of children the container staggers. |
 | [PAGE_APPEAR_TOO_LONG](/reference/findings/PAGE_APPEAR_TOO_LONG) | The line itself, or swap `data-words` from `appear` to `highlight`. |
 
-`data-in-seconds` runs from 0.12 to 0.48 in steps of 0.04, which is three to twelve frames at the 25
+`data-in-seconds` runs from 0.12 to 0.44 in steps of 0.04, which is three to eleven frames at the 25
 frames per second the recorder captures at. `data-stagger` runs from 0.04 to 0.2 in steps of 0.04,
 and a staggered container's total is the step times the children less one, plus the entrance, which
 must stay under half a second. `motion.scale` multiplies every declared length, so a value above one
@@ -453,8 +496,9 @@ boundary be an ordinary cut, which `[transition]` dips through.
 **What you see.** `MIX_LOUDNESS`, which is uncertain, with the measured numbers in the message.
 
 The mix is mastered to `mix.loudness.target_lufs`, with `mix.loudness.true_peak_max_dbtp` as the peak
-ceiling and `mix.loudness.range_max_lu` as the widest loudness range allowed. The defaults are
--16 LUFS, -1.5 dBTP and 11 LU, which are ordinary values for video on the web.
+ceiling. The defaults are -16 LUFS and -1.5 dBTP, which are ordinary values for video on the web.
+`mix.loudness.range_max_lu` is the loudness range the measurement is made against, and no mix fails
+on it. [Sound](/concepts/sound#loudness) says exactly when `MIX_LOUDNESS` is raised.
 
 **What to do.**
 
@@ -494,6 +538,29 @@ It is certain and it carries no fix, because only you can decide what the local 
 4. Keep the code if you mean it. `--allow PAGE_CDN_ASSET` carries a run past it, and it is worth
    writing down why, because a film that cannot be rebuilt in a year is what the code is warning
    about.
+
+## A sandbox that will not start
+
+**What you see.** `error[TOOL]: could not launch Chromium with its sandbox on`, on a machine whose
+`[record] page_policy` is `untrusted`.
+
+An untrusted page runs only inside Chromium's sandbox, and a machine that cannot start it is refused
+rather than given a browser without one. The sandbox is a property of the machine, so no edit to the
+project clears this.
+
+**What to do.**
+
+1. In a Linux container, run the render as a user other than root, because Chromium refuses its
+   sandbox to root.
+2. Give that container a seccomp profile that allows user namespaces. Docker's default profile does
+   not, and a render as an ordinary user under it is still refused.
+3. If the pages are your own work, the machine does not need the policy. `trusted` is the default,
+   and `decktalk config unset record.page_policy --where machine` returns to it.
+
+Under `untrusted`, a request for another origin is refused rather than sent, so a page that loads a
+font or a library from a CDN renders without it. The run still names that host as `PAGE_CDN_ASSET`,
+and the fix is the one above: put the file beside the page.
+[A page someone else wrote](/requirements#a-page-someone-else-wrote) says what the policy does.
 
 ## A page the contract refuses
 
@@ -569,8 +636,8 @@ Some things are not judgements. Use the stream.
 
 - `--events` prints one JSON line per event on stderr as it happens, and every run also appends
   `build/events/<run>.jsonl` whether you passed it or not. The discriminator key is `event` and
-  there are eleven names: `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`,
-  `section.done`, `progress`, `finding`, `spend`, `fetch` and `log`.
+  there are twelve names: `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`,
+  `section.done`, `progress`, `finding`, `spend`, `take.charged`, `fetch` and `log`.
 - `stage.done` and `section.done` carry an `outcome` of `ok`, `skipped` or `failed`, so a run that
   stopped early still says what it did not reach rather than leaving you to infer it from a shorter
   list.

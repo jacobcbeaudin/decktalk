@@ -104,7 +104,8 @@ carries. Write the local name on the page and the wire id in `cues.json`.
 
   <Step title="Add one cue row to cues.json">
     Add a `"4"` entry under `"sections"`, with a row for the heading alone. The second moment is left
-    out on purpose.
+    out on purpose. Put a comma after the closing brace of section `"3"` first, because JSON
+    separates one entry from the next with a comma.
 
     ```json cues.json
     "4": {
@@ -137,12 +138,11 @@ decktalk check --section 4 --no-frames
 ```
 
 ```text
-ELEVENLABS_VOICE_ID is not set, so no take on disk can be matched to the voice that made it.
-there is no voice to ask, so the cache could not be checked and the whole run is priced as new. ELEVENLABS_API_KEY is not set.
+No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
-Voicing it costs about $0.00 at $0.30 per 1,000 characters, up to $0.03.
+The takes on disk could not be matched to a voice, so this run costs up to $0.03 at $0.30 per 1,000 characters.
 cues.json: CUE_MISSING section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
-  fix (safe): Add 1 row(s) to section 4 of cues.json, each waiting for the phrase you write in its `on`.
+  fix (safe): Add 1 row to section 4 of cues.json, each waiting for the phrase you write in its `on`.
 Found 1 finding, 1 certain. 1 fixable with --fix.
 ```
 
@@ -155,7 +155,7 @@ decktalk check --section 4 --no-frames --fix
 ```
 
 ```text
-cues.json: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'on' and it will have a second.
+cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'on' and it will have a second.
 Found 1 finding, 1 certain.
 ```
 
@@ -184,15 +184,16 @@ decktalk check --section 4 --no-frames
 ```
 
 ```text
-ELEVENLABS_VOICE_ID is not set, so no take on disk can be matched to the voice that made it.
-there is no voice to ask, so the cache could not be checked and the whole run is priced as new. ELEVENLABS_API_KEY is not set.
+No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
-Voicing it costs about $0.00 at $0.30 per 1,000 characters, up to $0.03.
+The takes on disk could not be matched to a voice, so this run costs up to $0.03 at $0.30 per 1,000 characters.
 ```
 
-Nothing found, and it exits 0. The two lines about the voice are the price explaining itself: with no
-key there is no voice to ask, so no take on disk can be matched and the whole section is priced as
-new.
+Nothing found, and it exits 0. The two lines about the voice are the price explaining itself: with
+no voice id named, no take on disk can be matched to the voice that made it, so the section counts
+toward the most the run can cost rather than toward what it certainly costs. Set
+`ELEVENLABS_VOICE_ID` and the same line states one figure: `This run costs $0.03 for 111 characters
+at $0.30 per 1,000 characters.`
 
 <Tip>Run `decktalk check` with no flags before a build. It opens the pages, freezes every slide
 either side of every cue, and reports a reveal too small to be measured, which is the judgement
@@ -206,25 +207,21 @@ decktalk build --no-voice
 ```
 
 ```text
-run 348a4a0bf2af, events build/events/348a4a0bf2af.jsonl
+run a86cc81a91cc, events build/events/a86cc81a91cc.jsonl
      Narrate    0:00
          Cue    0:00
-      Record    1:10
+      Record    0:22
 The project declares no soundscape for this run, so there is nothing to generate.
   Soundscape    0:00
 The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
     Assemble    0:03
-another cue sits close to 1:1.1:title, so its probes were fitted to 0.7, 1.281 seconds after it.
-another cue sits close to 1:1.1:files, so its probes were fitted to 0.7, 1.14 seconds after it.
-another cue sits close to 3:3.1:again, so its probes were fitted to 0.7, 0.772 seconds after it.
-another cue sits close to 3:3.1:make, so its probes were fitted to 0.62, 1.5 seconds after it.
-      Verify    0:12
+      Verify    0:02
        Built build/final/my-lesson.mp4, $0.00, nothing found
 ```
 
 `--no-voice` uses estimated word times and a click track, so the new section costs nothing to try.
-The four notes above the `Verify` line are about sections 1 and 3, where two cues sat close enough
-together that the probes either side of the first had to be fitted into the gap.
+Its page records beside the other three, so a fourth section adds little to the time the build
+takes.
 
 `verify` runs as the last stage of a build, and it is also a command, so you can measure one section
 without building again.

@@ -18,6 +18,7 @@ from typing import Any
 
 from decktalk.errors import InputError
 from decktalk.inputs.paths import at
+from decktalk.results import section_key
 from decktalk.settings import NarrationConfig
 
 DIRECTION_MARK = "\x00DIR\x00"
@@ -28,9 +29,7 @@ SECTION_RE = re.compile(
 DIRECTION_RE = re.compile(r"\[(?![A-Z][A-Z0-9_]*\])[^\]]*\]")
 # "[pause 3]" or "[pause 2.5]": a timed pause, in seconds, in place of the default direction pause.
 PAUSE_RE = re.compile(r"\[\s*pause\s+(?P<seconds>\d+(?:\.\d+)?)\s*\]", re.IGNORECASE)
-PLACEHOLDER_RE = re.compile(r"\[([A-Z][A-Z0-9_]*)\]")
 BREAK_RE = re.compile(r'<break time="([0-9.]+)s"\s*/>')
-PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 
 
 def break_tag(seconds: float) -> str:
@@ -50,7 +49,7 @@ class Segment:
 
     @property
     def key(self) -> str:
-        return f"{self.index:02d}"
+        return section_key(self.index)
 
     @property
     def spoken(self) -> str:
@@ -62,10 +61,6 @@ class Segment:
     @property
     def word_count(self) -> int:
         return len(self.spoken.split())
-
-    @property
-    def placeholders(self) -> list[str]:
-        return sorted(set(PLACEHOLDER_RE.findall(self.text)))
 
     @property
     def target_seconds(self) -> float | None:
@@ -179,12 +174,8 @@ def parse_script(markdown: str) -> list[Segment]:
     return segments
 
 
-def read_script(path: Path, root: Path, *, declared: set[int], clips: set[int]) -> tuple[list[Segment], list[Segment]]:
-    """(every section in the script, the spoken ones in order).
-
-    `declared` is every section number in `decktalk.toml`, and `clips` are the ones that play a
-    clip instead of a page, which the voice never reads.
-    """
+def read_script(path: Path, root: Path, *, declared: set[int]) -> list[Segment]:
+    """Every section in the script, in order, where `declared` is every section number in `decktalk.toml`."""
     if not path.exists():
         raise InputError(
             f"{path.name} is not there.",
@@ -205,4 +196,4 @@ def read_script(path: Path, root: Path, *, declared: set[int], clips: set[int]) 
             hint="Add a [[section]] for each, or drop the heading from the script.",
             location=at(path, root),
         )
-    return all_segments, [s for s in all_segments if s.index not in clips]
+    return all_segments

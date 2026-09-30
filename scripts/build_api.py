@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate src/decktalk/__init__.py, whose `__all__` is the reachable closure of the public surface.
 
     uv run scripts/build_api.py --write    # write the package's __init__.py
@@ -17,7 +14,6 @@ nothing, which is how the stages and the command line stay private.
 
 from __future__ import annotations
 
-import argparse
 import enum
 import importlib
 import inspect
@@ -26,19 +22,16 @@ import types
 import typing
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+from pydantic import BaseModel
 
-from pydantic import BaseModel  # noqa: E402  (after sys.path, so a checkout needs no install)
+import generated
+
+ROOT = Path(__file__).resolve().parent.parent
 
 TARGET = ROOT / "src" / "decktalk" / "__init__.py"
 PACKAGE = "decktalk"
-STALE = "stale: {path}. Run `uv run scripts/{script} --write` to bring it up to date."
-LINE_LENGTH = 120
-"""The line ruff wraps at, which decides whether a module's imports fit on one line."""
 
 MODULES = (
-    "artifacts",
     "errors",
     "events",
     "explain",
@@ -65,10 +58,8 @@ reachable from an exported annotation, so a type a result can hand you is a type
 Everything not in it may move without notice.
 """'''
 
-VERSION_BLOCK = '''try:
-    __version__ = version("decktalk")
-except PackageNotFoundError:  # running from a checkout without an install
-    __version__ = "0+unknown"'''
+VERSION_IMPORT = ("artifacts.stored", ["ENGINE_VERSION as __version__"])
+"""Where `__version__` comes from, which is the one reading of the engine version every cache key carries."""
 
 
 def seeds() -> dict[str, list[str]]:
@@ -121,61 +112,26 @@ def closure() -> dict[str, list[str]]:
                 module = found.__module__.removeprefix(f"{PACKAGE}.")
                 if found.__name__ not in exported.setdefault(module, []):
                     exported[module].append(found.__name__)
-    return {module: sorted(names, key=order) for module, names in sorted(exported.items()) if names}
-
-
-def order(name: str) -> tuple[int, str]:
-    """How an import list is sorted, which is constants, then classes, then the rest, each ignoring case.
-
-    This is the order the formatter's own import sorter wants, so the generated file is already
-    formatted and `ruff check` has nothing to say about it.
-    """
-    rank = 0 if name.isupper() else 1 if name[:1].isupper() else 2
-    return rank, name.lower()
+    return {module: names for module, names in exported.items() if names}
 
 
 def render(exported: dict[str, list[str]]) -> str:
-    """The generated module as it is committed, which one `ruff format` run would leave alone."""
-    lines = [
-        DOCSTRING,
-        "",
-        "from __future__ import annotations",
-        "",
-        "from importlib.metadata import PackageNotFoundError, version",
-        "",
-    ]
-    for module, names in exported.items():
-        statement = f"from .{module} import {', '.join(names)}"
-        if len(statement) <= LINE_LENGTH:
-            lines.append(statement)
-        else:
-            lines.append(f"from .{module} import (")
-            lines += [f"    {name}," for name in names]
-            lines.append(")")
+    """The generated module as it is committed, with its imports sorted and wrapped by the project's ruff."""
+    imports = [f"from .{module} import {', '.join(names)}" for module, names in [*exported.items(), VERSION_IMPORT]]
     every = sorted({name for names in exported.values() for name in names} | {"__version__"})
-    lines += ["", VERSION_BLOCK, "", "__all__ = ["]
-    lines += [f'    "{name}",' for name in every]
-    lines.append("]")
-    return "\n".join(lines) + "\n"
+    listed = "".join(f'    "{name}",\n' for name in every)
+    return generated.ruff(
+        "\n".join(
+            [DOCSTRING, "", "from __future__ import annotations", "", *imports, "", f"__all__ = [\n{listed}]", ""]
+        ),
+        TARGET,
+    )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write the package's __init__.py")
-    action.add_argument("--check", action="store_true", help="exit 1 if the committed file would change")
-    args = parser.parse_args()
-
-    text = render(closure())
-    if args.check:
-        if not TARGET.exists() or TARGET.read_text("utf-8") != text:
-            print(STALE.format(path=TARGET.relative_to(ROOT), script=Path(__file__).name))
-            return 1
-        return 0
-    TARGET.write_text(text, encoding="utf-8")
-    print(f"wrote {TARGET.relative_to(ROOT)}")
-    return 0
+def documents() -> dict[Path, str]:
+    """The package's __init__.py, which is the one file this generator owns."""
+    return {TARGET: render(closure())}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))

@@ -9,45 +9,7 @@ because a stylesheet and an encoder write one colour two ways.
 
 from __future__ import annotations
 
-from typing import Protocol
-
-
-class VideoSettings(Protocol):
-    """What one output is made from, which is the whole of `[video]` this module reads.
-
-    The encoder names the keys it reads rather than importing the settings class, because what an
-    output is made from is a fact about encoding and a project is what supplies it. Every member is
-    read-only, because an encoder reads its settings and never writes them, and a frozen record of
-    the same keys therefore satisfies this without being cast to it.
-    """
-
-    @property
-    def width(self) -> int: ...
-
-    @property
-    def height(self) -> int: ...
-
-    @property
-    def output_fps(self) -> int: ...
-
-    @property
-    def crf(self) -> int: ...
-
-    @property
-    def preset(self) -> str: ...
-
-    @property
-    def sample_rate(self) -> int: ...
-
-    @property
-    def channels(self) -> int: ...
-
-    @property
-    def audio_bitrate(self) -> str: ...
-
-    @property
-    def slate_color(self) -> str: ...
-
+from ..settings import VideoConfig
 
 # An mp4 stream's language is an ISO 639-2 three-letter code, while `[project] language` is the BCP 47
 # tag the page and the caption files carry, so the primary subtag is mapped here. A language this
@@ -69,12 +31,12 @@ FFMPEG_HEX_PREFIX = "0x"
 def css_color(value: str) -> str:
     """The colour a `[video]` setting names, written the way a page's stylesheet reads it.
 
-    ffmpeg takes `0xRRGGBB` and a stylesheet takes `#RRGGBB`, and both take a colour name. The one
-    setting that says what a missing clip is drawn on is therefore spelled once, in the notation the
-    encoder reads, and converted here rather than restated in a second notation beside the page.
+    ffmpeg takes `0xRRGGBB` and a stylesheet takes `#RRGGBB`. The one setting that says what a missing
+    clip is drawn on is therefore spelled once, in either notation, and converted here rather than
+    restated beside the page. The loader holds the setting to those two spellings, so nothing but six
+    hex digits ever reaches the stylesheet.
     """
-    color = value.strip()
-    return "#" + color[len(FFMPEG_HEX_PREFIX) :] if color.lower().startswith(FFMPEG_HEX_PREFIX) else color
+    return "#" + value[len(FFMPEG_HEX_PREFIX) :] if value.lower().startswith(FFMPEG_HEX_PREFIX) else value
 
 
 def iso_639_2(tag: str) -> str:
@@ -101,7 +63,7 @@ class Encoder:
     those flags.
     """
 
-    def __init__(self, video: VideoSettings) -> None:
+    def __init__(self, video: VideoConfig) -> None:
         self.v = video
         self.fit = (
             f"scale={video.width}:{video.height}:force_original_aspect_ratio=decrease,"
@@ -137,11 +99,5 @@ class Encoder:
         self.silence = f"anullsrc=r={video.sample_rate}:cl=stereo"
 
     def color_source(self, color: str, seconds: float) -> list[str]:
-        return [
-            "-f",
-            "lavfi",
-            "-t",
-            f"{seconds}",
-            "-i",
-            f"color=c={color}:s={self.v.width}x{self.v.height}:r={self.v.output_fps}",
-        ]
+        size = f"{self.v.width}x{self.v.height}"
+        return ["-f", "lavfi", "-t", f"{seconds}", "-i", f"color=c={color}:s={size}:r={self.v.output_fps}"]

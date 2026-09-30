@@ -24,9 +24,10 @@ generated from that home.
 
 Three commands make the whole instruction set readable without running a stage. `decktalk --help`
 gives the tree, the global flags and the exit codes. `decktalk schema` gives every command, every
-flag with its type and default, every error code, every finding code, every event and every page
-attribute as one JSON object. `decktalk schema settings` gives every knob with its default, its safe
-range, its unit and its hazard, and `decktalk config explain KEY` gives one of them whole.
+flag with its type and default, the exit codes, every error code, every finding code and the stages
+as one JSON object, and `decktalk schema event` and `decktalk schema page` give every event line and
+every page attribute. `decktalk schema settings` gives every knob with its default, its safe range,
+its unit and its hazard, and `decktalk config explain KEY` gives one of them whole.
 
 ## The four files an author writes
 
@@ -73,23 +74,26 @@ local file it loads are unchanged, and when the motion settings that shaped it h
 takes are the only expensive thing in the tree, and caching them by content is what makes the tenth
 edit cheap.
 
+The same rule reaches past the takes. Several page sections record at once, each in its own
+Chromium, as many as the machine's CPU allows. A section cut is kept while the key of its encode,
+which is the whole argument list and the content of every file it read, is unchanged. A frozen frame
+is kept under a key of everything that draws it, so `check`, `storyboard` and the poster draw each
+state of a page once between them. And a build that finds nothing moved keeps `assemble` and
+`verify` whole, reports them with the outcome `kept`, and reports their findings again, because
+both are pure functions of files already on disk. Every key is a digest of content and names the
+engine, so a copy, a checkout or an upgrade never keeps something it should not. `build/.lock` is an
+operating system lock, so a writer that dies releases it with no cleanup.
+
 `tests/contract/test_imports.py` names every import that points sideways between stages, each with
-the reason it exists, so an exception is designed rather than acquired. There are twelve of them and
-every one is either `build` and `check` calling the stages they orchestrate, or a stage asking its
-neighbour for a rule that neighbour owns.
+the reason it exists, so an exception is designed rather than acquired. Every one is either `build`
+and `check` calling the stages they orchestrate, or a stage asking its neighbour for a rule that
+neighbour owns.
 
 ## The five layers
 
-`src/decktalk` is five layers deep. A module may import from a strictly lower rank, or from inside
-its own package, and from nothing else.
-
-| Layer | Holds | Knows about |
-|---|---|---|
-| vocabulary | `pipeline`, `findings`, `errors`, `locate`, `secret`, `page` | nothing but each other |
-| models | `results`, `events`, `catalog`, `tomlmap`, `settings`, `explain` | the words, and no project |
-| leaves | `toolchain`, `captions`, `speech`, `media`, `pagescan`, `template`, `artifacts` | one job each, and no project |
-| sdk | `inputs`, `machine`, `stages`, `project` | a project, and the stages it drives |
-| cli | `cli`, `__init__`, `__main__` | every call, and nothing a call does not return |
+`src/decktalk` is five layers deep: vocabulary, models, leaves, sdk and cli. A module may import from
+a strictly lower rank, or from inside its own package, and from nothing else. The module tree in
+[CONTRIBUTING.md](CONTRIBUTING.md#layout) lists every module under its layer.
 
 The layers are wide enough to be ranked among themselves, so one table gives every top-level module
 one rank and one comparison enforces both the layer and the order inside it. The walk reads the AST
@@ -120,13 +124,15 @@ result and driver, and the test is total in both directions.
 A finding is a diagnostic in the shape a linter made familiar: a code a caller dispatches on, one
 sentence with the measured number written into it, a certainty of `certain` or `uncertain`, a
 location whose `where` names the object judged, the stage that raised it, a docs URL, and often a
-fix. A fix is an edit, a setting or a command, each with an applicability that says whether it may be
+fix. A fix is an edit, a setting, a command or a runtime copy, each with an applicability that says whether it may be
 applied without asking, and `Project.apply(finding)` applies it. No code spells its own certainty,
 because a closed enum publishes each value with its own sentence where an adjective in a code name
 publishes nothing.
 
 `--fail-on certain|any|never` names a threshold rather than a field value, and `--allow CODE` carries
-on past one code.
+on past one code. `build` reads the same threshold to decide when to stop: a stage whose findings
+reach it ends the run before the next stage, and the result still comes back with its findings, its
+spend and `stopped_at`, because a finding is a judgement the caller reads and never an error.
 
 Errors are the other thing entirely. An error means DeckTalk could not run, so nothing was judged.
 There are nine codes and seven classes, one mapping table, and a test that exactly `USAGE` and
@@ -140,11 +146,11 @@ rather than on a project, because installing a toolchain and reporting on a mach
 and a project-only stream would leave `--events` silent on the two commands that download two
 hundred megabytes. A project's `events` is that stream filtered to the runs the project opened.
 
-There are eleven event names and the discriminator is `event`. The library mints `event`, `time`,
+There are twelve event names and the discriminator is `event`. The library mints `event`, `time`,
 `seq` and `run` onto every line, and `run.start` carries the path the lines are being appended to, so
-the stream and the file can never disagree. Skip and fail are not event names: `stage.done` and
-`section.done` carry an `outcome`, because three names for one moment forces three branches where one
-field read will do.
+the stream and the file can never disagree. Kept, skip and fail are not event names: `stage.done`
+and `section.done` carry an `outcome`, because four names for one moment forces four branches where
+one field read will do.
 
 Nothing in the library prints. The command line subscribes and renders, `--events` puts the same
 lines on stderr as they happen, and every run appends `build/events/<run>.jsonl`.
@@ -155,8 +161,8 @@ lines on stderr as they happen, and every run appends `build/events/<run>.jsonl`
 the judgements it moves and its environment name. The published range is the safe range and the
 loader refuses a value outside it, naming the file and the line that wrote it, because a published
 bound you can cross into nonsense is worse than no bound at all. Five layers can set a key and each
-overrides the ones before it, and `decktalk config explain KEY` prints all five with the winner
-marked.
+overrides the ones before it, and `decktalk config explain KEY` prints the value in force and
+the layer it comes from.
 
 No flag duplicates a settings key. `--set table.key=value` is the fifth layer, it is repeatable, it
 writes nothing, it is validated by the same loader with the same refusal, and the loader routes each
@@ -188,6 +194,29 @@ Chromium begins recording at a moment nobody can predict. The recorder covers th
 until the page says it is ready, and the first frame after the cover is narration t=0. The cover
 holds something that always moves, so frames keep coming while a still page waits. Everything after
 that is arithmetic on frames, and no part of it reads a wall clock.
+
+## A host that runs other people's projects
+
+The library is also the engine of a service that renders decks strangers wrote, and three rules
+keep such a deck from reaching what the service holds.
+
+- **The host builds the machine.** `Machine.from_environment()` is the only reading of the process
+  environment, and `Machine.of` reads nothing, so a job sees exactly the variables, the settings
+  file, the cache and the voices its host chose. Such a machine reads no project's `.env`, and the key
+  goes to ElevenLabs and nowhere else unless the host says otherwise.
+- **An untrusted page is sealed.** Under `record.page_policy = "untrusted"` Chromium runs with its
+  sandbox on or not at all, every request off the project's origin is refused through every channel
+  a page can open, and under both policies the browser is handed a scrubbed environment rather than
+  the process's own.
+- **The key never shares a process with a page.** `narrate` and `soundscape` run in a voice process
+  that holds the key and opens no page. `check`, `storyboard`, `record`, `assemble` and `verify` run
+  in a render process that holds no key. The build directory is the only thing that moves between
+  them, and a host never runs a voiced `build`, which would put both in one process. Each paid take
+  is a `take.charged` line on the stream the moment it is bought, which is what a host's own ledger
+  reads.
+
+[The Python API](https://docs.decktalk.ai/reference/python-api#running-decktalk-inside-a-service)
+is the contract a host builds on.
 
 ## Two readers, one product
 

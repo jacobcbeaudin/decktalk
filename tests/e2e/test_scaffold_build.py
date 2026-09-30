@@ -18,8 +18,6 @@ spelling and not a broken project.
 
 from __future__ import annotations
 
-import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +28,7 @@ import pytest
 from decktalk.artifacts import RecordingLog
 from decktalk.findings import Code
 from decktalk.template import EXAMPLES, STARTER
+from support.commands import FOUND_NOTHING, HOSTILE_DIRECTORY, clean_environ, codes, flat
 from support.timing_policy import (
     EVERY_PACKAGED_PROJECT_SECONDS,
     FIRST_FETCH_SECONDS,
@@ -51,13 +50,6 @@ here. The budget is a ceiling that catches a hung page rather than a measurement
 
 pytestmark = [pytest.mark.scaffold, pytest.mark.timeout(BUILD_BUDGET_SECONDS)]
 
-HOSTILE_DIRECTORY = "jacob's fïlms 2"
-"""The name every temporary root of this suite sits under, because a path is an input like any other.
-
-An apostrophe and a diacritic reach every shell quote, every ffmpeg concat list and every served URL
-a build writes, and the founder's own films live under a name like this one.
-"""
-
 NO_EXAMPLE = None
 """What `--example` is given for the starter, because the starter is what `init` writes unnamed.
 
@@ -69,26 +61,6 @@ PACKAGED = [NO_EXAMPLE, *(example.name for example in EXAMPLES if example.shippe
 """Every project `decktalk init` can write today, which is the starter and each shipped example."""
 
 IDS = [STARTER, *(name for name in PACKAGED[1:] if name)]
-
-RESERVED_KEYS = frozenset({"schema", "ok", "findings", "error"})
-"""The four keys every result carries, which is the founder's decided JSON contract."""
-
-FOUND_NOTHING = 0
-"""What the CLI exits when it judged nothing, from the CLI design's exit code table."""
-
-
-def flat(stdout: str) -> dict[str, Any]:
-    """The one flat object a command printed with `--json`, checked against the reserved keys."""
-    doc = json.loads(stdout)
-    assert isinstance(doc, dict), "--json prints one object on stdout and nothing else"
-    assert RESERVED_KEYS <= set(doc), sorted(RESERVED_KEYS - set(doc))
-    assert doc["schema"] == 2, doc["schema"]
-    return doc
-
-
-def codes(doc: dict[str, Any]) -> list[Code]:
-    """Every finding as the model's own member, which is what the timing policy judges."""
-    return [Code(row["code"]) for row in doc["findings"]]
 
 
 def sentences(doc: dict[str, Any], wanted: tuple[Code, ...]) -> list[str]:
@@ -102,12 +74,13 @@ def decktalk(*args: str, cwd: Path, cache: Path) -> subprocess.CompletedProcess[
     The environment is stripped of the credential and of the machine settings file, because a
     packaged project has to build on a machine that has never seen either.
     """
-    env = dict(os.environ)
-    for name in ("DECKTALK_PROJECT", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"):
-        env.pop(name, None)
-    env["DECKTALK_CONFIG"] = str(cache / "no-machine-config.toml")
     return subprocess.run(
-        [sys.executable, "-m", "decktalk", *args], capture_output=True, text=True, check=False, env=env, cwd=cwd
+        [sys.executable, "-m", "decktalk", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=clean_environ(cache),
+        cwd=cwd,
     )
 
 
@@ -146,7 +119,7 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(
         log = RecordingLog.read(log_path)
         assert log is not None, log_path
         assert list(log.findings) == [], (log_path.name, log.findings)
-        assert list(log.external) == [], (log_path.name, log.external)
+        assert list(log.recording.external) == [], (log_path.name, log.recording.external)
 
     # Read the finished film back. No packaged project may raise a certain finding this runner
     # judges, because that is a cue that did not land. An example is a project that was really made

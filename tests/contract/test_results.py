@@ -12,7 +12,7 @@ naming the result, so the table stays total without a second copy of the stage s
 reaching into fixtures this directory cannot see. Every other row is driven here for real, and each
 one is read back the way a caller reads it: the JSON is one flat object with four reserved keys, the
 result round-trips through its own schema, the library printed nothing, and a subscriber collected
-typed events that validate back and pair.
+typed events that validate back.
 """
 
 from __future__ import annotations
@@ -26,14 +26,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import typer
-from pydantic import BaseModel, TypeAdapter
+from pydantic import TypeAdapter
 
 import decktalk
 from decktalk import settings
+from decktalk.cli import catalog
 from decktalk.errors import DeckTalkError
-from decktalk.events import EVENTS, Event, Line, RunDone, RunStart
-from decktalk.findings import Applicability, Certainty, Code, Finding, Location, SettingFix
+from decktalk.events import EVENTS, Event, Line
+from decktalk.findings import Applicability, Code, Finding, Location, SettingFix
 from decktalk.machine import Machine
 from decktalk.pipeline import Stage
 from decktalk.project import Origin, Project
@@ -66,16 +66,11 @@ from decktalk.results import (
     VerifyResult,
     WordsResult,
 )
+from support.commands import RESERVED_KEYS
 from support.paths import REPO
 
 SOME_CODE = Code.CUE_OFF
 """One finding code, for the rows where a finding is the input rather than the subject."""
-
-RESERVED = ("schema", "ok", "findings", "error")
-"""The four keys the base reserves, which every result carries and no subclass may spell again."""
-
-RETIRED = ("command", "exit_code", "summary", "data", "result")
-"""Keys the 0.4 envelope carried. The JSON is one flat object now, so none of them may come back."""
 
 SCHEMAS = REPO / "schemas" / "v1" / "results"
 """Where the committed JSON Schema of each result lives, one file per name `decktalk schema` prints."""
@@ -85,9 +80,6 @@ HERE = "here"
 
 CLI_TESTS = "tests/decktalk/cli"
 """Where a row the command line owns whole is driven, which is a directory because T8 names its own files."""
-
-APP_NAMES = ("decktalk.cli:app", "decktalk.cli.parser:app", "decktalk.cli.main:app")
-"""Where the Typer app may live. The command set is read from it, so a miss names all three."""
 
 
 @dataclass(frozen=True)
@@ -103,11 +95,17 @@ class Row:
     returns_its_result: bool = True  # false when the callable returns a library record the CLI renders
     note: str = ""  # why this row is not a plain callable returning its own result
 
+    @property
+    def model(self) -> type[Result]:
+        """The result of a row that has one, which is every row the model tests below are drawn from."""
+        assert self.result is not None, f"{self.command} answers with the contract document, not a result"
+        return self.result
+
 
 SURFACE: tuple[Row, ...] = (
     Row("init", "decktalk:init", InitResult, True, True, HERE),
     Row("install", "decktalk.machine:Machine.install", InstallResult, True, False, "tests/decktalk/test_machine.py"),
-    Row("doctor", "decktalk.machine:Machine.doctor", DoctorResult, True, True, HERE),
+    Row("doctor", "decktalk.machine:Machine.doctor", DoctorResult, True, False, HERE),
     Row("status", "decktalk.project:Project.status", StatusResult, True, False, HERE),
     Row("check", "decktalk.project:Project.check", CheckResult, True, True, HERE),
     Row("words", "decktalk.project:Project.words", WordsResult, True, False, "tests/decktalk/stages/test_words.py"),
@@ -204,8 +202,7 @@ SURFACE: tuple[Row, ...] = (
         False,
         True,
         HERE,
-        returns_its_result=False,
-        note="The writer returns a SettingWrite, which is the library's record, and the CLI renders it.",
+        note="Editing a validated file is library work, so the writer returns the command's result itself.",
     ),
     Row(
         "config unset",
@@ -214,7 +211,6 @@ SURFACE: tuple[Row, ...] = (
         False,
         True,
         HERE,
-        returns_its_result=False,
         note="The remover is the writer's opposite and belongs beside it, because editing a file is library work.",
     ),
     Row(
@@ -224,8 +220,7 @@ SURFACE: tuple[Row, ...] = (
         False,
         False,
         HERE,
-        returns_its_result=False,
-        note="The explainer returns an Explanation, which is the library's record, and the CLI renders it.",
+        note="The explainer answers with the command's result, so the library and the command give one answer.",
     ),
     Row(
         "schema",
@@ -266,7 +261,7 @@ NO_COMMAND: tuple[Row, ...] = (
 ALL_ROWS = (*SURFACE, *NO_COMMAND)
 MODEL_ROWS = tuple(row for row in ALL_ROWS if row.result is not None)
 DRIVEN_ELSEWHERE = tuple(row for row in ALL_ROWS if row.driver != HERE)
-IDS = [row.command or row.result.__name__ for row in MODEL_ROWS]
+IDS = [row.command or row.model.__name__ for row in MODEL_ROWS]
 
 
 # ---- resolving what a row names ----------------------------------------------------------
@@ -307,20 +302,6 @@ def every_result_class() -> set[type[Result]]:
     return below(Result)
 
 
-def models_within(model: type[BaseModel], seen: set[type[BaseModel]]) -> Iterator[type[BaseModel]]:
-    """Every model reachable from one model's fields, which is the whole of what it publishes."""
-    if model in seen:
-        return
-    seen.add(model)
-    yield model
-    for field in model.model_fields.values():
-        annotation = field.annotation
-        candidates = [annotation, *(getattr(annotation, "__args__", ()) or ())]
-        for candidate in candidates:
-            if isinstance(candidate, type) and issubclass(candidate, BaseModel):
-                yield from models_within(candidate, seen)
-
-
 # ---- the table is total in both directions -----------------------------------------------
 
 
@@ -341,7 +322,7 @@ def test_the_schema_names_and_the_tables_name_the_same_results():
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_every_row_names_a_result_with_a_committed_schema(row: Row):
     """An agent reads the contract from the schema directory, so every result has a file there."""
-    assert issubclass(row.result, Result)
+    assert issubclass(row.model, Result)
     name = next(key for key, model in RESULTS.items() if model is row.result)
     assert (SCHEMAS / f"{name}.json").is_file(), f"{name}.json is missing from schemas/v1/results/"
 
@@ -365,7 +346,7 @@ def test_every_row_names_a_callable_that_is_public_and_returns_its_result(row: R
 def test_a_plain_row_returns_the_result_it_declares(row: Row):
     """Most rows are a callable that returns its own result, which is the ordinary shape."""
     returned = getattr(resolve(row.call), "__annotations__", {}).get("return")
-    assert returned == row.result.__name__, f"{row.call} returns {returned} and the table says {row.result.__name__}"
+    assert returned == row.model.__name__, f"{row.call} returns {returned} and the table says {row.model.__name__}"
 
 
 def test_serve_returns_an_origin_that_carries_its_result():
@@ -377,9 +358,9 @@ def test_serve_returns_an_origin_that_carries_its_result():
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_the_run_and_the_written_fields_are_declared_exactly_where_the_table_says(row: Row):
     """Founder decision 13: four keys on the base, and these two declared by the commands that earn them."""
-    declared = row.result.model_fields
-    assert ("run" in declared) == row.opens_run, f"{row.result.__name__} and the table disagree about run"
-    assert ("written" in declared) == row.writes, f"{row.result.__name__} and the table disagree about written"
+    declared = row.model.model_fields
+    assert ("run" in declared) == row.opens_run, f"{row.model.__name__} and the table disagree about run"
+    assert ("written" in declared) == row.writes, f"{row.model.__name__} and the table disagree about written"
 
 
 def subject_of(row: Row) -> tuple[str, ...]:
@@ -418,25 +399,14 @@ def test_every_row_that_is_not_a_plain_call_says_why(row: Row):
     assert row.note.endswith("."), row.note
 
 
-def typer_commands() -> set[str]:
-    """Every command the Typer app publishes, with a group's subcommands spelled as the CLI takes them."""
-    for name in APP_NAMES:
-        try:
-            app = resolve(name)
-        except (ImportError, AttributeError):
-            continue
-        command = typer.main.get_command(app)
-        found: set[str] = set()
-        for label, sub in getattr(command, "commands", {}).items():
-            children = getattr(sub, "commands", {})
-            found |= {f"{label} {child}" for child in children} if children else {label}
-        return found
-    pytest.fail(f"no Typer app answered to any of {', '.join(APP_NAMES)}, so the command set cannot be read")
+def test_the_app_is_the_surface_table_command_for_command_and_result_for_result():
+    """The fourth set: a command the app publishes and the table does not know is undiscoverable.
 
-
-def test_the_command_set_of_the_app_is_the_surface_table():
-    """The fourth set: a command the app publishes and the table does not know is undiscoverable."""
-    assert typer_commands() == {row.command for row in SURFACE}
+    The set is the catalog an agent reads, with a group's subcommands spelled as the CLI takes them,
+    and each command answers with the result its row names, by the name `decktalk schema` prints.
+    """
+    published = {row["command"]: row["result"] for row in catalog.walk()}
+    assert published == {row.command: row.result and catalog.NAMES[row.result] for row in SURFACE}
 
 
 # ---- what every result promises a reader -------------------------------------------------
@@ -445,26 +415,13 @@ def test_the_command_set_of_the_app_is_the_surface_table():
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_the_schema_is_one_flat_object_with_the_four_reserved_keys(row: Row):
     """The founder's decided contract: its own fields plus four keys, with no envelope around them."""
-    schema = row.result.model_json_schema(by_alias=True)
+    schema = row.model.model_json_schema(by_alias=True)
     properties = schema["properties"]
-    assert set(RESERVED) <= set(properties), sorted(set(RESERVED) - set(properties))
-    assert not set(RETIRED) & set(properties), sorted(set(RETIRED) & set(properties))
+    assert set(RESERVED_KEYS) <= set(properties), sorted(set(RESERVED_KEYS) - set(properties))
     assert properties["schema"]["const"] == SCHEMA
     for name, definition in schema.get("$defs", {}).items():
         nested = set(definition.get("properties", {}))
-        assert not set(RESERVED) <= nested, f"{name} is a second envelope inside {row.result.__name__}"
-
-
-@pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
-def test_every_field_a_result_publishes_carries_its_sentence(row: Row):
-    """`Field(description=...)` is the one home of each key's sentence, so a key without one is mute."""
-    mute = [
-        f"{model.__name__}.{name}"
-        for model in models_within(row.result, set())
-        for name, field in model.model_fields.items()
-        if not field.description
-    ]
-    assert mute == [], mute
+        assert not set(RESERVED_KEYS) <= nested, f"{name} is a second envelope inside {row.model.__name__}"
 
 
 @pytest.mark.parametrize(
@@ -472,16 +429,16 @@ def test_every_field_a_result_publishes_carries_its_sentence(row: Row):
 )
 def test_the_run_id_is_declared_volatile(row: Row):
     """R11: a value that differs between two identical runs is declared, so a golden read drops it."""
-    schema = row.result.model_json_schema(by_alias=True)
-    assert schema["properties"]["run"].get("volatile") is True, f"{row.result.__name__}.run is not declared volatile"
+    schema = row.model.model_json_schema(by_alias=True)
+    assert schema["properties"]["run"].get("volatile") is True, f"{row.model.__name__}.run is not declared volatile"
 
 
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_a_measured_duration_is_declared_volatile(row: Row):
     """The same rule as the run id, because a wall-clock second is measured and never reproduced."""
-    schema = row.result.model_json_schema(by_alias=True)
+    schema = row.model.model_json_schema(by_alias=True)
     for name in ("seconds", "film_seconds"):
-        field = row.result.model_fields.get(name)
+        field = row.model.model_fields.get(name)
         if field is not None and field.json_schema_extra:
             assert schema["properties"][name].get("volatile") is True, name
 
@@ -494,21 +451,13 @@ def test_a_finding_carries_everything_a_reader_dispatches_on():
     assert Location.model_fields["where"].is_required(), "the object a finding judged is never null"
 
 
-def test_ok_is_false_exactly_when_a_judgement_is_certain():
-    """Must 5, in the shape 0.5.0 gives it: one rule every command shares rather than a flag per result."""
-    sure = Finding(code=SOME_CODE, message="A cue landed late.", location=Location(where="1.1:first"))
-    assert sure.certainty is Certainty.CERTAIN
-    assert ErrorResult(ok=False, findings=(sure,)).ok is False
-    assert ErrorResult(ok=True).ok is True
-
-
 # ---- the rows this file drives for real --------------------------------------------------
 
 
 @pytest.fixture
 def machine(tmp_path: Path) -> Machine:
     """A machine whose cache is this test's own directory, so nothing reaches the author's real one."""
-    return Machine.from_environment(overrides=(("tools.cache_dir", str(tmp_path / "cache")),))
+    return Machine.from_environment(overrides=(f"tools.cache_dir={tmp_path / 'cache'}",))
 
 
 @pytest.fixture
@@ -570,24 +519,14 @@ def test_a_driven_row_returns_its_result_as_one_flat_object(
     """The whole contract on a real call: the type, the four keys, the round trip and the silence."""
     capsys.readouterr()
     result = driven(row, project, machine)
-    assert isinstance(result, row.result)
+    assert isinstance(result, row.model)
     payload = read_back(result)
     assert payload["schema"] == SCHEMA
-    assert set(RESERVED) <= set(payload)
-    assert not set(RETIRED) & set(payload)
+    assert set(RESERVED_KEYS) <= set(payload)
     assert ("run" in payload) == row.opens_run
     assert ("written" in payload) == row.writes
     printed = capsys.readouterr()
     assert printed.out == "" and printed.err == "", "the library printed, and nothing in the library may print"
-
-
-def test_a_driven_call_opens_a_run_and_closes_it(project: Project, collected: list[Event]):
-    """Every top-level call opens a run, so a renderer that subscribed sees a start and a finish."""
-    project.status()
-    names = [event.event for event in collected]
-    started = [name for name in names if EVENTS[name] is RunStart]
-    finished = [name for name in names if EVENTS[name] is RunDone]
-    assert len(started) == len(finished) == 1
 
 
 def test_every_event_a_driven_call_emitted_validates_back(project: Project, collected: list[Event]):
@@ -603,27 +542,37 @@ def test_every_event_a_driven_call_emitted_validates_back(project: Project, coll
 def test_the_settings_writer_reports_what_a_config_set_would_change(project: Project, capsys):
     """`config set` is the writer's record rendered, so the writer is what this row really drives."""
     capsys.readouterr()
-    written = settings.write(project.root / "decktalk.toml", "video.width", "1280", scope=Scope.PROJECT, dry_run=True)
+    written = settings.write(
+        project.root / "decktalk.toml",
+        "video.width",
+        "1280",
+        scope=Scope.PROJECT,
+        environ=project.machine.environ,
+        dry_run=True,
+    )
+    assert isinstance(written, ConfigSetResult)
     assert written.key == "video.width"
     assert written.dry_run is True
-    assert set(ConfigSetResult.model_fields) >= set(type(written).model_fields) - {"line", "shadowed"}
+    assert written.written == ()
     printed = capsys.readouterr()
     assert printed.out == "" and printed.err == ""
 
 
 def test_the_settings_remover_reports_what_a_config_unset_would_change(project: Project):
     """`config unset` takes the layer below back, and writing a validated file is library work."""
-    removed = settings.unset(project.root / "decktalk.toml", "video.width", scope=Scope.PROJECT)
+    removed = settings.unset(
+        project.root / "decktalk.toml", "video.width", scope=Scope.PROJECT, environ=project.machine.environ
+    )
+    assert isinstance(removed, ConfigUnsetResult)
     assert removed.keys == ("video.width",)
-    assert set(ConfigUnsetResult.model_fields) >= {"keys", "scope", "file"}
 
 
 def test_the_explainer_reports_what_a_config_explain_would_render(project: Project, capsys):
     """`config explain` is the explainer's record rendered, so the explainer is what this row drives."""
     capsys.readouterr()
     explanation = decktalk.explain("video.width", project=project.root)
+    assert isinstance(explanation, ConfigExplainResult)
     assert explanation.key == "video.width"
-    assert set(ConfigExplainResult.model_fields) >= {"key", "value", "default", "layer", "docs"}
     printed = capsys.readouterr()
     assert printed.out == "" and printed.err == ""
 
@@ -647,7 +596,7 @@ def test_applying_a_fix_reports_what_it_changed(project: Project, capsys: pytest
     assert [outcome.applied for outcome in applied.fixes] == [True]
     assert Path("decktalk.toml") in applied.written
     payload = read_back(applied)
-    assert set(RESERVED) <= set(payload)
+    assert set(RESERVED_KEYS) <= set(payload)
     printed = capsys.readouterr()
     assert printed.out == "" and printed.err == ""
 

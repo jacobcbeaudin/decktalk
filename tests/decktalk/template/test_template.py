@@ -20,9 +20,10 @@ import re
 import tomllib
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pytest
+import yaml
 
 from decktalk import template
 from decktalk.inputs.cues import load_cues
@@ -242,32 +243,6 @@ def words(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
-RETIRED = (
-    "data-cue", "data-reveal", "data-duration", "data-text", "data-delay", "data-preview",
-    "data-camera", "data-ease", "data-distance", "data-sync-lead", "min_tail_seconds",
-    "max_offset_frames", "true_peak_db", "mix.sfx", "soundscape.sfx", "video.fps", "screenshot_settle_ms",
-    "DECKTALK_FFMPEG", "DECKTALK_FFPROBE", "DECKTALK_CACHE_DIR", "preflight", "screenshots",
-)  # fmt: skip
-"""Every name 0.5.0 retired, which no file a reader receives from the wheel may still carry."""
-
-
-def carried(path: Path) -> list[str]:
-    """Every retired name one packaged file still writes, which is empty on a file that is clean."""
-    text = path.read_text(encoding="utf-8")
-    return [name for name in RETIRED if name in text]
-
-
-WRITTEN_SUFFIXES = frozenset({".toml", ".json", ".md", ".html", ".example"})
-"""The packaged files a person reads. Everything else is a font or a bundle, and carries no name."""
-
-PROJECT_FILES = sorted(p for root in PROJECTS.values() for p in root.rglob("*") if p.suffix in WRITTEN_SUFFIXES)
-
-
-@pytest.mark.parametrize("path", PROJECT_FILES, ids=lambda p: p.name)
-def test_no_retired_name_survives_in_a_packaged_project(path: Path) -> None:
-    assert not carried(path), f"{path.name} still carries {carried(path)}"
-
-
 # ---- the packaged skills ------------------------------------------------------------------------
 
 COMMANDS = {stage.value for stage in Stage} | {
@@ -294,20 +269,10 @@ def skill_of(path: Path) -> str:
     return path.relative_to(SKILLS).parts[0]
 
 
-def frontmatter(text: str) -> tuple[dict[str, str], str]:
-    """The YAML frontmatter as a flat mapping, and the body after it."""
-    if not text.startswith("---\n"):
-        return {}, text
-    head, _, body = text[4:].partition("\n---\n")
-    doc: dict[str, str] = {}
-    key = ""
-    for line in head.splitlines():
-        if re.match(r"^[a-zA-Z][\w-]*:", line):
-            key, _, value = line.partition(":")
-            doc[key.strip()] = value.strip()
-        elif key and line.strip():
-            doc[key] = f"{doc[key]} {line.strip()}".strip()
-    return doc, body
+def frontmatter(text: str) -> tuple[dict[str, Any], str]:
+    """The YAML frontmatter, read as the YAML an agent's loader reads, and the body after it."""
+    head, _, body = text.removeprefix("---\n").partition("\n---\n")
+    return yaml.safe_load(head), body
 
 
 def test_every_packaged_skill_is_a_folder_with_one_skill_file() -> None:
@@ -325,7 +290,7 @@ def test_the_frontmatter_holds_only_the_keys_a_reader_of_it_accepts(name: str) -
     assert doc["name"] == name and re.fullmatch(r"decktalk-[a-z0-9]+", doc["name"])
     assert 1 <= len(doc["description"]) <= 1024
     assert len(doc.get("compatibility", "")) <= 500
-    assert "<" not in "".join(doc.values()), "frontmatter carries no XML-style tag"
+    assert "<" not in str(doc), "frontmatter carries no XML-style tag"
     assert len(body.splitlines()) <= 200, f"{name} body is {len(body.splitlines())} lines"
 
 
@@ -405,16 +370,10 @@ def test_no_skill_carries_a_semicolon_or_a_dash_in_its_prose(path: Path) -> None
     assert not hits, "\n".join(hits)
 
 
-@pytest.mark.parametrize("path", SKILL_FILES, ids=lambda p: p.name)
-def test_no_retired_name_survives_in_a_skill(path: Path) -> None:
-    assert not carried(path), f"{path.name} still carries {carried(path)}"
-
-
 def test_the_agents_file_init_writes_points_at_the_help_rather_than_repeating_it() -> None:
     """A concise file that names the surface beats a long one that copies it and goes stale."""
     path = assets.package_file(f"template/{template.AGENTS_FILE}")
     text = path.read_text(encoding="utf-8")
-    assert not carried(path), f"AGENTS.md still carries {carried(path)}"
     assert "`decktalk --help`" in text and "`decktalk schema`" in text
     assert len(text.split()) < 200, "AGENTS.md is a few lines, not a manual"
 

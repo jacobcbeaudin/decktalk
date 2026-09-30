@@ -117,7 +117,7 @@ The closed word lists are small. `data-in-style` is `rise`, `settle`, `fade`, `p
 `crossfade` or `cut`.
 
 `MEASURABLE_SPAN_SECONDS` is 0.5, the one ceiling above which a cue cannot be measured.
-`data-in-seconds` runs from 0.12 to 0.48 in steps of 0.04, which is three to twelve frames at 25
+`data-in-seconds` runs from 0.12 to 0.44 in steps of 0.04, which is three to eleven frames at 25
 frames per second. `data-stagger` runs from 0.04 to 0.2 in steps of 0.04, and a staggered
 container's total is the step times the children less one, plus the entrance, which must stay under
 0.5 seconds. `data-hold` defaults to 8 and runs from 1 to 60.
@@ -202,7 +202,8 @@ credits are spent.
 | `decktalk verify` | Measure the finished mp4: every start, cut, seam and landing. | `--section N` |
 
 `--replace-voiced` is the one flag here that destroys money, because it discards the take it
-replaces. `--force` builds again from nothing and keeps every voiced take.
+replaces. `--force` builds again from nothing and keeps every voiced take. A build that finds nothing
+moved keeps `assemble` and `verify` and reports them as `kept`, and `--force` measures again.
 
 ### Run them all, or cut one piece out
 
@@ -277,15 +278,16 @@ around it, because a JSON Schema document inside a wrapper is not that document.
 
 A finding carries `code`, `message`, `certainty`, `location`, `stage`, `fix` and `url`. `certainty`
 is `certain` or `uncertain`. `location` carries a required `where` naming the object judged, plus
-`file`, `line`, `section` and `cue`. `fix` is one of `edit`, `setting` or `command`, each with a
+`file`, `line`, `section` and `cue`. `fix` is one of `edit`, `setting`, `command` or `runtime`, each with a
 `title` and an `applicability` of `safe`, `unsafe` or `display`. In the library
 `Project.apply(finding)` applies one.
 
 `--events` prints one JSON line per event on stderr as it happens, and every run of a project also
-appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are eleven names:
+appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are twelve names:
 `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`, `section.done`, `progress`,
-`finding`, `spend`, `fetch` and `log`. `run.done`, `stage.done` and `section.done` carry an
-`outcome` of `ok`, `skipped` or `failed`.
+`finding`, `spend`, `take.charged`, `fetch` and `log`. `run.done`, `stage.done` and `section.done` carry an
+`outcome` of `ok`, `kept`, `skipped`, `stopped` or `failed`, and `run.done` carries the `error` of a run
+that did not finish.
 
 Whole contract: [The JSON contract](/agents/json).
 
@@ -314,7 +316,7 @@ Whole contract: [The JSON contract](/agents/json).
 A non-zero exit with `error` null is a finding, so read `findings`, change the project and run the
 command again. A non-null `error` is an error, so stop and tell the person.
 
-The fifty-one finding codes each have a page of their own, and `decktalk schema` prints them all
+The fifty-two finding codes each have a page of their own, and `decktalk schema` prints them all
 with their sentences, their certainties and the settings keys that move them.
 
 ## Settings
@@ -334,7 +336,7 @@ under `%APPDATA%\decktalk\` on Windows, and under `$XDG_CONFIG_HOME/decktalk/` o
 than about the film.
 
 The knobs sit in `[video]`, `[narration]`, `[record]`, `[audio]`, `[verify]`, `[voice]`,
-`[mix.loudness]`, `[motion]`, `[elevenlabs]`, `[output]`, `[tools]` and `[host]`. `decktalk.toml`
+`[mix.loudness]`, `[motion]`, `[elevenlabs]`, `[output]` and `[tools]`. `decktalk.toml`
 also carries the tables that are project content rather than tuning, which are `[project]`,
 `[[section]]`, `[transition]`, `[soundscape]` with `[soundscape.effects.<name>]`, and
 `[[mix.effects]]`. `[voice]` and `[mix]` are each both things at once, because each holds content
@@ -342,8 +344,8 @@ keys the document owns beside knobs the settings loader declares.
 
 The published range is the safe range. A bound is there because a value past it deletes a check,
 corrupts the evidence a later stage measures or breaks a tool, and the loader refuses a value
-outside it, naming the file and the line. `decktalk config explain KEY` prints all five layers with
-the winner marked, along with the key's sentence, its unit, its range, its hazard and the finding
+outside it, naming the file and the line. `decktalk config explain KEY` prints the value in force and
+the layer it comes from, along with the key's sentence, its unit, its range, its hazard and the finding
 codes it moves.
 
 Three environment variables name no key: `DECKTALK_PROJECT`, `DECKTALK_CONFIG` and
@@ -386,7 +388,7 @@ decktalk <command> --help            # one command's flags, and what its JSON ob
 decktalk schema                      # every command, flag, exit, error code, finding code and stage
 decktalk schema NAME                 # one command's result, or finding, error, event, settings, page, project
 decktalk schema settings             # every knob with its default, range, unit and hazard
-decktalk config explain KEY          # one knob whole, with all five layers and the winner marked
+decktalk config explain KEY          # one knob whole, with its value and the layer in force
 decktalk status --json               # where this project stands, and the command to run next
 decktalk doctor --json               # what this machine has, and what a run would use
 ```

@@ -17,8 +17,9 @@ the closing band lands.
 
 ## Before you start
 
-- Resolve the cues once, with `decktalk cue` or with any build. An effect plays at the second its
-  cue resolved to, so a cue that has never been resolved has no second to sit on.
+- Resolve the cues once, with any build or with `decktalk narrate --no-voice` and then
+  `decktalk cue`. An effect plays at the second its cue resolved to, so a cue that has never been
+  resolved has no second to sit on, and `cue` needs the word clock `narrate` writes.
 - Put `ELEVENLABS_API_KEY` in `.env` to generate the sound. Generating one spends credits at the
   rate `[voice] price_per_1000_characters` states.
 - Bring your own audio file instead if you have one. Any file ffmpeg can read works, it needs no key,
@@ -179,8 +180,9 @@ viewer who cannot see or cannot hear it.
 
 ## What ducks and what does not
 
-The music bed plays at `[mix] music_db` and ducks to `[mix] music_duck_db` under every span that
-carries speech, ramped in and out over `[audio] duck_ramp_seconds` at each edge. A span that carries
+The music bed plays at `[mix] music_db` and ducks by `[mix] music_duck_db` under every span that
+carries speech, ramped in and out over `[audio] duck_ramp_seconds` at each edge.
+[Sound](/concepts/sound#ducking) owns the whole rule. A span that carries
 speech is a spoken section from its start to its last word, and a clip section for the whole of its
 own length.
 

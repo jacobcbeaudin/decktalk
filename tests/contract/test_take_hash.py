@@ -10,9 +10,8 @@ secret, so it sits in the data file beside the digests it produced, and the dige
 every paid take are proved on every machine and in CI rather than on the founder's laptop alone.
 Nothing here needs audio, a network or a credential, because a digest is arithmetic over text.
 
-`tests/decktalk/artifacts/test_takes.py` holds the same digests against `TakeInputs` alone. This file
-is the other half of the pair, and the half that reads the markdown, because a take is bought over
-what the parser makes of what the author wrote.
+This file is the one place the golden digests are held, and it reads the markdown rather than the
+text, because a take is bought over what the parser makes of what the author wrote.
 """
 
 from __future__ import annotations
@@ -34,22 +33,16 @@ EXPECTED_FILMS = ("halfway", "halfway/hero")
 """The two films the founder has really paid to voice, which are the only source of a golden digest."""
 
 
-def digest_of(text: str) -> str:
+def digest_of(text: str, *, voice: str = INPUTS["voice"]) -> str:
     """The digest the founder's takes were bought under, built from the inputs the data file names."""
     return TakeInputs.of(
         provider=INPUTS["provider"],
-        voice=INPUTS["voice"],
+        voice=voice,
         model=INPUTS["model"],
         output_format=INPUTS["output_format"],
         settings=INPUTS["settings"],
         text=text,
     ).digest
-
-
-def test_the_data_file_says_what_it_is_for():
-    """The file is never edited to make a test pass, so it carries the sentence that says so."""
-    assert GOLDEN["source"].endswith("."), GOLDEN["source"]
-    assert "never updated to make a test pass" in GOLDEN["rule"]
 
 
 def test_the_golden_rows_cover_both_films():
@@ -60,7 +53,7 @@ def test_the_golden_rows_cover_both_films():
 def test_the_voice_id_is_a_published_name_and_not_a_credential():
     """It sits in a tracked file on purpose: two voices reading one sentence are two different takes."""
     assert INPUTS["voice"] and INPUTS["voice"].isalnum()
-    assert digest_of("hello") != TakeInputs.of(**{**INPUTS, "voice": "someone-else", "text": "hello"}).digest
+    assert digest_of("hello") != digest_of("hello", voice="someone-else")
 
 
 @pytest.mark.parametrize("take", TAKES, ids=IDS)

@@ -14,6 +14,7 @@ a viewer never opens a half-written film.
 
 from __future__ import annotations
 
+import itertools
 import shutil
 import time
 from collections.abc import Mapping
@@ -26,47 +27,43 @@ from decktalk.captions import (
     Said,
     TranscriptSection,
     caption_cues,
+    chapters_text,
     display_words,
-    write_srt,
-    write_transcript,
-    write_vtt,
+    srt_text,
+    transcript_html,
+    vtt_text,
 )
-from decktalk.captions import write_chapters as write_chapter_file
 from decktalk.errors import DeckTalkError, ToolError
 from decktalk.events import Level
+from decktalk.files import replace_all
 from decktalk.inputs import ClipSection, Inputs, PageSection
 from decktalk.machine import Run
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import iso_639_2
-from decktalk.media.origin import Allowed, page_url
+from decktalk.media.origin import page_url
 from decktalk.media.pagereport import MeasuredScene
-from decktalk.page import Q
-from decktalk.results import SectionKind, Word
-from decktalk.stages import SECOND_DIGITS
+from decktalk.page import SECOND_DIGITS, Q
+from decktalk.pagescan import scene_entry, slide_cues
+from decktalk.results import SectionKind, Word, section_key
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
+from decktalk.stages.assemble.mix import effect_second
+from decktalk.stages.storyboard import open_project_page
 
 SOUND_CAPTION_SECONDS = 1.0
 """Calibration: how long a sound's caption stays on screen, which is what SC 1.2.2 expects of one."""
 
-MILLISECONDS = 1000
-"""Truth: milliseconds in one second, which is the unit a screenshot's settle is asked for in."""
 
 WORK_MARK = "."
 """What a work file's name opens with, so nothing a viewer can open is written until the film is whole."""
+
+POSTER_MARK = "poster"
+"""What a poster's still is keyed under before its scene, so it never shares a key with a frozen state."""
 
 STAMP_FORMAT = "%Y%m%d-%H%M"
 """How a timestamped copy is named, which is the date and the minute the copy was taken."""
 
 
 # ---- captions ---------------------------------------------------------------------------------
-
-
-def shifted(words: tuple[Word, ...], by: float) -> list[Word]:
-    """The same words moved later by one offset, which is how a section's clock joins the film's."""
-    return [
-        Word(word=word.word, start=round(word.start + by, SECOND_DIGITS), end=round(word.end + by, SECOND_DIGITS))
-        for word in words
-    ]
 
 
 def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], texts: Mapping[int, str]) -> list[
@@ -81,7 +78,7 @@ def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], t
     cues: list[CaptionCue] = []
     for take in takes.sections:
         shift = offsets.get(take.section, 0.0) + (takes.start(take.section) or 0.0)
-        words = shifted(inputs.words(take.section, take.hash), shift)
+        words = list(Words(words=inputs.words(take.section, take.hash)).shifted(shift))
         text = texts.get(take.section)
         cues += caption_cues(display_words(words, text) if text else words)
     return cues
@@ -148,10 +145,10 @@ def sound_captions(inputs: Inputs, starts: Mapping[int, float]) -> list[CaptionC
     for effect in inputs.document.mix.effects:
         if not effect.caption:
             continue
-        at = None if cue_times is None else cue_times.at(effect.section, effect.cue)
-        if effect.section not in starts or at is None:
+        at = effect_second(effect, cue_times, starts)
+        if at is None:
             continue
-        start = round(starts[effect.section] + at + effect.offset, SECOND_DIGITS)
+        start = round(at, SECOND_DIGITS)
         text = effect.caption if effect.caption.startswith("[") else f"[{effect.caption}]"
         cues.append(CaptionCue(start=start, end=round(start + SOUND_CAPTION_SECONDS, SECOND_DIGITS), lines=(text,)))
     return cues
@@ -215,22 +212,18 @@ def caption_texts(inputs: Inputs, takes: Takes) -> dict[int, str]:
 def build_chapters(rows: list[Rendered], titles: Mapping[int, str]) -> list[Chapter]:
     """One chapter per section, where consecutive sections with the same title share one marker."""
     starts = rendered_starts(rows)
-    chapters: list[Chapter] = []
-    for row in rows:
-        start = starts[row.number]
-        title = titles[row.number]
-        if chapters and chapters[-1].title == title:
-            chapters[-1] = Chapter(start=chapters[-1].start, end=start + row.seconds, title=title)
-        else:
-            chapters.append(Chapter(start=start, end=start + row.seconds, title=title))
-    return chapters
+    grouped = (list(run) for _title, run in itertools.groupby(rows, key=lambda row: titles[row.number]))
+    return [
+        Chapter(start=starts[run[0].number], end=starts[run[-1].number] + run[-1].seconds, title=titles[run[0].number])
+        for run in grouped
+    ]
 
 
 def write_caption_files(paths: Mapping[str, Path], cues: list[CaptionCue], chapters: list[Chapter]) -> None:
     """The SubRip, the WebVTT and the ffmetadata chapters, so nothing ever writes half of them."""
-    write_srt(paths["srt"], cues)
-    write_vtt(paths["vtt"], cues)
-    write_chapter_file(paths["chapters"], chapters)
+    replace_all(
+        {paths["srt"]: srt_text(cues), paths["vtt"]: vtt_text(cues), paths["chapters"]: chapters_text(chapters)}
+    )
 
 
 def mux_chapters(src: Path, chapters: Path, dst: Path, language: str) -> None:
@@ -262,12 +255,12 @@ def described_cues(inputs: Inputs, section: int, at: float) -> tuple[tuple[float
     letter, which printed a step back before the arrival it belongs to, and the runtime now composes
     one sentence per cue in document order, so the order the page gave them in is already right.
     """
-    log = inputs.recording_log(f"{section:02d}")
+    log = inputs.recording_log(section_key(section))
     if log is None:
         return ()
     rows = [
         (round(at + cue.ran, SECOND_DIGITS), cue.describe.strip())
-        for cue in log.report.cues
+        for cue in log.recording.report.cues
         if cue.describe and cue.describe.strip()
     ]
     return tuple(sorted(rows, key=lambda row: row[0]))
@@ -303,42 +296,22 @@ def transcript_sections(inputs: Inputs, cuts: Cuts, texts: Mapping[int, str]) ->
     group them, and each section's speech stays its own paragraph inside it.
     """
     out: list[TranscriptSection] = []
-    for cut in cuts.sections:
-        spoken = texts.get(cut.section, "") or clip_speech(inputs, cut.section)
-        note = cut_note(cut)
-        said = (Said(text=spoken, note=False),) if spoken else ()
-        said += (Said(text=note, note=True),) if note else ()
-        described = described_cues(inputs, cut.section, cut.start)
-        if out and out[-1].chapter == cut.chapter:
-            last = out[-1]
-            out[-1] = TranscriptSection(
-                chapter=last.chapter,
-                start=last.start,
-                end=cut.end,
-                said=last.said + said,
-                describes=last.describes + described,
-            )
-            continue
-        out.append(TranscriptSection(chapter=cut.chapter, start=cut.start, end=cut.end, said=said, describes=described))
+    for chapter, grouped in itertools.groupby(cuts.sections, key=lambda cut: cut.chapter):
+        run = list(grouped)
+        said = tuple(one for cut in run for one in _said(inputs, cut, texts))
+        shown = tuple(one for cut in run for one in described_cues(inputs, cut.section, cut.start))
+        out.append(TranscriptSection(chapter=chapter, start=run[0].start, end=run[-1].end, said=said, describes=shown))
     return out
 
 
+def _said(inputs: Inputs, cut: Cut, texts: Mapping[int, str]) -> tuple[Said, ...]:
+    """What one section contributes to its chapter's text: its speech, then the note on what plays."""
+    spoken = texts.get(cut.section, "") or clip_speech(inputs, cut.section)
+    note = cut_note(cut)
+    return ((Said(text=spoken, note=False),) if spoken else ()) + ((Said(text=note, note=True),) if note else ())
+
+
 # ---- the poster -------------------------------------------------------------------------------
-
-
-def scene_slides(catalog: tuple[MeasuredScene, ...], scene: str) -> tuple[str, ...]:
-    """Every slide of one scene, in the order the page declares them.
-
-    The catalog keeps what its model does not name, so the declared order is read from the entry
-    itself and the measured rows stand in only for a page that published no order at all.
-    """
-    entry = next((row for row in catalog if row.scene == scene), None)
-    if entry is None:
-        return ()
-    declared = (entry.model_extra or {}).get("slides")
-    if isinstance(declared, list):
-        return tuple(str(slide) for slide in declared)
-    return tuple(entry.elements)
 
 
 def poster_query(catalog: tuple[MeasuredScene, ...], section: PageSection) -> dict[Q, str] | None:
@@ -347,31 +320,30 @@ def poster_query(catalog: tuple[MeasuredScene, ...], section: PageSection) -> di
     A poster is the one picture that has to stand for the film, and a cue-driven slide before its
     first cue is an empty stage, so the slide is frozen in the state it ends in.
     """
-    slides = scene_slides(catalog, section.scene)
-    return None if not slides else {Q.SLIDE: slides[0]}
+    slides = slide_cues(scene_entry(catalog, section.scene))
+    return None if not slides else {Q.SLIDE: next(iter(slides))}
 
 
 def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
     """The film's opening slide as a lossless PNG, drawn by the page rather than taken from the mp4.
 
-    Nothing here may cost a film that is already written, so every refusal the media layer raises is
-    one sentence on the stream and no poster.
+    A poster drawn before from the same page, the same settings and the same loaded files is read
+    back from the frames the project keeps, so an unchanged build opens no browser for it. Nothing
+    here may cost a film that is already written, so every refusal the media layer raises is one
+    sentence on the stream and no poster.
     """
     section = next((s for s in inputs.document.sections if isinstance(s, PageSection)), None)
     if section is None:
         return None
-    video = inputs.settings.video
-    settle = int(inputs.settings.record.screenshot_settle_seconds * MILLISECONDS)
+    key = inputs.still_key(section.page, POSTER_MARK, section.scene, documents=inputs.documents())
+    kept = inputs.stills.find(key)
+    if kept is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(kept, out)
+        return out
     try:
-        with browser.chromium(inputs.settings.record.browser_path) as chrome:
-            page, _assets = browser.open_page(
-                chrome,
-                Allowed.of(inputs.root, inputs.served_paths()),
-                width=video.width,
-                height=video.height,
-                color_scheme=inputs.settings.record.color_scheme,
-                motion=inputs.settings.motion,
-            )
+        with browser.chromium(inputs.settings.record.browser_path, policy=inputs.settings.record.page_policy) as chrome:
+            page, assets = open_project_page(chrome, inputs)
             page.goto(page_url(section.page))
             browser.await_ready(page)
             query = poster_query(browser.read_report(page, out.stem).catalog, section)
@@ -379,7 +351,8 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
                 run.note(f"{section.page} declares no slide for scene {section.scene}, so no poster is written.",
                          level=Level.WARNING)  # fmt: skip
                 return None
-            browser.screenshot(page, page_url(section.page, query), out, settle_ms=settle)
+            browser.screenshot(page, page_url(section.page, query), out)
+            inputs.stills.keep(key, out, assets.paths)
     except DeckTalkError as refused:
         run.note(f"The poster could not be drawn ({refused}), so the film is published without one.",
                  level=Level.WARNING)  # fmt: skip
@@ -416,16 +389,13 @@ def publish(inputs: Inputs, work: Path, paths: Mapping[str, Path]) -> Path | Non
 
 def write_transcript_page(inputs: Inputs, path: Path, cuts: Cuts, texts: Mapping[int, str]) -> None:
     """The media alternative: one page with a heading per chapter, the speech and every reveal."""
-    write_transcript(
-        path,
-        inputs.workspace.name,
-        transcript_sections(inputs, cuts, texts),
-        language=inputs.document.language,
-    )
+    sections = transcript_sections(inputs, cuts, texts)
+    replace_all({path: transcript_html(inputs.workspace.name, sections, language=inputs.document.language)})
 
 
 __all__ = [
     "SOUND_CAPTION_SECONDS",
+    "WORK_MARK",
     "build_captions",
     "build_chapters",
     "caption_texts",
@@ -438,8 +408,6 @@ __all__ = [
     "poster_query",
     "publish",
     "render_poster",
-    "scene_slides",
-    "shifted",
     "sound_captions",
     "transcript_sections",
     "uncaptioned_sounds",

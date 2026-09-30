@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate docs/changelog.mdx from CHANGELOG.md, which release-please writes.
 
     uv run scripts/build_changelog.py --write    # write the page
@@ -17,10 +14,11 @@ section is folded into the `X.Y.Z` entry and the page names the version without 
 
 from __future__ import annotations
 
-import argparse
 import re
 import sys
 from pathlib import Path
+
+import generated
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "CHANGELOG.md"
@@ -40,7 +38,9 @@ A change to a file format or to the page contract raises the minor version. The 
 `decktalk.toml`, `cues.json`, and the build artifacts.
 
 A project keeps the `deck/decktalk-runtime.js` it was created with. To move a project onto a newer
-runtime, create a new project with the new DeckTalk and copy the deck pages across.
+runtime, run `decktalk check --fix`, which replaces a copy some release shipped with the engine's
+and leaves an edited copy alone, and rewrite its pages wherever the release changed the page
+contract.
 """
 
 # A heading names a version, optionally a prerelease suffix such as `-rc1`, optionally a compare
@@ -54,9 +54,6 @@ TAGS = {"Features": "feature", "Bug Fixes": "fix", "Documentation": "docs", "Per
 
 PREAMBLE = ""
 """The key the lines above a release's first `###` heading are collected under."""
-
-STALE = "{path} is out of date. Run: uv run scripts/build_changelog.py --write"
-"""The one sentence every generator fails with, naming the file and the command that fixes it."""
 
 
 class Release:
@@ -115,15 +112,41 @@ def parse(text: str) -> list[Release]:
     return releases
 
 
-def body(release: Release) -> str:
-    """One release's sections as Markdown, with each section named once however many cuts wrote it."""
+def once(block: str) -> str:
+    """A section's lines with each change listed once, however many commits and merges carried it.
+
+    A squash merge and the commit it squashed both reach release-please, so one change can arrive
+    twice with two different links. A bullet is the same change when its words before the first link
+    are the same, and the first one is kept.
+    """
+    seen: set[str] = set()
+    kept: list[str] = []
+    for line in block.splitlines():
+        subject = line.split(" ([", 1)[0]
+        if line.startswith("* ") and subject in seen:
+            continue
+        seen.add(subject)
+        kept.append(line)
+    return "\n".join(kept)
+
+
+SECTION = "**{name}**"
+"""How the docs page names a section, which the release notes write as a heading instead."""
+
+
+def body(release: Release, section: str = SECTION) -> str:
+    """One release's sections as Markdown, with each section named once however many cuts wrote it.
+
+    A section with no line under it is left out, because a name with nothing beneath it tells the
+    reader nothing.
+    """
     parts: list[str] = []
     for name, lines in release.sections.items():
-        block = "\n".join(lines).strip("\n")
+        block = once("\n".join(lines).strip("\n"))
         if name == PREAMBLE:
             parts.append(block)
-            continue
-        parts.append(f"**{name}**\n\n{block}" if block else f"**{name}**")
+        elif block:
+            parts.append(f"{section.format(name=name)}\n\n{block}")
     return re.sub(r"\n{3,}", "\n\n", "\n\n".join(part for part in parts if part).strip("\n"))
 
 
@@ -138,23 +161,10 @@ def render(releases: list[Release]) -> str:
     return "\n".join(parts).rstrip() + "\n"
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write the page from CHANGELOG.md")
-    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
-    args = ap.parse_args()
-    page = render(parse(SOURCE.read_text(encoding="utf-8")))
-    if args.check:
-        if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != page:
-            print(STALE.format(path=TARGET.relative_to(ROOT).as_posix()))
-            return 1
-        print(f"{TARGET.relative_to(ROOT).as_posix()} is up to date.")
-        return 0
-    TARGET.write_text(page, encoding="utf-8")
-    print(f"wrote {TARGET.relative_to(ROOT).as_posix()}")
-    return 0
+def documents() -> dict[Path, str]:
+    """The docs changelog, written from the one release-please keeps."""
+    return {TARGET: render(parse(SOURCE.read_text(encoding="utf-8")))}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))

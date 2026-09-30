@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import sys
+import json
 
 import pytest
 
+import build_changelog
+import release_notes
 from support.paths import REPO
-
-sys.path.insert(0, str(REPO / "scripts"))
-import release_notes  # noqa: E402
 
 CHANGELOG = """# Changelog
 
@@ -48,15 +47,30 @@ def test_a_final_release_carries_every_candidate_of_its_series() -> None:
     assert notes == "### Bug Fixes\n\n* the last fix\n* a candidate fix\n\n### Features\n\n* the feature\n"
 
 
+def test_a_change_a_squash_merge_carried_twice_is_listed_once() -> None:
+    """The notes fold duplicates exactly as the docs page does, because both render through one body."""
+    twice = CHANGELOG.replace("* the last fix\n", "* the last fix ([abc1234](l))\n* the last fix ([def5678](l))\n")
+    assert release_notes.notes(twice, "0.5.0").count("the last fix") == 1
+
+
 def test_an_older_release_is_left_out() -> None:
     assert "older" not in release_notes.notes(CHANGELOG, "0.5.0")
 
 
-def test_a_candidate_keeps_the_notes_release_please_wrote() -> None:
-    with pytest.raises(SystemExit, match="candidate"):
-        release_notes.notes(CHANGELOG, "0.5.0-rc2")
+@pytest.mark.parametrize(
+    ("version", "match"),
+    [
+        pytest.param("0.5.0-rc2", "candidate", id="a candidate keeps the notes release-please wrote"),
+        pytest.param("0.6.0", "no entry for 0.6.0", id="a version the changelog never released"),
+    ],
+)
+def test_a_version_with_no_notes_of_its_own_is_refused(version: str, match: str) -> None:
+    with pytest.raises(SystemExit, match=match):
+        release_notes.notes(CHANGELOG, version)
 
 
-def test_a_version_the_changelog_never_released_is_refused() -> None:
-    with pytest.raises(SystemExit, match="no entry for 0.6.0"):
-        release_notes.notes(CHANGELOG, "0.6.0")
+def test_every_section_the_changelog_shows_carries_a_docs_tag() -> None:
+    """A heading the config shows and the docs page cannot tag would publish a release with no tag."""
+    config = json.loads((REPO / "release-please-config.json").read_text(encoding="utf-8"))
+    shown = {row["section"] for row in config["packages"]["."]["changelog-sections"] if not row.get("hidden")}
+    assert shown <= set(build_changelog.TAGS)

@@ -8,35 +8,68 @@ from pathlib import Path
 import pytest
 
 from decktalk.cli import run as commands
+from decktalk.cli.options import FailOn
+from decktalk.cli.session import Globals, Session
 from decktalk.errors import ErrorCode
 from decktalk.events import RunStart
-from decktalk.findings import Code
+from decktalk.findings import Certainty, Code
 from decktalk.pipeline import Stage
 from decktalk.results import (
+    ApplyResult,
     AssembleResult,
+    BuildResult,
     ClipResult,
     CueResult,
+    FixOutcome,
     NarrateResult,
     RecordResult,
     SoundscapeResult,
     VerifyResult,
     Voicing,
 )
+from support.spends import a_spend
 
-from .conftest import spend
+from .conftest import ANSWERS, Fake, finding
 
-NARRATE = NarrateResult(ok=True, run="r", voice=Voicing.PLACEHOLDER, sections=(), spend=spend(), seconds=1.0)
+NARRATE = NarrateResult(ok=True, run="r", voice=Voicing.PLACEHOLDER, sections=(), spend=a_spend(), seconds=1.0)
 CUE = CueResult(ok=True, run="r", sections=(), seconds=1.0)
 RECORD = RecordResult(ok=True, run="r", sections=(), seconds=1.0)
-SOUNDSCAPE = SoundscapeResult(ok=True, run="r", items=(), spend=spend(), seconds=1.0)
+SOUNDSCAPE = SoundscapeResult(ok=True, run="r", items=(), spend=a_spend(), seconds=1.0)
 ASSEMBLE = AssembleResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, sections=(), seconds=1.0)
 VERIFY = VerifyResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, seconds=1.0)
+MOVING = {
+    "narrate": NARRATE,
+    "cue": CUE,
+    "record": RECORD,
+    "soundscape": SOUNDSCAPE,
+    "assemble": ASSEMBLE,
+    "build": ANSWERS["build"],
+}
+"""The answer each moving command's fake gives."""
 
 
-def test_narrate_with_no_voice_never_buys(run, project) -> None:
-    made = project(narrate=NARRATE)
-    assert run("narrate", "--no-voice").exit_code == 0
-    assert made.called("narrate")["voice"] is Voicing.PLACEHOLDER
+@pytest.mark.parametrize(
+    ("argv", "keyword", "expected"),
+    [
+        (("narrate", "--no-voice"), "voice", Voicing.PLACEHOLDER),  # never buys
+        # cue reads the allowed codes rather than a flag of its own
+        (("cue", "--allow", Code.CUE_UNKNOWN.value), "allow_unknown", True),
+        (("record", "--section", "1,3-4"), "only", (1, 3, 4)),
+        (("soundscape", "--no-voice"), "voice", Voicing.PLACEHOLDER),  # the spending flags are shared
+        (("assemble", "--skip", "soundscape"), "soundscape", False),  # the one stage it can leave out
+        (
+            ("build", "--no-voice", "--from", "record", "--to", "assemble"),
+            "stages",
+            (Stage.RECORD, Stage.SOUNDSCAPE, Stage.ASSEMBLE),
+        ),
+        (("build", "--no-voice"), "stages", None),  # neither end runs the whole pipeline
+    ],
+    ids=["narrate", "cue", "record", "soundscape", "assemble", "build-span", "build-whole"],
+)
+def test_a_stage_flag_reaches_the_library_as_its_keyword(run, project, argv, keyword, expected) -> None:
+    made = project(**{argv[0]: MOVING[argv[0]]})
+    assert run(*argv).exit_code == 0
+    assert made.called(argv[0])[keyword] == expected
 
 
 def test_narrate_with_spend_buys_without_asking(run, project) -> None:
@@ -55,35 +88,26 @@ def test_narrate_keeps_every_paid_take_unless_the_flag_says_otherwise(run, proje
     assert made.calls[-1][2]["replace_voiced"] is True
 
 
-def test_cue_reads_the_allowed_codes_rather_than_a_flag_of_its_own(run, project) -> None:
-    made = project(cue=CUE)
-    run("cue", "--allow", Code.CUE_UNKNOWN.value)
-    assert made.called("cue")["allow_unknown"] is True
-
-
-def test_record_passes_the_section_selection_through(run, project) -> None:
-    made = project(record=RECORD)
-    run("record", "--section", "1,3-4")
-    assert made.called("record")["only"] == (1, 3, 4)
-
-
-def test_soundscape_takes_the_spending_flags(run, project) -> None:
-    made = project(soundscape=SOUNDSCAPE)
-    run("soundscape", "--no-voice")
-    assert made.called("soundscape")["voice"] is Voicing.PLACEHOLDER
-
-
-def test_assemble_reads_skip_as_the_one_stage_it_can_leave_out(run, project) -> None:
-    made = project(assemble=ASSEMBLE)
-    run("assemble", "--skip", "soundscape")
-    assert made.called("assemble")["soundscape"] is False
-
-
 def test_assemble_refuses_a_skip_that_names_a_stage_it_does_not_run(run, project) -> None:
     project(assemble=ASSEMBLE)
     ran = run("assemble", "--skip", "record")
     assert ran.exit_code == 2
     assert "soundscape alone" in ran.err
+
+
+def test_soundscape_says_what_its_spending_flags_buy(run) -> None:
+    """The spending family is shared, and on soundscape the thing bought is sound rather than a voice."""
+    said = run("soundscape", "--help").out
+    assert "Placeholder narration" not in said
+    assert "Buy nothing" in said
+    assert "Placeholder narration" in run("narrate", "--help").out
+
+
+def test_assemble_and_clip_describe_the_narrower_flags_they_take(run) -> None:
+    assert "Run every stage but this one" not in run("assemble", "--help").out
+    clip = " ".join(run("clip", "--help").out.split())
+    assert "--section N The one section to cut the clip from, such as 3." in clip
+    assert "clip-N.mp4" in clip
 
 
 def test_verify_measures_the_film(run, project) -> None:
@@ -93,17 +117,29 @@ def test_verify_measures_the_film(run, project) -> None:
     assert "build/final/demo.mp4" in ran.out
 
 
-def test_build_runs_the_span_two_flags_name(run, project, answers) -> None:
+def test_build_stops_where_the_exit_code_would_fail_and_carries_on_past_what_is_allowed(run, project, answers) -> None:
+    """The threshold a build stops on is the one its exit code fails on, so the two cannot disagree."""
     made = project(build=answers["build"])
-    run("build", "--no-voice", "--from", "record", "--to", "assemble")
+    run("build", "--no-voice", "--allow", Code.CUE_UNKNOWN.value)
     asked = made.called("build")
-    assert asked["stages"] == (Stage.RECORD, Stage.SOUNDSCAPE, Stage.ASSEMBLE)
+    assert asked["allow"] == frozenset({Code.CUE_UNKNOWN})
+    assert asked["stop_on"] is Certainty.CERTAIN
+    assert "soundscape" not in asked
 
 
-def test_build_with_neither_end_runs_the_whole_pipeline(run, project, answers) -> None:
+@pytest.mark.parametrize(("flag", "stops"), [(FailOn.ANY, Certainty.UNCERTAIN), (FailOn.NEVER, None)])
+def test_fail_on_moves_where_a_build_stops(run, project, answers, flag: FailOn, stops: Certainty | None) -> None:
     made = project(build=answers["build"])
-    run("build", "--no-voice")
-    assert made.called("build")["stages"] is None
+    run("build", "--no-voice", "--fail-on", flag.value)
+    assert made.called("build")["stop_on"] is stops
+
+
+def test_a_build_that_stopped_on_a_finding_exits_1_and_says_where(run, project, answers) -> None:
+    stopped = answers["build"].model_copy(update={"ok": False, "stopped_at": Stage.CUE, "findings": (finding(),)})
+    project(build=stopped)
+    ran = run("build", "--no-voice")
+    assert ran.exit_code == 1
+    assert f"Stopped at {Stage.CUE.value}" in ran.out
 
 
 def test_build_names_its_run_and_its_events_file_on_the_first_line_of_stderr(run, project, answers) -> None:
@@ -119,6 +155,25 @@ def test_events_writes_one_json_line_per_moment_on_stderr(run, project, answers)
     ran = run("build", "--no-voice", "--events")
     assert '"event":"run.start"' in ran.err
     assert ran.out.strip().startswith("Built")
+
+
+def test_every_stderr_line_under_events_is_one_json_object(run, project, answers) -> None:
+    """A reader of `--events` parses every line of stderr, so a plain sentence among them breaks it."""
+    made = project(build=answers["build"])
+    made.emits["build"] = (RunStart, {"events_path": Path("build/events/r.jsonl")})
+    ran = run("build", "--no-voice", "--events", "-v")
+    lines = ran.err.splitlines()
+    assert lines
+    assert all(isinstance(json.loads(line), dict) for line in lines)
+    assert not any(line.startswith("run r, events") for line in lines)
+
+
+def test_a_refusal_under_events_is_one_json_object_on_stderr(run, project, answers) -> None:
+    project(build=answers["build"], check=answers["check"])
+    ran = run("build", "--events")
+    assert ran.exit_code == 2
+    [line] = ran.err.splitlines()
+    assert json.loads(line)["error"]["code"] == ErrorCode.APPROVAL.value
 
 
 def test_build_without_a_terminal_and_without_a_flag_refuses_the_spend(run, project, answers) -> None:
@@ -158,13 +213,14 @@ def test_clip_needs_exactly_one_section(run, project) -> None:
     assert run("clip", "--section", "1,2").exit_code == 2
 
 
-@pytest.mark.parametrize("name", ["narrate", "cue", "record", "soundscape", "assemble", "verify", "build", "clip"])
-def test_every_stage_command_answers_with_its_own_result(run, name: str) -> None:
-    assert run(name, "--help").exit_code == 0
-
-
-def test_every_moving_command_is_registered() -> None:
-    assert all(
-        hasattr(commands, name)
-        for name in ("narrate", "cue", "record", "soundscape", "assemble", "verify", "build", "clip")
-    )
+def test_applying_one_fix_says_so_in_the_singular(monkeypatch: pytest.MonkeyPatch) -> None:
+    made = Session(Globals(), command="build")
+    said: list[str] = []
+    monkeypatch.setattr(made, "say", said.append)
+    applied = FixOutcome(code=Code.CUE_THIN_CHANGE, title="Move the cue.", applied=True)
+    fake = Fake(apply=ApplyResult(ok=True, run="r", fixes=(applied,)))
+    answer = ANSWERS["build"]
+    assert isinstance(answer, BuildResult)
+    built = answer.model_copy(update={"ok": False, "findings": (finding(fix=True),)})
+    commands._offered(made, fake.project(), built, True)
+    assert said == ["Applied 1 fix. Run decktalk build again to make the film from them."]

@@ -31,7 +31,7 @@ runs `uv tool install decktalk`, and uv fetches a Python of its own. `uv tool in
 the same thing without the script. `pipx install decktalk` uses a Python that is already on the
 machine, so that one is where the floor bites.
 
-Five packages come with DeckTalk: Playwright, Pydantic, Rich, tomlkit and Typer. Playwright ships
+Seven packages come with DeckTalk: blake3, filelock, Playwright, Pydantic, Rich, tomlkit and Typer. Playwright ships
 its own browser driver, so Node is not needed. KaTeX is not a dependency at all: the pinned release
 ships inside the wheel, and `decktalk init` copies it into `deck/katex/`, so a project typesets its
 equations with no network and no content delivery network.
@@ -71,7 +71,7 @@ home connection for the first run.
 | DeckTalk | `$XDG_CACHE_HOME/decktalk`, else `~/.cache/decktalk` | `~/Library/Caches/decktalk` | `%LOCALAPPDATA%\decktalk` |
 
 Both are per user, so a second project on the same machine downloads nothing. Move DeckTalk's with
-`[tools] cache_dir`, and move Playwright's with `PLAYWRIGHT_BROWSERS_PATH`, which Playwright reads on
+`tools.cache_dir`, and move Playwright's with `PLAYWRIGHT_BROWSERS_PATH`, which Playwright reads on
 the download and on every launch.
 
 ### What `decktalk install` is for
@@ -116,6 +116,11 @@ is one setting, and none of them changes the project.
 | The ffmpeg download | `[tools] ffmpeg` and `[tools] ffprobe`, naming two executables from one build. They override every other source, so nothing downloads a build. |
 | A write to DeckTalk's cache | `[tools] cache_dir`. |
 
+The `[tools]` keys and `record.browser_path` are
+[machine keys](/reference/configuration#keys-only-a-machine-may-set). They describe this machine, so
+they go in its own settings file through `decktalk config set KEY VALUE --where machine`, and a
+`decktalk.toml` that sets one is refused by name.
+
 Every setting has an environment variable of its own, spelled `DECKTALK_<TABLE>_<KEY>`, so
 `[tools] ffmpeg` is `DECKTALK_TOOLS_FFMPEG` and `[tools] cache_dir` is `DECKTALK_TOOLS_CACHE_DIR`.
 `decktalk config explain tools.ffmpeg` prints the value that wins and the layer that set it, and its
@@ -123,9 +128,8 @@ Every setting has an environment variable of its own, spelled `DECKTALK_<TABLE>_
 
 If the machine already has an approved Chrome or Chromium, record with that one instead.
 
-```toml decktalk.toml
-[record]
-browser_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+```console
+decktalk config set record.browser_path "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --where machine
 ```
 
 The pinned Playwright build is the reference build, and DeckTalk's timing limits are measured against
@@ -135,6 +139,98 @@ before you trust those limits on it.
 `decktalk doctor` prints the Chromium revision and the ffmpeg build a run would use, so a machine's
 owner can read what a recording will launch before it launches. [What leaves your
 machine](/reference/what-leaves-your-machine) is the whole list of hosts DeckTalk contacts.
+
+### How hard a machine is driven
+
+Four keys say how much work this machine takes on at once and how long it waits. They describe the
+machine rather than the film, so they are machine keys like the ones above.
+
+| Key | Default | What it decides |
+|---|---|---|
+| `record.concurrency` | `0` | How many page sections `record` records at once. Zero chooses from the CPU this process may use: one recording per two CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
+| `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
+| `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. |
+| `tools.timeout_seconds` | `600` | The longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
+
+A recording needs its CPU on time, because a frame drawn late lands its reveal late. So
+`record.concurrency` set above this machine's share costs correctness rather than only speed: a
+starved recording stalls, or reports reveals that land after their words.
+
+```console
+decktalk config set record.concurrency 2 --where machine
+```
+
+A `decktalk.toml` that sets any of the four is refused by name, because a project travels and a
+limit that suits one machine is wrong on the next:
+
+```text
+error[INPUT]: decktalk.toml: 'record.concurrency' is machine-scoped, so it belongs in this machine's file, where the machine that runs the build states what it runs.
+  hint: Remove it from decktalk.toml and run `decktalk config set record.concurrency <value> --where machine`.
+  docs: https://docs.decktalk.ai/reference/errors/INPUT
+```
+
+Each also has its environment variable, such as `DECKTALK_RECORD_CONCURRENCY`, which is how a job
+sets one for a container it does not keep.
+
+## A page someone else wrote
+
+A deck is a web page, and its script runs in the Chromium that records it. On your own machine that
+page is your own work, so by default it is trusted: it reaches the network the way it would in your
+browser, and a font or a library it loads from another origin is reported as
+[`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET) rather than stopped.
+
+A service that renders pages other people wrote cannot extend that trust, because a trusted page
+reaches anything the machine can reach, a cloud metadata endpoint included. `[record] page_policy`
+says how far a page is trusted. It is the machine's to set, so a project file that names it is
+refused and a project someone else wrote cannot trust its own page.
+
+| Value | What the page may do |
+|---|---|
+| `trusted` | The default. The page reaches the network as a browser would, through the machine's own proxy. |
+| `untrusted` | Chromium runs with its sandbox on, and every request that is not for the project's own origin is refused, through every channel a page can open. |
+
+```console
+decktalk config set record.page_policy untrusted --where machine
+```
+
+Under `untrusted`, three things hold at once.
+
+- **The sandbox is on, or nothing runs.** A Chromium that cannot start its sandbox is refused with a
+  `TOOL` error. The run never falls back to a browser without one.
+- **No request leaves the origin.** The page is served at the project's own origin, and a request for
+  any other one is aborted before it reaches the network, whatever its scheme. The browser is also
+  pointed at a proxy that answers nothing, and WebRTC may not send UDP past it, which closes the
+  channels request routing never sees: a WebSocket, a DNS lookup and a WebRTC probe. The recording
+  still names every host the page reached for, as `PAGE_CDN_ASSET`.
+- **The browser environment is scrubbed.** Chromium is handed only the variables that say where a
+  file, a display, a locale or a proxy is, so a key the host holds never reaches the process that runs
+  a page's script. ffmpeg and ffprobe are handed the same set. This holds under `trusted` too.
+
+The policy is read by every launch that opens a project's page, which is `record`, `check`,
+`storyboard` and the poster `assemble` draws.
+
+### The sandbox in a Linux container
+
+Chromium's sandbox needs user namespaces. In a Linux container that takes two things, and a container
+missing either one refuses an untrusted run.
+
+- **A user other than root.** Chromium refuses its sandbox to root, so run the render as an ordinary
+  user.
+- **A seccomp profile that allows user namespaces.** Docker's default profile blocks the calls the
+  sandbox makes. A render running as an ordinary user under the default profile is still refused, and
+  the same render under a profile that allows those calls launches.
+
+The refusal names both:
+
+```text
+error[TOOL]: could not launch Chromium with its sandbox on (...).
+  hint: An untrusted page runs only inside Chromium's sandbox. In a container that means a user other than root and a seccomp profile that allows user namespaces.
+  docs: https://docs.decktalk.ai/reference/errors/TOOL
+```
+
+The engine's refusal is defence in depth. A service that renders strangers' pages still runs each
+render in a network namespace with no egress of its own, because the machine is where the boundary
+belongs.
 
 ## What a voiced run needs
 
@@ -222,10 +318,21 @@ decktalk check --json
 - `ceiling_dollars` is the most the run can reach.
 - `price_layer` names which of the five settings layers set the rate, where `default` means nobody did.
 
-`dollars` and `ceiling_dollars` differ when a section's cache cannot be checked. With no
-`ELEVENLABS_API_KEY` set there is no voice to ask whether a take on disk is current, so no section
-can be called cached: each one's characters go into the ceiling and none of them into the price, and
-the same call then reports the figure a run certainly spends and the figure it can reach.
+`dollars` and `ceiling_dollars` differ when a section's cache cannot be checked. A take is named by
+its text and its voice, so with no `ELEVENLABS_VOICE_ID` set no take on disk can be matched to the
+voice that made it: each unmatched section's characters go into the ceiling and none of them into
+the price. The key is not needed to price a run, because the price never asks the voice anything.
+
+Every surface that states a price states one sentence, which keeps the certain part and the ceiling
+apart.
+
+| When | The sentence |
+|---|---|
+| Every section is priced for certain | `This run costs $0.14 for 476 characters at $0.30 per 1,000 characters.` |
+| Some sections could not be matched | `This run costs $X for the sections that certainly need a take, and up to $Y if the takes that could not be matched to a voice need one too, at $0.30 per 1,000 characters.` |
+| No section could be matched | `The takes on disk could not be matched to a voice, so this run costs up to $0.14 at $0.30 per 1,000 characters.` |
+| Nothing needs a take | `This run buys nothing.` |
+| After a voiced run | `This run spent $0.14 on 476 characters at $0.30 per 1,000 characters.` |
 
 ### The ceiling
 
@@ -234,7 +341,7 @@ consumed one request at a time and a cap that claimed to stop a run halfway woul
 checked before the first paid call, so a run it refuses has bought nothing.
 
 ```text
-error[APPROVAL]: this run can cost up to $0.14, which is over the $0.05 ceiling --max-cost set.
+error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.14, is over the $0.05 ceiling --max-cost set.
   hint: Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
   docs: https://docs.decktalk.ai/reference/errors/APPROVAL
 ```
@@ -261,10 +368,12 @@ you intend to.
 
 ## Time
 
-Recording runs in real time, one section after another, so a longer film takes longer to record. The
-starter's build without voice took 69 seconds in all on a MacBook Pro with an Apple M5 Pro and 64 GB
-of memory, on a machine that already had Chromium and ffmpeg, and the film it made is 50 seconds
-long. Most of that is the recording and the encode.
+Recording runs in real time, so a section takes as long to record as it plays. Several page
+sections record at once, as many as `record.concurrency` allows, so a film of several sections
+records in about the time of its longest few rather than of all of them end to end. The starter's
+build without voice took about 27 seconds in all on a MacBook Pro with an Apple M5 Pro and 64 GB of
+memory, on a machine that already had Chromium and ffmpeg, and the film it made is 50 seconds long.
+Most of that is the recording.
 
 [Rebuild one section](/guides/rebuild-one-section) shows how to record only what changed.
 

@@ -19,7 +19,7 @@ import {
   type Entrance,
   EXITS,
   type Exit,
-  MEASURABLE_SPAN_SECONDS,
+  MOTION_SCALE_PROPERTY,
   SLIDE_ENTRANCES,
   type SlideEntrance,
   scaled,
@@ -42,9 +42,6 @@ const POP_OVERSHOOT_AT = 60;
 
 /** How far `fall` travels as it leaves, which is the short distance `rise` already arrives across. */
 const FALL_PIXELS = ENTRANCES.rise.liftPixels;
-
-/** The custom property a reduced render writes the page's motion scale into, on the root element. */
-const SCALE_PROPERTY = "--dt-motion-scale";
 
 /** The custom property each element's own motion length is set through, which the sheet reads. */
 const SPAN_PROPERTY = "--dt-span";
@@ -229,14 +226,14 @@ export function reduced(): boolean {
  * the point where its own cues stop being measurable.
  */
 export function motionScale(): number {
-  const written = getComputedStyle(document.documentElement).getPropertyValue(SCALE_PROPERTY).trim();
+  const written = getComputedStyle(document.documentElement).getPropertyValue(MOTION_SCALE_PROPERTY).trim();
   const scale = Number.parseFloat(written);
   return Number.isFinite(scale) && scale > 0 ? scale : 1;
 }
 
 /** One element's own motion length, scaled and clamped, written where the stylesheet reads it. */
 export function span(el: HTMLElement, seconds: number): void {
-  el.style.setProperty(SPAN_PROPERTY, `${Math.min(scaled(seconds, motionScale()), MEASURABLE_SPAN_SECONDS)}s`);
+  el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds, motionScale())}s`);
 }
 
 /** Build the stage, fit it to the window, and keep it fitted for as long as the page is open. */
@@ -303,10 +300,10 @@ export function say(line: string): void {
 
 /** How long the crossfade into a slide takes, which is what the outgoing slide waits before it goes. */
 export function slideSeconds(word: SlideEntrance): number {
-  return Math.min(scaled(SLIDE_ENTRANCES[word].seconds, motionScale()), MEASURABLE_SPAN_SECONDS);
+  return scaled(SLIDE_ENTRANCES[word].seconds, motionScale());
 }
 
 /** How long a count runs, which the registry owns and a reduced render scales like any other length. */
 export function countSeconds(word: keyof typeof COUNTS): number {
-  return Math.min(scaled(COUNTS[word].seconds, motionScale()), MEASURABLE_SPAN_SECONDS);
+  return scaled(COUNTS[word].seconds, motionScale());
 }

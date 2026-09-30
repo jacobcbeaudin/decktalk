@@ -6,16 +6,17 @@ from collections.abc import Callable
 
 import pytest
 
+from decktalk.artifacts import CueTimes
 from decktalk.errors import Cancelled, NotBuiltError
 from decktalk.events import Event, Progress, Unit
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.pipeline import Stage
-from decktalk.results import VerifyResult
-from decktalk.stages import judge
+from decktalk.results import CueTime, SectionCues, VerifyResult
 from decktalk.stages.verify import verify
+from support.pages import write_log
 
-from .conftest import SECTION_SECONDS, Measurements, opened, write_log
+from .conftest import PAGES_TOML, SECTION_SECONDS, Measurements, opened
 
 CUES = {1: {"1.1:a": 2.0}}
 """One cue, well inside its section."""
@@ -46,6 +47,16 @@ def test_a_project_with_no_cut_list_and_no_section_files_is_refused(assembled: C
     for section in inputs.document.sections:
         inputs.workspace.section_video(section.key).unlink()
     with pytest.raises(NotBuiltError):
+        measure(inputs)
+
+
+def test_the_refusal_names_the_build_directory_the_project_chose(assembled: Callable[..., Inputs]) -> None:
+    """The message spelled `build/final` whatever `[project] build` said."""
+    inputs = assembled(CUES, toml=PAGES_TOML.replace('name = "t"', 'name = "t"\nbuild = "out"'))
+    inputs.workspace.cuts_path.unlink()
+    for section in inputs.document.sections:
+        inputs.workspace.section_video(section.key).unlink()
+    with pytest.raises(NotBuiltError, match="^out/final holds no cut list"):
         measure(inputs)
 
 
@@ -91,7 +102,8 @@ def test_a_recording_logs_own_judgement_is_reported_again(assembled: Callable[..
     write_log(
         inputs,
         1,
-        [
+        requested_seconds=SECTION_SECONDS,
+        findings=[
             judge(
                 Code.PAGE_RENDER_THREW,
                 "a slide's render threw, so the slide is not on screen.",
@@ -112,17 +124,60 @@ def test_a_section_with_no_recording_log_repeats_nothing(assembled: Callable[...
 # ---- the cues the film never played ----------------------------------------------------------------
 
 
+def placed(inputs: Inputs, rows: dict[str, tuple[str, float | None]]) -> None:
+    """Section 1's cue times on disk, as the cue stage last wrote them: each cue's phrase and second."""
+    CueTimes(
+        sections=(
+            SectionCues(
+                section=1,
+                key="01",
+                estimated=True,
+                cues=tuple(CueTime(cue=cue, phrase=phrase, seconds=at) for cue, (phrase, at) in rows.items()),
+            ),
+        )
+    ).write(inputs.workspace.cue_times_path)
+
+
+def codes(inputs: Inputs) -> list[tuple[Code, str | None]]:
+    return [
+        (row.code, row.location.cue)
+        for row in measure(inputs).findings
+        if row.code in (Code.CUE_UNRESOLVED, Code.CUE_STALE)
+    ]
+
+
 def test_a_cue_that_never_resolved_is_a_certain_finding_against_the_film(assembled: Callable[..., Inputs]) -> None:
     inputs = assembled(CUES, cues={"1": {"cues": [{"cue": "1.1:a", "on": "hello"}, {"cue": "1.1:z", "on": "nowhere"}]}})
+    placed(inputs, {"1.1:a": ("hello", 2.0), "1.1:z": ("nowhere", None)})
     found = [row for row in measure(inputs).findings if row.code is Code.CUE_UNRESOLVED]
     assert len(found) == 1
     assert found[0].location.cue == "1.1:z"
     assert "nowhere" in found[0].message
+    assert codes(inputs) == [(Code.CUE_UNRESOLVED, "1.1:z")]
 
 
 def test_a_cue_the_run_resolved_is_never_reported_as_unresolved(assembled: Callable[..., Inputs]) -> None:
     inputs = assembled(CUES, cues={"1": {"cues": [{"cue": "1.1:a", "on": "hello"}]}})
-    assert [row for row in measure(inputs).findings if row.code is Code.CUE_UNRESOLVED] == []
+    assert codes(inputs) == []
+
+
+def test_cue_times_placed_from_an_older_cue_file_are_stale_and_never_blamed_on_the_script(
+    assembled: Callable[..., Inputs],
+) -> None:
+    """A build stopped at the cue stage, and the cue file put back, left verify blaming the script."""
+    inputs = assembled(CUES, cues={"1": {"cues": [{"cue": "1.1:a", "on": "in code"}]}})
+    placed(inputs, {"1.1:a": ("in cod", None)})
+    assert codes(inputs) == [(Code.CUE_STALE, "1.1:a")]
+    stale = next(row for row in measure(inputs).findings if row.code is Code.CUE_STALE)
+    assert "decktalk build" in stale.message and "'in cod'" in stale.message
+
+
+def test_a_cue_the_times_never_placed_and_a_second_for_a_cue_now_gone_are_both_stale(
+    assembled: Callable[..., Inputs],
+) -> None:
+    inputs = assembled(CUES, cues={"1": {"cues": [{"cue": "1.1:a", "on": "hello"}, {"cue": "1.1:new", "on": "there"}]}})
+    placed(inputs, {"1.1:a": ("hello", 2.0), "1.1:old": ("there", 3.0)})
+    assert codes(inputs) == [(Code.CUE_STALE, "1.1:new"), (Code.CUE_STALE, "1.1:old")]
 
 
 # ---- what it says while it works ---------------------------------------------------------------------

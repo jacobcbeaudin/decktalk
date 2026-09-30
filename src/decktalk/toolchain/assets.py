@@ -24,13 +24,28 @@ from pathlib import Path
 RUNTIME_FILE = "decktalk-runtime.js"
 PROBE_FILE = "decktalk-probe.js"
 
+SHIPPED_RUNTIMES = (
+    "98519ba8be6e4560790322fc526aa6167098676ce0bfa9de11145d3b05faca22",  # v0.1.0
+    "9ea4d183d3ee57a718b2c1238af72e8ddba855abb7143a5f8fb621c7a63b3458",  # v0.2.0 and v0.2.1
+    "01e901c20434acbe0db729532a4ce57334979c8a9392f73af0e93c708779ce43",  # v0.3.0
+    "095fd5df5efba829eb8e44d4bbdc3c79b1ef590c9bc2773897b2ffba55ffe4fc",  # v0.4.0
+    "962e1d85c71590c22e22f0fd4b4012a3355fbf56089939029331d802e737c034",  # v0.4.1
+    "8e56d23fcd755174405f7effbb331b73d3968e824c97041aed19da22673a5602",  # v0.5.0-rc1
+    "9c5a49e0dfe6fe8a176809606459417f44c1124218b2b946563cba753e300f7a",  # v0.5.0-rc2
+    "f362f904f6dfa8bf06bf2e5063f37dcb1dcd4299c0014b5cf7b6b2c0adc5034a",  # v0.5.0
+)
+"""The sha256 of the runtime each release tag shipped, which is how a copy nobody edited is told apart.
+
+A copy with one of these digests is an engine's own bytes and holds none of the author's work, so
+replacing it is safe. Each release adds its own digest once it is tagged.
+"""
+
 # KaTeX typesets the [data-tex] elements. The pinned release ships inside the wheel under
 # decktalk/katex with its licence, and `decktalk init` copies it into deck/katex/, so a project
 # renders equations with no network and no CDN tag. Every packaged page loads it from there.
 KATEX_VERSION = "0.18.7"
 KATEX_DIR = "katex"
 KATEX_FILES = ("katex.min.js", "katex.min.css", "LICENSE")
-KATEX_FONT_DIR = "fonts"
 _KATEX_FONT_URL = re.compile(r"url\((fonts/[^)]+\.woff2)\)")
 
 
@@ -75,9 +90,7 @@ def vendor_katex(deck_dir: Path) -> Path:
     """Copy the packaged KaTeX into deck/katex/, replacing whatever was there. Returns that directory."""
     src, dst = katex_dir(), deck_dir / KATEX_DIR
     shutil.rmtree(dst, ignore_errors=True)
-    (dst / KATEX_FONT_DIR).mkdir(parents=True)
-    for f in KATEX_FILES:
-        shutil.copyfile(src / f, dst / f)
-    for font in sorted((src / KATEX_FONT_DIR).glob("*.woff2")):
-        shutil.copyfile(font, dst / KATEX_FONT_DIR / font.name)
+    # The packaged folder holds exactly the release files, which tests/contract/test_wheel.py holds
+    # against what git tracks, so the whole tree is the copy. copyfile leaves the package's modes behind.
+    shutil.copytree(src, dst, copy_function=shutil.copyfile)
     return dst

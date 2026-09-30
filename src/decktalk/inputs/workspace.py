@@ -4,8 +4,10 @@
     build/cue-times.json  every cue resolved against those words
     build/recordings/   one webm and one recording log per page section
     build/soundscape/   the music, the ambience bed and the effects
-    build/sections/     one mp4 per section, cut to its span
+    build/sections/     one mp4 per section, cut to its span, and the key it was cut from
     build/frames/       the frozen slides `check` compares
+    build/stills/       every frozen frame kept by what drew it, which check, storyboard
+                        and the poster all read before they draw one
     build/storyboard/   one still per panel, under the page that lays them out
     build/final/        the deliverables: the film, its captions, chapters, cut list,
                         transcript page and poster
@@ -13,17 +15,21 @@
 
 A new artifact gets a property here and nowhere else, so a reader who wants to know what a build
 leaves behind opens one module and no stage ever spells a build path by hand. The five paths the
-pipeline declares are held against `Artifact` by this module's own test, so the two cannot drift.
+pipeline declares are read off `Artifact` itself, moved under whichever build directory the project
+names, so the two cannot drift.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-SECTION_VIDEO = re.compile(r"\d+\.mp4")
-"""What a section's cut is called, which is how a cut left over from a renumbering is spotted."""
+from decktalk.inputs.paths import confined
+from decktalk.pipeline import Artifact
+
+SECTION_CUT = re.compile(r"(\d+)\.(?:mp4|json)")
+"""What a section's cut and the key beside it are called, which is how a pair a renumbering left is spotted."""
 
 EVENTS_SUFFIX = ".jsonl"
 """What a run's event file is called after its run id, which is one JSON object per line."""
@@ -38,6 +44,21 @@ class Workspace:
     name: str
     takes: Path | None = None
 
+    def confine(self) -> None:
+        """Refuse this build directory when anything in it leads outside it, before a run writes there.
+
+        Every path below is a plain join onto `build`, and a stage, ffmpeg and Chromium each write
+        and delete through whatever those joins find on disk. So the tree is resolved again at the
+        start of every run, which is the one moment before any of them touch it, rather than at each
+        of the places that write. DeckTalk itself never makes a link under the build directory, so a
+        tree that passes here stays inside the project for the length of the run.
+        """
+        confined(self.root, self.build)
+
+    def of(self, artifact: Artifact) -> Path:
+        """Where this project keeps one artifact the pipeline declares, under its own build directory."""
+        return self.build.joinpath(*PurePosixPath(artifact.value).parts[1:])
+
     @property
     def narrate_dir(self) -> Path:
         """The take index and the joined narration, which belong to this project alone."""
@@ -50,7 +71,7 @@ class Workspace:
 
     @property
     def takes_path(self) -> Path:
-        return self.narrate_dir / "takes.json"
+        return self.of(Artifact.TAKES)
 
     @property
     def narration_path(self) -> Path:
@@ -59,15 +80,15 @@ class Workspace:
 
     @property
     def cue_times_path(self) -> Path:
-        return self.build / "cue-times.json"
+        return self.of(Artifact.CUE_TIMES)
 
     @property
     def recordings_dir(self) -> Path:
-        return self.build / "recordings"
+        return self.of(Artifact.RECORDINGS)
 
     @property
     def soundscape_dir(self) -> Path:
-        return self.build / "soundscape"
+        return self.of(Artifact.SOUNDSCAPE)
 
     @property
     def sections_dir(self) -> Path:
@@ -77,6 +98,11 @@ class Workspace:
     def frames_dir(self) -> Path:
         """The frozen slides `check` compares, which are pictures rather than a deliverable."""
         return self.build / "frames"
+
+    @property
+    def stills_dir(self) -> Path:
+        """Every frozen frame kept by what drew it, so one state of a page is drawn once."""
+        return self.build / "stills"
 
     @property
     def storyboard_dir(self) -> Path:
@@ -93,7 +119,7 @@ class Workspace:
 
     @property
     def final_dir(self) -> Path:
-        return self.build / "final"
+        return self.of(Artifact.FINAL)
 
     @property
     def film(self) -> Path:
@@ -128,17 +154,16 @@ class Workspace:
     def section_video(self, key: str) -> Path:
         return self.sections_dir / f"{key}.mp4"
 
-    def stray_section_videos(self, keys: tuple[str, ...]) -> tuple[Path, ...]:
-        """Cuts in the sections directory whose section is no longer in `decktalk.toml`.
+    def stray_cuts(self, keys: tuple[str, ...]) -> tuple[Path, ...]:
+        """Cuts and cut keys in the sections directory whose section is no longer in `decktalk.toml`.
 
         A build made before the sections were renumbered or one was removed leaves such files
-        behind, and a later run would otherwise cut them into a film nobody asked for.
+        behind, and nothing reads them again.
         """
         if not self.sections_dir.is_dir():
             return ()
-        listed = {self.section_video(key).name for key in keys}
-        found = self.sections_dir.iterdir()
-        return tuple(sorted(f for f in found if SECTION_VIDEO.fullmatch(f.name) and f.name not in listed))
+        found = ((f, SECTION_CUT.fullmatch(f.name)) for f in self.sections_dir.iterdir())
+        return tuple(sorted(f for f, cut in found if cut and cut[1] not in keys))
 
 
 __all__ = ["EVENTS_SUFFIX", "Workspace"]

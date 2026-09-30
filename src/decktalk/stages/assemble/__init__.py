@@ -17,19 +17,20 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from decktalk.artifacts import Cuts, Takes
-from decktalk.errors import NotBuiltError, ToolError
+from decktalk.errors import ToolError
 from decktalk.events import Unit
 from decktalk.inputs import Inputs
 from decktalk.inputs.timeline import narration_offsets
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
-from decktalk.pipeline import Stage
-from decktalk.results import AssembleResult, RenderedSection
-from decktalk.stages import SECOND_DIGITS, clock, since
-from decktalk.stages.assemble.cut import Rendered, cut_list, render_sections, rendered_starts, stray_cuts
+from decktalk.page import SECOND_DIGITS
+from decktalk.pipeline import Artifact, Stage
+from decktalk.results import AssembleResult, RenderedSection, counted
+from decktalk.stages.assemble.cut import Rendered, cut_list, remove_stray_cuts, render_sections, rendered_starts
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
 from decktalk.stages.assemble.mix import MixPlan, encode_soundtrack, mix_soundtrack
 from decktalk.stages.assemble.publish import (
+    WORK_MARK,
     build_captions,
     build_chapters,
     caption_texts,
@@ -42,9 +43,6 @@ from decktalk.stages.assemble.publish import (
     write_caption_files,
     write_transcript_page,
 )
-
-WORK_MARK = "."
-"""What the name of a file only this run may read opens with, so no viewer ever opens a half-made one."""
 
 DELIVERY_PASSES: tuple[str, ...] = (
     "mix the soundtrack",
@@ -87,9 +85,8 @@ def assemble(
     strict: bool = False,
 ) -> AssembleResult:
     """Cut, mix, normalize and publish the whole film, with everything a viewer receives beside it."""
-    started = clock()
-    takes = _takes(inputs)
-    stray_cuts(inputs, run)
+    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
+    remove_stray_cuts(inputs)
     passes = Passes(run, len(inputs.document.sections))
     rows = render_sections(
         inputs, run, takes, only=list(only) if only is not None else None, strict=strict, passes=passes.total
@@ -127,19 +124,7 @@ def assemble(
         film_seconds=ffmpeg.probe_duration(inputs.workspace.film),
         sections=_rendered_rows(inputs, rows),
         loudness=None if after is None else measured(inputs, after),
-        seconds=since(started),
     )
-
-
-def _takes(inputs: Inputs) -> Takes:
-    """The take index, or the refusal that names the stage which writes it."""
-    takes = inputs.takes()
-    if takes is None:
-        raise NotBuiltError(
-            "the take index is not there, so no section has a length to cut to.",
-            hint="Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing.",
-        )
-    return takes
 
 
 def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *, loudness: bool, strict: bool
@@ -160,7 +145,7 @@ def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *,
     missed = loudness_findings(inputs, run, after)
     if missed and strict:
         raise ToolError(
-            f"the mix missed the loudness it was mastered to in {len(missed)} way(s).",
+            f"the mix missed the loudness it was mastered to in {counted(len(missed), 'way')}.",
             hint="Publish it as it is, or change [mix.loudness] to what this film is for.",
         )
     return after

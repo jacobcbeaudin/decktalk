@@ -130,7 +130,8 @@ Yes. DeckTalk runs on Linux, macOS and Windows.
 - What DeckTalk fetches goes under `%LOCALAPPDATA%` on Windows, and `[tools] cache_dir` moves it.
   Chromium is fetched by the first command that needs it, or up front by `decktalk install`. If a
   proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents, or point
-  `[record] browser_path` at a browser the machine already has.
+  `[record] browser_path` at a browser the machine already has, with
+  `decktalk config set record.browser_path PATH --where machine`.
 - The groups that drive a real browser or a real ffmpeg run on macOS and Windows when a change
   merges and when a release is cut. Those legs report cue timing rather than fail on it, because a
   hosted runner presents frames late, and the Linux legs hold every reveal to its word.
@@ -148,7 +149,7 @@ init` also writes six skills into the project, which hold the craft a help scree
 
 ## What does the lesson example mean by error?
 
-The "error" in `decktalk init --example lesson` is what machine learning calls the loss. The lesson
+The "error" in `decktalk init my-lesson --example lesson` is what machine learning calls the loss. The lesson
 uses "error" because the everyday word already says that lower is better.
 
 - **One guess.** A loss function scores one guess. For a category guess, such as seal or otter, the

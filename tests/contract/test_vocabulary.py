@@ -43,10 +43,11 @@ words an enum really owns.
 from __future__ import annotations
 
 import ast
-import json
 import sys
+from collections.abc import Iterable
 from enum import Enum
 from pathlib import Path
+from typing import Protocol, cast
 
 import pytest
 
@@ -58,20 +59,20 @@ from decktalk.findings import Applicability, Certainty, Code, RaisedBy
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     Layer,
+    Nature,
     Scope,
     SectionKind,
     SkipReason,
     SoundKind,
     SoundStatus,
+    Source,
     SpendState,
     Substitute,
     TakeStatus,
     Voicing,
 )
-from decktalk.tomlmap import Nature, Source
-from support.paths import REPO
-
-ROOT = REPO
+from support import ratchet
+from support.paths import REPO, SRC, TESTS
 
 BASELINE = Path(__file__).resolve().parent / "vocabulary-baseline.json"
 """The committed per-file count of literals still spelling a closed vocabulary, which only ever shrinks."""
@@ -94,10 +95,10 @@ DEFINING = {
 }
 """The modules that define the enums, where every word of the vocabulary is written once.
 
-`page.py` is here although no enum below is declared in it, because it publishes the page's half of
-the finding codes as `PageWarning` and its own closed word sets, so it spells the same words by
-being the contract. The mirrored test of each of these modules is here for the same reason: holding
-the frozen list is its whole subject, so it writes every word out on purpose.
+`page.py` is here although no enum below is declared in it, because it publishes the page's own
+closed word sets, so it spells the same words by being the contract. The mirrored test of each of
+these modules is here for the same reason: holding the frozen list is its whole subject, so it
+writes every word out on purpose.
 """
 
 KEY_READERS = {"get", "pop", "setdefault"}
@@ -187,23 +188,34 @@ def _called(node: ast.Call) -> str:
     return func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
 
 
-def _constants(node: ast.AST) -> list[ast.Constant]:
-    return [n for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+class Text(Protocol):
+    """A string constant in the tree, which is the only constant this walk reads."""
+
+    value: str
+    lineno: int
 
 
-def _words(nodes: list[ast.expr]) -> list[ast.Constant]:
+def _texts(nodes: Iterable[ast.AST]) -> list[Text]:
+    """The string constants among these nodes, typed as the strings the filter has just proved them."""
+    return [cast("Text", n) for n in nodes if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+
+
+def _constants(node: ast.AST) -> list[Text]:
+    return _texts(ast.walk(node))
+
+
+def _words(nodes: list[ast.expr]) -> list[Text]:
     """The string constants among these nodes, and among the elements of a list or a tuple among them."""
-    found: list[ast.Constant] = []
+    found: list[Text] = []
     for node in nodes:
-        items = node.elts if isinstance(node, (ast.List, ast.Tuple)) else [node]
-        found += [item for item in items if isinstance(item, ast.Constant) and isinstance(item.value, str)]
+        found += _texts(node.elts if isinstance(node, (ast.List, ast.Tuple)) else [node])
     return found
 
 
-def _prose(node: ast.AST) -> list[ast.Constant]:
+def _prose(node: ast.AST) -> list[Text]:
     """The string constants in one node that are prose, which is a docstring or an f-string part."""
-    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-        return [node.value]  # A docstring, or a bare string standing as one.
+    if isinstance(node, ast.Expr):
+        return _texts([node.value])  # A docstring, or a bare string standing as one.
     if isinstance(node, ast.JoinedStr):
         return _constants(node)
     if isinstance(node, ast.Assign):
@@ -212,7 +224,7 @@ def _prose(node: ast.AST) -> list[ast.Constant]:
     return []
 
 
-def _keys_of_call(node: ast.Call) -> list[ast.Constant]:
+def _keys_of_call(node: ast.Call) -> list[Text]:
     """The string constants one call reads as a key, an attribute name or a word of a command line."""
     name = _called(node)
     if name in COMMAND_LINE_RUNNERS:
@@ -224,7 +236,7 @@ def _keys_of_call(node: ast.Call) -> list[ast.Constant]:
     return []
 
 
-def _keys(node: ast.AST) -> list[ast.Constant]:
+def _keys(node: ast.AST) -> list[Text]:
     """The string constants in one node that name a key, an attribute or a word of a command line."""
     if isinstance(node, ast.Assign):
         names = {target.id for target in node.targets if isinstance(target, ast.Name)}
@@ -246,7 +258,7 @@ def _keys(node: ast.AST) -> list[ast.Constant]:
 def exempt(tree: ast.Module) -> set[int]:
     """The ids of every string constant that is prose, an export, a lower-case key or a command word."""
     prose: set[int] = set()
-    keys: list[ast.Constant] = []
+    keys: list[Text] = []
     for node in ast.walk(tree):
         prose.update(id(constant) for constant in _prose(node))
         keys += _keys(node)
@@ -266,15 +278,15 @@ def violations(source: str, where: str) -> list[str]:
 
 
 def python_files() -> list[Path]:
-    files = [*(ROOT / "src" / "decktalk").rglob("*.py"), *(ROOT / "tests").rglob("*.py")]
-    return sorted(p for p in files if "__pycache__" not in p.parts and "out" not in p.relative_to(ROOT).parts)
+    files = [*SRC.rglob("*.py"), *TESTS.rglob("*.py")]
+    return sorted(p for p in files if "__pycache__" not in p.parts and "out" not in p.relative_to(REPO).parts)
 
 
 def measured() -> dict[str, int]:
     """How many literals each file still spells, which is what the baseline is a count of."""
     found: dict[str, int] = {}
     for path in python_files():
-        where = path.relative_to(ROOT).as_posix()
+        where = path.relative_to(REPO).as_posix()
         if where in DEFINING:
             continue
         count = len(violations(path.read_text(encoding="utf-8"), where))
@@ -283,38 +295,17 @@ def measured() -> dict[str, int]:
     return found
 
 
-def baseline() -> dict[str, int]:
-    return dict(json.loads(BASELINE.read_text(encoding="utf-8"))["files"])
+def test_the_baseline_only_shrinks():
+    """A file off the list spells no word, a file on it never grows, and a beaten count is written down.
 
-
-def test_no_file_outside_the_baseline_spells_a_word_of_the_vocabulary():
-    """A file with no entry uses the enum member, which is the whole rule for new code."""
-    excused = baseline()
-    added = {name: count for name, count in measured().items() if name not in excused}
-    assert not added, (
-        "these files spell a closed vocabulary as a string: "
-        + ", ".join(f"{name} ({count})" for name, count in sorted(added.items()))
-        + ". Use the enum member, and `.value` where the word is written into text."
-    )
-
-
-def test_no_file_on_the_baseline_spells_more_than_it_did():
-    """The list only shrinks, so a change that adds a literal to a file already on it is refused."""
-    found = measured()
-    grown = {name: (count, found[name]) for name, count in baseline().items() if found.get(name, 0) > count}
-    assert not grown, "these files grew a literal: " + ", ".join(
-        f"{name} {was} to {now}" for name, (was, now) in sorted(grown.items())
-    )
-
-
-def test_a_baseline_entry_no_file_needs_any_more_is_removed():
-    """A count the code has beaten is a debt list rather than a rule, so it is written down as zero."""
-    found = measured()
-    stale = {name: count for name, count in baseline().items() if found.get(name, 0) < count}
-    assert not stale, (
-        "these files spell fewer words than the baseline excuses, so the baseline is stale: "
-        + ", ".join(f"{name} {count} to {found.get(name, 0)}" for name, count in sorted(stale.items()))
-        + ". Run `uv run python tests/contract/test_vocabulary.py --write`."
+    One walk of the tree answers all three, so the message names every kind of drift at once.
+    """
+    added, grown, stale = ratchet.drift(measured(), ratchet.baseline(BASELINE))
+    assert not (added or grown or stale), (
+        f"These files spell a closed vocabulary as a string and are not excused: {added}. Use the enum "
+        f"member, and `.value` where the word is written into text. These files grew a literal: {grown}. "
+        f"These files spell fewer words than the baseline excuses: {stale}. Run "
+        "`uv run python tests/contract/test_vocabulary.py --write` to lower a beaten count."
     )
 
 
@@ -390,23 +381,12 @@ def test_every_word_with_a_second_job_is_still_a_word_an_enum_owns(word):
 
 def test_every_defining_module_is_still_there():
     for name in sorted(DEFINING):
-        assert (ROOT / name).exists(), f"{name} defines part of the vocabulary and is not there any more."
-
-
-def _write() -> int:
-    """Lower every count the code has beaten, and refuse to raise one, which is the ratchet."""
-    committed = baseline() if BASELINE.exists() else {}
-    found = measured()
-    lowered = {name: min(count, found.get(name, 0)) for name, count in {**found, **committed}.items()}
-    kept = {name: count for name, count in sorted(lowered.items()) if count}
-    raised = sorted(name for name, count in found.items() if count > committed.get(name, count))
-    BASELINE.write_text(json.dumps({"files": kept}, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {BASELINE.name} with {len(kept)} files and {sum(kept.values())} literals")
-    if raised:
-        print("these files are not excused and must use the enum member: " + ", ".join(raised))
-        return 1
-    return 0
+        assert (REPO / name).exists(), f"{name} defines part of the vocabulary and is not there any more."
 
 
 if __name__ == "__main__":
-    sys.exit(_write())
+    sys.exit(
+        ratchet.write(
+            BASELINE, measured(), noun="literals", refusal="these files are not excused and must use the enum member"
+        )
+    )

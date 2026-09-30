@@ -29,11 +29,6 @@ from decktalk.results import SectionWords, WordsResult
 from decktalk.stages import selects
 
 
-def take_index(inputs: Inputs) -> Takes:
-    """The take index, or a `NOT_BUILT` refusal naming the stage that writes it."""
-    return Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
-
-
 def row_of(inputs: Inputs, take: Take) -> SectionWords:
     """One section's words, on its own clock, carrying the script's own spelling."""
     spoken = inputs.words(take.section, take.hash)
@@ -65,7 +60,7 @@ def words(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Wor
     A section this run was asked for that has no take is a refusal rather than an empty row, because
     a caller that read an empty answer for a finished one would write its cue phrase against nothing.
     """
-    takes = take_index(inputs)
+    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
     chosen = selects(only)
     if only:
         spoken = {take.section for take in takes.sections}
@@ -80,4 +75,4 @@ def words(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Wor
     return run.result(WordsResult, sections=rows)
 
 
-__all__ = ["row_of", "section_words", "take_index", "words"]
+__all__ = ["row_of", "section_words", "words"]

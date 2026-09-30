@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator
+from itertools import pairwise
 
 from decktalk.errors import InputError
 from decktalk.inputs.script import SECTION_RE, Segment
+from decktalk.results import counted
 
 INLINE_DIRECTION_RE = re.compile(r"^(?:beat|pause\s+\d+(?:\.\d+)?)$", re.IGNORECASE)
 """The two directions a paragraph may hold, which the parser turns into a pause the author asked for.
@@ -46,22 +48,27 @@ SHOWN_TOKENS = 5
 """Calibration: five words are enough to recognise the line, where the whole list would be a wall of text."""
 
 
-def spoken_lines(markdown: str) -> Iterator[tuple[int, str]]:
-    """(line number, line) for each line the voice reads, which is the body of every numbered section."""
-    inside = False
+def spoken_lines(markdown: str) -> Iterator[tuple[int, int, str]]:
+    """(line number, section number, line) for each line the voice reads, which is the body of every numbered section.
+
+    A finding about one line is more use with the section it sits in, because that is the unit an
+    author edits and the unit every other row of a check is grouped by.
+    """
+    section: int | None = None
     for number, line in enumerate(markdown.splitlines(), start=1):
-        if SECTION_RE.match(line):
-            inside = True
+        match = SECTION_RE.match(line)
+        if match:
+            section = int(match.group("num"))
         elif line.startswith(("# ", "## ")) or line.strip() == "---":
-            inside = False
-        elif inside:
-            yield number, line
+            section = None
+        elif section is not None:
+            yield number, section, line
 
 
 def script_refusals(markdown: str) -> list[tuple[int, str]]:
     """(line, what) for everything in the spoken text the voice would read out or silently swallow."""
     out: list[tuple[int, str]] = []
-    for number, line in spoken_lines(markdown):
+    for number, _section, line in spoken_lines(markdown):
         if COMMENT_RE.search(line):
             out.append((number, "an HTML comment, which the voice reads out"))
         if BRACE_RE.search(line):
@@ -86,7 +93,7 @@ def check_script(where: str, markdown: str) -> None:
         return
     rows = "\n  ".join(f"line {number}: {what}" for number, what in refusals)
     raise InputError(
-        f"{where} has {len(refusals)} thing(s) the voice must not receive:\n  {rows}",
+        f"{where} has {counted(len(refusals), 'thing')} the voice must not receive:\n  {rows}",
         hint=(
             "A stage direction goes on a line of its own. Inside a paragraph, write [beat] or "
             "[pause N] and nothing else."
@@ -115,11 +122,7 @@ def ascending(segments: Iterable[Segment]) -> tuple[Segment, Segment] | None:
     The take index is the one order the narration is joined in, so a script that counts backwards
     would place its takes in an order no other reading of the project agrees with.
     """
-    rows = list(segments)
-    for first, second in zip(rows, rows[1:], strict=False):
-        if second.index <= first.index:
-            return first, second
-    return None
+    return next(((first, second) for first, second in pairwise(segments) if second.index <= first.index), None)
 
 
 __all__ = [

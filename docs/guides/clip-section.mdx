@@ -46,8 +46,9 @@ phone video plays in a letterbox rather than distorted. A clip with no audio tra
 
 A clip section whose file is missing plays a titled slate for `slate_seconds`, so a project can carry
 the section before the video exists and everyone can watch the film with a hole labelled rather than
-a hole. The slate is drawn once, kept under `build/final/slates/`, and carries the section number,
-the line `Your clip goes here`, and the path to drop the file at. It is drawn on the colour
+a hole. The slate carries the section number, the line `Your clip goes here`, and the path to drop the
+file at. It is kept under `build/stills/` by everything it shows, so a renamed chapter or a new colour
+draws it again. It is drawn on the colour
 [`[video] slate_color`](/reference/configuration#video) names, and `[mix] slate` points at an image of
 your own to use in its place.
 

@@ -14,27 +14,21 @@ it. The query is typed, so no key outside the contract can reach a page.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict
 
-from playwright.sync_api import Page
-
-from decktalk.findings import Code, Finding, Location
-from decktalk.inputs import Inputs
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs.document import PageSection
 from decktalk.machine import Run
-from decktalk.media import MILLISECONDS, frames
-from decktalk.media.browser import screenshot
-from decktalk.media.pagereport import MeasuredScene, PageReport
+from decktalk.media import frames
+from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Attr
-from decktalk.pagescan import asset_findings, slide_findings
-from decktalk.results import Panel, SkipReason
+from decktalk.pagescan import Slides, measured_rows, slide_findings
+from decktalk.results import SkipReason
 from decktalk.settings import Settings
-from decktalk.stages import SECOND_DIGITS, judge
+from decktalk.stages import SECTION_START_SECONDS
 from decktalk.stages.check.freeze import FramePair, first_state, last_state, plan_frames
-from decktalk.stages.cue.catalog import measured_rows
-from decktalk.stages.storyboard import Freeze, Slides, freeze_url
+from decktalk.stages.storyboard import Freeze, Sheet
 from decktalk.stages.verify import thin_change
 from decktalk.stages.verify.plan import frame_size
 
@@ -45,55 +39,6 @@ A stroke sweeps a thin area, so a `draw` that changes less of the picture than t
 too thin to see rather than a reveal that never happened, which is why the two carry their own codes.
 The page cannot raise it, because the floor it is read against is a settings key no browser reads.
 """
-
-FROZEN_CONTROL_PERCENT = 0.0
-"""Truth: two frozen frames hold nothing in motion, so the control share between them is zero."""
-
-
-@dataclass
-class Sheet:
-    """One browser page drawing frozen states, with what it drew and where it put each one.
-
-    A state is drawn once however many cues are measured between it and another, because the same
-    URL is the same picture, and every file it writes is reported through the run.
-    """
-
-    inputs: Inputs
-    run: Run
-    pages: Mapping[str, Page]
-    settle_ms: int
-    drawn: dict[str, Path] = field(default_factory=dict)
-    panels: list[Panel] = field(default_factory=list)
-
-    def frozen(self, section: PageSection, freeze: Freeze) -> Path:
-        """The file holding one frozen state of one section, drawn now unless it is already there."""
-        url = freeze_url(self.inputs, section, freeze)
-        if url not in self.drawn:
-            target = self.inputs.workspace.frames_dir / section.key / f"{freeze.label}.png"
-            screenshot(self.pages[section.page], url, target, settle_ms=self.settle_ms)
-            self.run.wrote(target)
-            self.drawn[url] = target
-        return self.drawn[url]
-
-    def panel(self, section: PageSection, freeze: Freeze, cue: str | None, at: float) -> None:
-        """Keep one drawn state as a panel of the storyboard this check writes."""
-        image = self.drawn.get(freeze_url(self.inputs, section, freeze))
-        if image is None:
-            return
-        self.panels.append(
-            Panel(
-                section=section.number,
-                slide=freeze.slide,
-                cue=cue,
-                at=round(at, SECOND_DIGITS),
-                image=self.inputs.relative(image),
-            )
-        )
-
-
-def settle_milliseconds(inputs: Inputs) -> int:
-    """How long a page is left to draw itself before its frame is taken, in the unit Chromium waits in."""
-    return int(inputs.settings.record.screenshot_settle_seconds * MILLISECONDS)
 
 
 def share_code(share: float, settings: Settings, *, drawn: bool) -> Code | None:
@@ -126,23 +71,6 @@ def share_message(code: Code, cue: str, share: float, settings: Settings) -> str
         f"freezing the slide either side of {cue} changes {share:.2f} percent of the frame, which passes the "
         f"{floor:.2f} percent floor by less than the {cfg.thin_change_factor:g} times a clean reveal clears it."
     )
-
-
-def page_findings(report: PageReport, *, where: str, section: int | None = None) -> list[Finding]:
-    """Everything the page said about itself while it was frozen, as the codes it named.
-
-    The page carries its own code on every warning, so nothing here reads a sentence to work out
-    what happened, which is the channel that used to be prose classified by substring.
-    """
-    return [
-        judge(row.code, row.message, Location(where=row.slide or where, section=section, cue=row.cue))
-        for row in report.warnings
-    ]
-
-
-def origin_findings(origins: Iterable[str], *, where: str, section: int | None = None) -> list[Finding]:
-    """One judgement per other origin a page reached for, which the film does not own and cannot replay."""
-    return asset_findings(origins, where=where, section=section)
 
 
 def static_findings(
@@ -183,7 +111,7 @@ def landing_findings(
 ) -> list[Finding]:
     """One judgement per cue whose frozen frames say the reveal would not be measured as it stands."""
     settings = sheet.inputs.settings
-    size = {"level": settings.verify.probe_diff_luma, **frame_size(settings)}
+    size = {"level": settings.verify.probe_diff_luma, **asdict(frame_size(settings))}
     strokes = drawn_cues(entry)
     declared = element_cues(entry)
     found: list[Finding] = []
@@ -240,9 +168,8 @@ def opening_panels(sheet: Sheet, section: PageSection, slides: Slides, times: Ma
     slide is the picture that slide opens on, so the sheet is complete without drawing anything twice.
     """
     for slide, wires in slides.items():
-        resolved = [times[wire] for wire in wires if wire in times]
-        opening = Freeze(slide, before=wires[0]) if wires else Freeze(slide)
-        sheet.panel(section, opening, None, min(resolved) if resolved else 0.0)
+        opening = min((times[wire] for wire in wires if wire in times), default=SECTION_START_SECONDS)
+        sheet.panel(section, Freeze.state(slide, (), wires), None, opening)
 
 
 def seam_findings(
@@ -267,7 +194,7 @@ def seam_findings(
     if last is None or first is None:
         sheet.run.note(f"section {section.number} declares seamless and a side of its cut has no resolved cue.")
         return []
-    size = {"level": settings.verify.probe_diff_luma, **frame_size(settings)}
+    size = {"level": settings.verify.probe_diff_luma, **asdict(frame_size(settings))}
     share = frames.changed_images_percent(sheet.frozen(previous, last), sheet.frozen(section, first), **size)
     limit = settings.verify.cut_change_max_percent
     if share <= limit:
@@ -289,16 +216,11 @@ def judged_pages(sections: Sequence[PageSection], extra: Sequence[str]) -> tuple
 
 __all__ = [
     "DRAW_STYLE",
-    "FROZEN_CONTROL_PERCENT",
-    "Sheet",
     "drawn_cues",
     "judged_pages",
     "landing_findings",
     "opening_panels",
-    "origin_findings",
-    "page_findings",
     "seam_findings",
-    "settle_milliseconds",
     "share_code",
     "share_message",
     "static_findings",

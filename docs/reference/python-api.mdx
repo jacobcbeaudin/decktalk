@@ -48,7 +48,7 @@ decktalk.open(path=None, *, machine=None, overrides=()) -> Project
 |---|---|---|
 | `path` | `DECKTALK_PROJECT`, then the directory the process started in | The project directory, or the path of its `decktalk.toml`. |
 | `machine` | a machine made from the environment | The `Machine` to open this project on, which is how two projects share one toolchain and one event stream. |
-| `overrides` | `()` | `table.key=value` strings, which are the top settings layer for every call on this project. |
+| `overrides` | `()` | `table.key=value` strings, which are the top settings layer for every call on this project. When `machine` is given they may set project-scoped keys only, and a machine-scoped key belongs in that machine's own overrides. |
 
 A script that opens two projects should make one `Machine` itself and hand it to both, because the
 machine is what carries the shared toolchain and the shared stream.
@@ -103,8 +103,8 @@ project.assemble(*, only=None, soundscape=True, loudness=True, strict=False,
                  cancel=None) -> AssembleResult
 project.verify(*, only=None, cancel=None) -> VerifyResult
 project.build(*, stages=None, skip=(), only=None, voice=Voicing.PLACEHOLDER, max_cost=None,
-              force=False, replace_voiced=False, soundscape=True, loudness=True,
-              strict=False, allow_unknown=False, cancel=None) -> BuildResult
+              force=False, replace_voiced=False, loudness=True, strict=False,
+              allow=(), stop_on=Certainty.CERTAIN, cancel=None) -> BuildResult
 project.status(*, cancel=None) -> StatusResult
 project.check(*paths, only=None, pages=True, frames=True, cancel=None) -> CheckResult
 project.words(*, only=None, cancel=None) -> WordsResult
@@ -131,6 +131,52 @@ stages are members of, in run order: `NARRATE`, `CUE`, `RECORD`, `SOUNDSCAPE`, `
 | `words` | Every spoken word with its start and its end, which is how a cue phrase is written. | nothing |
 | `storyboard` | Freezes every slide at every cue onto one page. | `build/storyboard/` and `build/storyboard.html` |
 | `clip` | Cuts a span of one built section into its own file. | the file `out` names, and its words file |
+
+### The parameters that spend or change what a call does
+
+| Parameter | Calls | What it does |
+|---|---|---|
+| `voice` | `narrate`, `soundscape`, `build` | `Voicing.PAID` buys what needs buying. `Voicing.PLACEHOLDER`, the default, buys nothing: `narrate` writes a click track and a word clock, and `soundscape` reports its plan. |
+| `max_cost` | `narrate`, `soundscape`, `build` | A ceiling in US dollars on the most the run can cost, checked before the first paid request. A run over it raises `ApprovalRequired`. |
+| `only` | every call but `status` and `clip` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. |
+| `force` | `narrate`, `record`, `soundscape`, `build` | Does the work again where what is on disk still matches. A paid take is kept unless `replace_voiced` is true as well, and on `soundscape` every item is bought again, which spends again. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
+| `replace_voiced` | `narrate`, `build` | Voices a section again and discards the paid take it replaces. Without it, a run that would replace a paid take raises `InputError`, which names the unpaid sections to rehearse instead. |
+| `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it, and a build whose `skip` names `Stage.SOUNDSCAPE` also leaves the soundscape's audio out of the mix. |
+| `soundscape` | `assemble` | False leaves the soundscape's audio out of the mix. |
+| `loudness` | `assemble`, `build` | False skips the loudness pass, so the soundtrack is encoded as it was mixed. A placeholder narration skips it in any case. |
+| `strict` | `assemble`, `build` | True raises `ToolError` when the mix misses the loudness it was mastered to, rather than reporting `MIX_LOUDNESS` and writing the film. |
+| `allow_unknown` | `cue` | True keeps a cue that no page declares out of the findings. |
+| `stop_on` | `build` | The least certain finding that stops the run: `Certainty.CERTAIN`, the default, stops on a certain one, `Certainty.UNCERTAIN` on any, and None never stops. |
+| `allow` | `build` | Codes that never stop the run, whatever their certainty. They are still reported. |
+
+A build that stops is not an error. It returns its `BuildResult` with `ok` false, every finding the
+stages that ran made, the spend so far, the stages it did not reach as `skipped`, and `stopped_at`
+naming the stage it stopped after. `stopped_at` is None on a build that ran through.
+
+```python
+import decktalk
+
+project = decktalk.open("my-lesson")
+result = project.build(allow=[decktalk.Code.CUE_UNKNOWN])
+if result.stopped_at is not None:
+    print(f"stopped after {result.stopped_at.value}, spent ${result.spend.dollars:.2f}")
+    for finding in result.findings:
+        print(finding.code.name, finding.message)
+```
+
+### What a call raises
+
+| Exception | Raised by |
+|---|---|
+| `ApprovalRequired` | `narrate`, `soundscape` and `build`, when a run would spend and `voice` did not approve it, or when `max_cost` refuses it. |
+| `ProjectLocked` | Every call that writes, when another writer holds the build directory. |
+| `NotBuiltError` | A call that needs an artifact no earlier run made, such as `cue`, `words` or `verify` before any `narrate`. |
+| `ProviderError` | `narrate`, `soundscape` and `build` on a paid run, when the voice service fails. |
+| `ToolError` | Every call that opens a page or runs ffmpeg, when Chromium or ffmpeg is missing or fails. |
+| `InputError` | Every call, when a file the author writes is missing, unreadable or malformed. |
+| `Cancelled` | Every call, when its `cancel` token is set. |
+
+[Errors](#errors) says what each one carries.
 
 A call that writes holds a lock on the build directory for its whole length, so two writing runs
 cannot overwrite each other's work. A second writer meets `ProjectLocked`. `status`, `words` and
@@ -314,8 +360,9 @@ because an error means DeckTalk could not run at all.
 
 A `Code` member carries more than its name. `code.sentence` is what the condition is,
 `code.certainty` is how sure it is, `code.raised_by` is `RaisedBy.RUNTIME` when the page reports it
-from the browser and `RaisedBy.PYTHON` when DeckTalk measures it, `code.decides` names the settings
-keys whose values decide it, and `code.url` is its page.
+from the browser and `RaisedBy.PYTHON` when DeckTalk measures it, and `code.url` is its page. The
+settings keys that move a code are declared on the keys themselves, and `decktalk.explain(KEY)`
+lists the codes one key decides.
 
 ```python
 import decktalk
@@ -325,10 +372,10 @@ for finding in project.check(pages=False).findings:
     code = finding.code
     print(code.name, finding.certainty.value, finding.location.where)
     print("  ", finding.message)
-    print("  knobs that decide it:", code.decides)
+    print("  read more:", code.url)
 ```
 
-A fix is one of three shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
+A fix is one of four shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
 saying what applying it does, and an `applicability`.
 
 | `kind` | Class | What it changes |
@@ -336,6 +383,7 @@ saying what applying it does, and an `applicability`.
 | `edit` | `EditFix` | `edits`, a run of `Edit` objects applied together or not at all. Each names exactly one of `pointer`, `key` or `line`. |
 | `setting` | `SettingFix` | `key` and `value`, in the same key space `config set` takes. |
 | `command` | `CommandFix` | `command`, the whole argv a caller may hand to a subprocess. |
+| `runtime` | `RuntimeFix` | `file`, a project's copy of the runtime, which becomes the engine's own. |
 
 `Applicability.SAFE` cannot lose the author's work. `Applicability.UNSAFE` can, so it is applied only
 when the caller asked for that. `Applicability.DISPLAY` is a change only a person can make, so it is
@@ -403,13 +451,13 @@ Every line carries four fields the library mints, so an emitter states only what
 | `seq` | This line's place in its run, counting from zero. |
 | `run` | The id of the run this line belongs to. |
 
-There are eleven names and eleven models. Skip and fail are not names, because `stage.done` and
+There are twelve names and twelve models. Skip and fail are not names, because `stage.done` and
 `section.done` carry an `outcome` instead.
 
 | `event` | Class | What it carries beyond the four |
 |---|---|---|
 | `run.start` | `RunStart` | `events_path`, the file this run's lines are appended to, or null when no project holds one. |
-| `run.done` | `RunDone` | `outcome`, `seconds`. |
+| `run.done` | `RunDone` | `outcome`, `seconds`, and `error` in the shape a result's error takes when the run stopped or failed. |
 | `stage.start` | `StageStart` | `stage`, `index` counting from one, `count` of stages the run planned. |
 | `stage.done` | `StageDone` | `stage`, `outcome`, `seconds`. |
 | `section.start` | `SectionStart` | `stage`, `section`. |
@@ -417,16 +465,22 @@ There are eleven names and eleven models. Skip and fail are not names, because `
 | `progress` | `Progress` | `stage`, `section` or null, `done`, `total`, `unit`, `label`. |
 | `finding` | `FindingEvent` | `finding`, in the same shape the result will carry. |
 | `spend` | `SpendEvent` | `spend`, with its state saying whether it is an estimate. |
+| `take.charged` | `TakeCharged` | `section`, `take`, `characters` and `dollars` for one take the provider was paid for. |
 | `fetch` | `Fetch` | `tool`, `bytes`, `total_bytes` or null. |
-| `log` | `Log` | `level`, `message`. |
+| `log` | `Log` | `level`, `message`, and `source`, `stage`, `section` and a flat `data` map, each null when unknown. |
 
-`Outcome` is `OK`, `SKIPPED` or `FAILED`. `Unit` is `TAKE`, `SECTION`, `ASSET`, `PASS` or `PROBE`,
-so a renderer names the thing rather than a bare number: narrate counts takes, record counts
-sections, soundscape counts assets, assemble counts encoding passes and verify counts probes.
-`Level` is `DEBUG`, `INFO`, `WARNING` or `ERROR`.
+`Outcome` is `OK`, `KEPT`, `SKIPPED`, `STOPPED` or `FAILED`. `KEPT` is a stage a build planned and
+did not repeat, because nothing it reads had changed since the last build ran it, and `STOPPED` is
+a run, a stage or a section its caller cancelled or interrupted. `Unit` is `TAKE`,
+`SECTION`, `ASSET`, `PASS` or `PROBE`, so a renderer names the thing rather than a bare number:
+narrate counts takes, record counts sections, soundscape counts assets, assemble counts encoding
+passes and verify counts probes. `Level` is `DEBUG`, `INFO`, `WARNING` or `ERROR`.
 
 `JsonlSink` is the subscriber that appends one JSON line per event to a file. Every run of a project
-gets one, at `build/events/<run>.jsonl`, and `output.events_keep_runs` prunes the oldest.
+gets one, at `build/events/<run>.jsonl`, and `output.events_keep_runs` prunes the oldest. A sink given
+`max_bytes`, as every project run's is from `output.events_max_bytes`, leaves progress, fetch, debug
+and info lines out once the file reaches it, keeps every line about the run's shape, its findings
+and its spending, and reports how many it left out as `dropped` on `run.done`.
 
 ```python
 import decktalk
@@ -463,12 +517,9 @@ the last run resolved.
 
 | Member | Meaning |
 |---|---|
-| `url` | Where the deck is served, which is what an author opens and a recorder drives. |
-| `port` | The port the origin listens on, which a caller reads when it asked for any free one. |
+| `result` | The `ServeResult`: `url` is where the deck is served, `port` is the port the origin listens on, which a caller reads when it asked for any free one. |
 | `wait()` | Block until the origin is closed, which is what a command with no other work to do does. |
 | `close()` | Stop serving, after which the URL answers nothing. |
-| `result` | The `ServeResult`, with `url`, `port` and `root`. |
-| `run` | The run this origin opened. |
 
 It is also a context manager, so the `with` form closes it.
 
@@ -477,8 +528,8 @@ import decktalk
 
 project = decktalk.open("my-lesson")
 with project.serve(port=0) as origin:
-    print(origin.url)     # http://127.0.0.1:64434
-    print(origin.port)    # 64434
+    print(origin.result.url)     # http://127.0.0.1:64434
+    print(origin.result.port)    # 64434
     origin.wait()
 ```
 
@@ -568,8 +619,8 @@ becomes one.
 decktalk.Machine.from_environment(*, overrides=()) -> Machine
 ```
 
-This is the only reading of the environment there is. `overrides` is an iterable of
-`(key, value)` pairs.
+This is the only reading of the environment there is. `overrides` is an iterable of `key=value`
+strings, spelled as `--set` spells them.
 
 | Member | Meaning |
 |---|---|
@@ -581,13 +632,15 @@ This is the only reading of the environment there is. `overrides` is an iterable
 | `events` | The stream every run on this machine writes to. |
 | `cache_dir` | Where this machine keeps the browser and the encoder it fetches. |
 | `voice_key` | True when the credential a paid run would use is set. It is asked and never revealed. |
-| `provider(name)` | The factory one `[voice] provider` name answers to, or an `InputError` naming the providers it knows. |
+| `providers` | The voices this machine answers with by name, or None for the ones DeckTalk ships. A host's table replaces the shipped one rather than sitting over it. |
+| `dotenv` | Whether a project's `.env` is read. True from the environment, false from `Machine.of` unless the host says otherwise. |
+| `allow_any_api_base` | Whether `[elevenlabs] api_base` may name a host other than ElevenLabs. |
 | `install(*, cancel=None)` | Fetch the browser and the encoder, before a build asks for them. |
 | `doctor(*, measure=False, cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. |
 | `apply(fix, *, unsafe=False)` | Carry out the fixes a machine can make. |
 
-`doctor(measure=True)` drives a browser to measure this host's presentation bias and writes it to
-the per-machine settings file, which is the one key a command measures rather than a person chooses.
+`doctor(measure=True)` drives a browser to measure this host's presentation bias and reports it as
+`bias_ms`. It writes nothing, because no stage reads it.
 
 ```python
 import decktalk
@@ -599,18 +652,150 @@ for tool in report.tools:
 print(report.python, report.platform, report.cache, report.voice_key)
 ```
 
+## Running DeckTalk inside a service
+
+A service that renders other people's projects holds three things apart that an author's own machine
+holds together: the voice key, the pages, and the processes that touch each. This section is the
+contract a host builds on.
+
+### A machine the host builds
+
+```python
+decktalk.Machine.of(*, environ, config_path, cwd, cache_dir, providers=None, overrides=(),
+                    dotenv=False, allow_any_api_base=False) -> Machine
+```
+
+`Machine.from_environment()` reads the process. `Machine.of` reads nothing, so every value a job may
+see is one the host chose.
+
+| Parameter | Meaning |
+|---|---|
+| `environ` | Every variable a run on this machine may see. A render job passes none, and a voice job passes the key and the voice id. |
+| `config_path` | The per-machine settings file, read when it is there and where a machine fix lands. The host writes the machine-scoped keys it sets, such as `[record] concurrency`, here. |
+| `cwd` | The directory a relative project path is read from. |
+| `cache_dir` | Where the fetched Chromium and ffmpeg live. |
+| `providers` | The voices this machine answers with by name. It replaces the shipped table, so a machine built with a fake voice reaches no real one by a name the host left out. |
+| `overrides` | `key=value` strings, spelled as `--set` spells them, that override settings on this machine. A project opened on it starts from them, and the overrides `decktalk.open` is given come after them. |
+| `dotenv` | False by default, so a project's `.env` is never read and a tenant's upload cannot supply a credential. |
+| `allow_any_api_base` | False by default, so the key goes to ElevenLabs and nowhere else. |
+
+The page policy is machine-scoped, so the host sets it on the render machine, in the file at
+`config_path` or in `overrides`, and a project file that names it is refused.
+
+```python
+render = decktalk.Machine.of(environ={}, config_path=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
+                             overrides=["record.page_policy=untrusted"])
+```
+
+### One call on one worker thread
+
+Every call is synchronous and blocks until its run is over. Chromium is driven through Playwright's
+synchronous API, which refuses to run on a thread whose asyncio loop is running, so an async host
+runs each call on a worker thread, for example with `asyncio.to_thread`. Each call opens and closes
+its own run, and the machine's toolchain, voices and `.env` rule are bound for that run alone, so two
+calls on two threads do not share them.
+
+A run checks its `Cancel` between sections, and `tools.timeout_seconds` stops any one ffmpeg call that
+runs longer than it allows.
+
+### Three readers of one account
+
+A run's account reaches a host three ways, and all three carry the same sentences. A subscriber to
+`Machine.events` receives every line as it is minted. The run's file under `build/events/` holds the
+same lines. And a module below the stages writes standard `logging` records under the `decktalk.*`
+loggers, which one handler DeckTalk puts on the `decktalk` logger turns into `log` lines of the run
+bound to the current thread, and which then propagate to whatever logging the host configured,
+stamped with `decktalk_run`, `decktalk_stage` and `decktalk_section` for its formatter. Nothing is
+printed, a record written while no run is bound reaches the host's logging alone, and every value of
+a credential the machine holds is replaced by its name before any of the three sees it. The
+`decktalk` logger is set to `DEBUG` only when the host chose no level before importing DeckTalk, so a
+host that set one keeps it.
+
+### Voice and render in separate processes
+
+The voice key must never share a process with a page, because a page is someone else's script and
+runs in a Chromium the process started. So a host runs the stages in two kinds of process, and the
+build directory is the only thing that moves between them.
+
+| Process | Calls | What it holds |
+|---|---|---|
+| Voice | `narrate` and `soundscape`, with `voice=Voicing.PAID` | The key and the voice id. It opens no page. |
+| Render | `check`, `storyboard`, `record`, `assemble` and `verify` | No key. Its pages run under `record.page_policy = "untrusted"`. |
+
+`cue` reads only files and opens no page, so it runs in either. `assemble` draws the poster from the
+page, which is why it belongs to the render side.
+
+A host never calls `build` on a voiced run. A voiced build draws the storyboard, narrates and records
+in one process, which puts the key and the page side by side.
+
+```python
+import decktalk
+from pathlib import Path
+
+work = Path("/jobs/1234")          # the project, and the build directory both jobs share
+cache = Path("/opt/decktalk-cache")
+
+# The voice job, in its own process. Only this machine sees the key.
+voice = decktalk.Machine.of(
+    environ={"ELEVENLABS_API_KEY": key, "ELEVENLABS_VOICE_ID": voice_id},
+    config_path=Path("/etc/decktalk/voice.toml"),
+    cwd=work,
+    cache_dir=cache,
+)
+decktalk.open(work, machine=voice).narrate(voice=decktalk.Voicing.PAID, max_cost=ceiling)
+
+# The render job, in another process whose environment holds no key at all.
+render = decktalk.Machine.of(environ={}, config_path=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
+                             overrides=["record.page_policy=untrusted"])
+project = decktalk.open(work, machine=render)
+project.cue()
+project.record()
+project.assemble()
+result = project.verify()
+```
+
+### A ledger of what was bought
+
+A `spend` line prices a whole run, before or after it. A `take.charged` line is written the moment
+the provider is paid for one take, once per take, after the provider answered and before anything
+that could fail writes the take. So a host that keeps its own ledger records every take it paid for,
+including one whose file never reached the disk, and a run that fails on its fourth take still leaves
+three lines.
+
+| Field | Meaning |
+|---|---|
+| `section` | The section the take voices. |
+| `take` | The take's content hash, which names its file in the cache. |
+| `characters` | How many characters of that section's text were sent. |
+| `dollars` | What the take cost at the price in force. |
+
+The hash is what makes a retry safe to meter. A take already on disk is read from the cache and never
+bought again, so it earns no line, and a ledger keyed on `take` sees at once when two runs bought
+the same words. `soundscape` writes no `take.charged` line, and its purchases are in its `spend`.
+
+```python
+import decktalk
+
+def meter(event):
+    if isinstance(event, decktalk.TakeCharged):
+        ledger.record(job=job_id, section=event.section, take=event.take, dollars=event.dollars)
+
+with project.events.subscribe(meter):
+    project.narrate(voice=decktalk.Voicing.PAID, max_cost=ceiling)
+```
+
 ## Settings
 
 `Project.settings` is a `Settings`, with one frozen config object per table. `Project.layers` says
 which of the five layers set each key.
 
 ```python
-decktalk.explain(key, *, project=None, value=None) -> Explanation
+decktalk.explain(key, *, project=None, value=None) -> ConfigExplainResult
 ```
 
 `explain` reads one knob whole: its type, its unit, its safe range, the value in force, every layer
-that stated it, the variable that sets it, the stages that read it, the findings it decides, the
-published numbers it feeds, and what a candidate value would clamp in this project. Without
+that stated it, the variable that sets it, the findings it decides, the published numbers it feeds,
+and what a candidate value would clamp in this project. It is the result `config explain` prints. Without
 `project` the answer is about the defaults and the machine alone, which is what an agent reading the
 instruction set before it has a project needs. `value` is a candidate spelled the way a command line
 spells it, held to the same safe range as a value that is written.

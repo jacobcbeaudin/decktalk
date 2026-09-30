@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from graphlib import CycleError
+
 import pytest
 
-from decktalk.pipeline import PIPELINE, Artifact, Outcome, Stage, required
+from decktalk import pipeline
+from decktalk.pipeline import NEEDS, PIPELINE, Artifact, Outcome, Stage, downstream, required
 
 
 def test_the_six_stages_are_declared_in_run_order() -> None:
@@ -36,20 +39,63 @@ def test_every_artifact_path_is_project_relative_and_posix() -> None:
     for artifact in Artifact:
         assert artifact.value.startswith("build/"), artifact
         assert "\\" not in artifact.value, artifact
-        assert artifact.path.parts[0] == "build"
 
 
-def test_an_artifact_resolves_under_a_root(tmp_path) -> None:
-    assert Artifact.TAKES.under(tmp_path) == tmp_path / "build" / "narrate" / "takes.json"
+def test_the_next_step_names_the_stage_that_writes_the_artifact() -> None:
+    """A refusal about a missing file reads its advice from the one table that says who writes it."""
+    for artifact in Artifact:
+        writer = artifact.written_by
+        assert writer is not None, artifact
+        assert artifact.next_step.startswith(f"Run `decktalk {writer.value}` first"), artifact
 
 
-def test_no_stage_reads_an_artifact_a_later_stage_writes() -> None:
+def test_the_one_stage_that_spends_names_the_way_to_spend_nothing() -> None:
+    """A reader stopped by a missing take index should not have to look up the free way to make one."""
+    assert (
+        Artifact.TAKES.next_step == "Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing."
+    )
+    assert Artifact.RECORDINGS.next_step == "Run `decktalk record` first."
+
+
+def test_the_declared_order_is_one_the_graph_admits() -> None:
+    """Every stage comes after each stage whose artifact it reads, which makes the order a topological one."""
     order = list(Stage)
-    for spec in PIPELINE:
-        for artifact in spec.reads:
-            writer = artifact.written_by
-            assert writer is not None, artifact
-            assert order.index(writer) < order.index(spec.stage), (spec.stage, artifact)
+    for at, stage in enumerate(order):
+        assert NEEDS[stage] <= set(order[:at]), f"{stage.value} runs before a stage whose artifact it reads"
+
+
+def test_the_graph_is_the_table_read_as_edges() -> None:
+    assert NEEDS == {
+        Stage.NARRATE: frozenset(),
+        Stage.CUE: {Stage.NARRATE},
+        Stage.RECORD: {Stage.CUE},
+        Stage.SOUNDSCAPE: {Stage.NARRATE},
+        Stage.ASSEMBLE: {Stage.NARRATE, Stage.RECORD, Stage.SOUNDSCAPE},
+        Stage.VERIFY: {Stage.CUE, Stage.ASSEMBLE},
+    }
+
+
+@pytest.mark.parametrize(
+    ("changed", "stale"),
+    [
+        ((Stage.NARRATE,), (Stage.CUE, Stage.RECORD, Stage.SOUNDSCAPE, Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.CUE,), (Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.SOUNDSCAPE,), (Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.ASSEMBLE,), (Stage.VERIFY,)),
+        ((Stage.VERIFY,), ()),
+        ((Stage.RECORD, Stage.ASSEMBLE), (Stage.VERIFY,)),
+    ],
+)
+def test_a_change_reaches_every_stage_that_reads_from_it_however_far(
+    changed: tuple[Stage, ...], stale: tuple[Stage, ...]
+) -> None:
+    assert downstream(changed) == stale
+
+
+def test_a_table_that_reads_in_a_circle_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(pipeline.NEEDS, Stage.NARRATE, frozenset({Stage.VERIFY}))
+    with pytest.raises(CycleError):
+        downstream((Stage.CUE,))
 
 
 @pytest.mark.parametrize(
@@ -78,8 +124,8 @@ def test_a_span_whose_ends_are_the_wrong_way_round_is_empty() -> None:
     assert Stage.span(Stage.VERIFY, Stage.NARRATE) == ()
 
 
-def test_one_outcome_field_replaces_three_event_names() -> None:
-    assert [outcome.value for outcome in Outcome] == ["ok", "skipped", "failed"]
+def test_one_outcome_field_replaces_four_event_names() -> None:
+    assert [outcome.value for outcome in Outcome] == ["ok", "kept", "skipped", "stopped", "failed"]
 
 
 def test_every_stage_reaches_its_own_row() -> None:

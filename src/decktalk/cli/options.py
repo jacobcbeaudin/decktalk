@@ -18,11 +18,12 @@ every one of them and a new code, stage or knob costs no help row at all.
 
 from __future__ import annotations
 
+import copy
 import inspect
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, get_args
 
 import typer
 
@@ -68,6 +69,16 @@ class FailOn(Enum):
     ANY = "any"
     NEVER = "never"
 
+    @property
+    def stops_on(self) -> Certainty | None:
+        """The least certain finding that stops a build, which is the same line the exit code draws.
+
+        A build that carried on past a finding its exit code fails on would spend on a film the
+        caller has already said is wrong, and one that stopped short of it would refuse a film the
+        caller said is fine, so the threshold is one decision read in two places.
+        """
+        return {FailOn.CERTAIN: Certainty.CERTAIN, FailOn.ANY: Certainty.UNCERTAIN, FailOn.NEVER: None}[self]
+
 
 class When(Enum):
     """When colour is written, which is the one thing `--color` decides."""
@@ -75,13 +86,6 @@ class When(Enum):
     AUTO = "auto"
     ALWAYS = "always"
     NEVER = "never"
-
-
-class Where(Enum):
-    """Which settings file a `config` write lands in."""
-
-    PROJECT = "project"
-    MACHINE = "machine"
 
 
 # The shared families, each written once and derived onto the commands that carry it. A hidden
@@ -271,6 +275,15 @@ def shared_for(result: object) -> list[inspect.Parameter]:
     ]
 
 
+def restated(annotation: object, **changes: object) -> object:
+    """The same flag with some of its declaration changed for one command, leaving the shared one untouched."""
+    base, info, *rest = get_args(annotation)
+    mine = copy.copy(info)
+    for name, value in changes.items():
+        setattr(mine, name, value)
+    return Annotated[base, mine, *rest]
+
+
 def sections_of(values: Sequence[str] | None) -> tuple[int, ...] | None:
     """Every section a run of `--section` values names, in order and without repeats.
 
@@ -279,13 +292,10 @@ def sections_of(values: Sequence[str] | None) -> tuple[int, ...] | None:
     """
     if not values:
         return None
-    found: list[int] = []
-    for value in values:
-        try:
-            found.extend(section_numbers(value))
-        except InputError as refused:
-            raise typer.BadParameter(str(refused), param_hint="--section") from refused
-    return tuple(dict.fromkeys(found))
+    try:
+        return section_numbers(",".join(values))
+    except InputError as refused:
+        raise typer.BadParameter(str(refused), param_hint="--section") from refused
 
 
 def one_section(values: Sequence[str] | None) -> int:
@@ -294,11 +304,6 @@ def one_section(values: Sequence[str] | None) -> int:
     if sections is None or len(sections) != 1:
         raise typer.BadParameter("names exactly one section, such as --section 3.", param_hint="--section")
     return sections[0]
-
-
-def allowed(codes: Iterable[Code] | None) -> frozenset[Code]:
-    """The finding codes a run carries on past, which the exit code is worked out without."""
-    return frozenset(codes or ())
 
 
 def pairs(values: Sequence[str] | None) -> tuple[str, ...]:
@@ -339,11 +344,10 @@ __all__ = [
     "Spend",
     "Verbose",
     "When",
-    "Where",
     "Yes",
-    "allowed",
     "one_section",
     "pairs",
+    "restated",
     "sections_of",
     "shared_for",
 ]

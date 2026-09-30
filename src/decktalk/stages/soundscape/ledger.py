@@ -23,10 +23,10 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from decktalk.artifacts import Stored
-from decktalk.findings import MODEL, ProjectPath
+from decktalk.findings import Model, ProjectPath
 from decktalk.results import SoundKind
 
 DIGEST_DIGITS = 16
@@ -53,10 +53,8 @@ def request_digest(endpoint: str, body: Mapping[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:DIGEST_DIGITS]
 
 
-class SoundEntry(BaseModel):
+class SoundEntry(Model):
     """One item this project has bought: what was asked for, what came back, and where it went."""
-
-    model_config = MODEL
 
     name: str = Field(description="What the author calls this item in decktalk.toml.")
     kind: SoundKind = Field(description="Whether this item is music, ambience or an effect.")

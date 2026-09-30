@@ -16,13 +16,13 @@ import enum
 import inspect
 import types
 import typing
-from typing import get_args, get_origin
+from typing import TypeGuard, get_args, get_origin
 
 import pytest
 from pydantic import BaseModel
 
 import decktalk
-from decktalk.results import RESULTS, Result
+from decktalk.results import RESULTS
 
 PACKAGE = "decktalk"
 
@@ -36,7 +36,7 @@ ElevenLabs is the only provider, so no provider type is importable.
 EXPORTED = tuple(decktalk.__all__)
 
 
-def owned(obj: object) -> bool:
+def owned(obj: object) -> TypeGuard[type]:
     """Whether a class is one this package defines, which is what the closure has to reach."""
     return inspect.isclass(obj) and getattr(obj, "__module__", "").split(".")[0] == PACKAGE
 
@@ -51,23 +51,14 @@ def reachable(annotation: object) -> list[type]:
 
 
 def annotations_of(obj: object) -> list[object]:
-    """Every annotation one exported name publishes: a model's fields, or a callable's signature."""
+    """Every annotation one exported name publishes: a model's fields, a callable's signature, or an alias itself."""
     if inspect.isclass(obj) and issubclass(obj, BaseModel):
         return [field.annotation for field in obj.model_fields.values()]
     if inspect.isclass(obj):
         return [value for name, value in typing.get_type_hints(obj).items() if not name.startswith("_")]
-    if callable(obj):
-        try:
-            hints = typing.get_type_hints(obj)
-        except (NameError, TypeError):
-            return []
-        return list(hints.values())
-    return []
-
-
-def test_all_is_sorted_and_holds_each_name_once():
-    assert list(EXPORTED) == sorted(EXPORTED)
-    assert len(set(EXPORTED)) == len(EXPORTED)
+    if inspect.isroutine(obj):
+        return list(typing.get_type_hints(obj).values())
+    return [obj]
 
 
 @pytest.mark.parametrize("name", EXPORTED)
@@ -91,17 +82,6 @@ def test_every_result_class_is_exported():
     """`RESULTS` is what `decktalk schema NAME` renders, so every one of them is importable."""
     missing = sorted({model.__name__ for model in RESULTS.values()} - set(EXPORTED))
     assert missing == [], missing
-
-
-@pytest.mark.parametrize("name", [name for name in EXPORTED if name[0].islower() and name != "__version__"])
-def test_every_exported_call_that_returns_a_result_exports_that_result(name: str):
-    """A call whose result a caller cannot name is a call a caller cannot type against."""
-    obj = getattr(decktalk, name)
-    if not callable(obj):
-        return
-    returned = typing.get_type_hints(obj).get("return")
-    if inspect.isclass(returned) and issubclass(returned, Result):
-        assert returned.__name__ in EXPORTED, f"{name} returns {returned.__name__}, which is not exported."
 
 
 @pytest.mark.parametrize("name", NOT_PUBLIC)

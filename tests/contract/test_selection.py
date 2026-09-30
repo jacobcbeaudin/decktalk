@@ -54,22 +54,19 @@ def suite(pytester):
     return pytester
 
 
-def test_a_bare_run_is_the_tests_that_need_no_tool(suite):
-    suite.runpytest().assert_outcomes(passed=1, deselected=4)
-
-
-def test_a_suite_is_reached_by_naming_its_marker(suite):
-    suite.runpytest("-m", "media").assert_outcomes(passed=1, deselected=4)
-
-
-def test_the_platform_suite_is_reached_the_same_way_every_other_one_is(suite):
-    """A bare run on a fresh machine used to collect it and fail on a tool nobody had fetched."""
-    suite.runpytest("-m", "platform").assert_outcomes(passed=1, deselected=4)
-
-
-def test_naming_one_marker_never_admits_another(suite):
-    """`-m "not e2e"` used to collect every other suite, including the five-minute scaffold build."""
-    suite.runpytest("-m", "not e2e").assert_outcomes(passed=1, deselected=4)
+@pytest.mark.parametrize(
+    "args",
+    [
+        pytest.param((), id="a bare run is the tests that need no tool"),
+        pytest.param(("-m", "media"), id="a suite is reached by naming its marker"),
+        # A bare run on a fresh machine used to collect the platform suite and fail on a tool nobody had fetched.
+        pytest.param(("-m", "platform"), id="the platform suite is reached the same way"),
+        # `-m "not e2e"` used to collect every other suite, including the five-minute scaffold build.
+        pytest.param(("-m", "not e2e"), id="naming one marker never admits another"),
+    ],
+)
+def test_each_selection_runs_exactly_one_test(suite, args):
+    suite.runpytest(*args).assert_outcomes(passed=1, deselected=4)
 
 
 def test_an_empty_selection_is_an_error_naming_the_markers(suite):

@@ -21,9 +21,9 @@ from pathlib import Path
 import pytest
 
 from decktalk.settings import ENV_PREFIX, env_warnings
-from support.paths import REPO, TESTS
+from support.paths import REPO, SRC, TESTS
+from support.tools import SUITE_MARKERS
 
-SRC = REPO / "src" / "decktalk"
 MIRROR = TESTS / "decktalk"
 
 NO_UNIT_TEST = {
@@ -66,6 +66,7 @@ ALLOW = {
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
     "contract/test_selection.py": "The collection hook in `tests/conftest.py`.",
+    "contract/test_silent.py": "Every except block and every child process in `src/decktalk`, read as its AST.",
     "contract/test_take_hash.py": "`tests/data/take_hash.json`, the golden digests of the founder's film.",
     "contract/test_timing_policy.py": "`tests/support/timing_policy.py`, the suite's own timing rule.",
     "contract/test_vocabulary.py": (
@@ -74,9 +75,6 @@ ALLOW = {
     "contract/test_wheel.py": "The built wheel's file list.",
 }
 """Every test file that belongs to no source module, and the repository artifact it holds instead."""
-
-SUITE_MARKERS = {"browser", "media", "e2e", "scaffold", "platform"}
-"""The markers that name what a run needs. `tests/conftest.py` selects by them and nothing else is one."""
 
 PLATFORM_BRANCH_EXEMPT = {
     "decktalk/toolchain/test_ffmpeg_fetch.py": "T6 owes the pair: the unpack policy on Linux, the run on the platform.",
@@ -197,7 +195,7 @@ def test_nothing_under_support_collects():
 def test_the_project_registers_exactly_the_markers_that_name_what_a_run_needs():
     config = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
     rows = config["tool"]["pytest"]["ini_options"]["markers"]
-    assert {row.split(":", 1)[0] for row in rows} == SUITE_MARKERS
+    assert {row.split(":", 1)[0] for row in rows} == set(SUITE_MARKERS)
     for row in rows:
         name, description = row.split(":", 1)
         assert description.strip().startswith("needs "), (
@@ -273,7 +271,7 @@ def test_no_end_to_end_test_names_a_variable_decktalk_does_not_read():
     its own variable there puts that warning in the stderr those same tests print as the evidence
     for a failure. The loader answers here rather than a list, so the rule and the warning agree.
     """
-    for path in sorted((TESTS / "e2e").glob("test_*.py")):
+    for path in [*sorted((TESTS / "e2e").glob("test_*.py")), TESTS / "support" / "commands.py"]:
         warnings = env_warnings(dict.fromkeys(named_in_the_settings_namespace(path), ""))
         assert warnings == [], (
             f"{path.relative_to(REPO).as_posix()}: {warnings} A variable a suite owns is spelled outside "

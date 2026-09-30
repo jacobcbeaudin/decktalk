@@ -34,15 +34,15 @@
     appear: { seconds: 0.12 },
   };
   var COUNTS = {
-    last: { seconds: 0.48 },
-    first: { seconds: 0.48 },
+    last: { seconds: 0.44 },
+    first: { seconds: 0.44 },
   };
   var ATTENTION = {
     back: { seconds: 0.28 },
     front: { seconds: 0.2 },
   };
   var READ_FROM_THE_PAGE = null;
-  var IN_SECONDS_RANGE = { min: 0.12, max: 0.48, step: 0.04, unit: "seconds" };
+  var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
   var HOLD_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
@@ -464,14 +464,14 @@
     }).observe({ type: "long-animation-frame" });
   }
   function report() {
-    const view = window.__decktalk ?? {};
+    const view = window.__decktalk;
     return {
-      version: view.version ?? null,
-      mode: view.mode ?? null,
-      scene: view.scene ?? null,
-      slide: view.slide ?? null,
-      warnings: view.warnings ?? [],
-      catalog: view.catalog ?? [],
+      version: view?.version ?? null,
+      mode: view?.mode ?? null,
+      scene: view?.scene ?? null,
+      slide: view?.slide ?? null,
+      warnings: view?.warnings ?? [],
+      catalog: view?.catalog ?? [],
       cues,
       words,
       frameGaps,
@@ -494,6 +494,7 @@
   var ELEMENT_ATTRS = Object.keys(ATTRS).filter((name) =>
     ATTRS[name].on.some((subject) => subject === "element" || subject === "container"),
   );
+  var STAGGER = "data-stagger";
   var MOMENT_ATTRS = ELEMENT_ATTRS.filter((name) => ATTRS[name].kind === "moment");
   function boxOf(el, frame, scale) {
     const rect = el.getBoundingClientRect();
@@ -520,6 +521,9 @@
       moments,
       text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, TEXT_MAX),
       box: boxOf(el, frame, scale),
+      // The count a stagger's span is worked out from, which no attribute carries, because the flag
+      // that says the children step says nothing about how many of them there are.
+      children: el.hasAttribute(STAGGER) ? el.children.length : 0,
     };
   }
   function rowsFor(slideEl, slideId, frame, scale) {
@@ -552,5 +556,6 @@
     return catalog;
   }
   watchFrames();
-  window.__dtprobe = { cover, lift, ready, report, recorder, freezeCues, measure };
+  var probe = { cover, lift, ready, report, recorder, freezeCues, measure };
+  window.__dtprobe = probe;
 })();

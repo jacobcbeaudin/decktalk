@@ -154,13 +154,15 @@
           "x-environment": "DECKTALK_VIDEO_CHANNELS"
         },
         "slate_color": {
-          "description": "Color of the plain frame that plays when a slate image cannot be rendered.",
+          "description": "Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB.",
           "type": "string",
           "default": "0x0e1116",
-          "x-range": "takes any value of its type",
+          "pattern": "^(#|0[xX])[0-9A-Fa-f]{6}$",
+          "x-range": "must match the pattern ^(#|0[xX])[0-9A-Fa-f]{6}$",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
+          "x-hazard": "The colour is placed inside an ffmpeg filter graph and the slate page's stylesheet, so any other text could add a filter that opens a file or a rule that loads a URL.",
           "x-environment": "DECKTALK_VIDEO_SLATE_COLOR"
         }
       },
@@ -190,6 +192,31 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_NARRATION_OUTPUT_FORMAT"
+        },
+        "concurrency": {
+          "description": "How many sections `narrate` voices at once.",
+          "type": "integer",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 8,
+          "x-range": "must be between 1 and 8",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A voice provider limits requests per account, and a busy answer is retried rather than paid twice.",
+          "x-environment": "DECKTALK_NARRATION_CONCURRENCY"
+        },
+        "retries": {
+          "description": "How many more times `narrate` asks again when the voice provider answers that it is busy or failed.",
+          "type": "integer",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 10,
+          "x-range": "must be between 0 and 10",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_NARRATION_RETRIES"
         },
         "mp3_bitrate": {
           "description": "Bitrate of the mp3 files that DeckTalk writes, which are the click tracks and the joined narration.",
@@ -417,6 +444,34 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_RECORD_COLOR_SCHEME"
         },
+        "page_policy": {
+          "description": "How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. It is the machine's to set, so a project someone else wrote cannot trust its own page.",
+          "type": "string",
+          "default": "trusted",
+          "enum": [
+            "trusted",
+            "untrusted"
+          ],
+          "x-range": "must be one of trusted, untrusted",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.",
+          "x-environment": "DECKTALK_RECORD_PAGE_POLICY"
+        },
+        "concurrency": {
+          "description": "How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count.",
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 16,
+          "x-range": "must be between 0 and 16",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "Each recording needs about two dedicated CPUs to present its frames on time, and a starved recording stalls or lands its reveals late, so a number above the machine's share costs correctness rather than only speed.",
+          "x-environment": "DECKTALK_RECORD_CONCURRENCY"
+        },
         "retries": {
           "description": "How many more times `record` records a section whose frames stalled.",
           "type": "integer",
@@ -431,19 +486,6 @@
             "record.frame_gap_max_ms"
           ],
           "x-environment": "DECKTALK_RECORD_RETRIES"
-        },
-        "screenshot_settle_seconds": {
-          "description": "Seconds that `storyboard` waits before each slide panel.",
-          "type": "number",
-          "default": 0.4,
-          "minimum": 0,
-          "maximum": 10,
-          "x-range": "must be between 0 and 10",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_SCREENSHOT_SETTLE_SECONDS"
         },
         "cover_scan_seconds": {
           "description": "Seconds at the start of each recording that `record` scans for the magenta cover.",
@@ -692,6 +734,9 @@
             "verify.cue_offset_max_ms",
             "verify.reference_lead_seconds"
           ],
+          "x-decides": [
+            "CUE_OFF"
+          ],
           "x-environment": "DECKTALK_VERIFY_REFERENCE_LEAD_EXTRA_MS"
         },
         "probe_delays_seconds": {
@@ -758,7 +803,8 @@
           ],
           "x-decides": [
             "CUE_NO_CHANGE",
-            "CUE_THIN_CHANGE"
+            "CUE_THIN_CHANGE",
+            "PAGE_THIN_DRAW"
           ],
           "x-environment": "DECKTALK_VERIFY_CHANGED_SHARE_MIN_PERCENT"
         },
@@ -1121,7 +1167,7 @@
               "x-environment": "DECKTALK_MIX_LOUDNESS_TRUE_PEAK_MAX_DBTP"
             },
             "range_max_lu": {
-              "description": "Widest loudness range the normalised mix may hold.",
+              "description": "The loudness range the measurement is made against. It is not a limit, and no mix fails on it.",
               "type": "number",
               "default": 11.0,
               "minimum": 1,
@@ -1131,9 +1177,6 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-decides": [
-                "MIX_LOUDNESS"
-              ],
               "x-environment": "DECKTALK_MIX_LOUDNESS_RANGE_MAX_LU"
             }
           },
@@ -1179,7 +1222,8 @@
             "MEASURABLE_SPAN_SECONDS"
           ],
           "x-decides": [
-            "PAGE_MOTION_OVERRUN"
+            "PAGE_MOTION_OVERRUN",
+            "PAGE_STAGGER_OVERRUN"
           ],
           "x-environment": "DECKTALK_MOTION_SCALE"
         }
@@ -1358,6 +1402,23 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_OUTPUT_EVENTS_KEEP_RUNS"
+        },
+        "events_max_bytes": {
+          "description": "Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its spending are always kept.",
+          "type": "integer",
+          "default": 8388608,
+          "minimum": 65536,
+          "maximum": 1073741824,
+          "x-range": "must be between 65536 and 1073741824",
+          "x-unit": "bytes",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A file with no bound grows with every tool call a long film makes, on a disk a host shares.",
+          "x-see-also": [
+            "output.events_keep_runs"
+          ],
+          "x-environment": "DECKTALK_OUTPUT_EVENTS_MAX_BYTES"
         }
       },
       "additionalProperties": false
@@ -1389,6 +1450,19 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_TOOLS_FFPROBE"
         },
+        "timeout_seconds": {
+          "description": "Longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before it is stopped.",
+          "type": "number",
+          "default": 600.0,
+          "minimum": 10,
+          "maximum": 7200,
+          "x-range": "must be between 10 and 7200",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_TOOLS_TIMEOUT_SECONDS"
+        },
         "cache_dir": {
           "description": "Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache.",
           "type": "string",
@@ -1402,29 +1476,6 @@
             "narration.cache_dir"
           ],
           "x-environment": "DECKTALK_TOOLS_CACHE_DIR"
-        }
-      },
-      "additionalProperties": false
-    },
-    "host": {
-      "type": "object",
-      "description": "These keys are facts about this machine that a run measures rather than a person chooses.",
-      "x-kind": "tuning",
-      "properties": {
-        "presentation_bias_ms": {
-          "description": "How long this machine takes to present a frame the page has already drawn, which is what a run's own measurements of this machine are read against.",
-          "type": "number",
-          "default": 0.0,
-          "minimum": -200,
-          "maximum": 200,
-          "x-range": "must be between -200 and 200",
-          "x-unit": "milliseconds",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "measured",
-          "x-evidence": "decktalk doctor --measure",
-          "x-hazard": "A bias written by hand is a claim about this machine that nobody measured, and the one command that can measure it is beside this key. It is measured or it is zero.",
-          "x-environment": "DECKTALK_HOST_PRESENTATION_BIAS_MS"
         }
       },
       "additionalProperties": false

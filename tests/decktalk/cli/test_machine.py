@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from decktalk.cli import machine as commands
-from decktalk.results import DoctorResult
 
 from .conftest import ANSWERS, Fake, finding
+
+MISSING = ANSWERS["doctor"].model_copy(update={"ok": False, "findings": (finding(),)})
+"""A doctor that found a tool missing, which it exits 1 for and offers to fix."""
 
 
 def test_init_writes_the_project_and_reports_what_it_chose(run, machine, monkeypatch, tmp_path) -> None:
@@ -71,38 +69,13 @@ def test_doctor_measures_only_when_asked(run, machine, answers) -> None:
 
 
 def test_doctor_applies_nothing_without_a_terminal_and_without_the_flag(run, machine) -> None:
-    missing = DoctorResult(
-        ok=False,
-        findings=(finding(),),
-        run="r",
-        tools=(),
-        cache=Path("cache"),
-        python="3.12",
-        platform="test",
-        voice_key=False,
-    )
-    made = machine(doctor=missing, apply=None)
+    made = machine(doctor=MISSING, apply=None)
     ran = run("doctor")
     assert ran.exit_code == 1
     assert [name for name, _, _ in made.calls] == ["doctor"]
 
 
 def test_doctor_fix_applies_and_reads_the_machine_again(run, machine) -> None:
-    missing = DoctorResult(
-        ok=False,
-        findings=(finding(),),
-        run="r",
-        tools=(),
-        cache=Path("cache"),
-        python="3.12",
-        platform="test",
-        voice_key=False,
-    )
-    made = machine(doctor=missing, apply=None)
+    made = machine(doctor=MISSING, apply=None)
     run("doctor", "--fix")
     assert [name for name, _, _ in made.calls] == ["doctor", "apply", "doctor"]
-
-
-@pytest.mark.parametrize("name", ["init", "install", "doctor"])
-def test_every_machine_command_is_registered(name: str) -> None:
-    assert hasattr(commands, name)

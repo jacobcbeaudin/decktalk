@@ -1,31 +1,32 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
-"""Generate the settings reference from the committed JSON Schema.
+"""Generate the settings reference from the JSON Schema of decktalk.toml.
 
     uv run scripts/build_settings_reference.py --write    # write the page
     uv run scripts/build_settings_reference.py --check    # exit 1 if the committed page would change
 
-The page is a rendering of the published schema by construction. It reads `schemas/v1/decktalk.json`
-rather than the dataclasses, so a reader of the page and a machine reading the schema are told the
-same thing by the same bytes, and a key that reached the page without reaching the schema is
-impossible rather than merely unlikely.
+The page is a rendering of the published schema by construction. It reads the document
+`build_settings_schema.py` writes to `schemas/v1/decktalk.json` rather than the dataclasses, so a
+reader of the page and a machine reading the schema are told the same thing, and a key that reached
+the page without reaching the schema is impossible rather than merely unlikely. It asks that script
+rather than the committed file, so the two can be written in either order.
 
-It opens with the index from a verdict to the keys that move it, because that is the lookup an
-agent makes after a failure, and it ends with the numbers that are deliberately not knobs, because
-the second lookup an agent makes is for a knob that does not exist.
+It names the keys only a machine may set, because a project file that sets one is refused. It then
+gives the index from a verdict to the keys that move it, because that is the lookup an agent makes
+after a failure, and it ends with the numbers that are deliberately not knobs, because the second
+lookup an agent makes is for a knob that does not exist.
 """
 
 from __future__ import annotations
 
-import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Any
 
+import tomlkit
+
+import build_settings_schema
+import generated
+
 ROOT = Path(__file__).resolve().parent.parent
-SCHEMA = ROOT / "schemas" / "v1" / "decktalk.json"
 TARGET = ROOT / "docs" / "reference" / "configuration.mdx"
 
 HEADER = """---
@@ -60,11 +61,12 @@ Five layers can set a key. Each one overrides the layers before it.
 4. The environment variable each key publishes, such as `DECKTALK_VIDEO_PRESET`.
 5. `--set table.key=value`, on any command, for one run.
 
-`decktalk config explain KEY` prints those five layers with the winner marked, so you never have to
-work out which one is in force.
+`decktalk config explain KEY` prints the value in force and the layer it comes from, so you never
+have to work out which one that is.
 
 The per-machine settings file holds machine keys alone. A key about the film in that file is
 refused by name, because the file that ships has to carry whatever the machine running it believes.
+`DECKTALK_CONFIG` names a different per-machine file.
 
 | Linux | macOS | Windows |
 |---|---|---|
@@ -84,6 +86,14 @@ A finding names the key that decided it. This is the same index in reverse, for 
 have a code and want the candidates before you run anything.
 """
 
+MACHINE_LEAD = """## Keys only a machine may set
+
+These keys describe the machine rather than the film: where a tool or a cache lives, and how hard
+this machine may be driven. A project file that sets one is refused by name, because a project
+travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
+machine's file with `decktalk config set KEY VALUE --where machine`, or set its environment variable.
+"""
+
 NUMBERS_LEAD = """## The numbers that are not knobs
 
 These are the numbers that decide something and are still not settings. A derived number is written
@@ -92,11 +102,6 @@ a fact about a codec, a standard, or a tool DeckTalk drives, and it is fixed for
 sample rate is. Neither can be set, and both are here so that a knob you cannot find is a number you
 can read.
 """
-
-
-def schema() -> dict[str, Any]:
-    """The committed schema, which is the one thing this page renders."""
-    return json.loads(SCHEMA.read_text(encoding="utf-8"))
 
 
 def keys(document: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
@@ -124,17 +129,6 @@ def cell(text: object) -> str:
     return str(text).replace("|", "\\|")
 
 
-def toml_value(value: object) -> str:
-    """One default as it would be written in `decktalk.toml`."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, str):
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    if isinstance(value, list):
-        return "[" + ", ".join(toml_value(x) for x in value) + "]"
-    return str(value)
-
-
 def index(rows: list[tuple[str, str, dict[str, Any]]]) -> list[str]:
     """The verdict-to-keys index, which is the lookup an agent makes with a code and nothing else."""
     by_code: dict[str, list[str]] = {}
@@ -146,6 +140,12 @@ def index(rows: list[tuple[str, str, dict[str, Any]]]) -> list[str]:
     return [*out, ""]
 
 
+def machine(rows: list[tuple[str, str, dict[str, Any]]]) -> list[str]:
+    """The keys a project file may not set, which is the list a refused `config set` points at."""
+    found = [f"`{table}.{name}`" for table, name, prop in rows if prop["x-scope"] == "machine"]
+    return [MACHINE_LEAD, ", ".join(found[:-1]) + f" and {found[-1]}." if len(found) > 1 else f"{found[0]}.", ""]
+
+
 def tables(document: dict[str, Any], rows: list[tuple[str, str, dict[str, Any]]]) -> list[str]:
     """One section per table, each a row per key with everything the schema publishes about it."""
     out: list[str] = []
@@ -153,13 +153,15 @@ def tables(document: dict[str, Any], rows: list[tuple[str, str, dict[str, Any]]]
         body = _table(document, table)
         out.append(f"## `[{table}]`\n")
         out.append(f"{body['description']}\n")
-        out.append("| Key | Type | Default | Safe range | Unit | Decides | Meaning |")
-        out.append("|---|---|---|---|---|---|---|")
+        out.append("| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |")
+        out.append("|---|---|---|---|---|---|---|---|")
         for name, prop in ((name, prop) for t, name, prop in rows if t == table):
             decides = ", ".join(f"`{code}`" for code in prop.get("x-decides", []))
+            # tomlkit writes the default as `decktalk.toml` would hold it, escapes and all.
+            default = tomlkit.item(prop["default"]).as_string()
             out.append(
-                f"| `{name}` | {prop['type']} | `{toml_value(prop['default'])}` | {cell(prop['x-range'])} "
-                f"| {prop.get('x-unit', '')} | {decides} | {cell(prop['description'])} |"
+                f"| `{name}` | {prop['type']} | `{default}` | {cell(prop['x-range'])} "
+                f"| {prop.get('x-unit', '')} | {prop['x-scope']} | {decides} | {cell(prop['description'])} |"
             )
         out.append("")
         out += hazards(table, rows)
@@ -197,28 +199,16 @@ def numbers(document: dict[str, Any]) -> list[str]:
 
 def render() -> str:
     """The whole page, which is the header, the index, one section per table, the numbers and the links."""
-    document = schema()
+    document = build_settings_schema.document(machine=False)
     rows = keys(document)
-    parts = [HEADER, *index(rows), *tables(document, rows), *numbers(document), FOOTER]
+    parts = [HEADER, *machine(rows), *index(rows), *tables(document, rows), *numbers(document), FOOTER]
     return "\n".join(parts).rstrip() + "\n"
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write the page")
-    action.add_argument("--check", action="store_true", help="exit 1 if the committed page would change")
-    args = ap.parse_args()
-    text = render()
-    if args.check:
-        if not TARGET.exists() or TARGET.read_text(encoding="utf-8") != text:
-            print(f"stale: {TARGET.relative_to(ROOT)}. Run `uv run scripts/build_settings_reference.py --write`.")
-            return 1
-        return 0
-    TARGET.write_text(text, encoding="utf-8")
-    print(f"wrote {TARGET.relative_to(ROOT)}")
-    return 0
+def documents() -> dict[Path, str]:
+    """The settings reference, which is the one file this generator owns."""
+    return {TARGET: render()}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))

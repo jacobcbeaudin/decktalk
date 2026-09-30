@@ -11,12 +11,20 @@
  */
 
 import { frameAt, now, round, run, schedule, start } from "./clock.ts";
-import { FRAME_STEP_MS, MILLISECONDS, type Q, SLIDE_ENTRANCES, wireId } from "./contract.ts";
+import {
+  FRAME_STEP_MS,
+  LIST_SEPARATOR,
+  MILLISECONDS,
+  PREVIEW_CUE_TIMES,
+  type Q,
+  SLIDE_ENTRANCES,
+  TIME_MARK,
+  wireId,
+} from "./contract.ts";
 import { typeset, ready as typesetterReady } from "./katex.ts";
 import { fire, type Mounted, prepare } from "./reveal.ts";
 import {
   all,
-  type CatalogEntry,
   type Context,
   catalog as catalogOf,
   cueOrder,
@@ -44,7 +52,7 @@ import {
   style,
   styleClass,
 } from "./stage.ts";
-import { recorder } from "./telemetry.ts";
+import { type CatalogEntry, type Mode, type Probe, recorder } from "./telemetry.ts";
 import { key, type Spoken } from "./text.ts";
 import { warn } from "./warn.ts";
 
@@ -66,17 +74,11 @@ const ON = "1";
 /** The slowest a preview may be played, which is slow enough to read a cue and fast enough to end. */
 const SLOWEST = 0.05;
 
-/** The router alias a project answers with the cue times its last run resolved. */
-const CUE_TIMES = "/__decktalk/cue-times.json";
-
 /** How long a preview without cue times rests before its first cue, and between two of them. */
 const PREVIEW_STEP_SECONDS = 1;
 
 /** How long after the deck is done a page says so, which is what a screenshot and a test wait for. */
 const DONE = "1";
-
-/** What the page is doing, which the probe reports and a person reads in the heads-up display. */
-export type Mode = "index" | "preview" | "cue" | "freeze";
 
 /** Everything the page knows about itself, which is what `window.__decktalk` is a view onto. */
 export const state = {
@@ -238,11 +240,11 @@ function fireCue(cue: string, due: number): void {
 /** `?cues=` as the recorder writes it, which is a wire id and a second, sorted by the second. */
 function parseCues(raw: string): { id: string; at: number }[] {
   return raw
-    .split(",")
+    .split(LIST_SEPARATOR)
     .map((token) => token.trim())
     .filter(Boolean)
     .map((token) => {
-      const mark = token.lastIndexOf("@");
+      const mark = token.lastIndexOf(TIME_MARK);
       return { id: token.slice(0, mark), at: Number.parseFloat(token.slice(mark + 1)) };
     })
     .filter((cue) => cue.id && !Number.isNaN(cue.at))
@@ -252,9 +254,9 @@ function parseCues(raw: string): { id: string; at: number }[] {
 /** `?words=` as `narrate` wrote it, which is every spoken word and the second the voice reaches it. */
 function parseWords(raw: string): Spoken[] {
   return raw
-    .split(",")
+    .split(LIST_SEPARATOR)
     .map((item) => {
-      const mark = item.lastIndexOf("@");
+      const mark = item.lastIndexOf(TIME_MARK);
       return { key: key(item.slice(0, mark)), at: Number.parseFloat(item.slice(mark + 1)) };
     })
     .filter((word) => word.key && !Number.isNaN(word.at));
@@ -349,7 +351,7 @@ type TimedSection = { scene?: string; cues?: { cue?: string; at?: number }[] };
 async function resolvedCues(sceneId: string): Promise<{ id: string; at: number }[] | null> {
   let document_: { sections?: TimedSection[] };
   try {
-    const answer = await fetch(CUE_TIMES);
+    const answer = await fetch(PREVIEW_CUE_TIMES);
     if (!answer.ok) return null;
     document_ = await answer.json();
   } catch {
@@ -442,12 +444,6 @@ function link(href: string, text: string): HTMLAnchorElement {
 
 // ---- starting ------------------------------------------------------------------------------------
 
-/** What the probe lends the page, which is the shorter freeze list and the measured boxes. */
-export type Probe = {
-  freezeCues?(order: readonly string[], slide: string, report: typeof warn): readonly string[];
-  measure?(catalog: CatalogEntry[], stage: unknown): CatalogEntry[];
-};
-
 /**
  * Read the page, pick the mode its URL asks for, and start the clock loop.
  *
@@ -468,7 +464,7 @@ export function begin(probe: Probe | null): Promise<void> {
   let listing = false;
   let waiting: Promise<void> = Promise.resolve();
   if (frozen) {
-    stop(params.get(SLIDE) ?? "", (order, slide) => probe?.freezeCues?.(order, slide, warn) ?? order);
+    stop(params.get(SLIDE) ?? "", (order, slide) => probe?.freezeCues(order, slide, warn) ?? order);
   } else if (chosen !== null || cues.length) {
     const scene =
       chosen !== null ? (all().get(chosen) ?? null) : (ownerOf((cues[0] as { id: string }).id)?.scene ?? null);
@@ -522,7 +518,7 @@ function measure(probe: Probe | null): void {
     }
   }
   layer.remove();
-  probe?.measure?.(state.catalog, {
+  probe?.measure(state.catalog, {
     scenes: all(),
     pan: pan(),
     origin: frame(),

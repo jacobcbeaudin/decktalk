@@ -23,24 +23,26 @@ reader who cannot find a knob learns the number is deliberately not one.
 
 from __future__ import annotations
 
-import logging
-import os
+import functools
+import operator
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Mapping, MutableMapping
-from dataclasses import Field as DataField
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
 import tomlkit
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import Field, JsonValue
+from pydantic_core import to_jsonable_python
+from tomlkit.exceptions import ParseError
 
 from .errors import InputError
-from .findings import MODEL, Code, Location, ProjectPath
+from .files import current_text, replace_all
+from .findings import Code, Location, Model
 from .locate import locate, refused_line
 from .page import CAPTURE_FPS, MEASURABLE_SPAN_SECONDS
-from .results import Layer, LayerValue, Scope
+from .results import ConfigSetResult, ConfigUnsetResult, Layer, LayerValue, Scope
 from .tomlmap import (
     A_LUMA,
     A_PERCENT,
@@ -50,7 +52,6 @@ from .tomlmap import (
     Nature,
     Source,
     did_you_mean,
-    env_names,
     from_mapping,
     read_value,
     registry,
@@ -58,8 +59,6 @@ from .tomlmap import (
     unknown_key_message,
     unknown_key_warnings,
 )
-
-log = logging.getLogger(__name__)
 
 PROJECT_FILE = "decktalk.toml"
 ENV_PREFIX = "decktalk"
@@ -69,6 +68,12 @@ X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium"
 
 COLOR_SCHEMES = ("light", "dark", "no-preference")
 """Truth: the values Chromium reports for `prefers-color-scheme`."""
+
+HEX_COLOR = r"^(#|0[xX])[0-9A-Fa-f]{6}$"
+"""Truth: a colour written as six hex digits after the prefix a stylesheet or ffmpeg reads, and nothing else."""
+
+PAGE_POLICIES = ("trusted", "untrusted")
+"""The two ways `record` treats a page: as the author's own work, or as a stranger's that may be hostile."""
 
 BLOCK_PX = 8
 """Truth: the H.264 transform block the block-averaged copy of a frame cancels ringing over."""
@@ -148,7 +153,12 @@ class VideoConfig:
     )
     slate_color: str = tune(
         "0x0e1116",
-        "Color of the plain frame that plays when a slate image cannot be rendered.",
+        "Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB.",
+        bounds=Bounds(pattern=HEX_COLOR),
+        hazard=(
+            "The colour is placed inside an ffmpeg filter graph and the slate page's stylesheet, so any other "
+            "text could add a filter that opens a file or a rule that loads a URL."
+        ),
     )
 
 
@@ -161,6 +171,21 @@ class NarrationConfig:
     )
     output_format: str = tune(
         "mp3_44100_128", "Audio format that the speech provider returns. It is part of the narration cache key."
+    )
+    concurrency: int = tune(
+        2,
+        "How many sections `narrate` voices at once.",
+        bounds=Bounds(ge=1, le=8),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard="A voice provider limits requests per account, and a busy answer is retried rather than paid twice.",
+    )
+    retries: int = tune(
+        3,
+        "How many more times `narrate` asks again when the voice provider answers that it is busy or failed.",
+        bounds=Bounds(ge=0, le=10),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
     )
     mp3_bitrate: str = tune(
         "128k",
@@ -275,17 +300,38 @@ class RecordConfig:
         "Color scheme that Chromium reports to the page.",
         bounds=Bounds(enum=COLOR_SCHEMES),
     )
+    page_policy: str = tune(
+        "trusted",
+        "How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as "
+        "a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not "
+        "for the project's own origin, through every channel a page can open. It is the machine's to set, "
+        "so a project someone else wrote cannot trust its own page.",
+        bounds=Bounds(enum=PAGE_POLICIES),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "A service that renders pages other people wrote sets `untrusted` on its machine, because a "
+            "trusted page can reach anything the machine can, including a cloud metadata endpoint."
+        ),
+    )
+    concurrency: int = tune(
+        0,
+        "How many page sections `record` records at once. Zero chooses from the CPU this process may use, "
+        "which inside a container is its quota rather than the host's core count.",
+        bounds=Bounds(ge=0, le=16),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "Each recording needs about two dedicated CPUs to present its frames on time, and a starved "
+            "recording stalls or lands its reveals late, so a number above the machine's share costs "
+            "correctness rather than only speed."
+        ),
+    )
     retries: int = tune(
         2,
         "How many more times `record` records a section whose frames stalled.",
         bounds=Bounds(ge=0, le=10),
         see_also=("record.frame_gap_max_ms",),
-    )
-    screenshot_settle_seconds: float = tune(
-        0.4,
-        "Seconds that `storyboard` waits before each slide panel.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=10),
     )
     cover_scan_seconds: float = tune(
         4.0,
@@ -411,6 +457,7 @@ class VerifyConfig:
         "Extra lead added to the reference frame beyond the one the offset limit implies.",
         unit="milliseconds",
         bounds=Bounds(ge=0, le=80),
+        decides=(Code.CUE_OFF,),
         hazard=(
             "The lead is already the offset limit plus the grid guard, so extra lead is only ever the "
             "escape hatch for a deck whose reference frame is still inside its own reveal. Above about 80 "
@@ -445,7 +492,7 @@ class VerifyConfig:
         unit="percent",
         bounds=Bounds(ge=0.001, le=5),
         typed=A_PERCENT,
-        decides=(Code.CUE_NO_CHANGE, Code.CUE_THIN_CHANGE),
+        decides=(Code.CUE_NO_CHANGE, Code.CUE_THIN_CHANGE, Code.PAGE_THIN_DRAW),
         hazard=(
             "Above about 5 percent only a change across most of the slide passes, so every small reveal in "
             "the deck reports a failure it cannot fix."
@@ -639,10 +686,9 @@ class LoudnessConfig:
     )
     range_max_lu: float = tune(
         11.0,
-        "Widest loudness range the normalised mix may hold.",
+        "The loudness range the measurement is made against. It is not a limit, and no mix fails on it.",
         unit="LU",
         bounds=Bounds(ge=1, le=20),
-        decides=(Code.MIX_LOUDNESS,),
     )
 
 
@@ -668,7 +714,7 @@ class MotionConfig:
         1.0,
         "Multiplier on every declared motion span and duration in the deck.",
         bounds=Bounds(ge=0.25, le=4.0),
-        decides=(Code.PAGE_MOTION_OVERRUN,),
+        decides=(Code.PAGE_MOTION_OVERRUN, Code.PAGE_STAGGER_OVERRUN),
         hazard=(
             "A scale above one slows motion down, and a span slowed past the measurable ceiling makes its "
             "own cue unmeasurable, so each scaled span is clamped at that ceiling rather than obeyed."
@@ -747,6 +793,17 @@ class OutputConfig:
         unit="runs",
         bounds=Bounds(ge=1, le=1000),
     )
+    events_max_bytes: int = tune(
+        8_388_608,
+        "Bytes one run's events file may reach before debug and info lines are left out of it. "
+        "Lines about the run, its stages, its sections, its findings and its spending are always kept.",
+        unit="bytes",
+        bounds=Bounds(ge=65_536, le=1_073_741_824),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        see_also=("output.events_keep_runs",),
+        hazard="A file with no bound grows with every tool call a long film makes, on a disk a host shares.",
+    )
 
 
 @dataclass(frozen=True)
@@ -767,6 +824,14 @@ class ToolsConfig:
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
     )
+    timeout_seconds: float = tune(
+        600.0,
+        "Longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before it is stopped.",
+        unit="seconds",
+        bounds=Bounds(ge=10, le=7200),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+    )
     cache_dir: str = tune(
         "",
         "Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache.",
@@ -774,27 +839,6 @@ class ToolsConfig:
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
         see_also=("narration.cache_dir",),
-    )
-
-
-@dataclass(frozen=True)
-class HostConfig:
-    """These keys are facts about this machine that a run measures rather than a person chooses."""
-
-    presentation_bias_ms: float = tune(
-        0.0,
-        "How long this machine takes to present a frame the page has already drawn, which is what a "
-        "run's own measurements of this machine are read against.",
-        unit="milliseconds",
-        bounds=Bounds(ge=-200, le=200),
-        scope=Scope.MACHINE,
-        nature=Nature.APPARATUS,
-        source=Source.MEASURED,
-        evidence="decktalk doctor --measure",
-        hazard=(
-            "A bias written by hand is a claim about this machine that nobody measured, and the one "
-            "command that can measure it is beside this key. It is measured or it is zero."
-        ),
     )
 
 
@@ -813,7 +857,6 @@ class Settings:
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
-    host: HostConfig = field(default_factory=HostConfig)
 
 
 KEYS: tuple[Key, ...] = registry(Settings)
@@ -832,7 +875,18 @@ DOCUMENT_TABLES = ("project", "section", "transition", "soundscape")
 the document owns, so neither is wholly one thing.
 """
 
-STANDALONE_ENV = frozenset(("DECKTALK_PROJECT", "DECKTALK_CONFIG", "DECKTALK_ALLOW_ANY_API_BASE"))
+CONFIG_VARIABLE = "DECKTALK_CONFIG"
+"""The variable that names a per-machine settings file other than the standard one."""
+
+ALLOW_ANY_API_BASE = "DECKTALK_ALLOW_ANY_API_BASE"
+"""The variable that lets `[elevenlabs] api_base` name a host other than ElevenLabs, for a local mock.
+
+The machine reads it when it is built from the process environment and carries the answer as a
+field, because the environment is the user's own machine and a project file is not, so the file
+alone can never redirect the key.
+"""
+
+STANDALONE_ENV = frozenset(("DECKTALK_PROJECT", CONFIG_VARIABLE, ALLOW_ANY_API_BASE))
 """The three variables DeckTalk reads that name no key. Every other DECKTALK_ name is a key or a typo."""
 
 
@@ -851,13 +905,18 @@ class Number:
     unit: str | None
     nature: Nature
     sentence: str
-    at: Callable[[Settings], object]
+    at: Callable[[Settings], float]
     decides: tuple[Code, ...] = ()
 
     @property
     def kind(self) -> str:
         """Whether this number is computed from the keys or fixed, which is what `x-numbers` publishes."""
         return "derived" if self.nature is Nature.DERIVED else "constant"
+
+    @classmethod
+    def fixed(cls, name: str, value: float, unit: str, nature: Nature, sentence: str) -> Number:
+        """A number that reads no key, whose formula is its own value and whose value never moves."""
+        return cls(name, str(value), (), unit, nature, sentence, lambda _settings: value)
 
 
 def probe_width(settings: Settings) -> int:
@@ -942,62 +1001,50 @@ NUMBERS: tuple[Number, ...] = (
         at=reference_lead_seconds,
         decides=(Code.CUE_OFF, Code.CUE_NO_ONSET),
     ),
-    Number(
-        id="CAPTURE_FPS",
-        formula=str(CAPTURE_FPS),
-        reads=(),
-        unit="frames per second",
-        nature=Nature.TRUTH,
-        sentence="Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for.",
-        at=lambda _settings: CAPTURE_FPS,
+    Number.fixed(
+        "CAPTURE_FPS",
+        CAPTURE_FPS,
+        "frames per second",
+        Nature.TRUTH,
+        "Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for.",
     ),
-    Number(
-        id="BLOCK_PX",
-        formula=str(BLOCK_PX),
-        reads=(),
-        unit="pixels",
-        nature=Nature.TRUTH,
-        sentence="Truth: the H.264 transform block the block-averaged copy of a frame cancels ringing over.",
-        at=lambda _settings: BLOCK_PX,
+    Number.fixed(
+        "BLOCK_PX",
+        BLOCK_PX,
+        "pixels",
+        Nature.TRUTH,
+        "Truth: the H.264 transform block the block-averaged copy of a frame cancels ringing over.",
     ),
-    Number(
-        id="GUARD_FRAMES",
-        formula=str(GUARD_FRAMES),
-        reads=(),
-        unit="frames",
-        nature=Nature.TRUTH,
-        sentence="Truth: half a frame of rounding guard on each side of the window the offset limit allows.",
-        at=lambda _settings: GUARD_FRAMES,
+    Number.fixed(
+        "GUARD_FRAMES",
+        GUARD_FRAMES,
+        "frames",
+        Nature.TRUTH,
+        "Truth: half a frame of rounding guard on each side of the window the offset limit allows.",
     ),
-    Number(
-        id="REPORT_FRAME_GAP_MS",
-        formula=str(REPORT_FRAME_GAP_MS),
-        reads=(),
-        unit="milliseconds",
-        nature=Nature.CALIBRATION,
-        sentence="Calibration: the runtime's own reporting floor, under which a frame gap cannot be seen.",
-        at=lambda _settings: REPORT_FRAME_GAP_MS,
+    Number.fixed(
+        "REPORT_FRAME_GAP_MS",
+        REPORT_FRAME_GAP_MS,
+        "milliseconds",
+        Nature.CALIBRATION,
+        "Calibration: the runtime's own reporting floor, under which a frame gap cannot be seen.",
     ),
-    Number(
-        id="CLICK_LEVEL_DBFS",
-        formula=str(CLICK_LEVEL_DBFS),
-        reads=(),
-        unit="dBFS",
-        nature=Nature.TRUTH,
-        sentence="Truth: the level DeckTalk generates its own click at, which every click floor sits under.",
-        at=lambda _settings: CLICK_LEVEL_DBFS,
+    Number.fixed(
+        "CLICK_LEVEL_DBFS",
+        CLICK_LEVEL_DBFS,
+        "dBFS",
+        Nature.TRUTH,
+        "Truth: the level DeckTalk generates its own click at, which every click floor sits under.",
     ),
-    Number(
-        id="MEASURABLE_SPAN_SECONDS",
-        formula=str(MEASURABLE_SPAN_SECONDS),
-        reads=(),
-        unit="seconds",
-        nature=Nature.TRUTH,
-        sentence=(
+    Number.fixed(
+        "MEASURABLE_SPAN_SECONDS",
+        MEASURABLE_SPAN_SECONDS,
+        "seconds",
+        Nature.TRUTH,
+        (
             "Truth: the span at which an effect covers its own cue, which is the ceiling every declared "
             "span, every scaled span and every staggered total is held under."
         ),
-        at=lambda _settings: MEASURABLE_SPAN_SECONDS,
     ),
 )
 """Every number that is not a knob, with the formula or the fact that fixes it."""
@@ -1005,15 +1052,13 @@ NUMBERS: tuple[Number, ...] = (
 NUMBERS_BY_ID: dict[str, Number] = {number.id: number for number in NUMBERS}
 
 
-class Layers(BaseModel):
+class Layers(Model):
     """What every layer said about every key, which is the record `config explain` renders.
 
     It is built at load and again at reload, so a watch loop that sees an edited `decktalk.toml`
     sees the layer that set each key move with it. A finding that names a knob quotes the winning
     row, because a value without its layer cannot tell a deliberate choice from a default.
     """
-
-    model_config = MODEL
 
     rows: dict[str, tuple[LayerValue, ...]] = Field(
         description="Every key by its dotted name, with one row per layer that stated it, lowest first."
@@ -1044,57 +1089,21 @@ class Loaded:
     layers: Layers
 
 
-class SettingWrite(BaseModel):
-    """What a write to a settings file changed, or would change on a dry run.
+def machine_config_path(environ: Mapping[str, str], home: Path, platform: str = sys.platform) -> Path:
+    """The per-machine settings file this environment names, which DECKTALK_CONFIG moves.
 
-    It reports the effective value as well as the written one, because a write to the project file
-    that an environment variable still shadows changes the file and not the run, and an agent that
-    is told only what it wrote will believe the opposite.
+    The environment and the home directory are arguments, because the machine that owns them is the
+    one reader of the process, and a host that builds its machine by hand names its own file.
     """
-
-    model_config = MODEL
-
-    key: str = Field(description="The key's dotted name.")
-    value: JsonValue = Field(description="The value this call wrote, or would write.")
-    previous: JsonValue = Field(None, description="The value that file held before, or null when it held none.")
-    scope: Scope = Field(description="Which file the write landed in.")
-    file: ProjectPath = Field(description="The file that was written.")
-    line: int | None = Field(None, ge=1, description="The line the key now sits on in that file, or null.")
-    dry_run: bool = Field(description="True when the call reported the change and wrote nothing.")
-    effective: JsonValue = Field(None, description="The value in force after the write.")
-    layer: Layer = Field(description="Which layer the effective value now comes from.")
-    shadowed: bool = Field(description="True when a higher layer still decides this key despite the write.")
-
-
-class SettingUnset(BaseModel):
-    """What a removal from a settings file took out, and what decides the key once it is gone.
-
-    It reports the value in force as well as the value it removed, because the layer that shows
-    through may be the default or an environment variable that was shadowed all along, and an agent
-    that is told only what it removed cannot tell which of the two it is now running on.
-    """
-
-    model_config = MODEL
-
-    keys: tuple[str, ...] = Field(description="Every key that file no longer sets, in the order this call named them.")
-    previous: JsonValue = Field(None, description="The value that file held before, or null when it held none.")
-    scope: Scope = Field(description="Which file the removal landed in.")
-    file: ProjectPath = Field(description="The file that was read, and written when it stated the key.")
-    effective: JsonValue = Field(None, description="The value in force once the key is gone from that file.")
-    layer: Layer = Field(description="Which layer decides this key now that the file has stopped stating it.")
-
-
-def machine_config_path() -> Path:
-    """The per-machine settings file. DECKTALK_CONFIG names a different one."""
-    override = os.environ.get("DECKTALK_CONFIG")
+    override = environ.get(CONFIG_VARIABLE)
     if override:
         return Path(override)
-    if sys.platform == "darwin":
-        root = Path.home() / "Library" / "Application Support"
-    elif sys.platform == "win32":
-        root = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    if platform == "darwin":
+        root = home / "Library" / "Application Support"
+    elif platform == "win32":
+        root = Path(environ.get("APPDATA") or home / "AppData" / "Roaming")
     else:
-        root = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+        root = Path(environ.get("XDG_CONFIG_HOME") or home / ".config")
     return root / "decktalk" / PROJECT_FILE
 
 
@@ -1118,7 +1127,38 @@ def read_project_toml(root: Path) -> dict[str, Any]:
     return read_toml(root / PROJECT_FILE)
 
 
-def read_machine_toml(path: Path | None = None) -> dict[str, Any]:
+WHERE_SCOPE_BELONGS = {
+    Scope.MACHINE: "this machine's file, where the machine that runs the build states what it runs",
+    Scope.PROJECT: f"the project's {PROJECT_FILE}, where the film that ships carries it",
+}
+"""Where each scope's keys are written, which is the sentence a refusal of a misplaced key ends on."""
+
+
+def refuse_off_scope(data: Mapping[str, Any], allowed: Scope, *, file: Path, text: str | None = None) -> None:
+    """Refuse the first key in `data` that belongs to a scope other than `allowed`.
+
+    The refusal is symmetric. A per-machine file cannot carry a key about the film, and a project
+    cannot carry a key about the machine, because those keys name executables and directories the
+    machine trusts. A project that someone else wrote would otherwise choose the program DeckTalk
+    launches as the browser, so a machine-scoped key in a project is refused rather than ignored.
+    """
+    for dotted, _value in _flatten(data):
+        key = BY_ID.get(dotted)
+        if key is None or key.scope is allowed:
+            continue
+        where = key.scope.value
+        raise InputError(
+            f"{file.name}: '{dotted}' is {where}-scoped, so it belongs in {WHERE_SCOPE_BELONGS[key.scope]}.",
+            hint=f"Remove it from {file.name} and run `decktalk config set {dotted} <value> --where {where}`.",
+            location=Location(
+                where=f"[{key.table}] {key.name}",
+                file=file,
+                line=locate(text, dotted) if text is not None else None,
+            ),
+        )
+
+
+def read_machine_toml(path: Path) -> dict[str, Any]:
     """The per-machine tuning tables, refusing any key that belongs in the project instead.
 
     The file is restricted by key and not by table, because a limit is a statement about the film
@@ -1126,7 +1166,6 @@ def read_machine_toml(path: Path | None = None) -> dict[str, Any]:
     name rather than warned about, since a warning would put a correctly spelled key in a weaker
     class than a typo and a reader of the JSON never sees a log line at all.
     """
-    path = path or machine_config_path()
     data = read_toml(path)
     if not data:
         return {}
@@ -1139,19 +1178,7 @@ def read_machine_toml(path: Path | None = None) -> dict[str, Any]:
             hint=f"The tables the per-machine file may hold are {', '.join(sorted(tables))}.",
             location=Location(where=path.name, file=path),
         )
-    for dotted, _value in _flatten(data):
-        key = BY_ID.get(dotted)
-        if key is None:
-            continue
-        if key.scope is not Scope.MACHINE:
-            raise InputError(
-                f"{path.name}: '{dotted}' is {key.scope.value}-scoped, so it belongs in the project's "
-                f"{PROJECT_FILE} where the film that ships carries it.",
-                hint=f"Remove it from this file and run `decktalk config set {dotted} <value> --where project`.",
-                location=Location(where=f"[{key.table}] {key.name}", file=path, line=locate(text, dotted)),
-            )
-    for message in key_warnings(data, path.name):
-        log.warning(message)
+    refuse_off_scope(data, Scope.MACHINE, file=path, text=text)
     return data
 
 
@@ -1171,27 +1198,22 @@ def key_warnings(doc: Mapping[str, Any], where: str) -> list[str]:
     return out
 
 
-def env_warnings(environ: Mapping[str, str] | None = None) -> list[str]:
+def env_warnings(environ: Mapping[str, str]) -> list[str]:
     """One warning per DECKTALK_ variable DeckTalk does not read, naming the closest one it does.
 
     A variable DeckTalk does not read has no effect, so the warning is what tells a reader that a
     typed name never took hold.
     """
-    env = os.environ if environ is None else environ
-    known = env_names(Settings, ENV_PREFIX) | STANDALONE_ENV
+    known = {key.environment for key in KEYS} | STANDALONE_ENV
     return [
         unknown_key_message(name, known, "environment")
-        for name in sorted(n for n in env if n.startswith("DECKTALK_") and n not in known)
+        for name in sorted(n for n in environ if n.startswith("DECKTALK_") and n not in known)
     ]
 
 
 def _table(doc: Mapping[str, Any], dotted: str) -> Mapping[str, Any] | None:
     """One nested table of a parsed document by its dotted name, or null when it is not there."""
-    found: Any = doc
-    for part in dotted.split("."):
-        if not isinstance(found, Mapping) or part not in found:
-            return None
-        found = found[part]
+    found = stated(doc, dotted)
     return found if isinstance(found, Mapping) else None
 
 
@@ -1237,11 +1259,7 @@ def route(overrides: tuple[str, ...]) -> dict[str, str]:
                 f"'{key}' is project content rather than a knob, so no override can set it.",
                 hint=f"Edit [{key.split('.')[0]}] in {PROJECT_FILE} instead.",
             )
-        if key not in BY_ID:
-            raise InputError(
-                f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
-                hint="Run `decktalk schema settings` for every key DeckTalk reads.",
-            )
+        key_named(key)
         out[key] = value
     return out
 
@@ -1257,7 +1275,7 @@ def load(
     project: Mapping[str, Any] | None = None,
     machine: Mapping[str, Any] | None = None,
     machine_path: Path | None = None,
-    environ: Mapping[str, str] | None = None,
+    environ: Mapping[str, str],
     overrides: tuple[str, ...] = (),
 ) -> Loaded:
     """Every key resolved through the five layers, with the record of which layer set each one.
@@ -1265,22 +1283,24 @@ def load(
     An override is spelled the way an environment variable is, a string the key's own type reads,
     so one conversion serves both and an override cannot be admitted by a route the environment is
     refused by. It sits above the environment because it is given for one run on purpose.
+
+    The environment is required and never read from the process, because the machine is the one
+    reader of the process and a host that built its machine by hand chose what it holds. The machine
+    layer is the tables given, or the file at `machine_path`, or nothing when neither is named.
     """
-    env = dict(os.environ if environ is None else environ)
-    from_machine = dict(machine) if machine is not None else read_machine_toml(machine_path)
+    env = dict(environ)
+    from_machine = dict(machine) if machine is not None else (read_machine_toml(machine_path) if machine_path else {})
     from_project = dict(project) if project is not None else (read_project_toml(root) if root else {})
+    project_file = (root / PROJECT_FILE) if root else Path(PROJECT_FILE)
+    project_text = project_file.read_text(encoding="utf-8") if root and project_file.is_file() else None
+    refuse_off_scope(from_project, Scope.PROJECT, file=project_file, text=project_text)
     pairs = route(overrides)
-    for message in env_warnings(env):
-        log.warning(message)
-    if project is not None or root:
-        for message in key_warnings(from_project, PROJECT_FILE):
-            log.warning(message)
     base = merge_tables(from_machine, from_project)
     env_and_overrides = {**env, **{BY_ID[key].environment: value for key, value in pairs.items()}}
     settings = from_mapping(Settings, base=base, prefixes=[ENV_PREFIX], environ=env_and_overrides)
     _require(settings)
     files = {
-        Layer.MACHINE: machine_path or (machine_config_path() if machine is None else None),
+        Layer.MACHINE: machine_path,
         Layer.PROJECT: (root / PROJECT_FILE) if root else None,
     }
     return Loaded(settings=settings, layers=_layers(settings, from_machine, from_project, env, pairs, files))
@@ -1299,18 +1319,18 @@ def _layers(
     The layers are read separately rather than after merging, because a merged mapping has already
     forgotten which file wrote each key, and the file is half of what makes the record useful.
     """
-    texts = {layer: path.read_text(encoding="utf-8") if path and path.exists() else "" for layer, path in files.items()}
+    texts = {layer: current_text(path) if path else "" for layer, path in files.items()}
     rows: dict[str, tuple[LayerValue, ...]] = {}
     for key in KEYS:
-        found = [LayerValue(layer=Layer.DEFAULT, value=_json(key.default))]
+        found = [LayerValue(layer=Layer.DEFAULT, value=json_value(key.default))]
         for layer, doc in ((Layer.MACHINE, machine), (Layer.PROJECT, project)):
-            stated = _stated(doc, key.id)
-            if stated is not _ABSENT:
+            said = stated(doc, key.id)
+            if said is not ABSENT:
                 path = files.get(layer)
                 found.append(
                     LayerValue(
                         layer=layer,
-                        value=_json(stated),
+                        value=json_value(said),
                         file=path,
                         line=locate(texts.get(layer, ""), key.id) if path else None,
                     )
@@ -1321,38 +1341,37 @@ def _layers(
             found.append(LayerValue(layer=Layer.OVERRIDE, value=overrides[key.id]))
         # The winning row carries the value the tree holds rather than the text a layer wrote, so a
         # reader of the record and a reader of the settings never disagree about one number.
-        found[-1] = found[-1].model_copy(update={"value": _json(value_of(settings, key.id))})
+        found[-1] = found[-1].model_copy(update={"value": json_value(value_of(settings, key.id))})
         rows[key.id] = tuple(found)
     return Layers(rows=rows)
 
 
-_ABSENT = object()
+ABSENT = object()
 """The answer to a lookup for a key a layer never stated, which None cannot be because None is a value."""
 
 
-def _stated(doc: Mapping[str, Any], dotted: str) -> object:
-    """What one layer's document says about one key, or `_ABSENT` when it says nothing."""
+def stated(doc: Mapping[str, Any], dotted: str) -> object:
+    """What one layer's document says about one key, or `ABSENT` when it says nothing."""
     found: object = doc
     for part in dotted.split("."):
         if not isinstance(found, Mapping) or part not in found:
-            return _ABSENT
+            return ABSENT
         found = found[part]
     return found
 
 
-def _json(value: object) -> JsonValue:
-    """One value as JSON carries it, which turns the tuple a TOML array becomes into a list."""
-    if isinstance(value, tuple):
-        return [_json(item) for item in value]
-    return cast("JsonValue", value)
+json_value: Callable[[object], JsonValue] = functools.partial(to_jsonable_python, fallback=str)
+"""One value as JSON carries it: a tuple as a list, an enum as its value, and anything else unknown as its text."""
 
 
 def value_of(settings: Settings, dotted: str) -> object:
     """The value one dotted key holds in a settings tree."""
-    found: object = settings
-    for part in dotted.split("."):
-        found = getattr(found, part)
-    return found
+    return operator.attrgetter(dotted)(settings)
+
+
+def effective(settings: Settings, name: str) -> object:
+    """One input of a relation or a formula at its effective value, whether it is a key or a published number."""
+    return value_of(settings, name) if name in BY_ID else NUMBERS_BY_ID[name].at(settings)
 
 
 def _require(settings: Settings) -> None:
@@ -1365,7 +1384,7 @@ def _require(settings: Settings) -> None:
         if key.requires is None:
             continue
         left, op, right = key.requires.split()
-        if not _compare(_side(settings, left), op, _side(settings, right)):
+        if not COMPARISONS[op](_side(settings, left), _side(settings, right)):
             raise InputError(
                 f"{key.id} must satisfy {key.requires}, and it does not.",
                 hint=key.hazard,
@@ -1374,21 +1393,29 @@ def _require(settings: Settings) -> None:
 
 def _side(settings: Settings, token: str) -> float:
     """One side of a declared relation, which is a key, a published number or a literal."""
-    if token in BY_ID:
-        return float(cast("float", value_of(settings, token)))
-    if token in NUMBERS_BY_ID:
-        return float(cast("float", NUMBERS_BY_ID[token].at(settings)))
+    if token in BY_ID or token in NUMBERS_BY_ID:
+        return float(cast("float", effective(settings, token)))
     return float(token)
 
 
-def _compare(left: float, op: str, right: float) -> bool:
-    """The four comparisons a declared relation may use."""
-    return {
-        ">=": left >= right,
-        "<=": left <= right,
-        ">": left > right,
-        "<": left < right,
-    }[op]
+COMPARISONS = {">=": operator.ge, "<=": operator.le, ">": operator.gt, "<": operator.lt}
+"""The four comparisons a declared relation may use."""
+
+
+def not_a_key(key: str) -> InputError:
+    """The one refusal of a name no settings key carries, with the nearest key when one is near."""
+    return InputError(
+        f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
+        hint="Run `decktalk schema settings` for every key DeckTalk reads.",
+    )
+
+
+def key_named(key: str) -> Key:
+    """The settings key called `key`, or the one refusal every reader of a key's name gives."""
+    known = BY_ID.get(key)
+    if known is None:
+        raise not_a_key(key)
+    return known
 
 
 def parse_value(key: Key, text: str) -> object:
@@ -1397,22 +1424,48 @@ def parse_value(key: Key, text: str) -> object:
     A value that reaches `config set` and a value that reaches `--set` are the same string, so both
     are read here and both meet the same refusal.
     """
-    return read_value(key.annotation, text, where=key.id, field=_declared(key), from_env=True)
+    return read_value(key.annotation, text, where=key.id, bounds=key.bounds, hazard=key.hazard, from_env=True)
 
 
-def _declared(key: Key) -> DataField[Any]:
-    """The dataclass field that declares this key, found by walking the table path of its id.
+def _scoped_key(key: str, scope: Scope, *, action: str, rerun: str) -> Key:
+    """The key a write or a removal names, refused when no key has that name or it belongs in the other file."""
+    known = key_named(key)
+    if known.scope is not scope:
+        raise InputError(
+            f"'{key}' is {known.scope.value}-scoped, so it cannot be {action} the {scope.value} file.",
+            hint=f"Run `{rerun} --where {known.scope.value}`.",
+        )
+    return known
 
-    The walk resolves each table's annotation by name, because the module is written under future
-    annotations and a field's declared type is the string the author wrote.
+
+@dataclass(frozen=True)
+class Edited:
+    """One settings file's text with one key set in it, and what that key held before.
+
+    It is text rather than a written file, because a fix that also edits lines of the same file
+    stages both changes before either lands, and the whole file is judged once they are all made.
     """
-    holder: Any = Settings
-    for part in key.table.split("."):
-        annotation = next(f for f in fields(holder) if f.name == part).type
-        holder = globals()[annotation] if isinstance(annotation, str) else annotation
-        if not is_dataclass(holder):
-            raise KeyError(key.id)
-    return next(f for f in fields(holder) if f.name == key.name)
+
+    text: str
+    value: object
+    previous: object
+
+
+def edit(text: str, key: str, value: str, *, scope: Scope, file: Path) -> Edited:
+    """Set one key in the text of one settings file, keeping every comment the file already has.
+
+    The key is refused when no key has that name, when it belongs in the other file, or when the
+    value is not one the key takes. The document is edited rather than rewritten, because a person
+    wrote the comments around the key and a writer that dumped a parsed tree would delete them the
+    first time an agent turned a knob. The text that comes back is not yet validated as a whole,
+    because a caller may have more changes to make to it first.
+    """
+    known = _scoped_key(key, scope, action="written to", rerun=f"decktalk config set {key} {value}")
+    typed = parse_value(known, value)
+    document = _document(text, file)
+    previous = stated(document, key)
+    _put(document, key.split("."), typed)
+    return Edited(text=tomlkit.dumps(document), value=typed, previous=previous)
 
 
 def write(
@@ -1421,104 +1474,108 @@ def write(
     value: str,
     *,
     scope: Scope,
+    environ: Mapping[str, str],
     dry_run: bool = False,
-    measured: bool = False,
-) -> SettingWrite:
+) -> ConfigSetResult:
     """Set one key in one file, through the whole loader, keeping every comment the file already has.
 
     The would-be file is built first and loaded whole, so a value that no run could use never lands
     and the refusal a caller meets is the loader's own, with its file, its line and its near name.
-    The document is edited rather than rewritten, because a person wrote the comments around the
-    key and a writer that dumped a parsed tree would delete them the first time an agent turned a
-    knob.
+    The file is then replaced whole rather than written in place, so a write that fails leaves it as
+    it was.
 
-    `measured` is the door the one command that takes a measurement comes through. A measured key is
-    refused by hand because a number typed into it is a guess, and the command that measured it is
-    holding the only honest value there is, so the refusal has to have exactly one exception and it
-    has to be named at the call rather than assumed from the key.
+    `environ` is the machine's environment, which is the layer over the file that decides whether
+    the value written is the value in force. The answer is `config set`'s own result, so the command
+    renders what the library returns.
     """
-    known = BY_ID.get(key)
-    if known is None:
-        raise InputError(
-            f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
-            hint="Run `decktalk schema settings` for every key DeckTalk reads.",
-        )
-    if known.scope is not scope:
-        other = "--where machine" if known.scope is Scope.MACHINE else "--where project"
-        raise InputError(
-            f"'{key}' is {known.scope.value}-scoped, so it cannot be written to the {scope.value} file.",
-            hint=f"Run `decktalk config set {key} {value} {other}`.",
-        )
-    if known.source is Source.MEASURED and not measured:
-        raise InputError(
-            f"'{key}' is measured rather than chosen, so a value written by hand would be a guess.",
-            hint=f"Run `{known.evidence}`.",
-        )
-    if measured and known.source is not Source.MEASURED:
-        raise InputError(
-            f"'{key}' is chosen rather than measured, so nothing may write it as a measurement.",
-            hint=f"Run `decktalk config set {key} {value}`.",
-        )
-    typed = parse_value(known, value)
-    document = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
-    previous = _stated(document, key)
-    _put(document, key.split("."), typed)
-    text = tomlkit.dumps(document)
-    _validate(text, path, scope)
+    target = _target(path, scope)
+    edited = edit(current_text(target), key, value, scope=scope, file=path)
+    validate(edited.text, path, scope)
     if not dry_run:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    return SettingWrite(
+        replace_all({target: edited.text})
+    # A write that a higher layer shadows changes the file and not the run, so the result says so
+    # rather than reporting a new value the next command will not use.
+    tree = _in_force(path, scope, {key: edited.value}, environ)
+    return ConfigSetResult(
+        ok=True,
+        written=() if dry_run else (path,),
         key=key,
-        value=_json(typed),
-        previous=None if previous is _ABSENT else _json(previous),
+        value=json_value(edited.value),
+        previous=None if edited.previous is ABSENT else json_value(edited.previous),
         scope=scope,
         file=path,
-        line=locate(text, key),
         dry_run=dry_run,
-        **_after(path, key, scope, typed),
+        effective=json_value(value_of(tree.settings, key)),
+        layer=tree.layers.winner(key).layer,
     )
 
 
-def unset(path: Path, key: str, *, scope: Scope) -> SettingUnset:
-    """Take one key out of one file, so the layer below it decides again.
+def unset(path: Path, key: str, *more: str, scope: Scope, environ: Mapping[str, str]) -> ConfigUnsetResult:
+    """Take one key, or several, out of one file, so the layer below each decides again.
 
     This is the writer's opposite and it is built the same way: the would-be file is loaded whole
     before a byte lands, so a removal that breaks a relation between two keys never reaches the
     disk, and the document is edited rather than rewritten so the comments a person wrote around the
-    key survive. A key the file never stated is taken out of nothing and the call says so, which is
-    what lets an agent that cannot read the file call this twice. A measured key may be taken out
-    although it may not be written, because a measurement that no longer describes the machine needs
-    a way back to the default.
+    key survive. Several keys are one edit and one write, so a table is removed whole or not at all.
+    A key the file never stated is taken out of nothing and the call says so, which is what lets an
+    agent that cannot read the file call this twice. `previous`, `effective` and `layer` describe
+    the first key.
     """
-    known = BY_ID.get(key)
-    if known is None:
-        raise InputError(
-            f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
-            hint="Run `decktalk schema settings` for every key DeckTalk reads.",
-        )
-    if known.scope is not scope:
-        other = "--where machine" if known.scope is Scope.MACHINE else "--where project"
-        raise InputError(
-            f"'{key}' is {known.scope.value}-scoped, so it cannot be taken out of the {scope.value} file.",
-            hint=f"Run `decktalk config unset {key} {other}`.",
-        )
-    document = tomlkit.parse(path.read_text(encoding="utf-8")) if path.exists() else tomlkit.document()
-    previous = _stated(document, key)
-    if previous is not _ABSENT:
-        _take(document, key.split("."))
+    keys = (key, *more)
+    for one in keys:
+        _scoped_key(one, scope, action="taken out of", rerun=f"decktalk config unset {one}")
+    target = _target(path, scope)
+    document = _document(current_text(target), path)
+    stating = [one for one in keys if stated(document, one) is not ABSENT]
+    previous = stated(document, key)
+    for one in stating:
+        _take(document, one.split("."))
+    if stating:
         text = tomlkit.dumps(document)
-        _validate(text, path, scope)
-        path.write_text(text, encoding="utf-8")
-    tree = _in_force(path, scope, {})
-    return SettingUnset(
-        keys=(key,),
-        previous=None if previous is _ABSENT else _json(previous),
+        validate(text, path, scope)
+        replace_all({target: text})
+    tree = _in_force(path, scope, {}, environ)
+    return ConfigUnsetResult(
+        ok=True,
+        written=(path,) if stating else (),
+        keys=keys,
+        previous=None if previous is ABSENT else json_value(previous),
         scope=scope,
         file=path,
-        effective=_json(value_of(tree.settings, key)),
+        effective=json_value(value_of(tree.settings, key)),
         layer=tree.layers.winner(key).layer,
     )
+
+
+def _target(path: Path, scope: Scope) -> Path:
+    """The file a settings change replaces, which is `path` with every link followed.
+
+    A link is followed so a machine file kept in a dotfiles repository stays where its owner keeps
+    it. A project file that leads out of the project is refused, because a project someone else
+    wrote would otherwise choose a file elsewhere on the machine for a fix or `config set` to write.
+    A hard link needs no refusal, because the change replaces the file rather than writing into it,
+    so the other name keeps its own contents.
+    """
+    target = path.resolve()
+    if scope is Scope.PROJECT and not target.is_relative_to(path.parent.resolve()):
+        raise InputError(
+            f"{path.name} leads outside the project, so DeckTalk writes nothing through it.",
+            hint=f"Replace the link at {path.name} with the file itself.",
+            location=Location(where=path.name, file=Path(path.name)),
+        )
+    return target
+
+
+def _document(text: str, file: Path) -> tomlkit.TOMLDocument:
+    """A settings file parsed for editing, or the loader's own refusal when it is not valid TOML."""
+    try:
+        return tomlkit.parse(text)
+    except ParseError as exc:
+        raise InputError(
+            f"{file.name} is not valid TOML: {exc}.",
+            hint="Fix the line this message names, which is usually a quote or a bracket left open.",
+            location=Location(where=file.name, file=file, line=exc.line),
+        ) from exc
 
 
 def _put(document: MutableMapping[str, Any], parts: list[str], value: object) -> None:
@@ -1543,14 +1600,22 @@ def _take(document: MutableMapping[str, Any], parts: list[str]) -> None:
     del table[parts[-1]]
 
 
-def _validate(text: str, path: Path, scope: Scope) -> None:
-    """The whole settings tree built on the would-be file, so a bad value never reaches the disk."""
+def validate(text: str, path: Path, scope: Scope) -> None:
+    """The whole settings tree built on the would-be file, so a bad value never reaches the disk.
+
+    A fix may also edit the lines of the file around a key, so the text is parsed here as well as
+    loaded, and a line edit that breaks the TOML is refused as the loader would refuse it.
+    """
     try:
         data = tomllib.loads(text)
-    except tomllib.TOMLDecodeError as exc:  # pragma: no cover  (tomlkit writes only valid TOML)
-        raise InputError(f"{path.name} would not be valid TOML: {exc}.") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise InputError(
+            f"{path.name} would not be valid TOML: {exc}.",
+            hint="The change was not made, so the file is as it was.",
+            location=Location(where=path.name, file=path, line=refused_line(exc)),
+        ) from exc
     if scope is Scope.MACHINE:
-        _machine_scope(data, path)
+        refuse_off_scope(data, Scope.MACHINE, file=path, text=text)
     load(
         machine=data if scope is Scope.MACHINE else {},
         project=data if scope is Scope.PROJECT else {},
@@ -1558,18 +1623,7 @@ def _validate(text: str, path: Path, scope: Scope) -> None:
     )
 
 
-def _machine_scope(data: Mapping[str, Any], path: Path) -> None:
-    """The per-machine rule applied to a would-be file, which is the same refusal a read makes."""
-    for dotted, _value in _flatten(data):
-        key = BY_ID.get(dotted)
-        if key is not None and key.scope is not Scope.MACHINE:
-            raise InputError(
-                f"{path.name}: '{dotted}' is {key.scope.value}-scoped and does not belong in this file.",
-                hint=f"Run `decktalk config set {dotted} <value> --where project`.",
-            )
-
-
-def _in_force(path: Path, scope: Scope, stated: Mapping[str, object]) -> Loaded:
+def _in_force(path: Path, scope: Scope, stated: Mapping[str, object], environ: Mapping[str, str]) -> Loaded:
     """The whole tree as it stands once a write or a removal has landed in the named file.
 
     Only the key the call touched is handed back to the loader, because no other key in that file
@@ -1578,29 +1632,14 @@ def _in_force(path: Path, scope: Scope, stated: Mapping[str, object]) -> Loaded:
     alone states nothing about it either.
     """
     return load(
-        machine=_nested(stated) if scope is Scope.MACHINE else {},
-        project=_nested(stated) if scope is Scope.PROJECT else {},
+        machine=nested(stated) if scope is Scope.MACHINE else {},
+        project=nested(stated) if scope is Scope.PROJECT else {},
         machine_path=path if scope is Scope.MACHINE else None,
+        environ=environ,
     )
 
 
-def _after(path: Path, key: str, scope: Scope, typed: object) -> dict[str, Any]:
-    """The value in force once this write lands, and whether a higher layer still decides the key.
-
-    A write that a higher layer shadows changes the file and not the run, so the call says so
-    rather than reporting a new value the next command will not use.
-    """
-    tree = _in_force(path, scope, {key: typed})
-    winner = tree.layers.winner(key)
-    own = Layer.MACHINE if scope is Scope.MACHINE else Layer.PROJECT
-    return {
-        "effective": _json(value_of(tree.settings, key)),
-        "layer": winner.layer,
-        "shadowed": winner.layer is not own,
-    }
-
-
-def _nested(flat: Mapping[str, object]) -> dict[str, Any]:
+def nested(flat: Mapping[str, object]) -> dict[str, Any]:
     """Dotted keys as the nested tables a layer is read from."""
     out: dict[str, Any] = {}
     for dotted, value in flat.items():
@@ -1613,7 +1652,12 @@ def _nested(flat: Mapping[str, object]) -> dict[str, Any]:
 
 
 __all__ = [
+    "ABSENT",
+    "ALLOW_ANY_API_BASE",
+    "json_value",
+    "nested",
     "BY_ID",
+    "CONFIG_VARIABLE",
     "DOCUMENT_TABLES",
     "ENV_PREFIX",
     "KEYS",
@@ -1624,7 +1668,6 @@ __all__ = [
     "STANDALONE_ENV",
     "AudioConfig",
     "ElevenLabsConfig",
-    "HostConfig",
     "Layers",
     "Loaded",
     "LoudnessConfig",
@@ -1634,25 +1677,31 @@ __all__ = [
     "Number",
     "OutputConfig",
     "RecordConfig",
-    "SettingUnset",
-    "SettingWrite",
+    "Edited",
     "Settings",
     "ToolsConfig",
     "VerifyConfig",
     "VideoConfig",
     "VoiceConfig",
+    "edit",
+    "effective",
     "env_warnings",
     "key_warnings",
     "load",
     "machine_config_path",
     "merge_tables",
+    "key_named",
+    "not_a_key",
     "parse_value",
     "read_machine_toml",
     "read_project_toml",
+    "refuse_off_scope",
     "read_toml",
     "route",
     "scoped",
+    "stated",
     "unset",
+    "validate",
     "value_of",
     "write",
 ]

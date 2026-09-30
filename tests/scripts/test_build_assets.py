@@ -14,27 +14,12 @@ number, an identifier that ends in a digit, a colour and an embedded font.
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
+import build_assets
 from support.paths import REPO
-
-
-def _generator() -> ModuleType:
-    """`scripts/build_assets.py` as a module, which is the only way to reach a file outside the package."""
-    spec = importlib.util.spec_from_file_location("build_assets", REPO / "scripts" / "build_assets.py")
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-build_assets = _generator()
 
 FONT = "data:font/woff2;base64,d09GMgABAAAAAAr4ABAAAAAAFjQAAAqfAAEAAAAAAAAAAAAA1234567890+/=="
 FIGURE = (
@@ -100,30 +85,21 @@ def test_the_tolerance_is_the_edge() -> None:
     assert build_assets.stale_reason(nudge(FIGURE, "270.5", f"{270.5 + edge + 0.1}"), FIGURE) is not None
 
 
-def test_changed_words_are_stale() -> None:
-    """Text is held exactly, because no measurement can rewrite what a figure says."""
-    reason = build_assets.stale_reason(FIGURE.replace("three.", "four."), FIGURE)
-    assert reason is not None
-    assert "the text differs" in reason
-
-
-def test_a_changed_colour_is_stale() -> None:
-    """A colour is text rather than a number, so the digits in it are held exactly."""
-    reason = build_assets.stale_reason(FIGURE.replace("#7a5000", "#7a5001"), FIGURE)
-    assert reason is not None
-    assert "the text differs" in reason
-
-
-def test_a_renamed_class_is_stale() -> None:
-    """An identifier that ends in a digit is text, so `w3` never passes for `w4` within the tolerance."""
-    reason = build_assets.stale_reason(FIGURE.replace("w3", "w4"), FIGURE)
-    assert reason is not None
-    assert "the text differs" in reason
-
-
-def test_a_new_element_is_stale() -> None:
-    """Structure is held exactly, so an element that appeared or vanished fails whatever its numbers are."""
-    reason = build_assets.stale_reason(FIGURE.replace("</svg>", '  <circle cx="8" cy="8" r="4"/>\n</svg>'), FIGURE)
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        # Text is held exactly, because no measurement can rewrite what a figure says.
+        pytest.param("three.", "four.", id="words"),
+        # A colour is text rather than a number, so the digits in it are held exactly.
+        pytest.param("#7a5000", "#7a5001", id="colour"),
+        # An identifier that ends in a digit is text, so `w3` never passes for `w4` within the tolerance.
+        pytest.param("w3", "w4", id="class"),
+        # Structure is held exactly, so an element that appeared or vanished fails whatever its numbers are.
+        pytest.param("</svg>", '  <circle cx="8" cy="8" r="4"/>\n</svg>', id="element"),
+    ],
+)
+def test_a_change_no_tolerance_covers_is_stale(old: str, new: str) -> None:
+    reason = build_assets.stale_reason(FIGURE.replace(old, new), FIGURE)
     assert reason is not None
     assert "the text differs" in reason
 
@@ -159,15 +135,13 @@ def test_a_digit_inside_an_embedded_font_is_never_a_number() -> None:
     assert build_assets.stale_reason(HERO.replace(body, swapped, 1), HERO) == "the embedded fonts differ"
 
 
-def test_the_report_sends_each_file_to_the_comparison_it_belongs_to(capsys: pytest.CaptureFixture[str]) -> None:
+def test_each_file_reaches_the_comparison_it_belongs_to() -> None:
     """A measured figure reaches the tolerance and every other generated file is held to the byte."""
     hero = REPO / "assets" / "hero-light.svg"
     tokens = REPO / "assets" / "tokens.css"
     css = tokens.read_text(encoding="utf-8")
-    assert build_assets.report_stale({hero: HERO, tokens: css}) == 0
-    assert build_assets.report_stale({hero: nudge(HERO, "343.9", "346.9")}) == 0
-    assert build_assets.report_stale({hero: nudge(HERO, "343.9", "353.9")}) == 1
-    assert build_assets.report_stale({tokens: css.replace("--dt-size-xs: 12px", "--dt-size-xs: 13px", 1)}) == 1
-    printed = capsys.readouterr().out
-    assert "stale: assets/hero-light.svg" in printed
-    assert "stale: assets/tokens.css, because it differs from its source" in printed
+    assert build_assets.why_stale(hero, HERO) is None
+    assert build_assets.why_stale(tokens, css) is None
+    assert build_assets.why_stale(hero, nudge(HERO, "343.9", "346.9")) is None
+    assert build_assets.why_stale(hero, nudge(HERO, "343.9", "353.9")) is not None
+    assert build_assets.why_stale(tokens, css.replace("--dt-size-xs: 12px", "--dt-size-xs: 13px", 1)) is not None

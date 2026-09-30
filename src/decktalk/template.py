@@ -8,11 +8,14 @@ the packaged runtime and KaTeX land beside the pages, the skills land in `.agent
 An example with no project behind it yet is reserved here rather than left out, so the flag value
 never changes meaning and the refusal says what it is waiting for.
 
-A project is written once. A project that wants a newer runtime is written again.
+A project is written once. `stale_runtime` says when a project's copy of the runtime is not the one
+this engine ships, because a copy an older engine wrote keeps playing the older contract however new
+the engine that records it, and `check --fix` replaces that copy.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -21,6 +24,8 @@ from pathlib import Path
 
 from decktalk.errors import InputError
 from decktalk.toolchain import assets
+
+log = logging.getLogger(__name__)
 
 STARTER = "starter"
 """The packaged project `init` writes when no example is named, which is not itself an example."""
@@ -95,6 +100,15 @@ EXAMPLES: tuple[Example, ...] = (
 """Every packaged example, including the names that are reserved and not yet written."""
 
 
+def stale_runtime(copy: Path) -> bool:
+    """Whether the copy at `copy` is there and is not, byte for byte, the runtime this engine ships.
+
+    The files are compared whole rather than by the version they carry, because an engine built
+    between two releases ships a runtime that still carries the last release's version.
+    """
+    return copy.is_file() and copy.read_bytes() != assets.runtime_path().read_bytes()
+
+
 def listed_names() -> str:
     """Every `--example` value in one line, with each reserved name marked as one."""
     return ", ".join(example.name if example.shipped else f"{example.name} (reserved)" for example in EXAMPLES)
@@ -106,7 +120,7 @@ def example(name: str) -> Example:
         if found.name == name:
             return found
     raise InputError(
-        f"there is no example called {name!r}.",
+        f"There is no example called {name!r}.",
         hint=f"The examples are {listed_names()}.",
     )
 
@@ -175,8 +189,9 @@ def _link(root: Path) -> Path:
     relative = Path(os.path.relpath(root / SKILLS_DIR, link.parent))
     try:
         link.symlink_to(relative, target_is_directory=True)
-    except OSError:
+    except OSError as refused:
         # Windows without developer mode, and any filesystem that has no links at all.
+        log.debug("%s could not be a link, so it is a copy.", LINK_DIR, exc_info=refused)
         shutil.copytree(root / SKILLS_DIR, link)
     return link
 

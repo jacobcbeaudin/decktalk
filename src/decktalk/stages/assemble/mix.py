@@ -14,32 +14,31 @@ soundtrack missing its music is still a soundtrack and a film that stopped for o
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from decktalk.artifacts import Takes
+from decktalk.artifacts import CueTimes, Takes
 from decktalk.errors import InputError
 from decktalk.events import Level
-from decktalk.findings import Code, Location
+from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, PageSection
-from decktalk.inputs.cues import find_phrase
+from decktalk.inputs.cues import SECTION_END, SECTION_START, Spoken
+from decktalk.inputs.document import MixEffect
 from decktalk.inputs.markers import Marker
 from decktalk.inputs.timeline import narration_offsets, narration_runs
 from decktalk.machine import Run
 from decktalk.media import ffmpeg
-from decktalk.pipeline import Stage
-from decktalk.stages import SECOND_DIGITS, judge
-from decktalk.stages.assemble.cut import Rendered, concat, encoder, rendered_starts
+from decktalk.media.audio import gain
+from decktalk.media.encode import Encoder
+from decktalk.page import MILLISECONDS, SECOND_DIGITS
+from decktalk.pipeline import Artifact, Stage
+from decktalk.stages.assemble.cut import Rendered, concat, rendered_starts
 
 CLIP_FADE_SECONDS = 0.02
 """Truth: half a frame of fade at each edge of a clip's own audio, so a cut into it never clicks."""
 
-MILLISECONDS = 1000
-"""Truth: milliseconds in one second, which is the unit ffmpeg's `adelay` reads."""
-
-DECIBEL_DECADE = 20.0
-"""Truth: twenty decibels is one decade of amplitude, which is what converts a level to a factor."""
 
 ONCE = "once"
 """An input read from its start, once, such as the narration track or one sound effect."""
@@ -59,12 +58,17 @@ class MixInput:
     path: str
 
     def args(self, total: float) -> list[str]:
-        """The ffmpeg input arguments for this layer, in the order the filter graph indexes them."""
+        """The ffmpeg input arguments for this layer, in the order the filter graph indexes them.
+
+        A file layer is a sound the project names or the soundscape wrote, so it opens through
+        `ffmpeg.source`, which reads that one file and follows no name inside it. The generated
+        anchor is the one input that is not a file.
+        """
         if self.mode == LOOP:
-            return ["-stream_loop", "-1", "-i", self.path]
+            return ["-stream_loop", "-1", *ffmpeg.source(self.path)]
         if self.mode == LAVFI:
             return ["-f", "lavfi", "-t", f"{total:.3f}", "-i", self.path]
-        return ["-i", self.path]
+        return ffmpeg.source(self.path)
 
 
 @dataclass(frozen=True)
@@ -111,15 +115,6 @@ class Chain:
         return MixPlan(inputs=tuple(self.inputs), filter=";".join([*self.fragments, summed]), total=total)
 
 
-DECIBEL_BASE = 10
-"""Truth: a decibel is a base ten ratio, so a level becomes an amplitude through ten to a power."""
-
-
-def gain(level_db: float) -> float:
-    """The amplitude factor one level in decibels asks for, which is what `volume` reads."""
-    return DECIBEL_BASE ** (level_db / DECIBEL_DECADE)
-
-
 def delay(seconds: float) -> str:
     """Where one layer starts in the film, in the milliseconds `adelay` takes."""
     return f"adelay={round(seconds * MILLISECONDS)}:all=1"
@@ -132,24 +127,19 @@ def ramp_expr(start: float, end: float, ramp: float) -> str:
 
 def max_expr(terms: list[str]) -> str:
     """The largest of several ramps at each moment, which is how overlapping spans are joined."""
-    if not terms:
-        return "0"
-    expression = terms[0]
-    for term in terms[1:]:
-        expression = f"max({expression},{term})"
-    return expression
+    return functools.reduce(lambda joined, term: f"max({joined},{term})", terms) if terms else "0"
 
 
-def encode_soundtrack(inputs: Inputs, src: Path, dst: Path) -> None:
-    """Copy the picture and encode the mixed soundtrack to the delivery codec, once.
+def encode_soundtrack(inputs: Inputs, src: Path, dst: Path, *, filters: str | None = None) -> None:
+    """Copy the picture and encode the mixed soundtrack to the delivery codec, once, through `filters` when given.
 
-    This is the path a build takes when the loudness pass is skipped, so the soundtrack still meets
-    the delivery encoder exactly once rather than never or twice.
+    Both the loudness pass and the path a build takes when that pass is skipped end here, so the
+    soundtrack meets the delivery encoder exactly once rather than never or twice.
     """
-    enc = encoder(inputs)
+    shaped = ("-af", filters) if filters else ()
     ffmpeg.run(
         "-i", str(src), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
-        *enc.aenc, "-movflags", "+faststart", str(dst),
+        *shaped, *Encoder(inputs.settings.video).aenc, "-movflags", "+faststart", str(dst),
     )  # fmt: skip
 
 
@@ -161,15 +151,15 @@ def resolve_marker_time(marker: Marker, starts: Mapping[int, float], takes: Take
     """
     if marker.section not in starts:
         return None
-    if marker.on == "$start":
+    if marker.on == SECTION_START:
         return starts[marker.section] + marker.offset
     take = takes.of(marker.section)
     if take is None:
         return None
     words = inputs.words(marker.section, take.hash)
-    if marker.on == "$end":
+    if marker.on == SECTION_END:
         return starts[marker.section] + words[-1].end + marker.offset if words else None
-    found = find_phrase(words, marker.on, marker.occurrence, marker.case_sensitive)
+    found = Spoken.of(words).find(marker.on, marker.occurrence, marker.case_sensitive)
     return None if found is None else starts[marker.section] + words[found].start + marker.offset
 
 
@@ -191,12 +181,7 @@ def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]
 
 
 def _anchor(chain: Chain) -> None:
-    """A silence as long as the picture, which fixes the length of the mix.
-
-    The picture carries no audio of its own, so without this layer the mix would be as long as
-    whichever other layer happened to run longest. Its length is the plan's own, which
-    `MixInput.args` writes onto the generated input.
-    """
+    """A silence as long as the picture, which fixes the length of the mix."""
     chain.layer(chain.add(LAVFI, f"anullsrc=r={chain.sample_rate}:cl=stereo"), "", "anchor")
 
 
@@ -243,6 +228,8 @@ def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, fl
     if markers is None:
         run.note(f"{mix.music_markers} is not there, so the music plays with no structure.", level=Level.WARNING)
         return factors
+    for note in markers.notes:
+        run.note(note, level=Level.WARNING)
     boosts: list[str] = []
     mutes: list[str] = []
     for marker in markers.markers:
@@ -269,7 +256,7 @@ def _music(chain: Chain, inputs: Inputs, run: Run, takes: Takes, starts: Mapping
         return
     path = inputs.path(mix.music)
     if not path.exists():
-        _missing_sound(inputs, run, mix.music, "music", "Run `decktalk soundscape` to make it.")
+        _missing_sound(inputs, run, mix.music, "music", Artifact.SOUNDSCAPE.next_step)
         return
     volume = f"{gain(mix.music_db):.5f}*" + "*".join(_music_shape(inputs, run, takes, starts, speech))
     chain.layer(
@@ -290,7 +277,7 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
         return
     path = inputs.path(mix.ambience)
     if not path.exists():
-        _missing_sound(inputs, run, mix.ambience, "ambience", "Run `decktalk soundscape` to make it.")
+        _missing_sound(inputs, run, mix.ambience, "ambience", Artifact.SOUNDSCAPE.next_step)
         return
     audio = inputs.settings.audio
     pad = audio.ambience_pad_seconds
@@ -306,6 +293,12 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
     )
 
 
+def effect_second(effect: MixEffect, cue_times: CueTimes | None, starts: Mapping[int, float]) -> float | None:
+    """The film second one effect plays at, or None while its cue or its section has no place in the film."""
+    at = None if cue_times is None else cue_times.at(effect.section, effect.cue)
+    return None if effect.section not in starts or at is None else starts[effect.section] + at + effect.offset
+
+
 def _effects(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float]) -> None:
     """Each sound effect, at the second its own cue resolved to."""
     cue_times = inputs.cue_times()
@@ -314,14 +307,13 @@ def _effects(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float]
         if not path.exists():
             _missing_sound(inputs, run, effect.file, f"the effect cued at {effect.cue}", "", section=effect.section)
             continue
-        at = None if cue_times is None else cue_times.at(effect.section, effect.cue)
-        if effect.section not in starts or at is None:
+        where = effect_second(effect, cue_times, starts)
+        if where is None:
             run.note(
                 f"The cue {effect.cue!r} in section {effect.section} is unresolved, so {effect.file} does not play.",
                 level=Level.WARNING,
             )
             continue
-        where = starts[effect.section] + at + effect.offset
         chain.layer(chain.add(ONCE, str(path)), f",volume={gain(effect.db):.5f},{delay(where)}", f"effect{number}")
 
 
@@ -375,7 +367,7 @@ def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes,
         )
     concat(concat_files, picture)
     plan = plan_mix(inputs, run, rows, takes, soundscape=soundscape)
-    enc = encoder(inputs)
+    enc = Encoder(inputs.settings.video)
     try:
         ffmpeg.run(
             "-i", str(picture), *mix_input_args(plan),
@@ -397,7 +389,6 @@ __all__ = [
     "MixPlan",
     "delay",
     "encode_soundtrack",
-    "gain",
     "max_expr",
     "mix_input_args",
     "mix_soundtrack",

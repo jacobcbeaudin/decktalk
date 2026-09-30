@@ -4,118 +4,17 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import types
 import typing
-from datetime import UTC, datetime
-from enum import Enum
-from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
 
 from decktalk import errors, events, findings, results
-from decktalk.findings import Code, Finding, Location
-from decktalk.results import RESULTS, SCHEMA, Result
-
-ROOT = Path(__file__).resolve().parents[2]
-RESERVED = ("schema", "ok", "findings", "error")
-
-# The commands that open a run, and the commands that write a file. Both directions are asserted, so
-# a result that gains one of the two declared fields without being one of these fails here.
-OPENS_A_RUN = {
-    "init",
-    "install",
-    "doctor",
-    "status",
-    "check",
-    "words",
-    "storyboard",
-    "serve",
-    "narrate",
-    "cue",
-    "record",
-    "soundscape",
-    "assemble",
-    "verify",
-    "build",
-    "clip",
-    "apply",
-}
-WRITES_A_FILE = {
-    "init",
-    "doctor",
-    "check",
-    "storyboard",
-    "config-set",
-    "config-unset",
-    "narrate",
-    "cue",
-    "record",
-    "soundscape",
-    "assemble",
-    "build",
-    "clip",
-    "apply",
-}
-
-# A finding fills its own certainty and page from its code, so the sampler is handed one ready made.
-EXAMPLES: dict[type[BaseModel], BaseModel] = {
-    Finding: Finding(code=Code.CUE_OFF, message="It lands 340 ms late.", location=Location(where="2.1:formula")),
-}
-
-
-SCALARS: dict[object, object] = {
-    bool: True,
-    int: 1,
-    float: 1.5,
-    str: "one",
-    datetime: datetime(2026, 9, 24, 3, 0, tzinfo=UTC),
-}
-"""One value per type that stands on its own, which is every field a sampler fills without recursing."""
-
-
-def value(annotation: object) -> object:
-    """One value of the given type, which is all a round-trip needs the field to hold."""
-    if hasattr(annotation, "__metadata__"):
-        return value(typing.get_args(annotation)[0])
-    if annotation in EXAMPLES:
-        return EXAMPLES[annotation]  # type: ignore[index]
-    if annotation in SCALARS:
-        return SCALARS[annotation]  # type: ignore[index]
-    if isinstance(annotation, type):
-        return of_class(annotation)
-    return of_generic(annotation)
-
-
-def of_class(annotation: type) -> object:
-    """One value of a class the package declares, which is a path, a member or a model of its own."""
-    if issubclass(annotation, Path):
-        return Path("build/final/demo.mp4")
-    if issubclass(annotation, Enum):
-        return next(iter(annotation))
-    if issubclass(annotation, BaseModel):
-        return sample(annotation)
-    return "one"
-
-
-def of_generic(annotation: object) -> object:
-    """One value of an annotation that names other annotations, filled from the first one it names."""
-    origin = typing.get_origin(annotation)
-    arguments = typing.get_args(annotation)
-    if origin is typing.Literal:
-        return arguments[0]
-    if origin is tuple:
-        return (value(arguments[0]),)
-    if origin is dict:
-        return {value(arguments[0]): value(arguments[1])}
-    if origin in (typing.Union, types.UnionType):
-        return None if type(None) in arguments else value(arguments[0])
-    return "one"
-
-
-def sample(model: type[BaseModel]) -> BaseModel:
-    """One instance of a model with every field filled, built from the field types alone."""
-    return model(**{name: value(field.annotation) for name, field in model.model_fields.items()})
+from decktalk.results import RESULTS, Result
+from support.commands import RESERVED_KEYS
+from support.paths import REPO
+from support.samples import sample
+from support.spends import a_spend
 
 
 def models() -> list[type[BaseModel]]:
@@ -129,17 +28,8 @@ def models() -> list[type[BaseModel]]:
     return found
 
 
-def test_there_is_one_result_per_command_and_the_names_are_its_own() -> None:
-    assert set(RESULTS) == set(OPENS_A_RUN | WRITES_A_FILE | {"config-list", "config-get", "config-explain", "error"})
-
-
 def test_the_base_reserves_exactly_four_keys() -> None:
-    assert [field.alias or name for name, field in Result.model_fields.items()] == list(RESERVED)
-
-
-def test_the_shape_version_is_two_on_every_result() -> None:
-    for name, model in RESULTS.items():
-        assert model.model_fields["schema_"].default == SCHEMA, name
+    assert [field.alias or name for name, field in Result.model_fields.items()] == list(RESERVED_KEYS)
 
 
 @pytest.mark.parametrize("name", sorted(RESULTS))
@@ -152,15 +42,7 @@ def test_a_result_round_trips_through_its_own_model(name: str) -> None:
 @pytest.mark.parametrize("name", sorted(RESULTS))
 def test_a_result_writes_its_reserved_keys_under_their_published_names(name: str) -> None:
     written = sample(RESULTS[name]).model_dump(mode="json")
-    assert list(written)[: len(RESERVED)] == list(RESERVED)
-
-
-def test_run_is_declared_by_exactly_the_commands_that_open_one() -> None:
-    assert {name for name, model in RESULTS.items() if "run" in model.model_fields} == OPENS_A_RUN
-
-
-def test_written_is_declared_by_exactly_the_commands_that_write_a_file() -> None:
-    assert {name for name, model in RESULTS.items() if "written" in model.model_fields} == WRITES_A_FILE
+    assert list(written)[: len(RESERVED_KEYS)] == list(RESERVED_KEYS)
 
 
 def test_the_two_command_facts_are_class_facts_and_never_fields() -> None:
@@ -169,6 +51,7 @@ def test_the_two_command_facts_are_class_facts_and_never_fields() -> None:
         assert isinstance(model.reports_findings, bool)
         assert isinstance(model.spends, bool)
         assert not {"reports_findings", "spends"} & set(model.model_fields)
+    assert results.InitResult.reports_findings is False
 
 
 def test_every_result_that_spends_also_reports_what_it_judged() -> None:
@@ -185,9 +68,15 @@ def test_a_volatile_field_says_so_in_its_own_schema() -> None:
     assert "volatile" not in build["properties"]["film"]
 
 
+def test_an_elapsed_time_is_read_to_the_millisecond() -> None:
+    """The type rounds, so no emitter rounds for itself and a result and an event read one clock alike."""
+    row = results.StageRun(stage=results.Stage.CUE, outcome=results.Outcome.OK, seconds=10.3456789)
+    assert row.seconds == 10.346
+
+
 def test_every_model_uses_the_one_config() -> None:
     for model in models():
-        assert {key: model.model_config[key] for key in findings.MODEL} == dict(findings.MODEL), model.__name__
+        assert findings.MODEL.items() <= model.model_config.items(), model.__name__
 
 
 def test_every_field_publishes_one_sentence() -> None:
@@ -220,30 +109,47 @@ def test_no_model_declares_a_computed_field() -> None:
 
 def test_every_path_is_written_with_forward_slashes() -> None:
     written = sample(RESULTS["assemble"]).model_dump(mode="json")
-    assert written["film"] == "build/final/demo.mp4"
+    assert written["film"].startswith("build/film")
 
 
 def test_a_result_is_frozen() -> None:
     built = sample(RESULTS["status"])
     with pytest.raises(Exception, match="frozen"):
-        built.ok = False  # type: ignore[misc]
+        built.ok = False
 
 
-def test_the_committed_schemas_are_what_the_generator_writes() -> None:
+@pytest.mark.parametrize("generator", ["build_result_schemas.py", "build_api.py"])
+def test_the_committed_schemas_and_api_are_what_their_generator_writes(generator: str) -> None:
     done = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build_result_schemas.py"), "--check"],
-        capture_output=True,
-        text=True,
-        check=False,
+        [sys.executable, str(REPO / "scripts" / generator), "--check"], capture_output=True, text=True, check=False
     )
     assert done.returncode == 0, done.stdout + done.stderr
 
 
-def test_the_committed_api_is_what_the_generator_writes() -> None:
-    done = subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "build_api.py"), "--check"],
-        capture_output=True,
-        text=True,
-        check=False,
+def test_a_price_that_is_certain_is_stated_once() -> None:
+    assert a_spend(0.14, 0.14).sentence == "This run costs $0.14 for 466 characters at $0.30 per 1,000 characters."
+
+
+def test_a_price_the_cache_could_not_check_is_stated_as_a_ceiling() -> None:
+    """The smoke test read "about $0.00, up to $0.14" as a contradiction, so the ceiling says why it is one."""
+    said = a_spend(0.0, 0.14).sentence
+    assert said == (
+        "The takes on disk could not be matched to a voice, so this run costs up to $0.14 at $0.30 per 1,000 "
+        "characters."
     )
-    assert done.returncode == 0, done.stdout + done.stderr
+    assert "$0.00" not in said
+
+
+def test_a_price_with_a_certain_part_and_a_ceiling_names_both() -> None:
+    said = a_spend(0.03, 0.18).sentence
+    assert "$0.03 for the sections that certainly need a take" in said
+    assert "up to $0.18" in said
+
+
+def test_a_charged_price_is_stated_as_spent() -> None:
+    charged = a_spend(0.14, 0.14, state=results.SpendState.CHARGED)
+    assert charged.sentence.startswith("This run spent $0.14")
+
+
+def test_a_price_of_nothing_says_the_run_buys_nothing() -> None:
+    assert a_spend(0.0, 0.0).sentence == "This run buys nothing."

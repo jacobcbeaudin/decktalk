@@ -81,6 +81,13 @@ refusal names what it read and would not accept.
 - `seamless` is set on the first section, which has no previous section.
 - A `[transition] dips` pair or a `[[mix.effects]]` row names a section that does not exist.
 - A settings value is outside its safe range.
+- A `page` sits at the project root. The origin serves a page's whole directory, and the root holds
+  the script, the cue file and the build directory.
+- A path the project names resolves outside the project, which includes a symbolic link inside the
+  project that points out of it. The refusal names the path and never the place it resolved to.
+- A settings key only a machine may set is written here, such as `record.concurrency` or
+  `tools.ffmpeg`. The refusal names the key and the `config set` line that puts it in the machine's
+  file.
 
 An unknown key inside a known table does not fail the load. DeckTalk warns, names the closest key it
 does read, ignores the key and carries on.
@@ -140,7 +147,7 @@ file does not matter. A section is a **page section**, which records one scene o
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `page` | path | required | The HTML file to record, such as `deck/index.html`. |
+| `page` | path | required | The HTML file to record, such as `deck/index.html`. It sits in a directory of its own, never at the project root. |
 | `scene` | integer or string | the section's `number` | Which `data-scene` of that page to play. It reaches the page as a string. |
 | `record_margin_seconds` | number | `0.3` | How long the recording runs past the section's span. |
 | `hold_seconds` | number | `0` | How long the section's last frame holds after its narration. The narration waits for the hold, and the next section starts after it. |
@@ -191,6 +198,12 @@ needs no heading in the script and it is never voiced. A clip between two page s
 narration, which resumes with the next page section. DeckTalk scales and pads the clip to the frame
 size, and the chapters include it.
 [Add a clip section](/guides/clip-section) shows the whole task.
+
+Every media file a project names, which is a clip, the music, the ambience and each effect, is read
+as one file by one of a closed set of formats: MP4, MOV and M4A, WebM and MKV, AVI, MP3, WAV, Ogg,
+FLAC, AAC, PNG, JPEG and WebP. A file in any other format is refused, and so is a playlist, an HLS
+or DASH manifest, an ffmpeg concat list or an image sequence, because each of those opens files or
+hosts the project never named.
 
 ## `[voice]`
 
@@ -355,7 +368,6 @@ unit, its scope and its hazard by `decktalk schema settings` and documented in f
 | [`[output]`](/reference/configuration#output) | The timestamped copy and how many runs of event files are kept. |
 | [`[elevenlabs]`](/reference/configuration#elevenlabs) | The API base, the sound and music models and the request lengths. |
 | [`[tools]`](/reference/configuration#tools) | Where ffmpeg, ffprobe and the fetched builds live on this machine. |
-| [`[host]`](/reference/configuration#host) | What this machine measures about itself. |
 
 The per-machine file holds machine-scoped keys alone. A key about the film written there is refused
 by name with the line it sits on, because the file that ships has to carry whatever the machine

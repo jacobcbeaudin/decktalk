@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate the module tree and the check table in CONTRIBUTING.md from the code itself.
 
     uv run scripts/build_contributing.py --write    # write both blocks
@@ -24,21 +21,18 @@ added without a sentence about it.
 
 from __future__ import annotations
 
-import argparse
 import ast
-import importlib.util
 import re
 import sys
 from pathlib import Path
 
+import check
+import generated
+
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "decktalk"
 IMPORT_TEST = ROOT / "tests" / "contract" / "test_imports.py"
-CHECK_SCRIPT = ROOT / "scripts" / "check.py"
 TARGET = ROOT / "CONTRIBUTING.md"
-
-STALE = "stale: {path}. Run `uv run scripts/{script} --write` to bring it up to date."
-"""The one sentence every generator fails with, naming the file and the command that fixes it."""
 
 LAYOUT = ("<!-- layout:start -->", "<!-- layout:end -->")
 CHECKS = ("<!-- checks:start -->", "<!-- checks:end -->")
@@ -63,25 +57,13 @@ DATA_DIRS = {
 """The directories of the package that hold no Python. A new one fails the run until it is named here."""
 
 
-def layers() -> dict[str, tuple[str, int]]:
-    """The layer and rank of every top-level module, read from the table the test suite enforces."""
+def layers() -> dict[str, tuple[str, ...]]:
+    """Every layer, lowest first, with its modules in import order, read from the table the test suite enforces."""
     tree = ast.parse(IMPORT_TEST.read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "LAYERS" and node.value:
             return ast.literal_eval(node.value)
     raise SystemExit(f"{IMPORT_TEST.relative_to(ROOT)} has no LAYERS table to read the import order from.")
-
-
-def groups() -> tuple[object, ...]:
-    """The frozen `GROUPS` table, imported from the one file that spells a check."""
-    spec = importlib.util.spec_from_file_location("decktalk_check_table", CHECK_SCRIPT)
-    if spec is None or spec.loader is None:
-        raise SystemExit(f"{CHECK_SCRIPT.relative_to(ROOT)} could not be read, so no check table exists.")
-    module = importlib.util.module_from_spec(spec)
-    # A frozen dataclass looks its own module up while it is being built, so it has to be registered.
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return tuple(module.GROUPS)
 
 
 def summary(path: Path) -> str:
@@ -108,12 +90,11 @@ def entries(directory: Path, depth: int) -> list[tuple[int, str, str]]:
 def package_rows() -> list[tuple[int, str, str]]:
     """Every row of the tree: the layers in import order, then the directories that hold no Python."""
     rows: list[tuple[int, str, str]] = []
-    ranked = sorted(layers().items(), key=lambda item: (item[1][1], item[0]))
-    for layer in dict.fromkeys(rank[0] for _, rank in ranked):
+    for layer, names in layers().items():
         if layer not in LAYER_NOTES:
             raise SystemExit(f"the {layer} layer has no clause in LAYER_NOTES, so its line cannot be written.")
         rows.append((0, layer, LAYER_NOTES[layer]))
-        for name, _ in [item for item in ranked if item[1][0] == layer]:
+        for name in names:
             module, package = SRC / f"{name}.py", SRC / name
             if package.is_dir() and (package / "__init__.py").is_file():
                 rows.append((1, f"{name}/", summary(package / "__init__.py")))
@@ -121,7 +102,7 @@ def package_rows() -> list[tuple[int, str, str]]:
             elif module.is_file():
                 rows.append((1, f"{name}.py", summary(module)))
             else:
-                raise SystemExit(f"{name} is ranked in LAYERS and is neither a module nor a package.")
+                raise SystemExit(f"{name} is listed in LAYERS and is neither a module nor a package.")
 
     rows.append((0, "packaged data", "what ships in the wheel and holds no Python"))
     known = {p.name for p in SRC.iterdir() if p.is_dir() and not (p / "__init__.py").is_file()}
@@ -144,79 +125,20 @@ def render_tree() -> str:
     return "\n".join(lines)
 
 
-def shell(command: tuple[str, ...]) -> str:
-    """One command as a person types it, with this checkout's own path and any script left out."""
-    parts = ["<shell script>" if "\n" in part else part.replace(f"{ROOT}/", "") for part in command]
-    return " ".join(parts)
-
-
-def runner_names(runners: tuple[str, ...]) -> str:
-    """The runners of one row, as the words a contributor uses rather than the labels GitHub uses."""
-    words = {"ubuntu-latest": "Linux", "macos-latest": "macOS", "windows-latest": "Windows"}
-    return ", ".join(words.get(name, name) for name in runners)
-
-
 def render_checks() -> str:
-    """The check table as a Markdown table and a command list, both read from `GROUPS`."""
-    rows = groups()
-    lines = [
-        "| Group | What it runs | Needs | Where | Gates on |",
-        "|---|---|---|---|---|",
-    ]
-    for group in rows:
-        first = shell(group.commands[0])
-        more = f", and {len(group.commands) - 1} more" if len(group.commands) > 1 else ""
-        lines.append(
-            f"| `{group.name}` | `{first}`{more} | {', '.join(group.tools)} | "
-            f"{runner_names(group.runners)} | {', '.join(group.when)} |"
-        )
-    lines.append("")
-    lines.append("Every group, one at a time:")
-    lines.append("")
-    lines.append("```console")
-    # The comment column is measured from the longest row rather than typed, so a group whose name
-    # grows still leaves a space between the command and the sentence that explains it.
-    calls = [f"uv run scripts/check.py --group {group.name}" for group in rows]
-    column = max(len(call) for call in calls) + 1
-    for call, group in zip(calls, rows, strict=True):
-        lines.append(call.ljust(column) + f"# {group.why}")
-    lines.append("```")
+    """The check table as a Markdown table, one row per entry of `GROUPS`."""
+    lines = ["| Group | What it runs | Needs | Where | Gates on |", "|---|---|---|---|---|"]
+    lines += [f"| `{group.name}` | {' | '.join(check.summary(group))} |" for group in check.GROUPS]
     return "\n".join(lines)
 
 
-def fill(page: str, markers: tuple[str, str], block: str) -> str:
-    """One generated block written between its markers, with the note that says not to edit it."""
-    start, end = markers
-    if start not in page or end not in page:
-        raise SystemExit(f"{TARGET.name} has no {start} ... {end} block to fill.")
-    head, _, rest = page.partition(start)
-    _, _, tail = rest.partition(end)
-    return f"{head}{start}\n{NOTE}\n\n{block}\n{end}{tail}"
-
-
-def render(page: str) -> str:
-    return fill(fill(page, LAYOUT, render_tree()), CHECKS, render_checks())
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = parser.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write both generated blocks")
-    action.add_argument("--check", action="store_true", help="exit 1 if either generated block would change")
-    args = parser.parse_args()
-
-    current = TARGET.read_text(encoding="utf-8")
-    page = render(current)
-    if args.check:
-        if current != page:
-            print(STALE.format(path=TARGET.relative_to(ROOT), script="build_contributing.py"))
-            return 1
-        print(f"{TARGET.name} is up to date.")
-        return 0
-    TARGET.write_text(page, encoding="utf-8")
-    print(f"wrote {TARGET.name}")
-    return 0
+def documents() -> dict[Path, str]:
+    """CONTRIBUTING.md with both generated blocks written, each under the note that says not to edit it."""
+    page = TARGET.read_text(encoding="utf-8")
+    for markers, block in ((LAYOUT, render_tree()), (CHECKS, render_checks())):
+        page = generated.splice(page, markers, f"\n{NOTE}\n\n{block}\n", where=TARGET)
+    return {TARGET: page}
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))

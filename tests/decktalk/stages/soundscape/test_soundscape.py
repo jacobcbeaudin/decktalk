@@ -16,18 +16,19 @@ from typing import Any
 
 import pytest
 
-from decktalk.errors import ApprovalRequired, Cancel
+from decktalk.errors import ApprovalRequired, Cancelled
 from decktalk.events import Event, Progress, Unit
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
 from decktalk.media import audio
 from decktalk.pipeline import Stage
-from decktalk.results import SoundKind, SoundStatus, Voicing
+from decktalk.results import Layer, SoundKind, SoundStatus, Voicing
+from decktalk.speech.elevenlabs import MUSIC_PATH
 from decktalk.stages import soundscape as stage
 from decktalk.stages.soundscape import soundscape
 from decktalk.stages.soundscape.ledger import LEDGER_FILE, Ledger
 from support.projects import write_project
+from support.runs import a_run
 
 TOML = """
 [project]
@@ -82,18 +83,9 @@ class FakeService:
     music_bodies: list[dict[str, Any]] = field(default_factory=list)
     answer: bytes = b"audio"
 
-    def sound_effect(self, body: dict[str, Any], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(body)
+    def generate(self, path: str, body: dict[str, Any], *, output_format: str) -> bytes:  # noqa: ARG002
+        (self.music_bodies if path == MUSIC_PATH else self.sounds).append(body)
         return self.answer
-
-    def music(self, body: dict[str, Any], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.music_bodies.append(body)
-        return self.answer
-
-
-def a_run(root: Path, *, voice: Voicing = Voicing.PLACEHOLDER, max_cost: float | None = None) -> Run:
-    machine = Machine(environ={}, tables={}, config_path=root / "machine.toml", cwd=root, toolchain=Toolchain())
-    return Run(machine, id="run-1", cancel=Cancel(), voice=voice, max_cost=max_cost, root=root)
 
 
 def an_inputs(root: Path, toml: str = TOML) -> Inputs:
@@ -175,6 +167,19 @@ def test_the_price_is_the_prompt_characters_at_the_rate_the_project_states(tmp_p
     assert result.spend.sections == (1, 2)
 
 
+def test_a_price_no_layer_records_is_the_default_price_and_not_a_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The layer table may hold no row for the price, which narrate and build already read as the default."""
+    inputs = an_inputs(tmp_path)
+
+    def unstated(_layers: object, key: str) -> None:
+        raise KeyError(key)
+
+    monkeypatch.setattr(type(inputs.layers), "winner", unstated)
+    assert soundscape(inputs, a_run(tmp_path)).spend.price_layer is Layer.DEFAULT
+
+
 # ---- what the run buys ------------------------------------------------------------------------
 
 
@@ -237,8 +242,8 @@ def test_the_ledger_records_what_each_item_was_bought_with(tmp_path: Path, servi
     ledger = Ledger.read(inputs.workspace.soundscape_dir / LEDGER_FILE)
     assert ledger is not None
     assert {row.name for row in ledger.items} == {"ambience", "chime", "music"}
-    assert ledger.of("chime") is not None
-    assert "a bright chime" in ledger.of("chime").request  # type: ignore[union-attr]  (asserted above)
+    chime = ledger.of("chime")
+    assert chime is not None and "a bright chime" in chime.request
     assert service.sounds
 
 
@@ -283,8 +288,6 @@ def test_a_ceiling_over_a_price_nobody_stated_refuses_the_run_before_it_buys(tmp
 
 
 def test_a_cancelled_run_stops_before_it_reaches_the_first_item(tmp_path: Path) -> None:
-    from decktalk.errors import Cancelled  # noqa: PLC0415  (the class this one test names)
-
     run = a_run(tmp_path)
     run.cancel.cancel()
     with pytest.raises(Cancelled):
@@ -305,38 +308,27 @@ def test_one_progress_line_is_reported_for_every_asset(tmp_path: Path) -> None:
 # ---- what a run selects -----------------------------------------------------------------------
 
 
-def test_only_keeps_the_effects_cued_in_the_sections_it_names(tmp_path: Path) -> None:
-    result = soundscape(an_inputs(tmp_path), a_run(tmp_path), only=[1])
-    assert {item.name for item in result.items} == {"ambience", "chime", "music"}
-
-
-def test_an_effect_cued_in_another_section_is_left_out(tmp_path: Path) -> None:
-    result = soundscape(an_inputs(tmp_path), a_run(tmp_path), only=[2])
-    assert {item.name for item in result.items} == {"music"}
-
-
-def test_the_ambience_bed_is_wanted_only_where_a_selected_section_asks_for_one(tmp_path: Path) -> None:
-    inputs = an_inputs(tmp_path)
-    assert "ambience" in {item.name for item in soundscape(inputs, a_run(tmp_path), only=[1]).items}
-    assert "ambience" not in {item.name for item in soundscape(inputs, a_run(tmp_path), only=[2]).items}
-
-
-def test_the_music_is_wanted_whenever_any_section_is_selected(tmp_path: Path) -> None:
-    inputs = an_inputs(tmp_path)
-    assert "music" in {item.name for item in soundscape(inputs, a_run(tmp_path), only=[2]).items}
-    assert soundscape(inputs, a_run(tmp_path), only=[7]).items == ()
+@pytest.mark.parametrize(
+    ("only", "names"),
+    [
+        pytest.param([1], {"ambience", "chime", "music"}, id="the effects and the bed cued in the section named"),
+        # The ambience bed and the chime are cued in section one, and the music plays under any section.
+        pytest.param([2], {"music"}, id="an effect cued in another section is left out"),
+        pytest.param([7], set(), id="no section selected wants nothing"),
+    ],
+)
+def test_only_keeps_what_the_sections_it_names_ask_for(tmp_path: Path, only: list[int], names: set[str]) -> None:
+    result = soundscape(an_inputs(tmp_path), a_run(tmp_path), only=only)
+    assert {item.name for item in result.items} == names
 
 
 # ---- where the files go -----------------------------------------------------------------------
 
 
-def test_every_default_path_is_the_workspace_and_no_build_directory_is_spelled_here(tmp_path: Path) -> None:
+def test_every_default_path_is_the_workspace(tmp_path: Path) -> None:
     inputs = an_inputs(tmp_path, TOML.replace('music = "build/soundscape/music.mp3"\n', ""))
     planned = stage.plan_items(inputs)
     assert {item.out.parent for item in planned} == {inputs.workspace.soundscape_dir}
-    source = Path("src/decktalk/stages/soundscape/__init__.py").read_text(encoding="utf-8")
-    assert "build/sfx" not in source
-    assert "build/music" not in source
 
 
 def test_an_item_that_names_its_own_file_is_written_where_the_project_says(tmp_path: Path) -> None:

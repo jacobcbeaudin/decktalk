@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
 
-from decktalk.errors import Cancel, Cancelled
-from decktalk.events import Log
-from decktalk.findings import Code
-from decktalk.machine import Machine, Run, Toolchain
-from decktalk.results import CheckResult, SpendState
+from decktalk.errors import Cancelled
+from decktalk.findings import Applicability, Code
+from decktalk.inputs import Inputs
+from decktalk.machine import apply_fix
+from decktalk.results import CheckResult, Scope, SpendState
+from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
+from decktalk.toolchain import assets
+from support.pages import a_project, catalog
+from support.runs import a_run, notes
 
-from .conftest import Drawn, a_project, a_run, catalog
+from .conftest import Drawn
 
 CUES = {
     "1": {"cues": [{"cue": "1.1:a", "on": "there"}, {"cue": "1.1:b", "on": "again"}]},
@@ -26,13 +31,6 @@ SCENES = (
     catalog("2", {"2.1": ["2.1:a"]}),
 )
 """What the demo deck publishes, which is two scenes with one slide each."""
-
-
-def notes(run: Run) -> list[str]:
-    """Every sentence a run said, which is where a reading that is not a judgement goes."""
-    said: list[str] = []
-    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
-    return said
 
 
 def test_a_run_with_no_pages_judges_the_script_and_opens_nothing(tmp_path: Path) -> None:
@@ -66,8 +64,11 @@ def test_a_project_with_no_credential_is_priced_rather_than_refused(tmp_path: Pa
     inputs = a_project(tmp_path, cues=CUES)
     run = a_run(tmp_path)
     said = notes(run)
-    check(inputs, run, pages=False)
-    assert any("ELEVENLABS_VOICE_ID" in one for one in said)
+    result = check(inputs, run, pages=False)
+    assert result.spend.state is SpendState.ESTIMATE
+    # The plan says which credential was missing, and says it once.
+    assert len([one for one in said if "is not set" in one]) == 1
+    assert not any("priced as new" in one for one in said)
 
 
 def test_a_cue_phrase_nothing_speaks_is_judged_before_anything_is_voiced(tmp_path: Path) -> None:
@@ -175,9 +176,82 @@ def test_a_selection_keeps_the_sections_it_names(tmp_path: Path) -> None:
 def test_a_cancelled_run_stops_inside_the_section_it_was_in(tmp_path: Path, drawn: Drawn) -> None:
     inputs = a_project(tmp_path, cues=CUES)
     drawn.report("deck/index.html", *SCENES)
-    machine = Machine(environ={}, tables={}, config_path=tmp_path / "m.toml", cwd=tmp_path, toolchain=Toolchain())
-    token = Cancel()
-    token.cancel()
-    run = Run(machine, id="r1", cancel=token, root=tmp_path)
+    run = a_run(tmp_path)
+    run.cancel.cancel()
     with pytest.raises(Cancelled):
         check(inputs, run, frames=True)
+
+
+def test_a_phrase_an_edit_moved_is_repaired_by_the_fix_its_finding_carries(tmp_path: Path) -> None:
+    """The script was edited from "there again" to "there once again", and the cue kept the old phrase."""
+    edited = {"1": {"cues": [{"cue": "1.1:a", "on": "there agian"}]}}
+    inputs = a_project(tmp_path, cues=edited)
+    run = a_run(tmp_path)
+    result = check(inputs, run, pages=False)
+    (found,) = [one for one in result.findings if one.code is Code.CUE_UNRESOLVED]
+    assert found.location.file == Path("cues.json") and found.location.line is not None
+    assert found.fix is not None
+    outcome = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=True)
+    assert outcome.applied
+    again = check(Inputs.load(tmp_path, environ={}), a_run(tmp_path), pages=False)
+    assert Code.CUE_UNRESOLVED not in {one.code for one in again.findings}
+
+
+def test_a_runtime_copy_an_older_engine_wrote_is_a_certain_finding_at_the_copy(tmp_path: Path) -> None:
+    """A copy an older engine wrote plays a contract this engine does not measure, which fails the check."""
+    inputs = a_project(tmp_path, cues=CUES)
+    (tmp_path / "deck" / "decktalk-runtime.js").write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
+    result = check(inputs, a_run(tmp_path), pages=False)
+    (found,) = [one for one in result.findings if one.code is Code.PAGE_RUNTIME_STALE]
+    assert found.location is not None and found.location.file == Path("deck/decktalk-runtime.js")
+    assert result.ok is False
+
+
+def test_the_safe_fix_replaces_a_runtime_copy_a_release_shipped_with_the_engines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy a release shipped holds none of the author's work, so `check --fix` replaces it and says so."""
+    inputs = a_project(tmp_path, cues=CUES)
+    copy = tmp_path / "deck" / "decktalk-runtime.js"
+    copy.write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
+    monkeypatch.setattr(assets, "SHIPPED_RUNTIMES", (hashlib.sha256(copy.read_bytes()).hexdigest(),))
+    run = a_run(tmp_path)
+    (found,) = [one for one in check(inputs, run, pages=False).findings if one.code is Code.PAGE_RUNTIME_STALE]
+    assert found.fix is not None and found.fix.applicability is Applicability.SAFE
+    assert "Run `decktalk check --fix`" in found.message
+    outcome = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=False)
+    assert outcome.applied and outcome.files == (Path("deck/decktalk-runtime.js"),)
+    assert copy.read_bytes() == assets.runtime_path().read_bytes()
+    again = check(Inputs.load(tmp_path, environ={}), a_run(tmp_path), pages=False)
+    assert Code.PAGE_RUNTIME_STALE not in {one.code for one in again.findings}
+
+
+def test_a_runtime_copy_no_release_shipped_is_kept_unless_the_caller_accepts_losing_its_edits(tmp_path: Path) -> None:
+    """A copy the author edited holds their work, so its fix is unsafe and the finding says what it would lose."""
+    inputs = a_project(tmp_path, cues=CUES)
+    copy = tmp_path / "deck" / "decktalk-runtime.js"
+    edited = assets.runtime_path().read_bytes() + b"window.__MINE__ = 1;\n"
+    copy.write_bytes(edited)
+    run = a_run(tmp_path)
+    (found,) = [one for one in check(inputs, run, pages=False).findings if one.code is Code.PAGE_RUNTIME_STALE]
+    assert found.fix is not None and found.fix.applicability is Applicability.UNSAFE
+    assert "edits" in found.message and "lose" in found.fix.title
+    kept = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=False)
+    assert not kept.applied and copy.read_bytes() == edited
+    replaced = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=True)
+    assert replaced.applied and copy.read_bytes() == assets.runtime_path().read_bytes()
+
+
+def test_a_project_whose_pages_load_no_copy_of_the_runtime_is_told_nothing_about_one(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, cues=CUES)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    assert Code.PAGE_RUNTIME_STALE not in {one.code for one in result.findings}
+
+
+def test_an_untrusted_project_opens_its_pages_untrusted(tmp_path: Path, drawn: Drawn) -> None:
+    """A page `record` would sandbox must not reach the network through `check` instead."""
+    a_project(tmp_path)
+    inputs = Inputs.load(tmp_path, environ={BY_ID["record.page_policy"].environment: "untrusted"})
+    drawn.report("deck/index.html", *SCENES)
+    check(inputs, a_run(tmp_path), frames=False)
+    assert drawn.policies == ["untrusted"]

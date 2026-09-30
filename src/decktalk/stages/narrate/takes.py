@@ -22,12 +22,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from decktalk.artifacts import Take, Takes, Words, take_file, words_file
+from decktalk.events import TakeCharged
 from decktalk.inputs import Inputs
-from decktalk.inputs.script import PUNCT, Segment
+from decktalk.inputs.script import Segment
+from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
+from decktalk.page import SECOND_DIGITS
 from decktalk.results import Word
-from decktalk.speech import SpeechProvider, SpeechRequest
-from decktalk.stages import SECOND_DIGITS
+from decktalk.speech import PUNCT, SpeechProvider, SpeechRequest
+from decktalk.stages import dollars_for
 from decktalk.stages.narrate.plan import TakePlan, is_cached
 
 PLACEHOLDER_CLOSE_SECONDS = 0.1
@@ -129,26 +132,35 @@ def write_placeholder_take(inputs: Inputs, segment: Segment, chapter: str, diges
 
 def write_voiced_take(
     inputs: Inputs,
+    run: Run,
     provider: SpeechProvider,
     segment: Segment,
     chapter: str,
     digest: str,
     request: SpeechRequest,
 ) -> tuple[Take, list[Path]]:
-    """Send one request, write the mp3 and its words as they came, and give back the row and the files."""
+    """Send one request, write the mp3 and its words as they came, and give back the row and the files.
+
+    The provider is paid the moment it answers, so the charge goes on the stream before anything
+    that could fail writes the take. A host that keeps its own ledger then records every take it
+    paid for, even one whose file never reached the disk.
+    """
     takes_dir = inputs.workspace.takes_dir
     out = takes_dir / take_file(digest)
     spoken, words = provider.speak(request)
+    characters = len(request.text)
+    run.emit(
+        TakeCharged,
+        section=segment.index,
+        take=digest,
+        characters=characters,
+        dollars=dollars_for(characters, inputs),
+    )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(spoken)
     written = takes_dir / words_file(digest)
     Words(words=tuple(words)).write(written)
     return take_row(inputs, segment, chapter, digest, voiced=True), [out, written]
-
-
-def index_cached_take(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voiced: bool) -> Take:
-    """The row for a take already on disk, placed by the same rule as a take this run wrote."""
-    return take_row(inputs, segment, chapter, digest, voiced=voiced)
 
 
 def join_takes(inputs: Inputs, takes: Takes) -> Path:
@@ -204,17 +216,13 @@ def planned_words(inputs: Inputs, plan: TakePlan) -> tuple[tuple[Word, ...], flo
         # There is no voice to ask, and the take on disk was voiced from this exact text.
         return inputs.words(number, paid.hash), place(inputs, number, paid).span_seconds, False
     length = segment.silent_seconds(inputs.settings.narration)
-    shifted = tuple(
-        Word(word=word.word, start=round(word.start + lead, SECOND_DIGITS), end=round(word.end + lead, SECOND_DIGITS))
-        for word in estimated_words(segment, length)
-    )
+    shifted = Words(words=tuple(estimated_words(segment, length))).shifted(lead)
     return shifted, round(lead + length + tail, SECOND_DIGITS), True
 
 
 __all__ = [
     "PLACEHOLDER_CLOSE_SECONDS",
     "estimated_words",
-    "index_cached_take",
     "join_takes",
     "place",
     "planned_words",

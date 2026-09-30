@@ -57,13 +57,13 @@ On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECK
        Built build/final/my-lesson.mp4, $0.00, nothing found
 ```
 
-The first build downloads Chromium and ffmpeg, one time per machine, and says so as it goes. Recording runs in real time, so the build takes a little longer than the fifty seconds of film it makes.
+The first build downloads Chromium and ffmpeg, one time per machine, and says so as it goes. Recording runs in real time, several sections at once, so on a machine with a few cores to spare the build takes less time than the fifty seconds of film it makes.
 
 To hear your own voice, copy `.env.example` to `.env`, fill in your ElevenLabs API key and voice id, and run `decktalk build --spend --max-cost 1`. `decktalk check` prices the run before anything is bought, and `decktalk storyboard` puts every slide at every cue on one page for a look first. The [quickstart](https://docs.decktalk.ai/quickstart) walks each step with its output.
 
 ## A short tour
 
-### The four files you write
+### The four files in a project
 
 | File | What it holds |
 |---|---|
@@ -102,7 +102,7 @@ and ask me before any run that spends money.
 
 The agent reads `decktalk --help` for the commands, `decktalk schema build` for one command's flags and result, and `decktalk config explain KEY` for one setting. Every command prints one JSON object under `--json`, and `--events` streams progress as JSON lines. Exit 0 means nothing was found, 1 a finding, 2 a refused command line and 3 that DeckTalk could not run. The [reference card](https://docs.decktalk.ai/reference/card) puts the whole contract on one page.
 
-Without a terminal, a voiced build refuses to spend unless `--spend` is passed, so an agent left alone cannot buy speech by accident. This is the whole answer from `decktalk --json build` in the starter, which exits 2.
+Without a terminal, a voiced build refuses to spend unless `--spend` is passed, so an agent left alone cannot buy speech by accident. This is the whole answer from `decktalk --json build` in the starter with a voice named, which exits 2.
 
 ```json
 {
@@ -111,7 +111,7 @@ Without a terminal, a voiced build refuses to spend unless `--spend` is passed, 
   "findings": [],
   "error": {
     "code": "APPROVAL",
-    "message": "voicing 3 sections costs up to $0.14, and no terminal is here to approve it.",
+    "message": "This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.",
     "hint": "Run decktalk build --spend to approve that spend, or decktalk build --no-voice to finish with placeholder narration.",
     "location": null,
     "docs": "https://docs.decktalk.ai/reference/errors/APPROVAL"
@@ -177,7 +177,8 @@ The docs are at [docs.decktalk.ai](https://docs.decktalk.ai), and agents can rea
 
 DeckTalk is alpha, a minor release can still break things, and one person maintains it. CI runs every check on Linux, macOS and Windows. Every release is published from CI by trusted publishing, and every file on PyPI carries a provenance attestation.
 
-- Report bugs, ask questions and show what you made in [Issues](https://github.com/jacobcbeaudin/decktalk/issues).
+- Report bugs and ask questions in [Issues](https://github.com/jacobcbeaudin/decktalk/issues).
+- Show what you made in [Discussions](https://github.com/jacobcbeaudin/decktalk/discussions).
 - Report a vulnerability privately, as [SECURITY.md](https://github.com/jacobcbeaudin/decktalk/blob/main/SECURITY.md) explains.
 - Read what changed in the [changelog](https://github.com/jacobcbeaudin/decktalk/blob/main/CHANGELOG.md).
 - Work on DeckTalk itself by starting with [CONTRIBUTING.md](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md).

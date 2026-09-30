@@ -15,19 +15,15 @@ that mints the event and nothing in between translates.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Protocol
+
+Announce = Callable[[str, int, int | None], None]
+"""One line about a download: what is being fetched, how much has arrived, and how much there is."""
 
 
-class Announce(Protocol):
-    """One line about a download: what is being fetched, how much has arrived, and how much there is."""
-
-    def __call__(self, tool: str, done_bytes: int, total_bytes: int | None) -> None: ...
-
-
-def silent(tool: str, done_bytes: int, total_bytes: int | None) -> None:  # noqa: ARG001  (the listener that hears nothing)
+def silent(tool: str, done_bytes: int, total_bytes: int | None) -> None:  # the listener that hears nothing
     """The listener in force when nobody is watching, which is what keeps a fetcher free of a stream."""
 
 

@@ -23,22 +23,26 @@ opener and can neither read the environment nor print.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import threading
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from contextlib import contextmanager, nullcontext
 from http.server import ThreadingHTTPServer
 from importlib import import_module
 from pathlib import Path
 from typing import Any, cast
 
+from filelock import FileLock, Timeout
+
 from decktalk.errors import Cancel, InputError, ProjectLocked
 from decktalk.events import Event, Events, Level, Subscription
-from decktalk.findings import Finding
+from decktalk.files import replace_all
+from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Document, Inputs, Workspace
-from decktalk.inputs.paths import at, relative
-from decktalk.machine import Machine, Run, apply_fix, fixes_of, new_run
+from decktalk.inputs.paths import at
+from decktalk.machine import Machine, Run, apply_fixes, new_run
 from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
@@ -59,7 +63,9 @@ from decktalk.results import (
     Voicing,
     WordsResult,
 )
-from decktalk.settings import Layers, Settings
+from decktalk.settings import Layers, Settings, route, scoped
+
+log = logging.getLogger(__name__)
 
 STAGES = "decktalk.stages"
 """The package every stage lives in, named rather than imported so the facade loads none of them.
@@ -73,6 +79,12 @@ PROJECT_VARIABLE = "DECKTALK_PROJECT"
 
 LOCK_FILE = ".lock"
 """What the file a writer holds is called, under the build directory it is writing into."""
+
+OWNER_FILE = ".lock.owner"
+"""What the note that names the writer holding the lock is called, beside the lock itself."""
+
+CLOSE_POLL_SECONDS = 0.05
+"""Calibration: how often a serving origin looks for a close, so closing it returns at once rather than in 0.5 s."""
 
 SECTION_RANGE = re.compile(r"^(\d+)(?:-(\d+))?$")
 """One item of a section selection, which is a number or two numbers with a dash between them."""
@@ -88,20 +100,19 @@ def open(
 
     The machine is made once when a caller passes none, so a script that opens two projects should
     make one itself and hand it to both, which is what keeps the toolchain and the stream shared.
+
+    A machine a host built may carry overrides of its own, such as the page policy it enforces on
+    every project. A project opened on it starts from those, and `overrides` come after them. They
+    may set project-scoped keys only, as `Project` says. With no machine given, the machine is made
+    from `overrides`, so every key reaches the layer it belongs to.
     """
     pairs = tuple(overrides)
-    here = machine or Machine.from_environment(overrides=_split(pairs))
+    here = machine or Machine.from_environment(overrides=pairs)
     named = path if path is not None else here.environ.get(PROJECT_VARIABLE)
-    root = Path(named).expanduser() if named else here.cwd
-    root = root if root.is_absolute() else here.cwd / root
+    root = here.cwd / Path(named).expanduser() if named else here.cwd
     if root.is_file():
         root = root.parent
-    return Project(here, root, overrides=pairs or here.overrides)
-
-
-def _split(overrides: tuple[str, ...]) -> tuple[tuple[str, str], ...]:
-    """Each `table.key=value` override as its two halves, which is how a machine takes them."""
-    return tuple((pair.partition("=")[0], pair.partition("=")[2]) for pair in overrides)
+    return Project(here, root, overrides=pairs if machine is not None else ())
 
 
 def section_numbers(selection: str) -> tuple[int, ...]:
@@ -119,6 +130,11 @@ def section_numbers(selection: str) -> tuple[int, ...]:
                 hint="Write a number such as 3, a run such as 5-7, or a list such as 3,5-7.",
             )
         first, last = int(match.group(1)), int(match.group(2) or match.group(1))
+        if last < first:
+            raise InputError(
+                f"{item!r} runs backwards, so it names no section.",
+                hint=f"Write the lower number first, as in {last}-{first}.",
+            )
         found.extend(range(first, last + 1))
     return tuple(dict.fromkeys(found))
 
@@ -154,21 +170,10 @@ class ProjectEvents(Events):
 class Origin:
     """A local origin serving one project, which `serve` hands back and a watch loop holds open."""
 
-    def __init__(self, server: ThreadingHTTPServer, result: ServeResult, run: Run) -> None:
+    def __init__(self, server: ThreadingHTTPServer, result: ServeResult) -> None:
         self._server = server
         self._stopped = threading.Event()
         self.result = result
-        self.run = run
-
-    @property
-    def url(self) -> str:
-        """Where the deck is served, which is what an author opens and a recorder drives."""
-        return self.result.url
-
-    @property
-    def port(self) -> int:
-        """The port the origin listens on, which a caller reads when it asked for any free one."""
-        return self.result.port
 
     def wait(self) -> None:
         """Block until the origin is closed, which is what a command with no other work to do does."""
@@ -190,9 +195,11 @@ class Origin:
 class Project:
     """One project directory, opened once, with one call per command.
 
-    Every call opens a run, takes `cancel`, and returns the frozen result named after it. Nothing
-    here prints, nothing reads the environment, and every path a result carries is relative to
-    `root`, so two projects in one process share nothing but the machine they were opened on.
+    Every stage call opens a run, takes `cancel`, and returns the frozen result named after it.
+    `apply`, `serve`, `reload` and `sections_touching` take no `cancel`, because each of them finishes
+    at once or, as `serve` does, hands back something the caller closes itself. Nothing here prints,
+    nothing reads the environment, and every path a result carries is relative to `root`, so two
+    projects in one process share nothing but the machine they were opened on.
     """
 
     root: Path
@@ -201,10 +208,26 @@ class Project:
     events: Events
 
     def __init__(self, machine: Machine, root: Path, *, overrides: tuple[str, ...] = ()) -> None:
+        """Open the project at `root` on `machine`, with the caller's `overrides` over the machine's own.
+
+        A machine-scoped key in `overrides` is refused, because it names the browser DeckTalk launches
+        and the trust it gives a page, and those belong to whoever built the machine. A host that
+        forwards a tenant's pairs would otherwise hand the tenant both.
+        """
+        if taken := sorted(scoped(route(overrides), Scope.MACHINE)):
+            raise InputError(
+                f"'{taken[0]}' is machine-scoped, so an override of one project cannot set it.",
+                hint="Set it in the overrides of the machine the project is opened on.",
+            )
         self.machine = machine
         self.root = root.resolve()
         self.overrides = overrides
-        self.inputs = Inputs.load(self.root, environ=machine.environ, machine=dict(machine.tables), overrides=overrides)
+        self.inputs = Inputs.load(
+            self.root,
+            environ=machine.environ,
+            machine=dict(machine.tables),
+            overrides=(*machine.overrides, *overrides),
+        )
         self._runs: set[str] = set()
         self.events = ProjectEvents(machine, self._runs)
 
@@ -257,7 +280,17 @@ class Project:
         replace_voiced: bool = False,
         cancel: Cancel | None = None,
     ) -> NarrateResult:
-        """Speak each section of the script and time every word in it."""
+        """Speak each section of the script and time every word in it.
+
+        `voice` set to `Voicing.PAID` buys the takes that need buying, and the default buys nothing
+        and writes a click track and a word clock. `max_cost` is a ceiling in US dollars, checked
+        before the first paid request. `force` makes each take again, and keeps a paid take unless
+        `replace_voiced` is true as well.
+
+        Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`,
+        `InputError` when it would replace a paid take without `replace_voiced`, and `ProviderError`
+        when the voice service fails on a paid run.
+        """
         return self._call(Stage.NARRATE, NarrateResult, cancel=cancel, voice=voice, max_cost=max_cost,
                           only=only, force=force, replace_voiced=replace_voiced)  # fmt: skip
 
@@ -290,7 +323,15 @@ class Project:
         force: bool = False,
         cancel: Cancel | None = None,
     ) -> SoundscapeResult:
-        """Generate the music, the ambience bed and the effects this project describes."""
+        """Generate the music, the ambience bed and the effects this project describes.
+
+        `voice` set to `Voicing.PAID` buys what needs buying, and the default reports the plan and
+        buys nothing. `max_cost` is a ceiling in US dollars, checked before the first paid request.
+        `force` buys every item again, which spends again.
+
+        Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`, and
+        `ProviderError` when the sound service fails on a paid run.
+        """
         return self._call(Stage.SOUNDSCAPE, SoundscapeResult, cancel=cancel, voice=voice,
                           max_cost=max_cost, only=only, force=force)  # fmt: skip
 
@@ -323,16 +364,30 @@ class Project:
         max_cost: float | None = None,
         force: bool = False,
         replace_voiced: bool = False,
-        soundscape: bool = True,
         loudness: bool = True,
         strict: bool = False,
-        allow_unknown: bool = False,
+        allow: Collection[Code] = (),
+        stop_on: Certainty | None = Certainty.CERTAIN,
         cancel: Cancel | None = None,
     ) -> BuildResult:
-        """Run every stage in order, or the span of them `stages` names."""
+        """Run every stage in order, or the span of them `stages` names.
+
+        `stages` is the span to run, in run order, and `skip` leaves stages out of it. A stage whose
+        findings reach `stop_on` stops the run, unless their code is in `allow`, and the result still
+        comes back with its findings, its spend and the stage it stopped after in `stopped_at`. None
+        as `stop_on` runs every stage whatever it finds. The film carries the soundscape unless
+        `skip` names that stage, which is the one knob for that decision. `voice`, `max_cost`,
+        `force` and `replace_voiced` mean what they mean to `narrate` and `soundscape`, and `force`
+        also measures a film that nothing changed again. `loudness` and `strict` mean what they mean
+        to `assemble`.
+
+        Raises `ApprovalRequired`, `InputError` and `ProviderError` as `narrate` does, and `ToolError`
+        when `strict` is true and the mix misses its loudness. A host never calls this on a voiced
+        run, because it draws pages in the process that holds the voice key.
+        """
         return self._call("build", BuildResult, cancel=cancel, voice=voice, max_cost=max_cost, stages=stages, skip=skip,
-                          only=only, force=force, replace_voiced=replace_voiced, soundscape=soundscape,
-                          loudness=loudness, strict=strict, allow_unknown=allow_unknown)  # fmt: skip
+                          only=only, force=force, replace_voiced=replace_voiced, loudness=loudness, strict=strict,
+                          allow=frozenset(allow), stop_on=stop_on)  # fmt: skip
 
     # ---- the six that report or cut ---------------------------------------------------------
 
@@ -409,11 +464,7 @@ class Project:
         applied.
         """
         with self._open(writes=True) as run:
-            outcomes = tuple(
-                apply_fix(run, code, found, root=self.root, scope=Scope.PROJECT, unsafe=unsafe)
-                for code, found in fixes_of(fix)
-            )
-            return run.result(ApplyResult, fixes=outcomes)
+            return apply_fixes(run, fix, root=self.root, scope=Scope.PROJECT, unsafe=unsafe)
 
     # ---- the local origin ---------------------------------------------------------------------
 
@@ -427,19 +478,18 @@ class Project:
         URL and the build directory is not served.
         """
         # The server is the media layer's, which carries the routing every recorded page also uses.
-        from decktalk.media.origin import Allowed, bound_host, open_server  # noqa: PLC0415
+        from decktalk.media.origin import Allowed, open_server, served_url  # noqa: PLC0415
 
         with self._open(writes=False) as run:
-            server = open_server(Allowed.of(self.root, self.inputs.served_paths()), host, port)
-            address = f"{bound_host(server)}:{server.server_address[1]}"
+            allowed = Allowed.of(self.root, self.inputs.served_paths())
+            server = open_server(allowed, host, port, self.inputs.documents())
             result = run.result(
                 ServeResult,
-                url=f"http://{address}",
+                url=served_url(server),
                 port=int(server.server_address[1]),
-                root=relative(self.root, self.root),
             )
-            threading.Thread(target=server.serve_forever, daemon=True).start()
-            return Origin(server, result, run)
+            threading.Thread(target=server.serve_forever, args=(CLOSE_POLL_SECONDS,), daemon=True).start()
+            return Origin(server, result)
 
     # ---- how every call is made -----------------------------------------------------------------
 
@@ -475,8 +525,13 @@ class Project:
         max_cost: float | None = None,
         writes: bool = True,
     ) -> Iterator[Run]:
-        """One run of this project, with its lines beside the build and its lock held while it writes."""
-        keep = self.inputs.settings.output.events_keep_runs
+        """One run of this project, with its lines beside the build and its lock held while it writes.
+
+        Every run writes its event lines under the build directory and may prune old ones, so the
+        tree is confined before the run opens, whether or not the stage itself writes.
+        """
+        self.workspace.confine()
+        output = self.inputs.settings.output
         opening = new_run()
         self._runs.add(opening)
         with self.machine.run(
@@ -486,8 +541,13 @@ class Project:
             max_cost=max_cost,
             root=self.root,
             events_dir=self.workspace.events_dir,
-            keep_runs=keep,
+            keep_runs=output.events_keep_runs,
+            max_bytes=output.events_max_bytes,
         ) as run:
+            # What the load noticed, such as a misspelled key, is said on every run of the project,
+            # because the project was loaded once and each run's events file is read on its own.
+            for note in self.inputs.notes:
+                run.note(note, level=Level.WARNING)
             with self._lock(run) if writes else nullcontext():
                 yield run
 
@@ -495,53 +555,65 @@ class Project:
     def _lock(self, run: Run) -> Iterator[None]:
         """Hold this project's build directory for the length of one writing run.
 
-        The trigger is not a service, it is a build run by hand under a live watch loop. A lock left
-        by a process that is gone is broken and reported rather than refused, because a caller
-        cannot clear a file it was never told about.
+        The trigger is not a service, it is a build run by hand under a live watch loop. The lock is
+        the operating system's own, taken through `filelock` on the open file, so the system releases
+        it the moment the holder dies however it dies, and two writers that race for it cannot both
+        win. Who holds it is written to a note beside it, because Windows refuses a read of a locked
+        file. A refusal reports that note, a crashed holder leaves it behind, and a run that finds it
+        under a lock nobody holds says so rather than refusing, because a caller cannot clear a file
+        it was never told about.
         """
         path = self.workspace.build / LOCK_FILE
-        path.parent.mkdir(parents=True, exist_ok=True)
-        held = _read_lock(path)
-        if held is not None and not _alive(held[0]):
-            gone = f"A run that is no longer there left {LOCK_FILE} behind, so this run took it."
-            run.note(gone, level=Level.WARNING)
-            path.unlink(missing_ok=True)
+        note = self.workspace.build / OWNER_FILE
         try:
-            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError as clash:
-            owner = _read_lock(path)
+            held = FileLock(path, blocking=False).acquire()
+        except Timeout:
+            owner = _read_owner(note)
             whose = f" (process {owner[0]}, run {owner[1]})" if owner else ""
             raise ProjectLocked(
                 f"another writer holds this build directory{whose}.",
                 hint="Wait for that run to finish, or stop it and run this again.",
                 location=at(path, self.root),
-            ) from clash
-        try:
-            with os.fdopen(handle, "w", encoding="utf-8") as sink:
-                sink.write(f"{os.getpid()} {run.id}\n")
-            yield
-        finally:
-            path.unlink(missing_ok=True)
+            ) from None
+        except OSError as unusable:
+            # filelock opens the file without following a link, so a link planted inside the build,
+            # which confinement lets through because it stays inside, is refused here, as is a
+            # directory under the lock's name.
+            raise InputError(
+                f"{LOCK_FILE} cannot be used as the build lock ({unusable.strerror or unusable}).",
+                hint=f"Delete {LOCK_FILE} from the build directory and run again.",
+                location=at(path, self.root),
+            ) from unusable
+        with held:
+            if _read_owner(note) is not None:
+                gone = f"A run that is no longer there left {OWNER_FILE} behind, so this run took it."
+                run.note(gone, level=Level.WARNING)
+            # The note is replaced whole, so a reader never sees half a line.
+            replace_all({note: f"{os.getpid()} {run.id}\n"})
+            # A host that sees two jobs collide learns the winner's side from this line.
+            log.debug("This run holds the build directory.", extra={"data": {"pid": os.getpid(), "lock": LOCK_FILE}})
+            try:
+                yield
+            finally:
+                note.unlink(missing_ok=True)
 
 
-def _read_lock(path: Path) -> tuple[int, str] | None:
-    """Who holds the lock, as a process and a run, or None when nobody does or the file says nothing."""
+def _read_owner(note: Path) -> tuple[int, str] | None:
+    """The process and the run the note names, or None when there is no note or it names nobody.
+
+    A link is never followed, so a note a project shipped cannot quote a file from elsewhere.
+    """
     try:
-        pid, _, run = path.read_text(encoding="utf-8").strip().partition(" ")
-        return int(pid), run
-    except (OSError, ValueError):
-        return None
-
-
-def _alive(pid: int) -> bool:
-    """Whether a process is still there, asked without touching it."""
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
+        text = "" if note.is_symlink() else note.read_text(encoding="utf-8")
     except OSError:
-        return True
-    return True
+        # silent: an owner note that cannot be read names no owner.
+        return None
+    pid, _, run = text.strip().partition(" ")
+    try:
+        return int(pid), run
+    except ValueError:
+        # silent: an owner note that does not parse names no owner.
+        return None
 
 
 __all__ = ["Origin", "Project", "open", "section_numbers"]

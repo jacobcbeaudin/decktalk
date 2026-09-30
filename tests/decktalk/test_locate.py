@@ -6,7 +6,7 @@ import tomllib
 
 import pytest
 
-from decktalk.locate import locate, locate_table, refused_line
+from decktalk.locate import locate, refused_line
 
 FILE = """\
 # The project file a person wrote.
@@ -45,12 +45,6 @@ def test_a_dotted_key_at_the_top_of_the_file_is_the_same_key() -> None:
 def test_a_quoted_name_and_spacing_around_the_dot_do_not_hide_a_key() -> None:
     assert locate('[video]\n"width"  =  1920\n', "video.width") == 2
     assert locate("mix . loudness . target_lufs = -16.0\n", "mix.loudness.target_lufs") == 1
-
-
-def test_a_table_header_is_found_by_its_own_name() -> None:
-    assert locate_table(FILE, "verify") == 5
-    assert locate_table(FILE, "mix.loudness") == 9
-    assert locate_table(FILE, "audio") is None
 
 
 def test_a_comment_that_looks_like_an_assignment_is_not_one() -> None:

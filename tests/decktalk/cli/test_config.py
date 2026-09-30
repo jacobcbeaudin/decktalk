@@ -9,6 +9,7 @@ import pytest
 from decktalk import settings as knobs
 from decktalk.cli import config as commands
 from decktalk.results import ConfigGetResult, ConfigListResult, Layer
+from support.links import link
 from support.projects import write_project
 
 
@@ -66,6 +67,36 @@ def test_set_refuses_a_value_the_loader_would_refuse(run, project_dir) -> None:
     assert "crf" not in (project_dir / "decktalk.toml").read_text(encoding="utf-8")
 
 
+def test_set_refuses_a_project_file_that_links_out_of_the_project(run, project_dir, tmp_path_factory) -> None:
+    victim = tmp_path_factory.mktemp("elsewhere") / "victim.toml"
+    victim.write_text("[video]\ncrf = 18\n", encoding="utf-8")
+    (project_dir / "decktalk.toml").unlink()
+    link(project_dir / "decktalk.toml", victim)
+    ran = run("-p", str(project_dir), "config", "set", "video.crf", "20")
+    assert ran.exit_code != 0
+    assert "leads outside the project" in ran.err
+    assert victim.read_text(encoding="utf-8") == "[video]\ncrf = 18\n"
+
+
+def test_an_out_of_range_refusal_is_two_sentences(run, project_dir) -> None:
+    """The loader's refusal ends on the value it got, and the reason it was refused is a new sentence."""
+    said = " ".join(run("-p", str(project_dir), "config", "set", "video.crf", "99").err.split())
+    assert "got 99. " in said
+
+
+def test_unset_refuses_a_name_that_is_neither_a_key_nor_a_table(run, project_dir) -> None:
+    """A slip in the name is a usage error, the way get and set refuse it, and not a file that lacks it."""
+    ran = run("-p", str(project_dir), "config", "unset", "video.crff")
+    assert ran.exit_code == 2
+    assert "Did you mean 'video.crf'?" in " ".join(ran.err.split())
+
+
+def test_get_names_the_nearest_key(run, project_dir) -> None:
+    assert "Did you mean 'video.crf'?" in " ".join(
+        run("-p", str(project_dir), "config", "get", "video.crff").err.split()
+    )
+
+
 def test_set_on_a_dry_run_reports_the_change_and_writes_nothing(run, project_dir) -> None:
     ran = run("-p", str(project_dir), "config", "set", "video.crf", "20", "--dry-run", "--json")
     assert json.loads(ran.out)["dry_run"] is True
@@ -92,7 +123,7 @@ def test_unset_prints_the_value_that_now_applies_and_the_layer_it_comes_from(run
 def test_unset_of_a_key_the_file_does_not_set_says_so(run, project_dir) -> None:
     ran = run("-p", str(project_dir), "config", "unset", "video.crf")
     assert ran.exit_code == 3
-    assert "sets nothing under" in ran.err
+    assert "decktalk.toml sets nothing under 'video.crf'." in ran.err
 
 
 def test_unset_of_a_whole_table_without_a_terminal_refuses_and_names_all(run, project_dir) -> None:
@@ -128,3 +159,22 @@ def test_the_five_verbs_are_registered_on_the_one_nested_group() -> None:
     assert {"list", "get", "set", "unset", "explain"} == {
         registered.name for registered in commands.config.registered_commands
     }
+
+
+@pytest.mark.parametrize(
+    "verb", [("list",), ("get", "video.crf"), ("set", "video.width", "1280"), ("explain", "video.crf")]
+)
+def test_every_config_verb_says_a_project_key_is_misspelled(run, project_dir, verb) -> None:
+    """The command that says which layer set a key is the one that must say a typo left it at its default."""
+    toml = project_dir / "decktalk.toml"
+    toml.write_text(toml.read_text(encoding="utf-8") + "\n[video]\ncrff = 20\n", encoding="utf-8")
+    ran = run("-p", str(project_dir), "config", *verb)
+    assert ran.exit_code == 0, ran.err
+    assert "ignoring unknown key 'crff' (did you mean 'crf'?)" in ran.err
+
+
+def test_a_config_verb_says_a_decktalk_variable_is_misspelled(run, project_dir, monkeypatch) -> None:
+    monkeypatch.setenv("DECKTALK_VIDEO_CRFF", "20")
+    ran = run("-p", str(project_dir), "config", "get", "video.crf")
+    assert ran.exit_code == 0, ran.err
+    assert "DECKTALK_VIDEO_CRFF" in ran.err and "DECKTALK_VIDEO_CRF" in ran.err.replace("DECKTALK_VIDEO_CRFF", "")

@@ -12,6 +12,15 @@ Two rules hold this module to a page it does not trust. Every call into the page
 because a deck's own script runs in the same thread and a page that never answers would otherwise
 hold a build for as long as it cared to. And the probe is sealed onto the window before any script
 of the page runs, so the measurements come from the instrumentation the recorder injected.
+
+`[record] page_policy` decides how far the page itself is trusted, and every launch reads it, so
+`check`, `storyboard` and the poster follow the same policy as `record`. A trusted page is the
+author's own work and reaches the network as it would in the author's browser. An untrusted page is
+a stranger's. Its Chromium runs with the sandbox on and refuses to start without it, its requests
+off the origin are aborted by the router, and its browser is pointed at a proxy that answers nothing,
+which closes the channels routing never sees: a WebSocket, a DNS lookup and a WebRTC probe. Under
+both policies the browser is given the environment `environment.py` builds rather than the
+process's own, so a key the host holds never reaches the process that runs a page's script.
 """
 
 from __future__ import annotations
@@ -23,21 +32,24 @@ import shutil
 import statistics
 import tempfile
 import time
-from collections.abc import Iterator, Mapping
+import weakref
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import InputError, ToolError
-from ..settings import COLOR_SCHEMES, MotionConfig
+from ..page import MILLISECONDS, MOTION_SCALE_PROPERTY
+from ..settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
-from . import MILLISECONDS, pagereport
+from . import pagereport
 from .encode import css_color
+from .environment import child_environment
 from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport, Recording
 
@@ -65,7 +77,7 @@ MOTION_JS = """(() => {
   const add = () => {
     const style = document.createElement("style");
     style.id = "dt-motion";
-    style.textContent = ":root{--dt-motion-scale:%s}";
+    style.textContent = ":root{%s:%s}";
     (document.head || document.documentElement).appendChild(style);
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add, { once: true });
@@ -74,10 +86,16 @@ MOTION_JS = """(() => {
 # Remove the cover, then start the page clock on the next animation frame.
 START_JS = "() => window.__dtprobe.lift()"
 READY_JS = "() => window.__dtprobe.ready()"
+# Two animation frames after the page is ready, so what the page drew in answer to ready() has been
+# through layout and paint before a frozen frame is taken.
+PAINTED_JS = "() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))"
 REPORT_JS = "() => window.__dtprobe.report()"
 # Whether the runtime is present and the page registered at least one scene.
 HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
 NO_CATALOG = "no window.__decktalk.catalog (is decktalk-runtime.js included, and does the page register a scene?)"
+
+CHECK_SECONDS = 1.0
+"""Calibration: how often a recording asks whether it should stop, which is as long as a person waits on a stop."""
 
 DEADLINE_SECONDS = 15.0
 """Calibration: many times the longest a probe call measures, so only a page that stopped answering hits it."""
@@ -98,7 +116,7 @@ def motion_scripts(motion: MotionConfig) -> list[str]:
     scale is a custom property, because it multiplies every length the sheet plays and no query key
     could carry it.
     """
-    return [] if motion.scale == UNSCALED else [MOTION_JS % f"{motion.scale:g}"]
+    return [] if motion.scale == UNSCALED else [MOTION_JS % (MOTION_SCALE_PROPERTY, f"{motion.scale:g}")]
 
 
 def scheme(value: str) -> ColorScheme:
@@ -107,12 +125,17 @@ def scheme(value: str) -> ColorScheme:
     A setting Chromium does not know is a project file that says something untrue about the render,
     and the browser takes it silently, so the one place that passes it on is the place that reads it.
     """
-    if value not in COLOR_SCHEMES:
+    return _one_of("color_scheme", value, COLOR_SCHEMES)
+
+
+def _one_of[S: str](key: str, value: str, choices: tuple[S, ...]) -> S:
+    """One closed `[record]` key's value, refused unless it is a settings choice, whose own entry it returns."""
+    if value not in choices:
         raise InputError(
-            f"[record] color_scheme = {value!r} is not one of {', '.join(COLOR_SCHEMES)}.",
-            hint=f"Set it to one of {', '.join(COLOR_SCHEMES)}.",
+            f"[record] {key} = {value!r} is not one of {', '.join(choices)}.",
+            hint=f"Set it to one of {', '.join(choices)}.",
         )
-    return value  # type: ignore[return-value]  (the settings tuple and the type above are held equal by a test)
+    return choices[choices.index(value)]
 
 
 SLATE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
@@ -126,6 +149,67 @@ font-family:Inter,-apple-system,Helvetica,Arial,sans-serif;overflow:hidden}}
 </style></head><body><div class="wrap">
 <div class="eyebrow">{eyebrow}</div><div class="title">{title}</div><div class="sub">{sub}</div>
 </div><div class="foot">{foot}</div></body></html>"""
+
+
+PagePolicy = Literal["trusted", "untrusted"]
+"""How far a page is trusted, which is the closed set `[record] page_policy` publishes."""
+
+TRUSTED: PagePolicy = "trusted"
+UNTRUSTED: PagePolicy = "untrusted"
+
+DEAD_PROXY = "http://127.0.0.1:9"
+"""Truth: the discard port on this machine, where no proxy answers, so a request sent to it goes nowhere.
+
+The router answers the project's origin before the network stack sees a request, so the proxy is
+reached only by what routing cannot stop, which is every channel an untrusted page must not have.
+"""
+
+EVERY_HOST = "<-loopback>"
+"""Truth: Chromium's word for taking loopback off its implicit bypass list, so no host skips the proxy."""
+
+UNTRUSTED_ARGS = ("--force-webrtc-ip-handling-policy=disable_non_proxied_udp",)
+"""What an untrusted page's Chromium is started with, which keeps WebRTC from sending UDP past the proxy."""
+
+SANDBOX_HINT = (
+    "An untrusted page runs only inside Chromium's sandbox. In a container that means a user other than "
+    "root and a seccomp profile that allows user namespaces."
+)
+"""What a machine that cannot start the sandbox is told, because the sandbox is a property of the machine."""
+
+
+def page_policy(value: str) -> PagePolicy:
+    """The policy a page is opened under, refused here rather than read as the weaker of the two.
+
+    An unknown value is a project file that says something untrue about the render, and reading it as
+    trusted would open the network to a page whose host meant to close it.
+    """
+    return _one_of("page_policy", value, PAGE_POLICIES)
+
+
+def launch_options(policy: PagePolicy) -> dict[str, Any]:
+    """The keyword arguments a launch under `policy` passes to Playwright, beyond the executable.
+
+    The environment is scrubbed under both policies. The sandbox, the proxy and the WebRTC switch are
+    the untrusted policy's alone, because a trusted page is a deck on its author's own machine and
+    the machine's own proxy is the one it should use.
+    """
+    options: dict[str, Any] = {"env": child_environment()}
+    if policy == UNTRUSTED:
+        options |= {
+            "chromium_sandbox": True,
+            "proxy": {"server": DEAD_PROXY, "bypass": EVERY_HOST},
+            "args": list(UNTRUSTED_ARGS),
+        }
+    return options
+
+
+_POLICIES: weakref.WeakKeyDictionary[Browser, PagePolicy] = weakref.WeakKeyDictionary()
+"""The policy each open browser was launched under, which every page it opens is routed by."""
+
+
+def trusts(browser: Browser) -> bool:
+    """Whether a browser was launched for a trusted page, which a browser this module never launched was not."""
+    return _POLICIES.get(browser) == TRUSTED
 
 
 class RecordingSink(Protocol):
@@ -159,26 +243,30 @@ def driving(what: str) -> Iterator[None]:
 
 
 @contextmanager
-def chromium(browser_path: str = "") -> Iterator[Browser]:
-    """A launched headless Chromium, as the machine configures it, closed on exit.
+def chromium(browser_path: str = "", *, policy: str) -> Iterator[Browser]:
+    """A launched headless Chromium, as the machine and the page policy configure it, closed on exit.
 
-    No proxy argument is passed. Request routing answers the local origin before the network stack
-    reaches it, so no proxy ever sees that host, and every other request a recorded page makes goes
-    the way the machine sends it, through its own proxy and its own logging.
+    Under the trusted policy no proxy argument is passed. Request routing answers the local origin
+    before the network stack reaches it, so no proxy ever sees that host, and every other request a
+    recorded page makes goes the way the machine sends it, through its own proxy and its own logging.
+    Under the untrusted policy the browser is sealed as `launch_options` says.
 
     `browser_path` is `[record] browser_path`, the executable a machine that manages its own
     Chromium names. It is empty on a machine DeckTalk fetches the browser for, which is where
-    `launch` fetches it.
+    `launch` fetches it. `policy` is `[record] page_policy`, which every caller that opens a
+    project's page passes on. It has no default, because a default would be the policy a caller that
+    forgot it gets, and a caller that forgot it is the one most likely to open a stranger's page.
     """
     with sync_playwright() as pw:
-        browser = launch(pw, browser_path)
+        browser = launch(pw, browser_path, policy=policy)
+        _POLICIES[browser] = page_policy(policy)
         try:
             yield browser
         finally:
             browser.close()
 
 
-def launch(pw: Playwright, browser_path: str = "") -> Browser:
+def launch(pw: Playwright, browser_path: str = "", *, policy: str) -> Browser:
     """A launched Chromium, fetching the build Playwright manages when this machine has not got it.
 
     This is the one place a browser starts, so every command gets the browser it needs without
@@ -189,28 +277,54 @@ def launch(pw: Playwright, browser_path: str = "") -> Browser:
     error says to run `decktalk install`, which is the one command that may ask for a password.
 
     A machine that names its own executable is told about that executable instead. Fetching would
-    not help it: the next launch would use the same path again.
+    not help it: the next launch would use the same path again. An untrusted page whose Chromium is
+    on disk and will not start is a machine that cannot run the sandbox, which a fetch does not
+    change either, so it is refused and never started without one.
     """
+    sealed = page_policy(policy)
+    options = launch_options(sealed)
+    started = time.monotonic()
     try:
-        return pw.chromium.launch(executable_path=browser_path or None)
+        return _launched(pw.chromium.launch(executable_path=browser_path or None, **options), sealed, started)
     except PlaywrightError as exc:
+        said = str(exc).splitlines()[0]
         if browser_path:
             raise ToolError(
-                f"could not launch the Chromium at {browser_path} ({str(exc).splitlines()[0]}).",
+                f"could not launch the Chromium at {browser_path} ({said}).",
                 hint="[record] browser_path names it. Clear that setting to use the build DeckTalk fetches.",
             ) from exc
+        if sealed == UNTRUSTED and chromium_fetch.installed_chromium(pw) is not None:
+            raise ToolError(f"could not launch Chromium with its sandbox on ({said}).", hint=SANDBOX_HINT) from exc
     # A launch that failed with no executable named falls through to here, which is the fetch.
     if chromium_fetch.installed_chromium(pw) is not None:
-        log.info("Chromium is on this machine and did not launch, so the build is being fetched again")
-    chromium_fetch.fetch_chromium()
+        log.info(
+            "Chromium is on this machine and did not launch, so the build is being fetched again.",
+            extra={"data": {"reason": said}},
+        )
+    chromium_fetch.fetch_chromium(env=child_environment())
+    started = time.monotonic()
     try:
-        return pw.chromium.launch()
+        return _launched(pw.chromium.launch(**options), sealed, started)
     except PlaywrightError as exc:
         raise ToolError(
             f"Chromium was fetched and still would not launch ({str(exc).splitlines()[0]}).",
-            hint="Run `decktalk install`, which also installs the system libraries Chromium needs and is the one "
+            hint=SANDBOX_HINT
+            if sealed == UNTRUSTED
+            else "Run `decktalk install`, which also installs the system libraries Chromium needs and is the one "
             "command that may ask for a password.",
         ) from exc
+
+
+def _launched(browser: Browser, policy: PagePolicy, started: float) -> Browser:
+    """Record which Chromium started, under which policy and how long it took, and hand it back."""
+    seconds = time.monotonic() - started
+    log.debug(
+        "Chromium %s started in %.2f seconds.",
+        browser.version,
+        seconds,
+        extra={"data": {"version": browser.version, "policy": policy, "seconds": round(seconds, 3)}},
+    )
+    return browser
 
 
 def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECONDS) -> object:
@@ -234,16 +348,26 @@ def evaluate(page: Page, script: str, *, deadline_seconds: float = DEADLINE_SECO
         return page.evaluate(raced)
 
 
-def instrument(page: Page) -> Page:
-    """Add decktalk-probe.js to every page `page` loads from here on, sealed. Returns the page.
+def instrument[T: (Page, BrowserContext)](target: T, *scripts: str) -> T:
+    """Add decktalk-probe.js, sealed, and then `scripts` to every page `target` loads from here on. Returns it.
 
     An init script is added to the page and not to a navigation, so a page a command drives through
     several URLs keeps one probe across all of them. The seal runs after the probe and before any
     script of the page, and it leaves an already sealed window alone.
     """
-    page.add_init_script(PROBE_JS)
-    page.add_init_script(SEAL_JS)
-    return page
+    for script in (PROBE_JS, SEAL_JS, *scripts):
+        target.add_init_script(script)
+    return target
+
+
+def _view(width: int, height: int, color_scheme: str, motion: MotionConfig) -> dict[str, Any]:
+    """The viewport, colour scheme and motion that a page and a recording context are both opened with."""
+    return {
+        "viewport": {"width": width, "height": height},
+        "device_scale_factor": 1,
+        "color_scheme": scheme(color_scheme),
+        "reduced_motion": "reduce" if motion.reduce else "no-preference",
+    }
 
 
 def open_page(
@@ -264,16 +388,9 @@ def open_page(
     """
     motion = motion or MotionConfig()
     with driving("could not open a page"):
-        page = browser.new_page(
-            viewport={"width": width, "height": height},
-            device_scale_factor=1,
-            color_scheme=scheme(color_scheme),
-            reduced_motion="reduce" if motion.reduce else "no-preference",
-        )
-    instrument(page)
-    for script in motion_scripts(motion):
-        page.add_init_script(script)
-    return page, route_pages(page, allowed, documents)
+        page = browser.new_page(**_view(width, height, color_scheme, motion))
+    instrument(page, *motion_scripts(motion))
+    return page, route_pages(page, allowed, documents, trusted=trusts(browser))
 
 
 def await_ready(page: Page) -> None:
@@ -282,6 +399,21 @@ def await_ready(page: Page) -> None:
         evaluate(page, READY_JS)
     except ToolError:
         log.debug("the page did not answer __dtprobe.ready(), so it is taken as ready")
+
+
+def await_painted(page: Page) -> None:
+    """Wait until the page is ready and has painted two frames since, which is when a frozen frame is final.
+
+    `ready()` is the contract for a frozen frame: a page that is ready has its fonts, its scene and its
+    freeze in place, and the two frames after it carry what that state drew to the screen. A fixed
+    settle of 400 ms was six of every eight seconds `check` took, and the frames it waited for were
+    byte for byte the frames this takes without it.
+    """
+    await_ready(page)
+    try:
+        evaluate(page, PAINTED_JS)
+    except ToolError:
+        log.debug("the page painted no frame on request, so the frame is taken as it stands")
 
 
 def page_error_text(err: object) -> str:
@@ -297,16 +429,21 @@ def page_error_text(err: object) -> str:
     return message
 
 
+CONSOLE_KINDS = frozenset(("error", "warning"))
+"""The console lines of a recorded page that are kept, which are the ones an author wrote to be seen."""
+
+
 def page_errors(page: Page, caught: list[str], label: str) -> list[str]:
     """The page's uncaught exceptions, plus one entry when the runtime catalog is missing. Each is logged."""
     errors = list(caught)
     try:
         if not evaluate(page, HAS_CATALOG_JS):
             errors.append(NO_CATALOG)
-    except ToolError:
+    except ToolError as unanswered:
+        log.debug("[page] %s  could not say whether it has a catalog: %s", label, unanswered)
         errors.append(NO_CATALOG)
     for e in errors:
-        log.warning("[page] %s  page error: %s", label, e)
+        log.debug("[page] %s  page error: %s", label, e)
     return errors
 
 
@@ -322,9 +459,9 @@ def read_report(page: Page, label: str) -> PageReport:
         return pagereport.read(None).model_copy(update={"unreadable": (str(refused),)})
     report = pagereport.read(answer)
     for row in report.warnings:
-        log.warning("[page] %s  %s: %s", label, row.code.name, row.message)
+        log.debug("[page] %s  %s: %s", label, row.code.name, row.message)
     for line in report.unreadable:
-        log.warning("[page] %s  %s", label, line)
+        log.debug("[page] %s  %s", label, line)
     return report
 
 
@@ -342,11 +479,20 @@ class Capture:
     opened: float  # time.monotonic() when the context was created, which is when capture may have begun
     page: Page | None = None
 
-    def open(self, url: str, caught: list[str]) -> Page:
-        """The one page of this recording, loaded, with its uncaught exceptions collected into `caught`."""
+    def open(self, url: str, caught: list[str], console: list[tuple[str, str]] | None = None) -> Page:
+        """The one page of this recording, loaded, with its uncaught exceptions collected into `caught`.
+
+        The page's own `console.error` and `console.warn` lines are the author's diagnostics, so they are
+        collected into `console` as their kind and text, and recorded once the recording is read.
+        """
         with driving(f"could not open {url}"):
             self.page = self.context.new_page()
         self.page.on("pageerror", lambda err: caught.append(page_error_text(err)))
+        if console is not None:
+            self.page.on(
+                "console",
+                lambda said: console.append((said.type, said.text)) if said.type in CONSOLE_KINDS else None,
+            )
         with driving(f"could not load {url}"):
             self.page.goto(url, wait_until="load")
         return self.page
@@ -389,21 +535,14 @@ def capturing(
     try:
         with driving("could not open a recording context"):
             context = browser.new_context(
-                viewport={"width": width, "height": height},
-                device_scale_factor=1,
-                color_scheme=scheme(color_scheme),
-                reduced_motion="reduce" if motion.reduce else "no-preference",
+                **_view(width, height, color_scheme, motion),
                 record_video_dir=str(directory),
                 record_video_size={"width": width, "height": height},
             )
         opened = time.monotonic()
-        assets = route_pages(context, allowed, documents)
+        assets = route_pages(context, allowed, documents, trusted=trusts(browser))
         capture = Capture(context=context, assets=assets, directory=directory, opened=opened)
-        context.add_init_script(PROBE_JS)
-        context.add_init_script(SEAL_JS)
-        context.add_init_script("(" + COVER_JS + ")()")
-        for script in motion_scripts(motion):
-            context.add_init_script(script)
+        instrument(context, "(" + COVER_JS + ")()", *motion_scripts(motion))
         try:
             yield capture
         finally:
@@ -437,6 +576,7 @@ def record_page(
     color_scheme: str,
     motion: MotionConfig,
     documents: Mapping[str, bytes] | None = None,
+    check: Callable[[], None] = lambda: None,
 ) -> Recording:
     """Record `url` for `seconds` after the narration clock starts, and leave the webm beside its log.
 
@@ -446,13 +586,17 @@ def record_page(
     The order is the whole point of `log_sink`. The old log goes before anything is captured, the
     webm is replaced next, and the log of what was just recorded is written last, so the pair on
     disk is either complete or absent and a crash can never leave a new picture under an old t=0.
+
+    `check` raises when the recording should stop, and the section's span is waited for in slices so
+    it is asked at least once a second. A recording stopped that way places nothing and writes no log.
     """
     log_sink.clear()
     with capturing(
         browser, allowed, width=width, height=height, color_scheme=color_scheme, motion=motion, documents=documents
     ) as capture:
         caught: list[str] = []
-        page = capture.open(url, caught)
+        console: list[tuple[str, str]] = []
+        page = capture.open(url, caught, console)
         loaded = time.monotonic()
         await_ready(page)
         # Settle after load, and never start the clock before the recorder has certainly begun
@@ -461,13 +605,19 @@ def record_page(
         page.wait_for_timeout(wait * MILLISECONDS)
         evaluate(page, START_JS)
         started = time.monotonic()
-        page.wait_for_timeout(seconds * MILLISECONDS)
+        waited(page, seconds, check)
         report = read_report(page, out.stem)
         errors = page_errors(page, caught, out.stem)
+        for kind, text in console:
+            # A console.error is the author telling themselves something broke, so it reaches the terminal.
+            level = logging.WARNING if kind == "error" else logging.DEBUG
+            said = {"kind": kind, "text": text}
+            log.log(level, "[page] %s  console %s: %s", out.stem, kind, text, extra={"data": said})
         recording = Recording(
             url=url,
             assets=tuple(capture.assets.paths),
             external=tuple(capture.assets.external),
+            missing=tuple(capture.assets.missing),
             requested_seconds=round(seconds, 3),
             load_seconds=round(loaded - capture.opened, 3),
             settle_seconds=round(started - loaded, 3),
@@ -478,9 +628,21 @@ def record_page(
         _log_what_the_page_reported(recording, out.stem)
         capture.place(out)
     log_sink.write(recording)
-    for name in capture.assets.missing:
-        log.warning("[page] %s  the page asked for %s and the project has no such file", out.stem, name)
     return recording
+
+
+def waited(page: Page, seconds: float, check: Callable[[], None]) -> None:
+    """Wait `seconds` in slices of at most `CHECK_SECONDS`, asking `check` before each one.
+
+    The slices add up to the span exactly, so the recording is as long as one wait made it, and each
+    costs one call to the browser, which is a millisecond against a second.
+    """
+    left = seconds
+    while left > 0:
+        check()
+        step = min(left, CHECK_SECONDS)
+        page.wait_for_timeout(step * MILLISECONDS)
+        left -= step
 
 
 def _log_what_the_page_reported(recording: Recording, label: str) -> None:
@@ -498,18 +660,21 @@ def _log_what_the_page_reported(recording: Recording, label: str) -> None:
     after_start = [gap for gap in recording.report.frame_gaps if gap.at is not None and gap.at > 0]
     if after_start:
         worst = max(gap.ms for gap in after_start)
-        log.warning("[page] %s  %d frame stall(s) after narration t=0, worst %d ms", label, len(after_start), worst)
+        log.debug("[page] %s  %d frame stall(s) after narration t=0, worst %d ms", label, len(after_start), worst)
     under_cover = len(recording.report.frame_gaps) - len(after_start)
     if under_cover:
         log.debug("[page] %s  %d frame stall(s) under the cover", label, under_cover)
 
 
-def screenshot(page: Page, url: str, out: Path, *, settle_ms: int) -> PageReport:
-    """Write one PNG of `url`, and give back what the page reported while it was open."""
+def screenshot(page: Page, url: str, out: Path) -> PageReport:
+    """Write one PNG of `url` once it has painted, and give back what the page reported while it was open.
+
+    The frame is taken once the page says it is ready and two frames have painted after that, which
+    is everything a page that keeps the contract draws, so no fixed wait is spent on top of it.
+    """
     with driving(f"could not load {url}"):
         page.goto(url)
-    await_ready(page)
-    page.wait_for_timeout(settle_ms)
+    await_painted(page)
     out.parent.mkdir(parents=True, exist_ok=True)
     page.screenshot(path=str(out))
     return read_report(page, out.stem)
@@ -558,14 +723,15 @@ def bias_script(frames: int, hold_ms: int) -> str:
 def measure_presentation_bias() -> float:
     """How long this machine takes to present a frame the page has already drawn, in milliseconds.
 
-    This is the one measurement `decktalk doctor --measure` writes into a machine file, because
-    `verify` subtracts it from every offset it measures. It is the middle of a run of frames rather
-    than the worst or the mean, so one frame the operating system held up moves nothing.
+    This is what `decktalk doctor --measure` reports, which an author reads a late section's
+    offsets against. It is the middle of a run of frames rather than the worst or the mean, so one
+    frame the operating system held up moves nothing.
 
     It measures the browser this machine launches by default, which is the browser `doctor` reports
     on, rather than one a project names: a bias belongs to the machine and not to a deck.
     """
-    with chromium() as browser:
+    # The page is DeckTalk's own and loads nothing, so it is trusted whatever the projects are.
+    with chromium(policy=TRUSTED) as browser:
         page = browser.new_page()
         page.set_content("<!doctype html><title>bias</title>")
         answer = evaluate(page, bias_script(MEASURED_FRAMES, MEASURED_FRAME_MS))
@@ -574,7 +740,7 @@ def measure_presentation_bias() -> float:
     if not samples:
         raise ToolError(
             "this machine's browser reports no presentation times, so the bias cannot be measured.",
-            hint="Leave host.presentation_bias_ms at 0, which subtracts nothing from a measured offset.",
+            hint="Read a late section's offsets as they are, since this machine cannot say how late it presents.",
         )
     return round(statistics.median(samples), 1)
 
@@ -590,6 +756,7 @@ def render_slate(
     height: int,
     background: str,
     browser_path: str = "",
+    policy: str,
 ) -> Path:
     """A titled placeholder frame, for a section whose clip is missing.
 
@@ -606,9 +773,9 @@ def render_slate(
         foot=html.escape(foot),
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    with chromium(browser_path) as browser:
+    with chromium(browser_path, policy=policy) as browser:
         page = browser.new_page(viewport={"width": width, "height": height})
         page.set_content(doc)
-        await_ready(page)
+        await_painted(page)
         page.screenshot(path=str(out))
     return out

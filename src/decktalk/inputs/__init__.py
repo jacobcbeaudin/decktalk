@@ -22,14 +22,18 @@ a project, so a stage can parse one file without loading a whole project.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
+from functools import cached_property
+from pathlib import Path, PurePosixPath
 from typing import Any
 
-from decktalk.artifacts import PREVIEW_ALIAS, CueTimes, Cuts, RecordingLog, Takes, Words
+from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words, content_digest, file_digest
+from decktalk.artifacts.stills import Stills, still_key
 from decktalk.artifacts.words import words_file
 from decktalk.errors import InputError
+from decktalk.files import current_text
 from decktalk.inputs.cues import CuedSection, load_cues
 from decktalk.inputs.document import (
     ClipSection,
@@ -46,11 +50,14 @@ from decktalk.inputs.document import (
 )
 from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
-from decktalk.inputs.paths import at, relative
+from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.script import Segment, read_script
 from decktalk.inputs.workspace import Workspace
+from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import Word
 from decktalk.settings import PROJECT_FILE, Layers, Settings, key_warnings, load, read_project_toml
+
+log = logging.getLogger(__name__)
 
 ENV_FILE = ".env"
 """What a project calls the file its speech credential lives in, which is never committed."""
@@ -68,9 +75,6 @@ class Inputs:
     layers: Layers
     notes: tuple[str, ...] = ()
     """Every sentence the load wanted to say, which a caller reports as a line rather than printing."""
-
-    _script: list[tuple[Segment, ...]] = field(default_factory=list, repr=False, compare=False)
-    """The parsed script, kept in a one-slot list so a frozen value can still read the file once."""
 
     @classmethod
     def load(
@@ -98,16 +102,38 @@ class Inputs:
         document = Document.from_toml(toml, default_name=root.name)
         loaded = load(root, project=toml, machine=machine, environ=environ, overrides=overrides)
         takes_dir = cls._takes_dir(root, loaded.settings)
-        notes = tuple(key_warnings(toml, PROJECT_FILE)) + cls._takes_note(root, takes_dir)
+        notes = document.notes + tuple(key_warnings(toml, PROJECT_FILE)) + cls._takes_note(root, takes_dir)
+        build = contained(root, document.build)
+        cls._refuse_served_build(root, build, document)
         return cls(
             root=root,
             document=document,
-            workspace=Workspace(root=root, build=root / document.build, name=document.name, takes=takes_dir),
+            workspace=Workspace(root=root, build=build, name=document.name, takes=takes_dir),
             env=Env(file=root / ENV_FILE, environ=environ),
             settings=loaded.settings,
             layers=loaded.layers,
             notes=notes,
         )
+
+    @staticmethod
+    def _refuse_served_build(root: Path, build: Path, document: Document) -> None:
+        """Refuse a build directory that shares a directory the origin serves, in either direction.
+
+        The origin serves each page's whole directory, so a build inside one, or a page directory
+        inside the build, hands the page the takes, the event lines, the recordings and the stills.
+        Only a page's directory is served whole, so it is the one kind of served path that can hold
+        the build, and every other served path is a single file.
+        """
+        held = build.resolve()
+        for page in document.page_files:
+            served = (root / page).parent.resolve()
+            if held.is_relative_to(served) or served.is_relative_to(held):
+                raise InputError(
+                    f"the build directory {document.build} shares {Path(page).parent.as_posix()}, "
+                    "which is served to the page, so the page could read what a build writes.",
+                    hint="Keep the build directory and every page's directory apart, such as build/ and deck/.",
+                    location=at(root / PROJECT_FILE, root),
+                )
 
     @staticmethod
     def _takes_dir(root: Path, settings: Settings) -> Path | None:
@@ -132,9 +158,12 @@ class Inputs:
     # ---- paths --------------------------------------------------------------------------
 
     def path(self, named: str | Path) -> Path:
-        """A path the document names, resolved against the project root."""
-        given = Path(named)
-        return given if given.is_absolute() else self.root / given
+        """A path the document names, joined to the project root and refused when it leads outside it.
+
+        Every file a project names is read through here, so a script, a cue file, a page, a clip or a
+        sound that links out of the project is refused with `INPUT` before anything reads it.
+        """
+        return contained(self.root, named)
 
     def relative(self, path: Path) -> Path:
         """One path as every result and every finding publishes it, which is relative to the project."""
@@ -152,15 +181,13 @@ class Inputs:
 
     def script(self) -> tuple[Segment, ...]:
         """Every section of `script.md`, checked against `decktalk.toml`, parsed once per project."""
-        if not self._script:
-            written, _spoken = read_script(
-                self.script_path,
-                self.root,
-                declared={section.number for section in self.document.sections},
-                clips=self.document.clip_numbers,
-            )
-            self._script.append(tuple(written))
-        return self._script[0]
+        return self._parsed
+
+    @cached_property
+    def _parsed(self) -> tuple[Segment, ...]:
+        """The script as `script` answers it, kept on this value alone so a replaced one reads it afresh."""
+        declared = {section.number for section in self.document.sections}
+        return tuple(read_script(self.script_path, self.root, declared=declared))
 
     def spoken(self) -> tuple[Segment, ...]:
         """Every section the voice reads, which is every one that does not play a clip."""
@@ -176,7 +203,11 @@ class Inputs:
         """
         try:
             headings = {segment.index: segment.title for segment in self.script()}
-        except InputError:
+        except InputError as unread:
+            log.debug(
+                "The script did not parse, so a section with no chapter of its own is named by its number.",
+                exc_info=unread,
+            )
             headings = {}
         return {
             section.number: section.chapter or headings.get(section.number) or f"Section {section.number}"
@@ -186,6 +217,10 @@ class Inputs:
     def cues(self) -> tuple[CuedSection, ...]:
         """Every section's cues from `cues.json`, checked against `decktalk.toml`."""
         return load_cues(self.cues_path, self.root, {section.number for section in self.document.sections})
+
+    def cues_text(self) -> str:
+        """`cues.json` as it is written, which a fix that rewrites one row is worked out on, or nothing."""
+        return current_text(self.cues_path)
 
     def markers(self) -> Markers | None:
         """The parsed `[mix] music_markers` file, or None when the project names none."""
@@ -278,7 +313,10 @@ class Inputs:
         soundscape = document.soundscape
         generated = (soundscape.ambience, soundscape.music, *soundscape.effects.values())
         named += [item.out for item in generated if item is not None and item.out]
-        return tuple(dict.fromkeys(name.lstrip("./") for name in named if name))
+        # A name is folded as a path rather than stripped as text, and one that folds to the root
+        # itself is dropped, because a declared root would declare the whole project.
+        spelled = (PurePosixPath(name).as_posix() for name in named if name)
+        return tuple(dict.fromkeys(name for name in spelled if name != "."))
 
     def documents(self) -> dict[str, bytes]:
         """Every path the origin answers from memory rather than from a file, as the bytes it sends.
@@ -286,11 +324,37 @@ class Inputs:
         A recording keyed on one of these would be keyed on its own output, so the origin never
         counts them among the assets a section was recorded from.
         """
-        return {PREVIEW_ALIAS: json.dumps(self.preview_cues()).encode("utf-8")}
+        return {PREVIEW_CUE_TIMES: json.dumps(self.preview_cues()).encode("utf-8")}
 
-    def stray_section_videos(self) -> tuple[Path, ...]:
-        """Cuts in the sections directory whose section is no longer in `decktalk.toml`."""
-        return self.workspace.stray_section_videos(tuple(s.key for s in self.document.sections))
+    # ---- frozen frames -------------------------------------------------------------------------
+
+    @property
+    def stills(self) -> Stills:
+        """The frozen frames this project keeps, which check, storyboard and the poster share."""
+        return Stills(self.workspace.stills_dir, self.root)
+
+    def still_key(self, page: str, *identity: str, documents: Mapping[str, bytes] | None = None) -> str:
+        """The name of one frozen frame of `page`, from everything that decides how it looks before it loads.
+
+        `identity` is what the caller asks the page for, which is the URL of a frozen state or the
+        section a poster stands for. The frame size, the colour scheme, the page policy, the motion and
+        the page file itself decide the picture as surely as the URL does, and so does anything the
+        origin answers from memory. The files the page loads once it is open are named by the manifest beside the
+        frame rather than here, because nobody knows them until the page has asked.
+        """
+        video, record, motion = self.settings.video, self.settings.record, self.settings.motion
+        served = sorted((documents or {}).items())
+        return still_key(
+            (
+                *identity,
+                f"{video.width}x{video.height}",
+                record.color_scheme,
+                f"policy:{record.page_policy}",
+                f"motion:{motion.reduce}:{motion.scale:g}",
+                f"page:{page}:{file_digest(self.path(page))}",
+                *(f"served:{name}:{content_digest(body)}" for name, body in served),
+            )
+        )
 
     # ---- what a changed file touches --------------------------------------------------------
 
@@ -313,13 +377,10 @@ class Inputs:
 
 
 __all__ = [
-    "ENV_FILE",
     "ClipSection",
-    "CuedSection",
     "Document",
     "Env",
     "Inputs",
-    "Markers",
     "Mix",
     "MixEffect",
     "MusicSpec",

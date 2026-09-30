@@ -124,8 +124,9 @@ yet.
 
 ## Cue mismatches
 
-Eight codes name a cue that does not agree with something. Five of them are read from the two files
-before a picture exists, and three are measured from a frozen frame or from the finished film. Every
+Nine codes name a cue that does not agree with something. Five of them are read from the two files
+before a picture exists, three are measured from a frozen frame or from the finished film, and one
+compares the cue times on disk with the cue file they were placed from. Every
 one carries the sentence below, its certainty, the object it judged and the fix when there is one.
 
 | Code | Certainty | What it names | Raised by |
@@ -133,6 +134,7 @@ one carries the sentence below, its certainty, the object it judged and the fix 
 | [`CUE_MISSING`](/reference/findings/CUE_MISSING) | certain | The page declares a moment that cues.json does not list, so nothing gives it a second. | `cue`, `check` |
 | [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN) | certain | cues.json lists a cue no page declares, so nothing plays it. | `cue`, `check` |
 | [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED) | certain | The cue's phrase is not spoken in its section, so there is no second to place it at. | `cue`, `check`, `verify` |
+| [`CUE_STALE`](/reference/findings/CUE_STALE) | certain | The cue times on disk were placed from a different cues.json than the project's. | `verify` |
 | [`CUE_NO_ONSET`](/reference/findings/CUE_NO_ONSET) | uncertain | The cue resolved with no measured onset, so its second is the section's start and not its word's. | `cue`, `check`, `verify` |
 | [`CUE_OVERLAP`](/reference/findings/CUE_OVERLAP) | uncertain | Two cues resolve close enough together that a viewer cannot tell them apart. | `cue`, `check` |
 | [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE) | certain | Nothing in the picture changed at the cue's second, so the reveal never happened. | `check`, `verify` |
@@ -152,6 +154,11 @@ What each one means for the film, and what clears it:
   time.
 - **`CUE_UNRESOLVED`** is a phrase the section does not speak. Fix the phrase, or fix the script. A
   section with no take at all resolves nothing, and the message says which of the two it is.
+- **`CUE_STALE`** is a cue file edited after the film was built. `verify` measures the film on disk,
+  and that film was cut to the cue times of the last build, so a row whose phrase or offset changed
+  since, a row added since and a row removed since are all measured against moments nobody asks for
+  now. Nothing is wrong with the phrase. Run `decktalk build`, which places the cues again and
+  records only the sections they moved.
 - **`CUE_NO_ONSET`** is a cue whose second is 0, which is where the section starts rather than where
   a word does, or a cue in the finished film that changed the picture with no frame rising by
   `verify.onset_rise_points`. Nothing measures its landing against a word, so the offset check cannot
@@ -182,8 +189,9 @@ decktalk check --fix   # open every page, judge it, and add the row for every mi
 decktalk build --fix   # the same, as part of a run that goes on to make the film
 ```
 
-`--fix` lives on `check` and on `build`, which are the two commands that apply a fix. `cue` reports
-the same codes and applies nothing.
+`--fix` lives on `check` and on `build`, which are the two commands that apply a fix to a project's
+files, and `doctor --fix` applies the fixes a machine offers. `cue` reports the same codes and
+applies nothing.
 
 Both comparisons read the moments off the catalog the page itself published rather than off a scan of
 its markup, because `data-steps`, `data-class` and `data-owns` all declare moments no text scan can

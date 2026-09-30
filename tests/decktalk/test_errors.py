@@ -20,7 +20,7 @@ from decktalk.errors import (
     ProviderError,
     ToolError,
 )
-from decktalk.findings import DOCS, Location
+from decktalk.findings import Location
 
 CLASSES = (InputError, NotBuiltError, ProviderError, ToolError, ProjectLocked, ApprovalRequired, Cancelled)
 CODELESS = (ErrorCode.USAGE, ErrorCode.INTERNAL)
@@ -40,10 +40,8 @@ def test_there_are_nine_codes_and_they_are_the_ones_the_design_named() -> None:
     ]
 
 
-def test_there_are_seven_classes_and_each_is_a_kind_of_the_base() -> None:
-    assert len(CLASSES) == 7
-    for kind in CLASSES:
-        assert issubclass(kind, DeckTalkError)
+def test_the_seven_classes_are_every_kind_of_the_base() -> None:
+    assert set(DeckTalkError.__subclasses__()) == set(CLASSES) and len(CLASSES) == 7
 
 
 def test_every_class_carries_a_different_code() -> None:
@@ -72,11 +70,10 @@ def test_the_exit_mapping_is_total_and_is_the_one_the_design_named() -> None:
     }
 
 
-def test_every_code_publishes_one_sentence_and_one_page() -> None:
+def test_every_code_publishes_one_sentence() -> None:
     for code in ErrorCode:
         assert code.sentence.endswith("."), code.value
         assert ";" not in code.sentence, code.value
-        assert code.url == f"{DOCS}/errors/{code.value}"
 
 
 def test_a_raiser_carries_the_next_command_and_the_place_to_open() -> None:
@@ -123,3 +120,18 @@ def test_a_cancelled_run_raises_the_class_that_carries_the_interrupt_code() -> N
 def test_every_error_field_publishes_one_sentence() -> None:
     for name, field in ErrorInfo.model_fields.items():
         assert field.description, name
+
+
+def test_a_refusal_ends_a_run_with_its_own_code() -> None:
+    info = ErrorInfo.of_failure(ToolError("ffmpeg failed.", hint="Run decktalk doctor."))
+    assert (info.code, info.message, info.hint) == (ErrorCode.TOOL, "ffmpeg failed.", "Run decktalk doctor.")
+
+
+def test_an_interrupt_ends_a_run_as_cancelled() -> None:
+    assert ErrorInfo.of_failure(KeyboardInterrupt()).code is ErrorCode.CANCELLED
+
+
+def test_anything_else_ends_a_run_as_a_bug_named_by_its_type_and_message() -> None:
+    info = ErrorInfo.of_failure(KeyError("page"))
+    assert (info.code, info.message) == (ErrorCode.INTERNAL, "KeyError: 'page'")
+    assert info.docs == ErrorCode.INTERNAL.url

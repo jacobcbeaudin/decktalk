@@ -13,19 +13,22 @@ error block is the same block, and nothing prints a second vocabulary for a read
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from rich import box
 from rich.console import Console, RenderableType
 from rich.console import Group as Stack
+from rich.filesize import decimal
 from rich.live import Live
 from rich.table import Table
 from rich.text import Text
 
+from decktalk.captions import clock
 from decktalk.errors import ErrorInfo
 from decktalk.events import Event, Fetch, Log, Progress, RunStart, StageDone, StageStart
-from decktalk.findings import Applicability, Certainty, Code, Finding, Location
+from decktalk.files import json_text
+from decktalk.findings import Applicability, Certainty, Finding, Location
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
@@ -51,6 +54,8 @@ from decktalk.results import (
     StoryboardResult,
     VerifyResult,
     WordsResult,
+    counted,
+    money,
 )
 
 STAGE_COLUMN = 12
@@ -77,17 +82,36 @@ class Report:
     total: int = 0
 
     def line(self) -> Text:
-        """The stage's own row, which is its name, what it is working on and how long it took."""
+        """The stage's own row: its name, what it is working on, how long it took, and how it ended when not ok."""
         name = self.stage.value.title().rjust(STAGE_COLUMN)
         text = Text(f"{name} {self.label}")
         if self.seconds is not None:
-            text.append(f"   {_clock(self.seconds)}", style=QUIET_STYLE)
+            text.append(f"   {clock(self.seconds)}", style=QUIET_STYLE)
         elif self.total:
             text.append(f"   {self.done}/{self.total}", style=QUIET_STYLE)
+        if self.outcome not in (None, Outcome.OK):
+            text.append(f"   {self.outcome.value}")
         return text
 
 
-class Region:
+class Renderer:
+    """One reader of the event stream, on the console it writes to, holding nothing open unless it says so."""
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+
+    def open(self) -> None:
+        """Start whatever this reader draws, which for most of them is nothing."""
+
+    def close(self) -> None:
+        """Stop whatever this reader draws, which for most of them is nothing."""
+
+    def __call__(self, event: Event) -> None:
+        """Take one line of the stream."""
+        raise NotImplementedError
+
+
+class Region(Renderer):
     """The transient live region a terminal shows, which is one row per stage of the run.
 
     It is transient because a run's own summary is what a reader keeps, and because a region that
@@ -95,7 +119,7 @@ class Region:
     """
 
     def __init__(self, console: Console) -> None:
-        self._console = console
+        super().__init__(console)
         self._rows: dict[Stage, Report] = {}
         self._live = Live(console=console, transient=True, refresh_per_second=REFRESH_PER_SECOND)
 
@@ -118,24 +142,15 @@ class Region:
             row = self._rows.setdefault(event.stage, Report(stage=event.stage))
             row.seconds, row.outcome = event.seconds, event.outcome
         elif isinstance(event, Fetch):
-            self._live.update(Text(f"{'Fetching'.rjust(STAGE_COLUMN)} {event.tool}, {_bytes(event.bytes)}"))
+            self._live.update(Text(f"{'Fetching'.rjust(STAGE_COLUMN)} {event.tool}, {decimal(event.bytes)}"))
             return
         else:
             return
         self._live.update(Stack(*(row.line() for row in self._rows.values())))
 
 
-class Lines:
+class Lines(Renderer):
     """The plain stage lines a pipe gets, which are the live region without the cursor movement."""
-
-    def __init__(self, console: Console) -> None:
-        self._console = console
-
-    def open(self) -> None:
-        """Nothing is drawn until a stage ends, so there is nothing to start."""
-
-    def close(self) -> None:
-        """Nothing is held open, so there is nothing to stop."""
 
     def __call__(self, event: Event) -> None:
         """Write one line for every stage that ended, and nothing for the moments in between."""
@@ -144,17 +159,8 @@ class Lines:
             self._console.print(row.line())
 
 
-class Jsonl:
+class Jsonl(Renderer):
     """The JSON lines `--events` writes on stderr, which are the library's own lines untouched."""
-
-    def __init__(self, console: Console) -> None:
-        self._console = console
-
-    def open(self) -> None:
-        """A line stream has nothing to start."""
-
-    def close(self) -> None:
-        """A line stream has nothing to stop."""
 
     def __call__(self, event: Event) -> None:
         """Write one line, exactly as the library minted it."""
@@ -162,19 +168,18 @@ class Jsonl:
         self._console.file.flush()
 
 
-class Notes:
-    """The log lines the library would have printed, written at the level `-v` and `-q` choose."""
+class Notes(Renderer):
+    """The log lines the library would have printed, written at the level `-v` and `-q` choose.
 
-    def __init__(self, console: Console, *, verbose: bool, quiet: bool) -> None:
-        self._console = console
+    `heard` is shared by the renderers of one command that runs the same judgement twice, as
+    `check --fix` does, so a sentence the first run said is not printed again by the second.
+    """
+
+    def __init__(self, console: Console, *, verbose: bool, quiet: bool, heard: set[str] | None = None) -> None:
+        super().__init__(console)
         self._verbose = verbose
         self._quiet = quiet
-
-    def open(self) -> None:
-        """Nothing is held open."""
-
-    def close(self) -> None:
-        """Nothing is held open."""
+        self._heard = heard
 
     def __call__(self, event: Event) -> None:
         """Write one log line when its level passes the two flags that choose between them."""
@@ -185,21 +190,22 @@ class Notes:
             return
         if self._quiet and level in ("debug", "info"):
             return
-        self._console.print(Text(event.message, style=QUIET_STYLE if level in ("debug", "info") else "yellow"))
+        if self._heard is not None:
+            if event.message in self._heard:
+                return
+            self._heard.add(event.message)
+        style = QUIET_STYLE if level in ("debug", "info") else "yellow"
+        # Under -v a line says which module wrote it, which is what tells a tool call from a stage's sentence.
+        said = f"{event.source}: {event.message}" if self._verbose and event.source else event.message
+        self._console.print(Text(said, style=style))
 
 
-class Opening:
+class Opening(Renderer):
     """The first line `build` writes, which names the run and the file its events are appended to."""
 
     def __init__(self, console: Console) -> None:
-        self._console = console
+        super().__init__(console)
         self.said = False
-
-    def open(self) -> None:
-        """Nothing is held open."""
-
-    def close(self) -> None:
-        """Nothing is held open."""
 
     def __call__(self, event: Event) -> None:
         """Name the run and its events file once, before the first stage of the run."""
@@ -243,8 +249,7 @@ def _counted(findings: Sequence[Finding]) -> Text:
     """How many judgements there are, how many are certain, and how many `--fix` would apply."""
     certain = sum(1 for found in findings if found.certainty is Certainty.CERTAIN)
     fixable = sum(1 for found in findings if found.fix is not None and found.fix.applicability is Applicability.SAFE)
-    word = "finding" if len(findings) == 1 else "findings"
-    text = Text(f"Found {len(findings)} {word}, {certain} certain.")
+    text = Text(f"Found {counted(len(findings), 'finding')}, {certain} certain.")
     if fixable:
         text.append(f" {fixable} fixable with --fix.")
     return text
@@ -276,28 +281,15 @@ def _table(*columns: str) -> Table:
     return table
 
 
-def _clock(seconds: float) -> str:
-    """A duration as a person reads one, which is minutes and seconds."""
-    return f"{int(seconds) // 60}:{int(seconds) % 60:02d}"
-
-
-def _bytes(count: int) -> str:
-    """A download as a person reads one, in megabytes."""
-    return f"{count / 1_000_000:.1f} MB"
-
-
-def _money(dollars: float) -> str:
-    """A price as a person reads one, in US dollars."""
-    return f"${dollars:.2f}"
-
-
 def _yes(state: bool) -> str:
     """A boolean column, written as the two words a reader scans rather than as true and false."""
     return "yes" if state else "no"
 
 
 def _init(result: InitResult) -> Iterable[RenderableType]:
-    yield Text(f"Wrote {result.root.as_posix()} from the {result.example} example, {len(result.written)} files.")
+    yield Text(
+        f"Wrote {result.root.as_posix()} from the {result.example} example, {counted(len(result.written), 'file')}."
+    )
     yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-voice", style=QUIET_STYLE)
 
 
@@ -320,8 +312,6 @@ def _doctor(result: DoctorResult) -> Iterable[RenderableType]:
     yield Text(f"Voice key {_yes(result.voice_key)}")
     if result.bias_ms is not None:
         yield Text(f"Bias      {result.bias_ms:.0f} ms")
-    for path in result.written:
-        yield Text(f"Wrote     {path.as_posix()}", style=QUIET_STYLE)
 
 
 def _status(result: StatusResult) -> Iterable[RenderableType]:
@@ -338,7 +328,7 @@ def _status(result: StatusResult) -> Iterable[RenderableType]:
         )
     yield table
     if result.film is not None:
-        yield Text(f"Film   {result.film.as_posix()}, {_clock(result.film_seconds or 0)} long")
+        yield Text(f"Film   {result.film.as_posix()}, {clock(result.film_seconds or 0)} long")
     for run in result.runs:
         yield Text(f"Live   {run.run} writing {run.events.as_posix()}", style=QUIET_STYLE)
     if result.next is not None:
@@ -347,11 +337,7 @@ def _status(result: StatusResult) -> Iterable[RenderableType]:
 
 def _check(result: CheckResult) -> Iterable[RenderableType]:
     yield Text(f"Checking {', '.join(path.as_posix() for path in result.judged)}.")
-    rate = _money(result.spend.price_per_1000_characters)
-    yield Text(
-        f"Voicing it costs about {_money(result.spend.dollars)} at {rate} per 1,000 characters, "
-        f"up to {_money(result.spend.ceiling_dollars)}."
-    )
+    yield Text(result.spend.sentence)
     if result.storyboard is not None:
         yield Text(f"Storyboard {result.storyboard.as_posix()}", style=QUIET_STYLE)
 
@@ -366,11 +352,11 @@ def _words(result: WordsResult) -> Iterable[RenderableType]:
 
 def _storyboard(result: StoryboardResult) -> Iterable[RenderableType]:
     where = result.storyboard.as_posix() if result.storyboard else "nothing"
-    yield Text(f"Wrote {where}, {len(result.panels)} panels.")
+    yield Text(f"Wrote {where}, {counted(len(result.panels), 'panel')}.")
 
 
 def _serve(result: ServeResult) -> Iterable[RenderableType]:
-    yield Text(f"Serving {result.root.as_posix()} on {result.url}")
+    yield Text(f"Serving {result.url}")
 
 
 def _narrate(result: NarrateResult) -> Iterable[RenderableType]:
@@ -378,7 +364,7 @@ def _narrate(result: NarrateResult) -> Iterable[RenderableType]:
     for take in result.sections:
         table.add_row(str(take.section), take.status.value, str(take.characters), f"{take.seconds or 0:.1f}")
     yield table
-    yield Text(f"Spent {_money(result.spend.dollars)} on {result.voice.value} narration.")
+    yield Text(f"Spent {money(result.spend.dollars)} on {result.voice.value} narration.")
 
 
 def _cue(result: CueResult) -> Iterable[RenderableType]:
@@ -411,11 +397,11 @@ def _soundscape(result: SoundscapeResult) -> Iterable[RenderableType]:
     # A run that bought nothing still prices what it would have bought, and a bare "Spent" line over
     # that number reads as a charge nobody made.
     charged = result.spend.state is SpendState.CHARGED
-    yield Text(f"{'Spent' if charged else 'Would spend'} {_money(result.spend.dollars)} on the soundscape.")
+    yield Text(f"{'Spent' if charged else 'Would spend'} {money(result.spend.dollars)} on the soundscape.")
 
 
 def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
-    yield Text(f"Built {result.film.as_posix()}, {_clock(result.film_seconds)} long.")
+    yield Text(f"Built {result.film.as_posix()}, {clock(result.film_seconds)} long.")
     if result.loudness is not None:
         yield Text(
             f"Loudness {result.loudness.integrated_lufs:.1f} LUFS against {result.loudness.target_lufs:.1f}.",
@@ -424,7 +410,7 @@ def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
 
 
 def _verify(result: VerifyResult) -> Iterable[RenderableType]:
-    yield Text(f"Verifying {result.film.as_posix()}, {_clock(result.film_seconds)} long.")
+    yield Text(f"Verifying {result.film.as_posix()}, {clock(result.film_seconds)} long.")
     measured = [cue for cue in result.cues if cue.offset is not None]
     if measured:
         table = _table("Section", "Cue", "Spoken", "Shown", "Offset")
@@ -442,9 +428,14 @@ def _verify(result: VerifyResult) -> Iterable[RenderableType]:
 def _build(result: BuildResult) -> Iterable[RenderableType]:
     # The stages are not printed again here. Each one was reported as it ran, by the live region on
     # a terminal and by one plain line in a pipe, so this is the run's own last sentence.
-    where = result.film.as_posix() if result.film else "nothing"
-    found = f"{len(result.findings)} findings" if result.findings else "nothing found"
-    yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {_money(result.spend.dollars)}, {found}")
+    count = len(result.findings)
+    found = "nothing found" if not count else counted(count, "finding")
+    if result.stopped_at is not None:
+        stopped = f"at {result.stopped_at.value}"
+        yield Text(f"{'Stopped'.rjust(STAGE_COLUMN)} {stopped}, {money(result.spend.dollars)}, {found}")
+    else:
+        where = result.film.as_posix() if result.film else "nothing"
+        yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {money(result.spend.dollars)}, {found}")
     if result.storyboard is not None:
         yield Text(f"{'Next'.rjust(STAGE_COLUMN)} open {result.storyboard.as_posix()}", style=QUIET_STYLE)
 
@@ -490,7 +481,7 @@ def _config_explain(result: ConfigExplainResult) -> Iterable[RenderableType]:
 
 def _scalar(value: object) -> str:
     """One settings value as a row prints it, which is JSON's own spelling for everything but a string."""
-    return value if isinstance(value, str) else repr(value)
+    return value if isinstance(value, str) else json_text(value)
 
 
 RENDERERS: dict[type[Result], Callable[[Any], Iterable[RenderableType]]] = {
@@ -519,26 +510,13 @@ RENDERERS: dict[type[Result], Callable[[Any], Iterable[RenderableType]]] = {
 """One reading per result, so the command returns its result and the reading lives in one place."""
 
 
-@dataclass
-class Counted:
-    """How a run's judgements land against the threshold the caller set."""
-
-    findings: tuple[Finding, ...] = ()
-    allowed: frozenset[Code] = field(default_factory=frozenset)
-
-    @property
-    def judged(self) -> tuple[Finding, ...]:
-        """Every judgement the caller did not carry on past with `--allow`."""
-        return tuple(found for found in self.findings if found.code not in self.allowed)
-
-
 __all__ = [
-    "Counted",
     "Jsonl",
     "Lines",
     "Notes",
     "Opening",
     "Region",
+    "Renderer",
     "error_block",
     "finding_lines",
     "render",

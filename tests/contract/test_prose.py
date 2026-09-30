@@ -6,6 +6,10 @@ where a reader meets it as punctuation, because a colon or a full stop says the 
 dash is already spoken for: it is DeckTalk's own beat marker in a script, so a dash in prose and a
 dash in data would be one character with two meanings.
 
+Each rule is one test that lists every offending line in every file, because these are lint rather
+than behaviour: a test per file made them four fifths of the suite's count and said nothing more.
+They run once, in the lint row, rather than in the unit suite on every Python.
+
 The third rule, that every sentence is complete and declarative, is not held here and the panel said
 so out loud. Any regex over it passes everything or fails every heading, table and code fence, and a
 proxy a contributor learns to satisfy is worse than no mechanism at all. `CONTRIBUTING.md` names it
@@ -144,25 +148,21 @@ def offences(path: Path, character: str) -> list[str]:
     return [f"{name}:{number}: {line.strip()[:100]}" for number, line in prose(path) if character in strip_data(line)]
 
 
-PROSE_FILES = [path for path in tracked() if readable(path)]
-IDS = [path.relative_to(REPO).as_posix() for path in PROSE_FILES]
+def every_offence(character: str, paths: list[Path]) -> list[str]:
+    """Every line of every file in `paths` where this character stands in prose, as one list a person reads."""
+    return [line for path in paths for line in offences(path, character)]
 
 
-@pytest.mark.parametrize("path", PROSE_FILES, ids=IDS)
-def test_no_tracked_file_writes_an_em_dash_in_prose(path: Path):
+def test_no_tracked_file_writes_an_em_dash_in_prose():
     """The dash is the beat a script writes, so in a sentence it is a colon or a full stop instead."""
-    found = offences(path, EM_DASH)
+    found = every_offence(EM_DASH, [path for path in tracked() if readable(path)])
     assert found == [], "\n".join(found)
 
 
-@pytest.mark.parametrize(
-    "path",
-    [path for path in PROSE_FILES if path.suffix not in SEMICOLON_EXEMPT_SUFFIXES],
-    ids=[name for name in IDS if Path(name).suffix not in SEMICOLON_EXEMPT_SUFFIXES],
-)
-def test_no_tracked_file_joins_two_clauses_with_a_semicolon(path: Path):
+def test_no_tracked_file_joins_two_clauses_with_a_semicolon():
     """Two clauses a semicolon joins are one sentence with one less thing to read as two sentences."""
-    found = offences(path, SEMICOLON)
+    paths = [path for path in tracked() if readable(path) and path.suffix not in SEMICOLON_EXEMPT_SUFFIXES]
+    found = every_offence(SEMICOLON, paths)
     assert found == [], "\n".join(found)
 
 

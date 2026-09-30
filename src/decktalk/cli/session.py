@@ -12,12 +12,10 @@ A prompt an agent cannot answer and a flag that does not exist are the same fail
 
 from __future__ import annotations
 
-import json
-import os
-import sys
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -27,16 +25,14 @@ from typer._click import Context
 
 from decktalk import project as projects
 from decktalk.cli import output
-from decktalk.cli.options import FailOn, When
-from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorCode, ErrorInfo
+from decktalk.cli.options import FailOn, When, pairs
+from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorInfo
 from decktalk.events import Events
-from decktalk.findings import Certainty, Code
+from decktalk.files import json_text
+from decktalk.findings import Certainty, Code, Finding
 from decktalk.machine import Machine
 from decktalk.project import Project
-from decktalk.results import ErrorResult, Result, Spend, Voicing
-
-NO_COLOR = "NO_COLOR"
-"""The variable a reader sets to ask every tool for no colour, which is honoured before any flag."""
+from decktalk.results import ErrorResult, Result, Spend, Voicing, counted
 
 FOUND_SOMETHING = 1
 """What a run exits with when it judged something at or above the threshold `--fail-on` set."""
@@ -100,27 +96,25 @@ class Session:
         self.spend = False
         self.max_cost: float | None = None
         self._said = False
-        self.out = Console(
-            file=sys.stdout,
-            no_color=flags.color is When.NEVER,
-            force_terminal=True if flags.color is When.ALWAYS else None,
-            soft_wrap=True,
-        )
-        self.err = Console(
-            stderr=True,
-            no_color=flags.color is When.NEVER,
-            force_terminal=True if flags.color is When.ALWAYS else None,
-            soft_wrap=True,
+        self.out, self.err = (
+            Console(
+                stderr=stderr,
+                # None hands the choice to rich, which reads NO_COLOR, so the variable a reader sets to
+                # ask every tool for no colour is honoured before any flag, `--color always` included.
+                no_color=True if flags.color is When.NEVER else None,
+                force_terminal=True if flags.color is When.ALWAYS else None,
+                soft_wrap=True,
+            )
+            for stderr in (False, True)
         )
         self.terminal = Terminal(
             is_terminal=self.err.is_terminal,
             is_dumb=self.err.is_dumb_terminal,
-            no_color=self.err.no_color or bool(os.environ.get(NO_COLOR)),
+            no_color=self.err.no_color,
             json=flags.json_out,
             events=flags.events,
             quiet=flags.quiet,
         )
-        self._machine: Machine | None = None
         self._overrides: tuple[str, ...] = ()
 
     # ---- what the command opens -------------------------------------------------------------
@@ -129,37 +123,59 @@ class Session:
         """Hold this run's `--set` pairs, which are validated by the loader the first call opens."""
         self._overrides = tuple(overrides)
 
-    @property
+    def opened(self, overrides: Sequence[str] | None) -> Project:
+        """This run's project, opened with its `--set` pairs, which the loader validates before a stage runs."""
+        self.overriding(pairs(overrides))
+        return self.project()
+
+    @cached_property
     def machine(self) -> Machine:
         """This machine, read once, which is the only reading of the environment there is."""
-        if self._machine is None:
-            self._machine = Machine.from_environment(overrides=_split(self._overrides))
-        return self._machine
+        return Machine.from_environment(overrides=self._overrides)
 
     def project(self) -> Project:
-        """The project this run is about, opened on this machine with this run's overrides."""
-        return projects.open(self.flags.project, machine=self.machine, overrides=self._overrides)
+        """The project this run is about, opened on this machine, which already carries this run's overrides.
+
+        The machine is made from every `--set` pair, and a project opened on it starts from the
+        machine's own overrides, so the project is given none of its own. A machine-scoped pair given
+        to the project a second time would be refused, because a project may not set one.
+        """
+        return projects.open(self.flags.project, machine=self.machine)
+
+    def fixes_wanted(self, findings: Sequence[Finding], fix: bool | None) -> list[Finding]:
+        """The findings whose fixes the caller wants applied, asked once on a terminal, or none.
+
+        A run with no terminal and no `fix` applies nothing, so an agent applies the fixes itself
+        from the objects it holds.
+        """
+        offered = [found for found in findings if found.fix is not None]
+        return offered if offered and self.approve(fix, f"Apply {counted(len(offered), 'fix', 'fixes')}?") else []
 
     # ---- the stream -------------------------------------------------------------------------
 
     @contextmanager
-    def watching(self, events: Events, *, opening: bool = False) -> Iterator[None]:
+    def watching(self, events: Events, *, opening: bool = False, heard: set[str] | None = None) -> Iterator[None]:
         """Render this call's events for as long as it runs, and leave the stream as it was found.
 
         `opening` names the run and its events file on the first line of stderr, which is what lets
-        an agent that backgrounds a build name its own events file while the run is live.
+        an agent that backgrounds a build name its own events file while the run is live. `heard` is
+        the set of notes already printed by an earlier call of the same command, which are not
+        printed again.
+
+        Under `--events` stderr carries the JSON lines and nothing else, because a reader parses every
+        line of it. The log lines are among them, and `run.start` already names the events file.
         """
-        renderers: list[Any] = [output.Notes(self.err, verbose=self.flags.verbose, quiet=self.flags.quiet)]
-        if opening:
-            renderers.append(output.Opening(self.err))
+        renderers: list[output.Renderer] = []
         if self.terminal.events:
             renderers.append(output.Jsonl(self.err))
-        elif self.terminal.quiet:
-            pass
-        elif self.terminal.live:
-            renderers.append(output.Region(self.err))
         else:
-            renderers.append(output.Lines(self.err))
+            renderers.append(output.Notes(self.err, verbose=self.flags.verbose, quiet=self.flags.quiet, heard=heard))
+            if opening:
+                renderers.append(output.Opening(self.err))
+            if self.terminal.live and not self.terminal.quiet:
+                renderers.append(output.Region(self.err))
+            elif not self.terminal.quiet:
+                renderers.append(output.Lines(self.err))
         for renderer in renderers:
             renderer.open()
         subscriptions = [events.subscribe(renderer) for renderer in renderers]
@@ -178,6 +194,12 @@ class Session:
         """True when this run may ask a person a question, which needs a terminal and no `--no-input`."""
         return self.terminal.is_terminal and not self.flags.no_input and not self.flags.json_out
 
+    def approve(self, flag: bool | None, question: str, *, default: bool = False) -> bool:
+        """The caller's own answer when a flag gave one, else a person's on a terminal, else no."""
+        if flag is not None:
+            return flag
+        return self.asks and self.confirm(question, default=default)
+
     def confirm(self, question: str, *, default: bool = False) -> bool:
         """Ask one yes or no question on stderr, which is only ever called when `asks` is true."""
         return bool(typer.confirm(question, default=default, err=True))
@@ -186,13 +208,9 @@ class Session:
         """Ask one question with a default on stderr, which is only ever called when `asks` is true."""
         return str(typer.prompt(question, default=default, err=True))
 
-    def refuse(self, message: str, *, hint: str) -> ApprovalRequired:
-        """The refusal a run makes when a prompt had no terminal and no flag answered it."""
-        return ApprovalRequired(message, hint=hint)
-
     def say(self, message: str) -> None:
-        """One sentence on stderr, which is where everything but the result goes."""
-        if not self.flags.quiet:
+        """One sentence on stderr, which is where everything but the result goes, unless `--events` holds it."""
+        if not self.flags.quiet and not self.terminal.events:
             self.err.print(message)
 
     # ---- the spend gate -----------------------------------------------------------------------
@@ -215,11 +233,11 @@ class Session:
             return Voicing.PAID
         priced = self.price(project)
         if not self.asks:
-            raise self.refuse(_spend_sentence(priced), hint=_spend_hint(self.command))
+            raise ApprovalRequired(_spend_sentence(priced), hint=_spend_hint(self.command))
         if storyboard:
             self.say(self.storyboard_line(project))
         if priced is not None:
-            self.say(f"Voicing costs up to ${priced.ceiling_dollars:.2f} at ${priced.dollars:.2f} for what changed.")
+            self.say(priced.sentence)
         if self.confirm("Spend that now?"):
             return Voicing.PAID
         return Voicing.PLACEHOLDER
@@ -233,6 +251,7 @@ class Session:
         try:
             return project.check(pages=False, frames=False).spend
         except DeckTalkError:
+            # silent: the check run's own run.done line carries why it could not price.
             return None
 
     def storyboard_line(self, project: Project) -> str:
@@ -243,7 +262,7 @@ class Session:
         """
         written = project.storyboard()
         where = written.storyboard.as_posix() if written.storyboard else "nothing"
-        return f"Storyboard {where}, {len(written.panels)} panels."
+        return f"Storyboard {where}, {counted(len(written.panels), 'panel')}."
 
     # ---- how a command ends -------------------------------------------------------------------
 
@@ -262,8 +281,7 @@ class Session:
             return self.exit_code(result)
         self._said = True
         if self.flags.json_out:
-            self.out.file.write(result.model_dump_json(indent=2) + "\n")
-            self.out.file.flush()
+            self._stdout(result.model_dump_json(indent=2))
         else:
             output.render(result, self.out)
         return self.exit_code(result)
@@ -275,9 +293,13 @@ class Session:
         `schema` set to 2 inside a document about schemas is unreadable.
         """
         self._said = True
-        self.out.file.write(json.dumps(contract, indent=2, sort_keys=False, default=str) + "\n")
-        self.out.file.flush()
+        self._stdout(json_text(contract, indent=2))
         return 0
+
+    def _stdout(self, text: str) -> None:
+        """Write one JSON document on stdout whole, flushed so a reader that waits on it gets it now."""
+        self.out.file.write(text + "\n")
+        self.out.file.flush()
 
     def exit_code(self, result: Result) -> int:
         """0 found nothing, 1 found something at the threshold, and the code's own when it could not run."""
@@ -297,34 +319,30 @@ class Session:
     def reported(self, info: ErrorInfo) -> int:
         """Write one refusal, and give back the exit code its own code carries."""
         if self.flags.json_out:
-            self.out.file.write(ErrorResult(ok=False, error=info).model_dump_json(indent=2) + "\n")
-            self.out.file.flush()
+            self._stdout(ErrorResult(ok=False, error=info).model_dump_json(indent=2))
+        elif self.terminal.events:
+            # Every line of stderr is one JSON object under `--events`, so the refusal is one as well.
+            self.err.file.write(ErrorResult(ok=False, error=info).model_dump_json() + "\n")
+            self.err.file.flush()
         else:
             output.error_block(info, self.err)
         return info.code.exit_code
 
     def bug(self, failure: BaseException) -> int:
-        """Report anything DeckTalk did not mean to raise, with its traceback under `-v` alone."""
-        if self.flags.verbose:
+        """Report anything DeckTalk did not mean to raise, with its traceback under `-v` alone.
+
+        The traceback is never written under `--events`, because every line of stderr is JSON there.
+        """
+        if self.flags.verbose and not self.terminal.events:
             self.err.print_exception()
-        info = ErrorInfo(
-            code=ErrorCode.INTERNAL,
-            message=f"{type(failure).__name__}: {failure}",
-            hint="Run the command again with -v for the traceback, and open an issue with it.",
-            docs=ErrorCode.INTERNAL.url,
-        )
-        return self.reported(info)
+        return self.reported(ErrorInfo.of_failure(failure))
 
 
 def _spend_sentence(spend: Spend | None) -> str:
     """The sentence an approval refusal carries, with the price in it whenever the price is known."""
     if spend is None:
-        return "this run would voice narration and no terminal is here to approve it."
-    sends = f"sends {spend.characters} characters and " if spend.characters else ""
-    return (
-        f"voicing {len(spend.sections)} sections {sends}costs up to ${spend.ceiling_dollars:.2f}, "
-        "and no terminal is here to approve it."
-    )
+        return "This run would voice narration and no terminal is here to approve it."
+    return f"{spend.sentence} No terminal is here to approve it."
 
 
 def _spend_hint(command: str) -> str:
@@ -333,11 +351,6 @@ def _spend_hint(command: str) -> str:
         f"Run decktalk {command} --spend to approve that spend, or decktalk {command} --no-voice to "
         "finish with placeholder narration."
     )
-
-
-def _split(overrides: Sequence[str]) -> tuple[tuple[str, str], ...]:
-    """Each `--set` pair as its two halves, which is how a machine takes them."""
-    return tuple((pair.partition("=")[0], pair.partition("=")[2]) for pair in overrides)
 
 
 def of(ctx: Context) -> Session:

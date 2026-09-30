@@ -1,0 +1,26 @@
+{
+  "about": "Cases for the four pure functions the page contract publishes. The node suite runs every case against contract.ts, and pytest runs the cases of the two that Python also computes against the generated page.py, so both implementations answer one table.",
+  "tolerance": 1e-9,
+  "wire_id": [
+    { "args": ["4.1", "expand"], "want": "4.1:expand" },
+    { "args": ["intro", "a:b"], "want": "intro:a:b" }
+  ],
+  "stagger_span": [
+    { "args": [0.08, 4, 0.32], "want": 0.56 },
+    { "args": [0.08, 1, 0.32], "want": 0.32 },
+    { "args": [0.08, 0, 0.32], "want": 0 },
+    { "args": [0.2, 4, 0.44], "want": 1.04 }
+  ],
+  "measurable": [
+    { "args": [0.44], "want": true },
+    { "args": [0.46], "want": true },
+    { "args": [0.5], "want": false },
+    { "args": [1.04], "want": false }
+  ],
+  "scaled": [
+    { "args": [0.2, 1.5], "want": 0.3 },
+    { "args": [0.44, 1], "want": 0.44 },
+    { "args": [0.44, 4], "want": 0.46 },
+    { "args": [0.24, 0.5], "want": 0.12 }
+  ]
+}

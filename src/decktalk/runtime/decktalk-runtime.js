@@ -1,3 +1,4 @@
+/*! decktalk-runtime 0.5.0 */
 "use strict";
 (() => {
   // src/decktalk/runtime/src/contract.ts
@@ -24,7 +25,7 @@
   var MILLISECONDS = 1e3;
   var SECOND_DIGITS = 3;
   var FRAME_STEP_MS = 40;
-  var MEASURABLE_SPAN_SECONDS = 0.5;
+  var PLAYABLE_SPAN_SECONDS = 0.46;
   var APPEAR_WORDS_MAX = 8;
   var BACK_OPACITY = 0.45;
   var ENTRANCES = {
@@ -32,7 +33,7 @@
     settle: { seconds: 0.28, liftPixels: 4, overshootPercent: 0 },
     fade: { seconds: 0.24, liftPixels: 0, overshootPercent: 0 },
     pop: { seconds: 0.2, liftPixels: 0, overshootPercent: 4 },
-    draw: { seconds: 0.48, liftPixels: 0, overshootPercent: 0 },
+    draw: { seconds: 0.44, liftPixels: 0, overshootPercent: 0 },
     cut: { seconds: 0, liftPixels: 0, overshootPercent: 0 },
   };
   var EXITS = {
@@ -48,8 +49,8 @@
     appear: { seconds: 0.12 },
   };
   var COUNTS = {
-    last: { seconds: 0.48 },
-    first: { seconds: 0.48 },
+    last: { seconds: 0.44 },
+    first: { seconds: 0.44 },
   };
   var ATTENTION = {
     back: { seconds: 0.28 },
@@ -201,11 +202,6 @@
       certainty: "certain",
       raisedBy: "python",
     },
-    PAGE_WORD_LATE: {
-      message: "The first synced word of {value} was shown after the voice reached it, so the line trails the speech.",
-      certainty: "uncertain",
-      raisedBy: "python",
-    },
     PAGE_THIN_DRAW: {
       message: "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
       certainty: "uncertain",
@@ -243,9 +239,15 @@
       certainty: "certain",
       raisedBy: "python",
     },
+    PAGE_RUNTIME_STALE: {
+      message:
+        "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
+      certainty: "certain",
+      raisedBy: "python",
+    },
   };
   var READ_FROM_THE_PAGE = null;
-  var IN_SECONDS_RANGE = { min: 0.12, max: 0.48, step: 0.04, unit: "seconds" };
+  var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
   var HOLD_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
@@ -544,6 +546,10 @@
   var PAIR_SEPARATOR = "|";
   var PAIR_MARK = ":";
   var WIRE_MARK = ":";
+  var TIME_MARK = "@";
+  var LIST_SEPARATOR = ",";
+  var PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json";
+  var MOTION_SCALE_PROPERTY = "--dt-motion-scale";
   function wireId(slide, local) {
     return `${slide}${WIRE_MARK}${local}`;
   }
@@ -579,8 +585,11 @@
     }
     return value.trim() ? null : "a value";
   }
+  function staggerSpan(step, children, entrance) {
+    return children > 0 ? step * (children - 1) + entrance : 0;
+  }
   function scaled(span2, scale2) {
-    return Math.min(span2 * scale2, MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1e3);
+    return Math.min(span2 * scale2, PLAYABLE_SPAN_SECONDS);
   }
 
   // src/decktalk/runtime/src/clock.ts
@@ -855,8 +864,7 @@
   function arrivalSpan(el) {
     const entrance = entranceSeconds(el);
     const step = staggerSeconds(el);
-    const children = step === null ? 0 : el.children.length;
-    const spread = step === null ? entrance : step * Math.max(0, children - 1) + entrance;
+    const spread = step === null ? entrance : staggerSpan(step, el.children.length, entrance);
     const count2 = countOf(el) === null ? 0 : COUNTS[countOf(el)].seconds;
     const line2 = flagged(el, ATTR.words) ? WORD_STYLES[wordStyleOf(el)].seconds : 0;
     return Math.max(spread, count2, line2);
@@ -1111,7 +1119,6 @@
   var POP_ENTRY_SCALE = 0.7;
   var POP_OVERSHOOT_AT = 60;
   var FALL_PIXELS = ENTRANCES.rise.liftPixels;
-  var SCALE_PROPERTY = "--dt-motion-scale";
   var SPAN_PROPERTY = "--dt-span";
   var CLASS = {
     slide: "dt-slide",
@@ -1239,12 +1246,12 @@
     return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
   }
   function motionScale2() {
-    const written2 = getComputedStyle(document.documentElement).getPropertyValue(SCALE_PROPERTY).trim();
+    const written2 = getComputedStyle(document.documentElement).getPropertyValue(MOTION_SCALE_PROPERTY).trim();
     const scale2 = Number.parseFloat(written2);
     return Number.isFinite(scale2) && scale2 > 0 ? scale2 : 1;
   }
   function span(el, seconds2) {
-    el.style.setProperty(SPAN_PROPERTY, `${Math.min(scaled(seconds2, motionScale2()), MEASURABLE_SPAN_SECONDS)}s`);
+    el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds2, motionScale2())}s`);
   }
   function build(hud) {
     if (stageEl) return;
@@ -1293,10 +1300,10 @@
     if (hudEl) hudEl.textContent = line2;
   }
   function slideSeconds(word2) {
-    return Math.min(scaled(SLIDE_ENTRANCES[word2].seconds, motionScale2()), MEASURABLE_SPAN_SECONDS);
+    return scaled(SLIDE_ENTRANCES[word2].seconds, motionScale2());
   }
   function countSeconds(word2) {
-    return Math.min(scaled(COUNTS[word2].seconds, motionScale2()), MEASURABLE_SPAN_SECONDS);
+    return scaled(COUNTS[word2].seconds, motionScale2());
   }
 
   // src/decktalk/runtime/src/telemetry.ts
@@ -1307,9 +1314,12 @@
    * interface, and the arrays, the retention caps and the follow-up frame stamps live in the probe the
    * recorder injects. A page opened without the probe keeps the no-op default and allocates nothing.
    *
-   * This module holds the interface, the default and the one setter. It has no DOM and no state a
-   * reader can see, so a runtime module that wants to record something imports `recorder()` and calls
-   * it without ever knowing whether anyone is listening.
+   * This module holds the interface, the default and the one setter, and the types of everything that
+   * crosses the seam: the view the runtime publishes, the probe the recorder injects and the catalog
+   * the two of them fill. The runtime and the probe are two bundles that meet only on `window`, so these
+   * types are the one declaration both compile against. It has no DOM and no state a reader can see,
+   * so a runtime module that wants to record something imports `recorder()` and calls it without ever
+   * knowing whether anyone is listening.
    */
   var NOBODY = {
     cue() {},
@@ -1668,7 +1678,6 @@
   var SIGNAL = "signal";
   var ON = "1";
   var SLOWEST = 0.05;
-  var CUE_TIMES = "/__decktalk/cue-times.json";
   var PREVIEW_STEP_SECONDS = 1;
   var DONE = "1";
   var state = {
@@ -1777,11 +1786,11 @@
   }
   function parseCues(raw) {
     return raw
-      .split(",")
+      .split(LIST_SEPARATOR)
       .map((token) => token.trim())
       .filter(Boolean)
       .map((token) => {
-        const mark = token.lastIndexOf("@");
+        const mark = token.lastIndexOf(TIME_MARK);
         return { id: token.slice(0, mark), at: Number.parseFloat(token.slice(mark + 1)) };
       })
       .filter((cue) => cue.id && !Number.isNaN(cue.at))
@@ -1789,9 +1798,9 @@
   }
   function parseWords(raw) {
     return raw
-      .split(",")
+      .split(LIST_SEPARATOR)
       .map((item) => {
-        const mark = item.lastIndexOf("@");
+        const mark = item.lastIndexOf(TIME_MARK);
         return { key: key(item.slice(0, mark)), at: Number.parseFloat(item.slice(mark + 1)) };
       })
       .filter((word2) => word2.key && !Number.isNaN(word2.at));
@@ -1857,7 +1866,7 @@
   async function resolvedCues(sceneId) {
     let document_;
     try {
-      const answer = await fetch(CUE_TIMES);
+      const answer = await fetch(PREVIEW_CUE_TIMES);
       if (!answer.ok) return null;
       document_ = await answer.json();
     } catch {
@@ -1949,7 +1958,7 @@
     let listing = false;
     let waiting2 = Promise.resolve();
     if (frozen) {
-      stop(params.get(SLIDE) ?? "", (order2, slide) => probe?.freezeCues?.(order2, slide, warn) ?? order2);
+      stop(params.get(SLIDE) ?? "", (order2, slide) => probe?.freezeCues(order2, slide, warn) ?? order2);
     } else if (chosen !== null || cues.length) {
       const scene = chosen !== null ? (all().get(chosen) ?? null) : (ownerOf(cues[0].id)?.scene ?? null);
       if (!scene) index(`unknown scene ${chosen ?? ""}`);
@@ -1991,7 +2000,7 @@
       }
     }
     layer.remove();
-    probe?.measure?.(state.catalog, {
+    probe?.measure(state.catalog, {
       scenes: all(),
       pan: pan(),
       origin: frame2(),

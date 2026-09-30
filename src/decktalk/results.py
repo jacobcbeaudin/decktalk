@@ -24,14 +24,16 @@ rather than by a hand-written strip in every test.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import AfterValidator, Field, JsonValue
 
 from decktalk.errors import ErrorInfo
-from decktalk.findings import MODEL, Code, Finding, ProjectPath
+from decktalk.findings import Code, Finding, Model, ProjectPath
+from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Outcome, Stage
 
 SCHEMA = 2
@@ -55,8 +57,13 @@ Written = Annotated[
 Elapsed = Annotated[
     float,
     Field(ge=0, description="How long this call took, in seconds.", json_schema_extra=VOLATILE),
+    AfterValidator(lambda seconds: round(seconds, SECOND_DIGITS)),
 ]
-"""A wall-clock duration, which is measured rather than computed and so is never compared."""
+"""A wall-clock duration, which is measured rather than computed and so is never compared.
+
+It is rounded where it is declared, so a run, a stage, a section and a result all read their
+clocks the same way and no emitter rounds for itself.
+"""
 
 NextCommand = Annotated[
     str | None,
@@ -69,6 +76,11 @@ SectionNumber = Annotated[int, Field(ge=0, description="The section this row is 
 
 SectionKey = Annotated[str, Field(description="The section's key, which names its files under build/.")]
 """A section's key, which is the stable name its recording, its take and its cut are filed under."""
+
+
+def section_key(number: int) -> str:
+    """The key of the section with this number, which is its number in two digits."""
+    return f"{number:02d}"
 
 
 class Voicing(Enum):
@@ -104,6 +116,35 @@ class Scope(Enum):
 
     PROJECT = "project"
     MACHINE = "machine"
+
+
+class Nature(Enum):
+    """The four-way test every number takes, which decides whether it can be a key at all.
+
+    A number is a key when a project could hold another value for a reason a sentence can state.
+    Taste and apparatus are the two answers that make one, and truth and derived are the two that
+    make a published number instead, so an agent that cannot find a knob learns the number is
+    deliberately not one rather than proposing a setting that cannot exist. Calibration is the
+    fifth answer and belongs to a published number alone: it is a fact measured once from a tool
+    DeckTalk drives, so it is neither a standard nor arithmetic and no project may state it.
+    """
+
+    TASTE = "taste"
+    APPARATUS = "apparatus"
+    TRUTH = "truth"
+    DERIVED = "derived"
+    CALIBRATION = "calibration"
+
+
+class Source(Enum):
+    """Where the value in force is expected to come from, which decides who may write it.
+
+    A stated key is one DeckTalk cannot know and the operator must supply, such as a price, which is
+    why it names the evidence the operator reads it from.
+    """
+
+    CHOSEN = "chosen"
+    STATED = "stated"
 
 
 class TakeStatus(Enum):
@@ -148,25 +189,28 @@ class SkipReason(Enum):
     """Why one measurement was not taken, so a skipped row is never read as a passing one."""
 
     AT_SECTION_START = "at_section_start"
-    CLIP_SECTION = "clip_section"
-    NO_CATALOG = "no_catalog"
     NO_CUES = "no_cues"
     NO_ONSET = "no_onset"
     NO_SLIDE = "no_slide"
     NOT_ASSEMBLED = "not_assembled"
     OPTED_OUT = "opted_out"
-    REFERENCE_CLAMPED = "reference_clamped"
     TOO_CLOSE_TO_END = "too_close_to_end"
 
 
-class Spend(BaseModel):
+def counted(count: int, noun: str, plural: str | None = None) -> str:
+    """A count and its noun, singular for one and plural otherwise, which every sentence that counts uses.
+
+    The plural adds an s unless the caller names it, which a noun such as fix needs.
+    """
+    return f"{count:,} {noun if count == 1 else plural or noun + 's'}"
+
+
+class Spend(Model):
     """What a run costs, priced once so a caller never works it out from a character count.
 
     `--max-cost` is compared against `ceiling_dollars` and never against `dollars`, because credits
     are consumed one request at a time and a cap that claimed to stop a run halfway would be a lie.
     """
-
-    model_config = MODEL
 
     state: SpendState = Field(description="Whether this is what the run would cost or what it did cost.")
     sections: tuple[SectionNumber, ...] = Field(description="The sections this price covers, in script order.")
@@ -176,25 +220,55 @@ class Spend(BaseModel):
     price_per_1000_characters: float = Field(ge=0, description="The rate this price was worked out at.")
     price_layer: Layer = Field(description="Which layer set that rate, where default means nobody stated it.")
 
+    @property
+    def sentence(self) -> str:
+        """This price in one sentence, which tells the figure a run certainly spends from its ceiling.
 
-class Word(BaseModel):
+        A take that could not be matched to a voice may already be on disk, so it counts toward the
+        ceiling and never toward the price. When the two differ the sentence says which is which,
+        because "about $0.00, up to $0.14" reads as a contradiction to anyone not holding the rule.
+        Every surface that states a price states this sentence, so the rule is written once.
+        """
+        rate = f"{money(self.price_per_1000_characters)} per 1,000 characters"
+        if self.state is SpendState.CHARGED:
+            if self.dollars == self.ceiling_dollars == 0:
+                return "This run bought nothing."
+            return f"This run spent {money(self.dollars)} on {counted(self.characters, 'character')} at {rate}."
+        if self.ceiling_dollars == 0:
+            return "This run buys nothing."
+        if self.dollars == self.ceiling_dollars:
+            return f"This run costs {money(self.dollars)} for {counted(self.characters, 'character')} at {rate}."
+        if self.dollars == 0:
+            return (
+                "The takes on disk could not be matched to a voice, so this run costs up to "
+                f"{money(self.ceiling_dollars)} at {rate}."
+            )
+        return (
+            f"This run costs {money(self.dollars)} for the sections that certainly need a take, and up to "
+            f"{money(self.ceiling_dollars)} if the takes that could not be matched to a voice need one too, "
+            f"at {rate}."
+        )
+
+
+def money(dollars: float) -> str:
+    """An amount in US dollars as a price is written, to the cent."""
+    return f"${dollars:.2f}"
+
+
+class Word(Model):
     """One spoken word with its span, in seconds after its section starts."""
-
-    model_config = MODEL
 
     word: str = Field(description="The word as the script spells it.")
     start: float = Field(ge=0, description="When the word starts, in seconds after its section starts.")
     end: float = Field(ge=0, description="When the word ends, in seconds after its section starts.")
 
 
-class Result(BaseModel):
+class Result(Model):
     """What every call returns, with the four keys every result reserves.
 
     A subclass adds its own fields at the top level, because the JSON is one flat object and a
     reader derives every count it wants from the arrays it already has.
     """
-
-    model_config = MODEL
 
     reports_findings: ClassVar[bool] = False
     """True when the command answering with this can report a judgement, so it takes --fail-on and --allow."""
@@ -216,22 +290,17 @@ class ErrorResult(Result):
     """
 
 
-class InstalledTool(BaseModel):
+class InstalledTool(Model):
     """One tool this machine holds or has just fetched."""
-
-    model_config = MODEL
 
     tool: str = Field(description="What the tool is called, such as ffmpeg or chromium.")
     version: str | None = Field(None, description="The version this machine holds, or null when it cannot be read.")
     path: ProjectPath | None = Field(None, description="Where the tool is, or null when it is not there.")
-    fetched: bool = Field(description="True when this run downloaded it rather than finding it.")
-    bytes: int | None = Field(None, ge=0, description="How large the download was, or null when nothing was fetched.")
+    fetched: bool = Field(False, description="True when this run downloaded it rather than finding it.")
 
 
-class SectionStatus(BaseModel):
+class SectionStatus(Model):
     """What one section has and what it still needs, as `status` reads it off disk."""
-
-    model_config = MODEL
 
     section: SectionNumber
     key: SectionKey
@@ -243,10 +312,8 @@ class SectionStatus(BaseModel):
     stale: bool = Field(description="True when what is on disk no longer matches what the project says.")
 
 
-class LiveRun(BaseModel):
+class LiveRun(Model):
     """One run whose events file is still open, which is how a caller finds a background build."""
-
-    model_config = MODEL
 
     run: Run
     events: ProjectPath = Field(description="The events file that run appends to, project-relative.")
@@ -254,10 +321,8 @@ class LiveRun(BaseModel):
     stage: Stage | None = Field(None, description="The stage that run was last in, or null before the first.")
 
 
-class SectionTake(BaseModel):
+class SectionTake(Model):
     """One section's take: what it cost, how long it runs and what the run did about it."""
-
-    model_config = MODEL
 
     section: SectionNumber
     key: SectionKey
@@ -268,10 +333,8 @@ class SectionTake(BaseModel):
     hash: str = Field(description="The content hash that decides whether a take may be reused.")
 
 
-class CueTime(BaseModel):
+class CueTime(Model):
     """One cue resolved against the words its section speaks."""
-
-    model_config = MODEL
 
     cue: str = Field(description="The cue's wire id, which is its slide and its local name.")
     phrase: str = Field(description="The phrase in the script this cue lands on.")
@@ -279,10 +342,8 @@ class CueTime(BaseModel):
     offset: float = Field(0.0, description="The author's own nudge in seconds, added to the resolved second.")
 
 
-class SectionCues(BaseModel):
+class SectionCues(Model):
     """One section's cues, each resolved to a second on that section's own clock."""
-
-    model_config = MODEL
 
     section: SectionNumber
     key: SectionKey
@@ -290,10 +351,8 @@ class SectionCues(BaseModel):
     cues: tuple[CueTime, ...] = Field(description="Every cue this section declares, in the order they play.")
 
 
-class SectionRecording(BaseModel):
+class SectionRecording(Model):
     """One section's recording, as the recorder left it."""
-
-    model_config = MODEL
 
     section: SectionNumber
     key: SectionKey
@@ -303,10 +362,8 @@ class SectionRecording(BaseModel):
     kept: bool = Field(description="True when the run left an existing recording alone.")
 
 
-class SoundItem(BaseModel):
+class SoundItem(Model):
     """One piece of the soundscape, which is a music bed, an ambience bed or an effect."""
-
-    model_config = MODEL
 
     name: str = Field(description="What the author calls this item in decktalk.toml.")
     kind: SoundKind = Field(description="Whether this item is music, ambience or an effect.")
@@ -316,10 +373,8 @@ class SoundItem(BaseModel):
     file: ProjectPath | None = Field(None, description="The item's audio file, or null before it exists.")
 
 
-class RenderedSection(BaseModel):
+class RenderedSection(Model):
     """One section as it sits in the finished film."""
-
-    model_config = MODEL
 
     section: SectionNumber
     key: SectionKey
@@ -329,10 +384,8 @@ class RenderedSection(BaseModel):
     substitute: Substitute | None = Field(None, description="What stood in for a missing file, or null.")
 
 
-class Loudness(BaseModel):
+class Loudness(Model):
     """What the mixed film measures against the loudness it was mastered to."""
-
-    model_config = MODEL
 
     integrated_lufs: float = Field(description="The film's integrated loudness.")
     true_peak_dbtp: float = Field(description="The film's highest true peak.")
@@ -340,20 +393,16 @@ class Loudness(BaseModel):
     target_lufs: float = Field(description="The integrated loudness the mix was aiming at.")
 
 
-class StartCheck(BaseModel):
+class StartCheck(Model):
     """What the first frame of one section looks like, which is how a black opening is caught."""
-
-    model_config = MODEL
 
     section: SectionNumber
     at: float = Field(ge=0, description="When this frame sits in the film, in seconds.")
     luma: float = Field(ge=0, description="The frame's brightest pixel, on the luma scale the settings bound.")
 
 
-class CutCheck(BaseModel):
+class CutCheck(Model):
     """What one seam between two sections sounds like."""
-
-    model_config = MODEL
 
     section: SectionNumber
     at: float = Field(ge=0, description="When the cut sits in the film, in seconds.")
@@ -361,20 +410,16 @@ class CutCheck(BaseModel):
     step_dbfs: float = Field(description="How far the waveform steps across the cut.")
 
 
-class SeamCheck(BaseModel):
+class SeamCheck(Model):
     """How far one section's picture has drifted from its own clock by the time it ends."""
-
-    model_config = MODEL
 
     section: SectionNumber
     at: float = Field(ge=0, description="When the seam sits in the film, in seconds.")
     drift: float = Field(description="How far the picture is from where the clock says it should be, in seconds.")
 
 
-class CueCheck(BaseModel):
+class CueCheck(Model):
     """One cue measured on the finished film against the word it was promised to."""
-
-    model_config = MODEL
 
     section: SectionNumber
     cue: str = Field(description="The cue's wire id.")
@@ -385,20 +430,16 @@ class CueCheck(BaseModel):
     skipped: SkipReason | None = Field(None, description="Why this cue was not measured, or null when it was.")
 
 
-class StageRun(BaseModel):
+class StageRun(Model):
     """One stage of one build, and how it ended."""
 
-    model_config = MODEL
-
     stage: Stage = Field(description="The stage this row is about.")
-    outcome: Outcome = Field(description="Whether the stage ran, was skipped, or failed.")
+    outcome: Outcome = Field(description="Whether the stage ran, was kept from the last run, was skipped, or failed.")
     seconds: Elapsed
 
 
-class SettingValue(BaseModel):
+class SettingValue(Model):
     """One settings key with the value in force and the layer that set it."""
-
-    model_config = MODEL
 
     key: str = Field(description="The key's dotted name, such as verify.cue_offset_max_ms.")
     value: JsonValue = Field(description="The value in force for this project on this machine.")
@@ -407,10 +448,8 @@ class SettingValue(BaseModel):
     file: ProjectPath | None = Field(None, description="The file that set it, or null when no file did.")
 
 
-class LayerValue(BaseModel):
+class LayerValue(Model):
     """One layer's answer for one key, whether or not that layer is the one in force."""
-
-    model_config = MODEL
 
     layer: Layer = Field(description="Which of the five layers this row is.")
     value: JsonValue = Field(description="The value this layer states, or the default when it is the default.")
@@ -418,10 +457,8 @@ class LayerValue(BaseModel):
     line: int | None = Field(None, ge=1, description="The line in that file, or null.")
 
 
-class NumberView(BaseModel):
+class NumberView(Model):
     """One published number a key feeds, with its inputs at the values in force."""
-
-    model_config = MODEL
 
     id: str = Field(description="The number's name, which is the key it replaced or the constant it is.")
     formula: str = Field(description="The expression this number is, which is what it is published as.")
@@ -432,10 +469,8 @@ class NumberView(BaseModel):
     sentence: str = Field(description="Why this number is not a knob, which opens with its nature.")
 
 
-class FixOutcome(BaseModel):
+class FixOutcome(Model):
     """What happened to one fix a caller asked to apply."""
-
-    model_config = MODEL
 
     code: Code = Field(description="The code of the finding this fix resolves.")
     title: str = Field(description="The fix's own sentence, as the finding published it.")
@@ -444,10 +479,8 @@ class FixOutcome(BaseModel):
     files: tuple[ProjectPath, ...] = Field((), description="Every file the fix changed, project-relative.")
 
 
-class SectionWords(BaseModel):
+class SectionWords(Model):
     """One section's spoken words, in seconds after that section starts."""
-
-    model_config = MODEL
 
     section: SectionNumber
     key: SectionKey
@@ -455,10 +488,8 @@ class SectionWords(BaseModel):
     words: tuple[Word, ...] = Field(description="Every word this section speaks, in the order it speaks them.")
 
 
-class Panel(BaseModel):
+class Panel(Model):
     """One frozen moment on the storyboard."""
-
-    model_config = MODEL
 
     section: SectionNumber
     slide: str = Field(description="The slide this panel shows.")
@@ -474,7 +505,7 @@ class InitResult(Result):
     written: Written
     root: ProjectPath = Field(description="The project directory this call created.")
     name: str = Field(description="The project's name, which its film is named after.")
-    example: str | None = Field(None, description="The packaged example this project was written from, or null.")
+    example: str = Field(description="The packaged example this project was written from.")
     skills: bool = Field(description="True when the packaged skills were written into the project.")
 
 
@@ -492,7 +523,6 @@ class DoctorResult(Result):
     reports_findings: ClassVar[bool] = True
 
     run: Run
-    written: Written
     tools: tuple[InstalledTool, ...] = Field(description="Every tool this machine needs, in the order it checks them.")
     cache: ProjectPath = Field(description="The directory the fetched tools live in.")
     python: str = Field(description="The Python this DeckTalk runs on.")
@@ -553,7 +583,6 @@ class ServeResult(Result):
     run: Run
     url: str = Field(description="The origin's base URL, which is where the deck is served.")
     port: int = Field(ge=1, description="The port the origin listens on.")
-    root: ProjectPath = Field(description="The directory the origin serves, project-relative.")
 
 
 class ConfigListResult(Result):
@@ -595,7 +624,11 @@ class ConfigUnsetResult(Result):
 
 
 class ConfigExplainResult(Result):
-    """One knob read whole: what it is, what it does, what may be set and what set it."""
+    """One knob read whole: what it is, what it does, what may be set, what set it and what it feeds.
+
+    `decktalk.explain` answers with this and `config explain` prints it, so the library and the
+    command give one answer about one knob.
+    """
 
     key: str = Field(description="The key's dotted name.")
     type: str = Field(description="The key's type, as the schema names it.")
@@ -604,15 +637,25 @@ class ConfigExplainResult(Result):
     default: JsonValue = Field(description="The value that would be in force with no override at all.")
     unit: str | None = Field(None, description="The true unit of the value, or null when it has none.")
     range: str = Field(description="The values this key accepts, as the schema states them.")
-    layer: Layer = Field(description="Which layer set the value in force.")
-    file: ProjectPath | None = Field(None, description="The file that set it, or null when no file did.")
-    line: int | None = Field(None, ge=1, description="The line in that file, or null.")
+    typed_range: str | None = Field(None, description="The wider range the type admits, which is not enforced.")
+    scope: Scope = Field(description="Which file this key belongs in.")
+    nature: Nature = Field(description="Why this number is a key at all, taste or apparatus.")
+    source: Source = Field(description="Where the value is expected to come from.")
+    evidence: str | None = Field(None, description="What produces the value, for a stated key.")
+    requires: str | None = Field(None, description="A relation to another key or number, enforced at load.")
+    see_also: tuple[str, ...] = Field((), description="Keys and published numbers that move with this one.")
+    layer: Layer = Field(
+        description="Which layer set the value in force, whose file and line are the last of `layers`."
+    )
     layers: tuple[LayerValue, ...] = Field(description="Every layer that stated this key, lowest first.")
     environment: str = Field(description="The environment variable that sets this key.")
-    stages: tuple[Stage, ...] = Field((), description="The stages that read this key.")
     decides: tuple[Code, ...] = Field((), description="The findings whose verdict this key moves.")
     numbers: tuple[NumberView, ...] = Field((), description="The published numbers this key feeds, worked out here.")
-    clamped: tuple[str, ...] = Field((), description="Every cue in this project the value in force clamps.")
+    candidate: JsonValue | None = Field(None, description="The value asked about, or null when none was.")
+    clamped: tuple[str, ...] = Field(
+        (), description="Every cue in this project the candidate, or the value in force, clamps."
+    )
+    measured: bool = Field(description="True when this project's resolved cue times were there to read.")
     hazard: str | None = Field(None, description="What a value at the edge of the range risks, or null.")
     docs: str = Field(description="The docs page for this key.")
 
@@ -710,6 +753,10 @@ class BuildResult(Result):
     spend: Spend = Field(description="What this run cost, or would have cost.")
     film: ProjectPath | None = Field(None, description="The finished film, or null when the run made none.")
     storyboard: ProjectPath | None = Field(None, description="The storyboard this run wrote, or null.")
+    stopped_at: Stage | None = Field(
+        None,
+        description="The stage whose certain findings stopped the run before the film, or null when it ran through.",
+    )
     seconds: Elapsed
 
 
@@ -738,31 +785,14 @@ class ApplyResult(Result):
 
 
 RESULTS: dict[str, type[Result]] = {
-    "apply": ApplyResult,
-    "assemble": AssembleResult,
-    "build": BuildResult,
-    "check": CheckResult,
-    "clip": ClipResult,
-    "config-explain": ConfigExplainResult,
-    "config-get": ConfigGetResult,
-    "config-list": ConfigListResult,
-    "config-set": ConfigSetResult,
-    "config-unset": ConfigUnsetResult,
-    "cue": CueResult,
-    "doctor": DoctorResult,
-    "error": ErrorResult,
-    "init": InitResult,
-    "install": InstallResult,
-    "narrate": NarrateResult,
-    "record": RecordResult,
-    "serve": ServeResult,
-    "soundscape": SoundscapeResult,
-    "status": StatusResult,
-    "storyboard": StoryboardResult,
-    "verify": VerifyResult,
-    "words": WordsResult,
+    re.sub(r"(?<=[a-z])(?=[A-Z])", "-", kind.__name__.removesuffix("Result")).lower(): kind
+    for kind in sorted(Result.__subclasses__(), key=lambda kind: kind.__name__)
 }
-"""Every result by the name `decktalk schema NAME` prints it under, which is its command's own name."""
+"""Every result by the name `decktalk schema NAME` prints it under, which is its command's own name.
+
+The name is spelled from the class, so `ConfigExplainResult` is `config-explain`. It is read when this
+module loads, so a result declared anywhere else never joins it.
+"""
 
 
 __all__ = [
@@ -791,6 +821,7 @@ __all__ = [
     "LiveRun",
     "Loudness",
     "NarrateResult",
+    "Nature",
     "NumberView",
     "Panel",
     "RecordResult",
@@ -810,6 +841,7 @@ __all__ = [
     "SoundItem",
     "SoundKind",
     "SoundStatus",
+    "Source",
     "SoundscapeResult",
     "Spend",
     "SpendState",

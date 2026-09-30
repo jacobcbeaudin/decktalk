@@ -1,45 +1,23 @@
 """The five commands that read a project and spend nothing.
 
 They open the project, report what they found and buy nothing, which is why they sit in one group
-and why none of them takes a spending flag. `status` judges nothing at all, so it never takes
-`--fail-on` either: a third judge beside `check` and `verify` would be a third answer to one
-question.
+and why none of them takes a spending flag. `status` judges one thing alone, a file the project
+names and does not have, so it never takes `--fail-on` either: a third judge beside `check` and
+`verify` would be a third answer to one question.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from typer._click import Context
 
 from decktalk.cli import session as sessions
-from decktalk.cli.app import command, docs_for
-from decktalk.cli.options import Fix, Group, Overrides, Panel, Sections, pairs, sections_of
+from decktalk.cli.app import command
+from decktalk.cli.options import Fix, Group, Overrides, Panel, Sections, sections_of
 from decktalk.results import CheckResult, ServeResult, StatusResult, StoryboardResult, WordsResult
-
-STATUS_EPILOG = f"""\
-Reads the project and writes nothing. The JSON object carries run, name,
-script, cues, sections, film, runs and next. Docs: {docs_for("status")}"""
-
-CHECK_EPILOG = f"""\
-Judges the written files and the pages, and prices what a voiced build costs.
-The JSON object carries run, judged, pages, frames, spend, storyboard,
-written and findings. Docs: {docs_for("check")}"""
-
-WORDS_EPILOG = f"""\
-Prints the clock a cue phrase is written against. The JSON object carries run
-and sections. Docs: {docs_for("words")}"""
-
-STORYBOARD_EPILOG = f"""\
-Writes build/storyboard.html, which is the checkpoint before credits are
-spent. The JSON object carries run, storyboard, panels and written.
-Docs: {docs_for("storyboard")}"""
-
-SERVE_EPILOG = f"""\
-Serves the deck directory and the files decktalk.toml declares, and nothing
-else. The JSON object carries run, url, port and root. Docs: {docs_for("serve")}"""
 
 DEFAULT_HOST = "127.0.0.1"
 """Where the origin listens, which is this machine alone until a caller names another interface."""
@@ -85,21 +63,21 @@ At = Annotated[
 ]
 
 
-@command(group=Group.PROJECT, epilog=STATUS_EPILOG)
+@command(group=Group.PROJECT, epilog="Reads the project and writes nothing.")
 def status(ctx: Context, set_: Overrides = None) -> StatusResult:
     """Report what is written, what is built and what is stale.
 
-    It judges nothing and never exits 1, so it is a reading of the project rather than a third
-    verdict beside `check` and `verify`.
+    It judges one thing, a file the project names and does not have, and exits 1 only then.
+    Everything else it reports is a reading of the project rather than a third verdict beside
+    `check` and `verify`.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.status(cancel=session.cancel)
 
 
-@command(group=Group.PROJECT, epilog=CHECK_EPILOG)
+@command(group=Group.PROJECT, epilog="Judges the written files and the pages, and prices what a voiced build costs.")
 def check(
     ctx: Context,
     paths: Annotated[
@@ -121,52 +99,55 @@ def check(
     of a run makes this one call.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
-    with session.watching(project.events):
-        judged = project.check(
-            *(paths or ()),
-            only=sections_of(section),
-            pages=not no_pages,
-            frames=not no_frames,
-            cancel=session.cancel,
-        )
-    return _fixed(session, judged, fix)
+    project = session.opened(set_)
+    asked = {"only": sections_of(section), "pages": not no_pages, "frames": not no_frames}
+    heard: set[str] = set()
+    with session.watching(project.events, heard=heard):
+        judged = project.check(*(paths or ()), **asked, cancel=session.cancel)
+    return _fixed(session, judged, fix, paths=tuple(paths or ()), asked=asked, heard=heard)
 
 
-def _fixed(session: sessions.Session, judged: CheckResult, fix: bool | None) -> CheckResult:
+def _fixed(
+    session: sessions.Session,
+    judged: CheckResult,
+    fix: bool | None,
+    *,
+    paths: tuple[Path, ...],
+    asked: dict[str, Any],
+    heard: set[str],
+) -> CheckResult:
     """Apply the safe fixes when the caller asked, and judge again so the result is what is true now.
 
     Without a terminal and without the flag nothing is applied and every fix is reported, so an
-    agent applies them itself from the objects it already holds.
+    agent applies them itself from the objects it already holds. The second judgement is asked
+    exactly what the first was, with the same pages and the same sections, because a re-check that
+    widened to the whole project priced sections the caller never named. A note the first judgement
+    printed is in `heard` and is not printed again, because the second judgement says it too.
     """
-    offered = [found for found in judged.findings if found.fix is not None]
+    offered = session.fixes_wanted(judged.findings, fix)
     if not offered:
         return judged
-    wanted = fix if fix is not None else session.asks and session.confirm(f"Apply {len(offered)} fixes?")
-    if not wanted:
-        return judged
     project = session.project()
-    project.apply(offered)
+    with session.watching(project.events, heard=heard):
+        project.apply(offered)
     fresh = project.reload()
-    with session.watching(fresh.events):
-        return fresh.check(pages=judged.pages, frames=judged.frames, cancel=session.cancel)
+    with session.watching(fresh.events, heard=heard):
+        return fresh.check(*paths, **asked, cancel=session.cancel)
 
 
-@command(group=Group.PROJECT, epilog=WORDS_EPILOG)
+@command(group=Group.PROJECT, epilog="Prints the clock a cue phrase is written against.")
 def words(ctx: Context, section: Sections = None, set_: Overrides = None) -> WordsResult:
     """Print every spoken word with its start and end.
 
     It is the one command that maps script text to seconds, which is how a cue phrase is written.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.words(only=sections_of(section), cancel=session.cancel)
 
 
-@command(group=Group.PROJECT, epilog=STORYBOARD_EPILOG)
+@command(group=Group.PROJECT, epilog="Writes build/storyboard.html, which is the checkpoint before credits are spent.")
 def storyboard(
     ctx: Context,
     section: Sections = None,
@@ -184,15 +165,16 @@ def storyboard(
     number that matches no section already does.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
+    project = session.opened(set_)
     with session.watching(project.events):
         return project.storyboard(
             only=sections_of(section), slide=slide, after=after, before=before, at=at, cancel=session.cancel
         )
 
 
-@command(group=Group.PROJECT, epilog=SERVE_EPILOG)
+@command(
+    group=Group.PROJECT, epilog="Serves the deck directory and the files decktalk.toml declares, and nothing else."
+)
 def serve(
     ctx: Context,
     host: Annotated[str, typer.Option("--host", metavar="HOST", help="The interface to listen on.")] = DEFAULT_HOST,
@@ -205,14 +187,14 @@ def serve(
     reads one object and is not left waiting on a stream that never ends.
     """
     session = sessions.of(ctx)
-    session.overriding(pairs(set_))
-    project = session.project()
+    project = session.opened(set_)
     origin = project.serve(host=host, port=port)
     session.report(origin.result)
     session.out.file.flush()
     try:
         origin.wait()
     except KeyboardInterrupt:
+        # silent: an interrupt is how a person ends the report.
         pass
     finally:
         origin.close()

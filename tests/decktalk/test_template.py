@@ -8,7 +8,18 @@ import pytest
 
 from decktalk import template
 from decktalk.errors import ErrorCode, InputError
-from decktalk.template import EXAMPLES, SKILL_NAMES, STARTER, example, listed_names, title_from, write_project
+from decktalk.template import (
+    DECK_DIR,
+    EXAMPLES,
+    SKILL_NAMES,
+    STARTER,
+    example,
+    listed_names,
+    stale_runtime,
+    title_from,
+    write_project,
+)
+from decktalk.toolchain import assets
 
 
 def test_every_example_is_named_once_and_a_reserved_one_says_so() -> None:
@@ -60,7 +71,7 @@ def test_the_starter_writes_a_project_that_already_builds(tmp_path: Path) -> Non
     assert (tmp_path / "script.md").exists()
     assert (tmp_path / "cues.json").exists()
     assert (tmp_path / template.DECK_DIR / "decktalk-runtime.js").exists()
-    assert set(written) == set(written)  # every path is reported once, in the order it was written
+    assert len(written) == len(set(written))  # every path is reported once
 
 
 def test_the_project_name_is_filled_into_the_files_that_carry_it(tmp_path: Path) -> None:
@@ -103,3 +114,44 @@ def test_writing_the_skills_again_replaces_them_rather_than_merging(tmp_path: Pa
 
 def test_the_starter_is_the_default_and_is_not_itself_an_example() -> None:
     assert STARTER not in {found.name for found in EXAMPLES}
+
+
+# ---- a project's copy of the runtime ------------------------------------------------------------
+
+
+def test_the_copy_init_writes_is_the_runtime_this_engine_ships(tmp_path: Path) -> None:
+    write_project(tmp_path, name="demo", example_name=None, skills=False, force=False)
+    assert not stale_runtime(tmp_path / DECK_DIR / assets.RUNTIME_FILE)
+
+
+def test_a_copy_an_older_engine_wrote_is_stale(tmp_path: Path) -> None:
+    copy = tmp_path / assets.RUNTIME_FILE
+    copy.write_text('(() => {\n  var VERSION = "0.4.0";\n})();\n', encoding="utf-8")
+    assert stale_runtime(copy)
+
+
+def test_an_edited_copy_is_stale_although_it_names_the_same_version(tmp_path: Path) -> None:
+    """An engine built between two releases ships a runtime that still carries the last release's version."""
+    copy = tmp_path / assets.RUNTIME_FILE
+    copy.write_bytes(assets.runtime_path().read_bytes() + b"\n// edited\n")
+    assert stale_runtime(copy)
+
+
+def test_a_project_with_no_copy_has_nothing_stale(tmp_path: Path) -> None:
+    assert not stale_runtime(tmp_path / assets.RUNTIME_FILE)
+
+
+def test_a_harness_folder_that_could_not_be_a_link_is_a_copy_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Windows without developer mode refuses a link, and the copy it gets instead used to go unrecorded."""
+
+    def refused(*_args: object, **_kwargs: object) -> None:
+        raise OSError("links are not allowed here")
+
+    monkeypatch.setattr(Path, "symlink_to", refused)
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        write_project(tmp_path, name="demo", example_name=None, skills=True, force=False)
+    assert (tmp_path / template.LINK_DIR).is_dir() and not (tmp_path / template.LINK_DIR).is_symlink()
+    [record] = [record for record in caplog.records if record.name == "decktalk.template"]
+    assert "a copy" in record.getMessage() and record.exc_info is not None

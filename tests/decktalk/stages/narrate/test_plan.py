@@ -8,11 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import TakeInputs, take_file, words_file
+from decktalk.artifacts import TakeInputs, Takes, take_file, words_file
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.results import Layer, SpendState, TakeStatus
 from decktalk.settings import VoiceConfig
+from decktalk.speech import PROVIDERS
 from decktalk.stages.narrate.plan import (
     is_cached,
     placeholder_inputs,
@@ -23,7 +24,7 @@ from decktalk.stages.narrate.plan import (
 )
 from support.paths import DATA
 
-from .conftest import TOML, VOICE_ID
+from .conftest import TOML, VOICE_ID, a_paid_take
 
 GOLDEN = json.loads((DATA / "take_hash.json").read_text(encoding="utf-8"))
 """The two films the founder has really paid for, with the digest of every take he bought."""
@@ -113,18 +114,49 @@ def test_a_section_whose_take_is_on_disk_is_kept(inputs: Inputs) -> None:
     assert placeholder_plan(inputs, targets)[0].status is TakeStatus.KEPT
 
 
-def test_a_voiced_plan_with_no_credential_cannot_check_the_cache(make_inputs: Callable[..., Inputs]) -> None:
-    """A plan that cannot ask the voice still prices what it would send, and says why it is unsure."""
+def test_a_voiced_plan_prices_without_a_credential(
+    make_inputs: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A price is over names and text, none of them secret, so a machine with no key prices exactly."""
+
+    def refuse(_context: object) -> object:
+        raise AssertionError("a price built the provider")
+
+    monkeypatch.setitem(PROVIDERS, "elevenlabs", refuse)
     project = unvoiceable(make_inputs)
     plans, why = voiced_plan(project, list(project.spoken()), model="m", voice_id=VOICE_ID)
+    assert why is None
+    assert not any(plan.unchecked for plan in plans)
+    assert all(plan.digest is not None for plan in plans)
+
+
+def test_a_keyless_plan_finds_the_take_a_voice_already_made(make_inputs: Callable[..., Inputs]) -> None:
+    """A one-section edit on a machine with no key is priced as one section, not as the whole film."""
+    project = unvoiceable(make_inputs)
+    targets = list(project.spoken())
+    first, *_rest = voiced_plan(project, targets, model="m", voice_id=VOICE_ID)[0]
+    assert first.digest is not None
+    project.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
+    (project.workspace.takes_dir / take_file(first.digest)).write_bytes(b"")
+    (project.workspace.takes_dir / words_file(first.digest)).write_text('{"words": []}', encoding="utf-8")
+    plans, _why = voiced_plan(project, targets, model="m", voice_id=VOICE_ID)
+    assert [plan.status for plan in plans] == [TakeStatus.KEPT, TakeStatus.VOICED, TakeStatus.VOICED]
+    spend = spend_of(plans, project, state=SpendState.ESTIMATE)
+    assert spend.sections == (2, 3)
+    assert spend.dollars == spend.ceiling_dollars
+
+
+def test_a_voiced_plan_with_no_voice_named_cannot_check_the_cache(make_inputs: Callable[..., Inputs]) -> None:
+    """A plan that does not know the voice still prices what it would send, and says why it is unsure."""
+    project = unvoiceable(make_inputs)
+    plans, why = voiced_plan(project, list(project.spoken()), model="m", voice_id=None)
     assert why is not None
-    assert "ELEVENLABS_API_KEY" in why
-    assert all(plan.unchecked for plan in plans)
+    assert why.startswith("No voice is named") and "ELEVENLABS_VOICE_ID" in why
     assert all(plan.digest is None for plan in plans)
 
 
-def test_a_voiced_plan_prices_what_it_will_send_and_what_it_can_cost(inputs: Inputs, fake_voice: object) -> None:
-    assert fake_voice is not None
+@pytest.mark.usefixtures("fake_voice")
+def test_a_voiced_plan_prices_what_it_will_send_and_what_it_can_cost(inputs: Inputs) -> None:
     plans, why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
     assert why is None
     spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
@@ -137,15 +169,30 @@ def test_a_voiced_plan_prices_what_it_will_send_and_what_it_can_cost(inputs: Inp
     assert spend.sections == (1, 2, 3)
 
 
-def test_a_section_the_cache_could_not_be_checked_for_is_priced_into_the_ceiling_alone(
+def test_a_paid_take_the_cache_could_not_be_checked_for_is_priced_into_the_ceiling_alone(
+    make_inputs: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a paid take could turn out to be the one this run asks for, so only a paid take is in doubt."""
+    project = unvoiceable(make_inputs)
+    first, *rest = project.spoken()
+    held = Takes(script="script.md", model="m", output_format="mp3", sections=(a_paid_take(first.index),))
+    monkeypatch.setattr(Inputs, "takes", lambda _self: held)
+    plans, _why = voiced_plan(project, [first, *rest], model="m", voice_id=None)
+    assert [plan.unchecked for plan in plans] == [True] + [False] * len(rest)
+    spend = spend_of(plans, project, state=SpendState.ESTIMATE)
+    assert spend.characters == sum(plan.characters_sent for plan in plans[1:])
+    assert spend.sections == (*(plan.segment.index for plan in plans[1:]), first.index)
+
+
+def test_a_section_with_no_paid_take_is_priced_as_certain_when_no_voice_is_named(
     make_inputs: Callable[..., Inputs],
 ) -> None:
+    """A fresh project needs every take whatever the voice is, so its price is not a ceiling alone."""
     project = unvoiceable(make_inputs)
-    plans, _why = voiced_plan(project, list(project.spoken()), model="m", voice_id=VOICE_ID)
+    plans, _why = voiced_plan(project, list(project.spoken()), model="m", voice_id=None)
+    assert not any(plan.unchecked for plan in plans)
     spend = spend_of(plans, project, state=SpendState.ESTIMATE)
-    assert spend.characters == 0
-    assert spend.dollars == pytest.approx(0.0)
-    assert spend.ceiling_dollars > 0
+    assert spend.dollars == spend.ceiling_dollars > 0
 
 
 def test_a_price_nobody_stated_is_reported_as_the_default(make_inputs: Callable[..., Inputs]) -> None:

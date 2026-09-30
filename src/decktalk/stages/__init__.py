@@ -28,26 +28,57 @@ than at the end.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Sequence
 
-from decktalk.findings import Code, Finding, Fix, Location
-from decktalk.pipeline import Stage
+from decktalk.inputs import Inputs
+from decktalk.results import Layer
+from decktalk.speech import VoiceContext
 
-SECOND_DIGITS = 3
-"""Truth: three decimal places of a second is one millisecond, which is finer than any frame."""
+PRICE_KEY = "voice.price_per_1000_characters"
+"""The key that states what speech costs, whose layer decides whether a spend ceiling may refuse a run."""
+
+CHARACTERS_PER_PRICE = 1000
+"""Truth: the price is stated per thousand characters, which is how every provider bills speech."""
+
+DOLLAR_DIGITS = 2
+"""Truth: a price in dollars is read to the cent, which is the smallest unit anybody is charged."""
+
+SECTION_START_SECONDS = 0.0
+"""Where a section's own clock begins, which is when its first slide is already on screen."""
 
 
-def judge(
-    code: Code, message: str, location: Location, *, stage: Stage | None = None, fix: Fix | None = None
-) -> Finding:
-    """One judgement, built through validation so the code fills its own certainty and its own page.
+def dollars_for(characters: int, inputs: Inputs) -> float:
+    """What this many characters cost at the project's stated rate, unrounded.
 
-    A raiser names the code, the sentence, the place and sometimes the fix. Writing the certainty
-    out beside the code would be the second spelling of one fact, which is what the code owning it
-    exists to prevent.
+    One take's charge is stated at full precision, because a ledger that adds rounded cents per take
+    drifts from the run's own total, which is rounded once, after the sum.
     """
-    return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage, "fix": fix})
+    return characters / CHARACTERS_PER_PRICE * inputs.settings.voice.price_per_1000_characters
+
+
+def price_layer(inputs: Inputs) -> Layer:
+    """Which layer stated the price, because a ceiling may not guard a price nobody has stated."""
+    try:
+        return inputs.layers.winner(PRICE_KEY).layer
+    except KeyError:
+        # silent: a price no layer states is the default's.
+        return Layer.DEFAULT
+
+
+def voice_context(inputs: Inputs) -> VoiceContext:
+    """What a speech provider is built from, taken from this project's tuning and its own `.env`.
+
+    The context carries five values and no settings tree, so the speech layer imports no settings
+    class and a provider built in a test is built the way a run builds one.
+    """
+    settings = inputs.settings
+    return VoiceContext(
+        secrets=inputs.env,
+        api_base=settings.elevenlabs.api_base,
+        context_chars=settings.narration.context_chars,
+        speech_timeout_seconds=settings.narration.timeout_seconds,
+        sound_timeout_seconds=settings.elevenlabs.timeout_seconds,
+    )
 
 
 def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
@@ -56,14 +87,13 @@ def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
     return lambda number: not numbers or number in numbers
 
 
-def since(started: float) -> float:
-    """How long a stage has been running, in seconds, which is what every result reports."""
-    return round(time.monotonic() - started, SECOND_DIGITS)
-
-
-def clock() -> float:
-    """The moment a stage started, read from a clock that cannot go backwards."""
-    return time.monotonic()
-
-
-__all__ = ["SECOND_DIGITS", "clock", "judge", "selects", "since"]
+__all__ = [
+    "CHARACTERS_PER_PRICE",
+    "DOLLAR_DIGITS",
+    "PRICE_KEY",
+    "SECTION_START_SECONDS",
+    "dollars_for",
+    "price_layer",
+    "selects",
+    "voice_context",
+]

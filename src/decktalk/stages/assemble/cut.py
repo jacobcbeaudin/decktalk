@@ -8,37 +8,48 @@ reintroduce AAC priming and the picture starts at pts 0 as the sound does.
 
 `cuts.json` is written from the same rows, so where a section plays, what it was made from and
 whether a slate or a black frame stands in for it are all recorded once.
+
+Every cut is encoded through `encode`, which keeps the cut on disk when its key says the same
+arguments already made it from the same files. A rebuild that changed one sentence re-encodes the
+one section it moved, and the rest of the film is read back rather than encoded again.
 """
 
 from __future__ import annotations
 
+import itertools
+import json
+import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import Cut, Cuts, RecordingLog, Takes
+from decktalk.artifacts.cuts import CutKey
+from decktalk.artifacts.stills import still_key
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Level, Unit
-from decktalk.findings import Code, Location
+from decktalk.findings import Code, Location, judge
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.document import frame_dip
+from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import Encoder
-from decktalk.pipeline import Stage
+from decktalk.page import SECOND_DIGITS
+from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
-from decktalk.stages import SECOND_DIGITS, judge, selects
+from decktalk.stages import selects
 
-
-def encoder(inputs: Inputs) -> Encoder:
-    """The encoder every output of this stage is made with, built from `[video]` once."""
-    return Encoder(inputs.settings.video)
-
+log = logging.getLogger(__name__)
 
 BLACK = "0x000000"
 """Truth: the colour a section with no recording plays, written the way ffmpeg reads a colour."""
 
-SLATES_DIR = "slates"
-"""Where a rendered slate is kept under the final directory, so a second run draws none of them again."""
+KEY_SUFFIX = ".json"
+"""What the key beside a section cut is called after the cut's own name, such as `03.json` beside `03.mp4`."""
+
+DRAWING_SUFFIX = ".drawing.png"
+"""What a slate is called while the browser draws it, before the stills keep it under its key."""
 
 
 @dataclass(frozen=True)
@@ -47,20 +58,18 @@ class Rendered:
 
     This is the working row the cut, the mix and the captions all read. The result model of the same
     idea is `results.RenderedSection`, which carries what a reader receives rather than the paths a
-    filter graph is built from, and `rendered_rows` is the one place the two meet.
+    filter graph is built from, and `assemble._rendered_rows` is the one place the two meet.
     """
 
     section: Section
     path: Path
     seconds: float
-    note: str
-    source: str
+    source: Path
+    """The file the section is cut from, project-relative, which is the one it has not got when `substitute` is set."""
+
     substitute: Substitute | None = None
     audio: Path | None = None
     """A clip with its own sound, which is mixed in at the section start."""
-
-    missing: str | None = None
-    """The file the project names and has not got, project-relative, or None when nothing is missing."""
 
     @property
     def key(self) -> str:
@@ -71,32 +80,79 @@ class Rendered:
         return self.section.number
 
 
+def encode(out: Path, args: Sequence[str], sources: Sequence[Path]) -> bool:
+    """Encode one section cut into `out`, unless the cut there was made by these arguments from these files.
+
+    The key sits beside the cut under the same name. The old key is removed before the encode starts
+    and the new one is written only once it has finished, so a run stopped halfway leaves a cut with
+    no key, which the next run encodes again. True means the cut was encoded, and false means the
+    one on disk was kept.
+    """
+    where = out.with_suffix(KEY_SUFFIX)
+    key = CutKey.of(args, sources)
+    held = CutKey.previous(where) if out.is_file() else None
+    why = "no-cut" if not out.is_file() else "no-key" if held is None else "unchanged" if held == key else "key-changed"
+    cache_decision(log, "cut", hit=why == "unchanged", why=why, file=out.name)
+    if why == "unchanged":
+        return False
+    where.unlink(missing_ok=True)
+    ffmpeg.run(*args)
+    key.write(where)
+    return True
+
+
+def _cut(
+    out: Path, enc: Encoder, source: Sequence[str], chain: str, sources: Sequence[Path], *, seconds: float | None = None
+) -> None:
+    """Encode one silent section cut from one input through one video filter chain, cut to `seconds` when given."""
+    limit = ("-t", f"{seconds}") if seconds is not None else ()
+    encode(out, (
+        *source, "-filter_complex", f"[0:v]{chain}[v]",
+        "-map", "[v]", "-an", *limit, *enc.venc, "-movflags", "+faststart", str(out),
+    ), sources)  # fmt: skip
+
+
 def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None:
-    """A titled slate for a clip that is missing, drawn once and kept beside the film.
+    """A titled slate for a clip that is missing, kept among the stills under everything it shows.
 
     The slate is drawn on the colour `[video] slate_color` names, which is the same colour the plain
-    frame behind it is drawn on, so a project that sets one colour gets one colour either way.
+    frame behind it is drawn on, so a project that sets one colour gets one colour either way. Its key
+    is every word and number it is drawn from, the page policy and the engine, so a renamed chapter
+    or a new colour draws a new slate, the cut that reads it gets a new key, and the stills prune
+    removes the old slate once nobody asks for it.
     """
-    out = inputs.workspace.final_dir / SLATES_DIR / f"{section.key}-slate.png"
-    if out.exists():
-        return out
-    video = inputs.settings.video
+    video, policy = inputs.settings.video, inputs.settings.record.page_policy
+    title, sub = inputs.chapters()[section.number], "Your clip goes here"
+    eyebrow = f"section {section.number}: slate"
+    foot = f"drop it at {section.clip} and run `decktalk assemble`"
+    shown = json.dumps([title, sub, eyebrow, foot, video.width, video.height, video.slate_color])
+    # The key begins with the substitute's own name, so a slate never shares a name with a frame of a page.
+    key = still_key((Substitute.SLATE.value, f"policy:{policy}", shown))
+    stills = inputs.stills
+    kept = stills.find(key)
+    if kept is not None:
+        return kept
+    drawing = stills.directory / f".{key}{DRAWING_SUFFIX}"
     try:
-        return browser.render_slate(
-            out,
-            title=inputs.chapters()[section.number],
-            sub="Your clip goes here",
-            eyebrow=f"section {section.number}: slate",
-            foot=f"drop it at {section.clip} and run `decktalk assemble`",
+        browser.render_slate(
+            drawing,
+            title=title,
+            sub=sub,
+            eyebrow=eyebrow,
+            foot=foot,
             width=video.width,
             height=video.height,
             background=video.slate_color,
             browser_path=inputs.settings.record.browser_path,
+            policy=policy,
         )
+        return stills.keep(key, drawing, ())
     except ToolError as refused:
         run.note(f"A slate could not be drawn ({refused}), so section {section.number} plays a plain frame.",
                  level=Level.WARNING)  # fmt: skip
         return None
+    finally:
+        drawing.unlink(missing_ok=True)
 
 
 def render_clip(inputs: Inputs, run: Run, enc: Encoder, section: ClipSection, out: Path, dip: float, *, strict: bool
@@ -106,18 +162,12 @@ def render_clip(inputs: Inputs, run: Run, enc: Encoder, section: ClipSection, ou
     clip = inputs.path(section.clip)
     if clip.exists():
         total = ffmpeg.probe_duration(clip)
-        ffmpeg.run(
-            "-i", str(clip),
-            "-filter_complex", f"[0:v]{enc.fit}{vfades(total, *fades, dip)}[v]",
-            "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", str(out),
-        )  # fmt: skip
+        _cut(out, enc, ffmpeg.source(clip), f"{enc.fit}{vfades(total, *fades, dip)}", (clip,))
         sounds = ffmpeg.has_audio(clip)
         if not sounds:
             run.note(f"{section.clip} carries no audio track, so section {section.number} plays silent.",
                      level=Level.WARNING)  # fmt: skip
-        note = f"{clip.name} (own audio)" if sounds else f"{clip.name} (silent)"
-        return Rendered(section, out, ffmpeg.probe_duration(out), note, str(inputs.relative(clip).as_posix()),
-                        audio=clip if sounds else None)  # fmt: skip
+        return Rendered(section, out, ffmpeg.probe_duration(out), inputs.relative(clip), audio=clip if sounds else None)
     if strict and not section.optional:
         raise InputError(
             f"section {section.number} names the clip {section.clip}, which is not there.",
@@ -135,23 +185,18 @@ def _render_slate_section(
     configured = inputs.path(inputs.document.mix.slate) if inputs.document.mix.slate else None
     png = configured if configured is not None and configured.exists() else section_slate(inputs, run, section)
     source = (
-        ["-loop", "1", "-framerate", str(enc.v.output_fps), "-t", f"{seconds}", "-i", str(png)]
+        ["-loop", "1", "-framerate", str(enc.v.output_fps), "-t", f"{seconds}", *ffmpeg.source(png)]
         if png
         else enc.color_source(enc.v.slate_color, seconds)
     )
-    ffmpeg.run(
-        *source,
-        "-filter_complex", f"[0:v]{enc.fit}{vfades(seconds, *inputs.document.fade_flags[section.key], dip)}[v]",
-        "-map", "[v]", "-an", "-t", f"{seconds}", *enc.venc, "-movflags", "+faststart", str(out),
-    )  # fmt: skip
+    fades = vfades(seconds, *inputs.document.fade_flags[section.key], dip)
+    _cut(out, enc, source, f"{enc.fit}{fades}", (png,) if png else (), seconds=seconds)
     return Rendered(
         section=section,
         path=out,
         seconds=ffmpeg.probe_duration(out),
-        note=Substitute.SLATE.value,
-        source=section.clip,
+        source=Path(section.clip),
         substitute=Substitute.SLATE,
-        missing=section.clip,
     )
 
 
@@ -159,46 +204,34 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
                 strict: bool) -> Rendered:  # fmt: skip
     """One page section cut to its span in the narration, from its recording or from black."""
     webm = inputs.workspace.recording(section.key)
-    source = str(inputs.relative(webm).as_posix())
+    source = inputs.relative(webm)
     fades = inputs.document.fade_flags[section.key]
     if not webm.exists():
         if strict:
             raise NotBuiltError(
-                f"section {section.number} has no recording at {source}.",
-                hint="Run `decktalk record` first.",
+                f"section {section.number} has no recording at {source}.", hint=Artifact.RECORDINGS.next_step
             )
         run.note(f"{source} is not there, so section {section.number} plays black.", level=Level.WARNING)
-        ffmpeg.run(
-            *enc.color_source(BLACK, total),
-            "-filter_complex",
-            f"[0:v]{enc.fit},trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}[v]",
-            "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", "-t", f"{total}", str(out),
-        )  # fmt: skip
-        return Rendered(section, out, ffmpeg.probe_duration(out), Substitute.BLACK.value, source,
-                        substitute=Substitute.BLACK, missing=source)  # fmt: skip
+        chain = f"{enc.fit},trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
+        _cut(out, enc, enc.color_source(BLACK, total), chain, (), seconds=total)
+        return Rendered(section, out, ffmpeg.probe_duration(out), source, substitute=Substitute.BLACK)
     # The recorder covers the page until it starts the narration clock, so the head of the webm is
     # trimmed at the moment its own log recorded as narration t=0.
     log = RecordingLog.read(inputs.workspace.recording_log(section.key))
     lead = "" if log is None else f"trim=start={log.trim_seconds},setpts=PTS-STARTPTS,"
-    note = webm.name if log is None else f"{webm.name} (t0 {log.trim_seconds}s trimmed)"
-    ffmpeg.run(
-        "-i", str(webm),
-        "-filter_complex",
-        f"[0:v]{lead}{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},"
-        f"setpts=PTS-STARTPTS{vfades(total, *fades, dip)}[v]",
-        "-map", "[v]", "-an", *enc.venc, "-movflags", "+faststart", "-t", f"{total}", str(out),
-    )  # fmt: skip
-    return Rendered(section, out, ffmpeg.probe_duration(out), note, source)
+    chain = (
+        f"{lead}{enc.fit},tpad=stop_mode=clone:stop=-1,trim=duration={total},"
+        f"setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
+    )
+    _cut(out, enc, ffmpeg.source(webm), chain, (webm,), seconds=total)
+    return Rendered(section, out, ffmpeg.probe_duration(out), source)
 
 
 def page_target(takes: Takes, section: PageSection, fps: int) -> float:
     """How long one page section runs in the film, which is its span in the narration plus its hold."""
     span = section_targets(takes, fps).get(section.number, 0.0)
     if span <= 0:
-        raise NotBuiltError(
-            f"section {section.number} has no span in the take index.",
-            hint="Run `decktalk narrate` first.",
-        )
+        raise NotBuiltError(f"section {section.number} has no span in the take index.", hint=Artifact.TAKES.next_step)
     # The narration pauses for a hold exactly as it pauses for a clip, so the hold is picture alone.
     return round(span + section.hold_seconds, SECOND_DIGITS)
 
@@ -208,14 +241,16 @@ def render_sections(
 ) -> list[Rendered]:
     """Every section of the film cut to its span, in the order the film plays them.
 
-    A film is always whole, so every section is in the answer. `only` decides which of them are cut
-    again: a section it does not name whose cut is already on disk is kept, because re-encoding a
-    picture that has not moved buys nothing and costs the longest pass in the stage.
+    A film is always whole, so every section is in the answer, and every one of them is cut through
+    `encode`, which keeps a cut only when its key says these arguments made it from these files. A
+    cut already on disk is therefore never trusted for being there, which is what stops a supplied
+    `build/` from choosing what the film plays. `only` decides which sections this run answers for:
+    those are the ones `strict` holds and the ones judged for a missing file.
 
     `passes` is how many passes the whole stage runs, so the cuts count against the same total the
     passes after them do and a renderer never sees one bar restart inside one stage.
     """
-    enc = encoder(inputs)
+    enc = Encoder(inputs.settings.video)
     inputs.workspace.final_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.sections_dir.mkdir(parents=True, exist_ok=True)
     dip = frame_dip(inputs.document.transition.dip_seconds, enc.v.output_fps)
@@ -225,14 +260,11 @@ def render_sections(
     for done, section in enumerate(sections, start=1):
         run.check()
         out = inputs.workspace.section_video(section.key)
-        row = _kept(inputs, section, out) if not wanted(section.number) else None
-        if row is None:
-            row = _cut_one(inputs, run, enc, takes, section, out, dip, strict=strict)
-        rows.append(row)
+        rows.append(_cut_one(inputs, run, enc, takes, section, out, dip, strict=strict and wanted(section.number)))
         run.wrote(out)
         run.progress(Stage.ASSEMBLE, done=done, total=passes or len(sections), unit=Unit.PASS,
                      label=f"cut section {section.number}", section=section.number)  # fmt: skip
-    _judge_missing(run, rows)
+    _judge_missing(run, [row for row in rows if wanted(row.number)])
     return rows
 
 
@@ -245,16 +277,6 @@ def _cut_one(inputs: Inputs, run: Run, enc: Encoder, takes: Takes, section: Sect
     return render_page(inputs, run, enc, section, out, dip, total, strict=strict)
 
 
-def _kept(inputs: Inputs, section: Section, out: Path) -> Rendered | None:
-    """The row for a cut already on disk that this run was not asked to make again, or None."""
-    if not out.exists():
-        return None
-    source = section.clip if isinstance(section, ClipSection) else inputs.relative(
-        inputs.workspace.recording(section.key)
-    ).as_posix()  # fmt: skip
-    return Rendered(section, out, ffmpeg.probe_duration(out), f"{out.name} (kept)", str(source))
-
-
 def _judge_missing(run: Run, rows: list[Rendered]) -> None:
     """One judgement per section whose own file the project names and has not got.
 
@@ -262,7 +284,7 @@ def _judge_missing(run: Run, rows: list[Rendered]) -> None:
     there, so judging it certain would stop the build on the very thing the project asked for.
     """
     for row in rows:
-        if row.missing is None:
+        if row.substitute is None:
             continue
         if isinstance(row.section, ClipSection) and row.section.optional:
             continue
@@ -270,9 +292,9 @@ def _judge_missing(run: Run, rows: list[Rendered]) -> None:
         run.found(
             judge(
                 Code.FILE_MISSING,
-                f"section {row.number} names {row.missing}, which is not on disk, so {stood_in} plays for "
-                f"{row.seconds:.2f}s in its place.",
-                Location(where=row.missing, file=Path(row.missing), section=row.number),
+                f"section {row.number} names {row.source.as_posix()}, which is not on disk, so {stood_in} plays "
+                f"for {row.seconds:.2f}s in its place.",
+                Location(where=row.source.as_posix(), file=row.source, section=row.number),
                 stage=Stage.ASSEMBLE,
             )
         )
@@ -292,7 +314,7 @@ def cut_list(inputs: Inputs, rows: list[Rendered]) -> Cuts:
                 kind=SectionKind.CLIP if row.section.is_clip else SectionKind.PAGE,
                 start=round(starts[row.number], SECOND_DIGITS),
                 end=round(starts[row.number] + row.seconds, SECOND_DIGITS),
-                source=Path(row.source),
+                source=row.source,
                 chapter=chapters[row.number],
                 substitute=row.substitute,
                 dip_in=flags.get(row.key, (False, False))[0],
@@ -305,20 +327,20 @@ def cut_list(inputs: Inputs, rows: list[Rendered]) -> Cuts:
 
 def rendered_starts(rows: list[Rendered]) -> dict[int, float]:
     """Where each section begins in the finished film, added up from the lengths the cut rendered."""
-    starts: dict[int, float] = {}
-    at = 0.0
-    for row in rows:
-        starts[row.number] = at
-        at += row.seconds
-    return starts
+    ats = itertools.accumulate((row.seconds for row in rows), initial=0.0)
+    return {row.number: at for row, at in zip(rows, ats, strict=False)}
 
 
 def concat(files: list[Path], out: Path) -> None:
-    """Join the section cuts into one picture, with no re-encoding and no gaps between them."""
+    """Join the section cuts into one picture, with no re-encoding and no gaps between them.
+
+    Each cut is opened through the join's own whitelists, so a cut a supplied `build/` planted cannot
+    make the demuxer read a file or a host the project never named.
+    """
     listing = out.with_suffix(".concat.txt")
     listing.write_text(ffmpeg.concat_list(files), encoding="utf-8")
     try:
-        ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", "-movflags", "+faststart", str(out))
+        ffmpeg.run(*ffmpeg.concat_source(listing), "-c", "copy", "-movflags", "+faststart", str(out))
     finally:
         listing.unlink(missing_ok=True)
 
@@ -348,14 +370,10 @@ def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:
     return filters
 
 
-def stray_cuts(inputs: Inputs, run: Run) -> None:
-    """Say which leftover section cuts this film leaves out, which is what a renumbering leaves behind."""
-    for path in inputs.stray_section_videos():
-        run.note(
-            f"{inputs.relative(path).as_posix()} is a cut of a section decktalk.toml no longer declares, "
-            "so it is left out of the film.",
-            level=Level.WARNING,
-        )
+def remove_stray_cuts(inputs: Inputs) -> None:
+    """Remove the cuts and keys of sections `decktalk.toml` no longer declares, which a renumbering leaves."""
+    for path in inputs.workspace.stray_cuts(tuple(s.key for s in inputs.document.sections)):
+        path.unlink(missing_ok=True)
 
 
 __all__ = [
@@ -363,6 +381,7 @@ __all__ = [
     "Rendered",
     "concat",
     "cut_list",
+    "encode",
     "page_target",
     "render_clip",
     "render_page",
@@ -370,6 +389,6 @@ __all__ = [
     "rendered_starts",
     "section_slate",
     "section_targets",
-    "stray_cuts",
+    "remove_stray_cuts",
     "vfades",
 ]

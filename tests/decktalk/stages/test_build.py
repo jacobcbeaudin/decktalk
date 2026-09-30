@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.errors import Cancel, InputError, NotBuiltError
-from decktalk.events import Event
+from decktalk.errors import InputError, NotBuiltError
+from decktalk.events import Log, StageDone, StageStart
 from decktalk.findings import Certainty, Code, Finding, Location
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Run
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
@@ -38,9 +38,10 @@ from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import build as build_module
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.build import build
-
-RUN_ID = "run-under-test"
-"""The one run every test here opens, which every result it fakes carries."""
+from decktalk.stages.status import read_kept
+from support.logs import decisions
+from support.projects import load_project
+from support.runs import RUN_ID, Watched
 
 RATE = 0.30
 """What the project under test states a thousand characters of speech costs."""
@@ -112,49 +113,10 @@ class Calls:
         return next(options for called, options in self.made if called == name)
 
 
-@dataclass
-class Watched:
-    """One run and every line it put on the stream, which is how a test reads what a build reported."""
-
-    run: Run
-    lines: list[Event] = field(default_factory=list)
-
-    def of(self, event: str) -> list[Event]:
-        return [line for line in self.lines if line.event == event]
-
-
 @pytest.fixture
 def inputs(tmp_path: Path) -> Inputs:
     """A two-section project with no soundscape, which is the shape most of these tests want."""
-    root = tmp_path / "proj"
-    root.mkdir()
-    (root / "decktalk.toml").write_text(TOML, encoding="utf-8")
-    (root / "script.md").write_text(SCRIPT, encoding="utf-8")
-    return Inputs.load(root, environ={})
-
-
-@pytest.fixture
-def make_run(tmp_path: Path) -> Callable[..., Watched]:
-    """A run on a machine that holds nothing but a stream, with every line it emits kept."""
-
-    def make(project: Inputs, *, voice: Voicing = Voicing.PLACEHOLDER) -> Watched:
-        machine = Machine(
-            environ={},
-            tables={},
-            config_path=tmp_path / "decktalk-machine.toml",
-            cwd=project.root,
-            toolchain=Toolchain(),
-        )
-        watched = Watched(run=Run(machine, id=RUN_ID, cancel=Cancel(), voice=voice, root=project.root))
-        machine.events.subscribe(watched.lines.append)
-        return watched
-
-    return make
-
-
-@pytest.fixture
-def watched(inputs: Inputs, make_run: Callable[..., Watched]) -> Watched:
-    return make_run(inputs)
+    return load_project(tmp_path / "proj", TOML, script=SCRIPT)
 
 
 @dataclass
@@ -170,6 +132,8 @@ class Answers:
     narrate_dollars: float = 0.0
     soundscape_dollars: float = 0.0
     storyboard_page: str | None = "build/storyboard.html"
+    film: bytes | None = None
+    """What the faked assemble writes as the film, or None when it writes nothing, as most tests want."""
 
 
 def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
@@ -259,7 +223,15 @@ def calls(monkeypatch: pytest.MonkeyPatch, answers: Answers) -> Iterator[Calls]:
 
         def fake(_inputs: Inputs, _run: Run, _name: str = name, **options: object) -> Result:
             seen.made.append((_name, options))
-            return made[_name]()
+            answer = made[_name]()
+            if _name == "assemble" and answers.film is not None:
+                _inputs.workspace.film.parent.mkdir(parents=True, exist_ok=True)
+                _inputs.workspace.film.write_bytes(answers.film)
+            # A real stage reports each judgement through its run as it makes it, which is what
+            # fills the build's own result, so the fake does the same.
+            for found in answer.findings:
+                _run.found(found)
+            return answer
 
         monkeypatch.setattr(module, name, fake)
     yield seen
@@ -288,10 +260,10 @@ def test_skip_removes_a_stage_the_span_would_have_run(inputs: Inputs, watched: W
 def test_a_skipped_stage_still_reports_that_it_ended(inputs: Inputs, watched: Watched) -> None:
     """A renderer meets every stage of the pipeline exactly once, whether or not the run performed it."""
     build(inputs, watched.run, stages=[Stage.NARRATE])
-    ended = watched.of("stage.done")
-    assert [line.stage for line in ended] == list(Stage)  # type: ignore[attr-defined]
-    assert [line.stage for line in watched.of("stage.start")] == [Stage.NARRATE]  # type: ignore[attr-defined]
-    skipped = [line for line in ended if line.outcome is Outcome.SKIPPED]  # type: ignore[attr-defined]
+    ended = watched.of(StageDone)
+    assert [line.stage for line in ended] == list(Stage)
+    assert [line.stage for line in watched.of(StageStart)] == [Stage.NARRATE]
+    skipped = [line for line in ended if line.outcome is Outcome.SKIPPED]
     assert len(skipped) == len(Stage) - 1
 
 
@@ -319,9 +291,50 @@ def test_a_project_with_no_soundscape_may_still_assemble_without_one(
     (inputs.workspace.narrate_dir).mkdir(parents=True)
     inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
     inputs.workspace.recordings_dir.mkdir(parents=True)
-    (inputs.workspace.recordings_dir / "01.webm").write_bytes(b"")
+    for section in inputs.document.page_sections:
+        inputs.workspace.recording(section.key).write_bytes(b"")
     build(inputs, watched.run, stages=[Stage.ASSEMBLE])
     assert calls.names == ["assemble"]
+
+
+def test_a_run_that_starts_past_a_partial_recording_is_refused(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    """A build and the status report read one rule, so neither calls half a record stage finished."""
+    inputs.workspace.narrate_dir.mkdir(parents=True)
+    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    inputs.workspace.recordings_dir.mkdir(parents=True)
+    first = inputs.document.page_sections[0]
+    inputs.workspace.recording(first.key).write_bytes(b"")
+    with pytest.raises(NotBuiltError) as refused:
+        build(inputs, watched.run, stages=[Stage.ASSEMBLE])
+    assert "decktalk record" in (refused.value.hint or "")
+    assert calls.names == []
+
+
+def _with_a_soundscape(inputs: Inputs) -> Inputs:
+    """The same project with one generated ambience bed declared and nothing generated yet."""
+    toml = inputs.root / "decktalk.toml"
+    toml.write_text(TOML + '\n[soundscape.ambience]\ntext = "a quiet room"\n', encoding="utf-8")
+    inputs.workspace.narrate_dir.mkdir(parents=True)
+    inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
+    inputs.workspace.recordings_dir.mkdir(parents=True)
+    for section in inputs.document.page_sections:
+        inputs.workspace.recording(section.key).write_bytes(b"")
+    return Inputs.load(inputs.root, environ={})
+
+
+def test_a_run_that_skips_the_soundscape_assembles_without_it(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    """One knob decides the sound: a run told to skip the stage neither needs its files nor mixes them."""
+    declared = _with_a_soundscape(inputs)
+    build(declared, watched.run, stages=[Stage.ASSEMBLE], skip=[Stage.SOUNDSCAPE])
+    assert calls.options("assemble")["soundscape"] is False
+
+
+def test_a_run_that_does_not_skip_the_soundscape_needs_it(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    declared = _with_a_soundscape(inputs)
+    with pytest.raises(NotBuiltError) as refused:
+        build(declared, watched.run, stages=[Stage.ASSEMBLE])
+    assert "decktalk soundscape" in (refused.value.hint or "")
+    assert calls.names == []
 
 
 def test_a_paid_run_draws_the_storyboard_before_it_narrates(
@@ -343,7 +356,7 @@ def test_a_placeholder_run_draws_no_storyboard(inputs: Inputs, watched: Watched,
 
 def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A stage handed a flag it does not read would accept a knob that changes nothing."""
-    build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False, allow_unknown=True)
+    build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False, allow=[Code.CUE_UNKNOWN])
     assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False}
     assert calls.options("cue") == {"only": [1], "allow_unknown": True}
     assert calls.options("record") == {"only": [1], "force": True}
@@ -356,10 +369,39 @@ def test_a_certain_finding_stops_the_run_where_it_was_found(
 ) -> None:
     """A cue whose phrase is never spoken leaves a slide that never appears, so the film is not made."""
     answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
-    with pytest.raises(InputError) as stopped:
-        build(inputs, watched.run)
-    assert "CUE_UNRESOLVED" in (stopped.value.hint or "")
+    result = build(inputs, watched.run)
     assert calls.names == ["narrate", "cue"]
+    assert result.ok is False
+    assert result.stopped_at is Stage.CUE
+    assert [found.code for found in result.findings] == [Code.CUE_UNRESOLVED]
+    assert [row.outcome for row in result.stages] == [Outcome.OK, Outcome.OK, *[Outcome.SKIPPED] * 4]
+    assert result.film is None
+
+
+def test_a_run_that_stops_says_so_in_a_sentence(
+    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+) -> None:
+    """The stream says which stage stopped the run and how many findings did it, counted in words."""
+    answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
+    build(inputs, watched.run)
+    said = [line.message for line in watched.of(Log)]
+    assert said == ["Cue made 1 finding that the build stops on, so the build stopped before record rather "
+                    "than carry it into the film."]  # fmt: skip
+    assert "(s)" not in said[0]
+    assert calls.names == ["narrate", "cue"]
+
+
+@pytest.mark.usefixtures("calls")
+def test_a_stopped_run_keeps_what_narrate_already_charged(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers
+) -> None:
+    """A paid narrate followed by a cue finding still reports the money it spent."""
+    answers.narrate_dollars = 1.0
+    answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
+    watched = make_run(inputs, voice=Voicing.PAID)
+    result = build(inputs, watched.run)
+    assert result.stopped_at is Stage.CUE
+    assert result.spend.dollars == pytest.approx(1.0)
 
 
 def test_an_uncertain_finding_lets_the_run_carry_on(
@@ -367,24 +409,58 @@ def test_an_uncertain_finding_lets_the_run_carry_on(
 ) -> None:
     answers.record.append(judged(Code.PAGE_SWAP_APART, Stage.RECORD))
     assert judged(Code.PAGE_SWAP_APART, Stage.RECORD).certainty is Certainty.UNCERTAIN
-    build(inputs, watched.run)
+    result = build(inputs, watched.run)
     assert calls.names[-1] == "verify"
+    assert result.stopped_at is None
 
 
-def test_allow_unknown_lets_a_cue_no_page_declares_through(
+def test_a_threshold_of_any_finding_stops_on_an_uncertain_one(
+    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+) -> None:
+    """`--fail-on any` means the run stops where the command would fail, which is at any finding."""
+    answers.record.append(judged(Code.PAGE_SWAP_APART, Stage.RECORD))
+    result = build(inputs, watched.run, stop_on=Certainty.UNCERTAIN)
+    assert calls.names == ["narrate", "cue", "record"]
+    assert result.stopped_at is Stage.RECORD
+    assert result.ok is False
+
+
+def test_no_threshold_runs_every_stage_whatever_it_finds(
+    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+) -> None:
+    """`--fail-on never` lets a build run through to verify, which then measures what was made."""
+    answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
+    result = build(inputs, watched.run, stop_on=None)
+    assert calls.names[-1] == "verify"
+    assert result.stopped_at is None
+    assert result.ok is False
+
+
+def test_an_allowed_code_lets_a_cue_no_page_declares_through(
     inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
 ) -> None:
     """A deck under construction lists the cues of slides it has not drawn yet."""
     answers.cue.append(judged(Code.CUE_UNKNOWN, Stage.CUE))
-    build(inputs, watched.run, allow_unknown=True)
+    build(inputs, watched.run, allow=[Code.CUE_UNKNOWN])
     assert calls.names[-1] == "verify"
+    assert calls.options("cue")["allow_unknown"] is True
+
+
+def test_any_allowed_code_is_forgiven_the_same_way(
+    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+) -> None:
+    """`--allow` means what it means on every other command, not only for one code."""
+    answers.record.append(judged(Code.PAGE_BLACK, Stage.RECORD))
+    assert judged(Code.PAGE_BLACK, Stage.RECORD).certainty is Certainty.CERTAIN
+    result = build(inputs, watched.run, allow=[Code.PAGE_BLACK])
+    assert calls.names[-1] == "verify"
+    assert result.stopped_at is None
 
 
 @pytest.mark.usefixtures("calls")
 def test_the_same_cue_stops_the_run_without_that_flag(inputs: Inputs, watched: Watched, answers: Answers) -> None:
     answers.cue.append(judged(Code.CUE_UNKNOWN, Stage.CUE))
-    with pytest.raises(InputError):
-        build(inputs, watched.run)
+    assert build(inputs, watched.run).stopped_at is Stage.CUE
 
 
 def test_a_finding_an_earlier_stage_made_does_not_stop_a_later_one(
@@ -450,7 +526,125 @@ def test_every_stage_of_the_pipeline_declares_the_options_it_takes() -> None:
     assert set(build_module.MODULES) == set(Stage)
 
 
-def test_every_artifact_of_the_pipeline_knows_where_this_project_keeps_it(inputs: Inputs) -> None:
-    """`Artifact` says what a file is for and the workspace says where it is, which is one home each."""
-    for artifact, name in build_module.ARTIFACTS.items():
-        assert isinstance(getattr(inputs.workspace, name), Path), artifact
+# ---- keeping what has not changed --------------------------------------------------------------
+
+
+def _built_once(inputs: Inputs, answers: Answers, make_run: Callable[..., Watched]) -> None:
+    """A first build whose assemble writes a film and whose verify finds a late cue."""
+    answers.film = b"film"
+    answers.verify.append(judged(Code.CUE_OFF, Stage.VERIFY))
+    build(inputs, make_run(inputs).run)
+
+
+def test_an_unchanged_build_keeps_assemble_and_verify(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+) -> None:
+    """Nothing either stage reads has moved, so the film and its measurement already stand."""
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    again = make_run(inputs)
+    result = build(inputs, again.run)
+    assert "assemble" not in calls.names
+    assert "verify" not in calls.names
+    outcomes = {row.stage: row.outcome for row in result.stages}
+    assert outcomes[Stage.ASSEMBLE] is Outcome.KEPT
+    assert outcomes[Stage.VERIFY] is Outcome.KEPT
+    assert result.film == Path("build/final/t.mp4")
+    # What verify found is still true of the film, so the kept run reports it again.
+    assert [found.code for found in result.findings] == [Code.CUE_OFF]
+    kept = [line for line in again.of(StageDone) if line.outcome is Outcome.KEPT]
+    assert [line.stage for line in kept] == [Stage.ASSEMBLE, Stage.VERIFY]
+
+
+def test_every_kept_or_remade_stage_says_why(
+    inputs: Inputs,
+    make_run: Callable[..., Watched],
+    answers: Answers,
+    calls: Calls,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An author who expected a kept assemble learns which input moved from one token rather than a guess."""
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        _built_once(inputs, answers, make_run)
+        assert decisions(caplog, "assemble") == [(False, "no-record")]
+        caplog.clear()
+        build(inputs, make_run(inputs).run)
+        assert decisions(caplog, "assemble") == [(True, "unchanged")]
+        assert decisions(caplog, "verify") == [(True, "unchanged")]
+        caplog.clear()
+        build(inputs, make_run(inputs).run, force=True)
+        assert decisions(caplog, "assemble") == [(False, "forced")]
+        caplog.clear()
+        inputs.script_path.write_text(SCRIPT.replace("A ball.", "A ball rolls."), encoding="utf-8")
+        build(inputs, make_run(inputs).run)
+        assert decisions(caplog, "assemble") == [(False, "key-changed")]
+    del calls
+
+
+def test_force_measures_again(inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls) -> None:
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    build(inputs, make_run(inputs).run, force=True)
+    assert calls.names[-2:] == ["assemble", "verify"]
+
+
+def test_a_changed_input_assembles_and_measures_again(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+) -> None:
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    inputs.script_path.write_text(SCRIPT.replace("A ball.", "A ball rolls."), encoding="utf-8")
+    build(inputs, make_run(inputs).run)
+    assert calls.names[-2:] == ["assemble", "verify"]
+
+
+def test_a_film_rewritten_outside_the_build_is_made_again(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A stage run on its own rewrites the film without the record, so the record no longer vouches for it."""
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    inputs.workspace.film.write_bytes(b"another film")
+    caplog.clear()
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        build(inputs, make_run(inputs).run)
+    assert "assemble" in calls.names
+    assert decisions(caplog, "assemble") == [(False, "outputs-changed")]
+
+
+def test_a_new_film_is_measured_again_even_when_its_inputs_are_old(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+) -> None:
+    """Verify is kept on the film's own bytes, so a film assembled with other options is measured."""
+    _built_once(inputs, answers, make_run)
+    calls.made.clear()
+    answers.film = b"a louder film"
+    build(inputs, make_run(inputs).run, loudness=False)
+    assert calls.names[-2:] == ["assemble", "verify"]
+
+
+def test_a_run_that_makes_no_film_keeps_nothing(
+    inputs: Inputs, watched: Watched, calls: Calls, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An assemble that left no film behind has nothing a later build could keep."""
+    build(inputs, watched.run)
+    calls.made.clear()
+    caplog.clear()
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        build(inputs, watched.run)
+    assert calls.names[-2:] == ["assemble", "verify"]
+    assert decisions(caplog, "verify") == [(False, "film-missing")]
+
+
+def test_a_run_that_assembles_and_stops_before_verify_keeps_no_measurement(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+) -> None:
+    """Verify reads what assemble writes, so a new film leaves the last measurement describing another one."""
+    _built_once(inputs, answers, make_run)
+    assert read_kept(inputs).verify is not None
+    inputs.script_path.write_text(SCRIPT.replace("A ball.", "A ball rolls."), encoding="utf-8")
+    build(inputs, make_run(inputs).run, stages=Stage.span(None, Stage.ASSEMBLE))
+    assert calls.names[-1] == "assemble"
+    kept = read_kept(inputs)
+    assert kept.assemble is not None
+    assert kept.verify is None

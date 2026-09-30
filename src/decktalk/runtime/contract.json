@@ -1,10 +1,18 @@
 {
+  "milliseconds": 1000,
+  "secondDigits": 3,
   "captureFps": 25,
   "pairSeparator": "|",
   "pairMark": ":",
   "wireMark": ":",
+  "timeMark": "@",
+  "listSeparator": ",",
+  "previewCueTimes": "/__decktalk/cue-times.json",
+  "motionScaleProperty": "--dt-motion-scale",
+  "runtimeMark": "decktalk-runtime",
   "frameStepMs": 40,
   "measurableSpanSeconds": 0.5,
+  "playableSpanSeconds": 0.46,
   "onsetFirstFramePercent": 25,
   "appearWordsMax": 8,
   "backOpacity": 0.45,
@@ -30,7 +38,7 @@
       "overshootPercent": 4
     },
     "draw": {
-      "seconds": 0.48,
+      "seconds": 0.44,
       "liftPixels": 0,
       "overshootPercent": 0
     },
@@ -66,10 +74,10 @@
   },
   "counts": {
     "last": {
-      "seconds": 0.48
+      "seconds": 0.44
     },
     "first": {
-      "seconds": 0.48
+      "seconds": 0.44
     }
   },
   "attention": {
@@ -271,7 +279,7 @@
       "default": null,
       "range": null,
       "code": "PAGE_BAD_VALUE",
-      "span": 0.48,
+      "span": 0.44,
       "affects": [
         "motion",
         "style"
@@ -366,7 +374,7 @@
       "default": null,
       "range": {
         "min": 0.12,
-        "max": 0.48,
+        "max": 0.44,
         "step": 0.04,
         "unit": "seconds"
       },
@@ -692,11 +700,6 @@
       "certainty": "certain",
       "raisedBy": "python"
     },
-    "PAGE_WORD_LATE": {
-      "message": "The first synced word of {value} was shown after the voice reached it, so the line trails the speech.",
-      "certainty": "uncertain",
-      "raisedBy": "python"
-    },
     "PAGE_THIN_DRAW": {
       "message": "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
       "certainty": "uncertain",
@@ -729,6 +732,11 @@
     },
     "PAGE_CDN_ASSET": {
       "message": "The page loaded {value} from another origin, so the film depends on a host it does not own.",
+      "certainty": "certain",
+      "raisedBy": "python"
+    },
+    "PAGE_RUNTIME_STALE": {
+      "message": "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
       "certainty": "certain",
       "raisedBy": "python"
     }

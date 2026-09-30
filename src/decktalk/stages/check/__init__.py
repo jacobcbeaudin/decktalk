@@ -23,41 +23,45 @@ and `cue` still owns `build/cue-times.json`.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 
 from playwright.sync_api import Page
 
 from decktalk.errors import InputError
-from decktalk.findings import Code, Finding, Location, ProjectPath
+from decktalk.files import current_text
+from decktalk.findings import Applicability, Code, Finding, Location, ProjectPath, RuntimeFix, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
+from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
 from decktalk.machine import Run
-from decktalk.media.browser import chromium, open_page
-from decktalk.media.origin import Allowed
+from decktalk.media.browser import chromium
+from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
+from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
 from decktalk.results import CheckResult, Panel, SectionCues, SpendState
-from decktalk.stages import judge, selects
+from decktalk.stages import selects
 from decktalk.stages.check.scan import (
-    Sheet,
     judged_pages,
     landing_findings,
     opening_panels,
-    origin_findings,
-    page_findings,
     seam_findings,
-    settle_milliseconds,
     static_findings,
 )
 from decktalk.stages.check.script import script_findings
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
-from decktalk.stages.narrate.plan import VOICE_VARIABLE, voice_id_of
-from decktalk.stages.storyboard import Slides, reports_of, slide_cues, write_page
+from decktalk.stages.narrate.plan import voice_id_of
+from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
 from decktalk.stages.verify import opted_out
+from decktalk.template import stale_runtime
+from decktalk.toolchain import assets
+from decktalk.toolchain.assets import RUNTIME_FILE
 
 NEEDS_A_PAGE: tuple[Code, ...] = (
     Code.CUE_MISSING,
@@ -78,9 +82,6 @@ NEEDS_A_FRAME: tuple[Code, ...] = (
     Code.CUT_POP,
 )
 """Every judgement that needs two frozen frames, which a run without frames cannot reach."""
-
-UNKNOWN_VOICE = "there is no voice to ask, so the cache could not be checked and the whole run is priced as new."
-"""Why a price is the ceiling rather than the estimate, which is what a project with no key is told."""
 
 
 @dataclass
@@ -106,14 +107,15 @@ def check(
     script = inputs.relative(inputs.script_path)
     segments = _segments(inputs, run)
     spoken = [one for one in segments if one.index not in inputs.document.clip_numbers and wanted(one.index)]
-    for found in script_findings(_markdown(inputs), spoken, script=script):
+    for found in script_findings(current_text(inputs.script_path), spoken, script=script):
         run.found(found)
 
+    extra = _named_pages(inputs, paths)
+    _runtime_copies(inputs, run, extra)
     plans = _plan(inputs, run, spoken)
     spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
     resolved, times = _resolve(inputs, run, plans, wanted)
     sections = [one for one in inputs.document.page_sections if wanted(one.number)]
-    extra = _named_pages(inputs, paths)
 
     looked = _look(inputs, run, sections, extra, times, frames=frames) if pages else _unreached(run, frames=frames)
     if pages:
@@ -137,18 +139,43 @@ def check(
 # ---- the files the author writes ---------------------------------------------------------------
 
 
-def _markdown(inputs: Inputs) -> str:
-    """The script as it is written, or nothing at all when the project has not got one."""
-    path = inputs.script_path
-    return path.read_text(encoding="utf-8") if path.is_file() else ""
+def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
+    """Judge each of the project's copies of the runtime that is not the one this engine ships.
+
+    `decktalk init` copies the runtime beside the pages, and a copy an older engine wrote keeps
+    playing the older contract, so a reveal can pass on the author's machine and read differently to
+    this engine's recorder and verify. The copy that matters is the one beside each page, which is
+    the one a page loads.
+    """
+    pages = [*inputs.document.page_files, *extra]
+    for folder in dict.fromkeys(Path(page).parent for page in pages):
+        named = folder / RUNTIME_FILE
+        copy = inputs.path(named)
+        if stale_runtime(copy):
+            where = named.as_posix()
+            # Only a copy some release shipped is known to hold none of the author's work. Any other
+            # copy was edited, so replacing it is left to a caller who accepts losing the edits.
+            if hashlib.sha256(copy.read_bytes()).hexdigest() in assets.SHIPPED_RUNTIMES:
+                message = (
+                    f"{where} is not the runtime this engine ships, so its pages play a contract this engine does "
+                    "not measure. Run `decktalk check --fix` to replace it with the engine's."
+                )
+                title = f"Replace {where} with the runtime this engine ships."
+                fix = RuntimeFix(title=title, applicability=Applicability.SAFE, file=named)
+            else:
+                message = (
+                    f"{where} is not the runtime this engine ships, so its pages play a contract this engine does "
+                    "not measure. It matches no runtime a release shipped, so it holds edits that replacing it "
+                    "would lose, and `decktalk check --fix` leaves it as it is. Keep the edits somewhere else "
+                    "and apply the unsafe fix, which replaces it with the engine's."
+                )
+                title = f"Replace {where} with the runtime this engine ships, and lose the edits it holds."
+                fix = RuntimeFix(title=title, applicability=Applicability.UNSAFE, file=named)
+            run.found(judge(Code.PAGE_RUNTIME_STALE, message, at(copy, inputs.root), fix=fix))
 
 
 def _segments(inputs: Inputs, run: Run) -> list[Segment]:
-    """Every section of the script, or a judgement and no sections when it cannot be read.
-
-    A script that is missing or will not parse is what this command exists to report, so it is a
-    finding rather than the refusal it is on every command that would have spent something.
-    """
+    """Every section of the script, or a judgement and no sections when it cannot be read."""
     try:
         return list(inputs.script())
     except InputError as refused:
@@ -168,22 +195,18 @@ def _plan(inputs: Inputs, run: Run, spoken: Sequence[Segment]) -> list[TakePlan]
     if not spoken:
         return []
     model = inputs.document.voice.model or inputs.settings.narration.model
-    plans, why = voiced_plan(inputs, list(spoken), model=model, voice_id=_voice_id(inputs, run))
+    plans, why = voiced_plan(inputs, list(spoken), model=model, voice_id=_voice_id(inputs))
     if why:
-        run.note(f"{UNKNOWN_VOICE} {why}")
+        run.note(why)
     return plans
 
 
-def _voice_id(inputs: Inputs, run: Run) -> str:
-    """The voice this project would be read in, or nothing when the project has not named one yet.
-
-    A check is the command a person runs before they have a credential, so a project with no voice
-    is priced and judged rather than refused, and the plan says the cache could not be checked.
-    """
+def _voice_id(inputs: Inputs) -> str:
+    """The voice this project would be read in, or nothing when the project has not named one yet."""
     try:
         return voice_id_of(inputs)
     except InputError:
-        run.note(f"{VOICE_VARIABLE} is not set, so no take on disk can be matched to the voice that made it.")
+        # silent: a project that names no voice is judged for that elsewhere.
         return ""
 
 
@@ -206,6 +229,7 @@ def _resolve(
         clips=inputs.document.clip_numbers,
         estimated=estimated,
         cues_file=inputs.relative(inputs.cues_path),
+        cues_text=inputs.cues_text(),
     )
     for one in found:
         run.found(one)
@@ -216,11 +240,7 @@ def _resolve(
 
 
 def _named_pages(inputs: Inputs, paths: Sequence[Path]) -> tuple[str, ...]:
-    """Every page a caller named on the command line, as the project sees it.
-
-    A deck page no section plays yet is still a page worth judging, which is why `check` takes paths
-    at all, so a page nobody has wired into `decktalk.toml` is opened beside the ones that are.
-    """
+    """Every page a caller named on the command line, as the project sees it."""
     return tuple(dict.fromkeys(inputs.relative(inputs.path(one)).as_posix() for one in paths))
 
 
@@ -231,11 +251,7 @@ def _judged(
     sections: Sequence[PageSection],
     extra: Sequence[str],
 ) -> tuple[ProjectPath, ...]:
-    """Every file and page this call judged, project-relative and in the order it met them.
-
-    A run without pages opened none of them, so it names the script and the cue file alone. A page
-    listed by a run that never read it sends a reader looking for a judgement nobody made.
-    """
+    """Every file and page this call judged, project-relative and in the order it met them."""
     files: list[Path] = [script]
     if resolved or inputs.cues_path.is_file():
         files.append(inputs.relative(inputs.cues_path))
@@ -264,27 +280,18 @@ def _look(
     frames: bool,
 ) -> Look:
     """Open every page once, keep what it published, and judge as much of it as this run asked for."""
-    video, cfg = inputs.settings.video, inputs.settings.record
+    cfg = inputs.settings.record
     files = judged_pages(sections, extra)
     looked = Look()
     if not files:
         return looked
-    allowed = Allowed.of(inputs.root, inputs.served_paths())
-    with chromium(cfg.browser_path) as browser:
-        opened: dict[str, Page] = {}
+    with chromium(cfg.browser_path, policy=cfg.page_policy) as browser:
+        opened: dict[str, tuple[Page, Assets]] = {}
         for page in files:
             if not inputs.path(page).exists():
                 continue
-            drawn, assets = open_page(
-                browser,
-                allowed,
-                width=video.width,
-                height=video.height,
-                color_scheme=cfg.color_scheme,
-                motion=inputs.settings.motion,
-                documents=inputs.documents(),
-            )
-            opened[page] = drawn
+            drawn, assets = open_project_page(browser, inputs)
+            opened[page] = (drawn, assets)
             report = reports_of(drawn, inputs, [page]).get(page)
             looked.findings += _page_judgements(report, assets.external, where=page)
             if report is not None and report.catalog:
@@ -295,8 +302,8 @@ def _look(
 
 def _page_judgements(report: PageReport | None, external: Sequence[str], *, where: str) -> list[Finding]:
     """What one page said about itself and what it reached for, judged once per page rather than per section."""
-    said = page_findings(report, where=where) if report is not None else []
-    return [*said, *origin_findings(external, where=where)]
+    said = page_findings(report, page=where) if report is not None else []
+    return [*said, *asset_findings(external, where=where)]
 
 
 def _sections(
@@ -306,16 +313,16 @@ def _sections(
     times: Mapping[int, Mapping[str, float]],
     *,
     looked: Look,
-    opened: Mapping[str, Page],
+    opened: Mapping[str, tuple[Page, Assets]],
     frames: bool,
 ) -> None:
     """Judge every named section from the catalog its page published, and freeze its frames when asked."""
-    sheet = Sheet(inputs, run, opened, settle_milliseconds(inputs))
+    sheet = Sheet(inputs, run, opened, inputs.workspace.frames_dir)
     slides: dict[int, Slides] = {}
     skipped = opted_out(inputs)
     for section in sections:
         run.check()
-        entry = _entry(looked.catalogs.get(section.page), section.scene)
+        entry = scene_entry(looked.catalogs.get(section.page), section.scene)
         if entry is None:
             run.note(
                 f"section {section.number} plays scene {section.scene} of {section.page}, which published no "
@@ -347,7 +354,7 @@ def _seams(
 ) -> list[Finding]:
     """One judgement per section that declares `seamless` and follows another page section."""
     found: list[Finding] = []
-    for previous, section in zip(sections, sections[1:], strict=False):
+    for previous, section in pairwise(sections):
         if section.seamless:
             found += seam_findings(sheet, previous, section, slides, times)
     return found
@@ -360,11 +367,6 @@ def _two_way(
     declared = declared_cues(looked.catalogs, sections)
     cued = [block for block in inputs.cues() if wanted(block.number)]
     return cue_findings(declared, cued, cues_path=inputs.cues_path, root=inputs.root)
-
-
-def _entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
-    """The catalog entry for one scene of one page, or None when the page published no such scene."""
-    return next((one for one in entries or () if str(one.scene) == str(scene)), None)
 
 
 __all__ = ["NEEDS_A_FRAME", "NEEDS_A_PAGE", "Look", "check"]

@@ -21,15 +21,25 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections.abc import Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
+
+from pydantic_core import from_json
 
 from decktalk.errors import InputError
 from decktalk.findings import Location
+from decktalk.inputs.document import fill
 from decktalk.inputs.paths import at
 from decktalk.results import Word
 from decktalk.tomlmap import Table
+
+SECTION_START = "$start"
+"""The phrase that anchors a cue or a marker to its section's own beginning rather than to a spoken word."""
+
+SECTION_END = "$end"
+"""The phrase that anchors a cue or a marker to the end of the last word its section speaks."""
 
 
 @dataclass(frozen=True)
@@ -43,11 +53,22 @@ class Cue:
     offset: float = 0.0
     verify: bool = True  # False leaves the cue out of a plain `decktalk verify`.
     occurrence_set: bool = False  # cues.json names the occurrence, so a repeated phrase is not ambiguous.
+    line: int | None = None  # The line of cues.json the row's phrase is written on, when it could be found.
 
 
-# Every key a cue row may hold, which is every field of `Cue` but `occurrence_set`, this module's own and
-# never written by an author, and `_comment`, the one key a row may carry that DeckTalk reads nothing from.
-CUE_KEYS = {f.name for f in fields(Cue) if f.name != "occurrence_set"} | {"_comment"}
+READ_HERE = frozenset({"occurrence_set", "line"})
+"""The fields of `Cue` this module works out for itself, which an author never writes in a row."""
+
+# Every key a cue row may hold, which is every field of `Cue` but the ones this module works out, and
+# `_comment`, the one key a row may carry that DeckTalk reads nothing from.
+CUE_KEYS = {f.name for f in fields(Cue) if f.name not in READ_HERE} | {"_comment"}
+
+PHRASE_KEY = re.compile(r'"on"\s*:\s*("(?:[^"\\]|\\.)*")')
+"""Where a row writes its phrase in the file's own text, which is how the line of each row is found.
+
+A quote inside a JSON string is escaped, so this spelling can only be the key of a row and never a
+piece of some string's value.
+"""
 
 
 @dataclass(frozen=True)
@@ -59,6 +80,18 @@ class CuedSection:
     min_seconds: float | None = None
 
 
+def json_of(text: str, path: Path, root: Path) -> object:
+    """The JSON a project file holds, refused with the line the parser stopped on when it is not valid JSON."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise InputError(
+            f"{path.name} is not valid JSON: {exc.msg}.",
+            hint="Check the brackets and the commas on the line named here.",
+            location=at(path, root, line=exc.lineno),
+        ) from exc
+
+
 def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...]:
     """Parsed and validated `cues.json`, which is empty when the file does not exist.
 
@@ -67,14 +100,8 @@ def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...
     """
     if not path.exists():
         return ()
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise InputError(
-            f"{path.name} is not valid JSON: {exc.msg}.",
-            hint="Check the brackets and the commas on the line named here.",
-            location=at(path, root, line=exc.lineno),
-        ) from exc
+    text = path.read_text(encoding="utf-8")
+    data = json_of(text, path, root)
     sections_raw = data.get("sections") if isinstance(data, dict) else None
     if not isinstance(sections_raw, dict):
         raise InputError(
@@ -83,6 +110,7 @@ def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...
             location=at(path, root),
         )
     out: list[CuedSection] = []
+    lines = iter(phrase_lines(text))
     for num_raw, spec in sections_raw.items():
         try:
             number = int(num_raw)
@@ -106,11 +134,35 @@ def load_cues(path: Path, root: Path, known: set[int]) -> tuple[CuedSection, ...
             )
         section = Table(spec, f"{path.name}: section {number}")
         cues = [
-            parse_cue(raw, f"{path.name}: section {number}, cue #{i + 1}", at(path, root))
+            _placed(parse_cue(raw, f"{path.name}: section {number}, cue #{i + 1}", at(path, root)), next(lines, None))
             for i, raw in enumerate(section.get_tables("cues"))
         ]
         out.append(CuedSection(number=number, cues=tuple(cues), min_seconds=section.get_num("min_seconds")))
     return tuple(sorted(out, key=lambda s: s.number))
+
+
+def phrase_lines(text: str) -> list[tuple[str, int]]:
+    """(the phrase, the line it is written on) for every row of a cue file, in the order the file writes them.
+
+    JSON keeps the order of an object's members and of an array's items, so the rows the parser
+    hands back come in exactly this order, and the n-th phrase here is the n-th row's.
+    """
+    found: list[tuple[str, int]] = []
+    for match in PHRASE_KEY.finditer(text):
+        try:
+            phrase = from_json(match.group(1))
+        except ValueError:
+            # silent: a phrase that is not a JSON string is not a phrase.
+            continue
+        found.append((phrase, text.count("\n", 0, match.start()) + 1))
+    return found
+
+
+def _placed(cue: Cue, written: tuple[str, int] | None) -> Cue:
+    """The row with the line its phrase is written on, when the text agrees with what was parsed."""
+    if written is None or written[0] != cue.on:
+        return cue
+    return replace(cue, line=written[1])
 
 
 def parse_cue(raw: dict[str, object], where: str, location: Location | None = None) -> Cue:
@@ -127,38 +179,65 @@ def parse_cue(raw: dict[str, object], where: str, location: Location | None = No
             hint=f"The keys of a cue are {', '.join(sorted(CUE_KEYS))}.",
             location=location,
         )
-    t = Table(raw, where)
-    cue_id = t.get_str("cue", required=True)
-    on = t.get_str("on", required=True)
-    if not cue_id:
+    cue = fill(Table(raw, where), Cue, occurrence_set="occurrence" in raw)
+    if not cue.cue:
         raise InputError(f"{where}: 'cue' must not be empty", location=location)
-    return Cue(
-        cue=cue_id,
-        on=on,
-        occurrence=t.get_int("occurrence", 1),
-        case_sensitive=t.get_bool("case_sensitive"),
-        offset=t.get_num("offset", 0.0),
-        verify=t.get_bool("verify", True),
-        occurrence_set="occurrence" in raw,
-    )
+    return cue
+
+
+UNMATCHED = re.compile(r"[^\w']|_")
+"""Every character the matcher ignores, which is everything but a letter, a digit and an apostrophe.
+
+Letters are Unicode letters, so a cue on "café" or "naïve" keeps its accented letter rather than
+matching a word with the letter cut out of it.
+"""
+
+APOSTROPHES = str.maketrans({"\u2019": "'", "\u02bc": "'"})
+"""The typographic apostrophes a script or a voice's transcript may carry, read as the plain one."""
 
 
 def norm(token: str, case_sensitive: bool = False) -> str:
-    """One word with its punctuation dropped, as the matcher compares it."""
-    token = re.sub(r"[^0-9A-Za-z']", "", token)
-    return token if case_sensitive else token.lower()
+    """One word as the matcher compares it: composed, apostrophes plain, punctuation dropped.
+
+    A word is composed first, because the same accented letter can arrive as one character from the
+    script and as a letter plus a combining mark from a transcript, and the two must compare equal.
+    Case is folded rather than lowered, so letters whose lower case differs across forms still match.
+    """
+    token = UNMATCHED.sub("", unicodedata.normalize("NFC", token).translate(APOSTROPHES))
+    return token if case_sensitive else token.casefold()
 
 
-def phrase_matches(words: Sequence[Word], phrase: str, case_sensitive: bool = False) -> list[int]:
-    """Index of the first word of every occurrence of phrase, in order."""
-    target = [t for t in (norm(t, case_sensitive) for t in phrase.split()) if t]
-    if not target:
-        return []
-    normalized = [norm(w.word, case_sensitive) for w in words]
-    return [i for i in range(len(normalized) - len(target) + 1) if normalized[i : i + len(target)] == target]
+@dataclass(frozen=True)
+class Spoken:
+    """One section's words, with the form the matcher compares each of them in worked out once.
 
+    A section is matched against once per cue, and a long section with many cues would otherwise
+    normalise every one of its words again for each of them, so the two forms are made here when the
+    words are read and every phrase is matched against these.
+    """
 
-def find_phrase(words: Sequence[Word], phrase: str, occurrence: int = 1, case_sensitive: bool = False) -> int | None:
-    """Index of the first word of the n-th occurrence of phrase, or None."""
-    matches = phrase_matches(words, phrase, case_sensitive)
-    return matches[occurrence - 1] if 1 <= occurrence <= len(matches) else None
+    words: tuple[Word, ...]
+    folded: tuple[str, ...]
+    """Every word as a match without case compares it."""
+
+    exact: tuple[str, ...]
+    """Every word as a case-sensitive match compares it."""
+
+    @classmethod
+    def of(cls, words: Sequence[Word]) -> Spoken:
+        """These words with both of their matched forms worked out once."""
+        exact = tuple(norm(word.word, case_sensitive=True) for word in words)
+        return cls(words=tuple(words), folded=tuple(one.casefold() for one in exact), exact=exact)
+
+    def matches(self, phrase: str, case_sensitive: bool = False) -> list[int]:
+        """Index of the first word of every occurrence of phrase, in order."""
+        target = [t for t in (norm(t, case_sensitive) for t in phrase.split()) if t]
+        if not target:
+            return []
+        said, width = self.exact if case_sensitive else self.folded, len(target)
+        return [i for i in range(len(said) - width + 1) if list(said[i : i + width]) == target]
+
+    def find(self, phrase: str, occurrence: int = 1, case_sensitive: bool = False) -> int | None:
+        """Index of the first word of the n-th occurrence of phrase, or None."""
+        found = self.matches(phrase, case_sensitive)
+        return found[occurrence - 1] if 1 <= occurrence <= len(found) else None

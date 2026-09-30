@@ -57,6 +57,10 @@ my-lesson/build/
     ledger.json                 what this project has already bought, keyed by the request that made it
   sections/
     NN.mp4                      one section cut to its own span, which assemble concatenates
+    NN.json                     the key that cut was made from, which decides whether it is kept
+  stills/
+    <key>.png                   one frozen frame, named by everything that decides how it looks
+    <key>.json                  the project files the page had loaded when that frame was drawn
   frames/
     NN/<state>.png              the frozen slides check compares either side of a cue
   storyboard/
@@ -72,7 +76,8 @@ my-lesson/build/
     cuts.json                   where every section sits in the finished film
   events/
     <run>.jsonl                 one JSON line per event of one run
-  .lock                         held by the one run that is writing, and removed when it ends
+  kept.json                     what the last assemble and verify read, wrote and found
+  .lock                         locked by the one run that is writing, and left in place
 ```
 
 `<name>` is `[project] name`, which is what the film is named after. `NN` is a section's key, which
@@ -234,17 +239,32 @@ log as soon as that section is done and a measurement always belongs to the reco
 ```json build/recordings/01.json
 {
   "section": 1,
-  "url": "http://project.localhost/deck/index.html?scene=1&cues=1.1%3Atitle%400.5&t0=signal",
   "input_hash": "4b1d90a7c3e2f085",
-  "requested_seconds": 17.67,
-  "settle_seconds": 0.4,
-  "load_seconds": 0.62,
-  "clock_start_seconds": 1.04,
-  "t0_seconds": 1.08,
-  "t0_method": "the frame after the last of 37 cover frames",
-  "t0_guessed": false,
-  "assets": ["deck/index.html", "deck/decktalk-runtime.js"],
-  "external": [],
+  "recording": {
+    "url": "http://project.localhost/deck/index.html?scene=1&cues=1.1%3Atitle%400.5&t0=signal",
+    "assets": ["deck/index.html", "deck/decktalk-runtime.js"],
+    "external": [],
+    "missing": [],
+    "requested_seconds": 17.67,
+    "load_seconds": 0.62,
+    "settle_seconds": 0.4,
+    "clock_start_seconds": 1.04,
+    "page_errors": [],
+    "report": {
+      "version": "<the runtime that drew the page>",
+      "mode": "cue",
+      "scene": "1",
+      "slide": "1.2",
+      "warnings": [],
+      "catalog": [],
+      "cues": [],
+      "words": [],
+      "frameGaps": [],
+      "longFrames": [],
+      "unreadable": []
+    }
+  },
+  "start": { "seconds": 1.08, "method": "the frame after the last of 37 cover frames", "guessed": false },
   "findings": [
     {
       "code": "PAGE_NO_DESCRIPTION",
@@ -260,19 +280,6 @@ log as soon as that section is done and a measurement always belongs to the reco
     "duration_seconds": 17.7,
     "wanted_seconds": 17.67,
     "luma": { "at_tenth": 31.2, "at_half": 44.9, "at_nine_tenths": 45.1, "peak_at_half": 238.0 }
-  },
-  "report": {
-    "version": "<the runtime that drew the page>",
-    "mode": "cue",
-    "scene": "1",
-    "slide": "1.2",
-    "warnings": [],
-    "catalog": [],
-    "cues": [],
-    "words": [],
-    "frameGaps": [],
-    "longFrames": [],
-    "unreadable": []
   }
 }
 ```
@@ -280,20 +287,24 @@ log as soon as that section is done and a measurement always belongs to the reco
 | Field | Meaning |
 |---|---|
 | `section` | The section this recording plays. |
-| `url` | The page URL the recorder opened, with its cues and its words. |
 | `input_hash` | The digest of what this section was recorded from, which is what a skip is keyed on. |
-| `requested_seconds` | How long the recorder asked the page to play for. |
-| `settle_seconds` | How long the page was left to settle before the clock started. |
-| `load_seconds` | How long the page took to load. |
-| `clock_start_seconds` | The recorder's own estimate of where narration t=0 is. |
-| `t0_seconds` | The first clean frame after the cover, or null. |
-| `t0_method` | How t=0 was found, in one sentence, or null. |
-| `t0_guessed` | True when no cover was found, so every reveal in the section moves. |
-| `assets` | Every project file the page loaded, project-relative. |
-| `external` | Every other origin the page reached for while recording. |
+| `recording` | What the recorder knew, as the browser driver read it. |
+| `recording.url` | The page URL the recorder opened, with its cues and its words. |
+| `recording.assets` | Every project file the page loaded, project-relative. |
+| `recording.external` | Every other origin the page reached for while recording. |
+| `recording.missing` | Every project file the page asked for that is not there. |
+| `recording.requested_seconds` | How long the recorder asked the page to play for. |
+| `recording.load_seconds` | How long the page took to load. |
+| `recording.settle_seconds` | How long the page was left to settle before the clock started. |
+| `recording.clock_start_seconds` | The recorder's own estimate of where narration t=0 is. |
+| `recording.page_errors` | Uncaught exceptions, or the one line for no runtime at all. |
+| `recording.report` | What the page said about itself, read once as it was recorded. |
+| `start` | Where narration t=0 sits in the webm, or null before it was found. |
+| `start.seconds` | The first clean frame after the cover. |
+| `start.method` | How t=0 was found, in one sentence. |
+| `start.guessed` | True when no cover was found, so every reveal in the section moves. |
 | `findings` | Every judgement the page and the frames made, each a whole finding. |
 | `checks` | What the frames measured, or null when none were. |
-| `report` | What the page said about itself, read once as it was recorded. |
 
 Every judgement the recorder makes is a finding, so the page's own warnings, the exceptions it threw
 and the checks over the frames are one list a reader dispatches on by code.
@@ -353,6 +364,66 @@ is the author's to take.
 One mp4 per section, cut to the span the take index gives it, which is what `assemble` concatenates
 into the film. A cut left behind by a renumbering belongs to no section, and `assemble` names each
 such file rather than folding it into a film nobody asked for.
+
+Beside each cut, `NN.json` holds the key it was cut from.
+
+```json build/sections/01.json
+{
+  "digest": "e0e151e0309dbe1e6f668545562a726c5e0333e07ed2020583dce792e00c6017"
+}
+```
+
+The digest is a sha256 over the whole argument list of the encode, the BLAKE3 digest of every file
+it read and the engine version. `assemble` keeps a cut whose key still matches rather than encoding it
+again, so an edit to one section cuts that section again and leaves the others alone. Nothing chooses
+which arguments count, because a key over a hand-picked subset would one day miss an input and ship
+a stale picture, and a new engine version cuts every section again because it may encode the same
+arguments differently.
+
+## `build/stills/`
+
+Every frozen frame `check`, `storyboard` and the poster draw, kept by what drew it, so one state of
+a page is drawn once whichever of the three asks for it first. `<key>.png` is named by a digest of
+everything the caller knows before the page opens: the URL, the frame size, the colour scheme, the
+motion settings, the content of the page file and the engine version. `<key>.json` beside it names
+every project file the page went on to load, with its digest then, because a picture or a module the
+page reached for is part of the picture too.
+
+A still is used only when its key matches and every file its manifest names still has the digest it
+had, which is the same rule the recorder applies to a whole section. So a second `check` on an
+unchanged deck opens no page for a frame it already has, and an edit to one picture draws again only
+the frames that loaded it.
+
+The slate that stands in for a missing clip is kept here too. Its key is everything it shows: the
+chapter title, the lines above and below it, the frame size, `[video] slate_color`, the page policy
+and the engine version. A renamed chapter or a new colour therefore draws a new slate, and the section
+cut that reads it gets a new key.
+
+A frame nobody has found or kept for a fortnight is removed whenever another is kept, so the frames
+of an edited page and the slates of a renamed chapter do not stay for as long as the project does.
+
+## `build/kept.json`
+
+The record a build leaves of its last `assemble` and `verify`, which is what lets the next build keep
+them. For each stage it holds the digest of everything the stage read with the options it ran with,
+the digest of every file it wrote, and every finding it made.
+
+| Field | Meaning |
+|---|---|
+| `assemble.key`, `verify.key` | The digest of everything the stage read, with the options it was run with. |
+| `assemble.options`, `verify.options` | The options the stage was run with, as the build passed them. |
+| `assemble.outputs`, `verify.outputs` | Each file the stage wrote, project-relative, against the digest of its bytes. |
+| `assemble.findings`, `verify.findings` | What the stage found, which a build that keeps the stage reports again. |
+
+A build whose digest for a stage matches, and whose outputs still hold those bytes, keeps that stage
+rather than running it. `assemble` and `verify` are pure functions of files already on disk, so the
+film on disk is the one they would make and the measurement is the one they would take. The stage is
+reported with the outcome `kept`, its findings are reported again, and `--force` runs it anyway.
+
+The digests are over file contents and never over file times, because a copy or a checkout moves
+every time and changes no byte. Only `build` writes this file, so after a `verify` run on its own,
+`status` still names `verify`. A record this version cannot read keeps nothing, which costs one
+assemble and one verify and is never wrong.
 
 ## `build/final/`
 
@@ -425,7 +496,7 @@ the other is writing. `--events` prints the same lines on stderr as they happen.
 {"event":"run.done","time":"2026-09-24T10:23:12.301882Z","seq":9,"run":"a41e586449ed","outcome":"ok","seconds":0.026}
 ```
 
-`event` is the discriminator and there are eleven names. `time`, `seq` and `run` are on every line,
+`event` is the discriminator and there are twelve names. `time`, `seq` and `run` are on every line,
 and `seq` counts per run rather than per machine, so a reader can tell a gap from a lost line.
 [Python API](/reference/python-api) gives every field of every line.
 
@@ -446,7 +517,8 @@ finds a build running in the background and follows its lines.
 whether a reveal really changes anything before a single credit is spent. Those pictures are written
 to `build/frames/<key>/<state>.png`, where `<state>` names the URL that drew it, such as
 `slide-2.1-after-2.1_formula.png`. Each state is drawn once however many cues are measured against
-it, because the same URL is the same picture.
+it, because the same URL is the same picture, and each is copied from `build/stills/` when a still of
+it is already kept there.
 
 `storyboard` writes its own stills under `build/storyboard/<key>/` with the same naming.
 
@@ -458,10 +530,16 @@ panel captioned with its section, its slide, its moment and its second.
 
 ## `build/.lock`
 
-A run that writes holds this file for its whole length, and removes it however the run ends. It
-holds the process id and the run id, so a second writer is refused with a sentence that names whose
-run is in the way. A lock left behind by a process that is gone is broken and reported rather than
-refused, because a caller cannot clear a file it was never told about.
+A run that writes holds an operating system lock on this file for its whole length, which is `flock`
+on Linux and macOS and a byte-range lock on Windows. The system releases it the moment the holder
+ends, however it ends, and two writers that race for it cannot both win. While it is held the file
+names the process id and the run id, so a second writer is refused with a sentence that names whose
+run is in the way.
+
+The file itself stays on disk after the run, empty. A file removed while another writer waits on it
+would let a third lock a new file beside the old one, so deleting it is never needed and never
+helps. A run that finds an owner written in a file nobody holds takes the lock and says so, because
+a caller cannot clear a note it was never told about.
 
 ## Related
 

@@ -8,22 +8,22 @@ every sample the stage would read is a value the test names.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Cut, Cuts, RecordingLog, Take, Takes
+from decktalk.artifacts import Cut, Cuts
 from decktalk.errors import Cancel
-from decktalk.findings import Finding
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg, frames
-from decktalk.media.pagereport import PageReport
 from decktalk.results import SectionCues, Voicing
-from decktalk.settings import ToolsConfig
+from support.projects import load_project
+from support.runs import a_machine
+from support.takes import a_take, write_takes
 
 PAGES_TOML = """
 [project]
@@ -62,6 +62,7 @@ class Measurements:
     luma: float = 200.0
     changed: float = 5.0
     control: float = 0.0
+    shares: Iterator[float] | None = None  # when set, each comparison reads the next of these instead
     series: list[tuple[float, float]] | None = None
     rms_dbfs: float = -80.0
     samples: list[int] | None = None
@@ -69,18 +70,23 @@ class Measurements:
 
     def share(self, until: float) -> float:
         """What one comparison ending at `until` reads, which is a probe past the cue and a control before it."""
+        if self.shares is not None:
+            return next(self.shares)
         return self.changed if until > CUE_SECONDS else self.control
 
 
-def a_machine(tmp_path: Path) -> Machine:
-    """A machine that read nothing, which is what a stage test is handed rather than the real one."""
-    return Machine(
-        environ={},
-        tables={},
-        config_path=tmp_path / "config.toml",
-        cwd=tmp_path,
-        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
-    )
+class FakeDecoded:
+    """A decoded film whose every comparison is the number the test named, and the plan it was asked for."""
+
+    def __init__(self, said: Measurements, wanted: frames.Wanted) -> None:
+        self.said = said
+        self.wanted = wanted
+
+    def changed(self, _t1: float, t2: float, **_kw: object) -> float:
+        return self.said.share(t2)
+
+    def series(self, *_args: object, **_kw: object) -> list[tuple[float, float]]:
+        return list(self.said.series or [])
 
 
 @contextmanager
@@ -91,36 +97,14 @@ def opened(root: Path) -> Iterator[Run]:
         yield run
 
 
-def take(number: int, *, start_words: float = 1.0) -> Take:
-    """One placeholder take, long enough that every cue of its section sits inside it."""
-    return Take(
-        section=number,
-        key=f"{number:02d}",
-        chapter=f"Section {number}",
-        hash=f"hash{number}",
-        voiced=False,
-        word_count=2,
-        characters=10,
-        estimated_seconds=SECTION_SECONDS,
-        duration_seconds=SECTION_SECONDS,
-        speech_end_seconds=SECTION_SECONDS - start_words,
-        sound_end_seconds=SECTION_SECONDS,
-        spoken="hello there",
-    )
-
-
 def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> None:
     """The take index, the cut list, the cue times and the narration a finished film leaves behind."""
     workspace = inputs.workspace
     workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     workspace.final_dir.mkdir(parents=True, exist_ok=True)
     workspace.sections_dir.mkdir(parents=True, exist_ok=True)
-    Takes(
-        script="script.md",
-        model="m",
-        output_format="mp3_44100_128",
-        sections=tuple(take(section.number) for section in inputs.document.sections),
-    ).write(workspace.takes_path)
+    sections = inputs.document.sections
+    write_takes(inputs, *(a_take(section.number, seconds=SECTION_SECONDS, voiced=False) for section in sections))
     Cuts(
         fps=inputs.settings.video.output_fps,
         sections=tuple(
@@ -154,22 +138,6 @@ def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> N
         workspace.section_video(section.key).write_bytes(b"cut")
 
 
-def write_log(inputs: Inputs, section: int, found: Sequence[Finding] = ()) -> None:
-    """One recording log, so `verify` has something to repeat rather than measure again."""
-    inputs.workspace.recordings_dir.mkdir(parents=True, exist_ok=True)
-    RecordingLog(
-        section=section,
-        url="http://project.localhost/deck/index.html",
-        input_hash="abc",
-        requested_seconds=SECTION_SECONDS,
-        settle_seconds=0.1,
-        load_seconds=0.1,
-        clock_start_seconds=0.2,
-        findings=tuple(found),
-        report=PageReport(),
-    ).write(inputs.workspace.recording_log(f"{section:02d}"))
-
-
 @pytest.fixture(autouse=True)
 def measured(monkeypatch: pytest.MonkeyPatch) -> Measurements:
     """Every ffmpeg reading the stage would take, replaced by the number the test names.
@@ -180,8 +148,7 @@ def measured(monkeypatch: pytest.MonkeyPatch) -> Measurements:
     said = Measurements()
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: said.duration)
     monkeypatch.setattr(frames, "luma_at", lambda _path, _t, crop=None: (said.luma / 2, said.luma))
-    monkeypatch.setattr(frames, "changed_pixels_percent", lambda _p, _a, b, **_kw: said.share(b))
-    monkeypatch.setattr(frames, "changed_series", lambda *_a, **_kw: list(said.series or []))
+    monkeypatch.setattr(frames, "decode", lambda _path, wanted: FakeDecoded(said, wanted))
     monkeypatch.setattr(audio, "rms_db", lambda _p, _start, _seconds: said.rms_dbfs)
     monkeypatch.setattr(audio, "pcm_span", lambda _p, _start, _seconds, **_kw: list(said.samples or []))
     return said
@@ -194,12 +161,7 @@ def assembled(tmp_path: Path) -> Callable[..., Inputs]:
     def make(
         cue_times: dict[int, dict[str, float]] | None = None, *, toml: str = PAGES_TOML, cues: dict | None = None
     ) -> Inputs:
-        (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
-        (tmp_path / "deck").mkdir(exist_ok=True)
-        (tmp_path / "deck" / "index.html").write_text("<html></html>", encoding="utf-8")
-        if cues is not None:
-            (tmp_path / "cues.json").write_text(json.dumps({"sections": cues}), encoding="utf-8")
-        inputs = Inputs.load(tmp_path, environ={})
+        inputs = load_project(tmp_path, toml, page="<html></html>", cues=cues)
         write_artifacts(inputs, cue_times or {})
         return inputs
 

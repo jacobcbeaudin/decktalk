@@ -11,19 +11,20 @@ where unset says exactly what happens: the override is removed and the layer bel
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
-from pydantic import JsonValue
 from typer._click import Context
 
 from decktalk import settings as knobs
 from decktalk.cli import session as sessions
-from decktalk.cli.app import CONTEXT, DeckTalkGroup, app, command, docs_for
-from decktalk.cli.options import Group, Where
+from decktalk.cli.app import CONTEXT, DeckTalkGroup, app, command
+from decktalk.cli.options import Group
 from decktalk.errors import InputError
+from decktalk.events import Level
 from decktalk.explain import explain as explained
 from decktalk.results import (
     ConfigExplainResult,
@@ -34,14 +35,20 @@ from decktalk.results import (
     Layer,
     Scope,
     SettingValue,
+    counted,
 )
+from decktalk.settings import json_value
 from decktalk.tomlmap import Key as KeyRecord
+
+SENTENCE_ENDS = (".", "?", "!")
+"""The marks a refusal's own sentence may already end on, which is when no full stop is added."""
 
 PURPOSE = "List, get, set, explain or unset a setting."
 """What the command tree says about the group, which is the five verbs in the order they are met."""
 
 config = typer.Typer(
     cls=DeckTalkGroup,
+    name="config",
     help=PURPOSE,
     add_completion=False,
     pretty_exceptions_enable=False,
@@ -54,12 +61,12 @@ app.add_typer(config, name="config", rich_help_panel=Group.CONTRACTS.value)
 
 Named = Annotated[str, typer.Argument(metavar="KEY", help="The key's dotted name, such as video.crf.")]
 Scoped = Annotated[
-    Where,
+    Scope,
     typer.Option("--where", metavar="SCOPE", help="project writes decktalk.toml, machine writes this machine's file."),
 ]
 
 
-@command("list", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'list')}")
+@command("list", group=Group.CONTRACTS, to=config)
 def list_keys(
     ctx: Context,
     table: Annotated[str | None, typer.Argument(metavar="TABLE", help="One table, such as verify.")] = None,
@@ -72,34 +79,36 @@ def list_keys(
     once, and `config explain` is the call that reads one whole.
     """
     session = sessions.of(ctx)
-    return ConfigListResult(ok=True, keys=_rows(session, table, defaults=defaults, changed=changed))
+    with _told(session):
+        return ConfigListResult(ok=True, keys=_rows(session, table, defaults=defaults, changed=changed))
 
 
-@command("get", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'get')}")
+@command("get", group=Group.CONTRACTS, to=config)
 def get_key(ctx: Context, key: Named) -> ConfigGetResult:
     """Print one key's value and the layer that set it."""
     session = sessions.of(ctx)
     known = _known(key)
-    here = _loaded(session)
+    with _told(session):
+        here = _loaded(session)
     winner = here.layers.winner(known.id)
     return ConfigGetResult(
         ok=True,
         key=SettingValue(
             key=known.id,
-            value=_json(knobs.value_of(here.settings, known.id)),
-            default=_json(known.default),
+            value=json_value(knobs.value_of(here.settings, known.id)),
+            default=json_value(known.default),
             layer=winner.layer,
             file=winner.file,
         ),
     )
 
 
-@command("set", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'set')}")
+@command("set", group=Group.CONTRACTS, to=config)
 def set_key(
     ctx: Context,
     key: Named,
     value: Annotated[str, typer.Argument(metavar="VALUE", help="The value, spelled as a command line spells it.")],
-    where: Scoped = Where.PROJECT,
+    where: Scoped = Scope.PROJECT,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Report the change and write nothing.")] = False,
 ) -> ConfigSetResult:
     """Write one key into decktalk.toml or into this machine's file.
@@ -110,28 +119,17 @@ def set_key(
     session = sessions.of(ctx)
     path = _file(session, where)
     try:
-        written = knobs.write(path, key, value, scope=_scope(where), dry_run=dry_run)
+        with _told(session):
+            return knobs.write(path, key, value, scope=where, environ=session.machine.environ, dry_run=dry_run)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
-    return ConfigSetResult(
-        ok=True,
-        written=() if dry_run else (written.file,),
-        key=written.key,
-        value=written.value,
-        previous=written.previous,
-        scope=written.scope,
-        file=written.file,
-        effective=written.effective,
-        layer=written.layer,
-        dry_run=written.dry_run,
-    )
 
 
-@command("unset", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'unset')}")
+@command("unset", group=Group.CONTRACTS, to=config)
 def unset_key(
     ctx: Context,
     key: Named,
-    where: Scoped = Where.PROJECT,
+    where: Scoped = Scope.PROJECT,
     whole: Annotated[bool, typer.Option("--all", help="Remove a whole table rather than one key.")] = False,
 ) -> ConfigUnsetResult:
     """Remove one key so the layer below it wins again.
@@ -140,34 +138,24 @@ def unset_key(
     `--all` says so, and on a terminal it is confirmed first.
 
     The removal itself is the settings layer's, because editing a validated file is library work and
-    a second editor here would be a second thing to keep true. A table is that call once per key the
-    file states, and the value that now applies is the first key's, because the three scalars
-    describe one key and `keys` names the rest.
+    a second editor here would be a second thing to keep true. A table is every key the file states
+    under it, removed in one write, and the value that now applies is the first key's, because the
+    three scalars describe one key and `keys` names the rest.
     """
     session = sessions.of(ctx)
+    _named(key)
     path = _file(session, where)
     if not path.exists():
         raise InputError(
             f"{path.as_posix()} is not there, so it sets nothing to remove.",
             hint=f"Run decktalk config set {key} VALUE first.",
         )
-    scope = _scope(where)
-    going = _stating(path, key, asked=_asked(session, key, whole=whole))
-    removed = tuple(knobs.unset(path, one, scope=scope) for one in going)
-    first = removed[0]
-    return ConfigUnsetResult(
-        ok=True,
-        written=(path,),
-        keys=tuple(name for one in removed for name in one.keys),
-        previous=first.previous,
-        effective=first.effective,
-        layer=first.layer,
-        scope=first.scope,
-        file=first.file,
-    )
+    going = _stating(path, key, asked=session.approve(whole or None, f"Remove everything {key} sets?"))
+    with _told(session):
+        return knobs.unset(path, *going, scope=where, environ=session.machine.environ)
 
 
-@command("explain", group=Group.CONTRACTS, to=config, epilog=f"Docs: {docs_for('config', 'explain')}")
+@command("explain", group=Group.CONTRACTS, to=config)
 def explain_key(
     ctx: Context,
     key: Named,
@@ -182,33 +170,35 @@ def explain_key(
     does it move.
     """
     session = sessions.of(ctx)
-    root = session.flags.project or Path.cwd()
+    root = _root(session)
     here = root if (root / knobs.PROJECT_FILE).exists() else None
     try:
-        read = explained(key, project=here, value=value)
+        with _told(session):
+            return explained(key, project=here, value=value, machine=session.machine)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
-    winner = next((layer for layer in read.layers if layer.layer is read.winner), None)
-    return ConfigExplainResult(
-        ok=True,
-        key=read.key,
-        type=read.type,
-        sentence=read.description,
-        value=read.value,
-        default=read.default,
-        unit=read.unit,
-        range=read.range,
-        layer=read.winner,
-        file=winner.file if winner else None,
-        line=winner.line if winner else None,
-        layers=read.layers,
-        environment=read.environment,
-        decides=read.decides,
-        numbers=read.numbers,
-        clamped=read.clamped,
-        hazard=read.hazard,
-        docs=read.docs,
-    )
+
+
+@contextmanager
+def _told(session: sessions.Session) -> Iterator[None]:
+    """Say what the machine and the project file hold that DeckTalk does not read, then run the verb.
+
+    A misspelled key or `DECKTALK_` variable is ignored, so the value these verbs report is the
+    default it left in force, and the sentence that names the typo is what explains that default. A
+    verb opens a run on the machine for that reason alone, because a run is where the machine says
+    what it noticed and where a renderer is listening.
+    """
+    root = _root(session)
+    project = knobs.read_project_toml(root) if (root / knobs.PROJECT_FILE).is_file() else {}
+    with session.watching(session.machine.events), session.machine.run() as run:
+        for note in knobs.key_warnings(project, knobs.PROJECT_FILE):
+            run.note(note, level=Level.WARNING)
+        yield
+
+
+def _root(session: sessions.Session) -> Path:
+    """The project directory these verbs act on, which is the one `-p` names or the working directory."""
+    return session.flags.project or Path.cwd()
 
 
 def _rows(session: sessions.Session, table: str | None, *, defaults: bool, changed: bool) -> tuple[SettingValue, ...]:
@@ -216,7 +206,7 @@ def _rows(session: sessions.Session, table: str | None, *, defaults: bool, chang
     here = _loaded(session)
     rows: list[SettingValue] = []
     for key in knobs.KEYS:
-        if table and not (key.id == table or key.id.startswith(f"{table}.")):
+        if table and not _under(key.id, table):
             continue
         winner = here.layers.winner(key.id)
         if changed and winner.layer is Layer.DEFAULT:
@@ -224,8 +214,8 @@ def _rows(session: sessions.Session, table: str | None, *, defaults: bool, chang
         rows.append(
             SettingValue(
                 key=key.id,
-                value=_json(key.default) if defaults else _json(knobs.value_of(here.settings, key.id)),
-                default=_json(key.default),
+                value=json_value(key.default) if defaults else json_value(knobs.value_of(here.settings, key.id)),
+                default=json_value(key.default),
                 layer=Layer.DEFAULT if defaults else winner.layer,
                 file=winner.file,
             )
@@ -236,32 +226,39 @@ def _rows(session: sessions.Session, table: str | None, *, defaults: bool, chang
 
 
 def _known(key: str) -> KeyRecord:
-    """The published record of one key, or the loader's own refusal naming the nearest name."""
+    """The published record of one key, or the refusal naming the nearest name."""
     found = knobs.BY_ID.get(key)
     if found is None:
-        raise _refused(
-            InputError(
-                f"'{key}' is not a settings key.",
-                hint="Run decktalk schema settings for every key DeckTalk reads.",
-            ),
-            "KEY",
-        )
+        raise _unknown(key)
     return found
+
+
+def _named(key: str) -> None:
+    """Refuse a name that is neither a key nor a table, before any file is read for it.
+
+    `unset` removes a key or a whole table, so either is a name it takes. A name that is neither is
+    the caller's slip on the command line, which is refused the way `get` and `set` refuse it rather
+    than reported as a file that happens not to state it.
+    """
+    if key not in knobs.BY_ID and not any(_under(one.id, key) for one in knobs.KEYS):
+        raise _unknown(key)
+
+
+def _unknown(key: str) -> typer.BadParameter:
+    """The refusal of a name no key carries, with the nearest key when one is near."""
+    return _refused(knobs.not_a_key(key), "KEY")
 
 
 def _loaded(session: sessions.Session) -> knobs.Loaded:
     """Every layer resolved for this directory, which answers about the machine when no project is here."""
-    root = session.flags.project or Path.cwd()
-    return knobs.load(root if (root / knobs.PROJECT_FILE).exists() else None)
-
-
-def _asked(session: sessions.Session, key: str, *, whole: bool) -> bool:
-    """Whether a whole table may go, which one key never needs and a table needs `--all` or a person."""
-    if whole:
-        return True
-    if not session.asks:
-        return False
-    return session.confirm(f"Remove everything {key} sets?")
+    root = _root(session)
+    machine = session.machine
+    return knobs.load(
+        root if (root / knobs.PROJECT_FILE).exists() else None,
+        machine=machine.tables,
+        machine_path=machine.config_path,
+        environ=machine.environ,
+    )
 
 
 def _stating(path: Path, key: str, *, asked: bool) -> tuple[str, ...]:
@@ -271,12 +268,14 @@ def _stating(path: Path, key: str, *, asked: bool) -> tuple[str, ...]:
     because a table is many keys at once and a person who typed one word meant one thing.
     """
     document = knobs.read_toml(path)
-    going = tuple(one.id for one in knobs.KEYS if _under(one.id, key) and _states(document, one.id))
+    going = tuple(
+        one.id for one in knobs.KEYS if _under(one.id, key) and knobs.stated(document, one.id) is not knobs.ABSENT
+    )
     if not going:
-        raise InputError(f"this file sets nothing under '{key}'.", hint="Run decktalk config list --changed.")
+        raise InputError(f"{path.name} sets nothing under '{key}'.", hint="Run decktalk config list --changed.")
     if key not in knobs.BY_ID and not asked:
         raise InputError(
-            f"'{key}' is a whole table, and removing it would take out {len(going)} keys at once.",
+            f"'{key}' is a whole table, and removing it would take out {counted(len(going), 'key')} at once.",
             hint=f"Run decktalk config unset {key} --all to remove all of them.",
         )
     return going
@@ -287,43 +286,23 @@ def _under(published: str, named: str) -> bool:
     return published == named or published.startswith(f"{named}.")
 
 
-def _states(document: Mapping[str, Any], key: str) -> bool:
-    """Whether this file states one published key, walked down its dotted name."""
-    here: Any = document
-    for part in key.split("."):
-        if not isinstance(here, Mapping) or part not in here:
-            return False
-        here = here[part]
-    return True
-
-
-def _json(value: object) -> JsonValue:
-    """One value as JSON carries it, which is what a row and a schema both publish."""
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if isinstance(value, (tuple, list)):
-        return [_json(item) for item in value]
-    return str(value)
-
-
-def _file(session: sessions.Session, where: Where) -> Path:
+def _file(session: sessions.Session, where: Scope) -> Path:
     """The file a write lands in, which is the project's own or this machine's."""
-    if where is Where.MACHINE:
-        return knobs.machine_config_path()
-    return (session.flags.project or Path.cwd()) / knobs.PROJECT_FILE
-
-
-def _scope(where: Where) -> Scope:
-    """The library's word for the file a write lands in."""
-    return Scope.MACHINE if where is Where.MACHINE else Scope.PROJECT
+    if where is Scope.MACHINE:
+        return session.machine.config_path
+    return _root(session) / knobs.PROJECT_FILE
 
 
 def _refused(failure: InputError, hint: str) -> typer.BadParameter:
     """A key or a value the command line got wrong, which is a usage error rather than a broken file.
 
     The sentence is the loader's own, because a second wording of one refusal is a second contract.
+    The loader's hint follows it as a sentence of its own, so a refusal that ends on the value it
+    got never runs into the reason that value was refused.
     """
-    said = f"{failure} {failure.hint}" if failure.hint else str(failure)
+    said = str(failure)
+    if failure.hint:
+        said = f"{said if said.endswith(SENTENCE_ENDS) else f'{said}.'} {failure.hint}"
     return typer.BadParameter(said, param_hint=hint)
 
 

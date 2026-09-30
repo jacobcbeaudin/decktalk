@@ -42,7 +42,8 @@ changed sections and a written record of what changed and what it cost. Read
 - Never change the voice, the model or a voice setting. Each re-voices the whole film.
 - Never renumber or insert a section without saying that every renumbered section is recorded again.
   No take is paid for twice for its position, so only new words cost money.
-- Never run a build without a voice in a project that holds paid takes.
+- Never replace a paid take. In a project that holds paid takes, rehearse without a voice only on
+  the sections nobody has paid for.
 - Never leave a claim in the film that the ledger cannot source.
 - Never pass a flag that hides a finding or forces a run past a refusal.
 
@@ -52,7 +53,8 @@ changed sections and a written record of what changed and what it cost. Read
   not voiced again.
 - A fresh clone has no take cache, so every section looks new. Work where the build is, or say what a
   full re-voice would cost.
-- Limiting a rebuild to some sections limits what is recorded, not what is voiced.
+- Limiting a rebuild to some sections limits what is voiced as well as what is recorded, so the
+  price of a limited run covers those sections alone.
 - A page edit outside any scene, to the head, a stylesheet or a script, reaches every scene of that
   page, so every section that plays it is stale.
 

@@ -28,8 +28,8 @@
  * runtime owns.
  */
 
-import { ATTRS, type Attr, type Code, MOMENT_SELECTOR, type Q, wireId } from "../contract.ts";
-import type { CueEvent, Recorder, WordEvent } from "../telemetry.ts";
+import { ATTRS, type Attr, MOMENT_SELECTOR, type Q, type ReportField, wireId } from "../contract.ts";
+import type * as Seam from "../telemetry.ts";
 
 /** The cover over the first paint, and the square that keeps the compositor painting under it. */
 const COVER_ID = "__t0cover";
@@ -47,48 +47,6 @@ const KEEP = 5000;
 
 /** The longest text a measured row carries, which is enough to find the element in the script. */
 const TEXT_MAX = 80;
-
-/** A box in stage pixels, which is the coordinate system every static check reasons in. */
-type Box = { x: number; y: number; w: number; h: number };
-
-/** One measured element of a slide, as the author wrote it and as the layout placed it. */
-type ElementRow = {
-  attrs: Record<string, string>;
-  moments: Record<string, string>;
-  text: string;
-  box: Box;
-};
-
-/** What the runtime hands `measure`, which is the layer to build into and the frame to measure against. */
-type Stage = {
-  pan: HTMLElement;
-  origin: HTMLElement;
-  scale: number;
-  scenes: Map<string, { slides: { id: string }[] }>;
-  build(scene: unknown, slide: unknown): HTMLElement;
-};
-
-/** The catalog the runtime keeps, one entry per scene, which `measure` adds the boxes to. */
-type CatalogEntry = { scene: string; elements?: Record<string, ElementRow[]> };
-
-/** The live view of the page the runtime publishes, which the probe reads and never writes. */
-type RuntimeView = {
-  version?: string;
-  ready?: unknown;
-  mode?: string;
-  scene?: string | null;
-  slide?: string | null;
-  warnings?: unknown[];
-  catalog?: CatalogEntry[];
-};
-
-declare global {
-  interface Window {
-    DeckTalk?: { startClock?(): void };
-    __decktalk?: RuntimeView;
-    __dtprobe?: unknown;
-  }
-}
 
 // ---- the cover ---------------------------------------------------------------------------------
 
@@ -169,8 +127,8 @@ export function ready(): Promise<boolean> {
 
 // ---- the telemetry the recorder keeps -----------------------------------------------------------
 
-const cues: (CueEvent & { next: number | null; after: number | null })[] = [];
-const words: WordEvent[] = [];
+const cues: (Seam.CueEvent & { next: number | null; after: number | null })[] = [];
+const words: Seam.WordEvent[] = [];
 const frameGaps: { at: number | null; ms: number }[] = [];
 const longFrames: { start: number | null; ms: number; render: number | null; presented: number | null }[] = [];
 
@@ -181,8 +139,8 @@ const longFrames: { start: number | null; ms: number; render: number | null; pre
  * the one after that, because a cue that ran on time but whose next frame began late was held up by
  * the frame that drew it rather than before it.
  */
-export const recorder: Recorder = {
-  cue(event: CueEvent): void {
+export const recorder: Seam.Recorder = {
+  cue(event: Seam.CueEvent): void {
     if (cues.length >= KEEP) return;
     const row = { ...event, next: null as number | null, after: null as number | null };
     cues.push(row);
@@ -193,7 +151,7 @@ export const recorder: Recorder = {
       });
     });
   },
-  words(event: WordEvent): void {
+  words(event: Seam.WordEvent): void {
     if (words.length < KEEP) words.push(event);
   },
 };
@@ -234,15 +192,15 @@ function watchFrames(): void {
 }
 
 /** Everything the recorder reads back off the page, in the one call the contract names. */
-export function report(): Record<string, unknown> {
-  const view = window.__decktalk ?? {};
+export function report(): Record<ReportField, unknown> {
+  const view = window.__decktalk;
   return {
-    version: view.version ?? null,
-    mode: view.mode ?? null,
-    scene: view.scene ?? null,
-    slide: view.slide ?? null,
-    warnings: view.warnings ?? [],
-    catalog: view.catalog ?? [],
+    version: view?.version ?? null,
+    mode: view?.mode ?? null,
+    scene: view?.scene ?? null,
+    slide: view?.slide ?? null,
+    warnings: view?.warnings ?? [],
+    catalog: view?.catalog ?? [],
     cues,
     words,
     frameGaps,
@@ -259,11 +217,7 @@ export function report(): Record<string, unknown> {
  * and the storyboard opens. A check needs the slide one cue earlier, so it asks for a stop, and this
  * is the only reader of the two query keys that name one.
  */
-export function freezeCues(
-  order: readonly string[],
-  slideId: string,
-  warn: (code: Code, slide: string, cue: string) => void,
-): readonly string[] {
+export function freezeCues(order: readonly string[], slideId: string, warn: Seam.WarnAt): readonly string[] {
   const params = new URLSearchParams(location.search);
   const after = params.get(AFTER);
   const before = params.get(BEFORE);
@@ -284,10 +238,13 @@ const ELEMENT_ATTRS: Attr[] = (Object.keys(ATTRS) as Attr[]).filter((name) =>
   ATTRS[name].on.some((subject) => subject === "element" || subject === "container"),
 );
 
+/** The attribute that makes a container stagger its children, typed as a contract row so a rename fails to compile. */
+const STAGGER: Attr = "data-stagger";
+
 /** The moment attributes alone, which are the rows that qualify into a wire id. */
 const MOMENT_ATTRS: Attr[] = ELEMENT_ATTRS.filter((name) => ATTRS[name].kind === "moment");
 
-function boxOf(el: Element, frame: DOMRect, scale: number): Box {
+function boxOf(el: Element, frame: DOMRect, scale: number): Seam.Box {
   const rect = el.getBoundingClientRect();
   return {
     x: Math.round((rect.left - frame.left) / scale),
@@ -297,7 +254,7 @@ function boxOf(el: Element, frame: DOMRect, scale: number): Box {
   };
 }
 
-function rowFor(el: Element, slideId: string, frame: DOMRect, scale: number): ElementRow {
+function rowFor(el: Element, slideId: string, frame: DOMRect, scale: number): Seam.ElementRow {
   const attrs: Record<string, string> = {};
   for (const name of ELEMENT_ATTRS) {
     const written = el.getAttribute(name);
@@ -313,6 +270,9 @@ function rowFor(el: Element, slideId: string, frame: DOMRect, scale: number): El
     moments,
     text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, TEXT_MAX),
     box: boxOf(el, frame, scale),
+    // The count a stagger's span is worked out from, which no attribute carries, because the flag
+    // that says the children step says nothing about how many of them there are.
+    children: el.hasAttribute(STAGGER) ? el.children.length : 0,
   };
 }
 
@@ -323,7 +283,7 @@ function rowFor(el: Element, slideId: string, frame: DOMRect, scale: number): El
  * ever drawn rather than on whether it carries a cue, so an element on screen from the mount is
  * measured exactly like one that arrives.
  */
-function rowsFor(slideEl: Element, slideId: string, frame: DOMRect, scale: number): ElementRow[] {
+function rowsFor(slideEl: Element, slideId: string, frame: DOMRect, scale: number): Seam.ElementRow[] {
   const rows = [...slideEl.querySelectorAll(MOMENT_SELECTOR)].map((el) => rowFor(el, slideId, frame, scale));
   for (const el of slideEl.children) {
     if (el.matches(MOMENT_SELECTOR) || el.querySelector(MOMENT_SELECTOR)) continue;
@@ -338,7 +298,7 @@ function rowsFor(slideEl: Element, slideId: string, frame: DOMRect, scale: numbe
  * The runtime asks for this on the index page alone, which is the page a static check opens, so no
  * recording and no preview ever lays a slide out twice.
  */
-export function measure(catalog: CatalogEntry[], stage: Stage): CatalogEntry[] {
+export function measure(catalog: Seam.CatalogEntry[], stage: Seam.StageLoan): Seam.CatalogEntry[] {
   const layer = document.createElement("div");
   layer.id = "dt-measure";
   layer.style.cssText = "position:absolute;inset:0;visibility:hidden";
@@ -362,4 +322,5 @@ export function measure(catalog: CatalogEntry[], stage: Stage): CatalogEntry[] {
 
 watchFrames();
 
-window.__dtprobe = { cover, lift, ready, report, recorder, freezeCues, measure };
+const probe: Seam.Probe = { cover, lift, ready, report, recorder, freezeCues, measure };
+window.__dtprobe = probe;

@@ -2,31 +2,34 @@
 
 Three renderings read this and no other source: `--help` through Click's own formatter, the
 generated reference page, and `decktalk schema`. The command half is walked from the parser, so a
-flag on a page is a flag the command takes, and the contract half is the library's own registry, so
-a sentence a code or a key publishes has one home in the model that declares it.
+flag on a page is a flag the command takes, and the contract half is read off the library's own
+registries, so a sentence a code or a key publishes has one home in the model that declares it.
+That is every result's schema, every finding code, every error code with its exit, the event
+schema and every stage of the pipeline.
 
-Nothing outside `cli/` imports the application, which is why the join happens here and not in the
-library's own registry.
+Nothing outside `cli/` imports the application, which is why the join happens here. The generators
+that write the committed schemas and the docs pages read the same rows from here.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from dataclasses import MISSING, Field, fields, is_dataclass
-from enum import Enum
+from collections.abc import Callable, Iterator
 from typing import Any
 
-from pydantic import JsonValue
+from pydantic import TypeAdapter
 from typer._click import Context, Parameter
 from typer._click.core import Command
 from typer.main import get_command
 
-from decktalk import catalog as library
 from decktalk import page
 from decktalk import settings as knobs
 from decktalk.cli.app import PROGRAM, app
 from decktalk.errors import ErrorCode
+from decktalk.events import Line
+from decktalk.findings import Code, Finding
+from decktalk.pipeline import PIPELINE
 from decktalk.results import RESULTS, Result
+from decktalk.settings import json_value
 from decktalk.tomlmap import PUBLISHED, Key
 
 PURPOSE_LIMIT = 120
@@ -46,6 +49,52 @@ EXITS: tuple[tuple[int, str], ...] = (
 
 NAMES: dict[type[Result], str] = {model: name for name, model in RESULTS.items()}
 """Each result model by the name `decktalk schema NAME` prints it under, read back off the registry."""
+
+SCHEMAS: dict[str, Callable[[], dict[str, Any]]] = {
+    **{name: RESULTS[name].model_json_schema for name in sorted(RESULTS)},
+    "event": lambda: TypeAdapter(Line).json_schema(),
+    "finding": Finding.model_json_schema,
+}
+"""Every JSON Schema the library's models own, by the name `decktalk schema NAME` prints it under.
+
+A result's schema is its model's, and `error` is the result a refused command answers with, which
+carries the error object and its whole code enum. The finding schema carries the whole code enum
+too, and the event schema is one line of the stream discriminated by its `event`.
+"""
+
+
+def finding_codes() -> list[dict[str, Any]]:
+    """Every finding code as a row, in the order the enum declares them."""
+    return [
+        {
+            "code": code.value,
+            "sentence": code.sentence,
+            "certainty": code.certainty.value,
+            "raised_by": code.raised_by.value,
+            "docs": code.url,
+        }
+        for code in Code
+    ]
+
+
+def error_codes() -> list[dict[str, Any]]:
+    """Every error code as a row, with the exit code its refusal takes."""
+    return [
+        {"code": code.value, "sentence": code.sentence, "exit": code.exit_code, "docs": code.url} for code in ErrorCode
+    ]
+
+
+def stages() -> list[dict[str, Any]]:
+    """Every stage as a row, with what it reads, what it writes and why it runs where it does."""
+    return [
+        {
+            "stage": spec.stage.value,
+            "reads": [artifact.value for artifact in spec.reads],
+            "writes": [artifact.value for artifact in spec.writes],
+            "why": spec.why,
+        }
+        for spec in PIPELINE
+    ]
 
 
 def walk() -> list[dict[str, Any]]:
@@ -91,8 +140,9 @@ def _param(param: Parameter, context: Context) -> dict[str, Any]:
         "opts": list(param.opts) + list(param.secondary_opts),
         "type": param.type.name,
         "metavar": param.make_metavar(context) if param.metavar else param.metavar,
-        "default": _plain(param.default),
-        "repeatable": bool(getattr(param, "multiple", False)),
+        "default": json_value(param.default),
+        "repeatable": bool(getattr(param, "multiple", False)) or param.nargs == -1,
+        "required": param.required,
         "envvar": param.envvar,
         "help": getattr(param, "help", None),
         "hidden": bool(getattr(param, "hidden", False)),
@@ -100,17 +150,6 @@ def _param(param: Parameter, context: Context) -> dict[str, Any]:
     if "--set" in param.opts:
         row["keys"] = SETTINGS_KEYSPACE
     return row
-
-
-def _plain(value: object) -> JsonValue:
-    """A default as JSON carries it, which is its own value for a scalar and its name for an enum."""
-    if isinstance(value, Enum):
-        return _plain(value.value)
-    if isinstance(value, (list, tuple)):
-        return [_plain(item) for item in value]
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    return str(value)
 
 
 def globals_() -> list[dict[str, Any]]:
@@ -125,16 +164,30 @@ def exits() -> list[dict[str, Any]]:
     return [{"exit": code, "sentence": sentence} for code, sentence in EXITS]
 
 
+def deciding(code: Code) -> tuple[str, ...]:
+    """The settings keys whose value moves one code's verdict, read in reverse off each key's own list.
+
+    A key names the codes it decides beside its range, and that is the one declaration of the
+    relation, so the finding page, `decktalk schema` and `config explain` cannot give an agent two
+    different answers about which knob to read.
+    """
+    return tuple(key.id for key in knobs.KEYS if code in key.decides)
+
+
+def findings() -> list[dict[str, Any]]:
+    """Every finding code as the library publishes it, with the keys that decide it joined on."""
+    return [{**row, "decides": list(deciding(Code(row["code"])))} for row in finding_codes()]
+
+
 def document() -> dict[str, Any]:
     """The whole instruction set in one object, which is what bare `decktalk schema` prints."""
-    published = library.document()
     return {
         "commands": walk(),
         "globals": globals_(),
         "exits": exits(),
-        "errors": published["errors"],
-        "findings": published["findings"],
-        "stages": published["stages"],
+        "errors": error_codes(),
+        "findings": findings(),
+        "stages": stages(),
     }
 
 
@@ -146,7 +199,7 @@ def settings_schema(*, machine: bool = False) -> dict[str, Any]:
     """
     wanted = [key for key in knobs.KEYS if not machine or key.scope.value == "machine"]
     return {
-        "keys": [{name: _plain(_published(key, name)) for name in PUBLISHED} for key in wanted],
+        "keys": [{name: json_value(_published(key, name)) for name in PUBLISHED} for key in wanted],
         "numbers": [
             {
                 "id": number.id,
@@ -188,17 +241,16 @@ def page_schema() -> dict[str, Any]:
 
 
 def project_schema() -> dict[str, Any]:
-    """The shape of `cues.json`, walked from the row the loader parses it into."""
-    # The cue row is an input rather than a result, so its schema is walked from the declaration
-    # the loader reads it with, which is the one place its keys and their defaults are written.
-    from decktalk.inputs.cues import Cue  # noqa: PLC0415
+    """The shape of `cues.json`, read off the row the loader parses it into."""
+    # The cue row is an input rather than a result, so its schema comes from the declaration the
+    # loader reads it with, which is the one place its keys and their defaults are written.
+    from decktalk.inputs.cues import READ_HERE, Cue  # noqa: PLC0415
 
-    if not is_dataclass(Cue):  # pragma: no cover  (the row is a dataclass and the walk needs one)
-        raise TypeError("the cue row is no longer a dataclass, so its schema cannot be walked")
+    declared = TypeAdapter(Cue).json_schema()["properties"]
     rows = [
-        {"key": field.name, "type": _type_name(field.type), "default": _default(field)}
-        for field in fields(Cue)
-        if field.name != "occurrence_set"
+        {"key": name, "type": row["type"], "default": row.get("default")}
+        for name, row in declared.items()
+        if name not in READ_HERE
     ]
     return {
         "file": "cues.json",
@@ -206,44 +258,41 @@ def project_schema() -> dict[str, Any]:
     }
 
 
-def _default(field: Field[object]) -> JsonValue:
-    """What a row holds when the author writes nothing, or null when the key is required."""
-    return None if field.default is MISSING else _plain(field.default)
-
-
-def _type_name(annotation: object) -> str:
-    """One declared type as JSON names it, which is what a reader writes in the file."""
-    spelled = annotation if isinstance(annotation, str) else getattr(annotation, "__name__", str(annotation))
-    return {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}.get(spelled, spelled)
+CONTRACTS: dict[str, Callable[..., dict[str, Any]]] = {
+    **SCHEMAS,
+    "page": page_schema,
+    "project": project_schema,
+    "settings": settings_schema,
+}
+"""Every document `decktalk schema NAME` prints, by name, in the order a refusal lists them back."""
 
 
 def named(name: str, *, machine: bool = False) -> dict[str, Any]:
     """The one contract document `decktalk schema NAME` prints, whichever name was asked for."""
-    if name in RESULTS:
-        return library.result_schema(name)
-    if name == "finding":
-        return library.finding_schema()
-    if name == "error":
-        return library.error_schema()
-    if name == "event":
-        return library.event_schema()
     if name == "settings":
         return settings_schema(machine=machine)
-    if name == "page":
-        return page_schema()
-    if name == "project":
-        return project_schema()
-    raise KeyError(name)
+    return CONTRACTS[name]()
 
 
 def names() -> tuple[str, ...]:
     """Every name `decktalk schema NAME` answers to, which is what a refusal lists back."""
-    return (*sorted(RESULTS), "error", "event", "finding", "page", "project", "settings")
+    return tuple(CONTRACTS)
 
 
-def codes() -> tuple[str, ...]:
-    """Every error code, which the reference page prints with its exit code beside it."""
-    return tuple(code.value for code in ErrorCode)
-
-
-__all__ = ["document", "globals_", "named", "names", "page_schema", "project_schema", "settings_schema", "walk"]
+__all__ = [
+    "CONTRACTS",
+    "SCHEMAS",
+    "deciding",
+    "document",
+    "error_codes",
+    "finding_codes",
+    "findings",
+    "globals_",
+    "named",
+    "names",
+    "page_schema",
+    "project_schema",
+    "settings_schema",
+    "stages",
+    "walk",
+]

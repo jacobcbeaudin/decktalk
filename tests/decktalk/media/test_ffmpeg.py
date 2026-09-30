@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
-import subprocess
+import json
+import os
+import shlex
+import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
-from decktalk.errors import ToolError
+from decktalk.errors import Cancel, Cancelled, ToolError
 from decktalk.media import ffmpeg
+from decktalk.media.environment import children_see
 from decktalk.settings import ToolsConfig
 from decktalk.toolchain.cache import cache_dir
+from support.logs import data_of
 
 
 @pytest.fixture
@@ -19,16 +28,44 @@ def tools(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ffmpeg, "ffmpeg_paths", lambda: ("ffmpeg", "ffprobe"))
 
 
-def answer(monkeypatch: pytest.MonkeyPatch, *, code: int, out: bytes = b"", err: bytes = b"") -> list[list[str]]:
-    """Replace the subprocess seam with one fixed answer, and give back the commands it was asked to run."""
+SPAWN = ffmpeg._spawn
+"""The real seam, which a fake hands a small Python process to instead of a tool."""
+
+
+def answer(
+    monkeypatch: pytest.MonkeyPatch, *, code: int, out: bytes = b"", err: bytes = b"", seconds: float = 0.0
+) -> list[list[str]]:
+    """Replace the tool with a process that says one fixed thing, and give back the commands it was asked to run.
+
+    The stand-in is a real process, so the pipes, the polling and the kill are the ones a tool gets.
+    """
     seen: list[list[str]] = []
+    script = (
+        f"import sys, time; time.sleep({seconds}); sys.stdout.buffer.write({out!r}); "
+        f"sys.stderr.buffer.write({err!r}); sys.exit({code})"
+    )
 
-    def fake(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def fake(cmd: list[str]):
         seen.append(cmd)
-        return subprocess.CompletedProcess(cmd, code, out, err)
+        # The stand-in is Python, which on Windows cannot start without the system names a run binds.
+        with children_see(os.environ):
+            return SPAWN([sys.executable, "-c", script])
 
-    monkeypatch.setattr(ffmpeg.subprocess, "run", fake)
+    monkeypatch.setattr(ffmpeg, "_spawn", fake)
     return seen
+
+
+def test_a_tool_sees_the_machines_scrubbed_environment_and_never_the_process(monkeypatch):
+    """ffmpeg opens files someone else supplied, so a credential the host left in its environment stays there."""
+    machine = {**os.environ, "ELEVENLABS_API_KEY": "sk-not-a-key", "LANG": "the-machines-language"}
+    monkeypatch.setenv("DECKTALK_TEST_PROCESS_ONLY", "the-process-value")
+    show = "import json, os, sys; sys.stdout.write(json.dumps(dict(os.environ)))"
+    with children_see(machine), SPAWN([sys.executable, "-c", show]) as proc:
+        out, _err = proc.communicate()
+    seen = json.loads(out)
+    assert seen["LANG"] == "the-machines-language"
+    assert "ELEVENLABS_API_KEY" not in seen
+    assert "DECKTALK_TEST_PROCESS_ONLY" not in seen
 
 
 COMPLAINT = b"\n".join(b"line %d" % n for n in range(1, 10)) + b"\nno such file or directory\n"
@@ -87,20 +124,22 @@ def test_naming_one_half_of_the_build_is_refused_rather_than_ignored(tmp_path):
     binary = tmp_path / "ffmpeg"
     binary.write_text("")
     half = ToolsConfig(ffmpeg=str(binary))
-    assert ffmpeg.unpaired_tool(half) == ["tools.ffprobe"]
     with ffmpeg.using_tools(half), pytest.raises(ToolError) as raised:
         ffmpeg.ffmpeg_paths()
     assert "tools.ffprobe" in str(raised.value)
-    # `doctor` reports a machine rather than rendering on it, so it says there is no usable pair.
-    assert ffmpeg.installed_paths(half) is None
+    # `doctor` reports a machine rather than rendering on it, and says why the key is unusable.
+    with pytest.raises(ToolError, match="tools.ffprobe"):
+        ffmpeg.installed_paths(half)
 
 
 def test_a_key_that_names_a_file_which_is_not_there_is_refused_rather_than_resolved(tmp_path):
     """A typo told `doctor` the machine was ready and then died inside the first render."""
     both = ToolsConfig(ffmpeg=str(tmp_path / "nope"), ffprobe=str(tmp_path / "also-nope"))
-    assert ffmpeg.missing_tools(both) == ["tools.ffmpeg", "tools.ffprobe"]
-    with ffmpeg.using_tools(both), pytest.raises(ToolError, match="tools.ffmpeg"):
+    with ffmpeg.using_tools(both), pytest.raises(ToolError, match="tools.ffmpeg, tools.ffprobe names a file"):
         ffmpeg.ffmpeg_paths()
+    # `doctor` names the key rather than reporting the pinned build the key overrides.
+    with pytest.raises(ToolError, match="names a file"):
+        ffmpeg.installed_paths(both)
 
 
 def test_naming_both_halves_is_the_build_this_machine_renders_with(tmp_path):
@@ -108,7 +147,6 @@ def test_naming_both_halves_is_the_build_this_machine_renders_with(tmp_path):
     ff.write_text("")
     fp.write_text("")
     tools = ToolsConfig(ffmpeg=str(ff), ffprobe=str(fp))
-    assert ffmpeg.unpaired_tool(tools) == [] and ffmpeg.missing_tools(tools) == []
     with ffmpeg.using_tools(tools):
         assert ffmpeg.ffmpeg_paths() == (str(ff), str(fp))
         assert ffmpeg.installed_paths() == (str(ff), str(fp))
@@ -120,13 +158,20 @@ def test_binding_the_tools_also_binds_where_a_fetch_is_kept(tmp_path):
     """One call says which ffmpeg a run renders with, and a cache directory is part of that answer."""
     with ffmpeg.using_tools(ToolsConfig(cache_dir=str(tmp_path / "elsewhere"))):
         assert cache_dir() == tmp_path / "elsewhere"
-    assert cache_dir() != tmp_path / "elsewhere"
+    with pytest.raises(ToolError, match="no machine named a directory"):
+        cache_dir()
 
 
-def test_a_concat_line_quotes_a_path_a_person_could_actually_write():
-    r"""An apostrophe inside a single-quoted path ends the quoting, so it is written as `'\''`."""
-    assert ffmpeg.concat_line("/films/a.mp4") == "file '/films/a.mp4'\n"
-    assert ffmpeg.concat_line("/jacob's films/a.mp4") == "file '/jacob'\\''s films/a.mp4'\n"
+@given(st.text().filter(lambda path: "\x00" not in path))
+def test_a_concat_line_quotes_any_path_a_person_could_actually_write(path):
+    r"""An apostrophe inside a single-quoted path ends the quoting, so it is written as `'\''`.
+
+    The demuxer reads the line the way a POSIX shell does, so `shlex` is the reader held to it.
+    """
+    assert shlex.split(ffmpeg.concat_line(path)) == ["file", path]
+
+
+def test_a_concat_list_is_one_line_per_file():
     assert ffmpeg.concat_list([Path("a.mp4"), Path("b.mp4")]) == "file 'a.mp4'\nfile 'b.mp4'\n"
 
 
@@ -146,5 +191,174 @@ def test_ffmpeg_concatenates_files_under_a_directory_with_an_apostrophe_in_its_n
     listing = films / "parts.txt"
     listing.write_text(ffmpeg.concat_list(parts), encoding="utf-8")
     joined = films / "joined.mp4"
-    ffmpeg.run("-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", str(joined))
+    ffmpeg.run(*ffmpeg.concat_source(listing), "-c", "copy", str(joined))
     assert ffmpeg.probe_duration(joined) == pytest.approx(0.8, abs=0.1)
+
+
+# ---- a file a project supplies ----------------------------------------------------------------------
+
+
+def test_an_opened_input_allows_the_file_protocol_and_the_closed_demuxers_alone():
+    """The restriction sits ahead of `-i`, where ffmpeg applies it to that input and to nothing else."""
+    argv = ffmpeg.source(Path("clips/intro.mp4"))
+    assert argv[-2:] == ["-i", "clips/intro.mp4"]
+    assert argv[argv.index("-protocol_whitelist") + 1] == ffmpeg.SOURCE_PROTOCOLS
+    assert "," not in ffmpeg.SOURCE_PROTOCOLS, "one protocol, and it is the one that reads a local file"
+    formats = argv[argv.index("-format_whitelist") + 1].split(",")
+    assert formats == list(ffmpeg.SOURCE_FORMATS)
+    assert not {"hls", "dash", "concat", "image2"} & set(formats)
+
+
+@pytest.mark.usefixtures("tools")
+@pytest.mark.parametrize("probe", [ffmpeg.probe_duration, ffmpeg.has_audio])
+def test_every_probe_opens_its_file_through_the_one_restricted_input(monkeypatch, probe):
+    seen = answer(monkeypatch, code=0, out=b"1.0\n")
+    probe(Path("clips/intro.mp4"))
+    assert seen[0][-len(ffmpeg.source("x")) :][:-1] == ffmpeg.source("x")[:-1]
+    assert seen[0][-1] == "clips/intro.mp4"
+
+
+def hostile_playlist(root: Path, *, absolute: bool) -> tuple[Path, Path]:
+    """A project clip that is an HLS playlist naming a film outside the project, and that film.
+
+    The pinned ffmpeg refuses a segment that climbs with `..` on its own, and reads one named by an
+    absolute path, so both spellings are tried.
+    """
+    outside = root / "tenant-b" / "film.mp4"
+    outside.parent.mkdir(parents=True)
+    ffmpeg.run(
+        "-f", "lavfi", "-i", "color=c=black:s=64x64:r=25:d=1",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", str(outside),
+    )  # fmt: skip
+    clip = root / "tenant-a" / "clips" / "intro.m3u8"
+    clip.parent.mkdir(parents=True)
+    segment = outside.resolve().as_posix() if absolute else "../../tenant-b/film.mp4"
+    clip.write_text(
+        f"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:1.0,\n{segment}\n#EXT-X-ENDLIST\n",
+        encoding="utf-8",
+    )
+    return clip, outside
+
+
+@pytest.mark.media
+@pytest.mark.parametrize("absolute", [True, False])
+def test_a_clip_that_is_a_playlist_naming_another_tenants_film_is_refused(tmp_path, absolute):
+    """0.5.0 probed the playlist and read the other tenant's film through it, which is a cross-tenant read.
+
+    The refusal is the measure: 0.5.0 answered with the film's length, where this answers with no length.
+    """
+    clip, _outside = hostile_playlist(tmp_path, absolute=absolute)
+    with pytest.raises(ToolError):
+        ffmpeg.probe_duration(clip)
+    with pytest.raises(ToolError):
+        ffmpeg.stderr(*ffmpeg.source(clip), "-f", "null", "-")
+
+
+@pytest.mark.media
+def test_a_playlist_that_names_a_host_reaches_nothing(tmp_path, httpserver):
+    """The segment is a `.ts` on a listener this test holds, so what is measured is the request that never came.
+
+    ffmpeg's own rule already keeps a playlist read from a file off the network, which 0.5.0 relied on.
+    The closed set of demuxers refuses the playlist before that rule is asked, and this holds it there.
+    """
+    clip = tmp_path / "music.m3u8"
+    clip.write_text(
+        f"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:1.0,\n{httpserver.url_for('/segment.ts')}\n#EXT-X-ENDLIST\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ToolError):
+        ffmpeg.probe_duration(clip)
+    with pytest.raises(ToolError):
+        ffmpeg.stderr(*ffmpeg.source(clip), "-f", "null", "-")
+    assert httpserver.log == []
+
+
+# ---- a call that has to stop ------------------------------------------------------------------------
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_cancelled_run_stops_a_call_that_is_still_working(monkeypatch):
+    """A run was checked only between sections, so a long encode held its worker until it finished."""
+    answer(monkeypatch, code=0, seconds=30)
+    cancel = Cancel()
+    threading.Timer(0.2, cancel.cancel).start()
+    started = time.monotonic()
+    with ffmpeg.using_tools(ToolsConfig(), cancel=cancel), pytest.raises(Cancelled):
+        ffmpeg.run("-i", "long.mp4", "out.mp4")
+    assert time.monotonic() - started < 5
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_call_past_the_machines_limit_is_stopped_and_refused(monkeypatch):
+    answer(monkeypatch, code=0, seconds=30)
+    started = time.monotonic()
+    with ffmpeg.using_tools(ToolsConfig(timeout_seconds=0.3)), pytest.raises(ToolError, match="timeout_seconds"):
+        ffmpeg.stderr("-i", "stuck.mp4", "-f", "null", "-")
+    assert time.monotonic() - started < 5
+
+
+@pytest.mark.usefixtures("tools")
+@pytest.mark.parametrize(
+    ("reason", "limit", "stop"),
+    [("cancel", 600.0, Cancelled), ("timeout", 0.3, ToolError), ("reader", 600.0, ValueError)],
+)
+def test_a_stopped_call_says_which_command_was_stopped_and_why(monkeypatch, caplog, reason, limit, stop):
+    # The tool writes more than one read's worth and then keeps working, so each of the three stops
+    # meets a live process and the reader has something to refuse before the process ends.
+    script = "import sys, time; sys.stdout.buffer.write(b'f' * 200000); sys.stdout.flush(); time.sleep(30)"
+
+    def working(_cmd: list[str]):
+        with children_see(os.environ):
+            return SPAWN([sys.executable, "-c", script])
+
+    monkeypatch.setattr(ffmpeg, "_spawn", working)
+    cancel = Cancel()
+    if reason == "cancel":
+        threading.Timer(0.2, cancel.cancel).start()
+
+    def refuse(_chunk: bytes) -> None:
+        if reason == "reader":
+            raise ValueError("the frame was not the size it was planned at")
+
+    with (
+        caplog.at_level("DEBUG", logger="decktalk"),
+        ffmpeg.using_tools(ToolsConfig(timeout_seconds=limit), cancel=cancel),
+        pytest.raises(stop),
+    ):
+        ffmpeg.stream("-i", "stuck.mp4", "-", into=refuse)
+    [record] = [record for record in caplog.records if record.name == "decktalk.media.ffmpeg"]
+    assert record.levelname == "WARNING"
+    assert data_of(record)["reason"] == reason and data_of(record)["limit"] == limit
+    assert data_of(record)["argv"] == "ffmpeg -v error -i stuck.mp4 -"
+
+
+@pytest.mark.usefixtures("tools")
+def test_every_call_that_ends_leaves_its_command_exit_time_and_last_lines(monkeypatch, caplog):
+    answer(monkeypatch, code=0, err=COMPLAINT)
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        ffmpeg.run("-i", "a b.mp3", "out.mp3")
+    [record] = [record for record in caplog.records if record.name == "decktalk.media.ffmpeg"]
+    data = data_of(record)
+    assert record.levelname == "DEBUG"
+    assert data["argv"] == "ffmpeg -hide_banner -loglevel error -y -i 'a b.mp3' out.mp3"
+    assert data["exit"] == 0 and data["seconds"] >= 0
+    assert data["output_tail"].endswith("no such file or directory")
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_stream_hands_its_bytes_over_as_they_arrive_and_keeps_none(monkeypatch):
+    answer(monkeypatch, code=0, out=b"frames" * 1000)
+    kept: list[bytes] = []
+    ffmpeg.stream("-i", "film.mp4", "-f", "rawvideo", "-", into=kept.append)
+    assert b"".join(kept) == b"frames" * 1000
+
+
+@pytest.mark.usefixtures("tools")
+def test_a_reader_that_fails_fails_the_call_rather_than_ending_it_quietly(monkeypatch):
+    answer(monkeypatch, code=0, out=b"frames")
+
+    def refuse(_chunk: bytes) -> None:
+        raise ValueError("the frame was not the size it was planned at")
+
+    with pytest.raises(ValueError, match="not the size"):
+        ffmpeg.stream("-i", "film.mp4", "-", into=refuse)

@@ -74,3 +74,46 @@ def test_a_span_of_samples_from_a_file_ffmpeg_cannot_read_is_a_tool_error(tmp_pa
     broken.write_bytes(b"this is not an mp3")
     with pytest.raises(ToolError):
         audio.pcm_span(broken, 0.0, 0.5, sample_rate=48000)
+
+
+LOUDNORM = """[Parsed_loudnorm_0 @ 0x1]
+{{
+	"input_i" : "{i}",
+	"input_tp" : "{tp}",
+	"input_lra" : "0.00",
+	"input_thresh" : "-70.00",
+	"output_i" : "{i}",
+	"output_tp" : "{tp}",
+	"output_lra" : "0.00",
+	"output_thresh" : "-70.00",
+	"normalization_type" : "dynamic",
+	"target_offset" : "{offset}"
+}}
+[out#0/null @ 0x2] video:0KiB audio:1500KiB
+"""
+"""What ffmpeg 8.1 prints at the end of a loudnorm pass, with the numbers a test chooses."""
+
+
+def test_a_loudness_measurement_reads_every_number_loudnorm_printed(monkeypatch):
+    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: LOUDNORM.format(i="-21.75", tp="-18.06", offset="0.01"))
+    read = audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+    assert (read.i, read.tp, read.lra, read.thresh, read.offset) == (-21.75, -18.06, 0.0, -70.0, 0.01)
+
+
+def test_a_silent_file_measures_as_no_loudness_rather_than_as_zero_lufs(monkeypatch):
+    """loudnorm spells silence as -inf, which a pattern for digits read as 0.0 LUFS, the loudest film there is."""
+    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: LOUDNORM.format(i="-inf", tp="-inf", offset="inf"))
+    read = audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+    assert read.i == read.tp == float("-inf")
+
+
+def test_a_pass_that_printed_no_measurement_is_a_tool_error(monkeypatch):
+    monkeypatch.setattr(ffmpeg, "stderr", lambda *args: "size=N/A time=00:00:02.00\n")
+    with pytest.raises(ToolError, match="no measurement"):
+        audio.measure_loudness(Path("mix.mov"), i=-16.0, tp=-1.5, lra=11.0)
+
+
+def test_a_level_becomes_the_factor_that_plays_it() -> None:
+    assert audio.gain(0) == 1.0
+    assert round(audio.gain(-6), 3) == 0.501
+    assert round(audio.gain(20), 3) == 10.0

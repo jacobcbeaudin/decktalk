@@ -1,7 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["playwright>=1.50", "fonttools[woff]>=4.50"]
-# ///
 """Generate every graphic from one source. The graphics are the hero, how-it-works (wide and
 stacked), the pipeline, narration zero, the verify probes and onset, the edit cycle, the narration
 split, the duck lane, the cue offset, the mark and its lockups, the favicon set, the social card
@@ -39,7 +35,6 @@ start over the last few percent instead of snapping.
 
 from __future__ import annotations
 
-import argparse
 import base64
 import json
 import math
@@ -49,7 +44,12 @@ import tomllib
 from collections.abc import Callable
 from pathlib import Path
 
+from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.ttLib import TTFont
 from playwright.sync_api import sync_playwright
+
+import generated
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
@@ -191,25 +191,38 @@ def bg_rect(pal: dict[str, str], w: int, h: int, background: bool) -> str:
 # ---- measuring --------------------------------------------------------------------------
 
 
-def measure_words(words: list[str], font: str, letter_spacing: str) -> tuple[list[float], float]:
-    """Advance widths of each word and of a space, in Chromium with the embedded font."""
-    html = f"""<style>{font_face()}</style><svg xmlns="http://www.w3.org/2000/svg" width="2000" height="100">
-      <text id="t" x="0" y="50" style="font:{font};letter-spacing:{letter_spacing}">{"".join(f'<tspan id="w{i}">{w}</tspan>' for i, w in enumerate(words))}<tspan id="sp"> </tspan><tspan id="sp2">a a</tspan><tspan id="aa">aa</tspan></text></svg>"""
+def word_xs(*lines: list[str]) -> list[list[float]]:
+    """Where each word of each line starts, measured in one Chromium with the embedded font.
+
+    A word that closes a clause is followed by a space and a half, so a line reads with its pauses.
+    """
+    font = f"600 {MEASURE_PX}px {SANS}"
+    starts: list[list[float]] = []
     with sync_playwright() as pw:
         b = pw.chromium.launch()
         p = b.new_page()
-        p.set_content(html)
-        p.evaluate("() => document.fonts.ready")
-        p.wait_for_timeout(200)
-        widths = p.evaluate(
-            "(n) => Array.from({length:n}, (_, i) => document.getElementById('w'+i).getComputedTextLength())",
-            len(words),
-        )
-        space = p.evaluate(
-            "() => document.getElementById('sp2').getComputedTextLength() - document.getElementById('aa').getComputedTextLength()"
-        )
+        for words in lines:
+            spans = "".join(f'<tspan id="w{i}">{w}</tspan>' for i, w in enumerate(words))
+            p.set_content(
+                f"""<style>{font_face()}</style><svg xmlns="http://www.w3.org/2000/svg" width="2000" height="100">
+      <text id="t" x="0" y="50" style="font:{font};letter-spacing:-.01em">{spans}<tspan id="sp"> </tspan><tspan id="sp2">a a</tspan><tspan id="aa">aa</tspan></text></svg>"""
+            )
+            p.evaluate("() => document.fonts.ready")
+            p.wait_for_timeout(200)
+            widths = p.evaluate(
+                "(n) => Array.from({length:n}, (_, i) => document.getElementById('w'+i).getComputedTextLength())",
+                len(words),
+            )
+            space = p.evaluate(
+                "() => document.getElementById('sp2').getComputedTextLength() - document.getElementById('aa').getComputedTextLength()"
+            )
+            xs, x = [], 0.0
+            for word, width in zip(words, widths, strict=True):
+                xs.append(round(x, 1))
+                x += width + space * (1.6 if word.endswith((",", ".")) else 1.0)
+            starts.append(xs)
         b.close()
-    return [float(w) for w in widths], float(space)
+    return starts
 
 
 def glyph_outlines(text: str, size: float, tracking: float) -> tuple[str, float]:
@@ -217,18 +230,13 @@ def glyph_outlines(text: str, size: float, tracking: float) -> tuple[str, float]
 
     The display face (a static instance at the wordmark's weight) places each glyph by its own
     advance width, with `tracking` (in em) added between letters.
-
-    fontTools is not a dependency of the project. The one command that runs this generator adds it,
-    so the tracer's imports sit in the only function that traces and every other part of the file,
-    including the comparison its own test judges, imports with the project alone.
     """
-    from fontTools.pens.svgPathPen import SVGPathPen  # noqa: PLC0415  (fontTools is the wordmark's, not the project's)
-    from fontTools.pens.transformPen import TransformPen  # noqa: PLC0415
-    from fontTools.ttLib import TTFont  # noqa: PLC0415
-
     font = TTFont(FONTS / DISPLAY_FACE[1])
-    scale = size / font["head"].unitsPerEm
+    # fontTools declares no attributes on its tables, so the one field read from `head` is untyped.
+    scale = size / font["head"].unitsPerEm  # ty: ignore[unresolved-attribute]
     cmap = font.getBestCmap()
+    if cmap is None:
+        raise SystemExit(f"{DISPLAY_FACE[1]} has no Unicode character map, so no glyph can be found for a letter.")
     glyphs = font.getGlyphSet()
     x = 0.0
     parts = []
@@ -385,12 +393,8 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
     words_y = 110
     spoken = " ".join(HERO_WORDS)
     time_list = ", ".join(f"{t:.2f} s" for t in counts[:-1]) + f", and {counts[-1]:.2f} s"
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{HERO_W}" height="{HERO_H}" viewBox="0 0 {HERO_W} {HERO_H}" role="img" aria-labelledby="t d">
-  <title id="t">DeckTalk</title>
-  <desc id="d">A playhead moves along the narration "{spoken}", one tick per word. A bowl appears on the slide on "bowl", and a ball appears on its rim on "ball". On each count word, the ball steps down the bowl and a box fills with that word's start time: {time_list}.</desc>
-  <defs><style>{css}</style></defs>
-  {bg_rect(pal, HERO_W, HERO_H, background)}
-  <g class="loop">
+    desc = f'A playhead moves along the narration "{spoken}", one tick per word. A bowl appears on the slide on "bowl", and a ball appears on its rim on "ball". On each count word, the ball steps down the bowl and a box fills with that word\'s start time: {time_list}.'
+    body = f"""<g class="loop">
   <text class="lab" x="{HERO_PAD}" y="{card_y}">NARRATION</text>
   <g transform="translate({HERO_PAD} {words_y})">
     <text y="0">{words_svg}</text>
@@ -404,9 +408,8 @@ def hero(pal: dict[str, str], xs: list[float], background: bool) -> str:
     <g class="bx">{"".join(boxes)}</g>
     {"".join(fills)}
   </g>
-  </g>
-</svg>
-"""
+  </g>"""
+    return _svg(HERO_W, HERO_H, "DeckTalk", desc, [css], pal, background, body, hatched=False)
 
 
 # ---- how it works ----------------------------------------------------------------------------
@@ -528,7 +531,7 @@ def stage_svg(i: int, x: int, y: int, ticks: list[float]) -> str:
       <g class="out"><rect class="accent" x="0" y="0" width="224" height="36" rx="8"/><text class="lab on-accent" x="14" y="22">OUT.MP4</text></g></g>"""
     cmds = STAGE_COMMANDS[i]
     cmd = f'<text class="cmd" x="0" y="102">{" · ".join(cmds)}</text>' if cmds else ""
-    return f"""  <g transform="translate({x} {y})">
+    return f"""<g transform="translate({x} {y})">
     <text class="lab n{i}" x="0" y="80">{lab}</text>
     {cmd}
     <g transform="translate(0 {CMD_ROW})">
@@ -549,17 +552,11 @@ def how_it_works(pal: dict[str, str], stacked: bool, background: bool, ticks: li
     title = "How DeckTalk works. You write a script. Your voice reads it, and every word gets a timestamp. Slides appear on their words in a browser. ffmpeg cuts one mp4. The six stages are narrate, cue, record, soundscape, assemble and verify."
     if not stacked:
         w, h = 1200, 240 + CMD_ROW
-        stages = "\n".join(stage_svg(i, 60 + 280 * i, -40, ticks) for i in range(4))
+        stages = "\n  ".join(stage_svg(i, 60 + 280 * i, -40, ticks) for i in range(4))
     else:
         w, h = 600, 560 + 2 * CMD_ROW
-        stages = "\n".join(stage_svg(i, 40 + 280 * (i % 2), 280 * (i // 2), ticks) for i in range(4))
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t">
-  <title id="t">{title}</title>
-  <defs><style>{css}</style></defs>
-  {bg_rect(pal, w, h, background)}
-{stages}
-</svg>
-"""
+        stages = "\n  ".join(stage_svg(i, 40 + 280 * (i % 2), 280 * (i // 2), ticks) for i in range(4))
+    return _svg(w, h, title, None, [css], pal, background, stages, hatched=False)
 
 
 # ---- pipeline ---------------------------------------------------------------------------------
@@ -684,14 +681,7 @@ def pipeline(pal: dict[str, str], background: bool) -> str:
         "The slides are plain HTML in deck/index.html, one scene a section. The video is recorded in real time, and every reveal is measured. "
         f"A line from the slides joins the cues. Under the stations: change one sentence, and {PIPELINE_NOTE[0].lower()}{PIPELINE_NOTE[1:]}"
     )
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
-  <title id="t">How DeckTalk makes a film</title>
-  <desc id="d">{desc}</desc>
-  <defs><style>{chr(10).join(css)}</style></defs>
-  {bg_rect(pal, w, h, background)}
-  {"".join(parts)}
-</svg>
-"""
+    return _svg(w, h, "How DeckTalk makes a film", desc, css, pal, background, "".join(parts), hatched=False)
 
 
 # ---- mark -------------------------------------------------------------------------------------
@@ -813,12 +803,8 @@ def narration_zero(pal: dict[str, str], xs: list[float], background: bool) -> st
         f'<line class="lead" x1="{cx:.1f}" y1="{lead_y:.1f}" x2="{left + frame_at(cx) * pitch + FRAME_W / 2:.1f}" y2="{strip_y + FRAME_H + 3}"/>'
         for cx in (bowl_x, ball_x)
     )
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
-  <title id="t">Why the cuts are exact</title>
-  <desc id="d">A strip of recorded frames opens on three magenta cover frames. The first clean frame is narration t=0, where the narration "A bowl. A ball. Watch it step down" starts. The bowl appears whole in the first frame after "bowl", and the ball in the first frame after "ball".</desc>
-  <defs><style>{chr(10).join(css)}</style></defs>
-  {bg_rect(pal, w, h, background)}
-  <text class="lab" x="{left}" y="40">RECORDING</text>
+    desc = 'A strip of recorded frames opens on three magenta cover frames. The first clean frame is narration t=0, where the narration "A bowl. A ball. Watch it step down" starts. The bowl appears whole in the first frame after "bowl", and the ball in the first frame after "ball".'
+    body = f"""<text class="lab" x="{left}" y="40">RECORDING</text>
   {"".join(frames)}
   <path class="brace" d="M{left},{strip_y + FRAME_H + 8} v5 H{left + COVER_FRAMES * pitch - FRAME_GAP} v-5"/>
   <text class="cap" x="{cover_mid:.1f}" y="{strip_y + FRAME_H + 30}" text-anchor="middle">magenta cover</text>
@@ -828,9 +814,8 @@ def narration_zero(pal: dict[str, str], xs: list[float], background: bool) -> st
   <text class="lab" x="{left}" y="{words_y}">NARRATION</text>
   <text y="{words_y}">{words_svg}</text>
   {ticks_svg}
-  <text class="cap" x="{left}" y="{h - 18}">The first clean frame is t=0.</text>
-</svg>
-"""
+  <text class="cap" x="{left}" y="{h - 18}">The first clean frame is t=0.</text>"""
+    return _svg(w, h, "Why the cuts are exact", desc, css, pal, background, body, hatched=False)
 
 
 # ---- figure data --------------------------------------------------------------------------------
@@ -886,12 +871,21 @@ def fig_css(pal: dict[str, str]) -> list[str]:
 
 
 def _svg(
-    w: int, h: int, title: str, desc: str, css: list[str], pal: dict[str, str], background: bool, body: str
+    w: int,
+    h: int,
+    title: str,
+    desc: str | None,
+    css: list[str],
+    pal: dict[str, str],
+    background: bool,
+    body: str,
+    hatched: bool = True,
 ) -> str:
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="t d">
-  <title id="t">{title}</title>
-  <desc id="d">{desc}</desc>
-  <defs><style>{chr(10).join(css)}</style>{hatch(pal)}</defs>
+    """The envelope every diagram shares: its title, its description when it has one, its styles and its ground."""
+    labels, description = ("t d", f'\n  <desc id="d">{desc}</desc>') if desc else ("t", "")
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-labelledby="{labels}">
+  <title id="t">{title}</title>{description}
+  <defs><style>{chr(10).join(css)}</style>{hatch(pal) if hatched else ""}</defs>
   {bg_rect(pal, w, h, background)}
   {body}
 </svg>
@@ -1747,23 +1741,15 @@ def _first_difference(generated: list[str], committed: list[str]) -> str:
 
 
 def why_stale(path: Path, source: str) -> str | None:
-    """Why the file at `path` no longer says what `source` says, or None when it still does."""
-    if not path.exists():
-        return "it is not committed"
-    if measured(path):
+    """Why the file at `path` no longer says what `source` says, or None when it still does.
+
+    A measured figure is held within the tolerance, and every other file is held to the byte. A write
+    rewrites only what this calls stale, because the release pull request regenerates on a Linux
+    runner, and rewriting every measured figure within the tolerance would commit a churn of them.
+    """
+    if measured(path) and path.exists():
         return stale_reason(source, path.read_text(encoding="utf-8"))
-    return None if path.read_text(encoding="utf-8") == source else "it differs from its source"
-
-
-def report_stale(files: dict[Path, str]) -> int:
-    """Print every committed file that no longer says what its source says, and return how many there are."""
-    stale = 0
-    for path, source in files.items():
-        reason = why_stale(path, source)
-        if reason:
-            print(f"stale: {path.relative_to(ROOT)}, because {reason}")
-            stale += 1
-    return stale
+    return generated.differs(path, source)
 
 
 # ---- entry ------------------------------------------------------------------------------------
@@ -1775,24 +1761,7 @@ def _clean(svg: str) -> str:
 
 
 def build() -> dict[Path, str]:
-    h_widths, h_space = measure_words(HERO_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
-    hero_xs: list[float] = []
-    x = 0.0
-    for i, w in enumerate(h_widths):
-        hero_xs.append(round(x, 1))
-        x += w + h_space * (1.6 if HERO_WORDS[i].endswith((",", ".")) else 1.0)
-    a_widths, a_space = measure_words(ZERO_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
-    zero_xs: list[float] = []
-    x = 0.0
-    for i, w in enumerate(a_widths):
-        zero_xs.append(round(x, 1))
-        x += w + a_space * (1.6 if ZERO_WORDS[i].endswith((",", ".")) else 1.0)
-    o_widths, o_space = measure_words(OG_WORDS, f"600 {MEASURE_PX}px {SANS}", "-.01em")
-    og_xs: list[float] = []
-    x = 0.0
-    for i, w in enumerate(o_widths):
-        og_xs.append(round(x, 1))
-        x += w + o_space * (1.6 if OG_WORDS[i].endswith((",", ".")) else 1.0)
+    hero_xs, zero_xs, og_xs = word_xs(HERO_WORDS, ZERO_WORDS, OG_WORDS)
     ticks = narrate_ticks(hero_xs)
     name = glyph_outlines("DeckTalk", size=22, tracking=-0.01)
     out: dict[Path, str] = {}
@@ -1841,35 +1810,17 @@ def build() -> dict[Path, str]:
     return {k: _clean(v) for k, v in out.items()}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write every generated asset")
-    action.add_argument(
-        "--check", action="store_true", help="exit 1 if any committed file no longer says what its source says"
-    )
-    args = ap.parse_args()
-    files = build()
-    if args.check:
-        return 1 if report_stale(files) else 0
-    # A write rewrites only what the check calls stale. The release pull request regenerates on a
-    # Linux runner, which shapes every measured word a fraction of a pixel away from the author's
-    # machine, and rewriting within that tolerance would commit a churn of every figure to a release.
-    changed = [p for p, s in files.items() if why_stale(p, s)]
-    for p in changed:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(files[p], encoding="utf-8")
-        print(f"wrote {p.relative_to(ROOT)}  ({len(files[p]) // 1024} KB)")
-    if not changed:
-        print("every generated asset already says what its source says")
-    # The social card is also needed as a PNG for link previews. It is not part of --check because
-    # raster bytes vary between Chromium builds, so it is only refreshed when its SVG source was rewritten.
-    og_png = ROOT / "docs" / "images" / "og.png"
-    if ASSETS / "og.svg" in changed or not og_png.exists():
-        render_png(files[ASSETS / "og.svg"], og_png, 1200, 630)
+def refresh_card(written: set[Path]) -> None:
+    """Rasterize the social card again when its source was rewritten, because a link preview needs a PNG.
+
+    The PNG is not held to its source, because raster bytes vary between Chromium builds, so it is only
+    refreshed when its SVG was rewritten or when it is missing.
+    """
+    card, og_png = ASSETS / "og.svg", ROOT / "docs" / "images" / "og.png"
+    if card in written or not og_png.exists():
+        render_png(card.read_text(encoding="utf-8"), og_png, 1200, 630)
         print(f"wrote {og_png.relative_to(ROOT)}")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(build, why_stale=why_stale, wrote=refresh_card))

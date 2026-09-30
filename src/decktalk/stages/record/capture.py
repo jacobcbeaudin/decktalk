@@ -23,23 +23,23 @@ would say nothing had moved.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
-from decktalk.artifacts import CueTimes, RecordingLog, input_hash, text_digest
+from decktalk.artifacts import CueTimes, RecordingLog, content_digest, input_hash
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
-from decktalk.page import Q
+from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, TIME_MARK, Q
 from decktalk.results import Word
+
+log = logging.getLogger(__name__)
 
 SIGNAL = "signal"
 """What `t0` is set to so the page starts its clock on the recorder's signal rather than on a second."""
-
-SECOND_DIGITS = 3
-"""Truth: three decimal places of a second is one millisecond, which is finer than any frame."""
 
 WORD_DIGITS = 2
 """How precisely a word's start is written into the page URL, which is a hundredth of a second."""
@@ -75,14 +75,13 @@ def scene_params(section: PageSection, cue_times: CueTimes | None) -> dict[Q, st
 def words_param(words: tuple[Word, ...]) -> str | None:
     """A section's words as word@seconds pairs, in seconds after that section starts.
 
-    A comma separates two pairs and an at sign separates a word from its second, so neither may
-    appear inside a word that is written into the value.
+    The contract's list separator divides two pairs and its time mark divides a word from its
+    second, so neither may appear inside a word that is written into the value.
     """
     if not words:
         return None
-    return ",".join(
-        f"{word.word.replace(',', '').replace('@', '')}@{max(0.0, word.start):.{WORD_DIGITS}f}" for word in words
-    )
+    pairs = ((word.word.replace(LIST_SEPARATOR, "").replace(TIME_MARK, ""), max(0.0, word.start)) for word in words)
+    return LIST_SEPARATOR.join(f"{said}{TIME_MARK}{start:.{WORD_DIGITS}f}" for said, start in pairs)
 
 
 def spoken_words(inputs: Inputs, section: int) -> tuple[Word, ...]:
@@ -224,7 +223,8 @@ def page_source(path: Path) -> str:
     """A page as text, or nothing when the project no longer has it, which `scene_url` reports."""
     try:
         return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    except OSError as unread:
+        log.debug("%s could not be read, so it is hashed as empty.", path.name, exc_info=unread)
         return ""
 
 
@@ -234,7 +234,9 @@ def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float,
     The page joins the key in two pieces rather than as one file, so an edit to one scene moves the
     key of the sections that play it and of no others, while an edit to the head, a style, a script
     or another shared part of the file moves every section of that page. The motion the render asks
-    for joins the key too, or a reduced build would reuse the full-motion recordings it made before.
+    for joins the key too, or a reduced build would reuse the full-motion recordings it made before,
+    and so does the page policy, because an untrusted page whose other origins are refused may draw
+    a different picture from the same page trusted.
     `assets` is every project file the page loaded, which the last run's log names, and the page file
     itself is left out of them because its two pieces are already here.
     """
@@ -247,9 +249,10 @@ def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float,
         f"{seconds:.{SECOND_DIGITS}f}",
         f"{video.width}x{video.height}@{video.output_fps}",
         record.color_scheme,
+        f"policy:{record.page_policy}",
         f"motion:{motion.reduce}:{motion.scale:g}",
-        f"scene:{text_digest(parts.scene)}",
-        f"page:{text_digest(parts.shared)}",
+        f"scene:{content_digest(parts.scene.encode('utf-8'))}",
+        f"page:{content_digest(parts.shared.encode('utf-8'))}",
     ]
     named = [Path(rel).as_posix() for rel in assets]
     files = {rel: found for rel in named if (found := inputs.path(rel)) != page}
@@ -281,7 +284,7 @@ class Job:
             self.previous is not None
             and bool(self.previous.input_hash)
             and self.previous.input_hash == self.input_hash
-            and self.previous.t0_seconds is not None
+            and self.previous.start is not None
             and self.out.exists()
         )
 
@@ -290,14 +293,14 @@ def plan_job(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, s
     """What recording one section would open and write, and whether the recording on disk still stands."""
     url = scene_url(inputs, section, scene_params(section, cue_times))
     workspace = inputs.workspace
-    previous = RecordingLog.read(workspace.recording_log(section.key))
+    previous = RecordingLog.previous(workspace.recording_log(section.key))
     return Job(
         section=section,
         url=url,
         seconds=seconds,
         out=workspace.recording(section.key),
         log_path=workspace.recording_log(section.key),
-        input_hash=section_hash(inputs, section, url, seconds, previous.assets if previous else ()),
+        input_hash=section_hash(inputs, section, url, seconds, previous.recording.assets if previous else ()),
         previous=previous,
     )
 

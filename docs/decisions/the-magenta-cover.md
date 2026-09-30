@@ -34,7 +34,7 @@ pixel's luma by four steps at most and stays under every difference level `verif
 
 - A run that finds no cover does not refuse. It falls back to the first painted frame plus the
   settle, and failing that to `record.fallback_first_paint_seconds` plus the settle, marks the
-  recording's `t0_guessed`, and prints a warning naming the section and the second it guessed.
+  recording's `start.guessed`, and prints a warning naming the section and the second it guessed.
   Reporting the guess rather than hiding it is the point, because a guessed start moves every reveal
   in that section together.
 - The start is exact to one frame, which at the 25 frames per second the recorder captures at is

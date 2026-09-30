@@ -7,6 +7,10 @@ in the package that reads `os.environ`, the per-machine settings file or the wor
 everything below it takes what it needs as an argument, so two projects in one process cannot reach
 each other and a service can hold one machine per request.
 
+A host that runs other people's projects builds its machine with `Machine.of` instead, from values
+it chose: the environment a job may see, the per-machine file, the cache, and the voices it answers
+with. Such a machine reads no project's `.env`, so a tenant's upload cannot supply a credential.
+
 A `Run` is one call in progress: its id, the stream it writes to, the token that stops it and the
 gate it passes before it spends anything. Every call on a machine and on a project opens one, which
 is what makes the event stream total: `install` and `doctor` hold no project and would otherwise
@@ -19,6 +23,7 @@ the first request rather than counted down as the credits go.
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import subprocess
@@ -26,13 +31,13 @@ import sys
 import time
 import uuid
 from collections.abc import Iterable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field, replace
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, InputError, ToolError
+from decktalk.errors import STOPS, ApprovalRequired, Cancel, DeckTalkError, ErrorInfo, InputError, ToolError
 from decktalk.events import (
     Event,
     Events,
@@ -51,9 +56,25 @@ from decktalk.events import (
 )
 from decktalk.events import FindingEvent as FindingLine
 from decktalk.events import SpendEvent as SpendLine
-from decktalk.findings import Applicability, Certainty, Code, CommandFix, Edit, Finding, Location, SettingFix
-from decktalk.inputs.paths import at, relative
+from decktalk.files import current_text, replace_all
+from decktalk.findings import (
+    FIX_COMMANDS,
+    Applicability,
+    Certainty,
+    Code,
+    CommandFix,
+    Edit,
+    Finding,
+    Location,
+    RuntimeFix,
+    SettingFix,
+    judge,
+)
+from decktalk.inputs.env import reading_dotenv
+from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
+from decktalk.logs import WHERE, level_of, logging_into, source_of, within
+from decktalk.media.environment import child_environment, children_see
 from decktalk.media.ffmpeg import installed_paths, using_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
@@ -68,25 +89,38 @@ from decktalk.results import (
     Scope,
     Spend,
     Voicing,
+    money,
 )
+from decktalk.secret import register_environment
 from decktalk.settings import (
+    ALLOW_ANY_API_BASE,
+    BY_ID,
+    CONFIG_VARIABLE,
     PROJECT_FILE,
     ToolsConfig,
+    edit,
+    env_warnings,
+    key_warnings,
     load,
     machine_config_path,
     read_machine_toml,
     route,
     scoped,
+    validate,
     write,
 )
 from decktalk.settings import Scope as SettingScope
-from decktalk.toolchain import assets, chromium_fetch
+from decktalk.speech import PROVIDERS, Voices, voicing
+from decktalk.tomlmap import SWITCHED_OFF
+from decktalk.toolchain import assets, chromium_fetch, command_line, tail, traced
 from decktalk.toolchain.announce import announcing
-from decktalk.toolchain.cache import cache_dir
+from decktalk.toolchain.cache import caching_in, standard_cache_dir
 from decktalk.toolchain.ffmpeg_fetch import FFMPEG_VERSION, fetch_ffmpeg
 
 if TYPE_CHECKING:  # pragma: no cover
     from decktalk.findings import Fix
+
+log = logging.getLogger(__name__)
 
 VOICE_KEY = "ELEVENLABS_API_KEY"
 """The one credential a paid run needs, which `doctor` reports as set or not and never reads."""
@@ -99,8 +133,8 @@ FFMPEG = "ffmpeg"
 FFPROBE = "ffprobe"
 KATEX = "katex"
 
-BIAS_KEY = "host.presentation_bias_ms"
-"""The one key a command measures rather than a person chooses, which `doctor --measure` writes."""
+FIX_TIMEOUT_SECONDS = 1800.0
+"""The longest a command fix may run, which fetches a browser and an encoder in minutes and never in an hour."""
 
 
 def new_run() -> str:
@@ -110,25 +144,33 @@ def new_run() -> str:
 
 @dataclass(frozen=True)
 class Toolchain:
-    """What this machine renders with: the keys that name it, and the pair those keys resolve to.
+    """What this machine renders with: the keys that name it, the pair they resolve to, and its cache.
 
     The pair is a field rather than a cached lookup, so the first project opened in a process cannot
     pin the toolchain for every project after it, which is what a module-level cache over the
     environment did. The keys travel with it because a run binds them for the length of the run, and
-    every call between the machine and an audio filter reads them from there.
+    every call between the machine and an audio filter reads them from there. The cache is the
+    directory the machine worked out from its own environment, so a fetch lands where this machine
+    keeps its tools rather than where the process that happens to run it would.
     """
 
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     ffmpeg: Path | None = None
     ffprobe: Path | None = None
+    cache: Path | None = None
+    """The standard per-user directory this machine keeps its tools in, when `[tools] cache_dir` names none."""
 
     @classmethod
-    def of(cls, tools: ToolsConfig) -> Toolchain:
-        """The toolchain these keys resolve to, resolved once and without fetching anything."""
-        with using_tools(tools):
+    def of(cls, tools: ToolsConfig, *, cache: Path) -> Toolchain:
+        """The toolchain these keys resolve to, resolved once and without fetching anything.
+
+        `[tools]` naming half a build or a file that is not there is a `TOOL` refusal.
+        """
+        named = cls(tools=tools, cache=cache)
+        with named.bound():
             found = installed_paths(tools)
-        return cls(
-            tools=tools,
+        return replace(
+            named,
             ffmpeg=Path(found[0]) if found else None,
             ffprobe=Path(found[1]) if found else None,
         )
@@ -136,8 +178,29 @@ class Toolchain:
     @property
     def cache_dir(self) -> Path:
         """Where this machine keeps what it fetches, which `[tools] cache_dir` moves."""
-        with using_tools(self.tools):
-            return cache_dir()
+        if self.tools.cache_dir:
+            return Path(self.tools.cache_dir)
+        if self.cache is not None:
+            return self.cache
+        raise ToolError(
+            "this machine names no directory to keep fetched tools in.",
+            hint="Set tools.cache_dir on this machine, or build the machine with Machine.from_environment().",
+        )
+
+    @contextmanager
+    def bound(self, *, cancel: Cancel | None = None) -> Iterator[None]:
+        """Bind the keys, the pair, the cache directory and a run's cancel token below the machine.
+
+        A toolchain built by hand for a test may name no cache at all, and it binds only its keys,
+        so a run that fetches nothing never asks where a fetch would land. A pair this toolchain
+        already found is handed down, so a run renders with it and resolves nothing a second time.
+        `cancel` is the token every ffmpeg call polls while its tool works, which is how a cancelled
+        run stops an encode rather than waiting for it.
+        """
+        known = self.tools.cache_dir or (str(self.cache) if self.cache is not None else "")
+        paths = self.paths() if self.complete else None
+        with caching_in(known), using_tools(self.tools, paths=paths, cancel=cancel):
+            yield
 
     @property
     def complete(self) -> bool:
@@ -153,12 +216,22 @@ class Toolchain:
             )
         return self.ffmpeg, self.ffprobe
 
-    def fetched(self) -> Toolchain:
-        """This toolchain with the pinned build downloaded when it was not already there."""
+    def fetched(self, *, cancel: Cancel | None = None) -> Toolchain:
+        """This toolchain with the pinned build downloaded when it was not already there.
+
+        `cancel` is the run's token, which a fetch waiting on another fetch of the same build polls. A
+        download the network refuses is a `TOOL` refusal, never a bug in DeckTalk.
+        """
         if self.complete:
             return self
-        with using_tools(self.tools):
-            ffmpeg, ffprobe = fetch_ffmpeg()
+        with self.bound(cancel=cancel):
+            try:
+                ffmpeg, ffprobe = fetch_ffmpeg(cancel=cancel, wait_seconds=self.tools.timeout_seconds)
+            except OSError as exc:
+                raise ToolError(
+                    f"the pinned ffmpeg could not be downloaded ({exc}).",
+                    hint="Run `decktalk install` again with network access, or install ffmpeg and ffprobe on PATH.",
+                ) from exc
         return replace(self, ffmpeg=Path(ffmpeg), ffprobe=Path(ffprobe))
 
 
@@ -187,6 +260,7 @@ class Run:
         self.root = root
         self.written: list[Path] = []
         self.findings: list[Finding] = []
+        self.opened = time.monotonic()
 
     # ---- the stream ---------------------------------------------------------------------
 
@@ -196,7 +270,32 @@ class Run:
 
     def note(self, message: str, *, level: Level = Level.INFO) -> None:
         """One sentence the library would have printed, had the library printed anything."""
-        self.emit(Log, level=level, message=message)
+        place = WHERE.get()
+        self.emit(Log, level=level, message=message, stage=place.stage, section=place.section)
+
+    def logged(self, record: logging.LogRecord) -> None:
+        """Turn one standard logging record into one line of this run, which is the bridge's receiver.
+
+        The sentence is the record's own rendering, in which a `Secret` argument already reads as its
+        name. A record that carries an exception adds the exception's type and the first line of its
+        message to `data`, and never the traceback, because a traceback carries locals and paths.
+        """
+        given = getattr(record, "data", None)
+        data = dict(given) if isinstance(given, Mapping) else {}
+        if record.exc_info and record.exc_info[1] is not None:
+            failure = record.exc_info[1]
+            first = next(iter(str(failure).splitlines()), "")
+            data["error"] = f"{type(failure).__name__}: {first}" if first else type(failure).__name__
+        place = WHERE.get()
+        self.emit(
+            Log,
+            level=level_of(record.levelno),
+            message=record.getMessage(),
+            source=source_of(record.name),
+            stage=place.stage,
+            section=place.section,
+            data=data or None,
+        )
 
     def found(self, finding: Finding) -> Finding:
         """Record one judgement and report it as it was made, rather than holding it to the end."""
@@ -219,30 +318,34 @@ class Run:
         """Raise `Cancelled` when the caller has asked the run to stop, which a stage calls between sections."""
         self.cancel.check()
 
-    @contextmanager
-    def stage(self, stage: Stage, *, index: int = 1, count: int = 1) -> Iterator[None]:
+    def stage(self, stage: Stage, *, index: int = 1, count: int = 1) -> AbstractContextManager[None]:
         """Open and close one stage on the stream, whatever the stage does inside."""
-        started = _clock()
-        self.emit(StageStart, stage=stage, index=index, count=count)
-        try:
-            yield
-        except BaseException:
-            self.emit(StageDone, stage=stage, outcome=Outcome.FAILED, seconds=_clock() - started)
-            raise
-        self.emit(StageDone, stage=stage, outcome=Outcome.OK, seconds=_clock() - started)
+        return self._timed(StageStart, StageDone, stage=stage, opening={"index": index, "count": count})
 
-    @contextmanager
-    def section(self, stage: Stage, section: int) -> Iterator[None]:
+    def section(self, stage: Stage, section: int) -> AbstractContextManager[None]:
         """Open and close one section of one stage on the stream, and check the cancel token first."""
         self.check()
-        started = _clock()
-        self.emit(SectionStart, stage=stage, section=section)
+        return self._timed(SectionStart, SectionDone, stage=stage, section=section)
+
+    @contextmanager
+    def _timed(
+        self, start: type[Event], done: type[Event], *, opening: Mapping[str, int] | None = None, **both: object
+    ) -> Iterator[None]:
+        """Emit `start`, run the block, and emit `done` with how it ended and how long it took.
+
+        A block the caller cancelled or interrupted ends as stopped, because nothing in it failed.
+        """
+        started = time.monotonic()
+        self.emit(start, **both, **(opening or {}))
+        stage, section = both.get("stage"), both.get("section")
         try:
-            yield
-        except BaseException:
-            self.emit(SectionDone, stage=stage, section=section, outcome=Outcome.FAILED, seconds=_clock() - started)
+            with within(stage=cast("Stage | None", stage), section=cast("int | None", section)):
+                yield
+        except BaseException as failure:
+            ended = Outcome.STOPPED if isinstance(failure, STOPS) else Outcome.FAILED
+            self.emit(done, **both, outcome=ended, seconds=time.monotonic() - started)
             raise
-        self.emit(SectionDone, stage=stage, section=section, outcome=Outcome.OK, seconds=_clock() - started)
+        self.emit(done, **both, outcome=Outcome.OK, seconds=time.monotonic() - started)
 
     def fetching(self, tool: str, done_bytes: int, total_bytes: int | None = None) -> None:
         """A tool is arriving, which is the one moment a run stops for the network.
@@ -264,7 +367,7 @@ class Run:
         self.emit(SpendLine, spend=spend)
         if self.voice is not Voicing.PAID:
             raise ApprovalRequired(
-                f"this run would spend ${spend.dollars:.2f} on speech and no voicing approved it.",
+                f"{spend.sentence} No voicing approved it.",
                 hint="Pass --spend to approve it, or --no-voice to write placeholder narration.",
             )
         if self.max_cost is None:
@@ -276,8 +379,8 @@ class Run:
             )
         if spend.ceiling_dollars > self.max_cost:
             raise ApprovalRequired(
-                f"this run can cost up to ${spend.ceiling_dollars:.2f}, which is over the "
-                f"${self.max_cost:.2f} ceiling --max-cost set.",
+                f"{spend.sentence} The most it can cost, {money(spend.ceiling_dollars)}, is over the "
+                f"{money(self.max_cost)} ceiling --max-cost set.",
                 hint=f"Raise the ceiling to --max-cost {spend.ceiling_dollars:.2f}, or narrow the run with --section.",
             )
         return spend
@@ -292,11 +395,11 @@ class Run:
         written: Iterable[Path] | None = None,
         **fields: object,
     ) -> R:
-        """Fill one result: this run's id, the judgements it made and the files it wrote.
+        """Fill one result: this run's id, the judgements it made, the files it wrote and how long it took.
 
         `ok` is false when any judgement is certain, which is the one rule every command shares, so
         no stage decides for itself what counts as having found something. A stage that reported its
-        judgements and its files through the run names neither here.
+        judgements and its files through the run names neither here, and no stage times itself.
         """
         judged = tuple(findings) if findings is not None else tuple(self.findings)
         declared = model.model_fields
@@ -305,6 +408,8 @@ class Run:
         if "written" in declared:
             paths = self.written if written is None else list(written)
             fields.setdefault("written", tuple(dict.fromkeys(self._relative(path) for path in paths)))
+        if "seconds" in declared:
+            fields.setdefault("seconds", time.monotonic() - self.opened)
         fields.setdefault("ok", not any(found.certainty is Certainty.CERTAIN for found in judged))
         return model(findings=judged, **cast("dict[str, Any]", fields))
 
@@ -323,25 +428,85 @@ class Machine:
     toolchain: Toolchain
     events: Events = field(default_factory=Events, compare=False)
     overrides: tuple[str, ...] = ()
-    providers: Mapping[str, Any] = field(default_factory=dict, repr=False, compare=False)
-    """Provider factories a caller supplied, which sit over the shipped ones under the same names."""
+    providers: Mapping[str, Any] | None = field(default=None, repr=False, compare=False)
+    """The voices this machine answers with by name, or None for the ones DeckTalk ships.
+
+    A host's table replaces the shipped one rather than sitting over it, so a machine built with a
+    fake voice can reach no real one by a name the host left out. Each value is a factory that takes
+    a voice context and answers with a provider, and it is typed loosely on purpose, per the decision
+    that no provider type is a published name.
+    """
+    dotenv: bool = True
+    """Whether a project's `.env` is read, which is true for the author's own machine and false for a host's."""
+    allow_any_api_base: bool = False
+    """Whether `[elevenlabs] api_base` may name a host other than ElevenLabs, which only a machine decides.
+
+    It is a field rather than a variable the speech layer reads, so a host that built its machine by
+    hand decides it, and a key is never sent elsewhere because the process that runs a call happened
+    to have the switch set.
+    """
+    notes: tuple[str, ...] = field(default=(), compare=False)
+    """What reading the machine noticed, such as a misspelled variable or key, which every run says."""
 
     @classmethod
-    def from_environment(cls, *, overrides: Iterable[tuple[str, str]] = ()) -> Machine:
+    def from_environment(cls, *, overrides: Iterable[str] = ()) -> Machine:
         """This machine as the process found it, which is the only reading of the environment there is."""
         environ = dict(os.environ)
-        config = machine_config_path()
-        tables = read_machine_toml(config)
-        pairs = tuple(f"{key}={value}" for key, value in overrides)
-        mine = scoped(route(pairs), SettingScope.MACHINE)
-        loaded = load(project={}, machine=tables, machine_path=config, environ=environ, overrides=_pairs(mine))
-        return cls(
+        home = Path.home()
+        return cls.of(
             environ=environ,
-            tables=tables,
-            config_path=config,
+            config_path=machine_config_path(environ, home),
             cwd=Path.cwd(),
-            toolchain=Toolchain.of(loaded.settings.tools),
+            cache_dir=standard_cache_dir(environ, home),
+            overrides=overrides,
+            dotenv=True,
+            allow_any_api_base=environ.get(ALLOW_ANY_API_BASE, "").lower() not in SWITCHED_OFF,
+        )
+
+    @classmethod
+    def of(
+        cls,
+        *,
+        environ: Mapping[str, str],
+        config_path: Path,
+        cwd: Path,
+        cache_dir: Path,
+        providers: Mapping[str, Any] | None = None,
+        overrides: Iterable[str] = (),
+        dotenv: bool = False,
+        allow_any_api_base: bool = False,
+    ) -> Machine:
+        """A machine built from values its caller chose, which is how a host runs other people's projects.
+
+        Nothing here reads the process. `environ` is every variable a run on this machine may see,
+        which for a render job is none and for a voice job is the key and the voice id. The machine
+        file at `config_path` is read when it is there and is where a machine-scope fix lands.
+        `providers` replaces the shipped voices by name. A project's `.env` is left unread unless
+        `dotenv` says otherwise, and the voice key goes to ElevenLabs and nowhere else unless
+        `allow_any_api_base` says otherwise, because both are what a tenant's upload would reach for.
+        """
+        register_environment(environ)
+        tables = read_machine_toml(config_path)
+        pairs = tuple(overrides)
+        mine = _machine_overrides(pairs)
+        loaded = load(project={}, machine=tables, machine_path=config_path, environ=environ, overrides=mine)
+        # A machine whose `[tools]` names no usable pair is still a machine: every run says why, so
+        # `doctor` reports the key to mend rather than a missing encoder `install` could not fix.
+        try:
+            toolchain, refused = Toolchain.of(loaded.settings.tools, cache=cache_dir), ()
+        except ToolError as refusal:
+            toolchain, refused = Toolchain(tools=loaded.settings.tools, cache=cache_dir), (f"{refusal} {refusal.hint}",)
+        return cls(
+            environ=dict(environ),
+            tables=tables,
+            config_path=config_path,
+            cwd=cwd,
+            toolchain=toolchain,
             overrides=pairs,
+            providers=providers,
+            dotenv=dotenv,
+            allow_any_api_base=allow_any_api_base,
+            notes=(*env_warnings(environ), *key_warnings(tables, config_path.name), *refused),
         )
 
     @property
@@ -349,29 +514,32 @@ class Machine:
         """Where this machine keeps the browser and the encoder it fetches."""
         return self.toolchain.cache_dir
 
-    def provider(self, name: str) -> object:
-        """The factory one `[voice] provider` name answers to, which nothing public is typed by.
+    @property
+    def voices(self) -> Voices:
+        """The voices this machine answers with, where its key may go and how often it asks again.
 
-        The map is a field rather than a module dictionary anything may write into, so two projects
-        in one process cannot swap each other's voice. It is also internal, per the decision that no
-        provider type is a published name, and it is loaded on the first question, so a machine that
-        voices nothing never opens a network client.
+        The retries are a machine-scoped key, so the machine's own file, environment and overrides
+        decide them whole and no project can.
         """
-        supplied = self.providers.get(name)
-        if supplied is not None:
-            return supplied
-        # A provider carries an HTTP client, so the module that ships one is loaded by the one call
-        # that needs a voice, and never by a caller that brought its own or by a machine report.
-        from decktalk.speech import PROVIDERS  # noqa: PLC0415
+        mine = _machine_overrides(self.overrides)
+        tuned = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings
+        return Voices(
+            factories=PROVIDERS if self.providers is None else self.providers,
+            allow_any_api_base=self.allow_any_api_base,
+            retries=tuned.narration.retries,
+        )
 
-        factory = PROVIDERS.get(name)
-        if factory is None:
-            known = sorted(set(PROVIDERS) | set(self.providers))
-            raise InputError(
-                f"[voice] provider = {name!r} is not a provider this machine answers for.",
-                hint=f"The providers it knows are {', '.join(known)}.",
-            )
-        return factory
+    def child_environ(self) -> dict[str, str]:
+        """The environment a DeckTalk command this machine starts runs with, so the command acts on this machine.
+
+        A host's machine names its own file and cache rather than the ones its variables would, so the
+        two are spelled into the child's environment, and a child `decktalk install` fetches into the
+        cache this machine reads and writes to the file this machine holds.
+        """
+        child = {**self.environ, CONFIG_VARIABLE: str(self.config_path)}
+        if self.toolchain.tools.cache_dir or self.toolchain.cache is not None:
+            child[BY_ID["tools.cache_dir"].environment] = str(self.cache_dir)
+        return child
 
     @property
     def voice_key(self) -> bool:
@@ -391,6 +559,7 @@ class Machine:
         root: Path | None = None,
         events_dir: Path | None = None,
         keep_runs: int | None = None,
+        max_bytes: int | None = None,
     ) -> Iterator[Run]:
         """Open one run on the stream, write its lines beside the project, and close it however it ends.
 
@@ -401,25 +570,47 @@ class Machine:
         """
         run = Run(self, id=id or new_run(), cancel=cancel or Cancel(), voice=voice, max_cost=max_cost, root=root)
         events_path = events_dir / f"{run.id}{EVENTS_SUFFIX}" if events_dir is not None else None
-        sink = None
+        sink, written, pruned = None, None, ()
         if events_path is not None:
             if keep_runs is not None:
-                JsonlSink.prune(events_path.parent, keep_runs)
-            sink = self.events.subscribe(JsonlSink(events_path), runs=[run.id])
-        started = _clock()
+                pruned = JsonlSink.prune(events_path.parent, keep_runs)
+            written = JsonlSink(events_path, max_bytes=max_bytes)
+            sink = self.events.subscribe(written, runs=[run.id])
         self.events.emit(run.id, RunStart, events_path=relative(events_path, root) if events_path and root else None)
-        outcome = Outcome.OK
+        # What the machine noticed when it was read is said on every run, because the machine was read
+        # once and each run's events file is read on its own.
+        for note in self.notes:
+            run.note(note, level=Level.WARNING)
+        outcome, error = Outcome.OK, None
         try:
-            # The toolchain and the download listener are what this run renders and fetches with, and
-            # both sit below the event stream, so the run binds them for its own length rather than
-            # threading a machine through every filter and every fetcher.
-            with using_tools(self.toolchain.tools), announcing(run.fetching):
+            # The toolchain, the download listener, the voices, the rule about `.env` and the
+            # environment a launched browser is built from are what this run renders, fetches, speaks,
+            # reads secrets and opens pages with. All of them sit below the event stream, so the run
+            # binds them for its own length rather than threading a machine through every filter,
+            # fetcher, provider lookup and browser launch.
+            with (
+                self.toolchain.bound(cancel=run.cancel),
+                children_see(self.environ),
+                announcing(run.fetching),
+                voicing(self.voices),
+                reading_dotenv(self.dotenv),
+                logging_into(run.logged, run=run.id),
+            ):
+                if pruned:
+                    removed = [path.name for path in pruned]
+                    log.debug("Removed %d older events files.", len(removed), extra={"data": {"removed": removed}})
                 yield run
-        except BaseException:
-            outcome = Outcome.FAILED
+        except BaseException as failure:
+            # The reason goes on the run's last line as well as up the stack, because the file under
+            # build/events is read after the process that raised it is gone.
+            outcome = Outcome.STOPPED if isinstance(failure, STOPS) else Outcome.FAILED
+            error = ErrorInfo.of_failure(failure)
             raise
         finally:
-            self.events.emit(run.id, RunDone, outcome=outcome, seconds=_clock() - started)
+            dropped = written.dropped if written is not None else 0
+            self.events.emit(
+                run.id, RunDone, outcome=outcome, seconds=time.monotonic() - run.opened, error=error, dropped=dropped
+            )
             if sink is not None:
                 sink.close()
 
@@ -434,19 +625,12 @@ class Machine:
         browser's system libraries and so the one that may ask for a password.
         """
         with self.run(cancel=cancel) as run:
-            chromium_fetch.fetch_chromium(with_deps=sys.platform.startswith("linux"))
+            chromium_fetch.fetch_chromium(env=child_environment(), with_deps=sys.platform.startswith("linux"))
             # The row is asked for the way `doctor` asks for it, by launching what was just fetched,
             # so `install` cannot print the browser as missing a second after it downloaded one.
             browser = self._browser_row().model_copy(update={"fetched": True})
             held = self.toolchain.complete
-            toolchain = self.toolchain.fetched()
-            tools = (
-                browser,
-                InstalledTool(tool=FFMPEG, version=FFMPEG_VERSION, path=toolchain.ffmpeg, fetched=not held, bytes=None),
-                InstalledTool(
-                    tool=FFPROBE, version=FFMPEG_VERSION, path=toolchain.ffprobe, fetched=not held, bytes=None
-                ),
-            )
+            tools = (browser, *_encoder_rows(self.toolchain.fetched(cancel=run.cancel), fetched=not held))
             return run.result(InstallResult, tools=tools, cache=self.cache_dir)
 
     def doctor(self, *, measure: bool = False, cancel: Cancel | None = None) -> DoctorResult:
@@ -457,7 +641,7 @@ class Machine:
         No variable's value is reported, because a variable may hold a credential.
         """
         with self.run(cancel=cancel) as run:
-            tools = (self._browser_row(), *self._encoder_rows(), self._katex_row())
+            tools = (self._browser_row(), *_encoder_rows(self.toolchain), self._katex_row())
             findings = tuple(run.found(found) for found in _missing_findings(tools))
             return run.result(
                 DoctorResult,
@@ -467,78 +651,69 @@ class Machine:
                 python=f"{sys.version.split()[0]} ({sys.executable})",
                 platform=f"{platform.platform()} ({sys.platform})",
                 voice_key=self.voice_key,
-                bias_ms=self._bias(run, measure=measure),
+                bias_ms=self._bias(measure=measure),
             )
 
     def apply(self, fix: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
         """Carry out the fixes a machine can make, which is turning a machine knob and running a command."""
         with self.run(root=self.cwd) as run:
-            outcomes = tuple(
-                apply_fix(run, code, found, root=self.cwd, scope=Scope.MACHINE, unsafe=unsafe)
-                for code, found in fixes_of(fix)
-            )
-            return run.result(ApplyResult, fixes=outcomes)
+            return apply_fixes(run, fix, root=self.cwd, scope=Scope.MACHINE, unsafe=unsafe)
 
     # ---- the rows `doctor` reports ---------------------------------------------------------
 
     def _browser_row(self) -> InstalledTool:
-        """What browser this machine can launch, asked by launching it rather than by looking for a file."""
+        """What browser this machine can launch, asked by launching it rather than by looking for a file.
+
+        The row also names where that browser lives, because a person told the browser is there
+        still has to find it to clear a cache or to hand it to a container.
+        """
         try:
             # The browser driver is a heavy import and a machine without one is a row rather than a
             # refusal, so it is loaded by the one question that needs it.
             from playwright.sync_api import sync_playwright  # noqa: PLC0415
         except ImportError:
-            return InstalledTool(tool=CHROMIUM, version=None, path=None, fetched=False, bytes=None)
+            # silent: a machine without the browser driver reports a row with no browser.
+            return InstalledTool(tool=CHROMIUM)
         with sync_playwright() as playwright:
             try:
                 browser = playwright.chromium.launch()
                 version = browser.version
                 browser.close()
-            except Exception:  # noqa: BLE001  (a browser that will not launch is a row, never a traceback)
-                return InstalledTool(tool=CHROMIUM, version=None, path=None, fetched=False, bytes=None)
-            return InstalledTool(tool=CHROMIUM, version=version, path=None, fetched=False, bytes=None)
-
-    def _encoder_rows(self) -> tuple[InstalledTool, ...]:
-        """The encoder and the prober, which are one row each so a broken one names itself."""
-        return tuple(
-            InstalledTool(
-                tool=name,
-                version=FFMPEG_VERSION if path else None,
-                path=path,
-                fetched=False,
-                bytes=None,
-            )
-            for name, path in ((FFMPEG, self.toolchain.ffmpeg), (FFPROBE, self.toolchain.ffprobe))
-        )
+            except Exception as failed:  # noqa: BLE001  (a browser that will not launch is a row, never a traceback)
+                # The row says only that there is no browser, so the reason goes on the run's stream.
+                log.warning("Chromium did not launch.", extra={"data": {"reason": str(failed).splitlines()[0]}})
+                return InstalledTool(tool=CHROMIUM)
+            where = chromium_fetch.installed_chromium(playwright)
+            path = Path(where) if where else None
+            return InstalledTool(tool=CHROMIUM, version=version, path=path)
 
     def _katex_row(self) -> InstalledTool:
         """The maths the wheel carries, which a deck copies beside its pages."""
         missing = assets.katex_missing()
-        return InstalledTool(
-            tool=KATEX,
-            version=None if missing else assets.KATEX_VERSION,
-            path=None if missing else assets.katex_dir(),
-            fetched=False,
-            bytes=None,
-        )
+        if missing:
+            return InstalledTool(tool=KATEX)
+        return InstalledTool(tool=KATEX, version=assets.KATEX_VERSION, path=assets.katex_dir())
 
-    def _bias(self, run: Run, *, measure: bool) -> float | None:
+    @staticmethod
+    def _bias(*, measure: bool) -> float | None:
         """This host's presentation bias, measured only when asked, because measuring drives a browser.
 
-        A measurement that is taken is kept. The key is refused to every hand that would type it,
-        because a number typed into it is a guess subtracted from every later measurement, and this
-        command is the one holding an honest value, so it writes through the door `settings.write`
-        opens for exactly that and reports the file it wrote like any other.
+        It is reported and never kept, because no stage reads it: it is what an author reads a
+        section's offsets against to tell a machine that presents late from a deck that cues late.
         """
         if not measure:
             return None
         # Measuring drives a browser, so the layer that owns the browser owns the measurement, and
         # the module is loaded by the one caller that asks for it rather than by every report.
-        measured = import_module("decktalk.media.browser").measure_presentation_bias
-        bias = float(measured())
-        write(self.config_path, BIAS_KEY, str(bias), scope=SettingScope.MACHINE, measured=True)
-        run.wrote(self.config_path)
-        return bias
+        return float(import_module("decktalk.media.browser").measure_presentation_bias())
+
+
+def _encoder_rows(toolchain: Toolchain, *, fetched: bool = False) -> tuple[InstalledTool, ...]:
+    """The encoder and the prober, which are one row each so a broken one names itself."""
+    return tuple(
+        InstalledTool(tool=name, version=FFMPEG_VERSION if path else None, path=path, fetched=fetched)
+        for name, path in ((FFMPEG, toolchain.ffmpeg), (FFPROBE, toolchain.ffprobe))
+    )
 
 
 def init(
@@ -559,8 +734,7 @@ def init(
     from decktalk.template import STARTER, write_project  # noqa: PLC0415
 
     here = machine or Machine.from_environment()
-    root = Path(path).expanduser()
-    root = root if root.is_absolute() else here.cwd / root
+    root = here.cwd / Path(path).expanduser()
     with here.run(root=root) as run:
         written = write_project(root, name=name or root.name, example_name=example, skills=skills, force=force)
         for wrote in written:
@@ -577,11 +751,28 @@ def init(
 # ---- applying a fix ------------------------------------------------------------------------
 
 
+def apply_fixes(run: Run, fix: Finding | Iterable[Finding], *, root: Path, scope: Scope, unsafe: bool) -> ApplyResult:
+    """Carry out every fix a caller handed over, in order, and publish what each one did.
+
+    A fix left alone is also a warning on the run, so a reader of the stream or the events file
+    learns why without holding the result.
+    """
+    outcomes = tuple(
+        apply_fix(run, code, found, root=root, scope=scope, unsafe=unsafe) for code, found in fixes_of(fix)
+    )
+    for outcome in outcomes:
+        if not outcome.applied:
+            run.note(f"{outcome.title} was not applied: {outcome.why}", level=Level.WARNING)
+    return run.result(ApplyResult, fixes=outcomes)
+
+
 def apply_fix(run: Run, code: Code, fix: Fix, *, root: Path, scope: Scope, unsafe: bool) -> FixOutcome:
     """Carry out one fix, or say in one sentence why it was left alone.
 
     A display fix is a change only a person can make, so it is reported and never applied, and an
-    unsafe fix can lose the author's work, so it is applied only when the caller asked for that.
+    unsafe fix can lose the author's work, so it is applied only when the caller asked for that. A
+    file the system will not let DeckTalk read or write is a refusal like any other, because the fix
+    changed nothing and the caller is owed a sentence rather than an exception.
     """
     if fix.applicability is Applicability.DISPLAY:
         return FixOutcome(code=code, title=fix.title, applied=False, why="only a person can make this change.")
@@ -589,47 +780,174 @@ def apply_fix(run: Run, code: Code, fix: Fix, *, root: Path, scope: Scope, unsaf
         why = "this fix can lose work, so it was applied only on request."
         return FixOutcome(code=code, title=fix.title, applied=False, why=why)
     try:
-        files = _carry_out(fix, root=root, scope=scope)
+        files = _carry_out(run, fix, root=root, scope=scope)
     except DeckTalkError as refused:
         return FixOutcome(code=code, title=fix.title, applied=False, why=str(refused))
+    except (OSError, UnicodeDecodeError) as failed:
+        return FixOutcome(code=code, title=fix.title, applied=False, why=_unchanged(failed, root))
     for path in files:
         run.wrote(path)
     changed = tuple(relative(path, root) for path in files)
     return FixOutcome(code=code, title=fix.title, applied=True, files=changed)
 
 
-def _carry_out(fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, ...]:
-    """Make the change one fix describes, and give back every file it changed."""
+def _unchanged(failed: OSError | UnicodeDecodeError, root: Path) -> str:
+    """The sentence for a fix the system stopped, naming the file when the failure names one."""
+    named = failed.filename if isinstance(failed, OSError) else None
+    what = relative(Path(named), root).as_posix() if isinstance(named, str) else "a file this fix names"
+    reason = failed.strerror if isinstance(failed, OSError) and failed.strerror else str(failed)
+    return f"{what} could not be read or written ({reason}), so every file was left as it was."
+
+
+def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, ...]:
+    """Make the change one fix describes, and give back every file it changed.
+
+    Every edit is made in memory before any file is touched. A key edit is staged as text in the
+    same place as a line edit, so a fix that edits the lines of `decktalk.toml` and sets a key in it
+    changes one text, and a settings file the fix touched is loaded whole before anything is written.
+    Every file is then replaced together by `replace_all`, so a fix whose last edit is refused, or
+    whose last file cannot be written, leaves every file as it was.
+    """
     if isinstance(fix, SettingFix):
-        return (write(_settings_file(root, scope), fix.key, fix.value, scope=scope).file,)
+        return (_write_key(run, fix.key, fix.value, root=root, scope=scope),)
     if isinstance(fix, CommandFix):
-        finished = subprocess.run(fix.command, cwd=root, check=False, capture_output=True, text=True)
-        if finished.returncode != 0:
-            raise ToolError(
-                f"{fix.command[0]} exited {finished.returncode}.",
-                hint=f"Run `{' '.join(fix.command)}` by hand to see what it says.",
-            )
+        _run_command(run, fix, root=root)
         return ()
-    return tuple(dict.fromkeys(_edit(edit, root=root, scope=scope) for edit in fix.edits))
+    if isinstance(fix, RuntimeFix):
+        return (_replace_runtime(root, fix.file),)
+    settings_file = _settings_file(run, root, scope)
+    staged: dict[Path, str] = {}
+    for one in fix.edits:
+        path = _inside(root, one.file)
+        if one.key is not None:
+            text = staged[settings_file] if settings_file in staged else current_text(settings_file)
+            staged[settings_file] = edit(text, one.key, one.new, scope=scope, file=settings_file).text
+            continue
+        lines = staged[path].splitlines(keepends=True) if path in staged else _lines_under(one, path, root)
+        staged[path] = "".join(_edited(one, lines, path, root))
+    for path, holds in _settings_files(run, root).items():
+        if path in staged:
+            validate(staged[path], path, holds)
+    replace_all(staged)
+    return tuple(staged)
 
 
-def _edit(edit: Edit, *, root: Path, scope: Scope) -> Path:
-    """Make one change to one file, addressed by the one locator the edit names."""
-    path = root / edit.file
-    if edit.key is not None:
-        return write(_settings_file(root, scope), edit.key, edit.new, scope=scope).file
+def _replace_runtime(root: Path, named: Path) -> Path:
+    """Replace the project's copy of the runtime at `named` with the engine's, byte for byte.
+
+    The fix arrives as JSON, so the path is held to the project and must name a runtime copy once
+    every link is followed, which keeps a runtime fix from overwriting any other file of the project.
+    """
+    path = _inside(root, named)
+    if path.name != assets.RUNTIME_FILE:
+        raise InputError(
+            f"{Path(named).as_posix()} is not a copy of the runtime, so a runtime fix may not replace it.",
+            hint=f"A runtime fix only ever replaces a file called {assets.RUNTIME_FILE}.",
+            location=Location(where=Path(named).as_posix()),
+        )
+    replace_all({path: assets.runtime_path().read_bytes()})
+    return path
+
+
+def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:
+    """Run one of DeckTalk's own commands as this interpreter's DeckTalk, bounded in time.
+
+    The set is checked again here, because a model can be built without validation and a fix is the
+    one value that decides what this process launches. The command runs as `python -m decktalk`
+    under the interpreter making the call rather than as whatever `decktalk` is first on `PATH`,
+    which may be another install, and it sees the machine's own environment rather than the
+    process's, so a host that built its machine by hand is the one that decides what it reads.
+    """
+    if fix.command not in FIX_COMMANDS:
+        raise InputError(
+            f"`{' '.join(fix.command)}` is not one of DeckTalk's own commands, so a fix may not run it.",
+            hint="Run the command by hand if you mean it.",
+        )
+    argv = [sys.executable, "-m", *fix.command]
+    typed = command_line(fix.command)
+    started = time.monotonic()
+    try:
+        finished = subprocess.run(
+            argv,
+            cwd=root,
+            env=run.machine.child_environ(),
+            check=False,
+            capture_output=True,
+            timeout=FIX_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as late:
+        log.warning(
+            "`%s` was stopped after %.0f seconds (timeout).",
+            typed,
+            FIX_TIMEOUT_SECONDS,
+            extra={"data": {"argv": command_line(argv), "reason": "timeout", "limit": FIX_TIMEOUT_SECONDS}},
+        )
+        raise ToolError(
+            f"`{typed}` ran for {FIX_TIMEOUT_SECONDS:.0f} seconds and was stopped.",
+            hint=f"Run `{typed}` by hand to see where it waits.",
+        ) from late
+    said = finished.stderr or finished.stdout or b""
+    traced(log, typed, argv, code=finished.returncode, seconds=time.monotonic() - started, said=said)
+    if finished.returncode != 0:
+        # What the command said is the reason it failed, and a fix outcome keeps the message alone,
+        # so the message quotes its last lines.
+        raise ToolError(
+            f"{fix.command[0]} exited {finished.returncode}: {tail(said)}",
+            hint=f"Run `{typed}` by hand to see the rest of what it says.",
+        )
+
+
+def _inside(root: Path, named: Path) -> Path:
+    """The file an edit names, held to the project by `contained`, the one rule every project path meets.
+
+    A fix can arrive as JSON from anywhere, so its path is the one part of it an attacker chooses, and
+    the refusal says what a fix may change rather than what a project may read. The path handed back
+    is the resolved file spelled under the root the caller gave, so two edits that name one file by
+    two spellings change it once.
+    """
+    try:
+        path = contained(root, named)
+    except InputError as outside:
+        raise InputError(
+            f"{Path(named).as_posix()} is outside the project, so a fix may not change it.",
+            hint="A fix only ever changes files inside the project it was made for.",
+            location=Location(where=Path(named).as_posix()),
+        ) from outside
+    return root / path.resolve().relative_to(root.resolve())
+
+
+def _write_key(run: Run, key: str, value: str, *, root: Path, scope: Scope) -> Path:
+    """Set one settings key through the settings writer, and name the file it lands in."""
+    file = _settings_file(run, root, scope)
+    return write(file, key, value, scope=scope, environ=run.machine.environ).file
+
+
+def _edited(edit: Edit, lines: list[str], path: Path, root: Path) -> list[str]:
+    """The lines of one file after one edit, addressed by the one locator the edit names."""
     if edit.pointer is not None:
         raise InputError(
             f"a pointer edit into {edit.file} has no applier yet.",
             hint="Make the change by hand, or run the command the finding names.",
             location=at(path, root),
         )
-    lines = _lines_under(edit, path, root)
-    index = (edit.line or 1) - 1
-    lines[index : index + (1 if edit.old is not None else 0)] = [edit.new + "\n"] if edit.new else []
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(lines), encoding="utf-8")
-    return path
+    if edit.old is not None:
+        _still_reads(edit, lines, (edit.line or 1) - 1, path, root)
+    return edit.applied(lines)
+
+
+def _still_reads(edit: Edit, lines: list[str], index: int, path: Path, root: Path) -> None:
+    """Refuse a replacement whose line no longer reads what the fix was made against.
+
+    A fix is computed from the file as it was when the finding was raised. A file edited since then
+    has moved its lines, and replacing line n by number would overwrite whatever line n holds now.
+    """
+    found = lines[index].rstrip("\r\n") if index < len(lines) else None
+    if found != edit.old:
+        raise InputError(
+            f"line {edit.line} of {edit.file} no longer reads what this fix was made against, so it was left alone.",
+            hint="Run the command that raised the finding again for a fix made against the file as it is now.",
+            location=at(path, root),
+        )
 
 
 def _lines_under(edit: Edit, path: Path, root: Path) -> list[str]:
@@ -664,37 +982,44 @@ def fixes_of(given: Finding | Iterable[Finding]) -> tuple[tuple[Code, Fix], ...]
 def _missing_findings(tools: tuple[InstalledTool, ...]) -> tuple[Finding, ...]:
     """One judgement per component a build needs and this machine has not got."""
     return tuple(
-        # The code owns the certainty and the docs page, so a raiser names the code and nothing else.
-        Finding.model_validate(
-            {
-                "code": Code.FILE_MISSING,
-                "message": f"{tool.tool} is not on this machine, so a build that needs it cannot run.",
-                "location": Location(where=tool.tool),
-                "fix": CommandFix(
-                    title=f"Fetch {tool.tool} into the cache.",
-                    applicability=Applicability.SAFE,
-                    command=("decktalk", "install"),
-                ),
-            }
+        judge(
+            Code.FILE_MISSING,
+            f"{tool.tool} is not on this machine, so a build that needs it cannot run.",
+            Location(where=tool.tool),
+            fix=CommandFix(
+                title=f"Fetch {tool.tool} into the cache.",
+                applicability=Applicability.SAFE,
+                command=("decktalk", "install"),
+            ),
         )
         for tool in tools
         if tool.version is None and tool.path is None
     )
 
 
-def _settings_file(root: Path, scope: Scope) -> Path:
-    """The file a settings write lands in, which is the project's own or this machine's."""
-    return root / PROJECT_FILE if scope is Scope.PROJECT else machine_config_path()
+def _settings_file(run: Run, root: Path, scope: Scope) -> Path:
+    """The file a settings change lands in, which is the project's own or the one this machine was built from.
+
+    The machine's file is the one it holds, and never the one the process environment would name,
+    so a fix applied through a machine a host built by hand lands in that host's file. The project's
+    file is held to the project like every file a fix names, so a link out of it is refused.
+    """
+    return _inside(root, Path(PROJECT_FILE)) if scope is Scope.PROJECT else _machine_file(run)
 
 
-def _pairs(overrides: Mapping[str, str]) -> tuple[str, ...]:
-    """A routed override map spelled back the way the loader takes it, which is one string per pair."""
-    return tuple(f"{key}={value}" for key, value in overrides.items())
+def _settings_files(run: Run, root: Path) -> dict[Path, Scope]:
+    """Both settings files a fix may reach, each with the scope its keys belong to."""
+    return {_settings_file(run, root, held): held for held in Scope}
 
 
-def _clock() -> float:
-    """A monotonic reading in seconds, which is what every elapsed number on the stream is taken from."""
-    return time.monotonic()
+def _machine_file(run: Run) -> Path:
+    """This machine's settings file with its links followed, which is where a change to it lands."""
+    return run.machine.config_path.resolve()
+
+
+def _machine_overrides(overrides: tuple[str, ...]) -> tuple[str, ...]:
+    """The machine-scoped pairs of a run of `--set` overrides, spelled the way the loader takes them."""
+    return tuple(f"{key}={value}" for key, value in scoped(route(overrides), SettingScope.MACHINE).items())
 
 
 __all__ = ["Machine", "Run", "Toolchain", "init"]

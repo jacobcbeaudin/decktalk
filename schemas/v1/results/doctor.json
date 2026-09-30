@@ -22,7 +22,7 @@
       "type": "string"
     },
     "Code": {
-      "description": "Every judgement DeckTalk can make, with its sentence, its certainty and what decides it.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL. `decides` names the settings keys whose values move the verdict, so an agent that meets a\ncode knows which knob to read without a second call.",
+      "description": "Every judgement DeckTalk can make, with its sentence, its certainty and who raises it.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
       "enum": [
         "PAGE_UNKNOWN_ATTR",
         "PAGE_BAD_VALUE",
@@ -53,7 +53,6 @@
         "PAGE_STAGGER_EMPTY",
         "PAGE_MOTION_OVERRUN",
         "PAGE_STAGGER_OVERRUN",
-        "PAGE_WORD_LATE",
         "PAGE_THIN_DRAW",
         "PAGE_NO_DESCRIPTION",
         "PAGE_SWAP_APART",
@@ -61,9 +60,11 @@
         "PAGE_BLACK",
         "PAGE_TRUNCATED",
         "PAGE_CDN_ASSET",
+        "PAGE_RUNTIME_STALE",
         "CUE_MISSING",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
+        "CUE_STALE",
         "CUE_OFF",
         "CUE_NO_ONSET",
         "CUE_NO_CHANGE",
@@ -81,7 +82,7 @@
     },
     "CommandFix": {
       "additionalProperties": false,
-      "description": "A fix that runs a command, which is the whole argv a caller may hand to a subprocess.",
+      "description": "A fix that runs one of DeckTalk's own commands, spelled as the argv a person would type.",
       "properties": {
         "kind": {
           "const": "command",
@@ -100,7 +101,7 @@
           "description": "Whether this fix may be applied without asking."
         },
         "command": {
-          "description": "The command to run, one argument per element.",
+          "description": "The command to run, one argument per element, and always one of DeckTalk's own calls.",
           "items": {
             "type": "string"
           },
@@ -338,6 +339,7 @@
                 "mapping": {
                   "command": "#/$defs/CommandFix",
                   "edit": "#/$defs/EditFix",
+                  "runtime": "#/$defs/RuntimeFix",
                   "setting": "#/$defs/SettingFix"
                 },
                 "propertyName": "kind"
@@ -351,6 +353,9 @@
                 },
                 {
                   "$ref": "#/$defs/CommandFix"
+                },
+                {
+                  "$ref": "#/$defs/RuntimeFix"
                 }
               ]
             },
@@ -414,28 +419,14 @@
           "title": "Path"
         },
         "fetched": {
+          "default": false,
           "description": "True when this run downloaded it rather than finding it.",
           "title": "Fetched",
           "type": "boolean"
-        },
-        "bytes": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "How large the download was, or null when nothing was fetched.",
-          "title": "Bytes"
         }
       },
       "required": [
-        "tool",
-        "fetched"
+        "tool"
       ],
       "title": "InstalledTool",
       "type": "object"
@@ -509,6 +500,41 @@
         "where"
       ],
       "title": "Location",
+      "type": "object"
+    },
+    "RuntimeFix": {
+      "additionalProperties": false,
+      "description": "A fix that replaces a project's copy of the runtime with the one this engine ships.\n\nA copy some release shipped holds none of the author's work, so its fix is safe. A copy that\nmatches no shipped runtime holds edits that replacing it would lose, so its fix is unsafe. The\nfix names only where the copy is, because what goes there is always the engine's runtime.",
+      "properties": {
+        "kind": {
+          "const": "runtime",
+          "default": "runtime",
+          "description": "The kind of fix, which is how a reader dispatches on it.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "description": "One sentence saying what applying this fix does.",
+          "title": "Title",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/Applicability",
+          "description": "Whether this fix may be applied without asking."
+        },
+        "file": {
+          "description": "The project's copy of the runtime to replace, project-relative.",
+          "format": "path",
+          "title": "File",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "applicability",
+        "file"
+      ],
+      "title": "RuntimeFix",
       "type": "object"
     },
     "SettingFix": {
@@ -606,16 +632,6 @@
       "title": "Run",
       "type": "string",
       "volatile": true
-    },
-    "written": {
-      "default": [],
-      "description": "Every file this run wrote, project-relative, in the order it wrote them.",
-      "items": {
-        "format": "path",
-        "type": "string"
-      },
-      "title": "Written",
-      "type": "array"
     },
     "tools": {
       "description": "Every tool this machine needs, in the order it checks them.",

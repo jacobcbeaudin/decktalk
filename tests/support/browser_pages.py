@@ -8,20 +8,17 @@ property the split is supposed to have.
 
 from __future__ import annotations
 
-import shutil
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import sync_playwright
 
-from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
-
-try:
-    from playwright.sync_api import Error as PlaywrightError
-    from playwright.sync_api import sync_playwright
-except ImportError:  # A checkout without the browser bindings skips every page below.
-    PlaywrightError = sync_playwright = None  # type: ignore[assignment, misc]
+from decktalk.toolchain.assets import katex_dir, runtime_path
+from support.tools import absent
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -33,26 +30,39 @@ KATEX = (
 )
 
 
-def chromium_page(instrument: Callable[[Page], object] | None = None) -> Iterator[Page]:
+@dataclass
+class Tab:
+    """One Chromium page, and everything it threw since a test last cleared `errors`."""
+
+    page: Page
+    errors: list[str] = field(default_factory=list)
+
+    @classmethod
+    def of(cls, page: Page) -> Tab:
+        """A tab that listens on `page` for what it throws."""
+        tab = cls(page)
+        page.on("pageerror", lambda e: tab.errors.append(str(e)))
+        return tab
+
+
+def chromium_tab(instrument: Callable[[Page], object] | None = None) -> Iterator[Tab]:
     """One Chromium page for a module, with an `errors` list of everything it threw.
 
     `instrument` is the hook a DeckTalk command uses to add decktalk-probe.js, and a module that
     passes none gets the page a person opens.
+
+    Only a test that carries the `browser` marker reaches this, and the marker is only collected when
+    a run names it, so a Chromium that will not launch fails the test rather than skipping it.
     """
-    if sync_playwright is None:
-        pytest.skip("playwright not installed")
     with sync_playwright() as pw:
         try:
             browser = pw.chromium.launch()
         except PlaywrightError as exc:
-            pytest.skip(f"Chromium unavailable: {str(exc).splitlines()[0]}")
+            pytest.fail(absent("chromium", str(exc).splitlines()[0]))
         page = browser.new_page(viewport={"width": 1920, "height": 1080})
         if instrument is not None:
             instrument(page)
-        errors: list[str] = []
-        page.on("pageerror", lambda e: errors.append(str(e)))
-        page.errors = errors  # type: ignore[attr-defined]
-        yield page
+        yield Tab.of(page)
         browser.close()
 
 
@@ -72,21 +82,13 @@ def script_page(tmp_path: Path, name: str, script: str, *, head: str = "") -> st
     return write_page(tmp_path, name, f"<script>{script}</script>", head=head)
 
 
-def served_page(root: Path, name: str, body: str, *, head: str = "") -> str:
-    """A page beside its own copy of the runtime, as the recorder opens it on the local origin.
-
-    It returns the name the origin is asked for rather than a file URL, because a recorded page is
-    served from the project directory and loads the runtime the project holds.
-    """
-    shutil.copyfile(runtime_path(), root / RUNTIME_FILE)
-    (root / name).write_text(
-        f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{name}</title>'
-        f'{head}<script src="{RUNTIME_FILE}"></script></head><body>{body}</body></html>',
-        encoding="utf-8",
-    )
-    return name
+def opened(page: Page, url: str) -> None:
+    """Open `url` and wait until the runtime has read the page, which is before any cue plays."""
+    page.goto(url)
+    page.evaluate("() => window.__decktalk.ready")
 
 
-def warnings_of(page: Page) -> list[str]:
-    """The page's warnings without the note every slide a partial cue list leaves out earns."""
-    return [w for w in page.evaluate("() => window.__decktalk.warnings") if "owns no cue in ?cues=" not in w]
+def settled(page: Page, url: str) -> None:
+    """Open `url` and wait until the page has drawn everything the query asked it for."""
+    page.goto(url)
+    page.wait_for_function("() => document.body.dataset.done === '1'")

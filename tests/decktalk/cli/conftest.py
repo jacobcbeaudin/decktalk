@@ -13,30 +13,31 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from typer.testing import CliRunner
 
-from decktalk.cli import main
+from decktalk.cli import catalog, main
 from decktalk.cli import session as sessions
 from decktalk.events import Event, Events
 from decktalk.findings import Applicability, Code, EditFix, Finding, Location
+from decktalk.inputs.workspace import Workspace
+from decktalk.project import Project
 from decktalk.results import (
     BuildResult,
     CheckResult,
     DoctorResult,
     InitResult,
     InstallResult,
-    Layer,
     Result,
     ServeResult,
-    Spend,
-    SpendState,
     StatusResult,
     StoryboardResult,
     Voicing,
     WordsResult,
 )
+from support.spends import a_spend
 
 TTY = "TTY_COMPATIBLE"
 """The variable Rich reads to be told there is a terminal here, which is how both paths are run."""
@@ -75,12 +76,18 @@ class Fake:
     of what a command-line test needs to say what the client did.
     """
 
+    workspace: Workspace  # set by a test whose command reads the project's folders
+
     def __init__(self, **answers: object) -> None:
         self.answers = dict(answers)
         self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
         self.events = Events()
         self.emits: dict[str, tuple[type[Event], dict[str, object]]] = {}
         self.root = Path.cwd()
+
+    def project(self) -> Project:
+        """This fake as the project it stands in for, for a test that hands it to a function directly."""
+        return cast("Project", self)
 
     def called(self, name: str) -> dict[str, object]:
         """The keywords one call was made with, which is what a client test asserts on."""
@@ -127,17 +134,9 @@ def machine(monkeypatch: pytest.MonkeyPatch):
     return install
 
 
-def spend(dollars: float = 0.12, ceiling: float = 0.2) -> Spend:
-    """A priced run, which is what `check` reports and what an approval refusal carries."""
-    return Spend(
-        state=SpendState.ESTIMATE,
-        sections=(1, 2, 3),
-        characters=392,
-        dollars=dollars,
-        ceiling_dollars=ceiling,
-        price_per_1000_characters=0.3,
-        price_layer=Layer.PROJECT,
-    )
+def commands() -> dict[str, dict[str, Any]]:
+    """Every command the parser really has, by the words a caller types to reach it."""
+    return {str(row["command"]): row for row in catalog.walk()}
 
 
 def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
@@ -170,11 +169,11 @@ ANSWERS: dict[str, Result] = {
     "status": StatusResult(
         ok=True, run="r", name="demo", script=Path("script.md"), cues=Path("cues.json"), sections=()
     ),
-    "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=spend()),
+    "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=a_spend()),
     "words": WordsResult(ok=True, run="r", sections=()),
     "storyboard": StoryboardResult(ok=True, run="r", storyboard=Path("build/storyboard.html"), panels=()),
-    "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000, root=Path(".")),
-    "build": BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=spend(), seconds=1.0),
+    "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000),
+    "build": BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=a_spend(), seconds=1.0),
 }
 """One prepared answer per command, so a client test says what it asked for rather than what it got."""
 

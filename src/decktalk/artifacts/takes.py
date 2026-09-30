@@ -24,13 +24,14 @@ settings, so a section lands the same way whether this run voiced its take or fo
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from decktalk.artifacts.stored import Stored
-from decktalk.findings import MODEL
+from decktalk.findings import Model
 from decktalk.results import SectionKey, SectionNumber
 
 TAKE_DIGITS = 16
@@ -42,15 +43,29 @@ PLACEHOLDER_PREFIX = "placeholder-"
 PLACEHOLDER_DIGITS = 10
 """How much of the sha256 names a placeholder take, which is regenerated rather than bought."""
 
+TAKE_HASH = rf"^(?:[0-9a-f]{{{TAKE_DIGITS}}}|{PLACEHOLDER_PREFIX}[0-9a-f]{{{PLACEHOLDER_DIGITS}}})$"
+"""Every digest a take may be named by, which is the head of a sha256 in hex and nothing else.
 
-class TakeInputs(BaseModel):
+A take's digest becomes a file name under the take directory, so an index a user supplied could
+otherwise name `../` and have the narration read a file from anywhere on the machine.
+"""
+
+
+class _Digested(Model):
+    """A frozen set of inputs whose digest is taken over its payload."""
+
+    @property
+    def payload(self) -> str:
+        """The bytes the digest is taken of, which is every field in declaration order, newline separated."""
+        return "\n".join(str(getattr(self, name)) for name in type(self).model_fields)
+
+
+class TakeInputs(_Digested):
     """Everything that decides what a paid take sounds like, which is everything its name is taken over.
 
     The payload is the fields below joined by newlines, in the order they are declared. A reader
     who wants to know why a take was voiced again compares two of these rather than guessing.
     """
-
-    model_config = MODEL
 
     provider: str = Field(description="The speech provider that spoke this take, such as elevenlabs.")
     voice: str = Field(description="The provider's id for the voice, which is a published name and not a secret.")
@@ -81,33 +96,21 @@ class TakeInputs(BaseModel):
         )
 
     @property
-    def payload(self) -> str:
-        """The bytes the digest is taken of, which is every field in declaration order, newline separated."""
-        return "\n".join(str(getattr(self, name)) for name in type(self).model_fields)
-
-    @property
     def digest(self) -> str:
         """The take's name, which is the head of the sha256 of the payload."""
         return hashlib.sha256(self.payload.encode("utf-8")).hexdigest()[:TAKE_DIGITS]
 
 
-class PlaceholderInputs(BaseModel):
+class PlaceholderInputs(_Digested):
     """Everything that decides what a placeholder take sounds like, which is its length and its clicks.
 
     No credit is spent on one, so its digest exists only to let an unchanged section be skipped, and
     its prefix keeps it out of the paid takes a run must never overwrite.
     """
 
-    model_config = MODEL
-
     words_per_minute: float = Field(gt=0, description="The pace the placeholder is sized at.")
     beat_seconds: float = Field(ge=0, description="How long a declared pause is held in a placeholder.")
     text: str = Field(description="The spoken text this placeholder stands in for.")
-
-    @property
-    def payload(self) -> str:
-        """The bytes the digest is taken of, which is every field in declaration order, newline separated."""
-        return "\n".join(str(getattr(self, name)) for name in type(self).model_fields)
 
     @property
     def digest(self) -> str:
@@ -125,15 +128,16 @@ def is_placeholder(digest: str) -> bool:
     return digest.startswith(PLACEHOLDER_PREFIX)
 
 
-class Take(BaseModel):
+class Take(Model):
     """One section's take: the files it names, what it cost to make, and where it lands."""
-
-    model_config = MODEL
 
     section: SectionNumber
     key: SectionKey
     chapter: str = Field(description="The section's title, which the film's chapter marker carries.")
-    hash: str = Field(description="The digest of the inputs this take was made from, which names its files.")
+    hash: str = Field(
+        pattern=TAKE_HASH,
+        description="The digest of the inputs this take was made from, which names its files, in lowercase hex.",
+    )
     voiced: bool = Field(description="True when a provider spoke this take, false on a placeholder.")
     word_count: int = Field(ge=0, description="How many words this take speaks.")
     characters: int = Field(ge=0, description="How many characters were sent to the voice, which is what is billed.")
@@ -196,11 +200,8 @@ class Takes(Stored):
     @property
     def starts(self) -> dict[int, float]:
         """Where each section begins in the joined narration, added up in the order the takes are joined."""
-        at, out = 0.0, {}
-        for take in self.sections:
-            out[take.section] = round(at, 3)
-            at += take.span_seconds
-        return out
+        ats = itertools.accumulate((take.span_seconds for take in self.sections), initial=0.0)
+        return {take.section: round(at, 3) for take, at in zip(self.sections, ats, strict=False)}
 
     def start(self, section: int) -> float | None:
         """Where a section begins in the joined narration, or None when it has no take."""
@@ -222,6 +223,7 @@ class Takes(Stored):
 __all__ = [
     "PLACEHOLDER_PREFIX",
     "TAKE_DIGITS",
+    "TAKE_HASH",
     "PlaceholderInputs",
     "Take",
     "TakeInputs",

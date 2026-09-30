@@ -5,7 +5,9 @@ The pipeline used to be described in three places, which were the stage order, a
 worked out what a partial run still needed, and about ten sentences across the stages telling a
 reader to run an earlier command first. `PIPELINE` is the one declaration all three are read from,
 so the precondition check, the `--from` and `--to` validation, the hint a `NOT_BUILT` error carries
-and the next step `status` reports are one table a reader can see whole.
+and the next step `status` reports are one table a reader can see whole. `NEEDS` reads the same
+table as a graph of stages, so which records a change leaves describing other inputs is derived
+from the edges rather than kept as a rule of its own.
 
 A stage is a member of `Stage` and never its name as a string, so a misspelt stage fails where it is
 written rather than making a comparison quietly false. The value of a member is the one word that
@@ -15,9 +17,10 @@ the `stage` of an event line and the key its row sits under in `build --json`.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path, PurePosixPath
+from graphlib import TopologicalSorter
 
 
 class Stage(Enum):
@@ -45,14 +48,19 @@ class Stage(Enum):
 
 
 class Outcome(Enum):
-    """How a stage or a section ended, which is the one field that replaces three event names.
+    """How a stage or a section ended, which is the one field that replaces four event names.
 
-    A caller reads one field to learn what happened, where `stage.done`, `stage.skip` and
-    `stage.fail` would make it branch three ways to learn the same fact.
+    A caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`
+    and `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the
+    run planned and did not repeat, because nothing it reads had changed since it last ran, and
+    `skipped` is a stage the run did not plan at all. `stopped` is a run, a stage or a section the
+    caller cancelled or interrupted, which is kept apart from `failed` because nothing went wrong.
     """
 
     OK = "ok"
+    KEPT = "kept"
     SKIPPED = "skipped"
+    STOPPED = "stopped"
     FAILED = "failed"
 
 
@@ -71,18 +79,25 @@ class Artifact(Enum):
     FINAL = "build/final"
 
     @property
-    def path(self) -> PurePosixPath:
-        """The artifact's project-relative path."""
-        return PurePosixPath(self.value)
-
-    def under(self, root: Path) -> Path:
-        """The artifact's path under one project root, which is what a stage opens."""
-        return root.joinpath(*self.path.parts)
-
-    @property
     def written_by(self) -> Stage | None:
         """The stage that writes this artifact, or None when nothing in the pipeline does."""
         return next((spec.stage for spec in PIPELINE if self in spec.writes), None)
+
+    @property
+    def next_step(self) -> str:
+        """The one sentence that tells a reader how to get this artifact built, read from its writer.
+
+        Every refusal that meets a missing artifact carries this sentence, so a renamed command or a
+        moved stage changes the advice in one place rather than in every stage that reads the file.
+        """
+        writer = self.written_by
+        if writer is None:
+            return f"Nothing in the pipeline writes {self.value}."
+        if writer is Stage.NARRATE:
+            # The one stage that spends money on every run has a way to make its artifact for nothing,
+            # and a reader stopped by a missing take index should not have to find that flag elsewhere.
+            return f"Run `decktalk {writer.value}` first, or `decktalk {writer.value} --no-voice` to spend nothing."
+        return f"Run `decktalk {writer.value}` first."
 
 
 @dataclass(frozen=True)
@@ -140,6 +155,30 @@ SPECS: dict[Stage, StageSpec] = {spec.stage: spec for spec in PIPELINE}
 """Each stage's row, so `Stage.spec` is one lookup rather than a scan."""
 
 
+NEEDS: dict[Stage, frozenset[Stage]] = {
+    spec.stage: frozenset(writer for artifact in spec.reads if (writer := artifact.written_by) is not None)
+    for spec in PIPELINE
+}
+"""Each stage against the stages whose artifacts it reads, which is the table above read as a graph.
+
+The declared order is one the graph admits and not the only one, because `soundscape` reads nothing
+`cue` or `record` writes and runs after them only so the unpaid draft loop stops at `record`.
+"""
+
+
+def downstream(changed: Collection[Stage]) -> tuple[Stage, ...]:
+    """Every other stage that reads, directly or through another stage, what these stages write, in run order.
+
+    The graph's own order reaches a stage only after every stage it reads from, so one pass carries a
+    change as far as it goes, and a table that reads in a circle is refused here as a `CycleError`.
+    """
+    moved = set(changed)
+    for stage in TopologicalSorter(NEEDS).static_order():
+        if moved & NEEDS[stage]:
+            moved.add(stage)
+    return tuple(stage for stage in Stage if stage in moved and stage not in changed)
+
+
 def required(plan: tuple[Stage, ...]) -> tuple[Artifact, ...]:
     """The artifacts a run of `plan` reads but does not write, which must be on disk before it starts.
 
@@ -151,10 +190,4 @@ def required(plan: tuple[Stage, ...]) -> tuple[Artifact, ...]:
     return tuple(dict.fromkeys(needed))
 
 
-__all__ = [
-    "PIPELINE",
-    "Artifact",
-    "Outcome",
-    "Stage",
-    "StageSpec",
-]
+__all__ = ["Outcome", "Stage"]

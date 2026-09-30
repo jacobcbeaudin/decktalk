@@ -4,6 +4,9 @@
 writes those cues as SubRip and WebVTT, the section chapters as ffmetadata, and the transcript
 page a viewer reads instead of the film.
 
+`clock` is the one way a time in a film is written for a person, which is h:mm:ss, or m:ss under an
+hour, rounded to the nearest second, so a transcript and a terminal never show one second two ways.
+
 A word is the word model every result carries, so the times a caption is cut on are the times the
 voice reported and the times `verify` measures, with nothing converted in between.
 """
@@ -14,11 +17,12 @@ from .files import (
     Chapter,
     Said,
     TranscriptSection,
+    chapters_text,
+    clock,
     ffmetadata_escape,
-    write_chapters,
-    write_srt,
-    write_transcript,
-    write_vtt,
+    srt_text,
+    transcript_html,
+    vtt_text,
 )
 from .layout import CAPTION_MAX_CHARS, CaptionCue, caption_cues, display_words
 
@@ -29,10 +33,11 @@ __all__ = [
     "Said",
     "TranscriptSection",
     "caption_cues",
+    "clock",
     "display_words",
     "ffmetadata_escape",
-    "write_chapters",
-    "write_srt",
-    "write_transcript",
-    "write_vtt",
+    "chapters_text",
+    "srt_text",
+    "transcript_html",
+    "vtt_text",
 ]

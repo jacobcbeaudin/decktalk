@@ -29,13 +29,18 @@ result, `decktalk schema settings` and `decktalk schema page` print the two knob
 `decktalk config explain KEY` explains one knob. Every command takes `--json` and prints one object.
 `decktalk status` says where the project stands.
 
+A voiced build spends the author's money. Rehearse with a build without voice, ask the author before
+any run that spends, and never replace a paid take.
+
 The craft a command line cannot teach is in `.agents/skills/`: writing for the ear, spoken math, cue
 phrases, slide patterns, reading a finding, and the scope of a revision.
 ```
 
-The first paragraph orients. The second names the calls. The third says where the craft lives. There
-is no procedure in it, because a procedure loaded in every session is paid for in every session, and
-that is what the packaged skills are for.
+The first paragraph orients. The second names the calls. The third is the one rule the file states,
+which is about money, and the fourth says where the craft lives. There is no other procedure in it,
+because a procedure loaded in every session is paid for in every session, and that is what the
+packaged skills are for. The spending rule is the exception because a harness that loads no skills
+meets no other guard, and the refusal it would otherwise read names the flag that spends.
 
 ## The four calls that tell an agent everything
 
@@ -45,7 +50,7 @@ text, and the other three print JSON.
 | Call | What it answers |
 |---|---|
 | `decktalk --help` | The command tree, the global flags and the five exit codes. |
-| `decktalk schema` | Every command with every flag, its type and its default, plus the globals, the exit codes, the nine error codes, the fifty-one finding codes and the six stages, as one object. |
+| `decktalk schema` | Every command with every flag, its type and its default, plus the globals, the exit codes, the nine error codes, the fifty-two finding codes and the six stages, as one object. |
 | `decktalk schema settings` and `decktalk config explain KEY` | Every knob with its default, its safe range, its unit, the findings it moves and its hazard, and then one knob whole with the layer that set it. |
 | `decktalk status --json` and `decktalk doctor --json` | Where this project stands, and what this machine has installed. |
 
@@ -60,7 +65,7 @@ Read `AGENTS.md`, then run the four calls, then act. In practice that is one ord
 
 1. Run `decktalk status --json` to learn the project's name, its script, its cue file, every section
    with what is voiced, recorded and cut, and the `next` field, which is the whole command to run
-   next.
+   next, or null when the film is built and measured.
 2. Run `decktalk check --json` before anything that spends. It judges the written files and the
    pages, makes no film, and its `spend` object prices what a voiced build would cost.
 3. Dispatch on `findings[].code`, and read `location.file` and `location.line` to know what to open.

@@ -85,12 +85,12 @@ that never moves a pixel and `from the page` is a span read off the page or off 
 | `data-front` | element, container | a local cue name |  |  | 0.2 | [`PAGE_MOMENT_UNKNOWN`](/reference/findings/PAGE_MOMENT_UNKNOWN) | The element returns to full strength at this cue. |
 | `data-out` | element, container | a local cue name |  |  | from the page | [`PAGE_MOMENT_ORDER`](/reference/findings/PAGE_MOMENT_ORDER) | The element leaves at this cue. |
 | `data-words` | element | `highlight`, `appear` | `highlight` |  | 0.12 | [`PAGE_WORDS_NOT_FOUND`](/reference/findings/PAGE_WORDS_NOT_FOUND) | The line is shown word by word on the voice, matched against the section's spoken words. |
-| `data-count` | element | `last`, `first` |  |  | 0.48 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | A number in the text counts up from zero when the element arrives. |
+| `data-count` | element | `last`, `first` |  |  | 0.44 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | A number in the text counts up from zero when the element arrives. |
 | `data-class` | element, container | moment:value pairs |  |  | from the page | [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED) | Adds a class at a moment, written as moment:name pairs, for the page's own stylesheet. |
 | `data-describe-class` | element, container | moment:value pairs |  |  | 0 | none | What each class change means, as moment:phrase pairs separated by a vertical bar. |
 | `data-stagger` | container | seconds |  | 0.04 to 0.2 in steps of 0.04 | from the page | [`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN) | The container's children arrive this far apart from one cue. |
 | `data-steps` | container | written bare |  |  | from the page | [`PAGE_STAGGER_EMPTY`](/reference/findings/PAGE_STAGGER_EMPTY) | Each cued child comes to the front as it arrives and the ones before it step back. |
-| `data-in-seconds` | element, container | seconds |  | 0.12 to 0.48 in steps of 0.04 | from the page | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How long the entrance plays, which governs the entrance alone and never the onset. |
+| `data-in-seconds` | element, container | seconds |  | 0.12 to 0.44 in steps of 0.04 | from the page | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How long the entrance plays, which governs the entrance alone and never the onset. |
 | `data-out-style` | element, container | `fade`, `fall` | `fade` |  | 0.2 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How the element leaves. |
 | `data-swaps` | element | written bare |  |  | from the page | [`PAGE_SWAP_AMBIGUOUS`](/reference/findings/PAGE_SWAP_AMBIGUOUS) | The element takes the place of whatever leaves on its own arrival cue, in a held swap. |
 | `data-describe-out` | element | a phrase |  |  | 0 | none | Overrides the departure sentence when leaving means something of its own. |
@@ -140,14 +140,14 @@ from, so it marks its own cue unmeasurable. No span a page can declare may reach
 
 | Word set | Lengths |
 |---|---|
-| Entrances, `data-in-style` | `rise` 0.32, `settle` 0.28, `fade` 0.24, `pop` 0.2, `draw` 0.48, `cut` 0 |
+| Entrances, `data-in-style` | `rise` 0.32, `settle` 0.28, `fade` 0.24, `pop` 0.2, `draw` 0.44, `cut` 0 |
 | Exits, `data-out-style` | `fade` 0.2, `fall` 0.2 |
 | Slide entrances, `data-enter` | `crossfade` 0.24, `cut` 0 |
 | Word styles, `data-words` | `highlight` 0.12, `appear` 0.12 |
-| Counts, `data-count` | `last` 0.48, `first` 0.48 |
+| Counts, `data-count` | `last` 0.44, `first` 0.44 |
 | Attention, `data-back` and `data-front` | `back` 0.28, `front` 0.2 |
 
-`data-in-seconds` runs from 0.12 to 0.48 in steps of 0.04, which is three to twelve frames at the 25
+`data-in-seconds` runs from 0.12 to 0.44 in steps of 0.04, which is three to eleven frames at the 25
 frames a second the recorder captures at. `data-stagger` runs from 0.04 to 0.2 in the same steps,
 which is one to five frames.
 

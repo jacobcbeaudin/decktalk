@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import html
 from dataclasses import dataclass
-from pathlib import Path
 
 from .layout import CaptionCue
 
@@ -28,16 +27,14 @@ def _stamp(seconds: float, sep: str) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}{sep}{ms:03d}"
 
 
-def write_srt(path: Path, cues: list[CaptionCue]) -> None:
-    blocks = [f"{i}\n{_stamp(c.start, ',')} --> {_stamp(c.end, ',')}\n{c.text}\n" for i, c in enumerate(cues, 1)]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(blocks), encoding="utf-8")
+def srt_text(cues: list[CaptionCue]) -> str:
+    """The cues as SubRip, numbered from one and stamped with a comma."""
+    return "\n".join(f"{i}\n{_stamp(c.start, ',')} --> {_stamp(c.end, ',')}\n{c.text}\n" for i, c in enumerate(cues, 1))
 
 
-def write_vtt(path: Path, cues: list[CaptionCue]) -> None:
-    blocks = [f"{_stamp(c.start, '.')} --> {_stamp(c.end, '.')}\n{c.text}\n" for c in cues]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("WEBVTT\n\n" + "\n".join(blocks), encoding="utf-8")
+def vtt_text(cues: list[CaptionCue]) -> str:
+    """The cues as WebVTT, under its header and stamped with a full stop."""
+    return "WEBVTT\n\n" + "\n".join(f"{_stamp(c.start, '.')} --> {_stamp(c.end, '.')}\n{c.text}\n" for c in cues)
 
 
 @dataclass(frozen=True)
@@ -55,7 +52,7 @@ def ffmetadata_escape(value: str) -> str:
     return out.replace("\n", "\\\n")
 
 
-def write_chapters(path: Path, chapters: list[Chapter]) -> None:
+def chapters_text(chapters: list[Chapter]) -> str:
     """An ffmetadata file whose [CHAPTER] blocks ffmpeg muxes with -map_metadata."""
     lines = [";FFMETADATA1"]
     for ch in chapters:
@@ -67,8 +64,7 @@ def write_chapters(path: Path, chapters: list[Chapter]) -> None:
             f"END={round(ch.end * 1000)}",
             f"title={ffmetadata_escape(ch.title)}",
         ]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return "\n".join(lines) + "\n"
 
 
 @dataclass(frozen=True)
@@ -115,8 +111,8 @@ def clock(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
-def write_transcript(path: Path, title: str, sections: list[TranscriptSection], *, language: str = "en") -> None:
-    """Write the whole film as one plain page: a heading per chapter, the speech, and each description."""
+def transcript_html(title: str, sections: list[TranscriptSection], *, language: str = "en") -> str:
+    """The whole film as one plain page: a heading per chapter, the speech, and each description."""
     body = [
         "<!doctype html>",
         f'<html lang="{html.escape(language, quote=True)}"><head><meta charset="utf-8">',
@@ -139,5 +135,4 @@ def write_transcript(path: Path, title: str, sections: list[TranscriptSection], 
             )
             body.append(f"<ul>{rows}</ul>")
     body.append("</body></html>")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(body) + "\n", encoding="utf-8")
+    return "\n".join(body) + "\n"

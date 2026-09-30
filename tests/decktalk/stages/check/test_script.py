@@ -10,7 +10,6 @@ from decktalk.stages.check.script import (
     placeholder_findings,
     placeholder_rows,
     script_findings,
-    spoken_sections,
     symbol_findings,
 )
 
@@ -26,19 +25,6 @@ Nothing here needs filling in.
 """
 
 WHERE = Path("script.md")
-
-
-def test_a_spoken_line_knows_which_section_it_is_in() -> None:
-    """A finding about one line is more use with the section an author would open to fix it."""
-    inside = spoken_sections(SCRIPT)
-    assert set(inside.values()) == {1, 2}
-    assert inside[max(line for line, number in inside.items() if number == 1)] == 1
-
-
-def test_a_heading_is_not_a_spoken_line() -> None:
-    lines = SCRIPT.splitlines()
-    headings = [number for number, line in enumerate(lines, start=1) if line.startswith("## ")]
-    assert not set(headings) & set(spoken_sections(SCRIPT))
 
 
 def test_an_open_placeholder_is_found_with_its_line() -> None:

@@ -186,12 +186,14 @@ from the cue being measured, so it is part of the same reveal.
 
 When a probe is spoiled, it is fitted to the longest shorter delay that nothing spoils, down to one
 frame past the offset limit, so a reveal at the late edge of that limit still shows. Two probes fitted
-to the same delay count once. `verify` says on its stream which cue was fitted and to what.
+to the same delay count once. `verify` says on its stream which cue was fitted and to what, as a
+detail line that `-v` prints, because a fitted probe is how a close pair is measured and not a
+problem.
 
-{/* sample: decktalk verify, build without voice of a fresh starter */}
+{/* sample: decktalk -v verify, build without voice of a fresh starter */}
 
 ```text
-another cue sits close to 1:1.1:title, so its probes were fitted to 0.7, 1.281 seconds after it.
+Cue 1.1:title in section 1 sits close to another cue, so verify compared the picture 0.7 s and 1.281 s after its word instead of at the usual delays. This is how a close pair is measured, not a problem.
 ```
 
 ### Change test
@@ -305,6 +307,7 @@ A whole run that lands a frame or two late is usually a slow machine rather than
 | `CUE_NO_ONSET` | uncertain | The reveal changed the picture and no frame of it steps, so there is no second to compare with the word. | `verify.onset_rise_points`, `verify.onset_diff_luma` |
 | `CUE_OFF` | certain | The change lands further from its word than the offset limit allows, or the click does. | `verify.cue_offset_max_ms`, `verify.av_offset_max_ms`, `verify.onset_rise_points`, `verify.onset_diff_luma`, `verify.click_search_seconds`, `verify.click_floor_dbfs`, `verify.reference_lead_extra_ms` |
 | `CUE_UNRESOLVED` | certain | `cues.json` lists a cue that no run could give a second to, so the film never plays it. | none |
+| `CUE_STALE` | certain | The cue times on disk were placed from a different `cues.json` than the project's, so the film was cut to moments nobody asks for now. Run `decktalk build`. | none |
 
 `verify` also raises again every finding the recording logs hold, such as `PAGE_STALLED`,
 `PAGE_TRUNCATED`, `PAGE_KATEX_ERROR` and every warning the runtime reported while it recorded. Those
@@ -313,7 +316,7 @@ thing that clears one.
 
 Each finding has a page of its own under `/reference/findings/`, and
 [Configuration](/reference/configuration#which-key-moves-which-failure) is the same index in reverse.
-`decktalk schema` prints every code with its `decides` list as JSON.
+`decktalk schema` prints every code with the keys that decide it as JSON, in its `decides` list.
 
 ## Skipped cues
 

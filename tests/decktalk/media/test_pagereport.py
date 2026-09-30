@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from decktalk.findings import Code
+from decktalk.findings import Code, RaisedBy
 from decktalk.media import pagereport
-from decktalk.page import REPORT, PageWarning, RaisedBy
+from decktalk.page import REPORT
 
 REPORTED = {
     "version": "0.5.0",
@@ -17,7 +17,9 @@ REPORTED = {
     "catalog": [
         {
             "scene": "intro",
-            "slides": [{"id": "1.1", "cues": ["1.1:expand"]}],
+            "name": "Intro",
+            "slides": ["1.1"],
+            "cues": {"1.1": ["1.1:expand"]},
             "elements": {
                 "1.1": [
                     {
@@ -81,12 +83,22 @@ def test_a_field_reported_as_something_other_than_a_list_is_one_sentence():
     assert any(line.startswith("the page reported cues as dict") for line in report.unreadable), report.unreadable
 
 
+def test_a_label_reported_as_something_other_than_text_is_one_sentence():
+    """A page answering `version: 5` raised an uncaught ValidationError and lost the whole recording."""
+    report = pagereport.read({**REPORTED, "version": 5, "slide": ["1.1"]})
+    assert report.version is None and report.slide is None
+    assert report.warnings, "the rest of what the page said is still read"
+    assert "the page reported version as int rather than text" in report.unreadable
+    assert "the page reported slide as list rather than text" in report.unreadable
+
+
 def test_the_catalog_keeps_what_the_recorder_does_not_read():
-    """`pagescan.py` is the catalog's reader, so the slides and the cues survive this boundary."""
+    """`pagescan.py` is the catalog's reader, so what this model does not name survives this boundary."""
     scene = pagereport.read(REPORTED).catalog[0]
     assert scene.scene == "intro"
     assert scene.elements["1.1"][0].moments == {"data-in": "1.1:expand"}
-    assert scene.model_dump()["slides"] == [{"id": "1.1", "cues": ["1.1:expand"]}]
+    assert (scene.slides, scene.cues) == (("1.1",), {"1.1": ("1.1:expand",)})
+    assert scene.model_dump()["name"] == "Intro"
 
 
 def test_the_worst_stall_counts_only_what_a_viewer_can_see():
@@ -101,16 +113,16 @@ def test_the_report_names_every_field_the_contract_names():
     assert set(REPORT) <= named, set(REPORT) - named
 
 
-def test_the_contract_and_the_finding_vocabulary_hold_one_list_of_page_codes():
-    """Two enums name these codes, so a real warning would be dropped the day they disagree."""
-    for warning in PageWarning:
-        code = Code[warning.name]
-        assert code.raised_by.value == warning.raised_by.value, code
-
-
 def test_a_code_decktalk_measures_itself_is_refused_when_a_page_reports_it():
     """Half the page codes are measured from the frames, and a page reporting one decides its own verdict."""
-    measured = next(w for w in PageWarning if w.raised_by is not RaisedBy.RUNTIME)
+    measured = next(c for c in Code if c.name.startswith("PAGE_") and c.raised_by is not RaisedBy.RUNTIME)
     report = pagereport.read({**REPORTED, "warnings": [{"code": measured.name, "message": "not mine to say"}]})
     assert report.warnings == ()
     assert report.unreadable and "warnings[0]" in report.unreadable[0]
+
+
+def test_an_element_row_carries_the_child_count_its_stagger_reveals():
+    """The catalog reads a stagger's span from its child count, which a row without it could not give."""
+    box = {"x": 0, "y": 0, "w": 10, "h": 10}
+    assert pagereport.ElementRow.model_validate({"box": box, "children": 4}).children == 4
+    assert pagereport.ElementRow.model_validate({"box": box}).children == 0

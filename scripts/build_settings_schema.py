@@ -1,9 +1,6 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Generate the JSON Schema for decktalk.toml, and the per-machine filter of it.
 
-    uv run scripts/build_settings_schema.py --write    # write both schemas and their published copies
+    uv run scripts/build_settings_schema.py --write    # write both schemas
     uv run scripts/build_settings_schema.py --check    # exit 1 if either committed file would change
 
 One schema describes the whole project file, its document tables and its tuning tables together,
@@ -27,24 +24,24 @@ fall behind it.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-
-from decktalk.results import Scope  # noqa: E402  (after sys.path, so a checkout needs no install)
-from decktalk.settings import (  # noqa: E402
+import generated
+from decktalk.results import Scope
+from decktalk.settings import (
     DOCUMENT_TABLES,
     KEYS,
     NUMBERS,
     SHARED_TABLES,
     Settings,
+    json_value,
 )
-from decktalk.tomlmap import Key  # noqa: E402
+from decktalk.tomlmap import Key
+
+ROOT = Path(__file__).resolve().parent.parent
 
 BASE = "https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1"
 DRAFT = "https://json-schema.org/draft/2020-12/schema"
@@ -113,11 +110,6 @@ def property_of(key: Key) -> dict[str, Any]:
         out["x-decides"] = [code.name for code in key.decides]
     out["x-environment"] = key.environment
     return out
-
-
-def json_value(value: object) -> object:
-    """One default as JSON carries it, which turns the tuple a TOML array becomes into a list."""
-    return [json_value(item) for item in value] if isinstance(value, tuple) else value
 
 
 def table_of(name: str, keys: list[Key]) -> dict[str, Any]:
@@ -214,24 +206,5 @@ def documents() -> dict[Path, str]:
     return {SCHEMAS / name: render(machine=machine) for name, machine in ((PROJECT_NAME, False), (MACHINE_NAME, True))}
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    action = ap.add_mutually_exclusive_group(required=True)
-    action.add_argument("--write", action="store_true", help="write both schemas")
-    action.add_argument("--check", action="store_true", help="exit 1 if either committed file would change")
-    args = ap.parse_args()
-    stale = False
-    for target, text in documents().items():
-        if args.check:
-            if not target.exists() or target.read_text(encoding="utf-8") != text:
-                print(f"stale: {target.relative_to(ROOT)}. Run `uv run scripts/build_settings_schema.py --write`.")
-                stale = True
-            continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
-        print(f"wrote {target.relative_to(ROOT)}")
-    return 1 if stale else 0
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(generated.run(documents))

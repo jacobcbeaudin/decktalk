@@ -14,17 +14,16 @@ import pytest
 from decktalk.artifacts import Luma, RecordingChecks
 from decktalk.findings import Code
 from decktalk.media import ffmpeg, frames
-from decktalk.media.browser import Recording
-from decktalk.media.pagereport import FrameGap, PageReport, PageWarningRow
+from decktalk.media.pagereport import FrameGap, PageWarningRow
 from decktalk.settings import Settings
 from decktalk.stages.record.checks import (
     check_recording,
     frame_findings,
     measure_luma,
-    page_findings,
     recording_findings,
     stall_finding,
 )
+from support.pages import a_recording, a_report
 
 PAGE = "deck/index.html"
 """The page every row here is about, as `decktalk.toml` spells it."""
@@ -34,24 +33,6 @@ WHERE = Path("build/recordings/01.webm")
 
 SECTION = 1
 """The section every row here belongs to."""
-
-
-def a_report(**fields: object) -> PageReport:
-    return PageReport.model_validate({"version": "0.5.0", "mode": "cue", "scene": "1", "slide": "1.1", **fields})
-
-
-def a_recording(report: PageReport, *, external: tuple[str, ...] = (), wanted: float = 10.0) -> Recording:
-    return Recording(
-        url="http://project.localhost/deck/index.html?scene=1",
-        assets=(PAGE,),
-        external=external,
-        requested_seconds=wanted,
-        load_seconds=0.2,
-        settle_seconds=0.5,
-        clock_start_seconds=1.5,
-        page_errors=(),
-        report=report,
-    )
 
 
 def checks_of(*, duration: float = 10.0, wanted: float = 10.0, peak: float = 200.0) -> RecordingChecks:
@@ -76,7 +57,8 @@ def test_the_luma_is_read_at_a_tenth_a_half_and_nine_tenths(monkeypatch: pytest.
 
     monkeypatch.setattr(frames, "luma_at", luma_at)
     measured = measure_luma(tmp_path / "01.webm", 10.0)
-    assert read[:3] == [1.0, 5.0, 9.0]
+    # The middle frame gives its mean and its peak in one read, so it is decoded once.
+    assert read == [1.0, 5.0, 9.0]
     assert measured.peak_at_half == 210.0
 
 
@@ -85,31 +67,8 @@ def test_the_checks_measure_the_file_against_what_the_recorder_asked_for(
 ) -> None:
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: 9.5)
     monkeypatch.setattr(frames, "luma_at", lambda _path, _at, **_kwargs: (90.0, 210.0))
-    measured = check_recording(tmp_path / "01.webm", a_recording(a_report(), wanted=10.0))
+    measured = check_recording(tmp_path / "01.webm", a_recording(report=a_report(), requested_seconds=10.0))
     assert (measured.duration_seconds, measured.wanted_seconds) == (9.5, 10.0)
-
-
-def test_every_page_warning_becomes_the_finding_of_the_code_the_page_carried() -> None:
-    report = a_report(
-        warnings=[
-            {"code": "PAGE_KATEX_ERROR", "message": "KaTeX refused $x$.", "slide": "1.1", "cue": None, "attr": None},
-            {
-                "code": "PAGE_UNKNOWN_ATTR",
-                "message": "data-nope is not a knob.",
-                "slide": None,
-                "cue": "1.1:open",
-                "attr": "data-nope",
-            },
-        ]
-    )
-    found = page_findings(report, page=PAGE, section=SECTION)
-    assert [row.code for row in found] == [Code.PAGE_KATEX_ERROR, Code.PAGE_UNKNOWN_ATTR]
-    assert [row.location.where for row in found] == ["1.1", "1.1:open"]
-    assert found[0].location.file == Path(PAGE)
-
-
-def test_a_page_that_reported_nothing_is_judged_on_nothing() -> None:
-    assert page_findings(a_report(), page=PAGE, section=SECTION) == []
 
 
 def test_a_dark_frame_half_way_through_is_black(settings: Settings) -> None:
@@ -157,7 +116,7 @@ def test_every_judgement_of_one_recording_arrives_in_one_list(settings: Settings
         frameGaps=[FrameGap(at=2.0, ms=settings.record.frame_gap_max_ms + 100).model_dump()],
     )
     found = recording_findings(
-        a_recording(report, external=("https://cdn.example.com",)),
+        a_recording(report=report, external=("https://cdn.example.com",), requested_seconds=10.0),
         checks_of(peak=1.0),
         page=PAGE,
         where=WHERE,

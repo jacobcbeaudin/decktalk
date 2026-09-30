@@ -7,10 +7,15 @@ from pathlib import Path
 
 import pytest
 
+import decktalk
 from decktalk.cli import catalog
 from decktalk.errors import ErrorCode
 from decktalk.findings import Code
+from decktalk.pipeline import PIPELINE
 from decktalk.results import RESULTS
+from decktalk.settings import BY_ID, KEYS
+
+from .conftest import commands
 
 SCHEMA_DIR = Path(__file__).resolve().parents[3] / "schemas" / "v1"
 """Where the committed schemas sit, which the rendered settings document is held equal to."""
@@ -36,8 +41,16 @@ def test_every_purpose_is_a_whole_sentence() -> None:
 
 def test_every_parameter_publishes_what_an_agent_writes_after_it() -> None:
     for row in catalog.walk():
-        for param in row["params"]:  # ty: ignore[not-iterable]
+        for param in row["params"]:
             assert set(param) >= set(PARAM_KEYS)
+
+
+def test_an_argument_says_whether_it_is_required_and_whether_it_repeats() -> None:
+    rows = commands()
+    (paths,) = [param for param in rows["check"]["params"] if param["opts"] == ["paths"]]
+    (key,) = [param for param in rows["config get"]["params"] if param["opts"] == ["key"]]
+    assert (paths["required"], paths["repeatable"]) == (False, True)
+    assert (key["required"], key["repeatable"]) == (True, False)
 
 
 def test_the_globals_are_walked_from_the_root_callback() -> None:
@@ -53,6 +66,17 @@ def test_the_document_joins_the_two_halves() -> None:
     written = catalog.document()
     assert {row["code"] for row in written["errors"]} == {code.value for code in ErrorCode}
     assert {row["code"] for row in written["findings"]} == {code.value for code in Code}
+
+
+def test_a_finding_names_the_keys_that_declare_they_decide_it() -> None:
+    """The relation is declared once, on the keys, so every finding row reads it in reverse."""
+    rows = {row["code"]: row["decides"] for row in catalog.findings()}
+    for key in KEYS:
+        for code in key.decides:
+            assert key.id in rows[code.value], f"{key.id} decides {code.value} and the row omits it"
+    for code, keys in rows.items():
+        for key in keys:
+            assert Code(code) in BY_ID[key].decides, f"{code} names {key}, which does not decide it"
 
 
 def test_every_result_name_is_answerable() -> None:
@@ -102,3 +126,56 @@ def test_nothing_outside_the_command_line_imports_the_application() -> None:
         path for path in source if "cli" not in path.parts and "decktalk.cli" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []
+
+
+def test_nothing_named_catalog_is_published() -> None:
+    assert not [name for name in decktalk.__all__ if "catalog" in name.lower()]
+    assert not hasattr(decktalk, "catalog_")
+
+
+def test_every_schema_the_library_owns_is_named_once() -> None:
+    assert set(catalog.SCHEMAS) == {*RESULTS, "event", "finding"}
+
+
+def test_every_result_schema_names_its_own_model() -> None:
+    for name in RESULTS:
+        assert catalog.SCHEMAS[name]()["title"] == RESULTS[name].__name__
+
+
+def test_every_finding_code_is_a_row_with_its_sentence_and_its_page() -> None:
+    rows = catalog.finding_codes()
+    assert [row["code"] for row in rows] == [code.value for code in Code]
+    for row, code in zip(rows, Code, strict=True):
+        assert row["sentence"] == code.sentence
+        assert row["certainty"] == code.certainty.value
+        assert row["raised_by"] == code.raised_by.value
+        assert row["docs"] == code.url
+
+
+def test_every_error_code_is_a_row_with_the_exit_it_takes() -> None:
+    rows = catalog.error_codes()
+    assert [row["code"] for row in rows] == [code.value for code in ErrorCode]
+    assert [row["exit"] for row in rows] == [code.exit_code for code in ErrorCode]
+
+
+def test_every_stage_is_a_row_with_what_it_reads_and_writes() -> None:
+    rows = catalog.stages()
+    assert [row["stage"] for row in rows] == [spec.stage.value for spec in PIPELINE]
+    for row, spec in zip(rows, PIPELINE, strict=True):
+        assert row["reads"] == [artifact.value for artifact in spec.reads]
+        assert row["writes"] == [artifact.value for artifact in spec.writes]
+
+
+def test_the_finding_schema_carries_the_whole_code_list() -> None:
+    schema = catalog.SCHEMAS["finding"]()
+    assert set(schema["$defs"]["Code"]["enum"]) == {code.value for code in Code}
+
+
+def test_the_error_schema_carries_the_whole_code_list() -> None:
+    schema = catalog.SCHEMAS["error"]()
+    assert set(schema["$defs"]["ErrorCode"]["enum"]) == {code.value for code in ErrorCode}
+
+
+def test_the_event_schema_is_discriminated_by_the_event_name() -> None:
+    schema = catalog.SCHEMAS["event"]()
+    assert schema["discriminator"]["propertyName"] == "event"

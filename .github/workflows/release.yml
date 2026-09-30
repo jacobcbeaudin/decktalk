@@ -103,28 +103,16 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
-      - id: tag
-        name: The tag and the package version are the same version
-        # The tag is semver and the package is PEP 440, so `v0.5.0-rc1` and `0.5.0rc1` are one
-        # version spelled two ways and a string comparison would refuse every release candidate.
+      - run: uv build
+      - name: Open the built wheel on its own and hold the tag to the version in it
         env:
           TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: |
-          PACKAGED="$(uv version --short)" uv run --isolated --no-project --with packaging python - <<'PY'
-          import os
-          import sys
-          from packaging.version import Version
-
-          tag = Version(os.environ["TAG"].removeprefix("v"))
-          packaged = Version(os.environ["PACKAGED"])
-          if tag != packaged:
-              sys.exit(f"the tag is {tag} and the package is {packaged}, so the wheel would carry the wrong version")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
-              out.write(f"prerelease={str(tag.is_prerelease).lower()}\n")
-          PY
-      - run: uv build
-      - name: Open the built wheel on a machine that has only the wheel
-        run: uv run --isolated --no-project --with dist/decktalk-*.whl -- decktalk init "${RUNNER_TEMP}/wheelcheck"
+        run: uv run scripts/check_wheel.py --tag "$TAG"
+      - id: tag
+        name: A tag with a prerelease part is a candidate
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: case "$TAG" in *-*) echo "prerelease=true" ;; *) echo "prerelease=false" ;; esac >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dist

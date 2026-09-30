@@ -9,6 +9,12 @@ belongs to the recording beside it, and a long run can be read while it runs.
     capture.py   the page URL, what a recording is keyed on, and the page cut into its scenes
     start.py     where narration t=0 sits in one recording
     checks.py    the frames, the page's own codes and the origins it reached for
+    pool.py      how many sections record at once, and the workers that record them
+
+Sections are recorded several at a time, each worker with a Chromium of its own, because a
+recording waits for its span in real time and the sections of a film share nothing but the project.
+The rows, the progress lines and the result come back in section order whatever order the workers
+finish in.
 
 A section whose scene, the page around it, its loaded assets, its words, its cues and the motion it
 renders with have not moved is kept rather than recorded again, because the run would produce the
@@ -24,40 +30,42 @@ under an old narration t=0.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import logging
+import time
+from collections.abc import Callable, Sequence
 from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 
 from playwright.sync_api import Browser
 
-from decktalk.artifacts import RecordingChecks, RecordingLog, Takes
+from decktalk.artifacts import RecordingChecks, RecordingLog, Start, Takes
 from decktalk.errors import InputError
 from decktalk.events import Level, SectionDone, SectionStart, Unit
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs, PageSection
+from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.media import browser
 from decktalk.media.browser import Recording
 from decktalk.media.origin import Allowed
-from decktalk.page import CAPTURE_FPS
+from decktalk.page import CAPTURE_FPS, SECOND_DIGITS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
-from decktalk.stages import clock, judge, selects, since
+from decktalk.stages import selects
 from decktalk.stages.record.capture import (
     Job,
     plan_job,
-    scene_params,
-    scene_url,
     section_hash,
-    words_query,
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
-from decktalk.stages.record.start import Start, find_start
+from decktalk.stages.record.pool import Halt, Pool, automatic
+from decktalk.stages.record.start import find_start
 
-SECOND_DIGITS = 3
-"""Truth: three decimal places of a second is one millisecond, which is finer than any frame."""
+log = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, eq=False)
 class LogSink:
     """Where one section's recording log is kept, cleared before the capture and written after it.
 
@@ -68,13 +76,11 @@ class LogSink:
     t=0 in it, which the next run reads as a section it has not finished recording.
     """
 
-    def __init__(self, inputs: Inputs, section: PageSection, url: str, seconds: float, path: Path) -> None:
-        self.inputs = inputs
-        self.section = section
-        self.url = url
-        self.seconds = seconds
-        self.path = path
-        self.recording: Recording | None = None
+    inputs: Inputs
+    section: PageSection
+    url: str
+    seconds: float
+    path: Path
 
     def clear(self) -> None:
         """Delete the log of the recording that is about to be replaced, before anything is captured."""
@@ -82,7 +88,6 @@ class LogSink:
 
     def write(self, recording: Recording) -> None:
         """Write what the recorder knows about the webm now on disk, before anything measures it."""
-        self.recording = recording
         self.log(recording).write(self.path)
 
     def log(
@@ -101,20 +106,11 @@ class LogSink:
         """
         return RecordingLog(
             section=self.section.number,
-            url=recording.url,
             input_hash=section_hash(self.inputs, self.section, self.url, self.seconds, list(recording.assets)),
-            requested_seconds=recording.requested_seconds,
-            settle_seconds=recording.settle_seconds,
-            load_seconds=recording.load_seconds,
-            clock_start_seconds=recording.clock_start_seconds,
-            t0_seconds=None if start is None else start.seconds,
-            t0_method=None if start is None else start.method,
-            t0_guessed=start is not None and start.guessed,
-            assets=tuple(Path(name) for name in recording.assets),
-            external=recording.external,
+            recording=recording,
+            start=start,
             findings=findings,
             checks=checks,
-            report=recording.report,
         )
 
 
@@ -163,7 +159,7 @@ def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
     if not planned:
         raise InputError(
             "no page section has a length to record.",
-            hint="Run `decktalk narrate` first, or name a section that plays a page.",
+            hint=f"{Artifact.TAKES.next_step} Or name a section that plays a page.",
         )
     return planned
 
@@ -202,7 +198,7 @@ def passed_over(inputs: Inputs, run: Run, only: Sequence[int] | None) -> None:
         )
 
 
-def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink) -> Recording:
+def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, check: Callable[[], None]) -> Recording:
     """Record one section, retrying while its frames stall, and give back the recording that stuck.
 
     A stalled page froze a reveal for a few frames, which no cut can repair, so the section is
@@ -229,26 +225,46 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink) 
             color_scheme=recorder.color_scheme,
             motion=settings.motion,
             documents=documents,
+            check=check,
         )
         gap = recording.report.worst_gap_ms
         if gap <= recorder.frame_gap_max_ms or attempt > recorder.retries:
             break
-        run.note(
-            f"Section {job.section.number} stalled for {gap} ms, which is over the "
-            f"{recorder.frame_gap_max_ms} ms limit, so it is recorded again ({attempt} of {recorder.retries}).",
-            level=Level.WARNING,
+        # A retry is a standard record, so a host's own logging hears why a section took twice as long.
+        log.warning(
+            "Section %d stalled for %d ms, which is over the %d ms limit, so it is recorded again (%d of %d).",
+            job.section.number,
+            gap,
+            recorder.frame_gap_max_ms,
+            attempt,
+            recorder.retries,
+            extra={
+                "data": {
+                    "gap_ms": gap,
+                    "limit_ms": recorder.frame_gap_max_ms,
+                    "attempt": attempt,
+                    "retries": recorder.retries,
+                }
+            },
         )
     if recording is None:  # pragma: no cover  (the loop runs at least once)
         raise InputError(f"section {job.section.number} was not recorded.")
     for name in recording.page_errors:
         run.note(f"Section {job.section.number} threw while it was recorded: {name}", level=Level.ERROR)
+    for name in recording.missing:
+        run.note(
+            f"Section {job.section.number} asked for {name}, which the project does not have.", level=Level.WARNING
+        )
     return recording
 
 
-def recorded(inputs: Inputs, run: Run, opened: Browser, job: Job) -> SectionRecording:
-    """Record one section, measure it, and leave its log beside the webm with every judgement in it."""
+def recorded(inputs: Inputs, run: Run, opened: Browser, job: Job, check: Callable[[], None]) -> SectionRecording:
+    """Record one section, measure it, and leave its log beside the webm with every judgement in it.
+
+    `check` raises when the section should stop, which the recorder asks while it waits.
+    """
     sink = LogSink(inputs, job.section, job.url, job.seconds, job.log_path)
-    recording = capture(inputs, run, opened, job, sink)
+    recording = capture(inputs, run, opened, job, sink, check)
     start = find_start(job.out, recording.settle_seconds, inputs.settings.record)
     checks = check_recording(job.out, recording)
     page = inputs.relative(inputs.path(job.section.page)).as_posix()
@@ -294,14 +310,24 @@ def kept_row(inputs: Inputs, run: Run, job: Job) -> SectionRecording:
     A kept section is work the run decided not to do, so its `section.done` carries `skipped` rather
     than `ok` and a renderer counts it apart from a section that was really recorded.
     """
-    started = clock()
+    started = time.monotonic()
     run.check()
     number = job.section.number
     run.emit(SectionStart, stage=Stage.RECORD, section=number)
     previous = job.previous
     seconds = previous.checks.duration_seconds if previous is not None and previous.checks is not None else 0.0
-    run.emit(SectionDone, stage=Stage.RECORD, section=number, outcome=Outcome.SKIPPED, seconds=since(started))
+    run.emit(
+        SectionDone, stage=Stage.RECORD, section=number, outcome=Outcome.SKIPPED, seconds=time.monotonic() - started
+    )
     return row(inputs, job, seconds, kept=True)
+
+
+def _decided(job: Job, *, force: bool, named: set[int]) -> bool:
+    """Whether a section is recorded again, which is recorded with the one token that says why."""
+    number = job.section.number
+    why = "forced" if force else "named" if number in named else "unchanged" if job.unchanged else "changed"
+    cache_decision(log, "recording", hit=why == "unchanged", why=why, key=job.section.key, section=number)
+    return why != "unchanged"
 
 
 def record(
@@ -311,37 +337,39 @@ def record(
     only: Sequence[int] | None = None,
     force: bool = False,
 ) -> RecordResult:
-    """Record every page section this run names, and judge each one as soon as it is finished."""
-    started = clock()
+    """Record every page section this run names, and judge each one as soon as it is finished.
+
+    The sections that must be recorded go to a pool of workers as `[record] concurrency` allows, and
+    the sections that are kept are reported by this thread, so every row is in section order.
+    """
     planned = plan(inputs, run, only)
     passed_over(inputs, run, only)
     named = set(only or ())
+    todo = [job for job in planned if _decided(job, force=force, named=named)]
+    by_number = {job.section.number: job for job in todo}
+    recorder = inputs.settings.record
+
+    def opening(stack: ExitStack) -> Browser:
+        return stack.enter_context(browser.chromium(recorder.browser_path, policy=recorder.page_policy))
+
+    def one(opened: Browser, number: int, halt: Halt) -> SectionRecording:
+        with run.section(Stage.RECORD, number):
+            return recorded(inputs, run, opened, by_number[number], halt.check)
+
     rows: list[SectionRecording] = []
     total = len(planned)
-    with ExitStack() as stack:
-        opened: Browser | None = None
+    workers = automatic(recorder.concurrency, len(todo))
+    with Pool(list(by_number), workers, opening, one, run.cancel) as pool:
         for done, job in enumerate(planned, start=1):
-            again = force or job.section.number in named
-            if job.unchanged and not again:
-                rows.append(kept_row(inputs, run, job))
-            else:
-                if opened is None:
-                    opened = stack.enter_context(browser.chromium(inputs.settings.record.browser_path))
-                with run.section(Stage.RECORD, job.section.number):
-                    rows.append(recorded(inputs, run, opened, job))
-            label = f"section {job.section.number} of {inputs.document.name}"
-            run.progress(
-                Stage.RECORD, done=done, total=total, unit=Unit.SECTION, label=label, section=job.section.number
-            )
-    return run.result(RecordResult, sections=tuple(rows), seconds=since(started))
+            number = job.section.number
+            rows.append(pool.result(number) if number in by_number else kept_row(inputs, run, job))
+            label = f"section {number} of {inputs.document.name}"
+            run.progress(Stage.RECORD, done=done, total=total, unit=Unit.SECTION, label=label, section=number)
+    return run.result(RecordResult, sections=tuple(rows))
 
 
 __all__ = [
-    "Job",
     "LogSink",
     "record",
-    "scene_params",
-    "scene_url",
     "stale_recording",
-    "words_query",
 ]

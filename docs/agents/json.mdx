@@ -39,8 +39,8 @@ from the schema which commands do those things rather than meeting a null on the
 | `run` | string | Every result whose command opens a run, which is every command except the five under `config`. It is the run id, and it names the run's events file. |
 | `written` | array of strings | Every result whose command writes a file, as project-relative POSIX paths in the order they were written. |
 
-`init`, `doctor`, `check`, `storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`,
-`build`, `clip`, `config set` and `config unset` declare `written`. `install`, `status`, `words`,
+`init`, `check`, `storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`, `build`,
+`clip`, `config set` and `config unset` declare `written`. `doctor`, `install`, `status`, `words`,
 `serve`, `verify`, `config list`, `config get` and `config explain` do not, because they write
 nothing.
 
@@ -56,7 +56,7 @@ document about schemas is unreadable. Every other command under `--json` prints 
 ```console
 decktalk schema finding     # the Finding model, with its fixes and its codes
 decktalk schema error       # the error object
-decktalk schema event       # the eleven event lines
+decktalk schema event       # the twelve event lines
 decktalk schema settings    # every knob, its default, its range, its unit and its hazard
 decktalk schema page        # the twenty-four page attributes
 decktalk schema project     # the shape of cues.json
@@ -116,7 +116,8 @@ decktalk schema project     # the shape of cues.json
 ```
 
 `next` is the whole command to run next, so an agent that has just read the project already knows
-what to run. `runs` lists every run of this project whose events file is still open.
+what to run. It is null once the film on disk is the one the last build measured. `runs` lists every
+run of this project whose events file is still open.
 
 ## A result that judged the project
 
@@ -217,6 +218,35 @@ judgements about the project rather than a reason the command could not run.
 }
 ```
 
+## A build that stopped
+
+A build stops after the stage whose findings reach the threshold, and the stages after it are
+`skipped`. It is still a result and not an error, so it exits 1, `error` is null, and `stopped_at`
+names the stage. This is `decktalk build --no-voice --json` on a starter whose cue waits for a phrase
+the script does not speak, cut to the keys a build adds.
+
+```json
+{
+  "schema": 2,
+  "ok": false,
+  "error": null,
+  "stages": [
+    {"stage": "narrate", "outcome": "ok", "seconds": 0.308},
+    {"stage": "cue", "outcome": "ok", "seconds": 0.004},
+    {"stage": "record", "outcome": "skipped", "seconds": 0.0},
+    {"stage": "soundscape", "outcome": "skipped", "seconds": 0.0},
+    {"stage": "assemble", "outcome": "skipped", "seconds": 0.0},
+    {"stage": "verify", "outcome": "skipped", "seconds": 0.0}
+  ],
+  "film": null,
+  "stopped_at": "cue"
+}
+```
+
+`stopped_at` is null on a build that ran through, whatever it found. `--allow CODE` carries a build
+past a code, and `--fail-on` moves the threshold, so both decide what stops a build exactly as they
+decide what fails it.
+
 ## A result that could not run
 
 `decktalk words --json` before anything has been narrated. `findings` is empty and `error` is
@@ -269,7 +299,7 @@ its sentence, its certainty and the settings keys that move it.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `code` | string | The stable code a caller dispatches on, such as `CUE_OFF`. There are fifty-one of them. |
+| `code` | string | The stable code a caller dispatches on, such as `CUE_OFF`. There are fifty-two of them. |
 | `message` | string | One sentence, with every measured number and its limit written into it. |
 | `certainty` | `certain` or `uncertain` | Whether this is wrong for sure or only probably wrong. |
 | `location` | object | Where the finding is. |
@@ -291,9 +321,9 @@ judges is what tells a reader which side of the spend it came from.
 | `section` | integer or null | The section number this is about. |
 | `cue` | string or null | The wire id of the cue this is about. |
 
-## The three fixes
+## The four fixes
 
-A `fix` is one of three kinds, and `kind` is the discriminator. Every fix carries a `title`, which
+A `fix` is one of four kinds, and `kind` is the discriminator. Every fix carries a `title`, which
 is one sentence saying what applying it does, and an `applicability`, which decides whether it may
 be applied without asking.
 
@@ -315,7 +345,7 @@ deck declares two moments `cues.json` does not list.
 ```json
 {
   "kind": "edit",
-  "title": "Add 2 row(s) to section 3 of cues.json, each waiting for the phrase you write in its `on`.",
+  "title": "Add 2 rows to section 3 of cues.json, each waiting for the phrase you write in its `on`.",
   "applicability": "safe",
   "edits": [
     {
@@ -354,6 +384,21 @@ element, so a caller hands it straight to a subprocess with no shell. This one c
   "title": "Fetch ffmpeg into the cache.",
   "applicability": "safe",
   "command": ["decktalk", "install"]
+}
+```
+
+**`kind: "runtime"`** replaces a project's copy of `decktalk-runtime.js` with the one this engine
+ships. Its `file` names the copy, and the fix writes nothing but the engine's runtime there. It is
+`safe` when the copy is, byte for byte, a runtime some release shipped, and `unsafe` when it is not,
+because such a copy holds edits that replacing it would lose. This one comes from a
+`PAGE_RUNTIME_STALE` finding on a project an older engine wrote.
+
+```json
+{
+  "kind": "runtime",
+  "title": "Replace deck/decktalk-runtime.js with the runtime this engine ships.",
+  "applicability": "safe",
+  "file": "deck/decktalk-runtime.js"
 }
 ```
 
@@ -429,13 +474,13 @@ decktalk build --no-voice --events --json
 {"event":"run.start","time":"2026-09-24T10:32:36.759700Z","seq":0,"run":"b906d77fb488","events_path":"build/events/b906d77fb488.jsonl"}
 {"event":"stage.start","time":"2026-09-24T10:32:36.783527Z","seq":1,"run":"b906d77fb488","stage":"narrate","index":1,"count":6}
 {"event":"section.start","time":"2026-09-24T10:32:36.784386Z","seq":2,"run":"b906d77fb488","stage":"narrate","section":1}
-{"event":"section.done","time":"2026-09-24T10:32:36.878277Z","seq":3,"run":"b906d77fb488","stage":"narrate","section":1,"outcome":"ok","seconds":0.09388712490908802}
+{"event":"section.done","time":"2026-09-24T10:32:36.878277Z","seq":3,"run":"b906d77fb488","stage":"narrate","section":1,"outcome":"ok","seconds":0.094}
 {"event":"progress","time":"2026-09-24T10:32:36.878405Z","seq":4,"run":"b906d77fb488","stage":"narrate","section":1,"done":1,"total":3,"unit":"take","label":"Open"}
 ```
 
-DeckTalk's ordinary output also goes to stderr, so a reader takes the lines that parse as JSON and
-leaves the rest. `build` writes one such line of its own before the first stage, naming the run and
-the file its events are appended to.
+Under `--events` every line of stderr is one JSON object. The sentences DeckTalk would otherwise
+print are `log` lines among them, the first line is `run.start`, which names the file the events are
+appended to, and a refusal is written as the one object `{"ok": false, "error": {...}}`.
 
 The discriminator key is `event`, and every line carries `event`, `time`, `seq` and `run`. `seq`
 counts from zero inside its run, so a reader can order lines that arrived out of order.
@@ -443,7 +488,7 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `event` | What it says | Its own fields |
 |---|---|---|
 | `run.start` | A run opened. | `events_path` |
-| `run.done` | A run closed. | `outcome`, `seconds` |
+| `run.done` | A run closed, and why when it did not finish. | `outcome`, `seconds`, `error`, `dropped` |
 | `stage.start` | A stage began, with its place in the run's plan. | `stage`, `index`, `count` |
 | `stage.done` | A stage ended. | `stage`, `outcome`, `seconds` |
 | `section.start` | One section of a stage began. | `stage`, `section` |
@@ -451,13 +496,23 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `progress` | How far through its own work a stage is. | `stage`, `section`, `done`, `total`, `unit`, `label` |
 | `finding` | A judgement was made, carried as it was found. | `finding` |
 | `spend` | A price was worked out. | `spend` |
+| `take.charged` | The provider was paid for one take. | `section`, `take`, `characters`, `dollars` |
 | `fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
-| `log` | One sentence the library would have printed. | `level`, `message` |
+| `log` | One sentence the library would have printed. | `level`, `message`, `source`, `stage`, `section`, `data` |
 
-`outcome` is `ok`, `skipped` or `failed`, and it is on `run.done`, `stage.done` and `section.done`.
-One field replaces three event names, so a caller reads one field rather than branching three ways
-to learn the same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`,
+`outcome` is `ok`, `kept`, `skipped`, `stopped` or `failed`, and it is on `run.done`, `stage.done`
+and `section.done`. `kept` is a stage the run planned and did not repeat, because nothing it reads had
+changed since it last ran, `skipped` is a stage the run did not plan or did not reach, and `stopped`
+is a run the caller cancelled or interrupted. One field
+replaces four event names, so a caller reads one field rather than branching four ways to learn the
+same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`,
 and `level` on a log line is `debug`, `info`, `warning` or `error`.
+
+`run.done` carries `error` in the shape a result's `error` takes when the run stopped or failed, and
+null when it finished, so the events file of a failed run says why. A `log` line carries `source`,
+the module that wrote it such as `media.ffmpeg`, or null for a stage's own sentence, and the `stage`
+and `section` it was written in. Its `data` is a flat map of the measured values behind the
+sentence, so a reader filters on a value rather than parsing English.
 
 A `finding` line carries the judgement in the same shape the result will carry, so an agent that
 watches the stream can react before the call returns.
@@ -467,7 +522,11 @@ after, along with `sections`, `characters`, `dollars`, `ceiling_dollars`,
 `price_per_1000_characters` and `price_layer`.
 
 `build/events/` keeps the most recent `output.events_keep_runs` runs and deletes the oldest, and
-that key defaults to 20. Run `decktalk config explain output.events_keep_runs` for its range.
+that key defaults to 20. Run `decktalk config explain output.events_keep_runs` for its range. One
+file stops taking progress, fetch, debug and info lines once it reaches `output.events_max_bytes`,
+8 MiB by default, and keeps every line about the run, its stages and sections, its findings and its
+spending. `run.done` says in `dropped` how many lines were left out, so a reader can tell a bounded
+file from a quiet run.
 
 ## Watching from Python
 

@@ -27,13 +27,14 @@ from decktalk.artifacts import CueTimes, Takes
 from decktalk.events import Level
 from decktalk.findings import Finding
 from decktalk.inputs import CuedSection, Inputs
+from decktalk.inputs.cues import Spoken
 from decktalk.machine import Run
 from decktalk.media.pagereport import MeasuredScene
-from decktalk.pagescan import overlap_findings
+from decktalk.pagescan import measured_rows, overlap_findings, scene_entry
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import CueResult, SectionCues, Word
-from decktalk.stages import clock, selects, since
-from decktalk.stages.cue.catalog import cue_findings, declared_cues, measured_rows
+from decktalk.stages import selects
+from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import ambiguity, resolve_sections, short_section
 
 __all__ = ["cue"]
@@ -46,7 +47,6 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None, allow_un
     so a run aimed at one section never drops the cues of the rest. `allow_unknown` keeps a row no
     page declares out of the findings, which is the author saying they know about it.
     """
-    started = clock()
     wanted = selects(only)
     takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
     cued = [block for block in inputs.cues() if wanted(block.number)]
@@ -59,6 +59,7 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None, allow_un
         clips=inputs.document.clip_numbers,
         estimated=estimated,
         cues_file=inputs.relative(inputs.cues_path),
+        cues_text=inputs.cues_text(),
         stage=Stage.CUE,
     )
     for block in cued:
@@ -77,7 +78,6 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None, allow_un
         CueResult,
         sections=sections,
         file=inputs.relative(written),
-        seconds=since(started),
     )
 
 
@@ -88,8 +88,9 @@ def _say_what_was_chosen(run: Run, block: CuedSection, words: Sequence[Word]) ->
     both readings rather than judgements, so each is a line on the stream and no code is invented
     for it.
     """
+    spoken = Spoken.of(words)
     for row in block.cues:
-        said = ambiguity(row, words)
+        said = ambiguity(row, spoken)
         if said:
             run.note(said, level=Level.WARNING)
     short = short_section(block, words)
@@ -125,8 +126,8 @@ def _catalogs(inputs: Inputs) -> dict[str, tuple[MeasuredScene, ...]]:
         if section.page in out:
             continue
         log = inputs.recording_log(section.key)
-        if log is not None and log.report.catalog:
-            out[section.page] = tuple(log.report.catalog)
+        if log is not None and log.recording.report.catalog:
+            out[section.page] = tuple(log.recording.report.catalog)
     return out
 
 
@@ -144,11 +145,8 @@ def _overlap_findings(inputs: Inputs, sections: Sequence[SectionCues]) -> list[F
     found: list[Finding] = []
     for section in inputs.document.page_sections:
         block = by_number.get(section.number)
-        entries = catalogs.get(section.page)
-        if block is None or entries is None:
-            continue
-        entry = next((one for one in entries if str(one.scene) == str(section.scene)), None)
-        if entry is None:
+        entry = scene_entry(catalogs.get(section.page), section.scene)
+        if block is None or entry is None:
             continue
         times = {row.cue: row.seconds for row in block.cues if row.seconds is not None}
         found += [
@@ -163,7 +161,7 @@ def _overlap_findings(inputs: Inputs, sections: Sequence[SectionCues]) -> list[F
 def _write(inputs: Inputs, sections: Sequence[SectionCues], *, replacing: bool) -> Path:
     """Write `build/cue-times.json`, keeping the rows of every section this run did not resolve."""
     resolved = {block.section: block for block in sections}
-    previous = inputs.cue_times() if replacing else None
+    previous = CueTimes.previous(inputs.workspace.cue_times_path) if replacing else None
     kept = [block for block in previous.sections if block.section not in resolved] if previous else []
     blocks = sorted([*kept, *sections], key=lambda block: block.section)
     return CueTimes(sections=tuple(blocks)).write(inputs.workspace.cue_times_path)

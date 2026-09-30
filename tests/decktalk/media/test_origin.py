@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from pathlib import Path
 from threading import Thread
-from typing import Any
 
 import pytest
 
 from decktalk.errors import ToolError
-from decktalk.media.browser import chromium, open_page
+from decktalk.media import origin
+from decktalk.media.browser import TRUSTED, chromium, open_page
 from decktalk.media.origin import (
     HIDDEN,
+    OFF_ORIGIN,
     ORIGIN,
     OUTSIDE,
     UNDECLARED,
@@ -24,16 +27,20 @@ from decktalk.media.origin import (
     local_target,
     open_server,
     page_url,
-    reachable_warning,
     route_pages,
-    served_urls,
+    served_url,
 )
 from decktalk.page import Q
+from support.fakes import FakeRouter
+from support.logs import data_of
+
+WHOLE = ("deck", "envlink", "pub", "escape", "leak", "away", "leakhtm")
+"""Every name the tests about the other rules ask for, declared so that those rules are what refuse."""
 
 
 def whole(root: Path) -> Allowed:
-    """The rule of a project that declared its whole directory, for the tests about the other rules."""
-    return Allowed.of(root, ["."])
+    """The rule of a project that declared every name these tests reach, for the tests about the other rules."""
+    return Allowed.of(root, WHOLE)
 
 
 FETCH_PAGE = """<!doctype html><meta charset="utf-8"><title>fetch</title>
@@ -95,7 +102,20 @@ def test_a_path_that_is_not_a_usable_file_name_is_refused_rather_than_raised(tmp
 def test_a_directory_is_served_as_its_index(tmp_path):
     (tmp_path / "deck").mkdir()
     assert local_target(whole(tmp_path), f"{ORIGIN}/deck/").path == tmp_path / "deck" / "index.html"
-    assert local_target(whole(tmp_path), f"{ORIGIN}/").path == tmp_path / "index.html"
+    assert local_target(whole(tmp_path), f"{ORIGIN}/").refused == UNDECLARED
+
+
+@pytest.mark.parametrize("root", [".", "", "./", "deck/.."])
+def test_a_declaration_of_the_project_root_declares_nothing(tmp_path, root):
+    """The root holds the script, the cue file, the build directory and the credential."""
+    for name in ("script.md", "cues.json", "build/narrate/takes.json"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+    allowed = Allowed.of(tmp_path, [root])
+    assert allowed.served == ()
+    for name in ("script.md", "cues.json", "build/narrate/takes.json"):
+        assert local_target(allowed, f"{ORIGIN}/{name}").refused == UNDECLARED
+    assert not Allowed(root=tmp_path, served=("",)).declares("script.md")
 
 
 def test_a_directory_whose_index_is_a_link_to_a_dot_name_is_refused(tmp_path):
@@ -137,40 +157,11 @@ def test_the_asset_record_keeps_each_path_once_and_in_order(tmp_path):
     assert assets.missing == ["media/gone.png"]
 
 
-class _Route:
-    """Playwright's route object, as far as the handler under test uses it."""
-
-    def __init__(self) -> None:
-        self.answer: dict[str, object] | None = None
-        self.continued = False
-
-    def fulfill(self, **kwargs: object) -> None:
-        self.answer = kwargs
-
-    def continue_(self) -> None:
-        self.continued = True
-
-
-class _Target:
-    """A Playwright page or context, as far as `route_pages` uses it."""
-
-    def __init__(self) -> None:
-        self.handler: Any = None
-
-    def route(self, _pattern: str, handler: Any) -> None:  # noqa: ANN401  (Playwright's own handler type)
-        self.handler = handler
-
-    def request(self, url: str) -> _Route:
-        route = _Route()
-        self.handler(route, type("Request", (), {"url": url})())
-        return route
-
-
 def test_the_router_answers_a_project_file_and_leaves_every_other_origin_alone(tmp_path):
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text("<p>hi</p>", encoding="utf-8")
-    target = _Target()
-    assets = route_pages(target, whole(tmp_path))
+    target = FakeRouter()
+    assets = route_pages(target.page(), whole(tmp_path), trusted=True)
 
     served = target.request(f"{ORIGIN}/deck/index.html")
     assert served.answer == {"status": 200, "content_type": "text/html", "body": b"<p>hi</p>"}
@@ -192,18 +183,56 @@ def test_the_router_answers_a_project_file_and_leaves_every_other_origin_alone(t
     assert not climbed.continued, "an escape is refused rather than sent to the network"
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cdn.example.com/katex.js",
+        "http://169.254.169.254/latest/meta-data/",
+        "https://project.localhost/deck/index.html",
+        "http://project.localhost:8080/deck/index.html",
+        "http://127.0.0.1:9000/admin?key=secret",
+    ],
+)
+def test_an_untrusted_page_reaches_no_origin_but_the_projects_own(tmp_path, url):
+    """0.5.0 sent every request for another origin to the network, whoever wrote the page."""
+    (tmp_path / "deck").mkdir()
+    (tmp_path / "deck" / "index.html").write_text("<p>hi</p>", encoding="utf-8")
+    target = FakeRouter()
+    assets = route_pages(target.page(), whole(tmp_path), trusted=False)
+    refused = target.request(url)
+    assert refused.aborted == "blockedbyclient"
+    assert not refused.continued and refused.answer is None
+    assert assets.refused == [f"{url.split('?')[0]} ({OFF_ORIGIN})"]
+    # The host is still named, so the recording says what the page reached for.
+    assert assets.external == [url.split("/")[0] + "//" + url.split("/")[2]]
+    served = target.request(f"{ORIGIN}/deck/index.html")
+    assert served.answer is not None and served.answer["status"] == 200
+
+
+SHUTDOWN_POLL_SECONDS = 0.01
+"""How often a test's server looks for its stop, which `serve_forever` leaves at half a second a test."""
+
+
+@contextlib.contextmanager
+def serving(allowed: Allowed, documents: dict[str, bytes] | None = None) -> Iterator[str]:
+    """A preview server answering on its own thread, and the URL it prints, stopped however the test ends."""
+    server = open_server(allowed, "127.0.0.1", 0, documents)
+    with server:
+        Thread(target=server.serve_forever, args=(SHUTDOWN_POLL_SECONDS,), daemon=True).start()
+        try:
+            yield served_url(server)
+        finally:
+            server.shutdown()
+
+
 def test_the_server_serves_the_project_and_names_every_page(tmp_path):
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text("<p>served</p>", encoding="utf-8")
-    server = open_server(whole(tmp_path), "127.0.0.1", 0)
-    with server:
-        [url] = served_urls(server, ["deck/index.html"])
-        assert url.startswith("http://127.0.0.1:") and url.endswith("/deck/index.html")
-        Thread(target=server.serve_forever, daemon=True).start()
-        with urllib.request.urlopen(url, timeout=5) as response:
+    with serving(whole(tmp_path)) as base:
+        assert base.startswith("http://127.0.0.1:")
+        with urllib.request.urlopen(f"{base}/deck/index.html", timeout=5) as response:
             assert response.read() == b"<p>served</p>"
             assert response.headers["Cache-Control"] == "no-store"
-        server.shutdown()
 
 
 def _get(url: str) -> tuple[int, bytes]:
@@ -229,10 +258,7 @@ def test_the_server_refuses_a_dotfile_a_listing_and_a_link_out_of_the_project(tm
     (tmp_path / "leak" / "index.html").symlink_to(tmp_path / ".env")
     (tmp_path / "leakhtm").mkdir()
     (tmp_path / "leakhtm" / "index.htm").symlink_to(tmp_path / ".env")
-    server = open_server(whole(tmp_path), "127.0.0.1", 0)
-    with server:
-        base = f"http://127.0.0.1:{server.server_address[1]}"
-        Thread(target=server.serve_forever, daemon=True).start()
+    with serving(whole(tmp_path)) as base:
         assert _get(f"{base}/.env")[0] == 403
         assert _get(f"{base}/deck/../.env")[0] == 403
         assert _get(f"{base}/escape/secret.txt")[0] == 403
@@ -243,30 +269,20 @@ def test_the_server_refuses_a_dotfile_a_listing_and_a_link_out_of_the_project(tm
         status, body = _get(f"{base}/deck/")
         assert status == 404 and b".env" not in body
         assert b".env" not in _get(f"{base}/")[1]
-        server.shutdown()
 
 
 def test_the_ipv6_loopback_binds_as_readily_as_the_ipv4_one(tmp_path):
     """`--host` offers a loopback address, so the safest one an author can name has to work."""
     server = open_server(whole(tmp_path), "::1", 0)
     with server:
-        [url] = served_urls(server, ["index.html"])
-        assert url.startswith("http://[::1]:") and reachable_warning(server) == ""
+        assert served_url(server).startswith("http://[::1]:")
 
 
 def test_the_printed_url_names_the_address_the_socket_is_bound_to(tmp_path):
     """An author reads the URL to know who can reach the page, so it may not say loopback for any bind."""
     server = open_server(whole(tmp_path), "0.0.0.0", 0)
     with server:
-        [url] = served_urls(server, ["index.html"])
-        assert url.startswith("http://0.0.0.0:")
-        assert "every machine on this network" in reachable_warning(server)
-
-
-def test_a_loopback_bind_warns_about_nothing(tmp_path):
-    server = open_server(whole(tmp_path), "127.0.0.1", 0)
-    with server:
-        assert reachable_warning(server) == ""
+        assert served_url(server).startswith("http://0.0.0.0:")
 
 
 def test_a_port_already_in_use_says_which_flag_to_change(tmp_path):
@@ -283,7 +299,7 @@ def test_a_page_fetches_a_file_beside_it_from_the_origin(tmp_path):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "facts.json").write_text(json.dumps({"answer": 42}), encoding="utf-8")
     (tmp_path / "page.html").write_text(FETCH_PAGE, encoding="utf-8")
-    with chromium() as browser:
+    with chromium(policy=TRUSTED) as browser:
         allowed = Allowed.of(tmp_path, ["page.html", "data"])
         page, assets = open_page(browser, allowed, width=400, height=300)
         page.goto(page_url("page.html"), wait_until="load")
@@ -370,8 +386,8 @@ def test_a_declaration_outside_the_project_is_dropped_rather_than_opened(tmp_pat
 
 def test_the_router_records_what_it_turned_away(tmp_path):
     """A page reaching for the script is a fact the recording carries, not a 403 only the page saw."""
-    target = _Target()
-    assets = route_pages(target, project(tmp_path))
+    target = FakeRouter()
+    assets = route_pages(target.page(), project(tmp_path), trusted=True)
     refused = target.request(f"{ORIGIN}/script.md")
     assert refused.answer is not None and refused.answer["status"] == 403
     assert assets.refused == [f"script.md ({UNDECLARED})"]
@@ -381,22 +397,56 @@ def test_the_router_records_what_it_turned_away(tmp_path):
 def test_the_preview_server_answers_the_documents_the_router_answers(tmp_path):
     """An author previewing a deck reads its cue times off the origin exactly as the recorder does."""
     times = b'{"sections": []}'
-    server = open_server(project(tmp_path), "127.0.0.1", 0, {"/__decktalk/cue-times.json": times})
-    with server:
-        base = f"http://127.0.0.1:{server.server_address[1]}"
-        Thread(target=server.serve_forever, daemon=True).start()
+    with serving(project(tmp_path), {"/__decktalk/cue-times.json": times}) as base:
         assert _get(f"{base}/__decktalk/cue-times.json") == (200, times)
         assert _get(f"{base}/__decktalk/nothing.json")[0] == 403
-        server.shutdown()
 
 
 def test_the_preview_server_refuses_what_the_router_refuses(tmp_path):
     """Both halves apply one rule, so an author's own browser reaches exactly what the recorder does."""
-    server = open_server(project(tmp_path), "127.0.0.1", 0)
-    with server:
-        base = f"http://127.0.0.1:{server.server_address[1]}"
-        Thread(target=server.serve_forever, daemon=True).start()
+    with serving(project(tmp_path)) as base:
         assert _get(f"{base}/deck/index.html") == (200, b"<p>hi</p>")
         assert _get(f"{base}/script.md")[0] == 403
         assert _get(f"{base}/build/cue-times.json")[0] == 403
-        server.shutdown()
+
+
+# ---- what the two halves leave behind -------------------------------------------------------------
+
+
+def test_a_request_the_router_could_not_answer_is_a_warning_without_its_query(tmp_path, monkeypatch, caplog):
+    (tmp_path / "deck").mkdir()
+    target = FakeRouter()
+    route_pages(target.page(), whole(tmp_path), trusted=True)
+
+    def broken(*_args: object) -> None:
+        raise OSError("the disk went away")
+
+    monkeypatch.setattr(origin, "local_target", broken)
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        answered = target.request(f"{ORIGIN}/deck/index.html?token=sk_query_canary")
+    assert answered.answer is not None and answered.answer["status"] == 500
+    [record] = [record for record in caplog.records if record.name == "decktalk.media.origin"]
+    assert record.levelname == "WARNING" and "sk_query_canary" not in record.getMessage()
+    assert data_of(record) == {"url": f"{ORIGIN}/deck/index.html"}
+
+
+def test_the_preview_server_prints_nothing_when_a_request_raises_and_logs_no_query(
+    tmp_path, monkeypatch, caplog, capsys
+):
+    """socketserver printed a traceback to stderr when a handler raised, which no renderer could hold."""
+    (tmp_path / "deck").mkdir()
+    (tmp_path / "deck" / "index.html").write_text("<p>served</p>", encoding="utf-8")
+
+    def broken(_handler: object) -> None:
+        raise RuntimeError("the handler broke")
+
+    with caplog.at_level("DEBUG", logger="decktalk"), serving(whole(tmp_path)) as base:
+        assert _get(f"{base}/deck/index.html?token=sk_query_canary")[0] == 200
+        monkeypatch.setattr(origin._Handler, "send_head", broken)
+        with contextlib.suppress(OSError):
+            _get(f"{base}/deck/index.html")
+    assert capsys.readouterr().err == ""
+    said = [record.getMessage() for record in caplog.records if record.name == "decktalk.media.origin"]
+    assert any("GET /deck/index.html HTTP" in line for line in said)
+    assert not any("sk_query_canary" in line for line in said)
+    assert any("could not answer" in line for line in said)

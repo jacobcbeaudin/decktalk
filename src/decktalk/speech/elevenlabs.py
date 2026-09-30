@@ -13,7 +13,6 @@ model does, and it arrives in the request rather than being read from the enviro
 from __future__ import annotations
 
 import base64
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,25 +21,28 @@ from urllib.parse import urlsplit
 from ..errors import InputError, ProviderError
 from ..results import Word
 from ..secret import Secret
-from . import SpeechRequest, VoiceContext
+from ..settings import ALLOW_ANY_API_BASE
+from . import PUNCT, SpeechRequest, VoiceContext
 from .http import post_bytes, post_json
 
-PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 ELEVENLABS_DOMAIN = "elevenlabs.io"
-# Set this to let `[elevenlabs] api_base` name any host, for a local mock of the API. The
-# environment is the user's own machine and a project file is not, so the file alone can never
-# redirect the key. Any value but an empty string, `0`, `no` or `false` turns the check off.
-ALLOW_ANY_API_BASE = "DECKTALK_ALLOW_ANY_API_BASE"
+
+SOUND_PATH = "/sound-generation"
+"""Where a sound request goes on the service, which is also part of what a soundscape ledger row is keyed by."""
+
+MUSIC_PATH = "/music"
+"""Where a music request goes on the service, which is the other endpoint a ledger row may be keyed by."""
 
 
-def check_api_base(api_base: str, environ: Mapping[str, str] | None = None) -> str:
-    """`api_base` when it is an https URL on an ElevenLabs host or the override is set, and otherwise an error.
+def check_api_base(api_base: str, *, allow_any: bool) -> str:
+    """`api_base` when it is an https URL on an ElevenLabs host or the machine allows any, and otherwise an error.
 
     The key travels in a header to whatever host `api_base` names, so the value is checked here,
-    before the first request, wherever it came from.
+    before the first request, wherever it came from. Whether any host is allowed is the machine's
+    own field, passed in, so a project file can never lift the check and a host that built its
+    machine by hand decides it rather than the process it runs in.
     """
-    env = os.environ if environ is None else environ
-    if env.get(ALLOW_ANY_API_BASE, "").lower() not in ("false", "0", "no", ""):
+    if allow_any:
         return api_base
     parts = urlsplit(api_base)
     host = (parts.hostname or "").lower()
@@ -94,42 +96,32 @@ class ElevenLabs:
     the provider is built.
     """
 
+    context: VoiceContext
+    """The tuning that shapes every request, and the machine's switch and retries that `get_provider` set on it."""
     api_key: Secret
-    api_base: str
-    context_chars: int  # [narration] context_chars
-    speech_timeout_seconds: int  # [narration] timeout_seconds
-    sound_timeout_seconds: int  # [elevenlabs] timeout_seconds
     name: str = "elevenlabs"
     checked_base: str = field(init=False)
 
     def __post_init__(self) -> None:
         # Every URL is built from the base that passed the check, and never from the setting again.
-        object.__setattr__(self, "checked_base", check_api_base(self.api_base).rstrip("/"))
+        checked = check_api_base(self.context.api_base, allow_any=self.context.allow_any_api_base)
+        self.checked_base = checked.rstrip("/")
 
     @classmethod
     def for_context(cls, context: VoiceContext) -> ElevenLabs:
         """The provider one project asks for: its key, and the tuning that shapes its requests."""
         (api_key,) = context.secrets.require("ELEVENLABS_API_KEY")
-        return cls(
-            api_key=api_key,
-            api_base=context.api_base,
-            context_chars=context.context_chars,
-            speech_timeout_seconds=context.speech_timeout_seconds,
-            sound_timeout_seconds=context.sound_timeout_seconds,
-        )
+        return cls(context, api_key)
 
     def cache_key(self, request: SpeechRequest) -> str:
         """Everything but the text that changes the audio. The voice id is part of the take hash."""
         return f"{self.name}\n{request.voice_id}\n{request.model}\n{request.output_format}"
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
-        return self.synthesize(request)
-
     def _headers(self) -> dict[str, str]:
         """The one place the key is revealed, which is the request that is allowed to carry it."""
         return {"xi-api-key": self.api_key.reveal(), "Content-Type": "application/json", "Accept": "audio/mpeg"}
 
-    def synthesize(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
         """One section read aloud, as the mp3 bytes and a start and an end time per word.
 
         The neighbouring sections travel with the request so the voice carries its prosody across a
@@ -143,14 +135,15 @@ class ElevenLabs:
             "voice_settings": request.voice_settings,
         }
         if request.previous_text:
-            payload["previous_text"] = request.previous_text[-self.context_chars :]
+            payload["previous_text"] = request.previous_text[-self.context.context_chars :]
         if request.next_text:
-            payload["next_text"] = request.next_text[: self.context_chars]
+            payload["next_text"] = request.next_text[: self.context.context_chars]
         reply = post_json(
             f"{url}?output_format={request.output_format}",
             payload,
             self._headers(),
-            timeout=self.speech_timeout_seconds,
+            timeout=self.context.speech_timeout_seconds,
+            retries=self.context.retries,
         )
         return self._audio(reply), self._words(reply)
 
@@ -162,7 +155,9 @@ class ElevenLabs:
         """
         encoded = reply.get("audio_base64")
         if not isinstance(encoded, str) or not encoded:
-            raise ProviderError("the voice answered with no audio in it.", retryable=True)
+            # The service answered, and it may have charged for the answer, so asking again could buy
+            # the same take twice. The refusal is therefore not worth trying again on its own.
+            raise ProviderError("the voice answered with no audio in it.")
         return base64.b64decode(encoded)
 
     def _words(self, reply: Mapping[str, Any]) -> list[Word]:
@@ -178,10 +173,9 @@ class ElevenLabs:
             alignment.get("character_end_times_seconds", []),
         )
 
-    def sound_effect(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.checked_base}/sound-generation?output_format={output_format}"
-        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds)
-
-    def music(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.checked_base}/music?output_format={output_format}"
-        return post_bytes(url, body, self._headers(), timeout=self.sound_timeout_seconds)
+    def generate(self, path: str, body: dict[str, Any], *, output_format: str) -> bytes:
+        """One sound bought from `SOUND_PATH` or `MUSIC_PATH`, which take the same request and answer alike."""
+        url = f"{self.checked_base}{path}?output_format={output_format}"
+        return post_bytes(
+            url, body, self._headers(), timeout=self.context.sound_timeout_seconds, retries=self.context.retries
+        )

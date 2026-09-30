@@ -13,57 +13,51 @@ that form is how a stage reaches its neighbour and it was invisible to this guar
 blind spot is closed by `test_every_import_target_resolves_to_a_ranked_module`, which fails on a
 target that no longer exists, because an import of a deleted module used to pass the rank comparison
 by being unrankable rather than by being allowed.
+
+The ranks hold between packages and say nothing inside one, so two modules of one package could
+import each other and pass. The imports are also read as a graph of modules, and that graph has no
+cycle at all, however far round it goes.
 """
 
 from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 
-from support.paths import REPO
+import rustworkx as rx
 
-SRC = REPO / "src" / "decktalk"
+from support.paths import SRC
 
-LAYERS: dict[str, tuple[str, int]] = {
-    # The words every layer above shares, which import nothing but each other.
-    "pipeline": ("vocabulary", 0),
-    "findings": ("vocabulary", 1),
-    "errors": ("vocabulary", 2),
-    "locate": ("vocabulary", 3),
-    "secret": ("vocabulary", 4),
-    "page": ("vocabulary", 5),
+LAYERS: dict[str, tuple[str, ...]] = {
+    # The words every layer above shares, which import nothing but each other, and the one rule by
+    # which a file a person owns is replaced.
+    "vocabulary": ("files", "pipeline", "findings", "secret", "errors", "locate", "page"),
     # The frozen models and the settings tree, which every layer above reads and none of them writes.
-    "results": ("models", 6),
-    "events": ("models", 7),
-    "catalog": ("models", 8),
-    "tomlmap": ("models", 9),
-    "settings": ("models", 10),
-    "explain": ("models", 11),
+    # `logs` is the bridge from standard logging to the stream, which reads the stream and nothing above it.
+    "models": ("results", "events", "logs", "tomlmap", "settings"),
     # One job each, and no knowledge of a project.
-    "toolchain": ("leaves", 12),
-    "captions": ("leaves", 13),
-    "speech": ("leaves", 14),
-    "media": ("leaves", 15),
-    "pagescan": ("leaves", 16),
-    "template": ("leaves", 17),
-    "artifacts": ("leaves", 18),
+    "leaves": ("toolchain", "captions", "speech", "media", "pagescan", "template", "artifacts"),
     # The object a caller drives, and the stages it drives.
-    "inputs": ("sdk", 19),
-    "machine": ("sdk", 20),
-    "stages": ("sdk", 21),
-    "project": ("sdk", 22),
+    "sdk": ("inputs", "machine", "explain", "stages", "project"),
     # The first client, and the package's public surface.
-    "cli": ("cli", 23),
-    "__init__": ("cli", 24),
-    "__main__": ("cli", 25),
+    "cli": ("cli", "__init__", "__main__"),
 }
-"""Every top-level module and package of decktalk, with its layer and its rank inside that layer.
+"""Every top-level module and package of decktalk under its layer, lowest first, each ranked by where it stands.
 
-`project` ranks above `stages` because it calls a stage by name through `import_module`, which is a
-string and which no AST walk can see. Declaring the rank the code really has is what keeps that one
-edge honest, and it is why `stages` may not import `project` back.
+A module's rank is its place in the whole table read top to bottom, so a layer is always one run of
+ranks and no two modules share one. `project` ranks above `stages` because it calls a stage by name
+through `import_module`, which is a string and which no AST walk can see. Declaring the rank the
+code really has is what keeps that one edge honest, and it is why `stages` may not import `project`
+back.
 """
+
+RANKS: dict[str, tuple[str, int]] = {
+    name: (layer, rank)
+    for rank, (layer, name) in enumerate((layer, name) for layer, names in LAYERS.items() for name in names)
+}
+"""Every module's layer and rank, read off `LAYERS` in order."""
 
 ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     # build runs the six stages in the order `PIPELINE` gives them.
@@ -74,11 +68,14 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.build", "stages.assemble"): "by design",
     ("stages.build", "stages.verify"): "by design",
     ("stages.build", "stages.storyboard"): "the checkpoint drawn before any credit is spent",
+    ("stages.build", "stages.status"): "an unchanged build keeps what the kept record says it already made",
     # check rehearses what the stages downstream of it would judge, without producing any of it.
     ("stages.check", "stages.narrate"): "by design",
     ("stages.check", "stages.cue"): "by design",
     ("stages.check", "stages.storyboard"): "by design",
     ("stages.check", "stages.verify"): "by design",
+    # The storyboard owns how a frozen page is opened, so the poster is drawn from a page opened the same way.
+    ("stages.assemble", "stages.storyboard"): "the one way a frozen page is opened",
     # The recorder owns the query a page section is opened at, so the storyboard opens the same page
     # by reading that one rule rather than spelling it a second time.
     ("stages.storyboard", "stages.record"): "the page URL the recorder owns",
@@ -177,6 +174,21 @@ def edges() -> list[Edge]:
     return out
 
 
+def module_graph() -> rx.PyDiGraph:
+    """Every import between two modules of decktalk as a graph, each edge carrying the import it stands for.
+
+    A module's import of a package it lives inside is left out, because Python has begun that
+    package before it runs any module in it, so that edge can never be the one that finds a module
+    half made.
+    """
+    graph = rx.PyDiGraph()
+    index = {name: graph.add_node(name) for name in sorted(module_names())}
+    for edge in edges():
+        if edge.target in index and edge.source != edge.target and not edge.source.startswith(f"{edge.target}."):
+            graph.add_edge(index[edge.source], index[edge.target], edge)
+    return graph
+
+
 def unit(module: str) -> str:
     """The top-level module or package a dotted path belongs to."""
     return module.split(".", 1)[0]
@@ -190,21 +202,14 @@ def private(name: str) -> bool:
 def test_every_module_is_placed_in_a_layer():
     """A new top-level module joins the table above, which is what makes the rule enforceable."""
     top = {unit(dotted(p)) for p in modules()}
-    missing = sorted(top - set(LAYERS))
+    missing = sorted(top - set(RANKS))
     assert missing == [], f"{missing} have no row in LAYERS, so no rule holds over what they import."
 
 
-def test_every_layer_holds_a_run_of_consecutive_ranks():
-    """A layer is a name for a run of ranks, so a module cannot be filed under one and ranked in another."""
-    for layer in dict.fromkeys(name for name, _ in LAYERS.values()):
-        ranks = sorted(rank for name, rank in LAYERS.values() if name == layer)
-        assert ranks == list(range(ranks[0], ranks[-1] + 1)), f"the {layer} layer is not one run of ranks: {ranks}"
-
-
-def test_every_rank_is_held_by_exactly_one_module():
-    """Two modules at one rank could import each other, which is the sideways edge this table refuses."""
-    ranks = [rank for _, rank in LAYERS.values()]
-    assert sorted(ranks) == sorted(set(ranks)), "two modules share a rank, so neither is above the other."
+def test_every_module_is_ranked_once():
+    """A module listed twice would hold two ranks, and the later one would quietly win."""
+    listed = [name for names in LAYERS.values() for name in names]
+    assert len(listed) == len(RANKS), f"{sorted(n for n in RANKS if listed.count(n) > 1)} are listed twice."
 
 
 def test_every_import_target_resolves_to_a_ranked_module():
@@ -227,10 +232,10 @@ def test_no_import_points_up_a_layer_or_sideways_within_one():
     bad: list[str] = []
     for edge in edges():
         source_unit, target_unit = unit(edge.source), unit(edge.target)
-        if source_unit == target_unit or target_unit not in LAYERS or source_unit not in LAYERS:
+        if source_unit == target_unit or target_unit not in RANKS or source_unit not in RANKS:
             continue
-        source_layer, source_rank = LAYERS[source_unit]
-        target_layer, target_rank = LAYERS[target_unit]
+        source_layer, source_rank = RANKS[source_unit]
+        target_layer, target_rank = RANKS[target_unit]
         if target_rank < source_rank:
             continue
         bad.append(
@@ -238,6 +243,32 @@ def test_no_import_points_up_a_layer_or_sideways_within_one():
             f"{edge.target} ({target_layer}, rank {target_rank})"
         )
     assert not bad, "\n".join(sorted(set(bad)))
+
+
+def test_no_module_imports_itself_back_however_far_round():
+    """A cycle is a module that may be read half made, and the ranks cannot see one inside a package."""
+    graph = module_graph()
+    cycles = [
+        " -> ".join(graph.get_edge_data(a, b).where for a, b in pairwise([*cycle, cycle[0]]))
+        for cycle in rx.simple_cycles(graph)
+    ]
+    assert not cycles, "\n".join(sorted(cycles))
+
+
+def test_the_cycle_check_sees_a_cycle_inside_one_package():
+    """The check above is worth its name only if it fails on the cycle the ranks let through.
+
+    One import between two modules of one package is turned round and added, which is a cycle the
+    rank comparison skips because both ends share a package.
+    """
+    graph = module_graph()
+    source, target = next(
+        (a, b)
+        for a, b, edge in graph.weighted_edge_list()
+        if unit(edge.source) == unit(edge.target) and not edge.target.startswith(f"{edge.source}.")
+    )
+    graph.add_edge(target, source, Edge(graph[target], graph[source], 1))
+    assert not rx.is_directed_acyclic_graph(graph)
 
 
 def test_no_stage_imports_another_stage_but_the_ones_that_run_the_others():

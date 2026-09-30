@@ -17,12 +17,16 @@ import shutil
 import stat
 import sys
 import tarfile
+import tempfile
+import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..errors import ToolError
+from filelock import FileLock, Timeout
+
+from ..errors import Cancel, ToolError
 from .announce import announce
 from .cache import cache_dir
 
@@ -41,6 +45,9 @@ MAX_ARCHIVE_BYTES = 400 * 1024 * 1024
 USER_AGENT = "decktalk"
 CHUNK_BYTES = 1 << 20
 """Truth: a megabyte at a time, which is large enough that hashing keeps up with the socket."""
+
+LOCK_POLL_SECONDS = 0.1
+"""Calibration: how often a waiting fetch looks at the cancel token and the clock, which nobody notices."""
 
 DOWNLOAD_TIMEOUT_SECONDS = 60
 """Calibration: longer than any read of a healthy host takes, so only one that stopped answering hits it."""
@@ -190,6 +197,7 @@ def _download_verified(asset: FfmpegAsset, into: Path) -> Path:
     partial = target.with_name(f"{target.name}.part")
     digest = hashlib.sha256()
     total = 0
+    started = time.monotonic()
     request = urllib.request.Request(asset.url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as resp, partial.open("wb") as fh:
         expected = _content_length(resp)
@@ -213,6 +221,13 @@ def _download_verified(asset: FfmpegAsset, into: Path) -> Path:
             "and `ffprobe` to a build of your own until the pin is updated."
         )
     partial.replace(target)
+    seconds = round(time.monotonic() - started, 3)
+    log.debug(
+        "%s arrived and matched its pinned digest in %.2f seconds.",
+        target.name,
+        seconds,
+        extra={"data": {"url": asset.url, "sha256": asset.sha256, "bytes": total, "seconds": seconds}},
+    )
     return target
 
 
@@ -241,11 +256,46 @@ def _unpack(archive: Path, asset: FfmpegAsset, into: Path) -> None:
         out.chmod(out.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def fetch_ffmpeg(key: str | None = None) -> tuple[str, str]:
+def _take_turn(lock: FileLock, cancel: Cancel | None, wait_seconds: float) -> float | None:
+    """Acquire the lock of one build, waiting on another fetch of it for no longer than `wait_seconds`.
+
+    The wait is a run of short attempts rather than one blocking call, because a holder that is alive
+    and slow or wedged would otherwise hold every other run on the machine where no cancel reaches
+    it. A waiting run announces the fetch it stopped for once, with nothing counted, because the
+    bytes arrive in another fetch that this one cannot see. The seconds it waited are given back, or
+    None when the lock was free, so the caller can say what it found once its turn came.
+    """
+    started = time.monotonic()
+    deadline = started + wait_seconds
+    waiting = False
+    while True:
+        try:
+            lock.acquire(timeout=LOCK_POLL_SECONDS)
+            return round(time.monotonic() - started, 3) if waiting else None
+        except Timeout:
+            if not waiting:
+                announce(TOOL, 0, None)
+                waiting = True
+            if cancel is not None:
+                cancel.check()
+            if time.monotonic() > deadline:
+                raise ToolError(
+                    f"Another fetch of ffmpeg held {lock.lock_file} for longer than the {wait_seconds:g} seconds "
+                    "that tools.timeout_seconds allows, so this run stopped waiting for it.",
+                    hint="Let the other fetch finish, or stop it, then run the command again.",
+                ) from None
+
+
+def fetch_ffmpeg(key: str | None = None, *, cancel: Cancel | None = None, wait_seconds: float) -> tuple[str, str]:
     """Download the pinned build for a platform into install_dir() and return its (ffmpeg, ffprobe).
 
-    Every archive is verified before it is opened, the executables are unpacked into a temporary
-    directory, and that directory replaces the install directory only once both are in place.
+    Every archive is verified before it is opened, the executables are unpacked into a scratch
+    directory of this fetch's own, and that directory replaces the install directory only once both
+    are in place. Two fetches of one build take turns under an operating system lock beside it,
+    which the system releases if its holder dies, and the second finds the build the first installed
+    and downloads nothing, so two cold first builds in one process or in two can never delete each
+    other's download. A fetch waiting for its turn stops when `cancel` is set and gives up after
+    `wait_seconds`, which a run takes from `tools.timeout_seconds`.
     """
     key = key or platform_key()
     build = pinned_build(key)
@@ -255,16 +305,32 @@ def fetch_ffmpeg(key: str | None = None) -> tuple[str, str]:
             "`[tools] ffmpeg` and `ffprobe`."
         )
     dest = install_dir(key)
-    tmp = dest.with_name(f".{dest.name}.tmp")
-    shutil.rmtree(tmp, ignore_errors=True)
-    tmp.mkdir(parents=True)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    lock = FileLock(dest.with_name(f".{dest.name}.lock"))
+    waited = _take_turn(lock, cancel, wait_seconds)
     try:
-        for asset in build.assets:
-            archive = _download_verified(asset, tmp)
-            _unpack(archive, asset, tmp)
-            archive.unlink()
-        shutil.rmtree(dest, ignore_errors=True)
-        tmp.replace(dest)
+        installed = installed_pinned(key)
+        if waited is not None:
+            log.info(
+                "Waited %.1f seconds for another fetch of ffmpeg, which %s.",
+                waited,
+                "installed it" if installed else "left nothing installed, so this run fetches it",
+                extra={
+                    "data": {"lock": str(lock.lock_file), "waited_seconds": waited, "found_installed": bool(installed)}
+                },
+            )
+        if installed:
+            return installed
+        scratch = Path(tempfile.mkdtemp(prefix=f".{dest.name}.", dir=dest.parent))
+        try:
+            for asset in build.assets:
+                archive = _download_verified(asset, scratch)
+                _unpack(archive, asset, scratch)
+                archive.unlink()
+            shutil.rmtree(dest, ignore_errors=True)
+            scratch.replace(dest)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        lock.release()
     return str(dest / _exe("ffmpeg")), str(dest / _exe("ffprobe"))

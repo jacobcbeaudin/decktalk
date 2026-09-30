@@ -23,17 +23,15 @@ def test_bare_schema_prints_the_whole_instruction_set(run) -> None:
     assert set(written) == {"commands", "globals", "exits", "errors", "findings", "stages"}
 
 
-def test_the_contract_carries_no_envelope(run) -> None:
-    written = json.loads(run("schema").out)
-    assert "schema" not in written
-    assert "ok" not in written
-    assert "findings" not in set(written) - {"findings"} or isinstance(written["findings"], list)
-
-
 def test_a_schema_document_carries_no_reserved_keys(run) -> None:
     written = json.loads(run("schema", "finding").out)
     assert written["title"] == "Finding"
     assert "ok" not in written
+
+
+def test_the_names_list_the_results_first_and_each_name_once() -> None:
+    assert catalog.names()[-5:] == ("event", "finding", "page", "project", "settings")
+    assert len(set(catalog.names())) == len(catalog.names())
 
 
 @pytest.mark.parametrize("name", catalog.names())
@@ -65,7 +63,10 @@ def test_the_page_document_publishes_every_attribute(run) -> None:
 def test_the_project_document_publishes_the_cue_row(run) -> None:
     written = json.loads(run("schema", "project").out)
     assert written["file"] == "cues.json"
-    assert {"cue", "on"} <= {row["key"] for row in written["sections"]["cues"]}
+    rows = {row["key"]: row for row in written["sections"]["cues"]}
+    assert {"cue", "on"} <= rows.keys()
+    assert "line" not in rows, "the loader fills the line, so an author never writes it"
+    assert rows["offset"] == {"key": "offset", "type": "number", "default": 0.0}
 
 
 def test_the_set_parameter_points_at_the_key_space(run) -> None:

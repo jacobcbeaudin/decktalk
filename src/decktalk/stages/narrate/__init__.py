@@ -24,20 +24,25 @@ receive at all is refused here before a single request is sent.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import contextvars
+import logging
+import threading
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 
 from decktalk.artifacts import Take, Takes, is_placeholder
 from decktalk.errors import InputError
 from decktalk.events import Level, Unit
-from decktalk.findings import Location
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
+from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SectionTake, Spend, SpendState, TakeStatus, Voicing
 from decktalk.speech import SpeechProvider
-from decktalk.stages import clock, selects, since
+from decktalk.stages import selects
 from decktalk.stages.narrate.plan import (
     TakePlan,
     is_cached,
@@ -56,13 +61,15 @@ from decktalk.stages.narrate.script_rules import (
 )
 from decktalk.stages.narrate.takes import (
     estimated_words,
-    index_cached_take,
     join_takes,
     place,
     planned_words,
+    take_row,
     write_placeholder_take,
     write_voiced_take,
 )
+
+log = logging.getLogger(__name__)
 
 
 def narrate(
@@ -80,7 +87,6 @@ def narrate(
     has seen the price, and the index is written again after every take, so a run that is stopped
     keeps everything it has already paid for.
     """
-    started = clock()
     cfg = inputs.settings.narration
     targets = _targets(inputs, only)
     model = inputs.document.voice.model or cfg.model
@@ -110,18 +116,11 @@ def narrate(
         sections=tuple(made),
         spend=_charged(estimate, made) if paid else estimate,
         takes=inputs.relative(inputs.workspace.takes_path),
-        seconds=since(started),
     )
 
 
 def _targets(inputs: Inputs, only: Sequence[int] | None) -> list[Segment]:
-    """The spoken sections this run works on, with the whole script checked before any of them.
-
-    The script is read against three rules before a plan exists: every heading has a section, the
-    headings ascend, and the spoken text holds nothing the voice would read out. The second is here
-    because the take index is the one order the narration is joined in, so a script that counts
-    backwards would place its takes in an order no other reading of the project agrees with.
-    """
+    """The spoken sections this run works on, with the whole script checked before any of them."""
     segments = inputs.script()
     out_of_order = ascending(segments)
     if out_of_order is not None:
@@ -130,7 +129,7 @@ def _targets(inputs: Inputs, only: Sequence[int] | None) -> list[Segment]:
             f"the script heading for section {second.index} comes after section {first.index}, "
             "so the sections do not ascend and the narration would be joined in an order nothing else agrees with.",
             hint=f"Move '## {second.index}. {second.title}' after '## {first.index}. {first.title}'.",
-            location=_at_script(inputs),
+            location=at(inputs.script_path, inputs.root),
         )
     check_script(inputs.relative(inputs.script_path).as_posix(), inputs.script_path.read_text(encoding="utf-8"))
     wanted = selects(only)
@@ -140,14 +139,9 @@ def _targets(inputs: Inputs, only: Sequence[int] | None) -> list[Segment]:
         raise InputError(
             f"no spoken section matches {list(only or ())}, so there is nothing to narrate.",
             hint=f"The spoken sections are {every}.",
-            location=_at_script(inputs),
+            location=at(inputs.script_path, inputs.root),
         )
     return spoken
-
-
-def _at_script(inputs: Inputs) -> Location:
-    """Where a refusal about the script points, which is the script itself."""
-    return at(inputs.script_path, inputs.root)
 
 
 def _refuse_over_paid(inputs: Inputs, previous: Takes | None, targets: list[Segment], *, replace_voiced: bool) -> None:
@@ -172,16 +166,11 @@ def _refuse_over_paid(inputs: Inputs, previous: Takes | None, targets: list[Segm
         else "Every section of this project is voiced already, so rehearse in a copy of it."
     )
     raise InputError(
-        f"the take index holds paid takes for section(s) {', '.join(str(number) for number in paid)}, and a run "
+        f"The take index holds paid takes for section(s) {', '.join(str(number) for number in paid)}, and a run "
         "without voice would replace them, so the next voiced build would buy all of them again.",
         hint=f"{advice} Pass --replace-voiced to replace them anyway.",
-        location=_at_takes(inputs),
+        location=at(inputs.workspace.takes_path, inputs.root),
     )
-
-
-def _at_takes(inputs: Inputs) -> Location:
-    """Where a refusal about the take index points, which is the index itself."""
-    return at(inputs.workspace.takes_path, inputs.root)
 
 
 def _write_takes(
@@ -193,45 +182,104 @@ def _write_takes(
     model: str,
     paid: bool,
 ) -> tuple[dict[int, Take], list[SectionTake]]:
-    """Make every take this run plans, checkpointing the index after each one.
+    """Make every take this run plans, `[narration] concurrency` at a time, checkpointing after each.
 
-    The index is written again after every take, paid or not, so a run that is stopped halfway keeps
-    every take it has already bought and the next run finds them in the cache rather than buying
-    them twice.
+    The takes a plan found on disk are indexed after the pool has finished, because a section kept
+    for sharing another section's words reads the take that section is still making.
     """
     inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
     previous = inputs.takes()
-    rows: dict[int, Take] = {take.section: take for take in previous.sections} if previous is not None else {}
-    touched: set[int] = set()
-    made: list[SectionTake] = []
-    for done, plan in enumerate(plans, start=1):
+    progress = _Progress(rows={take.section: take for take in previous.sections} if previous is not None else {})
+
+    def one(plan: TakePlan) -> None:
         number = plan.segment.index
         with run.section(Stage.NARRATE, number):
             row, status = _one_take(inputs, run, plan, provider, paid=paid)
-            rows[number] = row
-            touched.add(number)
-            made.append(
-                SectionTake(
-                    section=number,
-                    key=plan.segment.key,
-                    status=status,
-                    characters=plan.characters_sent,
-                    seconds=row.duration_seconds,
-                    file=inputs.relative(inputs.workspace.takes_dir / row.file),
-                    hash=row.hash,
-                )
+            made = SectionTake(
+                section=number,
+                key=plan.segment.key,
+                status=status,
+                characters=plan.characters_sent,
+                seconds=row.duration_seconds,
+                file=inputs.relative(inputs.workspace.takes_dir / row.file),
+                hash=row.hash,
             )
-            _index(inputs, _placed(inputs, rows, touched), model=model).write(inputs.workspace.takes_path)
-        run.progress(
-            Stage.NARRATE,
-            done=done,
-            total=len(plans),
-            unit=Unit.TAKE,
-            label=plan.chapter or plan.segment.title,
-            section=number,
-        )
-    return _placed(inputs, rows, touched), made
+            # The count is reported under the lock that raised it, so a reader of the stream sees one,
+            # two, three in that order however the pool's workers finish.
+            with progress.lock:
+                progress.rows[number] = row
+                progress.made[number] = made
+                _index(inputs, _placed(inputs, progress.rows, set(progress.made)), model=model).write(
+                    inputs.workspace.takes_path
+                )
+                progress.done += 1
+                run.progress(
+                    Stage.NARRATE,
+                    done=progress.done,
+                    total=len(plans),
+                    unit=Unit.TAKE,
+                    label=plan.chapter or plan.segment.title,
+                    section=number,
+                )
+
+    making = [plan for plan in plans if not plan.cached]
+    _in_pool(one, making, workers=inputs.settings.narration.concurrency)
+    for plan in plans:
+        if plan.cached:
+            one(plan)
+    made = [progress.made[plan.segment.index] for plan in plans]
+    return _placed(inputs, progress.rows, set(progress.made)), made
+
+
+@dataclass
+class _Progress:
+    """What the workers of one narrate share, which every one of them changes only under its lock."""
+
+    rows: dict[int, Take]
+    made: dict[int, SectionTake] = field(default_factory=dict)
+    done: int = 0
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def _in_pool(work: Callable[[TakePlan], None], plans: list[TakePlan], *, workers: int) -> None:
+    """Run `work` over the plans on at most `workers` threads, and raise the first failure.
+
+    Each worker runs in a copy of this thread's context, because the toolchain a take is measured
+    with and the listener a download reports to are bound there and a new thread inherits neither.
+    A failure stops every plan that has not started, lets the requests already sent finish, since
+    they are already paid for, and is raised once they have.
+    """
+    if not plans:
+        return
+    chosen = min(workers, len(plans))
+    log.debug(
+        "%d takes are made on %d workers.",
+        len(plans),
+        chosen,
+        extra={"data": {"workers": chosen, "jobs": len(plans), "requested": workers}},
+    )
+    first: BaseException | None = None
+    with ThreadPoolExecutor(max_workers=chosen) as pool:
+        running = {pool.submit(contextvars.copy_context().run, work, plan): plan for plan in plans}
+        for finished in as_completed(running):
+            if finished.cancelled() or (failure := finished.exception()) is None:
+                continue
+            if first is None:
+                first = failure
+                pool.shutdown(wait=False, cancel_futures=True)
+                continue
+            # A request already sent that failed after the first failure may still have been paid for,
+            # so it is recorded rather than lost behind the one that is raised.
+            section = running[finished].segment.index
+            log.warning(
+                "Section %d also failed while the first failure was being raised.",
+                section,
+                exc_info=failure,
+                extra={"data": {"section": section}},
+            )
+    if first is not None:
+        raise first
 
 
 def _one_take(
@@ -243,19 +291,25 @@ def _one_take(
         raise InputError(
             f"section {plan.segment.index} has no take digest, so the voice could not be set up.",
             hint="Set ELEVENLABS_API_KEY in .env, or run without voice.",
-            location=_at_takes(inputs),
+            location=at(inputs.workspace.takes_path, inputs.root),
         )
-    if plan.cached and is_cached(digest, inputs.workspace.takes_dir):
+    hit = plan.cached and is_cached(digest, inputs.workspace.takes_dir)
+    # The plan's reason is the sentence `status` prints, and the token is what a reader filters on.
+    why = "unchanged" if hit else "take-missing" if plan.cached else "to-make"
+    cache_decision(
+        log, Unit.TAKE.value, hit=hit, why=why, key=digest, section=plan.segment.index, reason=plan.reason or None
+    )
+    if hit:
         voiced = not is_placeholder(digest)
-        return index_cached_take(inputs, plan.segment, plan.chapter, digest, voiced=voiced), TakeStatus.KEPT
+        return take_row(inputs, plan.segment, plan.chapter, digest, voiced=voiced), TakeStatus.KEPT
     if paid:
         if provider is None or plan.request is None:
             raise InputError(
                 f"section {plan.segment.index} would be voiced and this run has no request for it.",
                 hint="Run `decktalk narrate` again, or run without voice.",
-                location=_at_takes(inputs),
+                location=at(inputs.workspace.takes_path, inputs.root),
             )
-        row, files = write_voiced_take(inputs, provider, plan.segment, plan.chapter, digest, plan.request)
+        row, files = write_voiced_take(inputs, run, provider, plan.segment, plan.chapter, digest, plan.request)
         status = TakeStatus.VOICED
     else:
         row, files = write_placeholder_take(inputs, plan.segment, plan.chapter, digest)
@@ -266,11 +320,7 @@ def _one_take(
 
 
 def _placed(inputs: Inputs, rows: dict[int, Take], touched: set[int]) -> dict[int, Take]:
-    """Every row of the index, with the ones this run did not touch placed by the same rule.
-
-    A section a selection left out keeps the take it already has, and is placed by its own settings
-    like every other, so its lead and its tail follow the project whichever sections this run made.
-    """
+    """Every row of the index, with the ones this run did not touch placed by the same rule."""
     spoken = {segment.index for segment in inputs.spoken()}
     return {
         number: row if number in touched else place(inputs, number, row)

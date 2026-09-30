@@ -6,9 +6,15 @@ import json
 from pathlib import Path
 
 from decktalk.cli import report as commands
-from decktalk.results import ApplyResult, CheckResult
+from decktalk.results import ApplyResult
+from support.spends import a_spend
 
-from .conftest import Fake, finding, spend
+from .conftest import ANSWERS, Fake, finding
+
+FIXABLE = ANSWERS["check"].model_copy(
+    update={"ok": False, "findings": (finding(fix=True),), "judged": (Path("cues.json"),)}
+)
+"""A check that found one thing it can fix, which every test of `--fix` hands its fake."""
 
 
 def test_status_reports_the_project_and_judges_nothing(run, project, answers) -> None:
@@ -23,12 +29,19 @@ def test_status_never_fails_on_a_finding_because_it_takes_no_threshold(run) -> N
     assert "--fail-on" not in run("status", "--help").out
 
 
+def test_status_help_says_the_one_thing_it_exits_1_for(run) -> None:
+    """status raises a certain FILE_MISSING, so its help cannot promise that it never exits 1."""
+    said = " ".join(run("status", "--help").out.split())
+    assert "never exits 1" not in said
+    assert "exits 1 only then" in said
+
+
 def test_check_judges_the_written_files_and_prices_a_voiced_run(run, project, answers) -> None:
     made = project(check=answers["check"])
     ran = run("check", "--json")
     assert ran.exit_code == 0
     written = json.loads(ran.out)
-    assert written["spend"]["ceiling_dollars"] == spend().ceiling_dollars
+    assert written["spend"]["ceiling_dollars"] == a_spend().ceiling_dollars
     assert made.called("check")["pages"] is True
 
 
@@ -41,16 +54,7 @@ def test_check_without_pages_says_so_to_the_library(run, project, answers) -> No
 
 
 def test_check_reports_every_fix_and_applies_none_without_a_terminal(run, project) -> None:
-    judged = CheckResult(
-        ok=False,
-        findings=(finding(fix=True),),
-        run="r",
-        judged=(Path("cues.json"),),
-        pages=True,
-        frames=True,
-        spend=spend(),
-    )
-    made = project(check=judged)
+    made = project(check=FIXABLE)
     ran = run("check")
     assert ran.exit_code == 1
     assert "fix (safe)" in ran.out
@@ -58,21 +62,23 @@ def test_check_reports_every_fix_and_applies_none_without_a_terminal(run, projec
 
 
 def test_check_fix_applies_the_safe_fixes_and_judges_again(run, project) -> None:
-    judged = CheckResult(
-        ok=False,
-        findings=(finding(fix=True),),
-        run="r",
-        judged=(Path("cues.json"),),
-        pages=True,
-        frames=True,
-        spend=spend(),
-    )
-    made = Fake(check=judged, apply=ApplyResult(ok=True, run="r", fixes=()))
+    made = Fake(check=FIXABLE, apply=ApplyResult(ok=True, run="r", fixes=()))
     made.answers["reload"] = made
     project_calls = made.calls
     _install(project, made)
     run("check", "--fix")
     assert [name for name, _, _ in project_calls] == ["check", "apply", "reload", "check"]
+
+
+def test_the_second_judgement_after_a_fix_keeps_the_sections_it_was_asked_about(run, project) -> None:
+    """A re-check that widened to the whole project priced sections the caller never named."""
+    judged = FIXABLE.model_copy(update={"pages": False, "frames": False})
+    made = Fake(check=judged, apply=ApplyResult(ok=True, run="r", fixes=()))
+    _install(project, made)
+    run("check", "--section", "4", "--no-pages", "--fix")
+    first, again = [keywords for name, _, keywords in made.calls if name == "check"]
+    assert again["only"] == first["only"] == (4,)
+    assert again["pages"] is first["pages"] is False
 
 
 def _install(project, fake: Fake) -> None:

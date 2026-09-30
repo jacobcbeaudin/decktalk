@@ -18,6 +18,11 @@ put them on screen or send them to whoever it liked.
 The router also keeps the project-relative path of every file it served, which is what lets `record`
 key a section on the assets its page actually loaded rather than on the page file alone.
 
+A request for another origin is where the two page policies part. A trusted page is the author's own
+work, so its request goes to the network the way it would in the author's browser and the recording
+names the host it reached. An untrusted page is a stranger's, so its request is refused before it
+leaves the browser, whatever its scheme, and the recording names the host it reached for all the same.
+
 `decktalk serve` is the other half: an author previewing a page in their own browser needs a real
 server, so this module also runs one from the standard library, bound to 127.0.0.1 by default.
 """
@@ -26,12 +31,12 @@ from __future__ import annotations
 
 import errno
 import io
-import ipaddress
 import logging
 import mimetypes
 import os
+import re
 import socket
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from http import HTTPStatus
@@ -56,6 +61,9 @@ HIDDEN = "a name beginning with a dot is never served"
 UNUSABLE = "that path is not a usable file name"
 UNDECLARED = "that path is not in the deck directory and the project declares no such asset"
 TEXT = "text/plain; charset=utf-8"
+
+QUERY = re.compile(r"\?[^\s\"]*")
+"""The query of a URL inside a request line, up to the space or quote that ends it."""
 """What a refusal is answered as, because a page that asked for a file is given a sentence instead."""
 # A type the standard table gets wrong or does not know, and which a deck loads often enough to matter.
 EXTRA_TYPES = {
@@ -169,7 +177,9 @@ class Allowed:
 
         A declared path outside the project is dropped rather than refused at request time, because a
         rule that names a place the project does not own is a mistake in the project file and this
-        module answers requests rather than reporting on `decktalk.toml`.
+        module answers requests rather than reporting on `decktalk.toml`. A declaration of the root
+        itself is dropped for the same reason, because the root holds the script, the cue file, the
+        build directory and the credential, which no page may reach.
         """
         base = root.resolve()
         inside: list[str] = []
@@ -182,7 +192,7 @@ class Allowed:
             # to say where it sits under the project. A relative one already says it.
             named = candidate.relative_to(base).as_posix() if spelled.is_absolute() else spelled.as_posix()
             place = project_path(named)
-            if place is not None:
+            if place:
                 inside.append(place)
         return cls(root=base, served=tuple(dict.fromkeys(inside)))
 
@@ -191,10 +201,10 @@ class Allowed:
 
         The comparison is over the names rather than over the files they open, because a declaration
         names a spelling and only the filesystem knows whether two spellings open one file. A
-        declared directory is a place, so every name under it is declared with it, and a project that
-        declares its own root declares everything in it.
+        declared directory is a place, so every name under it is declared with it. An empty place
+        declares nothing, because the name it would stand for is the project root.
         """
-        return any(not place or asked == place or asked.startswith(f"{place}/") for place in self.served)
+        return any(place and (asked == place or asked.startswith(f"{place}/")) for place in self.served)
 
     def target(self, rel: str) -> Target:
         """The file a project-relative request path is answered from, or the reason it is refused.
@@ -213,6 +223,7 @@ class Allowed:
             opened = (named / INDEX).resolve() if directory else named
             contained = opened.is_relative_to(self.root)
         except (OSError, ValueError):
+            # silent: a path the system cannot resolve is refused as unusable.
             return Target(refused=UNUSABLE)
         if not contained:
             return Target(refused=OUTSIDE)
@@ -263,20 +274,37 @@ class Assets:
             where.append(rel)
 
     def turned_away(self, url: str, why: str) -> None:
-        """Note a request this origin would not answer, as the path it asked for and the reason."""
-        asked = f"{unquote(urlsplit(url).path).lstrip('/')} ({why})"
+        """Note a request this origin would not answer, as what it asked for and the reason.
+
+        A request under the origin is named by its project path. One for another origin is named by
+        its host and path, and never by its query, which is where a page would put what it meant to send.
+        """
+        parts = urlsplit(url)
+        path = unquote(parts.path).lstrip("/")
+        mine = f"{parts.scheme}://{parts.netloc}" == ORIGIN
+        asked = f"{path if mine else f'{parts.scheme}://{parts.netloc}/{path}'} ({why})"
         if asked not in self.refused:
             self.refused.append(asked)
 
 
+OFF_ORIGIN = "a page that is not trusted may reach no origin but the project's own"
+"""Why a request for another origin is refused under the untrusted policy, which the recording keeps."""
+
+
 def route_pages(
-    target: Page | BrowserContext, allowed: Allowed, documents: Mapping[str, bytes] | None = None
+    target: Page | BrowserContext,
+    allowed: Allowed,
+    documents: Mapping[str, bytes] | None = None,
+    *,
+    trusted: bool,
 ) -> Assets:
     """Answer every request under the origin from what `allowed` names, and return what was served.
 
-    `target` is a Playwright page or browser context. A request to any other origin is left alone, so
-    a page that reaches for a CDN still does what it would do in a browser and `record` can report it.
-    Every route is answered, because a route left unanswered hangs the page that made it.
+    `target` is a Playwright page or browser context. A request to any other origin is noted either
+    way. A trusted page's request then goes on, so a page that reaches for a CDN still does what it
+    would do in a browser and `record` can report it. An untrusted page's request is aborted, so
+    nothing it asks for off the origin ever reaches the network stack. Every route is answered,
+    because a route left unanswered hangs the page that made it.
 
     `documents` are the paths a caller answers itself, such as the cue times a run resolved, which no
     file on disk holds. They are answered from memory as JSON and never recorded as assets, because a
@@ -294,7 +322,11 @@ def route_pages(
             wanted = local_target(allowed, request.url)
             if not wanted.mine:
                 assets.reached(request.url)
-                route.continue_()
+                if trusted:
+                    route.continue_()
+                    return
+                assets.turned_away(request.url, OFF_ORIGIN)
+                route.abort("blockedbyclient")
                 return
             if wanted.refused or wanted.path is None:
                 assets.turned_away(request.url, wanted.refused or OUTSIDE)
@@ -307,8 +339,10 @@ def route_pages(
                 return
             assets.record(wanted.path, found=True)
             route.fulfill(status=HTTPStatus.OK, content_type=content_type(wanted.path), body=wanted.path.read_bytes())
-        except Exception as exc:  # noqa: BLE001  (the page must learn its request failed rather than wait for it)
-            log.warning("could not answer %s (%s)", request.url, exc)
+        except Exception as exc:  # the page must learn its request failed rather than wait for it
+            # The query is left out, because it is where a page puts what it means to send somewhere.
+            shown = request.url.split("?", 1)[0]
+            log.warning("The origin could not answer %s.", shown, exc_info=exc, extra={"data": {"url": shown}})
             broke = HTTPStatus.INTERNAL_SERVER_ERROR
             route.fulfill(status=broke, content_type=TEXT, body="the origin could not answer")
 
@@ -348,7 +382,8 @@ class _Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, format: str, *args: object) -> None:
-        log.debug("[serve] " + format, *args)
+        """Record one request line with its query left out, because the query is what a page means to send."""
+        log.debug("[serve] %s", QUERY.sub("", format % args))
 
     def guess_type(self, path: str | os.PathLike[str]) -> str:
         return content_type(Path(path))
@@ -390,6 +425,9 @@ def open_server(
     `documents` are the paths the caller answers itself, which are the same ones the router answers
     for a recorded page. An author previewing a deck reads its cue times from the origin exactly as
     the recorder does, so a page that works in the preview is the page that is recorded.
+
+    The server outlives the run that opened it, so what it records, a request line or a request that
+    raised, reaches a host's own logging and no run's events file, and nothing it records is printed.
     """
     handler = partial(_Handler, allowed, dict(documents or {}))
     try:
@@ -401,6 +439,10 @@ def open_server(
     class Server(ThreadingHTTPServer):
         address_family = family
 
+        def handle_error(self, request: object, client_address: tuple[str, int]) -> None:  # noqa: ARG002  (the base's signature)
+            """Record a request that raised, where the base class prints its traceback to stderr."""
+            log.debug("The preview server could not answer %s.", client_address[0], exc_info=True)
+
     try:
         return Server((host, port), handler)
     except OSError as exc:
@@ -408,33 +450,11 @@ def open_server(
         raise ToolError(f"could not serve {host}:{port} ({exc.strerror or exc}). Pass another {flag}.") from exc
 
 
-def bound_host(server: ThreadingHTTPServer) -> str:
-    """The address the socket is actually bound to, which is what the author needs to be told."""
-    return str(server.server_address[0])
+def served_url(server: ThreadingHTTPServer) -> str:
+    """Where a running server answers, named by the address its socket is bound to.
 
-
-def reachable_warning(server: ThreadingHTTPServer) -> str:
-    """One line for a bind that is not loopback, or an empty string when only this machine can reach it."""
-    host = bound_host(server)
-    try:
-        loopback = ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        loopback = host in ("localhost", "")
-    if loopback:
-        return ""
-    return (
-        f"serving on {host}, so every machine on this network can read the project directory. "
-        "Pass --host 127.0.0.1 to keep it on this machine."
-    )
-
-
-def served_urls(server: ThreadingHTTPServer, pages: Iterator[str] | list[str]) -> list[str]:
-    """The URL of each project page on a running server, which `serve` prints for an author to open.
-
-    The host is the one the socket is bound to, so a server reachable from the network says so in
-    every URL it prints.
+    An author reads the URL to know who can reach the page, so it names the real bind rather than
+    loopback, and an IPv6 address is bracketed as a URL requires.
     """
-    host, port = bound_host(server), server.server_address[1]
-    shown = host or "127.0.0.1"
-    base = f"http://[{shown}]:{port}" if ":" in shown else f"http://{shown}:{port}"
-    return [f"{base}/{quote(Path(page).as_posix())}" for page in pages]
+    host, port = str(server.server_address[0]) or "127.0.0.1", server.server_address[1]
+    return f"http://[{host}]:{port}" if ":" in host else f"http://{host}:{port}"

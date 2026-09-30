@@ -8,17 +8,17 @@ the film it was measured on, because the pass reports what it cannot fix and a r
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
-from decktalk.media import audio, ffmpeg
+from decktalk.media import audio
+from decktalk.media.audio import gain
 from decktalk.pipeline import Stage
 from decktalk.results import Loudness
-from decktalk.stages import judge
-from decktalk.stages.assemble.cut import encoder
-from decktalk.stages.assemble.mix import gain
+from decktalk.stages.assemble.mix import encode_soundtrack
 
 LIMITER_HEADROOM_DB = 0.3
 """Calibration: the limiter works on oversampled samples, so it sits this far under the ceiling."""
@@ -44,32 +44,35 @@ def normalize_loudness(inputs: Inputs, src: Path, dst: Path) -> tuple[audio.Loud
     ceiling promises.
     """
     loudness = inputs.settings.mix.loudness
-    enc = encoder(inputs)
     before = audio.measure_loudness(
         src, i=loudness.target_lufs, tp=loudness.true_peak_max_dbtp, lra=loudness.range_max_lu
     )
-    lift = loudness.target_lufs - before.i
+    # A silent mix has no loudness to lift, so it is encoded at unity gain and the finding says so.
+    lift = loudness.target_lufs - before.i if math.isfinite(before.i) else 0.0
     ceiling = gain(loudness.true_peak_max_dbtp - LIMITER_HEADROOM_DB)
-    ffmpeg.run(
-        "-i", str(src), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
-        "-af",
-        f"volume={lift:.2f}dB,aresample={LIMITER_OVERSAMPLE_RATE},"
+    encode_soundtrack(
+        inputs,
+        src,
+        dst,
+        filters=f"volume={lift:.2f}dB,aresample={LIMITER_OVERSAMPLE_RATE},"
         f"alimiter=limit={ceiling:.4f}:attack={LIMITER_ATTACK_MS}:release={LIMITER_RELEASE_MS}:level=false,"
-        f"aresample={enc.v.sample_rate}",
-        *enc.aenc, "-movflags", "+faststart", str(dst),
-    )  # fmt: skip
+        f"aresample={inputs.settings.video.sample_rate}",
+    )
     after = audio.measure_loudness(
         dst, i=loudness.target_lufs, tp=loudness.true_peak_max_dbtp, lra=loudness.range_max_lu
     )
     return before, after
 
 
-def measured(inputs: Inputs, after: audio.Loudness) -> Loudness:
-    """What the mix measures, as the result model publishes it.
+def measured(inputs: Inputs, after: audio.Loudness) -> Loudness | None:
+    """What the mix measures, as the result model publishes it, or None for a silent mix.
 
     The media layer reports what one loudnorm pass read and the result carries what a reader
-    receives, so the two names of each number meet here once rather than at every reader.
+    receives, so the two names of each number meet here once rather than at every reader. A silent
+    mix has no integrated loudness, and JSON has no -inf, so its result carries none.
     """
+    if not math.isfinite(after.i):
+        return None
     return Loudness(
         integrated_lufs=round(after.i, 1),
         true_peak_dbtp=round(after.tp, 1),
@@ -94,20 +97,32 @@ def loudness_findings(inputs: Inputs, run: Run, after: audio.Loudness) -> list[F
             run.found(
                 judge(
                     Code.MIX_LOUDNESS,
-                    f"the true peak is {after.tp:.1f} dBTP, which is above the "
+                    f"The true peak is {after.tp:.1f} dBTP, which is above the "
                     f"{loudness.true_peak_max_dbtp:.1f} dBTP ceiling the mix was mastered to.",
                     where,
                     stage=Stage.ASSEMBLE,
                 )
             )
         )
+    if not math.isfinite(after.i):
+        found.append(
+            run.found(
+                judge(
+                    Code.MIX_LOUDNESS,
+                    f"The mix is silent, so it has no loudness to bring to the {loudness.target_lufs:.1f} LUFS target.",
+                    where,
+                    stage=Stage.ASSEMBLE,
+                )
+            )
+        )
+        return found
     off = abs(after.i - loudness.target_lufs)
     if off > LOUDNESS_TOLERANCE_LU:
         found.append(
             run.found(
                 judge(
                     Code.MIX_LOUDNESS,
-                    f"the integrated loudness is {after.i:.1f} LUFS, which is {off:.1f} LU from the "
+                    f"The integrated loudness is {after.i:.1f} LUFS, which is {off:.1f} LU from the "
                     f"{loudness.target_lufs:.1f} LUFS target and over the {LOUDNESS_TOLERANCE_LU:.1f} LU "
                     "a mix may sit from it.",
                     where,

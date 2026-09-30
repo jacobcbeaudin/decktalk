@@ -8,22 +8,18 @@ from pathlib import Path
 from decktalk.findings import Applicability, Code
 from decktalk.inputs.cues import Cue, CuedSection
 from decktalk.inputs.document import PageSection
+from decktalk.machine import apply_fix
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pipeline import Stage
-from decktalk.stages.cue.catalog import cue_findings, declared_cues, measured_rows, scene_cues
-
-BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
-"""One element's box, which every row here shares because none of these cases measures a box."""
+from decktalk.results import Scope
+from decktalk.stages.cue.catalog import cue_findings, declared_cues
+from support.pages import elements
+from support.runs import a_run
 
 
 def entry(scene: str, moments: dict[str, list[str]], **extra: object) -> MeasuredScene:
     """One scene of a catalog, with one element per moment the slide declares."""
-    elements = {
-        slide: [{"attrs": {"data-in": wire.split(":", 1)[-1]}, "moments": {"data-in": wire}, "text": "", "box": BOX}
-                for wire in wires]
-        for slide, wires in moments.items()
-    }  # fmt: skip
-    return MeasuredScene.model_validate({"scene": scene, "elements": elements, **extra})
+    return MeasuredScene.model_validate({"scene": scene, "elements": elements(moments, text=""), **extra})
 
 
 def section(number: int, *, page: str = "deck/index.html", scene: str = "1") -> PageSection:
@@ -37,35 +33,15 @@ def write_cues(root: Path, sections: dict[str, object]) -> Path:
 
 
 def applied(path: Path, root: Path, findings: list) -> None:
-    """Carry out every fix these findings offer, the way `Project.apply` carries one out."""
+    """Carry out every fix these findings offer through the applier `Project.apply` calls, unsafe ones too."""
     for found in findings:
-        for edit in getattr(found.fix, "edits", ()):
-            target = root / edit.file
-            lines = target.read_text(encoding="utf-8").splitlines(keepends=True) if target.exists() else []
-            index = (edit.line or 1) - 1
-            lines[index : index + (1 if edit.old is not None else 0)] = [edit.new + "\n"]
-            target.write_text("".join(lines), encoding="utf-8")
+        if found.fix is not None:
+            outcome = apply_fix(a_run(root), found.code, found.fix, root=root, scope=Scope.PROJECT, unsafe=True)
+            assert outcome.applied, outcome.why
     assert json.loads(path.read_text(encoding="utf-8")), "the fix left a file that still parses"
 
 
 # ---- reading the catalog ----------------------------------------------------------------------
-
-
-def test_a_scene_declares_every_moment_its_elements_carry() -> None:
-    assert scene_cues(entry("1", {"1.1": ["1.1:a", "1.1:b"], "1.2": ["1.2:c"]})) == ("1.1:a", "1.1:b", "1.2:c")
-
-
-def test_a_scene_also_declares_the_cues_its_own_map_names() -> None:
-    """A cue a handler alone serves is in the scene's map and on no element, so both are read."""
-    one = entry("1", {"1.1": ["1.1:a"]}, cues={"1.1": ["1.1:a", "1.1:handled"]})
-    assert scene_cues(one) == ("1.1:a", "1.1:handled")
-    flat = entry("1", {}, cues=["1.1:listed"])
-    assert scene_cues(flat) == ("1.1:listed",)
-
-
-def test_a_catalog_row_becomes_the_row_pagescan_judges() -> None:
-    (row,) = measured_rows(entry("1", {"1.1": ["1.1:a"]}))
-    assert row.cue == "1.1:a" and row.box == (0, 0, 10, 10)
 
 
 def test_a_section_whose_page_published_nothing_is_left_unjudged() -> None:

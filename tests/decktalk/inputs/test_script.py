@@ -32,7 +32,7 @@ def test_parse_script_sections_and_directions():
     segs = parse_script(SCRIPT)
     assert [s.index for s in segs] == [0, 1]
     one = segs[1]
-    assert one.title == "Open" and one.target_seconds == 20 and one.placeholders == ["NUMBER"]
+    assert one.title == "Open" and one.target_seconds == 20 and "[NUMBER]" in one.text
     assert "**" not in one.text and "`" not in one.text and "http" not in one.text
     assert "<break" not in one.text and one.text.count(" —") == 1  # a direction between paragraphs becomes one beat
     assert one.word_count == 15

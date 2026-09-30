@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import threading
 from enum import Enum
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import Field, model_validator
 
-from decktalk.findings import DOCS, MODEL, Location
+from decktalk.findings import DOCS, Location, Model
+from decktalk.secret import redact, redacted
 
 REFUSED = 2
 """A command line DeckTalk refused, which a retry as written would refuse again."""
@@ -79,8 +80,10 @@ class DeckTalkError(Exception):
     code: ClassVar[ErrorCode]
 
     def __init__(self, message: str, *, hint: str | None = None, location: Location | None = None) -> None:
-        super().__init__(message)
-        self.hint = hint
+        # A message quotes what a tool or a service said, so every registered secret is taken out of it
+        # before the exception exists, and `str()` of it, its hint and its error object hold none.
+        super().__init__(redact(message))
+        self.hint = redact(hint) if hint is not None else None
         self.location = location
 
 
@@ -164,23 +167,27 @@ class Cancel:
     def check(self) -> None:
         """Raise `Cancelled` when the caller has asked the run to stop, which is what a stage calls."""
         if self._event.is_set():
-            raise Cancelled("the caller stopped this run", hint="Run the command again to start a fresh run.")
+            raise Cancelled("The caller stopped this run.", hint="Run the command again to start a fresh run.")
 
 
-class ErrorInfo(BaseModel):
+class ErrorInfo(Model):
     """The `error` of a result: why the command could not run, and what would let it.
 
     It is filled only when the command could not run at all, so a reader that finds it null knows
     the command ran and that every judgement is in `findings`.
     """
 
-    model_config = MODEL
-
     code: ErrorCode = Field(description="The code a caller dispatches on, such as NOT_BUILT.")
     message: str = Field(description="One sentence saying what is wrong, with the measured detail in it.")
     hint: str | None = Field(None, description="The whole command that would clear this, or null.")
     location: Location | None = Field(None, description="The file and line to open, or null.")
     docs: str = Field(description="The docs page for this code.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _redacted(cls, given: Any) -> Any:  # noqa: ANN401  (whatever the error is being built from)
+        """Take every registered secret out of the error before it exists, whichever path built it."""
+        return redacted(given)
 
     @classmethod
     def of(cls, error: DeckTalkError) -> ErrorInfo:
@@ -192,6 +199,29 @@ class ErrorInfo(BaseModel):
             location=error.location,
             docs=error.code.url,
         )
+
+    @classmethod
+    def of_failure(cls, failure: BaseException) -> ErrorInfo:
+        """Whatever ended a run as a result carries it, which is how a run's last line says why it ended.
+
+        A refusal keeps its own code. An interrupt is the caller stopping the run, as a cancel token
+        is. Anything else is a bug in DeckTalk, and only its type and message are kept, because a
+        traceback carries locals and paths that nothing has checked for a secret.
+        """
+        if isinstance(failure, DeckTalkError):
+            return cls.of(failure)
+        if isinstance(failure, KeyboardInterrupt):
+            return cls(code=ErrorCode.CANCELLED, message="The run was interrupted.", docs=ErrorCode.CANCELLED.url)
+        return cls(
+            code=ErrorCode.INTERNAL,
+            message=f"{type(failure).__name__}: {failure}",
+            hint="Run the command again with -v for the traceback, and open an issue with it.",
+            docs=ErrorCode.INTERNAL.url,
+        )
+
+
+STOPS = (Cancelled, KeyboardInterrupt)
+"""What a caller raises to stop a run, which ends it as stopped rather than as failed."""
 
 
 __all__ = [

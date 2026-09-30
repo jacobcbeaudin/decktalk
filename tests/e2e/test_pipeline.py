@@ -33,6 +33,7 @@ import sys
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import IO, Any
 
 import pytest
@@ -40,10 +41,19 @@ import pytest
 from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words
 from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart, StageDone, StageStart
 from decktalk.findings import Code
-from decktalk.media import MILLISECONDS, audio, ffmpeg, frames
+from decktalk.media import audio, ffmpeg, frames
+from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import Layer, SectionKind, SpendState, Substitute, Voicing, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
+from support.commands import (
+    FOUND_NOTHING,
+    FOUND_SOMETHING,
+    HOSTILE_DIRECTORY,
+    clean_environ,
+    codes,
+    flat,
+)
 from support.timing_policy import (
     BASE_BUDGET_SECONDS,
     FIRST_FETCH_SECONDS,
@@ -56,7 +66,7 @@ from support.timing_policy import (
 )
 
 # An advisory lock on the output directory, where the platform has one.
-fcntl = importlib.util.find_spec("fcntl") and importlib.import_module("fcntl")
+fcntl: ModuleType | None = importlib.import_module("fcntl") if importlib.util.find_spec("fcntl") else None
 
 BUILD_BUDGET_SECONDS = budget(BASE_BUDGET_SECONDS + FIRST_FETCH_SECONDS)
 """How long one test may take, which is generous enough for a cold Chromium fetch on a slow runner.
@@ -68,14 +78,6 @@ page or a stalled encoder, so it is not a measurement of anything and it is deli
 pytestmark = [pytest.mark.e2e, pytest.mark.timeout(BUILD_BUDGET_SECONDS)]
 
 FIXTURE = Path(__file__).parent / "fixture"
-
-HOSTILE_DIRECTORY = "jacob's fïlms 2"
-"""The name every temporary root of this suite sits under, because a path is an input like any other.
-
-An apostrophe and a diacritic reach every shell quote, every ffmpeg concat list and every served URL
-the build writes, and the founder's own films live under a name like this one. Building anywhere
-else would leave the quoting of must 1 proven by nothing that runs on every platform.
-"""
 
 OUT = Path(os.environ.get("E2E_OUT") or Path(__file__).parent.parent / "out") / "e2e" / HOSTILE_DIRECTORY
 
@@ -97,15 +99,6 @@ CUES = (
     "4:3.1:bar",
 )
 """Every cue the fixture declares, as the section number, then the wire id of slide and local name."""
-
-RESERVED_KEYS = frozenset({"schema", "ok", "findings", "error"})
-"""The four keys every result carries, which is the founder's decided JSON contract."""
-
-RETIRED_KEYS = frozenset({"command", "exit_code", "summary", "payload", "data"})
-"""The envelope keys 0.4 wrapped a result in, none of which may come back under any name."""
-
-FOUND_NOTHING, FOUND_SOMETHING = 0, 1
-"""What the CLI exits when it judged nothing and when it judged something, from the CLI design."""
 
 SLATE_SECONDS = 1.0
 """How long section 5's slate plays, which `decktalk.toml` states as `slate_seconds = 1`."""
@@ -168,12 +161,7 @@ class Run:
     @property
     def json(self) -> dict[str, Any]:
         """The one flat object the command printed, checked against the reserved key contract."""
-        doc = json.loads(self.stdout)
-        assert isinstance(doc, dict), f"{self.args}: --json prints one object and nothing else"
-        assert RESERVED_KEYS <= set(doc), f"{self.args}: missing {sorted(RESERVED_KEYS - set(doc))}"
-        assert not RETIRED_KEYS & set(doc), f"{self.args}: carries the retired key {sorted(RETIRED_KEYS & set(doc))}"
-        assert doc["schema"] == 2, doc["schema"]
-        return doc
+        return flat(self.stdout, self.args)
 
     @property
     def findings(self) -> list[dict[str, Any]]:
@@ -190,7 +178,7 @@ class Run:
 
     def codes(self) -> list[Code]:
         """Every finding as the model's own member, which is what the timing policy judges."""
-        return [Code(row["code"]) for row in self.findings]
+        return codes(self.json)
 
 
 BLOCK_THE_NETWORK = '''
@@ -238,12 +226,8 @@ class Project:
         The CLI is reached through `python -m decktalk` rather than through a console script, so the
         command under test is the one the wheel installs and no entry point has to be on PATH.
         """
-        env = dict(os.environ)
+        env = clean_environ(self.shim)
         env["E2E_ATTEMPTS"] = str(self.attempts)
-        # A key or a settings file belonging to whoever runs the suite must not reach the build.
-        for name in ("DECKTALK_PROJECT", "ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID"):
-            env.pop(name, None)
-        env["DECKTALK_CONFIG"] = str(self.shim / "no-machine-config.toml")
         existing = env.get("PYTHONPATH")
         env["PYTHONPATH"] = os.pathsep.join([str(self.shim), *([existing] if existing else [])])
         done = subprocess.run(
@@ -296,28 +280,6 @@ class Project:
 # ---- the fixture, built once -----------------------------------------------------------------------
 
 
-NEEDED_TOOLS = ("chromium", "ffmpeg")
-"""What a build of this fixture reaches for, which `decktalk doctor` is the one command that reports."""
-
-
-def missing_tools(shim: Path) -> list[str]:
-    """Every tool this machine does not hold, asked of DeckTalk through its own doctor command.
-
-    Asking the CLI rather than importing Playwright keeps this file on the surface an author uses,
-    and it means a machine with no browser skips rather than failing halfway through a recording.
-
-    A tool is held when `doctor` reports its version. The browser has no path to report, because it
-    is asked for by launching it rather than by looking for a file, so a row read by its path
-    skipped this whole suite on every machine including one that had just installed everything.
-    """
-    done = subprocess.run(
-        [sys.executable, "-m", "decktalk", "doctor", "--json"], capture_output=True, text=True, check=False, cwd=shim
-    )
-    doc = json.loads(done.stdout)
-    held = {row["tool"]: row for row in doc["tools"]}
-    return [name for name in NEEDED_TOOLS if not (held.get(name) or {}).get("version")]
-
-
 def generate_media(root: Path) -> None:
     """The clip and the three beds, from ffmpeg's own sources, because no media file is tracked."""
     media = root / "media"
@@ -354,8 +316,6 @@ def built(pytestconfig: pytest.Config) -> Iterator[Project]:
     """Copy the fixture, add the runtime and KaTeX, generate the media, and build it with no voice."""
     assert katex_missing() == [], "the packaged KaTeX copy is incomplete"
     OUT.mkdir(parents=True, exist_ok=True)
-    if absent := missing_tools(OUT):
-        pytest.skip(f"{', '.join(absent)} is missing: run `decktalk install` first")
     lock = hold(OUT / "pipeline.lock")
     if lock is None:
         pytest.skip(f"another session is building under {OUT}: set E2E_OUT to build elsewhere")
@@ -459,10 +419,10 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
     logs = {key: built.recording_log(key) for key in SPOKEN}
     assert {key: list(log.findings) for key, log in logs.items()} == {key: [] for key in SPOKEN}
     assert all(log.checks is not None for log in logs.values())
-    assert all(log.t0_seconds is not None and not log.t0_guessed for log in logs.values())
-    assert all(log.url.startswith("http://") for log in logs.values())
+    assert all(log.start is not None and not log.start.guessed for log in logs.values())
+    assert all(log.recording.url.startswith("http://") for log in logs.values())
     # Every project file the page loaded is named, which is what the next run keys its skip on.
-    loaded = {path.as_posix() for path in logs["01"].assets}
+    loaded = set(logs["01"].recording.assets)
     assert "deck/index.html" in loaded
     assert f"deck/{RUNTIME_FILE}" in loaded
 
@@ -470,7 +430,7 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
 def test_no_page_loaded_anything_from_another_origin(built: Project) -> None:
     """The film may depend on no host it does not own, which is what the local origin is for."""
     for key in SPOKEN:
-        assert list(built.recording_log(key).external) == [], key
+        assert list(built.recording_log(key).recording.external) == [], key
 
 
 def test_a_second_record_run_keeps_every_section(built: Project) -> None:
@@ -745,8 +705,8 @@ def test_the_storyboard_narrows_to_one_slide(built: Project) -> None:
 def test_the_equation_typesets_from_the_deck_and_not_from_a_cdn(built: Project) -> None:
     """KaTeX is vendored into deck/katex, so section 4 records with no finding and loads no host."""
     log = built.recording_log("04")
-    assert list(log.findings) == [] and list(log.external) == []
-    assert any(path.as_posix().startswith("deck/katex/") for path in log.assets), log.assets
+    assert list(log.findings) == [] and list(log.recording.external) == []
+    assert any(name.startswith("deck/katex/") for name in log.recording.assets), log.recording.assets
 
 
 def test_the_take_index_and_the_cue_times_agree_with_what_was_built(built: Project) -> None:

@@ -8,17 +8,18 @@ span, which no two effects share.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
-from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS
-from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig
+from decktalk.media.frames import Size
+from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS, MILLISECONDS
+from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig, reference_lead_seconds
 from decktalk.stages.verify.plan import (
     EPSILON,
-    MILLISECONDS,
     PROBE_TAIL_SECONDS,
     Neighbour,
     apart,
@@ -29,7 +30,6 @@ from decktalk.stages.verify.plan import (
     onset_offset_seconds,
     opted_out,
     probe_plan,
-    reference_lead,
     reference_time,
     thin_change,
 )
@@ -40,7 +40,7 @@ FPS = 25
 
 def settings_with(**verify: object) -> Settings:
     """The default tree with one or two verify keys moved, which is what a case names."""
-    return Settings(verify=VerifyConfig(**verify))  # type: ignore[arg-type]
+    return Settings(verify=replace(VerifyConfig(), **verify))
 
 
 # ---- the published numbers this module reads rather than restates -----------------------------
@@ -50,23 +50,23 @@ def test_the_reference_lead_is_the_published_formula_and_not_a_second_copy() -> 
     """The lead is the offset limit plus the grid guard plus whatever extra lead was asked for."""
     settings = settings_with(cue_offset_max_ms=80.0, reference_lead_extra_ms=40.0)
     expected = 80.0 / MILLISECONDS + GUARD_FRAMES / CAPTURE_FPS + 40.0 / MILLISECONDS
-    assert reference_lead(settings) == pytest.approx(expected)
+    assert reference_lead_seconds(settings) == pytest.approx(expected)
 
 
 def test_a_wider_offset_limit_reaches_the_reference_frame_further_back() -> None:
-    assert reference_lead(settings_with(cue_offset_max_ms=200.0)) > reference_lead(
+    assert reference_lead_seconds(settings_with(cue_offset_max_ms=200.0)) > reference_lead_seconds(
         settings_with(cue_offset_max_ms=80.0)
     )
 
 
 def test_a_frame_is_compared_at_a_quarter_of_its_own_size() -> None:
     settings = Settings()
-    assert frame_size(settings) == {"width": settings.video.width // 4, "height": settings.video.height // 4}
+    assert frame_size(settings) == Size(settings.video.width // 4, settings.video.height // 4)
 
 
 def test_a_block_copy_is_one_pixel_per_transform_block() -> None:
     settings = Settings()
-    assert block_size(settings)["width"] == settings.video.width // 8
+    assert block_size(settings).width == settings.video.width // 8
 
 
 # ---- the reference frame -----------------------------------------------------------------------
@@ -75,7 +75,7 @@ def test_a_block_copy_is_one_pixel_per_transform_block() -> None:
 def test_the_reference_frame_sits_the_whole_lead_before_its_cue() -> None:
     settings = settings_with(cue_offset_max_ms=80.0)
     at = reference_time(10.0, 2.0, fade_in=False, dip=0.0, settings=settings, fps=FPS)
-    assert at == pytest.approx(12.0 - reference_lead(settings), abs=1e-4)
+    assert at == pytest.approx(12.0 - reference_lead_seconds(settings), abs=1e-4)
 
 
 def test_a_cue_at_the_very_start_of_a_section_leaves_no_frame_before_it() -> None:
@@ -202,7 +202,7 @@ def test_every_resolved_cue_is_checked_in_section_order_and_then_cue_time(tmp_pa
     }
     path = tmp_path / "cue-times.json"
     path.write_text(json.dumps(document), encoding="utf-8")
-    assert default_checks(CueTimes.parse(path)) == [(1, "early"), (1, "late"), (2, "b")]
+    assert default_checks(CueTimes.read(path)) == [(1, "early"), (1, "late"), (2, "b")]
 
 
 def test_a_run_that_names_sections_checks_only_their_cues(tmp_path: Path) -> None:
@@ -214,7 +214,7 @@ def test_a_run_that_names_sections_checks_only_their_cues(tmp_path: Path) -> Non
     }
     path = tmp_path / "cue-times.json"
     path.write_text(json.dumps(document), encoding="utf-8")
-    assert default_checks(CueTimes.parse(path), [2]) == [(2, "b")]
+    assert default_checks(CueTimes.read(path), [2]) == [(2, "b")]
 
 
 def test_a_film_with_no_cue_times_checks_nothing() -> None:

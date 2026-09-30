@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-from contract.test_runtime import MARKUP_SCENE, deck
 
+from contract.test_runtime import MARKUP_SCENE, deck
 from decktalk.page import REPORT
 from decktalk.toolchain.assets import (
     KATEX_DIR,
@@ -26,7 +27,10 @@ from decktalk.toolchain.assets import (
     probe_path,
     runtime_path,
 )
-from support.browser_pages import chromium_page, write_page
+from support.browser_pages import Tab, chromium_tab, opened, settled, write_page
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 pytestmark = pytest.mark.browser
 
@@ -42,15 +46,21 @@ def instrument(page):
 
 
 @pytest.fixture(scope="module")
-def page():
+def tab():
     """The page a command opens: decktalk-probe.js added as an init script, as the recorder adds it."""
-    yield from chromium_page(instrument)
+    yield from chromium_tab(instrument)
 
 
-@pytest.fixture(autouse=True)
-def _fresh_errors(page):
-    page.errors.clear()
-    yield
+@pytest.fixture
+def page(tab: Tab) -> Page:
+    tab.errors.clear()
+    return tab.page
+
+
+@pytest.fixture
+def errors(tab: Tab) -> list[str]:
+    """What the page threw during this test, which `page` cleared before it began."""
+    return tab.errors
 
 
 # ---- the probe is the recorder's and nobody else's ----------------------------------------
@@ -77,11 +87,9 @@ def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
     bare = page.context.browser.new_page(viewport={"width": 1920, "height": 1080})
     try:
         url = deck(tmp_path, "bare.html")
-        bare.goto(f"{url}?slide=1.1")
-        bare.wait_for_function("() => document.body.dataset.done === '1'")
+        settled(bare, f"{url}?slide=1.1")
         assert bare.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
-        bare.goto(url)
-        bare.evaluate("() => window.__decktalk.ready")
+        opened(bare, url)
         assert bare.evaluate("() => !!document.getElementById('dt-index')")
         # Nothing measures the boxes, which is the one thing a page loses with no probe.
         assert bare.evaluate("() => window.__decktalk.catalog.every((c) => c.elements === undefined)")
@@ -93,7 +101,7 @@ def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
 # ---- the cover and the clock ---------------------------------------------------------------
 
 
-def test_the_cover_hides_the_page_until_the_clock_starts(page, tmp_path):
+def test_the_cover_hides_the_page_until_the_clock_starts(page, errors, tmp_path):
     """The recorder starts capturing before the page settles, so the cover owns every frame until t=0."""
     page.goto(f"{deck(tmp_path, 'cover.html')}?scene=1&t0=signal")
     page.evaluate("() => window.__dtprobe.cover()")
@@ -110,10 +118,10 @@ def test_the_cover_hides_the_page_until_the_clock_starts(page, tmp_path):
     # The clock started on the frame that showed the cover gone, so the page's t=0 is that frame.
     assert page.evaluate("() => window.__decktalk.now()") >= 0
     assert page.evaluate(alive) == 1
-    assert not page.errors
+    assert not errors
 
 
-def test_the_wait_helper_waits_for_the_pages_own_condition(page, tmp_path):
+def test_the_wait_helper_waits_for_the_pages_own_condition(page, errors, tmp_path):
     """The recorder waits with one call, and what it waits for is the fonts and the runtime's promise."""
     body = (
         "<script>DeckTalk.waitFor(new Promise((r) => setTimeout(() => { window.__late = true; r(); }, 300)));</script>"
@@ -121,17 +129,16 @@ def test_the_wait_helper_waits_for_the_pages_own_condition(page, tmp_path):
     page.goto(deck(tmp_path, "wait.html", body + MARKUP_SCENE))
     assert page.evaluate("() => window.__dtprobe.ready()") is True
     assert page.evaluate("() => window.__late") is True
-    assert not page.errors
+    assert not errors
 
 
 # ---- the measured catalog -------------------------------------------------
 
 
-def test_the_catalog_measures_every_cued_element(page, tmp_path):
+def test_the_catalog_measures_every_cued_element(page, errors, tmp_path):
     """In index mode each slide is laid out once, so every element carries a box in stage pixels."""
     head = "<style>.title { position: absolute; left: 120px; top: 80px; width: 600px; height: 90px; margin: 0 }</style>"
-    page.goto(write_page(tmp_path, "boxes.html", MARKUP_SCENE, head=head))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, write_page(tmp_path, "boxes.html", MARKUP_SCENE, head=head))
     rows = page.evaluate("() => window.__decktalk.catalog[0].elements['1.1']")
     by_cue = {row["moments"].get("data-in"): row for row in rows}
     assert set(by_cue) == {"1.1:ball", "1.1:step", None}
@@ -153,13 +160,29 @@ def test_the_catalog_measures_every_cued_element(page, tmp_path):
     assert tex["moments"]["data-in"] == "1.2:sum"
     assert page.evaluate("() => window.__decktalk.mode") == "index"
     assert page.evaluate("() => !!document.getElementById('dt-index')")
-    assert not page.errors
+    assert not errors
+
+
+def test_a_staggered_container_publishes_how_many_children_it_reveals(page, errors, tmp_path):
+    """The static span of a stagger is its count of children, and no attribute carries that count."""
+    scene = """
+    <div data-scene="6">
+      <template data-slide="6.1">
+        <ul data-in="tiles" data-stagger="0.08" data-describe="the three tiles"><li>a</li><li>b</li><li>c</li></ul>
+        <p data-in="line" data-describe="a line">x</p>
+      </template>
+    </div>
+    """
+    opened(page, write_page(tmp_path, "stagger-count.html", scene))
+    rows = page.evaluate("() => window.__decktalk.catalog[0].elements['6.1']")
+    counts = {row["moments"].get("data-in"): row["children"] for row in rows}
+    assert counts == {"6.1:tiles": 3, "6.1:line": 0}
+    assert not errors
 
 
 def test_measuring_leaves_nothing_on_the_stage(page, tmp_path):
     """The measuring layer is hidden while it is used and gone when the index page shows."""
-    page.goto(deck(tmp_path, "clean.html"))
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, deck(tmp_path, "clean.html"))
     assert page.evaluate("() => !document.getElementById('dt-measure')")
     assert page.evaluate("() => !document.getElementById('dt-spans')")
     assert page.evaluate("() => document.querySelectorAll('#dt-pan .dt-slide').length") == 0
@@ -168,8 +191,7 @@ def test_measuring_leaves_nothing_on_the_stage(page, tmp_path):
 
 def test_a_played_scene_is_not_measured(page, tmp_path):
     """Measuring mounts every slide, so it never runs in a mode a recording could be made in."""
-    page.goto(f"{deck(tmp_path, 'unmeasured.html')}?scene=1&t0=0&cues=1.1:ball@0.1")
-    page.evaluate("() => window.__decktalk.ready")
+    opened(page, f"{deck(tmp_path, 'unmeasured.html')}?scene=1&t0=0&cues=1.1:ball@0.1")
     assert page.evaluate("() => window.__decktalk.catalog.every((c) => c.elements === undefined)")
     assert page.evaluate("() => document.querySelectorAll('#dt-pan .dt-slide').length") == 1
 
@@ -217,36 +239,25 @@ def test_a_synced_line_reports_itself_through_the_seam(page, tmp_path):
 # ---- freezing at one cue ------------------------------------------------------------------
 
 
-def test_freeze_at_and_before_one_cue(page, tmp_path):
+def test_freeze_at_and_before_one_cue(page, errors, tmp_path):
     """?after=ID stops after that cue, ?before=ID stops just before it, and after wins over before."""
     url = deck(tmp_path, "freezecue.html")
     on = "(sel) => document.querySelector(sel).classList.contains('dt-shown')"
-    page.goto(f"{url}?slide=1.1&after=1.1:ball")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
-    assert page.evaluate(on, ".ball") is True
-    assert page.evaluate(on, ".step") is False
+    for query, fired, shown in (
+        ("after=1.1:ball", ["1.1:ball"], {".ball": True, ".step": False}),
+        ("before=1.1:step", ["1.1:ball"], {".step": False}),
+        ("before=1.1:ball", [], {".ball": False}),
+        ("after=1.1:step&before=1.1:ball", ["1.1:ball", "1.1:step"], {}),
+    ):
+        settled(page, f"{url}?slide=1.1&{query}")
+        assert page.evaluate("() => window.__decktalk.fired") == fired, query
+        assert {selector: page.evaluate(on, selector) for selector in shown} == shown, query
 
-    page.goto(f"{url}?slide=1.1&before=1.1:step")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
-    assert page.evaluate(on, ".step") is False
-
-    page.goto(f"{url}?slide=1.1&before=1.1:ball")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => window.__decktalk.fired") == []
-    assert page.evaluate(on, ".ball") is False
-
-    page.goto(f"{url}?slide=1.1&after=1.1:step&before=1.1:ball")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
-
-    page.goto(f"{url}?slide=1.1&after=nope")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=1.1&after=nope")
     reported = page.evaluate("() => window.__decktalk.warnings")
     assert [row["code"] for row in reported] == ["PAGE_FREEZE_CUE_UNKNOWN"]
     assert (reported[0]["slide"], reported[0]["cue"]) == ("1.1", "nope")
-    assert not page.errors
+    assert not errors
 
 
 def starter_deck(tmp_path: Path) -> str:
@@ -258,7 +269,7 @@ def starter_deck(tmp_path: Path) -> str:
     return (root / "index.html").resolve().as_uri()
 
 
-def test_the_frame_before_a_cue_and_the_frame_at_it_are_two_pictures(page, tmp_path):
+def test_the_frame_before_a_cue_and_the_frame_at_it_are_two_pictures(page, errors, tmp_path):
     """The two stills a check compares are the reveal itself, so an arrival held back stays hidden.
 
     This is the whole of what `check` measures: it freezes the starter's own slide either side of one
@@ -268,18 +279,16 @@ def test_the_frame_before_a_cue_and_the_frame_at_it_are_two_pictures(page, tmp_p
     """
     url = starter_deck(tmp_path)
     shown = "() => getComputedStyle(document.querySelector('.end')).opacity"
-    page.goto(f"{url}?slide=3.1&before=3.1:make")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=3.1&before=3.1:make")
     assert page.evaluate("() => window.__decktalk.fired") == ["3.1:idea", "3.1:again"]
     assert float(page.evaluate(shown)) == 0
     before = page.screenshot()
 
-    page.goto(f"{url}?slide=3.1&after=3.1:make")
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    settled(page, f"{url}?slide=3.1&after=3.1:make")
     assert page.evaluate("() => window.__decktalk.fired") == ["3.1:idea", "3.1:again", "3.1:make"]
     assert float(page.evaluate(shown)) == 1
     assert page.evaluate("() => document.querySelector('.end').classList.contains('dt-shown')") is True
     after = page.screenshot()
 
     assert before != after
-    assert not page.errors
+    assert not errors
