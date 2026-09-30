@@ -15,6 +15,7 @@ import pytest
 
 from decktalk.artifacts import Take
 from decktalk.inputs import Inputs
+from decktalk.media import audio
 from support.takes import a_take
 
 VOICE_ID = "voice-under-test"
@@ -82,6 +83,16 @@ def make_inputs(tmp_path: Path) -> Callable[..., Inputs]:
         return Inputs.load(root, environ=ENVIRON)
 
     return build
+
+
+@pytest.fixture(autouse=True)
+def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where a take's sound ends is read from real bytes, which no take written here has.
+
+    The fake encoder writes an empty file, so the scan is answered at the seam the stage reads it
+    through, and every placement test measures the arithmetic rather than ffmpeg.
+    """
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
 
 
 @pytest.fixture

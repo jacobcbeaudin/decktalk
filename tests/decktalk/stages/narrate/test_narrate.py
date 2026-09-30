@@ -11,7 +11,6 @@ from decktalk.artifacts import Takes, take_file, words_file
 from decktalk.errors import ApprovalRequired, InputError, ProviderError
 from decktalk.events import Unit
 from decktalk.inputs import Inputs
-from decktalk.media import audio
 from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SpendState, TakeStatus, Voicing, Word
 from decktalk.speech import PROVIDERS, SpeechRequest
@@ -19,12 +18,6 @@ from decktalk.stages.narrate import narrate
 from support.runs import Watched
 
 from .conftest import ENVIRON, SCRIPT, TOML
-
-
-@pytest.fixture(autouse=True)
-def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The fake encoder writes an empty file, so where a take's sound ends is answered at the seam."""
-    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
 
 
 @pytest.fixture(autouse=True)

@@ -25,16 +25,6 @@ from support.runs import Watched
 from .conftest import VOICE_ID, a_paid_take
 
 
-@pytest.fixture(autouse=True)
-def quiet_sound_end(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Where a take's sound ends is read from real bytes, which no take written here has.
-
-    The fake encoder writes an empty file, so the scan is answered at the seam the stage reads it
-    through, and every placement test measures the arithmetic rather than ffmpeg.
-    """
-    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
-
-
 def test_estimated_words_space_the_section_evenly_and_drop_its_punctuation() -> None:
     (segment,) = parse_script("## 1. Open\n\nA bowl, a ball.\n")
     words = estimated_words(segment, 4.0)
