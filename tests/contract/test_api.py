@@ -16,7 +16,7 @@ import enum
 import inspect
 import types
 import typing
-from typing import get_args, get_origin
+from typing import TypeGuard, get_args, get_origin
 
 import pytest
 from pydantic import BaseModel
@@ -36,7 +36,7 @@ ElevenLabs is the only provider, so no provider type is importable.
 EXPORTED = tuple(decktalk.__all__)
 
 
-def owned(obj: object) -> bool:
+def owned(obj: object) -> TypeGuard[type]:
     """Whether a class is one this package defines, which is what the closure has to reach."""
     return inspect.isclass(obj) and getattr(obj, "__module__", "").split(".")[0] == PACKAGE
 

@@ -27,7 +27,6 @@ import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 # `--write` is run as a plain script, where pytest's own `pythonpath` is not in force yet.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -139,8 +138,8 @@ def _admitted(tree: ast.Module) -> Iterator[ast.Constant]:
         elif isinstance(node, ast.Call):
             yield from _from_call(node)
     for node, following in zip(tree.body, [*tree.body[1:], None], strict=True):
-        if _is_a_door(node, following):
-            yield from _literals(cast("ast.Assign | ast.AnnAssign", node).value)
+        if (door := _door(node, following)) is not None:
+            yield from _literals(door)
 
 
 def _from_call(node: ast.Call) -> Iterator[ast.Constant]:
@@ -154,8 +153,8 @@ def _from_call(node: ast.Call) -> Iterator[ast.Constant]:
         yield from _literals(node.args[1])
 
 
-def _is_a_door(node: ast.stmt, following: ast.stmt | None) -> bool:
-    """Whether a module-level statement is the third door, which is a name and its sentence together.
+def _door(node: ast.stmt, following: ast.stmt | None) -> ast.expr | None:
+    """The value a module-level statement names when it is the third door, a name and its sentence together.
 
     A name with no sentence is half a door. The next reader meets the number and still has to work
     out whether it follows from a standard, from arithmetic, or from a measurement of a tool, which
@@ -166,11 +165,11 @@ def _is_a_door(node: ast.stmt, following: ast.stmt | None) -> bool:
     elif isinstance(node, ast.AnnAssign):
         targets, value = [node.target], node.value
     else:
-        return False
+        return None
     if value is None or not all(_named(target) for target in targets):
-        return False
+        return None
     sentence = _sentence(following) if following is not None else None
-    return sentence is not None and sentence.split(":")[0].strip().lower() in OPENERS
+    return value if sentence is not None and sentence.split(":")[0].strip().lower() in OPENERS else None
 
 
 OPENERS = ("truth", "derived", "calibration")
