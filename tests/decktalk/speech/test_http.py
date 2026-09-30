@@ -212,7 +212,7 @@ def test_a_reply_that_is_not_an_object_is_refused_rather_than_read(monkeypatch):
         _http.post_json("https://x.test/a", {}, {}, timeout=5, retries=0)
 
 
-def test_every_call_carries_the_timeout_it_was_given(server):
+def test_every_call_carries_the_timeout_it_was_given(server, monkeypatch):
     """A provider that stopped answering would otherwise hold a build open for as long as the socket did."""
     port = server.server_port
     seen: list[int] = []
@@ -222,11 +222,8 @@ def test_every_call_carries_the_timeout_it_was_given(server):
         seen.append(timeout)
         return real(request, timeout=timeout)
 
-    _http.urlopen = timed  # noqa: SLF001
-    try:
-        _http.post_bytes(f"http://127.0.0.1:{port}/plain", {}, {}, timeout=7, retries=0)
-    finally:
-        _http.urlopen = real
+    monkeypatch.setattr(_http, "urlopen", timed)
+    _http.post_bytes(f"http://127.0.0.1:{port}/plain", {}, {}, timeout=7, retries=0)
     assert seen == [7]
 
 
