@@ -26,11 +26,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import typer
 from pydantic import TypeAdapter
 
 import decktalk
 from decktalk import settings
+from decktalk.cli import catalog
 from decktalk.errors import DeckTalkError
 from decktalk.events import EVENTS, Event, Line
 from decktalk.findings import Applicability, Code, Finding, Location, SettingFix
@@ -80,9 +80,6 @@ HERE = "here"
 
 CLI_TESTS = "tests/decktalk/cli"
 """Where a row the command line owns whole is driven, which is a directory because T8 names its own files."""
-
-APP_NAMES = ("decktalk.cli:app", "decktalk.cli.parser:app", "decktalk.cli.main:app")
-"""Where the Typer app may live. The command set is read from it, so a miss names all three."""
 
 
 @dataclass(frozen=True)
@@ -399,25 +396,12 @@ def test_every_row_that_is_not_a_plain_call_says_why(row: Row):
     assert row.note.endswith("."), row.note
 
 
-def typer_commands() -> set[str]:
-    """Every command the Typer app publishes, with a group's subcommands spelled as the CLI takes them."""
-    for name in APP_NAMES:
-        try:
-            app = resolve(name)
-        except (ImportError, AttributeError):
-            continue
-        command = typer.main.get_command(app)
-        found: set[str] = set()
-        for label, sub in getattr(command, "commands", {}).items():
-            children = getattr(sub, "commands", {})
-            found |= {f"{label} {child}" for child in children} if children else {label}
-        return found
-    pytest.fail(f"no Typer app answered to any of {', '.join(APP_NAMES)}, so the command set cannot be read")
-
-
 def test_the_command_set_of_the_app_is_the_surface_table():
-    """The fourth set: a command the app publishes and the table does not know is undiscoverable."""
-    assert typer_commands() == {row.command for row in SURFACE}
+    """The fourth set: a command the app publishes and the table does not know is undiscoverable.
+
+    The set is the catalog an agent reads, with a group's subcommands spelled as the CLI takes them.
+    """
+    assert {row["command"] for row in catalog.walk()} == {row.command for row in SURFACE}
 
 
 # ---- what every result promises a reader -------------------------------------------------

@@ -26,6 +26,7 @@ from __future__ import annotations
 import pytest
 
 from decktalk import page
+from decktalk.cli import catalog
 from decktalk.errors import ErrorCode
 from decktalk.findings import Code, RaisedBy
 from decktalk.results import RESULTS, Result
@@ -140,37 +141,21 @@ def test_every_result_declares_the_shape_version_the_contract_fixes():
 # ---- the command line, which is the instruction set ------------------------------------------
 
 
-def typer_commands() -> set[str]:
-    """Every command name the Typer app publishes, walked the way `--help` walks it.
-
-    This is the one surface that is not here yet. It fails rather than skips, because a thesis test
-    that passes while the instruction set is missing is the failure the thesis test exists to catch.
-    """
-    try:
-        from decktalk.cli import app  # noqa: PLC0415  (the app is the CLI's, and importing it is the test)
-    except Exception as error:  # noqa: BLE001  (any import failure is the same fact: there is no app)
-        pytest.fail(f"decktalk.cli publishes no Typer app to walk, so no command is discoverable: {error}")
-    from typer.main import get_command  # noqa: PLC0415  (typer is the CLI's dependency, not this file's)
-
-    return set(get_command(app).commands)
-
-
 def test_the_command_set_equals_the_results_the_library_publishes():
     """A result with no command is a call an agent reading `--help` never learns about."""
-    commands = typer_commands()
+    commands = {row["command"].split()[0] for row in catalog.walk()}
     published = {name.split("-")[0] for name in RESULTS} - {"error", "apply"}
     assert published <= commands, sorted(published - commands)
 
 
 def test_every_command_and_every_option_carries_its_own_help():
-    """An option with no help is a knob an agent can pass and cannot read, which is the thesis failing."""
-    from typer.main import get_command  # noqa: PLC0415  (typer is the CLI's dependency, not this file's)
+    """An option with no help is a knob an agent can pass and cannot read, which is the thesis failing.
 
-    from decktalk.cli import app  # noqa: PLC0415  (the app is the CLI's, and importing it is the test)
-
+    The catalog walks a group's subcommands too, so the options of `config set` are held as well.
+    """
     bare: list[str] = []
-    for name, command in get_command(app).commands.items():
-        if not command.help:
-            bare.append(name)
-        bare += [f"{name} {param.name}" for param in command.params if not getattr(param, "help", None)]
+    for row in catalog.walk():
+        if not row["purpose"]:
+            bare.append(row["command"])
+        bare += [f"{row['command']} {param['opts'][0]}" for param in row["params"] if not param["help"]]
     assert bare == [], bare
