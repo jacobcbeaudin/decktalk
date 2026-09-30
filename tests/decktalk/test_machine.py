@@ -44,7 +44,7 @@ from decktalk.media.environment import child_environment
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.project import open as open_project
-from decktalk.results import Layer, Scope, Spend, SpendState, StatusResult, Voicing
+from decktalk.results import FixOutcome, Layer, Scope, Spend, SpendState, StatusResult, Voicing
 from decktalk.settings import BY_ID, ToolsConfig
 from decktalk.speech import VoiceContext, get_provider
 from decktalk.toolchain import assets, command_line
@@ -728,10 +728,17 @@ def test_install_reports_the_browser_it_just_fetched_rather_than_a_blank_row(
 
 INSTALL = ("decktalk", "install")
 """The one command a fix may run, which these tests stand in for with a fake subprocess."""
+INSTALL_FIX = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
 
 
 def a_finding(fix: object) -> Finding:
     return Finding(code=Code.FILE_MISSING, message="x", location=Location(where="a"), fix=fix)
+
+
+def ran(here: Machine, fix: CommandFix, *, unsafe: bool = False) -> FixOutcome:
+    """What applying a machine's fix in a run of its own came to."""
+    with here.run() as run:
+        return apply_fix(run, Code.FILE_MISSING, fix, root=here.cwd, scope=Scope.MACHINE, unsafe=unsafe)
 
 
 def exits(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
@@ -743,35 +750,25 @@ def exits(monkeypatch: pytest.MonkeyPatch, code: int) -> None:
 
 
 def test_a_fix_is_taken_from_the_finding_whose_code_it_resolves() -> None:
-    edit = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
-    assert fixes_of(a_finding(edit)) == ((Code.FILE_MISSING, edit),)
-    assert fixes_of([a_finding(None), a_finding(edit)]) == ((Code.FILE_MISSING, edit),)
+    assert fixes_of(a_finding(INSTALL_FIX)) == ((Code.FILE_MISSING, INSTALL_FIX),)
+    assert fixes_of([a_finding(None), a_finding(INSTALL_FIX)]) == ((Code.FILE_MISSING, INSTALL_FIX),)
 
 
 def test_a_fix_only_a_person_can_make_is_reported_and_never_applied(tmp_path: Path) -> None:
-    here = a_machine(tmp_path)
-    fix = CommandFix(title="t", applicability=Applicability.DISPLAY, command=INSTALL)
-    with here.run() as run:
-        outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    outcome = ran(a_machine(tmp_path), INSTALL_FIX.model_copy(update={"applicability": Applicability.DISPLAY}))
     assert not outcome.applied and "only a person" in (outcome.why or "")
 
 
 def test_a_fix_that_can_lose_work_is_applied_only_on_request(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     here = a_machine(tmp_path)
     exits(monkeypatch, 0)
-    fix = CommandFix(title="t", applicability=Applicability.UNSAFE, command=INSTALL)
-    with here.run() as run:
-        held = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
-        asked = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=True)
-    assert not held.applied and asked.applied
+    fix = INSTALL_FIX.model_copy(update={"applicability": Applicability.UNSAFE})
+    assert not ran(here, fix).applied and ran(here, fix, unsafe=True).applied
 
 
 def test_a_command_that_fails_is_reported_rather_than_raised(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    here = a_machine(tmp_path)
     exits(monkeypatch, 1)
-    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
-    with here.run() as run:
-        outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    outcome = ran(a_machine(tmp_path), INSTALL_FIX)
     assert not outcome.applied and "exited 1" in (outcome.why or "")
     assert "OSError: the cache is read-only" in (outcome.why or "")
 
@@ -781,10 +778,9 @@ def test_a_fix_command_leaves_its_command_exit_time_and_output_on_the_stream(
 ) -> None:
     here = a_machine(tmp_path)
     exits(monkeypatch, 2)
-    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run() as run:
-        apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    with here.events.subscribe(seen.append):
+        ran(here, INSTALL_FIX)
     [line] = [line for line in seen if isinstance(line, Log) and line.source == "machine"]
     assert line.level is Level.WARNING and line.data is not None
     assert line.data["exit"] == 2 and str(line.data["argv"]).endswith("-m decktalk install")
@@ -803,9 +799,7 @@ def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_ma
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     monkeypatch.setattr("decktalk.machine.subprocess.run", record)
-    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
-    with here.run() as run:
-        assert apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False).applied
+    assert ran(here, INSTALL_FIX).applied
     assert asked["argv"] == [sys.executable, "-m", "decktalk", "install"]
     assert asked["timeout"] == FIX_TIMEOUT_SECONDS
     assert asked["env"] == {
@@ -818,15 +812,11 @@ def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_ma
 def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    here = a_machine(tmp_path)
-
     def hang(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(argv, FIX_TIMEOUT_SECONDS)
 
     monkeypatch.setattr("decktalk.machine.subprocess.run", hang)
-    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=INSTALL)
-    with here.run() as run:
-        outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    outcome = ran(a_machine(tmp_path), INSTALL_FIX)
     assert not outcome.applied and "was stopped" in (outcome.why or "")
     [said] = [record for record in caplog.records if record.name == "decktalk.machine"]
     assert said.levelname == "WARNING" and "(timeout)" in said.getMessage()
@@ -839,7 +829,6 @@ def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
 
 def test_a_command_built_without_validation_is_still_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The model refuses a foreign argv, and a model built past its validator meets the same refusal here."""
-    here = a_machine(tmp_path)
     marker = tmp_path / "ran"
 
     def run_it(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
@@ -850,16 +839,19 @@ def test_a_command_built_without_validation_is_still_refused(tmp_path: Path, mon
     hostile = CommandFix.model_construct(
         kind="command", title="t", applicability=Applicability.SAFE, command=("sh", "-c", f"touch {marker}")
     )
-    with here.run() as run:
-        outcome = apply_fix(run, Code.FILE_MISSING, hostile, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
+    outcome = ran(a_machine(tmp_path), hostile)
     assert not outcome.applied and "not one of DeckTalk's own commands" in (outcome.why or "")
     assert not marker.exists()
 
 
+def edit_fix(*edits: Edit) -> EditFix:
+    """A safe fix of these edits, made in order."""
+    return EditFix(title="t", applicability=Applicability.SAFE, edits=edits)
+
+
 def an_edit(file: str | Path, **locator: object) -> EditFix:
     """A safe fix of one edit, which is the shape a finding read from JSON hands `apply`."""
-    edit = Edit.model_validate({"file": file, "new": "written by a fix", **locator})
-    return EditFix(title="t", applicability=Applicability.SAFE, edits=(edit,))
+    return edit_fix(Edit.model_validate({"file": file, "new": "written by a fix", **locator}))
 
 
 def applied(here: Machine, fix: EditFix | RuntimeFix, root: Path) -> tuple[bool, str]:
@@ -928,11 +920,7 @@ def test_a_runtime_copy_that_links_to_another_file_is_never_written_through(tmp_
 def test_a_fix_with_one_refused_edit_writes_none_of_its_edits(tmp_path: Path) -> None:
     root = tmp_path / "project"
     root.mkdir()
-    fix = EditFix(
-        title="t",
-        applicability=Applicability.SAFE,
-        edits=(Edit(file=Path("inside.txt"), line=1, new="x"), Edit(file=Path("../outside.txt"), line=1, new="x")),
-    )
+    fix = edit_fix(Edit(file=Path("inside.txt"), line=1, new="x"), Edit(file=Path("../outside.txt"), line=1, new="x"))
     done, _why = applied(a_machine(tmp_path), fix, root)
     assert not done
     assert not (root / "inside.txt").exists()
@@ -942,13 +930,9 @@ def test_a_fix_whose_second_edit_is_stale_leaves_its_first_file_whole(tmp_path: 
     """Every edit is checked before any file is written, so a fix changes all of its files or none."""
     (tmp_path / "first.txt").write_text("one\n", encoding="utf-8")
     (tmp_path / "second.txt").write_text("moved\n", encoding="utf-8")
-    fix = EditFix(
-        title="t",
-        applicability=Applicability.SAFE,
-        edits=(
-            Edit(file=Path("first.txt"), line=1, old="one", new="changed"),
-            Edit(file=Path("second.txt"), line=1, old="two", new="changed"),
-        ),
+    fix = edit_fix(
+        Edit(file=Path("first.txt"), line=1, old="one", new="changed"),
+        Edit(file=Path("second.txt"), line=1, old="two", new="changed"),
     )
     done, why = applied(a_machine(tmp_path), fix, tmp_path)
     assert not done and "no longer reads" in why
@@ -958,13 +942,9 @@ def test_a_fix_whose_second_edit_is_stale_leaves_its_first_file_whole(tmp_path: 
 
 def test_two_edits_to_one_file_are_made_in_order_and_written_once(tmp_path: Path) -> None:
     (tmp_path / "notes.txt").write_text("one\ntwo\n", encoding="utf-8")
-    fix = EditFix(
-        title="t",
-        applicability=Applicability.SAFE,
-        edits=(
-            Edit(file=Path("notes.txt"), line=1, old="one", new="first"),
-            Edit(file=Path("notes.txt"), line=2, old="two", new="second"),
-        ),
+    fix = edit_fix(
+        Edit(file=Path("notes.txt"), line=1, old="one", new="first"),
+        Edit(file=Path("notes.txt"), line=2, old="two", new="second"),
     )
     done, _why = applied(a_machine(tmp_path), fix, tmp_path)
     assert done
@@ -993,14 +973,10 @@ def test_a_fix_that_breaks_the_project_file_and_sets_a_key_in_it_changes_nothing
     """A key edit is staged with the line edits, so the file both change is judged whole before any lands."""
     (tmp_path / "script.md").write_text("one\n", encoding="utf-8")
     (tmp_path / "decktalk.toml").write_text('[project]\nname = "t"\n', encoding="utf-8")
-    fix = EditFix(
-        title="t",
-        applicability=Applicability.SAFE,
-        edits=(
-            Edit(file=Path("script.md"), line=1, old="one", new="changed"),
-            Edit(file=Path("decktalk.toml"), line=1, old="[project]", new="[project"),
-            Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
-        ),
+    fix = edit_fix(
+        Edit(file=Path("script.md"), line=1, old="one", new="changed"),
+        Edit(file=Path("decktalk.toml"), line=1, old="[project]", new="[project"),
+        Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
     )
     done, why = applied(a_machine(tmp_path), fix, tmp_path)
     assert not done and "not valid TOML" in why
@@ -1010,13 +986,9 @@ def test_a_fix_that_breaks_the_project_file_and_sets_a_key_in_it_changes_nothing
 
 def test_a_line_edit_and_a_key_edit_of_the_project_file_both_land_in_one_write(tmp_path: Path) -> None:
     (tmp_path / "decktalk.toml").write_text('[project]\nname = "t"\n', encoding="utf-8")
-    fix = EditFix(
-        title="t",
-        applicability=Applicability.SAFE,
-        edits=(
-            Edit(file=Path("decktalk.toml"), line=2, old='name = "t"', new='name = "renamed"'),
-            Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
-        ),
+    fix = edit_fix(
+        Edit(file=Path("decktalk.toml"), line=2, old='name = "t"', new='name = "renamed"'),
+        Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),
     )
     done, why = applied(a_machine(tmp_path), fix, tmp_path)
     assert done, why
@@ -1040,13 +1012,9 @@ def test_a_file_the_system_refuses_to_replace_puts_back_every_file_already_repla
         return real(self, target)
 
     monkeypatch.setattr(Path, "replace", full)
-    fix = EditFix(
-        title="t",
-        applicability=Applicability.SAFE,
-        edits=(
-            Edit(file=Path("first.txt"), line=1, old="one", new="changed"),
-            Edit(file=Path("second.txt"), line=1, old="two", new="changed"),
-        ),
+    fix = edit_fix(
+        Edit(file=Path("first.txt"), line=1, old="one", new="changed"),
+        Edit(file=Path("second.txt"), line=1, old="two", new="changed"),
     )
     done, why = applied(a_machine(tmp_path), fix, tmp_path)
     assert (
