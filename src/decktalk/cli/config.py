@@ -14,10 +14,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import typer
-from pydantic import BaseModel
 from typer._click import Context
 
 from decktalk import settings as knobs
@@ -34,7 +33,6 @@ from decktalk.results import (
     ConfigSetResult,
     ConfigUnsetResult,
     Layer,
-    Result,
     Scope,
     SettingValue,
     counted,
@@ -177,18 +175,9 @@ def explain_key(
     here = root if (root / knobs.PROJECT_FILE).exists() else None
     try:
         with _told(session):
-            read = explained(key, project=here, value=value, machine=session.machine)
+            return explained(key, project=here, value=value, machine=session.machine)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
-    winner = next((layer for layer in read.layers if layer.layer is read.winner), None)
-    return ConfigExplainResult(
-        ok=True,
-        sentence=read.description,
-        layer=read.winner,
-        file=winner.file if winner else None,
-        line=winner.line if winner else None,
-        **_shared(read, ConfigExplainResult),
-    )
 
 
 @contextmanager
@@ -211,11 +200,6 @@ def _told(session: sessions.Session) -> Iterator[None]:
 def _root(session: sessions.Session) -> Path:
     """The project directory these verbs act on, which is the one `-p` names or the working directory."""
     return session.flags.project or Path.cwd()
-
-
-def _shared(record: BaseModel, result: type[Result], **stated: object) -> dict[str, Any]:
-    """The fields a library record and its result both name, carried across by name, with `stated` on top."""
-    return {name: value for name, value in record if name in result.model_fields} | stated
 
 
 def _rows(session: sessions.Session, table: str | None, *, defaults: bool, changed: bool) -> tuple[SettingValue, ...]:

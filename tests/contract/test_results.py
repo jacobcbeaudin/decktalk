@@ -214,8 +214,7 @@ SURFACE: tuple[Row, ...] = (
         False,
         False,
         HERE,
-        returns_its_result=False,
-        note="The explainer returns an Explanation, which is the library's record, and the CLI renders it.",
+        note="The explainer answers with the command's result, so the library and the command give one answer.",
     ),
     Row(
         "schema",
@@ -564,8 +563,8 @@ def test_the_explainer_reports_what_a_config_explain_would_render(project: Proje
     """`config explain` is the explainer's record rendered, so the explainer is what this row drives."""
     capsys.readouterr()
     explanation = decktalk.explain("video.width", project=project.root)
+    assert isinstance(explanation, ConfigExplainResult)
     assert explanation.key == "video.width"
-    assert set(ConfigExplainResult.model_fields) >= {"key", "value", "default", "layer", "docs"}
     printed = capsys.readouterr()
     assert printed.out == "" and printed.err == ""
 

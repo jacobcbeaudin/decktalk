@@ -14,13 +14,11 @@ import itertools
 from pathlib import Path
 from typing import Any, cast
 
-from pydantic import Field, JsonValue
-
 from .errors import DeckTalkError, InputError
-from .findings import DOCS, Code, Model
+from .findings import DOCS
 from .inputs import Inputs
 from .machine import Machine
-from .results import Layer, LayerValue, NumberView, Scope, SectionCues
+from .results import ConfigExplainResult, Layer, NumberView, Scope, SectionCues
 from .settings import (
     NUMBERS,
     NUMBERS_BY_ID,
@@ -33,7 +31,7 @@ from .settings import (
     nested,
     value_of,
 )
-from .tomlmap import Key, Nature, Source
+from .tomlmap import Key
 
 Cue = tuple[float, str]
 """One resolved cue as the explainer reads it, which is its second and its wire id, in that order so it sorts."""
@@ -45,43 +43,9 @@ ARRAY_TYPE = "array of numbers"
 """The type of every key that is not a scalar, which is a TOML array of numbers."""
 
 
-class Explanation(Model):
-    """One knob read whole, with the layers under it and the arithmetic above it.
-
-    It is the explainer's own result rather than a command's, because the same three computations
-    serve `config explain`, a fix an agent applies and a renderer that shows a knob beside the
-    finding it moves.
-    """
-
-    key: str = Field(description="The key's dotted name.")
-    description: str = Field(description="What this key changes, in one sentence.")
-    type: str = Field(description="The key's type, as the schema names it.")
-    unit: str | None = Field(None, description="The true unit of the value, or null when it has none.")
-    default: JsonValue = Field(description="The value that would be in force with no override at all.")
-    value: JsonValue = Field(description="The value in force for this project on this machine.")
-    range: str = Field(description="The safe range in words, which is the range the loader enforces.")
-    typed_range: str | None = Field(None, description="The wider range the type admits, which is not enforced.")
-    scope: Scope = Field(description="Which file this key belongs in.")
-    nature: Nature = Field(description="Why this number is a key at all, taste or apparatus.")
-    source: Source = Field(description="Where the value is expected to come from.")
-    evidence: str | None = Field(None, description="What produces the value, for a stated key.")
-    hazard: str | None = Field(None, description="What a value at the edge of the range risks, or null.")
-    requires: str | None = Field(None, description="A relation to another key or number, enforced at load.")
-    see_also: tuple[str, ...] = Field((), description="Keys and published numbers that move with this one.")
-    decides: tuple[Code, ...] = Field((), description="The findings whose verdict this key moves.")
-    environment: str = Field(description="The environment variable that sets this key.")
-    layers: tuple[LayerValue, ...] = Field(description="Every layer that stated this key, lowest first.")
-    winner: Layer = Field(description="The layer the value in force comes from.")
-    numbers: tuple[NumberView, ...] = Field((), description="The derived numbers this key feeds.")
-    candidate: JsonValue | None = Field(None, description="The value asked about, or null when none was.")
-    clamped: tuple[str, ...] = Field((), description="Cues in this project the candidate would clamp.")
-    measured: bool = Field(description="True when this project's resolved cue times were there to read.")
-    docs: str = Field(description="The docs page for this key.")
-
-
 def explain(
     key: str, *, project: Path | None = None, value: str | None = None, machine: Machine | None = None
-) -> Explanation:
+) -> ConfigExplainResult:
     """One knob, its layers, the numbers it feeds and what a candidate would clamp in this project.
 
     `project` is a project directory. Without one the answer is about the defaults and the machine
@@ -102,9 +66,13 @@ def explain(
     )
     candidate = _candidate(known, here, value)
     cues = _cues(opened) if opened else ()
-    return Explanation(
+    layers = here.layers.of(known.id)
+    winner = here.layers.winner(known.id).layer
+    stated = next((layer for layer in layers if layer.layer is winner), None)
+    return ConfigExplainResult(
+        ok=True,
         key=known.id,
-        description=known.description,
+        sentence=known.description,
         type=TYPE_NAMES.get(known.annotation, ARRAY_TYPE),
         unit=known.unit,
         default=json_value(known.default),
@@ -120,8 +88,10 @@ def explain(
         see_also=known.see_also,
         decides=known.decides,
         environment=known.environment,
-        layers=here.layers.of(known.id),
-        winner=here.layers.winner(known.id).layer,
+        layers=layers,
+        layer=winner,
+        file=stated.file if stated else None,
+        line=stated.line if stated else None,
         numbers=_numbers(known, here.settings, candidate),
         candidate=None if candidate is None else json_value(value_of(candidate, known.id)),
         clamped=_clamped(known, candidate or here.settings, cues),
@@ -224,4 +194,4 @@ def _block(section: SectionCues) -> tuple[str, tuple[Cue, ...]]:
     return section.key, tuple(sorted((row.seconds, row.cue) for row in section.cues if row.seconds is not None))
 
 
-__all__ = ["Explanation", "explain"]
+__all__ = ["explain"]

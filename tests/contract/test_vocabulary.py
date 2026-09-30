@@ -57,17 +57,18 @@ from decktalk.findings import Applicability, Certainty, Code, RaisedBy
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     Layer,
+    Nature,
     Scope,
     SectionKind,
     SkipReason,
     SoundKind,
     SoundStatus,
+    Source,
     SpendState,
     Substitute,
     TakeStatus,
     Voicing,
 )
-from decktalk.tomlmap import Nature, Source
 from support import ratchet
 from support.paths import REPO, SRC, TESTS
 

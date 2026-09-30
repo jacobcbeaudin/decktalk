@@ -113,6 +113,35 @@ class Scope(Enum):
     MACHINE = "machine"
 
 
+class Nature(Enum):
+    """The four-way test every number takes, which decides whether it can be a key at all.
+
+    A number is a key when a project could hold another value for a reason a sentence can state.
+    Taste and apparatus are the two answers that make one, and truth and derived are the two that
+    make a published number instead, so an agent that cannot find a knob learns the number is
+    deliberately not one rather than proposing a setting that cannot exist. Calibration is the
+    fifth answer and belongs to a published number alone: it is a fact measured once from a tool
+    DeckTalk drives, so it is neither a standard nor arithmetic and no project may state it.
+    """
+
+    TASTE = "taste"
+    APPARATUS = "apparatus"
+    TRUTH = "truth"
+    DERIVED = "derived"
+    CALIBRATION = "calibration"
+
+
+class Source(Enum):
+    """Where the value in force is expected to come from, which decides who may write it.
+
+    A stated key is one DeckTalk cannot know and the operator must supply, such as a price, which is
+    why it names the evidence the operator reads it from.
+    """
+
+    CHOSEN = "chosen"
+    STATED = "stated"
+
+
 class TakeStatus(Enum):
     """What one run did about one section's take."""
 
@@ -590,7 +619,11 @@ class ConfigUnsetResult(Result):
 
 
 class ConfigExplainResult(Result):
-    """One knob read whole: what it is, what it does, what may be set and what set it."""
+    """One knob read whole: what it is, what it does, what may be set, what set it and what it feeds.
+
+    `decktalk.explain` answers with this and `config explain` prints it, so the library and the
+    command give one answer about one knob.
+    """
 
     key: str = Field(description="The key's dotted name.")
     type: str = Field(description="The key's type, as the schema names it.")
@@ -599,6 +632,13 @@ class ConfigExplainResult(Result):
     default: JsonValue = Field(description="The value that would be in force with no override at all.")
     unit: str | None = Field(None, description="The true unit of the value, or null when it has none.")
     range: str = Field(description="The values this key accepts, as the schema states them.")
+    typed_range: str | None = Field(None, description="The wider range the type admits, which is not enforced.")
+    scope: Scope = Field(description="Which file this key belongs in.")
+    nature: Nature = Field(description="Why this number is a key at all, taste or apparatus.")
+    source: Source = Field(description="Where the value is expected to come from.")
+    evidence: str | None = Field(None, description="What produces the value, for a stated key.")
+    requires: str | None = Field(None, description="A relation to another key or number, enforced at load.")
+    see_also: tuple[str, ...] = Field((), description="Keys and published numbers that move with this one.")
     layer: Layer = Field(description="Which layer set the value in force.")
     file: ProjectPath | None = Field(None, description="The file that set it, or null when no file did.")
     line: int | None = Field(None, ge=1, description="The line in that file, or null.")
@@ -606,7 +646,11 @@ class ConfigExplainResult(Result):
     environment: str = Field(description="The environment variable that sets this key.")
     decides: tuple[Code, ...] = Field((), description="The findings whose verdict this key moves.")
     numbers: tuple[NumberView, ...] = Field((), description="The published numbers this key feeds, worked out here.")
-    clamped: tuple[str, ...] = Field((), description="Every cue in this project the value in force clamps.")
+    candidate: JsonValue | None = Field(None, description="The value asked about, or null when none was.")
+    clamped: tuple[str, ...] = Field(
+        (), description="Every cue in this project the candidate, or the value in force, clamps."
+    )
+    measured: bool = Field(description="True when this project's resolved cue times were there to read.")
     hazard: str | None = Field(None, description="What a value at the edge of the range risks, or null.")
     docs: str = Field(description="The docs page for this key.")
 
@@ -772,6 +816,7 @@ __all__ = [
     "LiveRun",
     "Loudness",
     "NarrateResult",
+    "Nature",
     "NumberView",
     "Panel",
     "RecordResult",
@@ -791,6 +836,7 @@ __all__ = [
     "SoundItem",
     "SoundKind",
     "SoundStatus",
+    "Source",
     "SoundscapeResult",
     "Spend",
     "SpendState",

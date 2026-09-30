@@ -514,6 +514,18 @@
       "title": "Location",
       "type": "object"
     },
+    "Nature": {
+      "description": "The four-way test every number takes, which decides whether it can be a key at all.\n\nA number is a key when a project could hold another value for a reason a sentence can state.\nTaste and apparatus are the two answers that make one, and truth and derived are the two that\nmake a published number instead, so an agent that cannot find a knob learns the number is\ndeliberately not one rather than proposing a setting that cannot exist. Calibration is the\nfifth answer and belongs to a published number alone: it is a fact measured once from a tool\nDeckTalk drives, so it is neither a standard nor arithmetic and no project may state it.",
+      "enum": [
+        "taste",
+        "apparatus",
+        "truth",
+        "derived",
+        "calibration"
+      ],
+      "title": "Nature",
+      "type": "string"
+    },
     "NumberView": {
       "additionalProperties": false,
       "description": "One published number a key feeds, with its inputs at the values in force.",
@@ -616,6 +628,15 @@
       "title": "RuntimeFix",
       "type": "object"
     },
+    "Scope": {
+      "description": "Which file a settings write lands in.",
+      "enum": [
+        "project",
+        "machine"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
     "SettingFix": {
       "additionalProperties": false,
       "description": "A fix that turns a knob, which is the same key space `config set` and `--set` take.",
@@ -656,6 +677,15 @@
       "title": "SettingFix",
       "type": "object"
     },
+    "Source": {
+      "description": "Where the value in force is expected to come from, which decides who may write it.\n\nA stated key is one DeckTalk cannot know and the operator must supply, such as a price, which is\nwhy it names the evidence the operator reads it from.",
+      "enum": [
+        "chosen",
+        "stated"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
     "Stage": {
       "description": "One stage of the pipeline, declared in run order. The value is the word that names it.",
       "enum": [
@@ -671,7 +701,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "One knob read whole: what it is, what it does, what may be set and what set it.",
+  "description": "One knob read whole: what it is, what it does, what may be set, what set it and what it feeds.\n\n`decktalk.explain` answers with this and `config explain` prints it, so the library and the\ncommand give one answer about one knob.",
   "properties": {
     "schema": {
       "const": 2,
@@ -747,6 +777,66 @@
       "title": "Range",
       "type": "string"
     },
+    "typed_range": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The wider range the type admits, which is not enforced.",
+      "title": "Typed Range"
+    },
+    "scope": {
+      "$ref": "#/$defs/Scope",
+      "description": "Which file this key belongs in."
+    },
+    "nature": {
+      "$ref": "#/$defs/Nature",
+      "description": "Why this number is a key at all, taste or apparatus."
+    },
+    "source": {
+      "$ref": "#/$defs/Source",
+      "description": "Where the value is expected to come from."
+    },
+    "evidence": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "What produces the value, for a stated key.",
+      "title": "Evidence"
+    },
+    "requires": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "A relation to another key or number, enforced at load.",
+      "title": "Requires"
+    },
+    "see_also": {
+      "default": [],
+      "description": "Keys and published numbers that move with this one.",
+      "items": {
+        "type": "string"
+      },
+      "title": "See Also",
+      "type": "array"
+    },
     "layer": {
       "$ref": "#/$defs/Layer",
       "description": "Which layer set the value in force."
@@ -810,14 +900,31 @@
       "title": "Numbers",
       "type": "array"
     },
+    "candidate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/JsonValue"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The value asked about, or null when none was."
+    },
     "clamped": {
       "default": [],
-      "description": "Every cue in this project the value in force clamps.",
+      "description": "Every cue in this project the candidate, or the value in force, clamps.",
       "items": {
         "type": "string"
       },
       "title": "Clamped",
       "type": "array"
+    },
+    "measured": {
+      "description": "True when this project's resolved cue times were there to read.",
+      "title": "Measured",
+      "type": "boolean"
     },
     "hazard": {
       "anyOf": [
@@ -846,9 +953,13 @@
     "value",
     "default",
     "range",
+    "scope",
+    "nature",
+    "source",
     "layer",
     "layers",
     "environment",
+    "measured",
     "docs"
   ],
   "title": "ConfigExplainResult",

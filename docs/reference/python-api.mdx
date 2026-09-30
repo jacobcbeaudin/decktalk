@@ -790,12 +790,12 @@ with project.events.subscribe(meter):
 which of the five layers set each key.
 
 ```python
-decktalk.explain(key, *, project=None, value=None) -> Explanation
+decktalk.explain(key, *, project=None, value=None) -> ConfigExplainResult
 ```
 
 `explain` reads one knob whole: its type, its unit, its safe range, the value in force, every layer
-that stated it, the variable that sets it, the stages that read it, the findings it decides, the
-published numbers it feeds, and what a candidate value would clamp in this project. Without
+that stated it, the variable that sets it, the findings it decides, the published numbers it feeds,
+and what a candidate value would clamp in this project. It is the result `config explain` prints. Without
 `project` the answer is about the defaults and the machine alone, which is what an agent reading the
 instruction set before it has a project needs. `value` is a candidate spelled the way a command line
 spells it, held to the same safe range as a value that is written.

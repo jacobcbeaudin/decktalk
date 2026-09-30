@@ -9,13 +9,11 @@ import pytest
 
 from decktalk.artifacts.cue_times import CueTimes
 from decktalk.errors import InputError
-from decktalk.explain import Explanation
 from decktalk.explain import explain as explained
 from decktalk.findings import Code
 from decktalk.machine import Machine, Toolchain
-from decktalk.results import CueTime, Layer, Scope, SectionCues
+from decktalk.results import ConfigExplainResult, CueTime, Layer, Nature, Scope, SectionCues, Source
 from decktalk.settings import BY_ID, NUMBERS_BY_ID, load
-from decktalk.tomlmap import Nature, Source
 
 CUES = CueTimes(
     sections=(
@@ -66,7 +64,7 @@ def lead_at(offset_ms: float) -> float:
     return float(NUMBERS_BY_ID["verify.reference_lead_seconds"].at(settings))  # type: ignore[arg-type]
 
 
-def explain(key: str, **asked: object) -> Explanation:
+def explain(key: str, **asked: object) -> ConfigExplainResult:
     """The explainer as every test here calls it, on the machine above rather than this process's own."""
     return explained(key, machine=MACHINE, **asked)  # type: ignore[arg-type]
 
@@ -85,7 +83,7 @@ class TestTheKeyItself:
     def test_the_record_comes_through_whole(self, project: Path) -> None:
         found = explain("verify.cue_offset_max_ms", project=project)
         key = BY_ID["verify.cue_offset_max_ms"]
-        assert found.description == key.description
+        assert found.sentence == key.description
         assert found.hazard == key.hazard
         assert found.range == key.range
         assert found.unit == "milliseconds"
@@ -110,7 +108,7 @@ class TestTheKeyItself:
     def test_a_knob_is_explainable_before_a_project_exists(self) -> None:
         found = explain("video.output_fps")
         assert found.value == BY_ID["video.output_fps"].default
-        assert found.winner is Layer.DEFAULT
+        assert found.layer is Layer.DEFAULT
         assert found.measured is False
 
 
@@ -120,7 +118,7 @@ class TestTheLayerView:
     def test_every_layer_that_stated_the_key_is_a_row_with_the_winner_last(self, project: Path) -> None:
         found = explain("verify.cue_offset_max_ms", project=project)
         assert [row.layer for row in found.layers] == [Layer.DEFAULT, Layer.PROJECT]
-        assert found.winner is Layer.PROJECT
+        assert found.layer is Layer.PROJECT
         assert found.value == STATED
         assert found.default == BY_ID["verify.cue_offset_max_ms"].default
 
@@ -193,7 +191,7 @@ class TestWhereTheExplainerReads:
     def test_a_project_whose_sections_are_not_written_yet_still_explains_its_knobs(self, tmp_path: Path) -> None:
         (tmp_path / "decktalk.toml").write_text("[verify]\ncue_offset_max_ms = 100\n", encoding="utf-8")
         found = explain("verify.cue_offset_max_ms", project=tmp_path)
-        assert found.winner is Layer.PROJECT and found.measured is False
+        assert found.layer is Layer.PROJECT and found.measured is False
 
     def test_the_machine_layer_is_the_machine_the_caller_named(self, tmp_path: Path) -> None:
         here = Machine(

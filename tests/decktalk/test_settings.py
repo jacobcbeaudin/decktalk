@@ -19,7 +19,7 @@ from hypothesis import strategies as st
 
 from decktalk.errors import ErrorCode, InputError
 from decktalk.findings import Code
-from decktalk.results import Layer, Scope
+from decktalk.results import Layer, Nature, Scope, Source
 from decktalk.settings import (
     BY_ID,
     DOCUMENT_TABLES,
@@ -41,7 +41,7 @@ from decktalk.settings import (
     value_of,
     write,
 )
-from decktalk.tomlmap import Bounds, Key, Nature, Source
+from decktalk.tomlmap import Bounds, Key
 from support.links import link
 
 SCHEMA = Path(__file__).resolve().parents[2] / "schemas" / "v1" / "decktalk.json"

@@ -19,7 +19,6 @@ import difflib
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields, is_dataclass
-from enum import Enum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import UnionType
 from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints, overload
@@ -27,36 +26,7 @@ from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hin
 from .errors import InputError
 from .findings import Code, Location
 from .locate import locate
-from .results import Scope
-
-
-class Nature(Enum):
-    """The four-way test every number takes, which decides whether it can be a key at all.
-
-    A number is a key when a project could hold another value for a reason a sentence can state.
-    Taste and apparatus are the two answers that make one, and truth and derived are the two that
-    make a published number instead, so an agent that cannot find a knob learns the number is
-    deliberately not one rather than proposing a setting that cannot exist. Calibration is the
-    fifth answer and belongs to a published number alone: it is a fact measured once from a tool
-    DeckTalk drives, so it is neither a standard nor arithmetic and no project may state it.
-    """
-
-    TASTE = "taste"
-    APPARATUS = "apparatus"
-    TRUTH = "truth"
-    DERIVED = "derived"
-    CALIBRATION = "calibration"
-
-
-class Source(Enum):
-    """Where the value in force is expected to come from, which decides who may write it.
-
-    A stated key is one DeckTalk cannot know and the operator must supply, such as a price, which is
-    why it names the evidence the operator reads it from.
-    """
-
-    CHOSEN = "chosen"
-    STATED = "stated"
+from .results import Nature, Scope, Source
 
 
 @dataclass(frozen=True)
@@ -601,8 +571,6 @@ __all__ = [
     "PUBLISHED",
     "Bounds",
     "Key",
-    "Nature",
-    "Source",
     "Table",
     "did_you_mean",
     "from_mapping",

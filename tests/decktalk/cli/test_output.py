@@ -120,13 +120,13 @@ Cut build/film13, 17.2 seconds of section 12.
 Found 1 finding, 1 certain.
 """,
         "ConfigExplainResult": """\
-key10 = value13 (project)
+key10 = value13 (override)
   sentence12
   type type11, default default14, range16
   unit unit15
-  hazard hazard35
-  decides PAGE_APPEAR_TOO_LONG
-  docs docs36
+  hazard hazard43
+  decides PAGE_STALLED
+  docs docs44
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,

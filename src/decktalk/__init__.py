@@ -49,7 +49,7 @@ from .events import (
     TakeCharged,
     Unit,
 )
-from .explain import Explanation, explain
+from .explain import explain
 from .findings import (
     Applicability,
     Certainty,
@@ -110,6 +110,7 @@ from .results import (
     LiveRun,
     Loudness,
     NarrateResult,
+    Nature,
     NumberView,
     Panel,
     RecordResult,
@@ -130,6 +131,7 @@ from .results import (
     SoundKind,
     SoundscapeResult,
     SoundStatus,
+    Source,
     Spend,
     SpendState,
     StageRun,
@@ -159,7 +161,6 @@ from .settings import (
     VideoConfig,
     VoiceConfig,
 )
-from .tomlmap import Nature, Source
 
 __all__ = [
     "Applicability",
@@ -197,7 +198,6 @@ __all__ = [
     "ErrorResult",
     "Event",
     "Events",
-    "Explanation",
     "Fetch",
     "Finding",
     "FindingEvent",
