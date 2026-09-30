@@ -905,7 +905,7 @@ class Number:
     unit: str | None
     nature: Nature
     sentence: str
-    at: Callable[[Settings], object]
+    at: Callable[[Settings], float]
     decides: tuple[Code, ...] = ()
 
     @property

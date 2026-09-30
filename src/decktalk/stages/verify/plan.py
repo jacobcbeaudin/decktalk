@@ -17,13 +17,20 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from typing import cast
 
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
 from decktalk.media.frames import Size
 from decktalk.page import MILLISECONDS
-from decktalk.settings import NUMBERS_BY_ID, Settings, VerifyConfig
+from decktalk.settings import (
+    Settings,
+    VerifyConfig,
+    block_height,
+    block_width,
+    probe_height,
+    probe_width,
+    reference_lead_seconds,
+)
 from decktalk.stages import selects
 
 EPSILON = 1e-6
@@ -43,37 +50,24 @@ A probe at the very last frame of a section reads the cut rather than the reveal
 a second is over one frame at every rate DeckTalk encodes at.
 """
 
-REFERENCE_LEAD = "verify.reference_lead_seconds"
-"""The published number that says how far before its cue the reference frame is read."""
-
-PROBE_WIDTH = "verify.probe_width"
-PROBE_HEIGHT = "verify.probe_height"
-BLOCK_WIDTH = "verify.block_width"
-BLOCK_HEIGHT = "verify.block_height"
-"""The published numbers that say what size a frame is compared at, which no key states."""
-
 
 def reference_lead(settings: Settings) -> float:
     """How far before its cue the reference frame is read, which is a published derived number.
 
-    The formula lives once, in the settings layer's own `NUMBERS` table, so a reader who asks what
-    decides the lead meets the arithmetic rather than a second copy of it here.
+    The formula lives once, in the settings layer beside the `NUMBERS` row that publishes it, so a
+    reader who asks what decides the lead meets the arithmetic rather than a second copy of it here.
     """
-    return cast("float", NUMBERS_BY_ID[REFERENCE_LEAD].at(settings))
+    return reference_lead_seconds(settings)
 
 
 def frame_size(settings: Settings) -> Size:
     """The size every probe, control and seam comparison is made at."""
-    return Size(
-        cast("int", NUMBERS_BY_ID[PROBE_WIDTH].at(settings)), cast("int", NUMBERS_BY_ID[PROBE_HEIGHT].at(settings))
-    )
+    return Size(probe_width(settings), probe_height(settings))
 
 
 def block_size(settings: Settings) -> Size:
     """The size of the block-averaged copy the onset scan reads, which cancels the encoder's ringing."""
-    return Size(
-        cast("int", NUMBERS_BY_ID[BLOCK_WIDTH].at(settings)), cast("int", NUMBERS_BY_ID[BLOCK_HEIGHT].at(settings))
-    )
+    return Size(block_width(settings), block_height(settings))
 
 
 @dataclass(frozen=True)

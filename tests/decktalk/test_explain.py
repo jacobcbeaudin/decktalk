@@ -61,7 +61,7 @@ MACHINE = Machine(environ={}, tables={}, config_path=Path("unread.toml"), cwd=Pa
 def lead_at(offset_ms: float) -> float:
     """The reference lead the published formula gives at one cue limit, which is what the explainer must show."""
     settings = load(project={"verify": {"cue_offset_max_ms": offset_ms}}, environ={}).settings
-    return float(NUMBERS_BY_ID["verify.reference_lead_seconds"].at(settings))  # type: ignore[arg-type]
+    return NUMBERS_BY_ID["verify.reference_lead_seconds"].at(settings)
 
 
 def explain(key: str, **asked: object) -> ConfigExplainResult:

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import itertools
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from .errors import DeckTalkError, InputError
 from .findings import DOCS
@@ -162,7 +162,7 @@ def _clamped(key: Key, settings: Settings, cues: tuple[tuple[str, tuple[Cue, ...
     feeds = NUMBERS_BY_ID.get("verify.reference_lead_seconds")
     if feeds is None or key.id not in feeds.reads:
         return ()
-    lead = float(cast("float", feeds.at(settings)))
+    lead = feeds.at(settings)
     out: list[str] = []
     for _section, rows in cues:
         for (earlier, _), (later, cue) in itertools.pairwise(rows):
