@@ -264,11 +264,7 @@ class Document:
     @property
     def page_files(self) -> list[str]:
         """Each page file once, in section order."""
-        seen: list[str] = []
-        for s in self.page_sections:
-            if s.page not in seen:
-                seen.append(s.page)
-        return seen
+        return list(dict.fromkeys(s.page for s in self.page_sections))
 
 
 def tuning_keys(table: str) -> set[str]:
