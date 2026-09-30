@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
@@ -183,14 +184,26 @@ def parse_cue(raw: dict[str, object], where: str, location: Location | None = No
     return cue
 
 
-UNMATCHED = re.compile(r"[^0-9A-Za-z']")
-"""Every character the matcher ignores, which is everything but a letter, a digit and an apostrophe."""
+UNMATCHED = re.compile(r"[^\w']|_")
+"""Every character the matcher ignores, which is everything but a letter, a digit and an apostrophe.
+
+Letters are Unicode letters, so a cue on "café" or "naïve" keeps its accented letter rather than
+matching a word with the letter cut out of it.
+"""
+
+APOSTROPHES = str.maketrans({"\u2019": "'", "\u02bc": "'"})
+"""The typographic apostrophes a script or a voice's transcript may carry, read as the plain one."""
 
 
 def norm(token: str, case_sensitive: bool = False) -> str:
-    """One word with its punctuation dropped, as the matcher compares it."""
-    token = UNMATCHED.sub("", token)
-    return token if case_sensitive else token.lower()
+    """One word as the matcher compares it: composed, apostrophes plain, punctuation dropped.
+
+    A word is composed first, because the same accented letter can arrive as one character from the
+    script and as a letter plus a combining mark from a transcript, and the two must compare equal.
+    Case is folded rather than lowered, so letters whose lower case differs across forms still match.
+    """
+    token = UNMATCHED.sub("", unicodedata.normalize("NFC", token).translate(APOSTROPHES))
+    return token if case_sensitive else token.casefold()
 
 
 @dataclass(frozen=True)

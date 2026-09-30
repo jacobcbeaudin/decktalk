@@ -12,7 +12,7 @@ from hypothesis import strategies as st
 
 from decktalk.errors import InputError
 from decktalk.inputs import cues as cues_module
-from decktalk.inputs.cues import Spoken, load_cues
+from decktalk.inputs.cues import Spoken, load_cues, norm
 from decktalk.results import Word
 
 
@@ -141,3 +141,21 @@ def test_each_row_knows_the_line_its_phrase_is_written_on(tmp_path: Path) -> Non
         ('say "there"', 4),
         ("again", 5),
     ]
+
+
+@pytest.mark.parametrize(
+    ("spoken", "cue", "wanted"),
+    [
+        ("café", "café", "café"),
+        ("café", "café", "café"),
+        ("Naïve,", "naïve", "naïve"),
+        ("don’t", "don't", "don't"),
+    ],
+)
+def test_an_accented_or_typographic_word_is_matched_whole(spoken: str, cue: str, wanted: str) -> None:
+    # Before, every letter outside ASCII was cut out, so "café" matched as "caf".
+    assert norm(spoken) == norm(cue) == wanted
+
+
+def test_a_word_with_its_accent_cut_out_does_not_match_the_accented_word() -> None:
+    assert norm("caf") != norm("café")
