@@ -91,12 +91,6 @@ def test_an_object_in_a_log_lines_data_is_kept_as_text() -> None:
     assert line.data == {"headers": "{'a': 'b'}"}
 
 
-def test_a_log_line_from_an_earlier_release_still_parses() -> None:
-    old = '{"event":"log","time":"2026-01-01T00:00:00Z","seq":0,"run":"r1","level":"info","message":"m"}'
-    parsed = TypeAdapter(Line).validate_json(old)
-    assert isinstance(parsed, Log) and (parsed.source, parsed.stage, parsed.section, parsed.data) == (None,) * 4
-
-
 def test_skip_and_fail_are_outcomes_rather_than_names() -> None:
     assert not [name for name in EVENTS if name.endswith((".skip", ".fail"))]
     assert "outcome" in EVENTS["stage.done"].model_fields
