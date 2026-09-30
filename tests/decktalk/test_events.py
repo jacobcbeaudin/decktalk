@@ -177,6 +177,14 @@ def test_a_subscriber_that_raises_becomes_a_log_line_and_never_stops_the_run() -
 RUNS_IN_A_LONG_LIFE = 1000
 """How many runs a long-lived service opens on one machine in this test, which is enough to see a leak."""
 
+OVERLAP_SECONDS = 0.1
+"""How long one delivery waits for the other thread's to overlap it.
+
+The stream delivers under its order lock, so the two never overlap and the first wait always runs
+out, which breaks the barrier and is itself the failure each thread reports. The wait only bites if
+the lock goes, and then both threads are inside long before it runs out.
+"""
+
 
 def test_two_threads_delivering_at_once_each_report_their_own_subscriber_failure() -> None:
     stream = Events()
@@ -188,7 +196,7 @@ def test_two_threads_delivering_at_once_each_report_their_own_subscriber_failure
             return
         # Each thread waits inside its own delivery until the other is inside too, which is the
         # moment one flag for the whole stream would make the second thread drop its failure line.
-        both_inside.wait(timeout=5)
+        both_inside.wait(timeout=OVERLAP_SECONDS)
         raise RuntimeError("no")
 
     stream.subscribe(angry)
