@@ -126,7 +126,7 @@ def explain(
         candidate=None if candidate is None else json_value(value_of(candidate, known.id)),
         clamped=_clamped(known, candidate or here.settings, cues),
         measured=bool(cues),
-        docs=f"{DOCS}/configuration#{known.id.rsplit('.', 1)[0].replace('.', '-')}",
+        docs=f"{DOCS}/configuration#{known.table.replace('.', '-')}",
     )
 
 

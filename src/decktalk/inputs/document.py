@@ -273,7 +273,7 @@ def tuning_keys(table: str) -> set[str]:
     `[voice]` and `[mix]` each hold knobs beside the content this module parses, so a reader of one
     of them has to know both halves before it can call a key unknown.
     """
-    return {key.id.rsplit(".", 1)[1] for key in BY_ID.values() if key.id.rsplit(".", 1)[0] == table}
+    return {key.name for key in BY_ID.values() if key.table == table}
 
 
 PATH_KEYS = ("clip", "words", "page", "file", "music", "music_markers", "ambience", "slate", "out")

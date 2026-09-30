@@ -1204,9 +1204,9 @@ def refuse_off_scope(data: Mapping[str, Any], allowed: Scope, *, file: Path, tex
         key = BY_ID.get(dotted)
         if key is None or key.scope is allowed:
             continue
-        where = "machine" if key.scope is Scope.MACHINE else "project"
+        where = key.scope.value
         raise InputError(
-            f"{file.name}: '{dotted}' is {key.scope.value}-scoped, so it belongs in {WHERE_SCOPE_BELONGS[key.scope]}.",
+            f"{file.name}: '{dotted}' is {where}-scoped, so it belongs in {WHERE_SCOPE_BELONGS[key.scope]}.",
             hint=f"Remove it from {file.name} and run `decktalk config set {dotted} <value> --where {where}`.",
             location=Location(
                 where=f"[{key.table}] {key.name}",
@@ -1489,10 +1489,9 @@ def _scoped_key(key: str, scope: Scope, *, action: str, rerun: str) -> Key:
     """The key a write or a removal names, refused when no key has that name or it belongs in the other file."""
     known = key_named(key)
     if known.scope is not scope:
-        where = "machine" if known.scope is Scope.MACHINE else "project"
         raise InputError(
             f"'{key}' is {known.scope.value}-scoped, so it cannot be {action} the {scope.value} file.",
-            hint=f"Run `{rerun} --where {where}`.",
+            hint=f"Run `{rerun} --where {known.scope.value}`.",
         )
     return known
 
