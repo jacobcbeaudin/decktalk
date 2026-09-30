@@ -30,6 +30,7 @@ under an old narration t=0.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ from decktalk.errors import InputError
 from decktalk.events import Level, SectionDone, SectionStart, Unit
 from decktalk.findings import Code, Finding, Location
 from decktalk.inputs import Inputs, PageSection
+from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.media import browser
 from decktalk.media.browser import Recording
@@ -61,6 +63,8 @@ from decktalk.stages.record.capture import (
 from decktalk.stages.record.checks import check_recording, recording_findings
 from decktalk.stages.record.pool import Halt, Pool, automatic
 from decktalk.stages.record.start import Start, find_start
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(eq=False)
@@ -317,6 +321,14 @@ def kept_row(inputs: Inputs, run: Run, job: Job) -> SectionRecording:
     return row(inputs, job, seconds, kept=True)
 
 
+def _decided(job: Job, *, force: bool, named: set[int]) -> bool:
+    """Whether a section is recorded again, which is recorded with the one token that says why."""
+    number = job.section.number
+    why = "forced" if force else "named" if number in named else "unchanged" if job.unchanged else "changed"
+    cache_decision(log, "recording", hit=why == "unchanged", why=why, key=job.section.key, section=number)
+    return why != "unchanged"
+
+
 def record(
     inputs: Inputs,
     run: Run,
@@ -333,7 +345,7 @@ def record(
     planned = plan(inputs, run, only)
     passed_over(inputs, run, only)
     named = set(only or ())
-    todo = [job for job in planned if force or job.section.number in named or not job.unchanged]
+    todo = [job for job in planned if _decided(job, force=force, named=named)]
     by_number = {job.section.number: job for job in todo}
     recorder = inputs.settings.record
 

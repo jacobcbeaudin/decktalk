@@ -30,6 +30,7 @@ stage the run stopped after.
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
@@ -40,6 +41,7 @@ from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level, StageDone
 from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Inputs
+from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
 from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, Voicing, counted
@@ -58,6 +60,8 @@ from decktalk.stages.status import (
     read_kept,
     verify_key,
 )
+
+log = logging.getLogger(__name__)
 
 NOTHING = 0.0
 """What a stage that never opened took, which is the elapsed time a skipped row reports."""
@@ -170,7 +174,10 @@ def build(
         opened = clock()
         taken = {name: options[name] for name in OPTIONS[stage]}
         key = _key(stage, inputs, kept, fresh, taken)
-        standing = None if force or key is None else _standing(stage, inputs, kept, key)
+        standing = None
+        if stage in KEEPS:
+            standing, why = (None, FORCED) if force else _standing(stage, inputs, kept, key)
+            cache_decision(log, stage.value, hit=standing is not None, why=why, key=key)
         if standing is not None:
             findings = _keep(stage, run, standing)
             rows.append(StageRun(stage=stage, outcome=Outcome.KEPT, seconds=since(opened)))
@@ -232,13 +239,25 @@ def _key(
     return verify_key(inputs, made, options)
 
 
-def _standing(stage: Stage, inputs: Inputs, kept: Kept, key: str) -> KeptStage | None:
-    """The record of this stage's last run when it still stands, which is what lets a build keep it."""
+FORCED = "forced"
+"""Why a stage was made again when the caller asked for every stage to run."""
+
+
+def _standing(stage: Stage, inputs: Inputs, kept: Kept, key: str | None) -> tuple[KeptStage | None, str]:
+    """The record of this stage's last run when it still stands, which is what lets a build keep it.
+
+    The token beside it says why it stands or why it does not, which is the line an author reads to
+    learn which input moved.
+    """
+    if key is None:
+        return None, "film-missing"
     record: KeptStage | None = getattr(kept, KEEPS[stage])
-    if record is None or record.key != key:
-        return None
+    if record is None:
+        return None, "no-record"
+    if record.key != key:
+        return None, "key-changed"
     stands = holds_film(inputs, record) if stage is Stage.ASSEMBLE else intact(inputs, record)
-    return record if stands else None
+    return (record, "unchanged") if stands else (None, "outputs-changed")
 
 
 def _keep(stage: Stage, run: Run, record: KeptStage) -> list[Finding]:

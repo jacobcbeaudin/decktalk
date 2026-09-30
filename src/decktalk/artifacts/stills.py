@@ -21,6 +21,7 @@ caller still needs. A frame removed too early costs one redraw and is never wron
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import time
@@ -33,6 +34,9 @@ from pydantic import Field
 from decktalk.artifacts.recordings import HASH_DIGITS
 from decktalk.artifacts.stored import Stored, engine_digest, file_digest
 from decktalk.errors import NotBuiltError
+from decktalk.logs import cache_decision
+
+log = logging.getLogger(__name__)
 
 IMAGE_SUFFIX = ".png"
 """What a kept frame is called after its key, which is the lossless format every frozen frame is drawn in."""
@@ -69,20 +73,29 @@ class Stills:
         return self.directory / f"{key}{MANIFEST_SUFFIX}"
 
     def find(self, key: str) -> Path | None:
-        """The kept frame with this key, or None when there is none or a file it was drawn from has moved."""
+        """The kept frame with this key, or None when there is none or a file it was drawn from has moved.
+
+        Each answer is recorded with the reason for it, and a manifest that would not parse is told
+        apart from one that is not there, although both mean the frame is drawn again.
+        """
+        found, why = self._found(key)
+        cache_decision(log, "still", hit=found is not None, why=why, key=key)
+        return found
+
+    def _found(self, key: str) -> tuple[Path | None, str]:
         image = self.image(key)
         if not image.is_file():
-            return None
+            return None, "no-image"
         try:
             kept = StillManifest.read(self.manifest(key))
         except NotBuiltError:
-            return None
+            return None, "manifest-unreadable"
         if kept is None:
-            return None
+            return None, "no-manifest"
         if any(file_digest(self.root / name) != digest for name, digest in kept.files.items()):
-            return None
+            return None, "source-changed"
         os.utime(image)
-        return image
+        return image, "unchanged"
 
     def keep(self, key: str, drawn: Path, loaded: Sequence[str]) -> Path:
         """Keep one frame just drawn under its key, with the files the page had loaded to draw it.

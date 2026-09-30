@@ -14,6 +14,7 @@ zero chooses it here.
 from __future__ import annotations
 
 import contextvars
+import logging
 import os
 import sys
 import threading
@@ -25,6 +26,8 @@ from pathlib import Path
 from playwright.sync_api import Browser
 
 from decktalk.errors import Cancel, Cancelled
+
+log = logging.getLogger(__name__)
 
 CPUS_PER_RECORDING = 2
 """Calibration: the CPUs one recording keeps busy while it presents its frames on time.
@@ -101,8 +104,20 @@ def at_once(requested: int, jobs: int, *, cpus: float, windows: bool) -> int:
 
 
 def automatic(requested: int, jobs: int) -> int:
-    """`at_once` for this machine, which reads its own CPUs and platform."""
-    return at_once(requested, jobs, cpus=available_cpus(), windows=sys.platform == "win32")
+    """`at_once` for this machine, which reads its own CPUs and platform, and records what it chose.
+
+    How many recorders ran is the first thing an operator asks about a slow container, so the choice
+    is recorded beside the CPUs it was made from.
+    """
+    cpus = available_cpus()
+    chosen = at_once(requested, jobs, cpus=cpus, windows=sys.platform == "win32")
+    log.debug(
+        "%d sections are recorded on %d workers.",
+        jobs,
+        chosen,
+        extra={"data": {"workers": chosen, "jobs": jobs, "cpus": cpus, "requested": requested}},
+    )
+    return chosen
 
 
 class Halt:

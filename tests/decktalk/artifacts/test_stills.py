@@ -94,3 +94,26 @@ def test_a_frame_that_is_found_is_kept_however_old_it_was(tmp_path: Path) -> Non
     assert store.find("used") == used
     store.keep("new", drawn(tmp_path), [])
     assert store.find("used") == used
+
+
+def test_every_answer_says_why_it_kept_or_drew_again(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A manifest that would not parse is told apart from one that is not there, although both draw again."""
+    store = a_store(tmp_path)
+
+    def why(key: str) -> tuple[bool, str]:
+        caplog.clear()
+        store.find(key)
+        [record] = [record for record in caplog.records if getattr(record, "data", {}).get("cache") == "still"]
+        return record.data["hit"], record.data["why"]  # type: ignore[attr-defined]
+
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        assert why("k") == (False, "no-image")
+        store.keep("k", drawn(tmp_path), ["deck/index.html"])
+        assert why("k") == (True, "unchanged")
+        store.manifest("k").write_text("{", encoding="utf-8")
+        assert why("k") == (False, "manifest-unreadable")
+        store.manifest("k").unlink()
+        assert why("k") == (False, "no-manifest")
+        store.keep("k", drawn(tmp_path), ["deck/index.html"])
+        (tmp_path / "deck" / "index.html").write_text("<html>edited</html>", encoding="utf-8")
+        assert why("k") == (False, "source-changed")

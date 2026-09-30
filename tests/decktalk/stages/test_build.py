@@ -563,6 +563,40 @@ def test_an_unchanged_build_keeps_assemble_and_verify(
     assert [line.stage for line in kept] == [Stage.ASSEMBLE, Stage.VERIFY]  # type: ignore[attr-defined]
 
 
+def decisions(caplog: pytest.LogCaptureFixture, cache: str) -> list[tuple[bool, str]]:
+    """Every decision one cache made while the log was captured, as whether it kept and why."""
+    return [
+        (record.data["hit"], record.data["why"])  # type: ignore[attr-defined]
+        for record in caplog.records
+        if getattr(record, "data", {}).get("cache") == cache
+    ]
+
+
+def test_every_kept_or_remade_stage_says_why(
+    inputs: Inputs,
+    make_run: Callable[..., Watched],
+    answers: Answers,
+    calls: Calls,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An author who expected a kept assemble learns which input moved from one token rather than a guess."""
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        _built_once(inputs, answers, make_run)
+        assert decisions(caplog, "assemble") == [(False, "no-record")]
+        caplog.clear()
+        build(inputs, make_run(inputs).run)
+        assert decisions(caplog, "assemble") == [(True, "unchanged")]
+        assert decisions(caplog, "verify") == [(True, "unchanged")]
+        caplog.clear()
+        build(inputs, make_run(inputs).run, force=True)
+        assert decisions(caplog, "assemble") == [(False, "forced")]
+        caplog.clear()
+        inputs.script_path.write_text(SCRIPT.replace("A ball.", "A ball rolls."), encoding="utf-8")
+        build(inputs, make_run(inputs).run)
+        assert decisions(caplog, "assemble") == [(False, "key-changed")]
+    del calls
+
+
 def test_force_measures_again(inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls) -> None:
     _built_once(inputs, answers, make_run)
     calls.made.clear()

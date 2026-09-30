@@ -25,6 +25,7 @@ receive at all is refused here before a single request is sent.
 from __future__ import annotations
 
 import contextvars
+import logging
 import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,6 +37,7 @@ from decktalk.events import Level, Unit
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
+from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SectionTake, Spend, SpendState, TakeStatus, Voicing
@@ -66,6 +68,8 @@ from decktalk.stages.narrate.takes import (
     write_placeholder_take,
     write_voiced_take,
 )
+
+log = logging.getLogger(__name__)
 
 
 def narrate(
@@ -250,7 +254,14 @@ def _in_pool(work: Callable[[TakePlan], None], plans: list[TakePlan], *, workers
     """
     if not plans:
         return
-    with ThreadPoolExecutor(max_workers=min(workers, len(plans))) as pool:
+    chosen = min(workers, len(plans))
+    log.debug(
+        "%d takes are made on %d workers.",
+        len(plans),
+        chosen,
+        extra={"data": {"workers": chosen, "jobs": len(plans), "requested": workers}},
+    )
+    with ThreadPoolExecutor(max_workers=chosen) as pool:
         running = [pool.submit(contextvars.copy_context().run, work, plan) for plan in plans]
         for finished in as_completed(running):
             failure = finished.exception()
@@ -270,7 +281,13 @@ def _one_take(
             hint="Set ELEVENLABS_API_KEY in .env, or run without voice.",
             location=at(inputs.workspace.takes_path, inputs.root),
         )
-    if plan.cached and is_cached(digest, inputs.workspace.takes_dir):
+    hit = plan.cached and is_cached(digest, inputs.workspace.takes_dir)
+    # The plan's reason is the sentence `status` prints, and the token is what a reader filters on.
+    why = "unchanged" if hit else "take-missing" if plan.cached else "to-make"
+    cache_decision(
+        log, Unit.TAKE.value, hit=hit, why=why, key=digest, section=plan.segment.index, reason=plan.reason or None
+    )
+    if hit:
         voiced = not is_placeholder(digest)
         return take_row(inputs, plan.segment, plan.chapter, digest, voiced=voiced), TakeStatus.KEPT
     if paid:

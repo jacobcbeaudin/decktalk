@@ -100,6 +100,27 @@ def source_of(name: str) -> str:
     return name.removeprefix(PREFIX)
 
 
+KEY_DIGITS = 12
+"""How much of a cache key a decision line carries, which tells two keys apart without filling the line."""
+
+
+def cache_decision(
+    log: logging.Logger, cache: str, *, hit: bool, why: str, key: str | None = None, **more: object
+) -> None:
+    """Record one decision to keep or remake something cached, and the one short token that says why.
+
+    `why` is a fixed token such as `unchanged`, `no-record`, `key-changed` or `forced`, so a reader
+    answers why a stage rebuilt with a filter on `data.why` rather than by parsing a sentence.
+    """
+    log.debug(
+        "%s %s (%s).",
+        cache,
+        "reused" if hit else "made again",
+        why,
+        extra={"data": {"cache": cache, "hit": hit, "why": why, "key": key[:KEY_DIGITS] if key else None, **more}},
+    )
+
+
 def _redact(record: logging.LogRecord) -> None:
     """Take every registered secret out of the record itself, before it reaches a host's own handlers.
 
@@ -187,4 +208,4 @@ def install() -> RunHandler:
 HANDLER = install()
 """The handler this process installed, which a test reads to see what it could not deliver."""
 
-__all__ = ["HANDLER", "LOGGER", "RunHandler", "Where", "logging_into", "where", "within"]
+__all__ = ["HANDLER", "LOGGER", "RunHandler", "Where", "cache_decision", "logging_into", "where", "within"]

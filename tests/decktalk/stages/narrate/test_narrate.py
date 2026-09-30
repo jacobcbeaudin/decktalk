@@ -77,6 +77,23 @@ def test_a_second_run_keeps_every_take_it_already_has(inputs: Inputs, watched: W
     assert {row.status for row in again.sections} == {TakeStatus.KEPT}
 
 
+def test_every_take_kept_or_made_says_why_and_the_worker_count_is_recorded(
+    inputs: Inputs, watched: Watched, caplog: pytest.LogCaptureFixture
+) -> None:
+    def said() -> list[tuple[int, bool, str]]:
+        rows = [record.data for record in caplog.records if getattr(record, "data", {}).get("cache") == "take"]
+        caplog.clear()
+        return [(row["section"], row["hit"], row["why"]) for row in rows]
+
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        placeholder(inputs, watched)
+        workers = [record.data for record in caplog.records if "workers" in getattr(record, "data", {})]
+        assert workers and workers[0]["jobs"] == 3
+        assert sorted(said()) == [(1, False, "to-make"), (2, False, "to-make"), (3, False, "to-make")]
+        placeholder(inputs, watched)
+        assert sorted(said()) == [(1, True, "unchanged"), (2, True, "unchanged"), (3, True, "unchanged")]
+
+
 def test_a_run_told_to_make_them_again_replaces_them(inputs: Inputs, watched: Watched) -> None:
     placeholder(inputs, watched)
     again = placeholder(inputs, watched, force=True)

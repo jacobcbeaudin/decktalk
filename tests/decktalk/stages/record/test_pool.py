@@ -144,3 +144,13 @@ def test_a_browser_that_will_not_launch_fails_the_pool_with_its_own_reason():
     with Pool([1, 2], 2, refuse, lambda _b, job, _h: job, Cancel()) as recording:
         with pytest.raises(ToolError, match="sandbox"):
             recording.result(1)
+
+
+def test_the_number_of_recorders_chosen_is_recorded_beside_the_cpus_it_was_chosen_from(monkeypatch, caplog):
+    """How many recorders ran is the first question about a slow container."""
+    monkeypatch.setattr(pool, "available_cpus", lambda: 6.0)
+    monkeypatch.setattr(pool.sys, "platform", "linux")
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        assert pool.automatic(0, 5) == 3
+    [record] = [record for record in caplog.records if record.name == "decktalk.stages.record.pool"]
+    assert record.data == {"workers": 3, "jobs": 5, "cpus": 6.0, "requested": 0}  # type: ignore[attr-defined]

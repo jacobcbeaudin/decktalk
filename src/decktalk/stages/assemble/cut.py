@@ -17,6 +17,7 @@ one section it moved, and the rest of the film is read back rather than encoded 
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,12 +30,15 @@ from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.document import frame_dip
+from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
 from decktalk.stages import SECOND_DIGITS, judge, selects
+
+log = logging.getLogger(__name__)
 
 BLACK = "0x000000"
 """Truth: the colour a section with no recording plays, written the way ffmpeg reads a colour."""
@@ -86,7 +90,10 @@ def encode(out: Path, args: Sequence[str], sources: Sequence[Path]) -> bool:
     """
     where = out.with_suffix(KEY_SUFFIX)
     key = CutKey.of(args, sources)
-    if out.is_file() and _key_of(where) == key:
+    held = _key_of(where) if out.is_file() else None
+    why = "no-cut" if not out.is_file() else "no-key" if held is None else "unchanged" if held == key else "key-changed"
+    cache_decision(log, "cut", hit=why == "unchanged", why=why, file=out.name)
+    if why == "unchanged":
         return False
     where.unlink(missing_ok=True)
     ffmpeg.run(*args)

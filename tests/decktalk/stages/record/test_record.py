@@ -242,6 +242,24 @@ def test_forcing_a_run_records_every_section_again(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("driven")
+def test_every_section_recorded_or_kept_says_why(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """A kept section emitted `skipped` with no reason, so a reader could not tell forced from unchanged."""
+    inputs = a_project(tmp_path)
+
+    def said(**options: object) -> list[tuple[int, bool, str]]:
+        caplog.clear()
+        record(inputs, a_run(inputs.root), **options)  # type: ignore[arg-type]
+        rows = [record.data for record in caplog.records if getattr(record, "data", {}).get("cache") == "recording"]
+        return [(row["section"], row["hit"], row["why"]) for row in rows]
+
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        assert said() == [(1, False, "changed"), (2, False, "changed")]
+        assert said() == [(1, True, "unchanged"), (2, True, "unchanged")]
+        assert said(only=[1]) == [(1, False, "named")]
+        assert said(force=True) == [(1, False, "forced"), (2, False, "forced")]
+
+
+@pytest.mark.usefixtures("driven")
 def test_a_section_the_run_passed_over_with_no_recording_at_all_is_a_missing_file(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     result = record(inputs, a_run(inputs.root), only=[1])
