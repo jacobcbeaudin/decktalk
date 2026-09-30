@@ -92,6 +92,9 @@ dev = [
     # `pytest -p no:xdist --inline-snapshot=create,fix <file>` is how a person writes one.
     "inline-snapshot>=0.35",
     "jsonschema>=4.23",
+    # `contract/test_installer.py` runs install.sh under a terminal of its own, because the script
+    # branches on `[ -t 1 ]`, and pexpect is that terminal and the Ctrl-C it sends.
+    "pexpect>=4.9.0",
     "pytest>=8",
     "pytest-cov>=6",
     # A test that needs a listener on this machine asks this plugin for one, and its request log is

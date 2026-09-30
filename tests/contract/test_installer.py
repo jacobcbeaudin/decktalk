@@ -13,10 +13,7 @@ called all do what they say.
 
 from __future__ import annotations
 
-import contextlib
 import os
-import select
-import signal
 import subprocess
 import time
 from collections.abc import Callable
@@ -36,7 +33,7 @@ pytestmark = pytest.mark.skipif(os.name != "posix", reason="install.sh needs a P
 SCRIPT = REPO / "install.sh"
 
 POLL_SECONDS = 0.2
-"""How long one wait on the pty lasts before the run is asked whether it has exited."""
+"""How long one wait on the pty lasts before the run is asked again whether it is ready to interrupt."""
 
 Ready = Callable[[], bool]
 """What a terminal test asks before it interrupts the run, which is whether the moment it tests has come."""
@@ -312,63 +309,8 @@ def test_the_plain_path_still_names_every_step(clean_run: Install) -> None:
 # ---- what needs a real terminal -----------------------------------------------------------------
 #
 # `[ -t 1 ]` is what the script branches on for colour and the spinner, and a pipe cannot
-# reproduce it. A pty is the only way to test that branch: pty.fork
-# makes the pty the child's controlling terminal, which is what /dev/tty then opens. Popen with a
-# pty on stdout would leave the child's controlling terminal pointing at pytest's own.
-
-
-def _child(args: list[str], env: dict[str, str]) -> tuple[int, int]:
-    """Fork install.sh under a pty of its own, and give back its pid and the master end."""
-    import pty  # noqa: PLC0415 - termios is not on Windows, which is what pytestmark refuses this file on
-
-    pid, fd = pty.fork()
-    if pid == 0:  # pragma: no cover - the child execs or dies
-        try:
-            os.execvpe("/bin/sh", ["sh", str(SCRIPT), *args], env)
-        finally:
-            os._exit(127)
-    return pid, fd
-
-
-def _drain(pid: int, fd: int, interrupt_when: Ready | None, timeout: float) -> tuple[bytes, int, bool]:
-    """Read everything the run writes, interrupting it once `interrupt_when` holds, until it closes or exits.
-
-    The interrupt waits for the run to reach the moment it is about rather than for a fixed time,
-    because a wall-clock wait is a race with the machine's load: an interrupt that lands before the
-    script has set its traps tests nothing, and under a parallel suite it landed there in half the runs.
-    """
-    out = b""
-    status, reaped, interrupted = 0, False, False
-    started = time.monotonic()
-    while True:
-        if time.monotonic() - started > timeout:
-            raise AssertionError(f"install.sh did not finish in {timeout}s:\n{out.decode(errors='replace')}")
-        if interrupt_when is not None and not interrupted and interrupt_when():
-            # Ctrl-C reaches the whole foreground process group, not just the shell.
-            os.killpg(os.getpgid(pid), signal.SIGINT)
-            interrupted = True
-        ready, _, _ = select.select([fd], [], [], POLL_SECONDS)
-        if ready:
-            chunk = _read(fd)
-            if not chunk:
-                break
-            out += chunk
-            continue
-        done, got = os.waitpid(pid, os.WNOHANG)
-        if done:
-            status, reaped = got, True
-            break
-    return out, status, reaped
-
-
-def _read(fd: int) -> bytes:
-    """One chunk from the master end, where the end of the run reaches this side as an error."""
-    try:
-        return os.read(fd, 4096)
-    except OSError:
-        # The last process holding the slave closed it: EIO here means the run is over, not that it
-        # went wrong, so the status still has to be collected by the caller.
-        return b""
+# reproduce it. pexpect forks the run under a pty that is its controlling terminal, which is what
+# /dev/tty then opens. Popen with a pty on stdout would leave that pointing at pytest's own.
 
 
 def run_pty(
@@ -377,22 +319,30 @@ def run_pty(
     interrupt_when: Ready | None = None,
     timeout: float = 30.0,
 ) -> tuple[int, str]:
-    """Run install.sh under a pty, interrupted once `interrupt_when` holds, and return its status and output."""
-    pid, fd = _child(args, env)
-    reaped = False
+    """Run install.sh under a pty, interrupted once `interrupt_when` holds, and return its status and output.
+
+    The interrupt waits for the run to reach the moment it is about rather than for a fixed time,
+    because a wall-clock wait is a race with the machine's load: an interrupt that lands before the
+    script has set its traps tests nothing, and under a parallel suite it landed there in half the runs.
+    """
+    import pexpect  # noqa: PLC0415 - its pty spawn needs termios, which is what pytestmark refuses Windows on
+
+    child = pexpect.spawn(
+        "/bin/sh", [str(SCRIPT), *args], env=env, timeout=timeout, encoding="utf-8", codec_errors="replace"
+    )
     try:
-        out, status, reaped = _drain(pid, fd, interrupt_when, timeout)
-        if not reaped:
-            _, status = os.waitpid(pid, 0)
-            reaped = True
-        return os.waitstatus_to_exitcode(status), out.decode(errors="replace")
+        started = time.monotonic()
+        while interrupt_when is not None and not interrupt_when():
+            if time.monotonic() - started > timeout:
+                raise AssertionError(f"install.sh never reached the moment to interrupt in {timeout}s")
+            child.expect([pexpect.TIMEOUT, pexpect.EOF], timeout=POLL_SECONDS)
+        if interrupt_when is not None:
+            child.sendintr()  # Ctrl-C itself, which the terminal hands the whole foreground process group.
+        child.expect(pexpect.EOF)
+        out = str(child.before)  # everything since the last match, and nothing has matched but the end
     finally:
-        with contextlib.suppress(OSError):
-            os.close(fd)
-        if not reaped:
-            with contextlib.suppress(OSError, ChildProcessError):
-                os.kill(pid, signal.SIGKILL)
-                os.waitpid(pid, 0)
+        child.close(force=True)
+    return os.waitstatus_to_exitcode(child.status or 0), out
 
 
 def test_a_terminal_gets_the_spinner_and_a_tick(tmp_path: Path, source: str) -> None:
