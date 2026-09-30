@@ -228,7 +228,7 @@ def _rows(session: sessions.Session, table: str | None, *, defaults: bool, chang
     here = _loaded(session)
     rows: list[SettingValue] = []
     for key in knobs.KEYS:
-        if table and not (key.id == table or key.id.startswith(f"{table}.")):
+        if table and not _under(key.id, table):
             continue
         winner = here.layers.winner(key.id)
         if changed and winner.layer is Layer.DEFAULT:
