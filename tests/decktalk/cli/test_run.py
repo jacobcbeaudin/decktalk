@@ -35,12 +35,39 @@ RECORD = RecordResult(ok=True, run="r", sections=(), seconds=1.0)
 SOUNDSCAPE = SoundscapeResult(ok=True, run="r", items=(), spend=spend(), seconds=1.0)
 ASSEMBLE = AssembleResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, sections=(), seconds=1.0)
 VERIFY = VerifyResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, seconds=1.0)
+MOVING = {
+    "narrate": NARRATE,
+    "cue": CUE,
+    "record": RECORD,
+    "soundscape": SOUNDSCAPE,
+    "assemble": ASSEMBLE,
+    "build": ANSWERS["build"],
+}
+"""The answer each moving command's fake gives."""
 
 
-def test_narrate_with_no_voice_never_buys(run, project) -> None:
-    made = project(narrate=NARRATE)
-    assert run("narrate", "--no-voice").exit_code == 0
-    assert made.called("narrate")["voice"] is Voicing.PLACEHOLDER
+@pytest.mark.parametrize(
+    ("argv", "keyword", "expected"),
+    [
+        (("narrate", "--no-voice"), "voice", Voicing.PLACEHOLDER),  # never buys
+        # cue reads the allowed codes rather than a flag of its own
+        (("cue", "--allow", Code.CUE_UNKNOWN.value), "allow_unknown", True),
+        (("record", "--section", "1,3-4"), "only", (1, 3, 4)),
+        (("soundscape", "--no-voice"), "voice", Voicing.PLACEHOLDER),  # the spending flags are shared
+        (("assemble", "--skip", "soundscape"), "soundscape", False),  # the one stage it can leave out
+        (
+            ("build", "--no-voice", "--from", "record", "--to", "assemble"),
+            "stages",
+            (Stage.RECORD, Stage.SOUNDSCAPE, Stage.ASSEMBLE),
+        ),
+        (("build", "--no-voice"), "stages", None),  # neither end runs the whole pipeline
+    ],
+    ids=["narrate", "cue", "record", "soundscape", "assemble", "build-span", "build-whole"],
+)
+def test_a_stage_flag_reaches_the_library_as_its_keyword(run, project, argv, keyword, expected) -> None:
+    made = project(**{argv[0]: MOVING[argv[0]]})
+    assert run(*argv).exit_code == 0
+    assert made.called(argv[0])[keyword] == expected
 
 
 def test_narrate_with_spend_buys_without_asking(run, project) -> None:
@@ -57,30 +84,6 @@ def test_narrate_keeps_every_paid_take_unless_the_flag_says_otherwise(run, proje
     assert made.called("narrate")["replace_voiced"] is False
     run("narrate", "--no-voice", "--replace-voiced")
     assert made.calls[-1][2]["replace_voiced"] is True
-
-
-def test_cue_reads_the_allowed_codes_rather_than_a_flag_of_its_own(run, project) -> None:
-    made = project(cue=CUE)
-    run("cue", "--allow", Code.CUE_UNKNOWN.value)
-    assert made.called("cue")["allow_unknown"] is True
-
-
-def test_record_passes_the_section_selection_through(run, project) -> None:
-    made = project(record=RECORD)
-    run("record", "--section", "1,3-4")
-    assert made.called("record")["only"] == (1, 3, 4)
-
-
-def test_soundscape_takes_the_spending_flags(run, project) -> None:
-    made = project(soundscape=SOUNDSCAPE)
-    run("soundscape", "--no-voice")
-    assert made.called("soundscape")["voice"] is Voicing.PLACEHOLDER
-
-
-def test_assemble_reads_skip_as_the_one_stage_it_can_leave_out(run, project) -> None:
-    made = project(assemble=ASSEMBLE)
-    run("assemble", "--skip", "soundscape")
-    assert made.called("assemble")["soundscape"] is False
 
 
 def test_assemble_refuses_a_skip_that_names_a_stage_it_does_not_run(run, project) -> None:
@@ -110,19 +113,6 @@ def test_verify_measures_the_film(run, project) -> None:
     ran = run("verify")
     assert made.called("verify")
     assert "build/final/demo.mp4" in ran.out
-
-
-def test_build_runs_the_span_two_flags_name(run, project, answers) -> None:
-    made = project(build=answers["build"])
-    run("build", "--no-voice", "--from", "record", "--to", "assemble")
-    asked = made.called("build")
-    assert asked["stages"] == (Stage.RECORD, Stage.SOUNDSCAPE, Stage.ASSEMBLE)
-
-
-def test_build_with_neither_end_runs_the_whole_pipeline(run, project, answers) -> None:
-    made = project(build=answers["build"])
-    run("build", "--no-voice")
-    assert made.called("build")["stages"] is None
 
 
 def test_build_stops_where_the_exit_code_would_fail_and_carries_on_past_what_is_allowed(run, project, answers) -> None:
