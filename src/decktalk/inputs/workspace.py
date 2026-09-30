@@ -15,16 +15,18 @@
 
 A new artifact gets a property here and nowhere else, so a reader who wants to know what a build
 leaves behind opens one module and no stage ever spells a build path by hand. The five paths the
-pipeline declares are held against `Artifact` by this module's own test, so the two cannot drift.
+pipeline declares are read off `Artifact` itself, moved under whichever build directory the project
+names, so the two cannot drift.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from decktalk.inputs.paths import confined
+from decktalk.pipeline import Artifact
 
 SECTION_CUT = re.compile(r"(\d+)\.(?:mp4|json)")
 """What a section's cut and the key beside it are called, which is how a pair a renumbering left is spotted."""
@@ -53,6 +55,10 @@ class Workspace:
         """
         confined(self.root, self.build)
 
+    def of(self, artifact: Artifact) -> Path:
+        """Where this project keeps one artifact the pipeline declares, under its own build directory."""
+        return self.build.joinpath(*PurePosixPath(artifact.value).parts[1:])
+
     @property
     def narrate_dir(self) -> Path:
         """The take index and the joined narration, which belong to this project alone."""
@@ -65,7 +71,7 @@ class Workspace:
 
     @property
     def takes_path(self) -> Path:
-        return self.narrate_dir / "takes.json"
+        return self.of(Artifact.TAKES)
 
     @property
     def narration_path(self) -> Path:
@@ -74,15 +80,15 @@ class Workspace:
 
     @property
     def cue_times_path(self) -> Path:
-        return self.build / "cue-times.json"
+        return self.of(Artifact.CUE_TIMES)
 
     @property
     def recordings_dir(self) -> Path:
-        return self.build / "recordings"
+        return self.of(Artifact.RECORDINGS)
 
     @property
     def soundscape_dir(self) -> Path:
-        return self.build / "soundscape"
+        return self.of(Artifact.SOUNDSCAPE)
 
     @property
     def sections_dir(self) -> Path:
@@ -113,7 +119,7 @@ class Workspace:
 
     @property
     def final_dir(self) -> Path:
-        return self.build / "final"
+        return self.of(Artifact.FINAL)
 
     @property
     def film(self) -> Path:

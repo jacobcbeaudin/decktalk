@@ -100,20 +100,6 @@ not read would accept a flag that changes nothing, which is the false entry in t
 the founder's thesis exists to prevent. They are read at import, before a test replaces a stage.
 """
 
-ARTIFACTS: dict[Artifact, str] = {
-    Artifact.TAKES: "takes_path",
-    Artifact.CUE_TIMES: "cue_times_path",
-    Artifact.RECORDINGS: "recordings_dir",
-    Artifact.SOUNDSCAPE: "soundscape_dir",
-    Artifact.FINAL: "film",
-}
-"""Each artifact against the workspace property that says where this project keeps it.
-
-`Artifact` publishes the path a project uses by default and `[project] build` may name another, so
-the workspace is asked where a file is and the pipeline is asked what it is for. `FINAL` is the film
-itself rather than the directory around it, because the film is what the stage after it reads.
-"""
-
 
 def build(
     inputs: Inputs,
@@ -332,8 +318,8 @@ def _how_to_get(artifact: Artifact) -> str:
 
 
 def _where(inputs: Inputs, artifact: Artifact) -> Path:
-    """Where this project keeps one artifact, asked of the workspace rather than of the pipeline."""
-    return getattr(inputs.workspace, ARTIFACTS[artifact])
+    """Where this project keeps one artifact, which for `FINAL` is the film the stage after it reads."""
+    return inputs.workspace.film if artifact is Artifact.FINAL else inputs.workspace.of(artifact)
 
 
 def _storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None) -> Path | None:

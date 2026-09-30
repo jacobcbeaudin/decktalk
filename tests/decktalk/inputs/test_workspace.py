@@ -13,20 +13,12 @@ ROOT = Path("/p")
 SPACE = Workspace(root=ROOT, build=ROOT / "build", name="demo")
 
 
-@pytest.mark.parametrize(
-    ("artifact", "path"),
-    [
-        (Artifact.TAKES, SPACE.takes_path),
-        (Artifact.CUE_TIMES, SPACE.cue_times_path),
-        (Artifact.RECORDINGS, SPACE.recordings_dir),
-        (Artifact.SOUNDSCAPE, SPACE.soundscape_dir),
-        (Artifact.FINAL, SPACE.final_dir),
-    ],
-    ids=lambda value: getattr(value, "name", ""),
-)
-def test_every_artifact_the_pipeline_declares_is_the_path_this_module_names(artifact: Artifact, path: Path) -> None:
-    """Two declarations of one path can disagree, so this holds them equal rather than trusting them."""
-    assert ROOT.joinpath(artifact.value) == path
+@pytest.mark.parametrize("artifact", list(Artifact), ids=lambda artifact: artifact.name)
+def test_every_artifact_the_pipeline_declares_moves_with_the_build_directory(artifact: Artifact) -> None:
+    """`Artifact` publishes the default path, and `[project] build` may move the directory under it."""
+    assert SPACE.of(artifact) == ROOT.joinpath(artifact.value)
+    moved = Workspace(root=ROOT, build=ROOT / "out", name="demo")
+    assert moved.of(artifact) == ROOT / "out" / Path(artifact.value).relative_to("build")
 
 
 def test_the_film_is_named_after_the_project() -> None:

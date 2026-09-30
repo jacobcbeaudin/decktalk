@@ -528,12 +528,6 @@ def test_every_stage_of_the_pipeline_declares_the_options_it_takes() -> None:
     assert set(build_module.MODULES) == set(Stage)
 
 
-def test_every_artifact_of_the_pipeline_knows_where_this_project_keeps_it(inputs: Inputs) -> None:
-    """`Artifact` says what a file is for and the workspace says where it is, which is one home each."""
-    for artifact, name in build_module.ARTIFACTS.items():
-        assert isinstance(getattr(inputs.workspace, name), Path), artifact
-
-
 # ---- keeping what has not changed --------------------------------------------------------------
 
 
