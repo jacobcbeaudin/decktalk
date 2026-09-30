@@ -14,6 +14,7 @@ a viewer never opens a half-written film.
 
 from __future__ import annotations
 
+import itertools
 import shutil
 import time
 from collections.abc import Mapping
@@ -212,15 +213,11 @@ def caption_texts(inputs: Inputs, takes: Takes) -> dict[int, str]:
 def build_chapters(rows: list[Rendered], titles: Mapping[int, str]) -> list[Chapter]:
     """One chapter per section, where consecutive sections with the same title share one marker."""
     starts = rendered_starts(rows)
-    chapters: list[Chapter] = []
-    for row in rows:
-        start = starts[row.number]
-        title = titles[row.number]
-        if chapters and chapters[-1].title == title:
-            chapters[-1] = Chapter(start=chapters[-1].start, end=start + row.seconds, title=title)
-        else:
-            chapters.append(Chapter(start=start, end=start + row.seconds, title=title))
-    return chapters
+    grouped = (list(run) for _title, run in itertools.groupby(rows, key=lambda row: titles[row.number]))
+    return [
+        Chapter(start=starts[run[0].number], end=starts[run[-1].number] + run[-1].seconds, title=titles[run[0].number])
+        for run in grouped
+    ]
 
 
 def write_caption_files(paths: Mapping[str, Path], cues: list[CaptionCue], chapters: list[Chapter]) -> None:
@@ -300,24 +297,19 @@ def transcript_sections(inputs: Inputs, cuts: Cuts, texts: Mapping[int, str]) ->
     group them, and each section's speech stays its own paragraph inside it.
     """
     out: list[TranscriptSection] = []
-    for cut in cuts.sections:
-        spoken = texts.get(cut.section, "") or clip_speech(inputs, cut.section)
-        note = cut_note(cut)
-        said = (Said(text=spoken, note=False),) if spoken else ()
-        said += (Said(text=note, note=True),) if note else ()
-        described = described_cues(inputs, cut.section, cut.start)
-        if out and out[-1].chapter == cut.chapter:
-            last = out[-1]
-            out[-1] = TranscriptSection(
-                chapter=last.chapter,
-                start=last.start,
-                end=cut.end,
-                said=last.said + said,
-                describes=last.describes + described,
-            )
-            continue
-        out.append(TranscriptSection(chapter=cut.chapter, start=cut.start, end=cut.end, said=said, describes=described))
+    for chapter, grouped in itertools.groupby(cuts.sections, key=lambda cut: cut.chapter):
+        run = list(grouped)
+        said = tuple(one for cut in run for one in _said(inputs, cut, texts))
+        shown = tuple(one for cut in run for one in described_cues(inputs, cut.section, cut.start))
+        out.append(TranscriptSection(chapter=chapter, start=run[0].start, end=run[-1].end, said=said, describes=shown))
     return out
+
+
+def _said(inputs: Inputs, cut: Cut, texts: Mapping[int, str]) -> tuple[Said, ...]:
+    """What one section contributes to its chapter's text: its speech, then the note on what plays."""
+    spoken = texts.get(cut.section, "") or clip_speech(inputs, cut.section)
+    note = cut_note(cut)
+    return ((Said(text=spoken, note=False),) if spoken else ()) + ((Said(text=note, note=True),) if note else ())
 
 
 # ---- the poster -------------------------------------------------------------------------------
