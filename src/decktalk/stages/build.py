@@ -41,7 +41,7 @@ from decktalk.events import Level, StageDone
 from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
-from decktalk.pipeline import Artifact, Outcome, Stage, required
+from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
 from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, Voicing, counted
 from decktalk.stages import DOLLAR_DIGITS, assemble, clock, cue, narrate, record, since, storyboard, verify
 from decktalk.stages import soundscape as soundscape_stage
@@ -261,12 +261,12 @@ def _remember(
 def _kept_after(kept: Kept, fresh: Mapping[Stage, KeptStage]) -> Kept:
     """The record this run leaves, which keeps a stage it did not reach as the last build left it.
 
-    A run that assembled again and did not verify leaves no measurement behind, because the one
-    the last build took was of another film.
+    A stage this run did not reach that reads from one it did leaves no record behind, because the
+    one the last build left was taken of other inputs. A run that assembled and did not verify
+    therefore keeps no measurement, because the one the last build took was of another film.
     """
     update: dict[str, KeptStage | None] = {KEEPS[stage]: record for stage, record in fresh.items()}
-    if Stage.ASSEMBLE in fresh and Stage.VERIFY not in fresh:
-        update[KEEPS[Stage.VERIFY]] = None
+    update |= {KEEPS[stage]: None for stage in downstream(fresh) if stage in KEEPS and stage not in fresh}
     return kept.model_copy(update=update)
 
 

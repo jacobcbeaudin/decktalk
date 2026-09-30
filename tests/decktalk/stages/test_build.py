@@ -37,6 +37,7 @@ from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import build as build_module
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.build import build
+from decktalk.stages.status import read_kept
 from support.runs import RUN_ID, Watched
 
 RATE = 0.30
@@ -607,3 +608,17 @@ def test_a_run_that_makes_no_film_keeps_nothing(inputs: Inputs, watched: Watched
     calls.made.clear()
     build(inputs, watched.run)
     assert calls.names[-2:] == ["assemble", "verify"]
+
+
+def test_a_run_that_assembles_and_stops_before_verify_keeps_no_measurement(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+) -> None:
+    """Verify reads what assemble writes, so a new film leaves the last measurement describing another one."""
+    _built_once(inputs, answers, make_run)
+    assert read_kept(inputs).verify is not None
+    inputs.script_path.write_text(SCRIPT.replace("A ball.", "A ball rolls."), encoding="utf-8")
+    build(inputs, make_run(inputs).run, stages=Stage.span(None, Stage.ASSEMBLE))
+    assert calls.names[-1] == "assemble"
+    kept = read_kept(inputs)
+    assert kept.assemble is not None
+    assert kept.verify is None

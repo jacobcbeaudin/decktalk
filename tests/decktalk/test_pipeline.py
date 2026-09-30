@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from graphlib import CycleError, TopologicalSorter
+
 import pytest
 
-from decktalk.pipeline import PIPELINE, Artifact, Outcome, Stage, required
+from decktalk import pipeline
+from decktalk.pipeline import NEEDS, PIPELINE, Artifact, Outcome, Stage, downstream, required
 
 
 def test_the_six_stages_are_declared_in_run_order() -> None:
@@ -54,13 +57,49 @@ def test_the_one_stage_that_spends_names_the_way_to_spend_nothing() -> None:
     assert Artifact.RECORDINGS.next_step == "Run `decktalk record` first."
 
 
-def test_no_stage_reads_an_artifact_a_later_stage_writes() -> None:
-    order = list(Stage)
-    for spec in PIPELINE:
-        for artifact in spec.reads:
-            writer = artifact.written_by
-            assert writer is not None, artifact
-            assert order.index(writer) < order.index(spec.stage), (spec.stage, artifact)
+def test_the_declared_order_is_one_the_graph_admits() -> None:
+    """Each stage is ready, in the graph's own sense, by the time the declared order reaches it."""
+    graph = TopologicalSorter(NEEDS)
+    graph.prepare()
+    ready: set[Stage] = set()
+    for stage in Stage:
+        ready |= set(graph.get_ready())
+        assert stage in ready, f"{stage.value} runs before a stage whose artifact it reads"
+        graph.done(stage)
+
+
+def test_the_graph_is_the_table_read_as_edges() -> None:
+    assert NEEDS == {
+        Stage.NARRATE: frozenset(),
+        Stage.CUE: {Stage.NARRATE},
+        Stage.RECORD: {Stage.CUE},
+        Stage.SOUNDSCAPE: {Stage.NARRATE},
+        Stage.ASSEMBLE: {Stage.NARRATE, Stage.RECORD, Stage.SOUNDSCAPE},
+        Stage.VERIFY: {Stage.CUE, Stage.ASSEMBLE},
+    }
+
+
+@pytest.mark.parametrize(
+    ("changed", "stale"),
+    [
+        ((Stage.NARRATE,), (Stage.CUE, Stage.RECORD, Stage.SOUNDSCAPE, Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.CUE,), (Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.SOUNDSCAPE,), (Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.ASSEMBLE,), (Stage.VERIFY,)),
+        ((Stage.VERIFY,), ()),
+        ((Stage.RECORD, Stage.ASSEMBLE), (Stage.VERIFY,)),
+    ],
+)
+def test_a_change_reaches_every_stage_that_reads_from_it_however_far(
+    changed: tuple[Stage, ...], stale: tuple[Stage, ...]
+) -> None:
+    assert downstream(changed) == stale
+
+
+def test_a_table_that_reads_in_a_circle_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(pipeline.NEEDS, Stage.NARRATE, frozenset({Stage.VERIFY}))
+    with pytest.raises(CycleError):
+        downstream((Stage.CUE,))
 
 
 @pytest.mark.parametrize(

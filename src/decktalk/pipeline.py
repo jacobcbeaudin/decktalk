@@ -5,7 +5,9 @@ The pipeline used to be described in three places, which were the stage order, a
 worked out what a partial run still needed, and about ten sentences across the stages telling a
 reader to run an earlier command first. `PIPELINE` is the one declaration all three are read from,
 so the precondition check, the `--from` and `--to` validation, the hint a `NOT_BUILT` error carries
-and the next step `status` reports are one table a reader can see whole.
+and the next step `status` reports are one table a reader can see whole. `NEEDS` reads the same
+table as a graph of stages, so which records a change leaves describing other inputs is derived
+from the edges rather than kept as a rule of its own.
 
 A stage is a member of `Stage` and never its name as a string, so a misspelt stage fails where it is
 written rather than making a comparison quietly false. The value of a member is the one word that
@@ -15,8 +17,10 @@ the `stage` of an event line and the key its row sits under in `build --json`.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import Enum
+from graphlib import TopologicalSorter
 
 
 class Stage(Enum):
@@ -147,6 +151,30 @@ PIPELINE: tuple[StageSpec, ...] = (
 
 SPECS: dict[Stage, StageSpec] = {spec.stage: spec for spec in PIPELINE}
 """Each stage's row, so `Stage.spec` is one lookup rather than a scan."""
+
+
+NEEDS: dict[Stage, frozenset[Stage]] = {
+    spec.stage: frozenset(writer for artifact in spec.reads if (writer := artifact.written_by) is not None)
+    for spec in PIPELINE
+}
+"""Each stage against the stages whose artifacts it reads, which is the table above read as a graph.
+
+The declared order is one the graph admits and not the only one, because `soundscape` reads nothing
+`cue` or `record` writes and runs after them only so the unpaid draft loop stops at `record`.
+"""
+
+
+def downstream(changed: Collection[Stage]) -> tuple[Stage, ...]:
+    """Every other stage that reads, directly or through another stage, what these stages write, in run order.
+
+    The graph's own order reaches a stage only after every stage it reads from, so one pass carries a
+    change as far as it goes, and a table that reads in a circle is refused here as a `CycleError`.
+    """
+    moved = set(changed)
+    for stage in TopologicalSorter(NEEDS).static_order():
+        if moved & NEEDS[stage]:
+            moved.add(stage)
+    return tuple(stage for stage in Stage if stage in moved and stage not in changed)
 
 
 def required(plan: tuple[Stage, ...]) -> tuple[Artifact, ...]:
