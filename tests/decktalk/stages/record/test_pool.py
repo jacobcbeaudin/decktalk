@@ -6,6 +6,7 @@ import contextvars
 import threading
 import time
 from contextlib import ExitStack
+from typing import NoReturn
 
 import pytest
 
@@ -152,7 +153,8 @@ def test_a_second_section_that_failed_on_its_own_is_recorded_and_a_halted_one_is
         if record.name == "decktalk.stages.record.pool" and record.levelname == "WARNING"
     ]
     assert [data_of(record)["section"] for record in later] == [2]
-    assert "section 2 would not load" in later[0].exc_info[1].args[0]  # type: ignore[index]
+    assert later[0].exc_info is not None
+    assert "section 2 would not load" in str(later[0].exc_info[1])
 
 
 def test_a_cancelled_run_stops_every_worker():
@@ -168,7 +170,7 @@ def test_a_cancelled_run_stops_every_worker():
 
 
 def test_a_browser_that_will_not_launch_fails_the_pool_with_its_own_reason():
-    def refuse(_stack: ExitStack) -> object:
+    def refuse(_stack: ExitStack) -> NoReturn:
         raise ToolError("could not launch Chromium with its sandbox on")
 
     with Pool([1, 2], 2, refuse, lambda _b, job, _h: job, Cancel()) as recording:

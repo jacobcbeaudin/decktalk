@@ -69,6 +69,10 @@ class FakePage:
         self.scripts: list[str] = []
         self.report: dict[str, object] = dict(NOTHING_REPORTED)
 
+    def page(self) -> Page:
+        """This page as the Playwright page it stands in for."""
+        return cast("Page", self)
+
     def on(self, event: str, handler: object) -> None:
         """A recorder listens for the page's own exceptions, and this page throws none."""
 

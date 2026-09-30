@@ -18,6 +18,7 @@ import pytest
 
 import decktalk.stages.check as stage
 from decktalk.inputs import Inputs
+from decktalk.media.origin import Assets
 from decktalk.media.pagereport import PageReport
 from decktalk.stages import storyboard
 from decktalk.stages.check import scan
@@ -26,19 +27,11 @@ from support.pages import a_report
 
 
 @dataclass
-class FakeAssets:
-    """What the router recorded, which is the files it served and the other origins a page reached for."""
-
-    paths: list[str] = field(default_factory=list)
-    external: list[str] = field(default_factory=list)
-
-
-@dataclass
 class Drawn:
     """Every frozen state a run asked for, with the share each comparison was told to read."""
 
     page: FakePage
-    assets: FakeAssets
+    assets: Assets
     reports: dict[str, PageReport] = field(default_factory=dict)
     shots: list[str] = field(default_factory=list)
     policies: list[str] = field(default_factory=list)
@@ -52,14 +45,14 @@ class Drawn:
 @pytest.fixture
 def drawn(monkeypatch: pytest.MonkeyPatch) -> Drawn:
     """The browser seams `check` reads, replaced so the stage runs whole and opens nothing."""
-    made = Drawn(page=FakePage(), assets=FakeAssets())
+    made = Drawn(page=FakePage(), assets=Assets(Path()))
 
     @contextmanager
     def chromium(_browser_path: str = "", *, policy: str) -> Iterator[object]:
         made.policies.append(policy)
         yield object()
 
-    def open_project_page(*_args: object, **_kwargs: object) -> tuple[FakePage, FakeAssets]:
+    def open_project_page(*_args: object, **_kwargs: object) -> tuple[FakePage, Assets]:
         return made.page, made.assets
 
     def reports_of(_page: object, _inputs: Inputs, files: Sequence[str]) -> dict[str, PageReport]:
