@@ -242,12 +242,16 @@ def test_an_untrusted_page_reaches_no_origin_but_the_projects_own(tmp_path, url)
     assert served.answer is not None and served.answer["status"] == 200
 
 
+SHUTDOWN_POLL_SECONDS = 0.01
+"""How often a test's server looks for its stop, which `serve_forever` leaves at half a second a test."""
+
+
 @contextlib.contextmanager
 def serving(allowed: Allowed, documents: dict[str, bytes] | None = None) -> Iterator[str]:
     """A preview server answering on its own thread, and the URL it prints, stopped however the test ends."""
     server = open_server(allowed, "127.0.0.1", 0, documents)
     with server:
-        Thread(target=server.serve_forever, daemon=True).start()
+        Thread(target=server.serve_forever, args=(SHUTDOWN_POLL_SECONDS,), daemon=True).start()
         try:
             yield served_url(server)
         finally:
@@ -465,18 +469,15 @@ def test_the_preview_server_prints_nothing_when_a_request_raises_and_logs_no_que
     """socketserver printed a traceback to stderr when a handler raised, which no renderer could hold."""
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text("<p>served</p>", encoding="utf-8")
-    server = open_server(whole(tmp_path), "127.0.0.1", 0)
 
     def broken(_handler: object) -> None:
         raise RuntimeError("the handler broke")
 
-    with caplog.at_level("DEBUG", logger="decktalk"), server:
-        Thread(target=server.serve_forever, daemon=True).start()
-        assert _get(f"{served_url(server)}/deck/index.html?token=sk_query_canary")[0] == 200
+    with caplog.at_level("DEBUG", logger="decktalk"), serving(whole(tmp_path)) as base:
+        assert _get(f"{base}/deck/index.html?token=sk_query_canary")[0] == 200
         monkeypatch.setattr(origin._Handler, "send_head", broken)
         with contextlib.suppress(OSError):
-            _get(f"{served_url(server)}/deck/index.html")
-        server.shutdown()
+            _get(f"{base}/deck/index.html")
     assert capsys.readouterr().err == ""
     said = [record.getMessage() for record in caplog.records if record.name == "decktalk.media.origin"]
     assert any("GET /deck/index.html HTTP" in line for line in said)
