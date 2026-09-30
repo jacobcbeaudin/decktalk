@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
@@ -51,6 +52,8 @@ from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult
 from decktalk.settings import PROJECT_FILE
 from decktalk.stages import judge
 from decktalk.stages.record import stale_recording
+
+log = logging.getLogger(__name__)
 
 LINE = TypeAdapter(Line)
 """The one reader of an event file, so a line this library cannot read is never taken for a run."""
@@ -268,7 +271,8 @@ def voiced_text(inputs: Inputs) -> dict[int, str]:
     """
     try:
         return {segment.index: segment.spoken for segment in inputs.script()}
-    except DeckTalkError:
+    except DeckTalkError as unread:
+        log.debug("The script did not parse, so no take is judged by its words.", exc_info=unread)
         return {}
 
 

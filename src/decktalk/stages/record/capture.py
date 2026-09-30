@@ -23,6 +23,7 @@ would say nothing had moved.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -35,6 +36,8 @@ from decktalk.media.origin import page_url
 from decktalk.page import LIST_SEPARATOR, TIME_MARK, Q
 from decktalk.results import Word
 from decktalk.stages import SECOND_DIGITS
+
+log = logging.getLogger(__name__)
 
 SIGNAL = "signal"
 """What `t0` is set to so the page starts its clock on the recorder's signal rather than on a second."""
@@ -221,7 +224,8 @@ def page_source(path: Path) -> str:
     """A page as text, or nothing when the project no longer has it, which `scene_url` reports."""
     try:
         return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    except OSError as unread:
+        log.debug("%s could not be read, so it is hashed as empty.", path.name, exc_info=unread)
         return ""
 
 

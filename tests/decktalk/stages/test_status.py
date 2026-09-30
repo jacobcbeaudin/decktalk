@@ -360,3 +360,20 @@ def test_the_report_names_the_two_files_the_author_writes(tmp_path: Path) -> Non
     assert result.script == Path("script.md")
     assert result.cues == Path("cues.json")
     assert result.name == "demo"
+
+
+def test_a_script_that_will_not_parse_is_recorded_rather_than_read_as_no_words(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from decktalk.errors import InputError  # noqa: PLC0415
+    from decktalk.stages.status import voiced_text  # noqa: PLC0415
+
+    class Unparsed:
+        def script(self) -> None:
+            raise InputError("script.md has no sections.")
+
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        assert voiced_text(Unparsed()) == {}  # type: ignore[arg-type]
+    [record] = [record for record in caplog.records if record.name == "decktalk.stages.status"]
+    assert record.exc_info is not None and "no sections" in str(record.exc_info[1])
+    del tmp_path, monkeypatch

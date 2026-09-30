@@ -15,6 +15,7 @@ the engine that records it, and `check --fix` replaces that copy.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -23,6 +24,8 @@ from pathlib import Path
 
 from decktalk.errors import InputError
 from decktalk.toolchain import assets
+
+log = logging.getLogger(__name__)
 
 STARTER = "starter"
 """The packaged project `init` writes when no example is named, which is not itself an example."""
@@ -186,8 +189,9 @@ def _link(root: Path) -> Path:
     relative = Path(os.path.relpath(root / SKILLS_DIR, link.parent))
     try:
         link.symlink_to(relative, target_is_directory=True)
-    except OSError:
+    except OSError as refused:
         # Windows without developer mode, and any filesystem that has no links at all.
+        log.debug("%s could not be a link, so it is a copy.", LINK_DIR, exc_info=refused)
         shutil.copytree(root / SKILLS_DIR, link)
     return link
 

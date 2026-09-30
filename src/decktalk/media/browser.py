@@ -429,6 +429,10 @@ def page_error_text(err: object) -> str:
     return message
 
 
+CONSOLE_KINDS = frozenset(("error", "warning"))
+"""The console lines of a recorded page that are kept, which are the ones an author wrote to be seen."""
+
+
 def page_errors(page: Page, caught: list[str], label: str) -> list[str]:
     """The page's uncaught exceptions, plus one entry when the runtime catalog is missing. Each is logged."""
     errors = list(caught)
@@ -474,11 +478,20 @@ class Capture:
     opened: float  # time.monotonic() when the context was created, which is when capture may have begun
     page: Page | None = None
 
-    def open(self, url: str, caught: list[str]) -> Page:
-        """The one page of this recording, loaded, with its uncaught exceptions collected into `caught`."""
+    def open(self, url: str, caught: list[str], console: list[tuple[str, str]] | None = None) -> Page:
+        """The one page of this recording, loaded, with its uncaught exceptions collected into `caught`.
+
+        The page's own `console.error` and `console.warn` lines are the author's diagnostics, so they are
+        collected into `console` as their kind and text, and recorded once the recording is read.
+        """
         with driving(f"could not open {url}"):
             self.page = self.context.new_page()
         self.page.on("pageerror", lambda err: caught.append(page_error_text(err)))
+        if console is not None:
+            self.page.on(
+                "console",
+                lambda said: console.append((said.type, said.text)) if said.type in CONSOLE_KINDS else None,
+            )
         with driving(f"could not load {url}"):
             self.page.goto(url, wait_until="load")
         return self.page
@@ -581,7 +594,8 @@ def record_page(
         browser, allowed, width=width, height=height, color_scheme=color_scheme, motion=motion, documents=documents
     ) as capture:
         caught: list[str] = []
-        page = capture.open(url, caught)
+        console: list[tuple[str, str]] = []
+        page = capture.open(url, caught, console)
         loaded = time.monotonic()
         await_ready(page)
         # Settle after load, and never start the clock before the recorder has certainly begun
@@ -593,6 +607,8 @@ def record_page(
         waited(page, seconds, check)
         report = read_report(page, out.stem)
         errors = page_errors(page, caught, out.stem)
+        for kind, text in console:
+            log.debug("[page] %s  console %s: %s", out.stem, kind, text, extra={"data": {"kind": kind, "text": text}})
         recording = Recording(
             url=url,
             assets=tuple(capture.assets.paths),

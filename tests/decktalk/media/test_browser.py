@@ -674,3 +674,29 @@ def test_a_frozen_frame_is_taken_once_the_page_is_ready_and_has_painted_twice(tm
     order = [script for script in page.scripts if browser.READY_JS in script or browser.PAINTED_JS in script]
     assert [browser.READY_JS in script for script in order] == [True, False]
     assert waits == [], "no fixed settle is spent on top of ready() and two painted frames"
+
+
+def test_a_recorded_pages_own_errors_and_warnings_are_collected_and_its_chatter_is_not(tmp_path) -> None:
+    """A page's console.error and console.warn are the author's diagnostics, and nothing recorded them."""
+
+    class Said:
+        def __init__(self, kind: str, text: str) -> None:
+            self.type, self.text = kind, text
+
+    class Page:
+        def __init__(self) -> None:
+            self.handlers: dict[str, object] = {}
+
+        def on(self, event: str, handler: object) -> None:
+            self.handlers[event] = handler
+
+        def goto(self, _url: str, **_kwargs: object) -> None:
+            for kind, text in (("log", "chatter"), ("warning", "a slow font"), ("error", "no cue 2.1")):
+                self.handlers["console"](Said(kind, text))  # type: ignore[operator]
+
+    page = Page()
+    context = type("Context", (), {"new_page": lambda _self: page})()
+    capture = browser.Capture(context=context, assets=None, directory=tmp_path, opened=0.0)  # type: ignore[arg-type]
+    console: list[tuple[str, str]] = []
+    capture.open("http://project.localhost/deck/", [], console)
+    assert console == [("warning", "a slow font"), ("error", "no cue 2.1")]
