@@ -8,7 +8,7 @@ import pytest
 
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.media import audio, browser
-from decktalk.results import AssembleResult, Substitute
+from decktalk.results import AssembleResult, Substitute, Word
 from decktalk.stages.assemble import assemble
 
 from .conftest import TITLED_TOML, draw_slate, open_run, spoken, take_index, write_project
@@ -22,7 +22,7 @@ def no_poster(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("decktalk.stages.assemble.render_poster", lambda *_args: None)
 
 
-def a_film(inputs, take_index, spoken, *, voiced: bool = True):
+def a_film(inputs, *, voiced: bool = True):
     """A project whose three page sections all have takes and recordings, which is a whole film."""
     inputs.workspace.recordings_dir.mkdir(parents=True, exist_ok=True)
     for number in (1, 2, 3):
@@ -38,6 +38,21 @@ def a_film(inputs, take_index, spoken, *, voiced: bool = True):
     )
 
 
+def mastered(monkeypatch: pytest.MonkeyPatch, inputs, off: float = 0.0) -> None:
+    """Every loudness reading lands `off` from the target the project masters to."""
+    target = inputs.settings.mix.loudness.target_lufs
+    reading = audio.Loudness(i=target + off, tp=-2.0, lra=6.0, thresh=-30.0, offset=0.0)
+    monkeypatch.setattr(audio, "measure_loudness", lambda *_a, **_k: reading)
+
+
+GAPPED: dict[int, tuple[str, float, float | None, list[Word]]] = {
+    1: ("Open", 2.0, 1.6, spoken("alpha")),
+    3: ("The edit", 2.0, 1.6, spoken("beta")),
+    4: ("Close", 1.0, 0.8, spoken("gamma")),
+}
+"""Takes for the titled project's page sections, whose clip section two has no file on disk."""
+
+
 def test_a_film_with_no_take_index_names_the_stage_that_writes_one(tmp_path):
     inputs = write_project(tmp_path)
     with pytest.raises(NotBuiltError) as refused:
@@ -48,14 +63,8 @@ def test_a_film_with_no_take_index_names_the_stage_that_writes_one(tmp_path):
 def test_the_stage_answers_with_the_result_named_after_it(tmp_path, monkeypatch):  # fmt: skip
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
-    a_film(inputs, take_index, spoken)
-    monkeypatch.setattr(
-        audio,
-        "measure_loudness",
-        lambda *_a, **_k: audio.Loudness(
-            i=inputs.settings.mix.loudness.target_lufs, tp=-2.0, lra=6.0, thresh=-30.0, offset=0.0
-        ),
-    )
+    a_film(inputs)
+    mastered(monkeypatch, inputs)
     result = assemble(inputs, opened.run)
     assert isinstance(result, AssembleResult)
     assert result.run == "r1"
@@ -69,14 +78,8 @@ def test_the_stage_answers_with_the_result_named_after_it(tmp_path, monkeypatch)
 def test_every_file_the_run_wrote_is_in_the_result_and_written_once(tmp_path, monkeypatch):  # fmt: skip
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
-    a_film(inputs, take_index, spoken)
-    monkeypatch.setattr(
-        audio,
-        "measure_loudness",
-        lambda *_a, **_k: audio.Loudness(
-            i=inputs.settings.mix.loudness.target_lufs, tp=-2.0, lra=6.0, thresh=-30.0, offset=0.0
-        ),
-    )
+    a_film(inputs)
+    mastered(monkeypatch, inputs)
     result = assemble(inputs, opened.run)
     written = [path.as_posix() for path in result.written]
     assert len(written) == len(set(written))
@@ -89,14 +92,8 @@ def test_a_run_says_how_far_through_its_own_passes_it_is(tmp_path, monkeypatch):
     """A renderer never works out a fraction, so every pass reports the same shape."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
-    a_film(inputs, take_index, spoken)
-    monkeypatch.setattr(
-        audio,
-        "measure_loudness",
-        lambda *_a, **_k: audio.Loudness(
-            i=inputs.settings.mix.loudness.target_lufs, tp=-2.0, lra=6.0, thresh=-30.0, offset=0.0
-        ),
-    )
+    a_film(inputs)
+    mastered(monkeypatch, inputs)
     assemble(inputs, opened.run)
     labels = opened.progress()
     assert labels[:3] == ["cut section 1", "cut section 2", "cut section 3"]
@@ -110,7 +107,7 @@ def test_a_placeholder_narration_is_never_normalized(tmp_path, monkeypatch):  # 
     """Normalizing clicks would move the very clicks the a/v check listens for."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
-    a_film(inputs, take_index, spoken, voiced=False)
+    a_film(inputs, voiced=False)
     called: list[str] = []
     monkeypatch.setattr(audio, "measure_loudness", lambda *_a, **_k: called.append("measured"))
     result = assemble(inputs, opened.run)
@@ -124,12 +121,7 @@ def test_a_film_that_stood_a_frame_in_for_a_missing_file_is_not_ok(tmp_path, mon
     inputs = write_project(tmp_path, TITLED_TOML)
     opened = open_run(tmp_path)
     monkeypatch.setattr(browser, "render_slate", draw_slate)
-    take_index(
-        inputs,
-        {1: ("Open", 2.0, 1.6, spoken("alpha")), 3: ("The edit", 2.0, 1.6, spoken("beta")),
-         4: ("Close", 1.0, 0.8, spoken("gamma"))},
-        voiced=False,
-    )  # fmt: skip
+    take_index(inputs, GAPPED, voiced=False)
     result = assemble(inputs, opened.run)
     assert not result.ok
     assert {row.code.name for row in result.findings} == {"FILE_MISSING"}
@@ -144,12 +136,7 @@ def test_strict_refuses_a_placeholder_frame_where_the_file_is_missing(tmp_path, 
     inputs.workspace.recordings_dir.mkdir(parents=True)
     for number in (1, 3, 4):
         inputs.workspace.recording(f"{number:02d}").write_bytes(b"a recording")
-    take_index(
-        inputs,
-        {1: ("Open", 2.0, 1.6, spoken("alpha")), 3: ("The edit", 2.0, 1.6, spoken("beta")),
-         4: ("Close", 1.0, 0.8, spoken("gamma"))},
-        voiced=False,
-    )  # fmt: skip
+    take_index(inputs, GAPPED, voiced=False)
     with pytest.raises(InputError) as refused:
         assemble(inputs, opened.run, strict=True)
     assert refused.value.location is not None
@@ -159,14 +146,8 @@ def test_strict_refuses_a_placeholder_frame_where_the_file_is_missing(tmp_path, 
 def test_strict_refuses_a_mix_that_missed_the_loudness_it_was_mastered_to(tmp_path, monkeypatch):
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
-    a_film(inputs, take_index, spoken)
-    monkeypatch.setattr(
-        audio,
-        "measure_loudness",
-        lambda *_a, **_k: audio.Loudness(
-            i=inputs.settings.mix.loudness.target_lufs - 5.0, tp=-2.0, lra=6.0, thresh=-30.0, offset=0.0
-        ),
-    )
+    a_film(inputs)
+    mastered(monkeypatch, inputs, off=-5.0)
     with pytest.raises(ToolError) as refused:
         assemble(inputs, opened.run, strict=True)
     assert "loudness" in str(refused.value)
@@ -178,12 +159,7 @@ def test_a_run_that_asks_for_no_soundscape_lays_no_bed(tmp_path, rendering, monk
     )
     opened = open_run(tmp_path)
     monkeypatch.setattr(browser, "render_slate", draw_slate)
-    take_index(
-        inputs,
-        {1: ("Open", 2.0, 1.6, spoken("alpha")), 3: ("The edit", 2.0, 1.6, spoken("beta")),
-         4: ("Close", 1.0, 0.8, spoken("gamma"))},
-        voiced=False,
-    )  # fmt: skip
+    take_index(inputs, GAPPED, voiced=False)
     result = assemble(inputs, opened.run, soundscape=False)
     assert "media/bed.mp3" not in {row.location.where for row in result.findings}
     assert not any("bed.mp3" in " ".join(call) for call in rendering.calls)
@@ -193,7 +169,7 @@ def test_the_work_files_never_survive_the_run(tmp_path):
     """A viewer opens the film and never a half-made one, so nothing beginning with a dot is left."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
-    a_film(inputs, take_index, spoken, voiced=False)
+    a_film(inputs, voiced=False)
     assemble(inputs, opened.run)
     left = [path.name for path in inputs.workspace.final_dir.iterdir() if path.name.startswith(".")]
     assert left == []

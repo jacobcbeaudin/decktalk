@@ -29,7 +29,7 @@ THREE_PAGES = {1: 2.0, 2: 2.5, 3: 1.5}
 """Three page sections of the lengths the take index below gives them."""
 
 
-def three_page_plan(inputs, opened, take_index, spoken, rendered, *, soundscape: bool = True) -> MixPlan:
+def three_page_plan(inputs, opened, *, soundscape: bool = True) -> MixPlan:
     takes = take_index(
         inputs,
         {
@@ -60,7 +60,7 @@ def test_the_largest_of_no_ramps_is_nothing_at_all():
 def test_a_silent_anchor_of_the_pictures_length_fixes_the_mix(tmp_path):  # fmt: skip
     """The picture carries no audio, so without the anchor the mix is as long as its longest layer."""
     inputs = write_project(tmp_path)
-    plan = three_page_plan(inputs, open_run(tmp_path), take_index, spoken, rendered)
+    plan = three_page_plan(inputs, open_run(tmp_path))
     assert plan.inputs[0].mode == LAVFI
     assert plan.inputs[0].path == "anullsrc=r=48000:cl=stereo"
     assert plan.total == 6.0
@@ -70,7 +70,7 @@ def test_a_silent_anchor_of_the_pictures_length_fixes_the_mix(tmp_path):  # fmt:
 
 def test_one_unbroken_run_of_pages_plays_the_whole_track_once(tmp_path):  # fmt: skip
     inputs = write_project(tmp_path)
-    plan = three_page_plan(inputs, open_run(tmp_path), take_index, spoken, rendered)
+    plan = three_page_plan(inputs, open_run(tmp_path))
     narration = [layer for layer in plan.inputs if layer.path.endswith("narration.mp3")]
     assert len(narration) == 1
     assert "[narr]" in plan.filter
