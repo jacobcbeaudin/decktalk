@@ -358,6 +358,20 @@ def generator(name: str) -> tuple[str, ...]:
     return (*UV, "python", f"scripts/{name}.py", CHECK)
 
 
+FIRST_GENERATOR = "build_runtime"
+"""The generator that runs before the others, because it writes `page.py`, which every other one imports."""
+
+GENERATORS = (
+    FIRST_GENERATOR,
+    *sorted(path.stem for path in (ROOT / "scripts").glob(f"{GENERATES}*.py") if path.stem != FIRST_GENERATOR),
+)
+"""Every generator the generated row runs, read from the directory so a new one gates from the commit that adds it.
+
+A write runs each in a process of its own, in this order, so each one imports the `page.py` the
+runtime's generator has just written rather than the one the run started with.
+"""
+
+
 def writing(command: tuple[str, ...]) -> tuple[str, ...] | None:
     """The command that writes what `command` checks, or None when it only judges.
 
@@ -592,19 +606,7 @@ GROUPS: tuple[Group, ...] = (
         # and a generator that launches Playwright directly reaches nothing that would fetch it, so
         # the row needs Chromium as much as the browser group does.
         commands=(
-            generator("build_runtime"),
-            generator("build_result_schemas"),
-            generator("build_settings_schema"),
-            generator("build_settings_reference"),
-            generator("build_cli_reference"),
-            generator("build_api"),
-            generator("build_code_pages"),
-            generator("build_agents_doc"),
-            generator("build_outbound_reference"),
-            generator("build_skills_list"),
-            generator("build_contributing"),
-            generator("build_changelog"),
-            generator("build_assets"),
+            *(generator(name) for name in GENERATORS),
             (*UV, "python", "scripts/check_docs_links.py"),
         ),
         runners=(LINUX,),
