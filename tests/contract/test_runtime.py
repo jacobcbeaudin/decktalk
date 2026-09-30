@@ -552,34 +552,35 @@ def test_a_word_is_whole_by_the_second_the_voice_reaches_it(page, tmp_path):
     assert shown_at <= 1.2 - WORD_STYLES["highlight"].seconds + 0.1
 
 
-def test_a_line_the_voice_never_says_is_reported(page, tmp_path):
-    """A line that is not the spoken text cannot be shown on the voice, so the page says so."""
-    scene = """
-    <div data-scene="10">
-      <template data-slide="10.1"><p data-in="say" data-words data-describe="the line">nothing like it</p></template>
-    </div>
-    """
-    url = write_page(tmp_path, "unsaid.html", scene)
-    page.goto(f"{url}?scene=10&t0=0&cues=10.1:say@0.05&words=alpha@0.3,beta@0.5")
-    page.wait_for_function("() => window.__decktalk.warnings.length > 0")
-    assert "PAGE_WORDS_NOT_FOUND" in codes_of(page)
+LONG_LINE = [f"word{index}" for index in range(APPEAR_WORDS_MAX + 2)]
+"""A line two words past what `appear` may carry, one word at a time."""
 
 
-def test_appear_on_a_long_line_is_reported(page, tmp_path):
-    """One word at a time is a cue's worth of motion, and a long line is more than a cue can carry."""
-    long_line = " ".join(f"word{index}" for index in range(APPEAR_WORDS_MAX + 2))
-    spoken = ",".join(f"word{index}@{0.3 + index / 10}" for index in range(APPEAR_WORDS_MAX + 2))
+@pytest.mark.parametrize(
+    ("line", "style", "words", "code"),
+    [
+        # A line that is not the spoken text cannot be shown on the voice, so the page says so.
+        pytest.param("nothing like it", "", "alpha@0.3,beta@0.5", "PAGE_WORDS_NOT_FOUND", id="a line never said"),
+        # One word at a time is a cue's worth of motion, and a long line is more than a cue can carry.
+        pytest.param(
+            " ".join(LONG_LINE),
+            '="appear"',
+            ",".join(f"{word}@{0.3 + index / 10}" for index, word in enumerate(LONG_LINE)),
+            "PAGE_APPEAR_TOO_LONG",
+            id="appear on a long line",
+        ),
+    ],
+)
+def test_a_line_the_voice_cannot_carry_is_reported(page, tmp_path, line, style, words, code):
     scene = f"""
     <div data-scene="10">
-      <template data-slide="10.1">
-        <p data-in="say" data-words="appear" data-describe="the long line">{long_line}</p>
-      </template>
+      <template data-slide="10.1"><p data-in="say" data-words{style} data-describe="the line">{line}</p></template>
     </div>
     """
-    url = write_page(tmp_path, "long.html", scene)
-    page.goto(f"{url}?scene=10&t0=0&cues=10.1:say@0.05&words={spoken}")
+    url = write_page(tmp_path, "played.html", scene)
+    page.goto(f"{url}?scene=10&t0=0&cues=10.1:say@0.05&words={words}")
     page.wait_for_function("() => window.__decktalk.warnings.length > 0")
-    assert "PAGE_APPEAR_TOO_LONG" in codes_of(page)
+    assert code in codes_of(page)
 
 
 # ---- the transcript ---------------------------------------------------------------------------

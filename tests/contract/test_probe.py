@@ -233,21 +233,15 @@ def test_freeze_at_and_before_one_cue(page, tmp_path):
     """?after=ID stops after that cue, ?before=ID stops just before it, and after wins over before."""
     url = deck(tmp_path, "freezecue.html")
     on = "(sel) => document.querySelector(sel).classList.contains('dt-shown')"
-    settled(page, f"{url}?slide=1.1&after=1.1:ball")
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
-    assert page.evaluate(on, ".ball") is True
-    assert page.evaluate(on, ".step") is False
-
-    settled(page, f"{url}?slide=1.1&before=1.1:step")
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball"]
-    assert page.evaluate(on, ".step") is False
-
-    settled(page, f"{url}?slide=1.1&before=1.1:ball")
-    assert page.evaluate("() => window.__decktalk.fired") == []
-    assert page.evaluate(on, ".ball") is False
-
-    settled(page, f"{url}?slide=1.1&after=1.1:step&before=1.1:ball")
-    assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
+    for query, fired, shown in (
+        ("after=1.1:ball", ["1.1:ball"], {".ball": True, ".step": False}),
+        ("before=1.1:step", ["1.1:ball"], {".step": False}),
+        ("before=1.1:ball", [], {".ball": False}),
+        ("after=1.1:step&before=1.1:ball", ["1.1:ball", "1.1:step"], {}),
+    ):
+        settled(page, f"{url}?slide=1.1&{query}")
+        assert page.evaluate("() => window.__decktalk.fired") == fired, query
+        assert {selector: page.evaluate(on, selector) for selector in shown} == shown, query
 
     settled(page, f"{url}?slide=1.1&after=nope")
     reported = page.evaluate("() => window.__decktalk.warnings")
