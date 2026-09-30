@@ -49,9 +49,6 @@ added to the project's own limit, because the `4` and the `5` this replaces were
 two, spelled as literals inside the suite that is supposed to enforce the rule.
 """
 
-ROUNDING_SLACK_FRAMES = 0.5
-"""Half a frame, which is the most a measured time may pass a frame boundary by and still name it."""
-
 BASE_BUDGET_SECONDS = 180
 """How long a module that drives a real build may take on a warm Linux runner, as a ceiling."""
 

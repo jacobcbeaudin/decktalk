@@ -8,7 +8,6 @@ property the split is supposed to have.
 
 from __future__ import annotations
 
-import shutil
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -17,7 +16,7 @@ import pytest
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
-from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
+from decktalk.toolchain.assets import katex_dir, runtime_path
 from support.tools import absent
 
 if TYPE_CHECKING:
@@ -68,23 +67,3 @@ def write_page(tmp_path: Path, name: str, body: str, *, head: str = "") -> str:
 def script_page(tmp_path: Path, name: str, script: str, *, head: str = "") -> str:
     """A page whose scenes come from one inline script."""
     return write_page(tmp_path, name, f"<script>{script}</script>", head=head)
-
-
-def served_page(root: Path, name: str, body: str, *, head: str = "") -> str:
-    """A page beside its own copy of the runtime, as the recorder opens it on the local origin.
-
-    It returns the name the origin is asked for rather than a file URL, because a recorded page is
-    served from the project directory and loads the runtime the project holds.
-    """
-    shutil.copyfile(runtime_path(), root / RUNTIME_FILE)
-    (root / name).write_text(
-        f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{name}</title>'
-        f'{head}<script src="{RUNTIME_FILE}"></script></head><body>{body}</body></html>',
-        encoding="utf-8",
-    )
-    return name
-
-
-def warnings_of(page: Page) -> list[str]:
-    """The page's warnings without the note every slide a partial cue list leaves out earns."""
-    return [w for w in page.evaluate("() => window.__decktalk.warnings") if "owns no cue in ?cues=" not in w]
