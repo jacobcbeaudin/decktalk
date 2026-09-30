@@ -49,12 +49,12 @@ def contained(root: Path, named: str | Path) -> Path:
     the place it resolved to, which belongs to the machine and not to the project.
     """
     given = Path(named)
-    path = given if given.is_absolute() else root / given
+    path = root / given
     if not path.resolve().is_relative_to(root.resolve()):
         raise InputError(
             f"{Path(named).as_posix()} resolves to a place outside the project, so it is not read.",
             hint="Keep every file the project names inside the project directory, and never a link out of it.",
-            location=Location(where=path.name, file=given if not given.is_absolute() else path),
+            location=Location(where=path.name, file=given),
         )
     return path
 

@@ -722,8 +722,7 @@ def init(
     from decktalk.template import STARTER, write_project  # noqa: PLC0415
 
     here = machine or Machine.from_environment()
-    root = Path(path).expanduser()
-    root = root if root.is_absolute() else here.cwd / root
+    root = here.cwd / Path(path).expanduser()
     with here.run(root=root) as run:
         written = write_project(root, name=name or root.name, example_name=example, skills=skills, force=force)
         for wrote in written:

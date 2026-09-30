@@ -106,8 +106,7 @@ def open(
     pairs = tuple(overrides)
     here = machine or Machine.from_environment(overrides=pairs)
     named = path if path is not None else here.environ.get(PROJECT_VARIABLE)
-    root = Path(named).expanduser() if named else here.cwd
-    root = root if root.is_absolute() else here.cwd / root
+    root = here.cwd / Path(named).expanduser() if named else here.cwd
     if root.is_file():
         root = root.parent
     return Project(here, root, overrides=pairs if machine is not None else ())
