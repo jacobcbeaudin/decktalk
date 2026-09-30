@@ -46,7 +46,6 @@ replacing it is safe. Each release adds its own digest once it is tagged.
 KATEX_VERSION = "0.18.7"
 KATEX_DIR = "katex"
 KATEX_FILES = ("katex.min.js", "katex.min.css", "LICENSE")
-KATEX_FONT_DIR = "fonts"
 _KATEX_FONT_URL = re.compile(r"url\((fonts/[^)]+\.woff2)\)")
 
 
@@ -91,9 +90,7 @@ def vendor_katex(deck_dir: Path) -> Path:
     """Copy the packaged KaTeX into deck/katex/, replacing whatever was there. Returns that directory."""
     src, dst = katex_dir(), deck_dir / KATEX_DIR
     shutil.rmtree(dst, ignore_errors=True)
-    (dst / KATEX_FONT_DIR).mkdir(parents=True)
-    for f in KATEX_FILES:
-        shutil.copyfile(src / f, dst / f)
-    for font in sorted((src / KATEX_FONT_DIR).glob("*.woff2")):
-        shutil.copyfile(font, dst / KATEX_FONT_DIR / font.name)
+    # The packaged folder holds exactly the release files, which tests/contract/test_wheel.py holds
+    # against what git tracks, so the whole tree is the copy. copyfile leaves the package's modes behind.
+    shutil.copytree(src, dst, copy_function=shutil.copyfile)
     return dst
