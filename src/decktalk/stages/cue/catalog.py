@@ -30,6 +30,7 @@ from decktalk.inputs.paths import relative
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import scene_cues, scene_entry
 from decktalk.pipeline import Stage
+from decktalk.results import counted
 from decktalk.stages import judge
 
 JSON_INDENT = 2
@@ -243,7 +244,7 @@ def _scaffold_fix(text: str, number: int, wires: Sequence[str], *, where: Path) 
     edit = Edit(file=where, line=placement.line, old=placement.replaces, new=placement.text)
     fix = EditFix(
         title=(
-            f"Add {len(wires)} row(s) to section {number} of {where.as_posix()}, each waiting for the phrase "
+            f"Add {counted(len(wires), 'row')} to section {number} of {where.as_posix()}, each waiting for the phrase "
             "you write in its `on`."
         ),
         applicability=Applicability.SAFE,

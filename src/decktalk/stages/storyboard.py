@@ -35,7 +35,7 @@ from decktalk.media.origin import Allowed, Assets, page_url
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.pagescan import Slides, scene_entry, slide_cues
-from decktalk.results import Panel, StoryboardResult
+from decktalk.results import Panel, StoryboardResult, counted
 from decktalk.stages import SECOND_DIGITS, SECTION_START_SECONDS, selects
 from decktalk.stages.record.capture import as_query, words_query
 
@@ -321,7 +321,7 @@ def _document(title: str, count: int, figures: str) -> str:
         "figcaption{color:#9aa4b2;font-size:12px;padding-top:6px}\n"
         "</style></head><body>\n"
         f"<h1>{html.escape(title)}</h1>\n"
-        f"<p>{count} panel(s), in the order the film plays them.</p>\n"
+        f"<p>{counted(count, 'panel')}, in the order the film plays them.</p>\n"
         f'<div class="sheet">\n{figures}\n</div>\n'
         "</body></html>\n"
     )

@@ -24,7 +24,7 @@ from decktalk.inputs.timeline import narration_offsets
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.pipeline import Artifact, Stage
-from decktalk.results import AssembleResult, RenderedSection
+from decktalk.results import AssembleResult, RenderedSection, counted
 from decktalk.stages import SECOND_DIGITS, clock, since
 from decktalk.stages.assemble.cut import Rendered, cut_list, remove_stray_cuts, render_sections, rendered_starts
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
@@ -147,7 +147,7 @@ def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *,
     missed = loudness_findings(inputs, run, after)
     if missed and strict:
         raise ToolError(
-            f"the mix missed the loudness it was mastered to in {len(missed)} way(s).",
+            f"the mix missed the loudness it was mastered to in {counted(len(missed), 'way')}.",
             hint="Publish it as it is, or change [mix.loudness] to what this film is for.",
         )
     return after

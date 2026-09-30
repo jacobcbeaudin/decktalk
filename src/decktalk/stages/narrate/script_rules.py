@@ -19,6 +19,7 @@ from collections.abc import Iterable, Iterator
 
 from decktalk.errors import InputError
 from decktalk.inputs.script import SECTION_RE, Segment
+from decktalk.results import counted
 
 INLINE_DIRECTION_RE = re.compile(r"^(?:beat|pause\s+\d+(?:\.\d+)?)$", re.IGNORECASE)
 """The two directions a paragraph may hold, which the parser turns into a pause the author asked for.
@@ -91,7 +92,7 @@ def check_script(where: str, markdown: str) -> None:
         return
     rows = "\n  ".join(f"line {number}: {what}" for number, what in refusals)
     raise InputError(
-        f"{where} has {len(refusals)} thing(s) the voice must not receive:\n  {rows}",
+        f"{where} has {counted(len(refusals), 'thing')} the voice must not receive:\n  {rows}",
         hint=(
             "A stage direction goes on a line of its own. Inside a paragraph, write [beat] or "
             "[pause N] and nothing else."

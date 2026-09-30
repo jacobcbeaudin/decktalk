@@ -58,7 +58,7 @@ def test_a_spoken_line_knows_which_section_it_is_in() -> None:
 def test_a_refused_script_names_every_line_and_the_rule() -> None:
     with pytest.raises(InputError) as refused:
         check_script("script.md", "## 1. Open\n\nA ball {x} [which is red] falls.\n")
-    assert "script.md has 2 thing(s)" in str(refused.value)
+    assert "script.md has 2 things" in str(refused.value)
     assert "line 3" in str(refused.value)
     assert refused.value.hint is not None
     assert "[beat]" in refused.value.hint

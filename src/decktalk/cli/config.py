@@ -37,6 +37,7 @@ from decktalk.results import (
     Result,
     Scope,
     SettingValue,
+    counted,
 )
 from decktalk.settings import json_value
 from decktalk.tomlmap import Key as KeyRecord
@@ -296,7 +297,7 @@ def _stating(path: Path, key: str, *, asked: bool) -> tuple[str, ...]:
         raise InputError(f"{path.name} sets nothing under '{key}'.", hint="Run decktalk config list --changed.")
     if key not in knobs.BY_ID and not asked:
         raise InputError(
-            f"'{key}' is a whole table, and removing it would take out {len(going)} keys at once.",
+            f"'{key}' is a whole table, and removing it would take out {counted(len(going), 'key')} at once.",
             hint=f"Run decktalk config unset {key} --all to remove all of them.",
         )
     return going
