@@ -479,8 +479,8 @@ class Machine:
         register_environment(environ)
         tables = read_machine_toml(config_path)
         pairs = tuple(overrides)
-        mine = scoped(route(pairs), SettingScope.MACHINE)
-        loaded = load(project={}, machine=tables, machine_path=config_path, environ=environ, overrides=_pairs(mine))
+        mine = _machine_overrides(pairs)
+        loaded = load(project={}, machine=tables, machine_path=config_path, environ=environ, overrides=mine)
         return cls(
             environ=dict(environ),
             tables=tables,
@@ -506,8 +506,8 @@ class Machine:
         The retries are a machine-scoped key, so the machine's own file, environment and overrides
         decide them whole and no project can.
         """
-        mine = scoped(route(self.overrides), SettingScope.MACHINE)
-        tuned = load(project={}, machine=self.tables, environ=self.environ, overrides=_pairs(mine)).settings
+        mine = _machine_overrides(self.overrides)
+        tuned = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings
         return Voices(
             factories=PROVIDERS if self.providers is None else self.providers,
             allow_any_api_base=self.allow_any_api_base,
@@ -1001,9 +1001,9 @@ def _machine_file(run: Run) -> Path:
     return run.machine.config_path.resolve()
 
 
-def _pairs(overrides: Mapping[str, str]) -> tuple[str, ...]:
-    """A routed override map spelled back the way the loader takes it, which is one string per pair."""
-    return tuple(f"{key}={value}" for key, value in overrides.items())
+def _machine_overrides(overrides: tuple[str, ...]) -> tuple[str, ...]:
+    """The machine-scoped pairs of a run of `--set` overrides, spelled the way the loader takes them."""
+    return tuple(f"{key}={value}" for key, value in scoped(route(overrides), SettingScope.MACHINE).items())
 
 
 __all__ = ["Machine", "Run", "Toolchain", "init"]
