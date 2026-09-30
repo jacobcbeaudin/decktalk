@@ -383,11 +383,11 @@ def test_every_defining_module_is_still_there():
 
 def _write() -> int:
     """Lower every count the code has beaten, and refuse to raise one, which is the ratchet."""
-    committed = baseline() if BASELINE.exists() else {}
+    committed = baseline()
     found = measured()
-    lowered = {name: min(count, found.get(name, 0)) for name, count in {**found, **committed}.items()}
+    lowered = {name: min(count, found.get(name, 0)) for name, count in committed.items()}
     kept = {name: count for name, count in sorted(lowered.items()) if count}
-    raised = sorted(name for name, count in found.items() if count > committed.get(name, count))
+    raised = sorted(name for name, count in found.items() if count > committed.get(name, 0))
     BASELINE.write_text(json.dumps({"files": kept}, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {BASELINE.name} with {len(kept)} files and {sum(kept.values())} literals")
     if raised:
