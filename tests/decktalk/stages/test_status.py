@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import Take, file_digest
+from decktalk.errors import InputError
 from decktalk.events import Level, Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
@@ -15,7 +16,7 @@ from decktalk.page import Q
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, StatusResult
 from decktalk.stages import status as stage
-from decktalk.stages.status import BUILT, next_command, source_of, status
+from decktalk.stages.status import BUILT, next_command, source_of, status, voiced_text
 from support.runs import a_run, notes
 from support.takes import a_take, write_takes
 
@@ -347,11 +348,8 @@ def test_the_report_names_the_two_files_the_author_writes(tmp_path: Path) -> Non
 
 
 def test_a_script_that_will_not_parse_is_recorded_rather_than_read_as_no_words(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    from decktalk.errors import InputError  # noqa: PLC0415
-    from decktalk.stages.status import voiced_text  # noqa: PLC0415
-
     class Unparsed:
         def script(self) -> None:
             raise InputError("script.md has no sections.")
@@ -360,4 +358,3 @@ def test_a_script_that_will_not_parse_is_recorded_rather_than_read_as_no_words(
         assert voiced_text(Unparsed()) == {}  # type: ignore[arg-type]
     [record] = [record for record in caplog.records if record.name == "decktalk.stages.status"]
     assert record.exc_info is not None and "no sections" in str(record.exc_info[1])
-    del tmp_path, monkeypatch
