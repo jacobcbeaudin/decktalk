@@ -37,6 +37,7 @@ from decktalk.settings import (
     NUMBERS,
     SHARED_TABLES,
     Settings,
+    json_value,
 )
 from decktalk.tomlmap import Key
 
@@ -109,11 +110,6 @@ def property_of(key: Key) -> dict[str, Any]:
         out["x-decides"] = [code.name for code in key.decides]
     out["x-environment"] = key.environment
     return out
-
-
-def json_value(value: object) -> object:
-    """One default as JSON carries it, which turns the tuple a TOML array becomes into a list."""
-    return [json_value(item) for item in value] if isinstance(value, tuple) else value
 
 
 def table_of(name: str, keys: list[Key]) -> dict[str, Any]:
