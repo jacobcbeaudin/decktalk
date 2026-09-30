@@ -44,8 +44,10 @@ from __future__ import annotations
 
 import ast
 import sys
+from collections.abc import Iterable
 from enum import Enum
 from pathlib import Path
+from typing import Protocol, cast
 
 import pytest
 
@@ -186,23 +188,34 @@ def _called(node: ast.Call) -> str:
     return func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
 
 
-def _constants(node: ast.AST) -> list[ast.Constant]:
-    return [n for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+class Text(Protocol):
+    """A string constant in the tree, which is the only constant this walk reads."""
+
+    value: str
+    lineno: int
 
 
-def _words(nodes: list[ast.expr]) -> list[ast.Constant]:
+def _texts(nodes: Iterable[ast.AST]) -> list[Text]:
+    """The string constants among these nodes, typed as the strings the filter has just proved them."""
+    return [cast("Text", n) for n in nodes if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+
+
+def _constants(node: ast.AST) -> list[Text]:
+    return _texts(ast.walk(node))
+
+
+def _words(nodes: list[ast.expr]) -> list[Text]:
     """The string constants among these nodes, and among the elements of a list or a tuple among them."""
-    found: list[ast.Constant] = []
+    found: list[Text] = []
     for node in nodes:
-        items = node.elts if isinstance(node, (ast.List, ast.Tuple)) else [node]
-        found += [item for item in items if isinstance(item, ast.Constant) and isinstance(item.value, str)]
+        found += _texts(node.elts if isinstance(node, (ast.List, ast.Tuple)) else [node])
     return found
 
 
-def _prose(node: ast.AST) -> list[ast.Constant]:
+def _prose(node: ast.AST) -> list[Text]:
     """The string constants in one node that are prose, which is a docstring or an f-string part."""
-    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-        return [node.value]  # A docstring, or a bare string standing as one.
+    if isinstance(node, ast.Expr):
+        return _texts([node.value])  # A docstring, or a bare string standing as one.
     if isinstance(node, ast.JoinedStr):
         return _constants(node)
     if isinstance(node, ast.Assign):
@@ -211,7 +224,7 @@ def _prose(node: ast.AST) -> list[ast.Constant]:
     return []
 
 
-def _keys_of_call(node: ast.Call) -> list[ast.Constant]:
+def _keys_of_call(node: ast.Call) -> list[Text]:
     """The string constants one call reads as a key, an attribute name or a word of a command line."""
     name = _called(node)
     if name in COMMAND_LINE_RUNNERS:
@@ -223,7 +236,7 @@ def _keys_of_call(node: ast.Call) -> list[ast.Constant]:
     return []
 
 
-def _keys(node: ast.AST) -> list[ast.Constant]:
+def _keys(node: ast.AST) -> list[Text]:
     """The string constants in one node that name a key, an attribute or a word of a command line."""
     if isinstance(node, ast.Assign):
         names = {target.id for target in node.targets if isinstance(target, ast.Name)}
@@ -245,7 +258,7 @@ def _keys(node: ast.AST) -> list[ast.Constant]:
 def exempt(tree: ast.Module) -> set[int]:
     """The ids of every string constant that is prose, an export, a lower-case key or a command word."""
     prose: set[int] = set()
-    keys: list[ast.Constant] = []
+    keys: list[Text] = []
     for node in ast.walk(tree):
         prose.update(id(constant) for constant in _prose(node))
         keys += _keys(node)
