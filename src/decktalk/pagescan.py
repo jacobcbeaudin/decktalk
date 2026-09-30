@@ -21,6 +21,7 @@ Every stage that opens a catalog reads it here, so no two of them can disagree a
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+from itertools import pairwise
 from pathlib import Path
 
 from pydantic import Field
@@ -267,7 +268,7 @@ def overlap_findings(
     spans = {row.cue: row.span(scale) for row in rows if row.cue is not None}
     ordered = sorted(times.items(), key=lambda item: (item[1], item[0]))
     found: list[Finding] = []
-    for (first, at), (second, then) in zip(ordered, ordered[1:], strict=False):
+    for (first, at), (second, then) in pairwise(ordered):
         apart = round(then - at, MILLISECOND_DIGITS)
         playing = spans.get(first, 0.0)
         if apart >= playing or playing == 0.0:

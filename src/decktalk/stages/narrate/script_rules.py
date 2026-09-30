@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator
+from itertools import pairwise
 
 from decktalk.errors import InputError
 from decktalk.inputs.script import SECTION_RE, Segment
@@ -121,11 +122,7 @@ def ascending(segments: Iterable[Segment]) -> tuple[Segment, Segment] | None:
     The take index is the one order the narration is joined in, so a script that counts backwards
     would place its takes in an order no other reading of the project agrees with.
     """
-    rows = list(segments)
-    for first, second in zip(rows, rows[1:], strict=False):
-        if second.index <= first.index:
-            return first, second
-    return None
+    return next(((first, second) for first, second in pairwise(segments) if second.index <= first.index), None)
 
 
 __all__ = [

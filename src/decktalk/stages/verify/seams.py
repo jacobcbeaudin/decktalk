@@ -8,6 +8,7 @@ on the picture the section before it ended on.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 
 from decktalk.artifacts import Takes
@@ -130,7 +131,7 @@ def planned_seams(inputs: Inputs, starts: dict[int, float]) -> list[Seam]:
     dip = frame_dip(inputs.document.transition.dip_seconds, fps)
     sections = inputs.document.sections
     seams: list[Seam] = []
-    for previous, section in zip(sections, sections[1:], strict=False):
+    for previous, section in pairwise(sections):
         if not section.seamless or section.number not in starts or previous.number not in starts:
             continue
         cut = starts[section.number]

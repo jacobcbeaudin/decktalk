@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 
 from playwright.sync_api import Page
@@ -358,7 +359,7 @@ def _seams(
 ) -> list[Finding]:
     """One judgement per section that declares `seamless` and follows another page section."""
     found: list[Finding] = []
-    for previous, section in zip(sections, sections[1:], strict=False):
+    for previous, section in pairwise(sections):
         if section.seamless:
             found += seam_findings(sheet, previous, section, slides, times)
     return found
