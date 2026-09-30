@@ -22,8 +22,6 @@ JavaScript and the project's ruff for Python, so a generated file is as clean as
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 import sys
 import tempfile
 import tomllib
@@ -72,28 +70,9 @@ def tool(name: str) -> Path:
     return path
 
 
-def run(cmd: list[str | Path], *, stdin: str | None = None) -> str:
-    """One tool, with its output returned and its failure raised with everything it printed."""
-    # uv runs this script in an environment of its own, and a nested `uv run` would warn about it.
-    env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
-    done = subprocess.run(
-        [str(part) for part in cmd],
-        check=False,
-        cwd=ROOT,
-        env=env,
-        input=stdin,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-    if done.returncode != 0:
-        raise SystemExit(f"{cmd[0]} failed:\n{done.stdout}{done.stderr}")
-    return done.stdout
-
-
 def typecheck() -> None:
     """Every TypeScript source and every node test, checked against the contract's own types."""
-    run([tool("tsc"), "--noEmit", "-p", TSCONFIG])
+    generated.command([tool("tsc"), "--noEmit", "-p", TSCONFIG])
 
 
 def engine_version() -> str:
@@ -119,25 +98,24 @@ def bundle(entry: Path, name: str, first_line: str | None = None) -> str:
     ]
     if first_line is not None:
         cmd.append(f"--banner:js={first_line}")
-    return biome(run(cmd), name)
+    return biome(generated.command(cmd), name)
 
 
 def biome(text: str, name: str) -> str:
     """JavaScript through the pinned formatter, so a generated bundle is formatted like a written file."""
-    return run([tool("biome"), "format", f"--stdin-file-path={name}"], stdin=text)
-
-
-def ruff(text: str, name: str) -> str:
-    """Python through the project's formatter, for the same reason and with the same settings."""
-    return run(["uv", "run", "ruff", "format", f"--stdin-filename={name}", "-"], stdin=text)
+    return generated.command([tool("biome"), "format", f"--stdin-file-path={name}"], stdin=text)
 
 
 def contract() -> dict[str, Any]:
     """The contract as JSON, printed by node from a CommonJS build of the one TypeScript module."""
     with tempfile.TemporaryDirectory() as tmp:
         built = Path(tmp) / "contract.cjs"
-        run([tool("esbuild"), CONTRACT_ENTRY, "--bundle", "--format=cjs", f"--target={TARGET}", f"--outfile={built}"])
-        printed = run(["node", "-e", f"process.stdout.write(JSON.stringify(require({str(built)!r}).CONTRACT))"])
+        generated.command(
+            [tool("esbuild"), CONTRACT_ENTRY, "--bundle", "--format=cjs", f"--target={TARGET}", f"--outfile={built}"]
+        )
+        printed = generated.command(
+            ["node", "-e", f"process.stdout.write(JSON.stringify(require({str(built)!r}).CONTRACT))"]
+        )
     return json.loads(printed)
 
 
@@ -506,7 +484,7 @@ def page_module(data: dict[str, Any]) -> str:
         '"""Every attribute whose value is the local name of a cue, which is what joins the cue order."""\n',
         PAGE_FUNCTIONS,
     ]
-    return ruff("\n".join(parts), PAGE_MODULE.name)
+    return generated.ruff("\n".join(parts), PAGE_MODULE)
 
 
 # ---- the code list both tracks land ------------------------------------------------------------

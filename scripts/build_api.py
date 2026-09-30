@@ -31,8 +31,6 @@ import generated  # noqa: E402
 
 TARGET = ROOT / "src" / "decktalk" / "__init__.py"
 PACKAGE = "decktalk"
-LINE_LENGTH = 120
-"""The line ruff wraps at, which decides whether a module's imports fit on one line."""
 
 MODULES = (
     "artifacts",
@@ -116,40 +114,20 @@ def closure() -> dict[str, list[str]]:
                 module = found.__module__.removeprefix(f"{PACKAGE}.")
                 if found.__name__ not in exported.setdefault(module, []):
                     exported[module].append(found.__name__)
-    return {module: sorted(names, key=order) for module, names in sorted(exported.items()) if names}
-
-
-def order(name: str) -> tuple[int, str]:
-    """How an import list is sorted, which is constants, then classes, then the rest, each ignoring case.
-
-    This is the order the formatter's own import sorter wants, so the generated file is already
-    formatted and `ruff check` has nothing to say about it.
-    """
-    rank = 0 if name.isupper() else 1 if name[:1].isupper() else 2
-    return rank, name.lower()
+    return {module: names for module, names in exported.items() if names}
 
 
 def render(exported: dict[str, list[str]]) -> str:
-    """The generated module as it is committed, which one `ruff format` run would leave alone."""
-    lines = [
-        DOCSTRING,
-        "",
-        "from __future__ import annotations",
-        "",
-    ]
-    for module, names in sorted([*exported.items(), VERSION_IMPORT]):
-        statement = f"from .{module} import {', '.join(names)}"
-        if len(statement) <= LINE_LENGTH:
-            lines.append(statement)
-        else:
-            lines.append(f"from .{module} import (")
-            lines += [f"    {name}," for name in names]
-            lines.append(")")
+    """The generated module as it is committed, with its imports sorted and wrapped by the project's ruff."""
+    imports = [f"from .{module} import {', '.join(names)}" for module, names in [*exported.items(), VERSION_IMPORT]]
     every = sorted({name for names in exported.values() for name in names} | {"__version__"})
-    lines += ["", "__all__ = ["]
-    lines += [f'    "{name}",' for name in every]
-    lines.append("]")
-    return "\n".join(lines) + "\n"
+    listed = "".join(f'    "{name}",\n' for name in every)
+    return generated.ruff(
+        "\n".join(
+            [DOCSTRING, "", "from __future__ import annotations", "", *imports, "", f"__all__ = [\n{listed}]", ""]
+        ),
+        TARGET,
+    )
 
 
 def documents() -> dict[Path, str]:

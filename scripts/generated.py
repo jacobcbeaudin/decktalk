@@ -13,6 +13,8 @@ and is removed on a write.
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 import sys
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -46,6 +48,36 @@ def differs(path: Path, text: str) -> str | None:
     pairs = enumerate(zip(committed.splitlines(), text.splitlines(), strict=False), start=1)
     line = next((number for number, (old, new) in pairs if old != new), None)
     return f"line {line} differs from its source" if line else "its length differs from its source"
+
+
+def command(cmd: list[str | Path], *, stdin: str | None = None) -> str:
+    """One tool, with its output returned and its failure raised with everything it printed."""
+    # uv runs a generator in an environment of its own, and a nested `uv run` would warn about it.
+    env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
+    done = subprocess.run(
+        [str(part) for part in cmd],
+        check=False,
+        cwd=ROOT,
+        env=env,
+        input=stdin,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if done.returncode != 0:
+        raise SystemExit(f"{cmd[0]} failed:\n{done.stdout}{done.stderr}")
+    return done.stdout
+
+
+def ruff(text: str, target: Path) -> str:
+    """Generated Python as the project's own ruff sorts its imports and formats it, read as `target`.
+
+    A generator writes plain text and lets ruff order and wrap it, so the committed module is what
+    `ruff check` and `ruff format` would leave and the rule for either lives in one place.
+    """
+    name = f"--stdin-filename={target}"
+    ordered = command(["uv", "run", "ruff", "check", "--select", "I", "--fix-only", "--quiet", name, "-"], stdin=text)
+    return command(["uv", "run", "ruff", "format", name, "-"], stdin=ordered)
 
 
 def run(
