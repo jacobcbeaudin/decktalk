@@ -23,6 +23,7 @@ from decktalk.inputs import Inputs
 from decktalk.media import audio
 from decktalk.pipeline import Stage
 from decktalk.results import Layer, SoundKind, SoundStatus, Voicing
+from decktalk.speech.elevenlabs import MUSIC_PATH
 from decktalk.stages import soundscape as stage
 from decktalk.stages.soundscape import soundscape
 from decktalk.stages.soundscape.ledger import LEDGER_FILE, Ledger
@@ -82,12 +83,8 @@ class FakeService:
     music_bodies: list[dict[str, Any]] = field(default_factory=list)
     answer: bytes = b"audio"
 
-    def sound_effect(self, body: dict[str, Any], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.sounds.append(body)
-        return self.answer
-
-    def music(self, body: dict[str, Any], *, output_format: str) -> bytes:  # noqa: ARG002
-        self.music_bodies.append(body)
+    def generate(self, path: str, body: dict[str, Any], *, output_format: str) -> bytes:  # noqa: ARG002
+        (self.music_bodies if path == MUSIC_PATH else self.sounds).append(body)
         return self.answer
 
 

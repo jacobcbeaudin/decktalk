@@ -280,7 +280,9 @@ def _keep(ledger: Ledger, path: Path, entry: SoundEntry) -> Ledger:
 def _buy_sound(run: Run, inputs: Inputs, client: ElevenLabs, item: Planned, ledger: Ledger, path: Path) -> Ledger:
     """Buy one ambience bed or one effect, write it, and record what it was bought with."""
     item.out.parent.mkdir(parents=True, exist_ok=True)
-    item.out.write_bytes(client.sound_effect(item.bodies[0], output_format=inputs.settings.narration.output_format))
+    item.out.write_bytes(
+        client.generate(SOUND_PATH, item.bodies[0], output_format=inputs.settings.narration.output_format)
+    )
     run.wrote(item.out)
     run.wrote(path)
     return _keep(ledger, path, _entry(inputs, item, item.digest))
@@ -323,7 +325,7 @@ def _buy_music(run: Run, inputs: Inputs, client: ElevenLabs, item: Planned, ledg
         if index < len(known) and known[index] == digest and part.is_file():
             run.note(f"{part.name} was bought before and its request is unchanged, so this run keeps it.")
         else:
-            part.write_bytes(client.music(body, output_format=inputs.settings.narration.output_format))
+            part.write_bytes(client.generate(MUSIC_PATH, body, output_format=inputs.settings.narration.output_format))
             run.wrote(part)
         digests.append(digest)
         parts.append(part)

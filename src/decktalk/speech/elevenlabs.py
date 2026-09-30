@@ -173,14 +173,9 @@ class ElevenLabs:
             alignment.get("character_end_times_seconds", []),
         )
 
-    def sound_effect(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.checked_base}{SOUND_PATH}?output_format={output_format}"
-        return post_bytes(
-            url, body, self._headers(), timeout=self.context.sound_timeout_seconds, retries=self.context.retries
-        )
-
-    def music(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.checked_base}{MUSIC_PATH}?output_format={output_format}"
+    def generate(self, path: str, body: dict[str, Any], *, output_format: str) -> bytes:
+        """One sound bought from `SOUND_PATH` or `MUSIC_PATH`, which take the same request and answer alike."""
+        url = f"{self.checked_base}{path}?output_format={output_format}"
         return post_bytes(
             url, body, self._headers(), timeout=self.context.sound_timeout_seconds, retries=self.context.retries
         )
