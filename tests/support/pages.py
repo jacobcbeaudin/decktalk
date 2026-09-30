@@ -1,8 +1,8 @@
 """A two-section project on one page, the catalog that page publishes and the log its recording left.
 
 `check`, `storyboard`, `cue`, `verify` and `assemble` each judge what a page declared about itself.
-They share this project, this catalog builder and this log writer, so a change to either shape is
-made once.
+They share this project, this catalog builder, this page report and this log writer, so a change
+to any of those shapes is made once.
 """
 
 from __future__ import annotations
@@ -42,6 +42,13 @@ Hello there again.
 
 Second section speaks as well.
 """
+
+TWO_SCENE_PAGE = """<!doctype html><html><body>
+<div data-scene="1"><template data-slide="1.1"><p data-in="open">one</p></template></div>
+<div data-scene="2"><template data-slide="2.1"><p data-in="open">two</p></template></div>
+</body></html>
+"""
+"""The two-scene page the recorder tests open, each scene with one slide and one reveal."""
 
 BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
 """One element's box, which no case measures."""
@@ -89,6 +96,11 @@ def a_recording(**fields: object) -> Recording:
         "report": PageReport(),
     }
     return Recording.model_validate({**base, **fields})
+
+
+def a_report(**fields: object) -> PageReport:
+    """What the page says about its first scene, with every field a case names in place of the default."""
+    return PageReport.model_validate({"version": "0.5.0", "mode": "cue", "scene": "1", "slide": "1.1", **fields})
 
 
 def write_log(

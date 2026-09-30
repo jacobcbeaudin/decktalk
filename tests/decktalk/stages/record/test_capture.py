@@ -26,10 +26,8 @@ from decktalk.stages.record.capture import (
     section_hash,
     words_param,
 )
-from support.pages import a_recording
+from support.pages import TWO_SCENE_PAGE, a_recording
 from support.projects import write_project
-
-from .conftest import PAGE
 
 TOML = """
 [project]
@@ -61,7 +59,7 @@ cue = "1.1:open"
 """
 
 
-def a_project(tmp_path: Path, toml: str = TOML, page: str = PAGE) -> Inputs:
+def a_project(tmp_path: Path, toml: str = TOML, page: str = TWO_SCENE_PAGE) -> Inputs:
     tmp_path.mkdir(parents=True, exist_ok=True)
     write_project(tmp_path, toml)
     deck = tmp_path / "deck"
@@ -127,7 +125,7 @@ def test_no_words_is_no_query_value() -> None:
 
 
 def test_a_page_is_cut_into_the_scene_a_section_plays_and_the_part_every_scene_shares() -> None:
-    parts = page_parts(PAGE, "1")
+    parts = page_parts(TWO_SCENE_PAGE, "1")
     assert 'data-slide="1.1"' in parts.scene
     # Every scene is cut out of the shared part, so an edit inside scene two moves scene two's key
     # and no other section's, which is the whole reason the page is keyed in two pieces.
@@ -149,7 +147,7 @@ def test_editing_one_scene_moves_only_the_sections_that_play_it(tmp_path: Path) 
         section_hash(inputs, one, "url", 10.0, ()),
         section_hash(inputs, two, "url", 10.0, ()),
     )
-    edited = a_project(tmp_path, page=PAGE.replace("two</p>", "two and a half</p>"))
+    edited = a_project(tmp_path, page=TWO_SCENE_PAGE.replace("two</p>", "two and a half</p>"))
     after = (
         section_hash(edited, one, "url", 10.0, ()),
         section_hash(edited, two, "url", 10.0, ()),

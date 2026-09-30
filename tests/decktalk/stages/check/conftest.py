@@ -22,11 +22,7 @@ from decktalk.media.pagereport import PageReport
 from decktalk.stages import storyboard
 from decktalk.stages.check import scan
 from support.fakes import FakePage
-
-
-def a_report(*scenes: dict[str, Any], warnings: Sequence[dict[str, Any]] = ()) -> PageReport:
-    """What one page says about itself, as the reader at the boundary would have read it."""
-    return PageReport.model_validate({"catalog": list(scenes), "warnings": list(warnings)})
+from support.pages import a_report
 
 
 @dataclass
@@ -50,7 +46,7 @@ class Drawn:
 
     def report(self, page: str, *scenes: dict[str, Any], warnings: Sequence[dict[str, Any]] = ()) -> None:
         """Declare what one page of the project publishes when it is opened."""
-        self.reports[page] = a_report(*scenes, warnings=warnings)
+        self.reports[page] = a_report(catalog=list(scenes), warnings=list(warnings))
 
 
 @pytest.fixture

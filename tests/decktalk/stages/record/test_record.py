@@ -26,11 +26,10 @@ from decktalk.media.browser import Recording, RecordingSink
 from decktalk.media.pagereport import PageReport
 from decktalk.stages.record import pool, record, stale_recording
 from support.logs import decisions
+from support.pages import TWO_SCENE_PAGE, a_report
 from support.projects import write_project
 from support.runs import a_run
 from support.takes import a_take, write_takes
-
-from .conftest import PAGE, a_report
 
 TOML = """
 [project]
@@ -64,7 +63,7 @@ def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "", machine: d
     write_project(tmp_path, TOML + extra)
     deck = tmp_path / "deck"
     deck.mkdir(exist_ok=True)
-    (deck / "index.html").write_text(PAGE, encoding="utf-8")
+    (deck / "index.html").write_text(TWO_SCENE_PAGE, encoding="utf-8")
     inputs = Inputs.load(tmp_path, environ={})
     if takes:
         write_takes(inputs, *(a_take(section, seconds=SPAN_SECONDS, voiced=False) for section in (1, 2)))
@@ -308,7 +307,7 @@ def test_one_rule_decides_whether_a_recording_still_stands(tmp_path: Path) -> No
     assert stale_recording(inputs, section) == "section 1 has no recording"
     record(inputs, a_run(inputs.root))
     assert stale_recording(inputs, section) is None
-    (tmp_path / "deck" / "index.html").write_text(PAGE.replace("one</p>", "one more</p>"), encoding="utf-8")
+    (tmp_path / "deck" / "index.html").write_text(TWO_SCENE_PAGE.replace("one</p>", "one more</p>"), encoding="utf-8")
     assert "changed since it was recorded" in (stale_recording(Inputs.load(tmp_path, environ={}), section) or "")
 
 

@@ -6,10 +6,11 @@ from pathlib import Path
 
 from decktalk import page, pagescan
 from decktalk.findings import Code
-from decktalk.media.pagereport import ElementRow, MeasuredScene, PageReport
+from decktalk.media.pagereport import ElementRow, MeasuredScene
 from decktalk.pagescan import measured_rows, page_findings, scene_cues, scene_entry, slide_cues
 from decktalk.pipeline import Stage
 from decktalk.settings import KEYS
+from support.pages import a_report
 
 PAGE = "deck/index.html"
 NONE = 1.0
@@ -36,10 +37,6 @@ def entry(scene: str, moments: dict[str, list[str]], **extra: object) -> Measure
         for slide, wires in moments.items()
     }
     return MeasuredScene.model_validate({"scene": scene, "elements": elements, **extra})
-
-
-def a_report(**fields: object) -> PageReport:
-    return PageReport.model_validate({"version": "0.5.0", "mode": "cue", "scene": "1", "slide": "1.1", **fields})
 
 
 # ---- reading the catalog ----------------------------------------------------------------------

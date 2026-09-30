@@ -24,8 +24,7 @@ from decktalk.stages.record.checks import (
     recording_findings,
     stall_finding,
 )
-
-from .conftest import a_report
+from support.pages import a_report
 
 PAGE = "deck/index.html"
 """The page every row here is about, as `decktalk.toml` spells it."""
