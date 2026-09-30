@@ -8,10 +8,13 @@ from pathlib import Path
 from decktalk.findings import Applicability, Code
 from decktalk.inputs.cues import Cue, CuedSection
 from decktalk.inputs.document import PageSection
+from decktalk.machine import apply_fix
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pipeline import Stage
+from decktalk.results import Scope
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from support.pages import elements
+from support.runs import a_run
 
 
 def entry(scene: str, moments: dict[str, list[str]], **extra: object) -> MeasuredScene:
@@ -30,14 +33,11 @@ def write_cues(root: Path, sections: dict[str, object]) -> Path:
 
 
 def applied(path: Path, root: Path, findings: list) -> None:
-    """Carry out every fix these findings offer, the way `Project.apply` carries one out."""
+    """Carry out every fix these findings offer through the applier `Project.apply` calls, unsafe ones too."""
     for found in findings:
-        for edit in getattr(found.fix, "edits", ()):
-            target = root / edit.file
-            lines = target.read_text(encoding="utf-8").splitlines(keepends=True) if target.exists() else []
-            index = (edit.line or 1) - 1
-            lines[index : index + (1 if edit.old is not None else 0)] = [edit.new + "\n"]
-            target.write_text("".join(lines), encoding="utf-8")
+        if found.fix is not None:
+            outcome = apply_fix(a_run(root), found.code, found.fix, root=root, scope=Scope.PROJECT, unsafe=True)
+            assert outcome.applied, outcome.why
     assert json.loads(path.read_text(encoding="utf-8")), "the fix left a file that still parses"
 
 
