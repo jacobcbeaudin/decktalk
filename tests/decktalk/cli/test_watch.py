@@ -41,7 +41,7 @@ def test_the_loop_serves_builds_once_and_never_voices(monkeypatch, tmp_path) -> 
     origin = Origin()
     project = Fake(serve=origin, build=BUILT, status=_status())
     _place(project, tmp_path)
-    built = watch.loop(session(), project)  # ty: ignore[invalid-argument-type]
+    built = watch.loop(session(), project.project())
     assert built is BUILT
     assert project.called("build")["voice"] is Voicing.PLACEHOLDER
     assert origin.closed
@@ -51,7 +51,7 @@ def test_a_refused_rebuild_is_reported_and_the_loop_keeps_watching(monkeypatch, 
     monkeypatch.setattr(watch.time, "sleep", _stop)
     project = Fake(serve=Origin(), build=InputError("script.md is not there."), status=_status())
     _place(project, tmp_path)
-    built = watch.loop(session(), project)  # ty: ignore[invalid-argument-type]
+    built = watch.loop(session(), project.project())
     assert built.ok is False
     assert "error[INPUT]" in capsys.readouterr().err
 
@@ -59,20 +59,20 @@ def test_a_refused_rebuild_is_reported_and_the_loop_keeps_watching(monkeypatch, 
 def test_a_saved_file_names_the_sections_it_touches(tmp_path) -> None:
     project = Fake()
     project.answers["sections_touching"] = (2,)
-    assert watch._touched(project, [tmp_path / "script.md"]) == (2,)  # ty: ignore[invalid-argument-type]
+    assert watch._touched(project.project(), [tmp_path / "script.md"]) == (2,)
 
 
 def test_a_saved_file_that_touches_nothing_named_rebuilds_everything(tmp_path) -> None:
     project = Fake()
     project.answers["sections_touching"] = ()
-    assert watch._touched(project, [tmp_path / "decktalk.toml"]) is None  # ty: ignore[invalid-argument-type]
+    assert watch._touched(project.project(), [tmp_path / "decktalk.toml"]) is None
 
 
 def test_what_a_run_writes_is_never_watched(tmp_path) -> None:
     (tmp_path / "script.md").write_text("one", encoding="utf-8")
     (tmp_path / "build").mkdir()
     (tmp_path / "build" / "takes.json").write_text("{}", encoding="utf-8")
-    watched = watch._stamps(_place(Fake(), tmp_path))  # ty: ignore[invalid-argument-type]
+    watched = watch._stamps(_place(Fake(), tmp_path).project())
     assert set(watched) == {tmp_path / "script.md"}
 
 
@@ -83,7 +83,7 @@ def test_a_build_folder_the_project_names_is_never_watched(tmp_path) -> None:
         (tmp_path / written).mkdir(parents=True)
         (tmp_path / written / "takes.json").write_text("{}", encoding="utf-8")
     project = _place(Fake(), tmp_path, build="out/film", takes="takes")
-    watched = watch._stamps(project)  # ty: ignore[invalid-argument-type]
+    watched = watch._stamps(project.project())
     assert set(watched) == {tmp_path / "script.md"}
 
 
@@ -100,7 +100,7 @@ def test_a_voiced_take_that_goes_stale_is_named_with_the_command_that_voices_it(
     project = Fake(status=_status(stale=True))
     project.root = tmp_path
     made = Session(Globals(), command="build")
-    watch._stale(made, project)  # ty: ignore[invalid-argument-type]
+    watch._stale(made, project.project())
     said = capsys.readouterr().err
     assert "no longer matches the script" in said
     assert "decktalk narrate --section 2 --spend" in said

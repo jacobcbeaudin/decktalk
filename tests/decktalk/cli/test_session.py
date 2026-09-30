@@ -19,9 +19,9 @@ from support.spends import a_spend
 from .conftest import Fake, finding
 
 
-def session(**flags: object) -> Session:
+def session(flags: Globals | None = None) -> Session:
     """One session with the flags a test is about, and nothing else set."""
-    return Session(Globals(**flags), command="build")  # ty: ignore[invalid-argument-type]
+    return Session(flags or Globals(), command="build")
 
 
 def terminal(**state: bool) -> Terminal:
@@ -42,14 +42,14 @@ def test_the_live_region_needs_a_terminal_with_one_stream_to_itself() -> None:
 def test_no_color_in_the_environment_outranks_every_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NO_COLOR", "1")
     for color in When:
-        made = session(color=color)
+        made = session(Globals(color=color))
         assert made.out.no_color and made.err.no_color and made.terminal.no_color, color
 
 
 def test_color_never_turns_colour_off_without_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NO_COLOR", raising=False)
-    assert session(color=When.NEVER).terminal.no_color
-    assert not session(color=When.ALWAYS).terminal.no_color
+    assert session(Globals(color=When.NEVER)).terminal.no_color
+    assert not session(Globals(color=When.ALWAYS)).terminal.no_color
 
 
 @pytest.mark.parametrize(
@@ -84,7 +84,7 @@ def test_a_refusal_takes_the_exit_code_its_own_code_carries() -> None:
 
 
 def test_json_puts_one_object_on_stdout_and_nothing_else(capsys: pytest.CaptureFixture[str]) -> None:
-    made = session(json_out=True)
+    made = session(Globals(json_out=True))
     made.report(_status())
     written = capsys.readouterr()
     assert written.out.lstrip().startswith("{")
@@ -92,7 +92,7 @@ def test_json_puts_one_object_on_stdout_and_nothing_else(capsys: pytest.CaptureF
 
 
 def test_a_result_is_written_once_however_often_it_is_reported(capsys: pytest.CaptureFixture[str]) -> None:
-    made = session(json_out=True)
+    made = session(Globals(json_out=True))
     made.report(_status())
     made.report(_status())
     assert capsys.readouterr().out.count('"schema"') == 1
@@ -112,7 +112,7 @@ def test_nothing_is_asked_without_a_terminal() -> None:
 
 
 def test_nothing_is_asked_under_no_input_on_a_terminal() -> None:
-    made = session(no_input=True)
+    made = session(Globals(no_input=True))
     made.terminal = terminal()
     assert not made.asks
 
@@ -134,7 +134,7 @@ def test_a_spend_with_no_terminal_refuses_and_names_both_flags() -> None:
     made.spending(no_voice=False, spend=False, max_cost=None)
     fake = Fake(check=_check())
     with pytest.raises(ApprovalRequired) as refused:
-        made.voicing(fake)  # ty: ignore[invalid-argument-type]
+        made.voicing(fake.project())
     assert "No terminal is here to approve it." in str(refused.value)
     assert refused.value.hint is not None
     assert "--spend" in refused.value.hint
@@ -144,13 +144,13 @@ def test_a_spend_with_no_terminal_refuses_and_names_both_flags() -> None:
 def test_no_voice_never_asks_and_never_buys() -> None:
     made = session()
     made.spending(no_voice=True, spend=False, max_cost=None)
-    assert made.voicing(Fake()) is Voicing.PLACEHOLDER  # ty: ignore[invalid-argument-type]
+    assert made.voicing(Fake().project()) is Voicing.PLACEHOLDER
 
 
 def test_spend_buys_without_asking() -> None:
     made = session()
     made.spending(no_voice=False, spend=True, max_cost=None)
-    assert made.voicing(Fake()) is Voicing.PAID  # ty: ignore[invalid-argument-type]
+    assert made.voicing(Fake().project()) is Voicing.PAID
 
 
 def test_a_contract_document_is_written_with_no_envelope(capsys: pytest.CaptureFixture[str]) -> None:
@@ -195,5 +195,5 @@ def test_the_fix_prompt_counts_one_fix_in_the_singular(monkeypatch: pytest.Monke
 
 def test_the_storyboard_line_counts_one_panel_in_the_singular() -> None:
     drawn = SimpleNamespace(storyboard=Path("build/storyboard.html"), panels=("one",))
-    line = session().storyboard_line(Fake(storyboard=drawn))  # ty: ignore[invalid-argument-type]
+    line = session().storyboard_line(Fake(storyboard=drawn).project())
     assert line == "Storyboard build/storyboard.html, 1 panel."

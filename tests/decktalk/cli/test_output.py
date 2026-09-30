@@ -26,6 +26,7 @@ from decktalk.results import (
     CueCheck,
     ErrorResult,
     Layer,
+    Result,
     Scope,
     SettingValue,
     VerifyResult,
@@ -37,18 +38,18 @@ from .conftest import ANSWERS, finding
 
 def written(render, *args: object) -> str:
     """Whatever one renderer put on its console, as plain text."""
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-    render(*args, console)
-    return console.file.getvalue()  # ty: ignore[unresolved-attribute]
+    shown = io.StringIO()
+    render(*args, Console(file=shown, width=100, no_color=True))
+    return shown.getvalue()
 
 
 def heard(sink: Callable[[Console], Callable[[Event], None]], *events: Event) -> str:
     """Whatever one stream renderer, opened on a console, put there for these events, as plain text."""
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-    listen = sink(console)
+    shown = io.StringIO()
+    listen = sink(Console(file=shown, width=100, no_color=True))
     for event in events:
         listen(event)
-    return console.file.getvalue()  # ty: ignore[unresolved-attribute]
+    return shown.getvalue()
 
 
 def test_a_finding_line_carries_its_place_its_code_and_its_sentence() -> None:
@@ -304,11 +305,12 @@ def test_a_warning_survives_quiet() -> None:
 
 def test_a_note_one_command_already_printed_is_not_printed_by_its_second_judgement() -> None:
     """`check --fix` judges twice, and the second judgement says what the first already said."""
-    console = Console(file=io.StringIO(), width=100, no_color=True)
+    shown = io.StringIO()
+    console = Console(file=shown, width=100, no_color=True)
     heard: set[str] = set()
     for _ in range(2):
         output.Notes(console, verbose=False, quiet=False, heard=heard)(_log(Level.INFO))
-    assert console.file.getvalue().count("a debug line") == 1  # ty: ignore[unresolved-attribute]
+    assert shown.getvalue().count("a debug line") == 1
 
 
 def test_the_opening_line_names_the_run_and_its_events_file_once() -> None:
@@ -345,14 +347,14 @@ def _now() -> datetime:
 # branch the filled result does not, and asserts the words that branch writes.
 
 
-def recorded(result: object, width: int = 120) -> str:
+def recorded(result: Result, width: int = 120) -> str:
     """One result as a terminal would show it, read back from a recording console.
 
     The padding a table pads its cells out with is cut from every line, because a reader never sees
     it and a snapshot would otherwise carry it as escapes.
     """
     console = Console(record=True, width=width, no_color=True, file=io.StringIO())
-    output.render(result, console)  # ty: ignore[invalid-argument-type]
+    output.render(result, console)
     return "\n".join(line.rstrip() for line in console.export_text().splitlines()) + "\n"
 
 

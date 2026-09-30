@@ -13,7 +13,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from typer.testing import CliRunner
@@ -22,6 +22,8 @@ from decktalk.cli import catalog, main
 from decktalk.cli import session as sessions
 from decktalk.events import Event, Events
 from decktalk.findings import Applicability, Code, EditFix, Finding, Location
+from decktalk.inputs.workspace import Workspace
+from decktalk.project import Project
 from decktalk.results import (
     BuildResult,
     CheckResult,
@@ -74,12 +76,18 @@ class Fake:
     of what a command-line test needs to say what the client did.
     """
 
+    workspace: Workspace  # set by a test whose command reads the project's folders
+
     def __init__(self, **answers: object) -> None:
         self.answers = dict(answers)
         self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
         self.events = Events()
         self.emits: dict[str, tuple[type[Event], dict[str, object]]] = {}
         self.root = Path.cwd()
+
+    def project(self) -> Project:
+        """This fake as the project it stands in for, for a test that hands it to a function directly."""
+        return cast("Project", self)
 
     def called(self, name: str) -> dict[str, object]:
         """The keywords one call was made with, which is what a client test asserts on."""
