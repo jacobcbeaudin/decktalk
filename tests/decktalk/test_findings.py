@@ -159,7 +159,7 @@ def test_a_finding_round_trips_through_its_own_model() -> None:
 
 def test_a_location_always_names_the_object_it_judges() -> None:
     with pytest.raises(ValidationError):
-        Location()  # type: ignore[call-arg]
+        Location.model_validate({})
 
 
 def test_an_edit_names_exactly_one_place() -> None:

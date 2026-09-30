@@ -229,4 +229,6 @@ def test_one_call_reaches_every_static_judgement_a_slide_supports() -> None:
 
 def test_an_entrance_with_no_seconds_of_its_own_takes_the_span_of_the_style_it_names() -> None:
     assert row(**{"data-in-style": "draw"}).entrance == page.ENTRANCES["draw"].seconds
-    assert row().entrance == page.ENTRANCES[page.ATTRS[page.Attr.IN_STYLE].default].seconds
+    default = page.ATTRS[page.Attr.IN_STYLE].default
+    assert default is not None
+    assert row().entrance == page.ENTRANCES[default].seconds
