@@ -124,7 +124,7 @@ result and driver, and the test is total in both directions.
 A finding is a diagnostic in the shape a linter made familiar: a code a caller dispatches on, one
 sentence with the measured number written into it, a certainty of `certain` or `uncertain`, a
 location whose `where` names the object judged, the stage that raised it, a docs URL, and often a
-fix. A fix is an edit, a setting or a command, each with an applicability that says whether it may be
+fix. A fix is an edit, a setting, a command or a runtime copy, each with an applicability that says whether it may be
 applied without asking, and `Project.apply(finding)` applies it. No code spells its own certainty,
 because a closed enum publishes each value with its own sentence where an adjective in a code name
 publishes nothing.
@@ -161,8 +161,8 @@ lines on stderr as they happen, and every run appends `build/events/<run>.jsonl`
 the judgements it moves and its environment name. The published range is the safe range and the
 loader refuses a value outside it, naming the file and the line that wrote it, because a published
 bound you can cross into nonsense is worse than no bound at all. Five layers can set a key and each
-overrides the ones before it, and `decktalk config explain KEY` prints all five with the winner
-marked.
+overrides the ones before it, and `decktalk config explain KEY` prints the value in force and
+the layer it comes from.
 
 No flag duplicates a settings key. `--set table.key=value` is the fifth layer, it is repeatable, it
 writes nothing, it is validated by the same loader with the same refusal, and the loader routes each

@@ -39,8 +39,8 @@ from the schema which commands do those things rather than meeting a null on the
 | `run` | string | Every result whose command opens a run, which is every command except the five under `config`. It is the run id, and it names the run's events file. |
 | `written` | array of strings | Every result whose command writes a file, as project-relative POSIX paths in the order they were written. |
 
-`init`, `doctor`, `check`, `storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`,
-`build`, `clip`, `config set` and `config unset` declare `written`. `install`, `status`, `words`,
+`init`, `check`, `storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`, `build`,
+`clip`, `config set` and `config unset` declare `written`. `doctor`, `install`, `status`, `words`,
 `serve`, `verify`, `config list`, `config get` and `config explain` do not, because they write
 nothing.
 
@@ -299,7 +299,7 @@ its sentence, its certainty and the settings keys that move it.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `code` | string | The stable code a caller dispatches on, such as `CUE_OFF`. There are fifty-one of them. |
+| `code` | string | The stable code a caller dispatches on, such as `CUE_OFF`. There are fifty-two of them. |
 | `message` | string | One sentence, with every measured number and its limit written into it. |
 | `certainty` | `certain` or `uncertain` | Whether this is wrong for sure or only probably wrong. |
 | `location` | object | Where the finding is. |
@@ -474,7 +474,7 @@ decktalk build --no-voice --events --json
 {"event":"run.start","time":"2026-09-24T10:32:36.759700Z","seq":0,"run":"b906d77fb488","events_path":"build/events/b906d77fb488.jsonl"}
 {"event":"stage.start","time":"2026-09-24T10:32:36.783527Z","seq":1,"run":"b906d77fb488","stage":"narrate","index":1,"count":6}
 {"event":"section.start","time":"2026-09-24T10:32:36.784386Z","seq":2,"run":"b906d77fb488","stage":"narrate","section":1}
-{"event":"section.done","time":"2026-09-24T10:32:36.878277Z","seq":3,"run":"b906d77fb488","stage":"narrate","section":1,"outcome":"ok","seconds":0.09388712490908802}
+{"event":"section.done","time":"2026-09-24T10:32:36.878277Z","seq":3,"run":"b906d77fb488","stage":"narrate","section":1,"outcome":"ok","seconds":0.094}
 {"event":"progress","time":"2026-09-24T10:32:36.878405Z","seq":4,"run":"b906d77fb488","stage":"narrate","section":1,"done":1,"total":3,"unit":"take","label":"Open"}
 ```
 

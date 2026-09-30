@@ -278,7 +278,7 @@ around it, because a JSON Schema document inside a wrapper is not that document.
 
 A finding carries `code`, `message`, `certainty`, `location`, `stage`, `fix` and `url`. `certainty`
 is `certain` or `uncertain`. `location` carries a required `where` naming the object judged, plus
-`file`, `line`, `section` and `cue`. `fix` is one of `edit`, `setting` or `command`, each with a
+`file`, `line`, `section` and `cue`. `fix` is one of `edit`, `setting`, `command` or `runtime`, each with a
 `title` and an `applicability` of `safe`, `unsafe` or `display`. In the library
 `Project.apply(finding)` applies one.
 
@@ -316,7 +316,7 @@ Whole contract: [The JSON contract](/agents/json).
 A non-zero exit with `error` null is a finding, so read `findings`, change the project and run the
 command again. A non-null `error` is an error, so stop and tell the person.
 
-The fifty-one finding codes each have a page of their own, and `decktalk schema` prints them all
+The fifty-two finding codes each have a page of their own, and `decktalk schema` prints them all
 with their sentences, their certainties and the settings keys that move them.
 
 ## Settings
@@ -344,8 +344,8 @@ keys the document owns beside knobs the settings loader declares.
 
 The published range is the safe range. A bound is there because a value past it deletes a check,
 corrupts the evidence a later stage measures or breaks a tool, and the loader refuses a value
-outside it, naming the file and the line. `decktalk config explain KEY` prints all five layers with
-the winner marked, along with the key's sentence, its unit, its range, its hazard and the finding
+outside it, naming the file and the line. `decktalk config explain KEY` prints the value in force and
+the layer it comes from, along with the key's sentence, its unit, its range, its hazard and the finding
 codes it moves.
 
 Three environment variables name no key: `DECKTALK_PROJECT`, `DECKTALK_CONFIG` and
@@ -388,7 +388,7 @@ decktalk <command> --help            # one command's flags, and what its JSON ob
 decktalk schema                      # every command, flag, exit, error code, finding code and stage
 decktalk schema NAME                 # one command's result, or finding, error, event, settings, page, project
 decktalk schema settings             # every knob with its default, range, unit and hazard
-decktalk config explain KEY          # one knob whole, with all five layers and the winner marked
+decktalk config explain KEY          # one knob whole, with its value and the layer in force
 decktalk status --json               # where this project stands, and the command to run next
 decktalk doctor --json               # what this machine has, and what a run would use
 ```

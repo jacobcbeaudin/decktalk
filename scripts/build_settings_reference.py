@@ -61,8 +61,8 @@ Five layers can set a key. Each one overrides the layers before it.
 4. The environment variable each key publishes, such as `DECKTALK_VIDEO_PRESET`.
 5. `--set table.key=value`, on any command, for one run.
 
-`decktalk config explain KEY` prints those five layers with the winner marked, so you never have to
-work out which one is in force.
+`decktalk config explain KEY` prints the value in force and the layer it comes from, so you never
+have to work out which one that is.
 
 The per-machine settings file holds machine keys alone. A key about the film in that file is
 refused by name, because the file that ships has to carry whatever the machine running it believes.

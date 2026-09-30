@@ -517,7 +517,7 @@ the last run resolved.
 
 | Member | Meaning |
 |---|---|
-| `result` | The `ServeResult`: `url` is where the deck is served, `port` is the port the origin listens on, which a caller reads when it asked for any free one, and `root` is the directory it serves. |
+| `result` | The `ServeResult`: `url` is where the deck is served, `port` is the port the origin listens on, which a caller reads when it asked for any free one. |
 | `wait()` | Block until the origin is closed, which is what a command with no other work to do does. |
 | `close()` | Stop serving, after which the URL answers nothing. |
 

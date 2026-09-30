@@ -7,8 +7,9 @@ ElevenLabs is the only speech provider DeckTalk has. The seam above it is intern
 `decktalk`, and no result model carries a provider. `PROVIDERS` in `speech/__init__.py` is a written
 out mapping of one name to one factory, and `[voice] provider` may name a key of it.
 
-A provider is built from a `VoiceContext`, which carries five values and no project: `secrets`,
-`api_base`, `context_chars`, `speech_timeout_seconds` and `sound_timeout_seconds`. The one thing
+A provider is built from a `VoiceContext`, which carries seven values and no project: `secrets`,
+`api_base`, `context_chars`, `speech_timeout_seconds`, `sound_timeout_seconds`, `retries` and
+`allow_any_api_base`. The one thing
 DeckTalk asks of a voice is audio with a start and an end time for every word.
 
 ## Why
