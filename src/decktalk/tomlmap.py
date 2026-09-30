@@ -51,14 +51,12 @@ class Nature(Enum):
 class Source(Enum):
     """Where the value in force is expected to come from, which decides who may write it.
 
-    A stated key is one DeckTalk cannot know and the operator must supply, and a measured key is
-    one a run writes, which is why `config set` refuses to take a measured value by hand and names
-    the command that takes it instead.
+    A stated key is one DeckTalk cannot know and the operator must supply, such as a price, which is
+    why it names the evidence the operator reads it from.
     """
 
     CHOSEN = "chosen"
     STATED = "stated"
-    MEASURED = "measured"
 
 
 @dataclass(frozen=True)

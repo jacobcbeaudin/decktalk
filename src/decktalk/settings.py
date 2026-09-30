@@ -843,27 +843,6 @@ class ToolsConfig:
 
 
 @dataclass(frozen=True)
-class HostConfig:
-    """These keys are facts about this machine that a run measures rather than a person chooses."""
-
-    presentation_bias_ms: float = tune(
-        0.0,
-        "How long this machine takes to present a frame the page has already drawn, which is what a "
-        "run's own measurements of this machine are read against.",
-        unit="milliseconds",
-        bounds=Bounds(ge=-200, le=200),
-        scope=Scope.MACHINE,
-        nature=Nature.APPARATUS,
-        source=Source.MEASURED,
-        evidence="decktalk doctor --measure",
-        hazard=(
-            "A bias written by hand is a claim about this machine that nobody measured, and the one "
-            "command that can measure it is beside this key. It is measured or it is zero."
-        ),
-    )
-
-
-@dataclass(frozen=True)
 class Settings:
     """Every tunable with its default, in the order the reference and the schema publish them."""
 
@@ -878,7 +857,6 @@ class Settings:
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
-    host: HostConfig = field(default_factory=HostConfig)
 
 
 KEYS: tuple[Key, ...] = registry(Settings)
@@ -1509,7 +1487,7 @@ class Edited:
     previous: object
 
 
-def edit(text: str, key: str, value: str, *, scope: Scope, file: Path, measured: bool = False) -> Edited:
+def edit(text: str, key: str, value: str, *, scope: Scope, file: Path) -> Edited:
     """Set one key in the text of one settings file, keeping every comment the file already has.
 
     The key is refused when no key has that name, when it belongs in the other file, or when the
@@ -1517,23 +1495,8 @@ def edit(text: str, key: str, value: str, *, scope: Scope, file: Path, measured:
     wrote the comments around the key and a writer that dumped a parsed tree would delete them the
     first time an agent turned a knob. The text that comes back is not yet validated as a whole,
     because a caller may have more changes to make to it first.
-
-    `measured` is the door the one command that takes a measurement comes through. A measured key is
-    refused by hand because a number typed into it is a guess, and the command that measured it is
-    holding the only honest value there is, so the refusal has to have exactly one exception and it
-    has to be named at the call rather than assumed from the key.
     """
     known = _scoped_key(key, scope, action="written to", rerun=f"decktalk config set {key} {value}")
-    if known.source is Source.MEASURED and not measured:
-        raise InputError(
-            f"'{key}' is measured rather than chosen, so a value written by hand would be a guess.",
-            hint=f"Run `{known.evidence}`.",
-        )
-    if measured and known.source is not Source.MEASURED:
-        raise InputError(
-            f"'{key}' is chosen rather than measured, so nothing may write it as a measurement.",
-            hint=f"Run `decktalk config set {key} {value}`.",
-        )
     typed = parse_value(known, value)
     document = _document(text, file)
     previous = stated(document, key)
@@ -1549,20 +1512,19 @@ def write(
     scope: Scope,
     environ: Mapping[str, str],
     dry_run: bool = False,
-    measured: bool = False,
 ) -> SettingWrite:
     """Set one key in one file, through the whole loader, keeping every comment the file already has.
 
     The would-be file is built first and loaded whole, so a value that no run could use never lands
     and the refusal a caller meets is the loader's own, with its file, its line and its near name.
     The file is then replaced whole rather than written in place, so a write that fails leaves it as
-    it was. `measured` is the door `edit` describes.
+    it was.
 
     `environ` is the machine's environment, which is the layer over the file that decides whether
     the value written is the value in force.
     """
     target = _target(path, scope)
-    edited = edit(current_text(target), key, value, scope=scope, file=path, measured=measured)
+    edited = edit(current_text(target), key, value, scope=scope, file=path)
     validate(edited.text, path, scope)
     if not dry_run:
         replace_all({target: edited.text})
@@ -1591,9 +1553,7 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
     before a byte lands, so a removal that breaks a relation between two keys never reaches the
     disk, and the document is edited rather than rewritten so the comments a person wrote around the
     key survive. A key the file never stated is taken out of nothing and the call says so, which is
-    what lets an agent that cannot read the file call this twice. A measured key may be taken out
-    although it may not be written, because a measurement that no longer describes the machine needs
-    a way back to the default.
+    what lets an agent that cannot read the file call this twice.
     """
     _scoped_key(key, scope, action="taken out of", rerun=f"decktalk config unset {key}")
     target = _target(path, scope)
@@ -1736,7 +1696,6 @@ __all__ = [
     "STANDALONE_ENV",
     "AudioConfig",
     "ElevenLabsConfig",
-    "HostConfig",
     "Layers",
     "Loaded",
     "LoudnessConfig",

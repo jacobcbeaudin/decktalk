@@ -658,23 +658,17 @@ def test_a_browser_that_will_not_launch_is_a_row_and_a_warning_that_says_why(
     assert data_of(said) == {"reason": "Executable doesn't exist"}
 
 
-def test_a_measured_doctor_keeps_the_number_it_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """The one key no person may type is written by the one command that holds an honest value for it."""
+def test_a_measured_doctor_reports_the_number_and_keeps_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No stage reads the bias, so it is read off the report and never written into a settings file."""
     here = a_machine(tmp_path)
     monkeypatch.setattr(
         machine_module,
         "import_module",
         lambda _name: SimpleNamespace(measure_presentation_bias=lambda: 12.5),
     )
-    result = here.doctor(measure=True)
-    assert result.bias_ms == 12.5
-    assert result.written == (here.config_path,)
-    assert "presentation_bias_ms = 12.5" in here.config_path.read_text(encoding="utf-8")
-
-
-def test_a_doctor_that_measured_nothing_writes_nothing(tmp_path: Path) -> None:
-    here = a_machine(tmp_path)
-    assert here.doctor().written == ()
+    assert here.doctor(measure=True).bias_ms == 12.5
     assert not here.config_path.exists()
 
 

@@ -493,7 +493,6 @@ class DoctorResult(Result):
     reports_findings: ClassVar[bool] = True
 
     run: Run
-    written: Written
     tools: tuple[InstalledTool, ...] = Field(description="Every tool this machine needs, in the order it checks them.")
     cache: ProjectPath = Field(description="The directory the fetched tools live in.")
     python: str = Field(description="The Python this DeckTalk runs on.")

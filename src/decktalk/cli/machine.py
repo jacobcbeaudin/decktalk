@@ -117,9 +117,7 @@ def _asks_for_sudo() -> bool:
     return sys.platform.startswith("linux")
 
 
-@command(
-    group=Group.MACHINE, epilog="Reads this machine and fetches nothing, and --measure writes the bias it measured."
-)
+@command(group=Group.MACHINE, epilog="Reads this machine and fetches nothing, and writes nothing.")
 def doctor(
     ctx: Context,
     measure: Annotated[

@@ -19,7 +19,7 @@ from decktalk.errors import Cancelled, InputError, ToolError
 from decktalk.media import browser
 from decktalk.media.environment import child_environment
 from decktalk.media.origin import ORIGIN, Allowed, page_url
-from decktalk.settings import BY_ID, COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
+from decktalk.settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 from support.logs import data_of
 
 REPORTED = {
@@ -478,16 +478,19 @@ def test_the_measurement_is_written_from_the_two_constants_it_is_declared_with()
     assert "FRAMES" not in script and "HOLD_MS" not in script
 
 
+BIAS_LIMIT_MS = 200
+"""How far from zero a real presentation bias sits, well past any display's own refresh interval."""
+
+
 @pytest.mark.browser
 def test_this_machine_either_measures_a_bias_inside_the_published_range_or_says_it_cannot():
-    """The setting is measured or it is zero, so a browser with nothing to say refuses rather than guesses."""
-    bounds = BY_ID["host.presentation_bias_ms"].bounds
+    """A browser with nothing to say refuses rather than guesses."""
     try:
         measured = browser.measure_presentation_bias()
     except ToolError as refused:
         assert "reports no presentation times" in str(refused)
         return
-    assert bounds is not None and bounds.ge <= measured <= bounds.le
+    assert -BIAS_LIMIT_MS <= measured <= BIAS_LIMIT_MS
 
 
 # ---- the page policy ------------------------------------------------------------------------------

@@ -639,8 +639,8 @@ strings, spelled as `--set` spells them.
 | `doctor(*, measure=False, cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. |
 | `apply(fix, *, unsafe=False)` | Carry out the fixes a machine can make. |
 
-`doctor(measure=True)` drives a browser to measure this host's presentation bias and writes it to
-the per-machine settings file, which is the one key a command measures rather than a person chooses.
+`doctor(measure=True)` drives a browser to measure this host's presentation bias and reports it as
+`bias_ms`. It writes nothing, because no stage reads it.
 
 ```python
 import decktalk

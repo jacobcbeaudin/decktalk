@@ -53,7 +53,7 @@ class Outer:
         unit="word",
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
-        source=Source.MEASURED,
+        source=Source.STATED,
         evidence="a command",
         hazard="A wrong word breaks it.",
         requires="inner.count >= 1",

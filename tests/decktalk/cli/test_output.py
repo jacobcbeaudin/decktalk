@@ -168,13 +168,12 @@ Found 1 finding, 1 certain.
 
  Tool     Version     Where
  ─────────────────────────────────
- tool12   version13   build/path14
+ tool11   version12   build/path13
 
-Python    python17
-Platform  platform18
+Python    python16
+Platform  platform17
 Voice key yes
-Bias      19 ms
-Wrote     build/written11
+Bias      18 ms
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,

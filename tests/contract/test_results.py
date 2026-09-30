@@ -99,7 +99,7 @@ class Row:
 SURFACE: tuple[Row, ...] = (
     Row("init", "decktalk:init", InitResult, True, True, HERE),
     Row("install", "decktalk.machine:Machine.install", InstallResult, True, False, "tests/decktalk/test_machine.py"),
-    Row("doctor", "decktalk.machine:Machine.doctor", DoctorResult, True, True, HERE),
+    Row("doctor", "decktalk.machine:Machine.doctor", DoctorResult, True, False, HERE),
     Row("status", "decktalk.project:Project.status", StatusResult, True, False, HERE),
     Row("check", "decktalk.project:Project.check", CheckResult, True, True, HERE),
     Row("words", "decktalk.project:Project.words", WordsResult, True, False, "tests/decktalk/stages/test_words.py"),

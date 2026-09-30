@@ -48,7 +48,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --where machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.cache_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `output.events_max_bytes`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds`, `tools.cache_dir` and `host.presentation_bias_ms`.
+`narration.concurrency`, `narration.retries`, `narration.cache_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `output.events_max_bytes`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
 
 ## Which key moves which failure
 
@@ -305,19 +305,6 @@ These keys name the tools DeckTalk drives, for a machine that supplies its own.
 | `ffprobe` | string | `""` | takes any value of its type | path | machine |  | ffprobe executable. It is empty for the build DeckTalk fetches itself. |
 | `timeout_seconds` | number | `600.0` | must be between 10 and 7200 | seconds | machine |  | Longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before it is stopped. |
 | `cache_dir` | string | `""` | takes any value of its type | path | machine |  | Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache. |
-
-## `[host]`
-
-These keys are facts about this machine that a run measures rather than a person chooses.
-
-| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
-|---|---|---|---|---|---|---|---|
-| `presentation_bias_ms` | number | `0.0` | must be between -200 and 200 | milliseconds | machine |  | How long this machine takes to present a frame the page has already drawn, which is what a run's own measurements of this machine are read against. |
-
-<Warning>
-**`host.presentation_bias_ms`** A bias written by hand is a claim about this machine that nobody measured, and the one command that can measure it is beside this key. It is measured or it is zero.
-
-</Warning>
 
 ## The numbers that are not knobs
 

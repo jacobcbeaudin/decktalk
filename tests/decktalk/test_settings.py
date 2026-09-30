@@ -194,7 +194,7 @@ class TestTheRecordEveryKeyCarries:
     def test_no_verdict_limit_is_machine_scoped(self) -> None:
         for key in KEYS:
             if key.scope is Scope.MACHINE:
-                assert key.source is Source.MEASURED or not key.decides, f"{key.id} decides a verdict per machine"
+                assert not key.decides, f"{key.id} decides a verdict per machine"
 
     def test_the_key_a_diagnostic_names_is_the_key_config_set_takes(self) -> None:
         for key in KEYS:
@@ -478,25 +478,6 @@ class TestTheWriter:
         assert caught.value.hint is not None
         assert "--where machine" in caught.value.hint
 
-    def test_a_measured_key_is_refused_and_the_command_that_takes_it_is_named(self, tmp_path: Path) -> None:
-        with pytest.raises(InputError, match="measured rather than chosen") as caught:
-            write(tmp_path / "machine.toml", "host.presentation_bias_ms", "5", scope=Scope.MACHINE, environ={})
-        assert caught.value.hint == "Run `decktalk doctor --measure`."
-
-    def test_the_measuring_command_writes_a_measured_key_through_its_own_door(self, tmp_path: Path) -> None:
-        """The one exception to the refusal above, which is the command holding the only honest value."""
-        path = tmp_path / "machine.toml"
-        written = write(path, "host.presentation_bias_ms", "5", scope=Scope.MACHINE, measured=True, environ={})
-        assert written.value == 5.0
-        assert path.read_text(encoding="utf-8") == "[host]\npresentation_bias_ms = 5.0\n"
-
-    def test_a_chosen_key_is_refused_through_the_measuring_door(self, tmp_path: Path) -> None:
-        """The door opens one way only, so nothing dresses a preference up as a measurement."""
-        with pytest.raises(InputError, match="chosen rather than measured"):
-            write(
-                tmp_path / "decktalk.toml", "video.preset", "veryfast", scope=Scope.PROJECT, measured=True, environ={}
-            )
-
     def test_a_write_a_higher_layer_shadows_says_so(self, tmp_path: Path) -> None:
         environ = {"DECKTALK_VIDEO_PRESET": "slow"}
         written = write(tmp_path / "decktalk.toml", "video.preset", "veryfast", scope=Scope.PROJECT, environ=environ)
@@ -601,13 +582,6 @@ class TestTheRemover:
             unset(tmp_path / "decktalk.toml", "tools.ffmpeg", scope=Scope.PROJECT, environ={})
         assert caught.value.hint is not None
         assert "--where machine" in caught.value.hint
-
-    def test_a_measured_key_may_be_taken_out_although_it_may_not_be_written(self, tmp_path: Path) -> None:
-        path = tmp_path / "machine.toml"
-        path.write_text("[host]\npresentation_bias_ms = 5.0\n", encoding="utf-8")
-        removed = unset(path, "host.presentation_bias_ms", scope=Scope.MACHINE, environ={})
-        assert removed.keys == ("host.presentation_bias_ms",)
-        assert removed.layer is Layer.DEFAULT
 
 
 class TestTheTables:

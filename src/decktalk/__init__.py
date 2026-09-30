@@ -146,7 +146,6 @@ from .results import (
 from .settings import (
     AudioConfig,
     ElevenLabsConfig,
-    HostConfig,
     Layers,
     LoudnessConfig,
     MixConfig,
@@ -204,7 +203,6 @@ __all__ = [
     "FindingEvent",
     "Fix",
     "FixOutcome",
-    "HostConfig",
     "InitResult",
     "InputError",
     "Inputs",

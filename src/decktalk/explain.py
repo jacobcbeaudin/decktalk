@@ -64,7 +64,7 @@ class Explanation(Model):
     scope: Scope = Field(description="Which file this key belongs in.")
     nature: Nature = Field(description="Why this number is a key at all, taste or apparatus.")
     source: Source = Field(description="Where the value is expected to come from.")
-    evidence: str | None = Field(None, description="What produces the value, for a stated or measured key.")
+    evidence: str | None = Field(None, description="What produces the value, for a stated key.")
     hazard: str | None = Field(None, description="What a value at the edge of the range risks, or null.")
     requires: str | None = Field(None, description="A relation to another key or number, enforced at load.")
     see_also: tuple[str, ...] = Field((), description="Keys and published numbers that move with this one.")

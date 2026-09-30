@@ -723,9 +723,9 @@ def bias_script(frames: int, hold_ms: int) -> str:
 def measure_presentation_bias() -> float:
     """How long this machine takes to present a frame the page has already drawn, in milliseconds.
 
-    This is the one measurement `decktalk doctor --measure` writes into a machine file, because
-    `verify` subtracts it from every offset it measures. It is the middle of a run of frames rather
-    than the worst or the mean, so one frame the operating system held up moves nothing.
+    This is what `decktalk doctor --measure` reports, which an author reads a late section's
+    offsets against. It is the middle of a run of frames rather than the worst or the mean, so one
+    frame the operating system held up moves nothing.
 
     It measures the browser this machine launches by default, which is the browser `doctor` reports
     on, rather than one a project names: a bias belongs to the machine and not to a deck.
@@ -740,7 +740,7 @@ def measure_presentation_bias() -> float:
     if not samples:
         raise ToolError(
             "this machine's browser reports no presentation times, so the bias cannot be measured.",
-            hint="Leave host.presentation_bias_ms at 0, which subtracts nothing from a measured offset.",
+            hint="Read a late section's offsets as they are, since this machine cannot say how late it presents.",
         )
     return round(statistics.median(samples), 1)
 

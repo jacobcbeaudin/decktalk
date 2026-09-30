@@ -180,29 +180,6 @@
         }
       },
       "additionalProperties": false
-    },
-    "host": {
-      "type": "object",
-      "description": "These keys are facts about this machine that a run measures rather than a person chooses.",
-      "x-kind": "tuning",
-      "properties": {
-        "presentation_bias_ms": {
-          "description": "How long this machine takes to present a frame the page has already drawn, which is what a run's own measurements of this machine are read against.",
-          "type": "number",
-          "default": 0.0,
-          "minimum": -200,
-          "maximum": 200,
-          "x-range": "must be between -200 and 200",
-          "x-unit": "milliseconds",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "measured",
-          "x-evidence": "decktalk doctor --measure",
-          "x-hazard": "A bias written by hand is a claim about this machine that nobody measured, and the one command that can measure it is beside this key. It is measured or it is zero.",
-          "x-environment": "DECKTALK_HOST_PRESENTATION_BIAS_MS"
-        }
-      },
-      "additionalProperties": false
     }
   },
   "additionalProperties": false
