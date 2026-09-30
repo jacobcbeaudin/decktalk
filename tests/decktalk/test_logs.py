@@ -2,19 +2,42 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
+import subprocess
+import sys
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextvars import copy_context
+from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from filelock import FileLock
+from playwright.sync_api import Error as PlaywrightError
+from pydantic import TypeAdapter
+from pytest_httpserver import HTTPServer
+from werkzeug import Response
 
+import decktalk
 from decktalk import logs
-from decktalk.events import Event, Level, Log
+from decktalk.errors import ErrorCode, NotBuiltError, ProjectLocked, ProviderError
+from decktalk.events import Event, Level, Line, Log, RunDone
+from decktalk.findings import Applicability, Code, CommandFix
 from decktalk.logs import HANDLER, LOGGER, RunHandler, install, level_of, logging_into, where, within
-from decktalk.pipeline import Stage
+from decktalk.machine import Machine, Run, Toolchain, apply_fix
+from decktalk.media import browser, ffmpeg, origin
+from decktalk.media.environment import children_see
+from decktalk.pipeline import Outcome, Stage
+from decktalk.results import Scope
 from decktalk.secret import Secret
+from decktalk.settings import ToolsConfig
+from decktalk.speech import http as _http
+from decktalk.stages.narrate import _in_pool
+from decktalk.toolchain import chromium_fetch
+from support.projects import write_project
 from support.runs import a_machine
 
 log = logging.getLogger("decktalk.media.ffmpeg")
@@ -218,3 +241,353 @@ def test_a_hosts_own_handler_never_sees_a_registered_secret() -> None:
     finally:
         logging.getLogger().removeHandler(host)
     assert heard and canary not in heard[-1] and "<secret ELEVENLABS_API_KEY>" in heard[-1]
+
+
+# ---- every failure path leaves a record --------------------------------------------------------------
+#
+# Each row injects one fault inside a real run with a real events file, then reads the file back
+# through the `Line` adapter, as a host would, and names the one record the fault must leave. A path
+# that stops leaving its record fails its row, which is what keeps the table true as the code grows.
+
+LINES = TypeAdapter(Line)
+
+
+@dataclass(frozen=True)
+class Record:
+    """The record one fault must leave: its level, the module that wrote it and the keys its data holds."""
+
+    level: Level
+    source: str
+    keys: frozenset[str] = frozenset()
+    count: int = 1
+
+
+@dataclass(frozen=True)
+class Ended:
+    """How the run a fault ended must say it ended, on its last line."""
+
+    outcome: Outcome
+    code: ErrorCode
+
+
+def a_host_machine(root: Path, *, limit: float = 600.0) -> Machine:
+    """A machine that read nothing, whose tools stop a call after `limit` seconds."""
+    return Machine(
+        environ={},
+        tables={},
+        config_path=root / "machine.toml",
+        cwd=root,
+        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(root / "cache"), timeout_seconds=limit)),
+    )
+
+
+def recorded(root: Path, fault: Callable[[Run], object], *, limit: float = 600.0) -> list[Event]:
+    """Every line of the one run `fault` ran in, read back from its events file."""
+    here = a_host_machine(root, limit=limit)
+    events = root / "build" / "events"
+    with contextlib.suppress(Exception, KeyboardInterrupt), here.run(root=root, events_dir=events) as run:
+        fault(run)
+    [path] = events.glob("*.jsonl")
+    return [LINES.validate_json(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def a_tool(monkeypatch: pytest.MonkeyPatch, script: str) -> None:
+    """ffmpeg replaced by a small Python process, so the pipes, the poll and the kill are a tool's own."""
+    monkeypatch.setattr(ffmpeg, "ffmpeg_paths", lambda: ("ffmpeg", "ffprobe"))
+    spawn = ffmpeg._spawn
+
+    def fake(_cmd: list[str]) -> subprocess.Popen[bytes]:
+        with children_see(os.environ):
+            return spawn([sys.executable, "-c", script])
+
+    monkeypatch.setattr(ffmpeg, "_spawn", fake)
+
+
+def tool_exits_1(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    a_tool(monkeypatch, "import sys; sys.stderr.write('no such file'); sys.exit(1)")
+    ffmpeg.run("-i", "a.mp3", "out.mp3")
+
+
+def tool_runs_too_long(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    a_tool(monkeypatch, "import time; time.sleep(30)")
+    ffmpeg.run("-i", "a.mp3", "out.mp3")
+
+
+def tool_is_cancelled(run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    a_tool(monkeypatch, "import time; time.sleep(30)")
+    threading.Timer(0.2, run.cancel.cancel).start()
+    ffmpeg.run("-i", "a.mp3", "out.mp3")
+
+
+def reader_fails(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    a_tool(monkeypatch, "import sys, time; sys.stdout.buffer.write(b'f' * 200000); sys.stdout.flush(); time.sleep(30)")
+
+    def refuse(_chunk: bytes) -> None:
+        raise ValueError("the frame was not the size it was planned at")
+
+    ffmpeg.stream("-i", "film.mp4", "-", into=refuse)
+
+
+def pinned_download_fails(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    monkeypatch.setattr(ffmpeg.ffmpeg_fetch, "installed_pinned", lambda *_args: None)
+    monkeypatch.setattr(ffmpeg.ffmpeg_fetch, "pinned_build", lambda *_args: object())
+    monkeypatch.setattr(ffmpeg, "_path_pair", lambda: ("/usr/bin/ffmpeg", "/usr/bin/ffprobe"))
+
+    def offline(**_kwargs: object) -> tuple[str, str]:
+        raise OSError("network is unreachable")
+
+    monkeypatch.setattr(ffmpeg.ffmpeg_fetch, "fetch_ffmpeg", offline)
+    ffmpeg._resolve(ToolsConfig(), None)
+
+
+def installer_fails(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    failed = subprocess.CompletedProcess([], 1, b"", b"ERROR: host unreachable\n")
+    monkeypatch.setattr(chromium_fetch.subprocess, "run", lambda cmd, **_kwargs: failed)
+    chromium_fetch.fetch_chromium(env={})
+
+
+def installer_hangs(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    def hang(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.TimeoutExpired(cmd, float(kwargs["timeout"]))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(chromium_fetch.subprocess, "run", hang)
+    chromium_fetch.fetch_chromium(env={})
+
+
+def fix_command_fails(run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
+    failed = subprocess.CompletedProcess([], 2, b"", b"OSError: the cache is read-only\n")
+    monkeypatch.setattr("decktalk.machine.subprocess.run", lambda argv, **_kwargs: failed)
+    fix = CommandFix(title="t", applicability=Applicability.SAFE, command=("decktalk", "install"))
+    apply_fix(run, Code.FILE_MISSING, fix, root=tmp, scope=Scope.MACHINE, unsafe=False)
+
+
+def router_breaks(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
+    handlers: list[Callable[..., None]] = []
+    target = type("Target", (), {"route": lambda _self, _pattern, handler: handlers.append(handler)})()
+    origin.route_pages(target, origin.Allowed.of(tmp, ()), trusted=True)  # type: ignore[arg-type]
+
+    def broken(*_args: object) -> None:
+        raise OSError("the disk went away")
+
+    monkeypatch.setattr(origin, "local_target", broken)
+    route = type("Route", (), {"fulfill": lambda _self, **_kwargs: None})()
+    handlers[0](route, type("Request", (), {"url": f"{origin.ORIGIN}/deck/index.html?q=1"})())
+
+
+def two_sections_fail(_run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    both_sent = threading.Barrier(2)
+
+    def work(plan: SimpleNamespace) -> None:
+        both_sent.wait(timeout=5)
+        if plan.segment.index == 2:
+            threading.Event().wait(0.1)
+        raise ProviderError(f"section {plan.segment.index} failed")
+
+    plans = [SimpleNamespace(segment=SimpleNamespace(index=number)) for number in (1, 2)]
+    _in_pool(work, plans, workers=2)  # type: ignore[arg-type]
+
+
+def browser_is_fetched_again(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
+    executable = tmp / "chrome"
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    launched = type("Launched", (), {"version": "0.0.0.0"})()
+    tries: list[int] = []
+
+    def launch(**_options: object) -> object:
+        tries.append(1)
+        if len(tries) == 1:
+            raise PlaywrightError("error while loading shared libraries: libnss3.so")
+        return launched
+
+    chromium = SimpleNamespace(executable_path=str(executable), launch=launch)
+    fetched = subprocess.CompletedProcess([], 0, b"", b"")
+    monkeypatch.setattr(chromium_fetch.subprocess, "run", lambda cmd, **_kwargs: fetched)
+    browser.launch(SimpleNamespace(chromium=chromium), policy=browser.TRUSTED)  # type: ignore[arg-type]
+
+
+def run_is_cancelled(run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    run.cancel.cancel()
+    with run.section(Stage.RECORD, 1):
+        pass
+
+
+def run_is_interrupted(_run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    raise KeyboardInterrupt
+
+
+def a_bug(_run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
+    raise KeyError("page")
+
+
+RETRY = frozenset({"wait_seconds", "wait_source", "attempt", "retries"})
+KILL = frozenset({"argv", "reason", "seconds", "limit"})
+CALL = frozenset({"argv", "exit", "seconds", "output_tail"})
+
+FAILURES: dict[str, tuple[Callable[..., object], Record | None, Ended | None, float]] = {
+    "ffmpeg exits non-zero": (
+        tool_exits_1,
+        Record(Level.WARNING, "media.ffmpeg", CALL),
+        Ended(Outcome.FAILED, ErrorCode.TOOL),
+        600.0,
+    ),
+    "ffmpeg runs past its limit": (
+        tool_runs_too_long,
+        Record(Level.WARNING, "media.ffmpeg", KILL),
+        Ended(Outcome.FAILED, ErrorCode.TOOL),
+        0.3,
+    ),
+    "ffmpeg is cancelled": (
+        tool_is_cancelled,
+        Record(Level.WARNING, "media.ffmpeg", KILL),
+        Ended(Outcome.STOPPED, ErrorCode.CANCELLED),
+        600.0,
+    ),
+    "ffmpeg's reader fails": (
+        reader_fails,
+        Record(Level.WARNING, "media.ffmpeg", KILL),
+        Ended(Outcome.FAILED, ErrorCode.INTERNAL),
+        600.0,
+    ),
+    "the pinned ffmpeg cannot be fetched": (
+        pinned_download_fails,
+        Record(Level.WARNING, "media.ffmpeg", frozenset({"reason", "using"})),
+        None,
+        600.0,
+    ),
+    "playwright install fails": (
+        installer_fails,
+        Record(Level.WARNING, "toolchain.chromium_fetch", CALL),
+        Ended(Outcome.FAILED, ErrorCode.TOOL),
+        600.0,
+    ),
+    "playwright install hangs": (
+        installer_hangs,
+        Record(Level.WARNING, "toolchain.chromium_fetch", frozenset({"argv", "reason", "limit"})),
+        Ended(Outcome.FAILED, ErrorCode.TOOL),
+        600.0,
+    ),
+    "a fix command fails": (fix_command_fails, Record(Level.WARNING, "machine", CALL), None, 600.0),
+    "the origin cannot answer": (
+        router_breaks,
+        Record(Level.WARNING, "media.origin", frozenset({"url", "error"})),
+        None,
+        600.0,
+    ),
+    "two narration sections fail": (
+        two_sections_fail,
+        Record(Level.WARNING, "stages.narrate", frozenset({"section", "error"})),
+        Ended(Outcome.FAILED, ErrorCode.PROVIDER),
+        600.0,
+    ),
+    "Chromium will not launch and is fetched again": (
+        browser_is_fetched_again,
+        Record(Level.INFO, "media.browser", frozenset({"reason"})),
+        None,
+        600.0,
+    ),
+    "the run is cancelled": (run_is_cancelled, None, Ended(Outcome.STOPPED, ErrorCode.CANCELLED), 600.0),
+    "the run is interrupted": (run_is_interrupted, None, Ended(Outcome.STOPPED, ErrorCode.CANCELLED), 600.0),
+    "the run meets a bug": (a_bug, None, Ended(Outcome.FAILED, ErrorCode.INTERNAL), 600.0),
+}
+
+
+@pytest.mark.parametrize("name", list(FAILURES))
+def test_every_failure_path_leaves_its_record_in_the_events_file(
+    name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fault, record, ended, limit = FAILURES[name]
+    lines = recorded(tmp_path, lambda run: fault(run, monkeypatch, tmp_path), limit=limit)
+    if record is not None:
+        said = [line for line in lines if isinstance(line, Log) and line.source == record.source]
+        matching = [line for line in said if line.level is record.level and record.keys <= set(line.data or {})]
+        assert len(matching) == record.count, [line.model_dump() for line in said]
+    last = lines[-1]
+    assert isinstance(last, RunDone)
+    if ended is not None:
+        assert last.outcome is ended.outcome
+        assert last.error is not None and last.error.code is ended.code
+    # Nothing a failure path writes goes anywhere but the stream.
+    assert capsys.readouterr() == ("", "")
+
+
+@pytest.fixture
+def voice_service(monkeypatch: pytest.MonkeyPatch) -> Iterator[HTTPServer]:
+    """A threaded local voice, with every wait skipped, so a stalled reply holds one thread and no test time."""
+    monkeypatch.setattr(_http, "pause", lambda _seconds: None)
+    released = threading.Event()
+    server = HTTPServer(host="127.0.0.1", threaded=True)
+    server.start()
+    server.released = released  # type: ignore[attr-defined]
+    try:
+        yield server
+    finally:
+        released.set()
+        server.clear()
+        server.stop()
+
+
+def test_a_busy_voice_leaves_a_warning_per_retry_and_a_trace_per_attempt(tmp_path: Path, voice_service) -> None:
+    for _ in range(2):
+        voice_service.expect_oneshot_request("/speak").respond_with_data("", 429, {"Retry-After": "2"})
+    voice_service.expect_request("/speak").respond_with_json({"ok": True})
+    url = voice_service.url_for("/speak")
+    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=5, retries=3))
+    said = [line for line in lines if isinstance(line, Log) and line.source == "speech.http"]
+    retries = [line.data for line in said if line.level is Level.WARNING]
+    attempts = [line.data for line in said if line.level is Level.DEBUG]
+    assert [(data["wait_seconds"], data["wait_source"]) for data in retries] == [(2.0, "retry-after")] * 2  # type: ignore[index]
+    assert [data["status"] for data in attempts] == [429, 429, 200]  # type: ignore[index]
+
+
+def test_a_stalled_voice_is_retried_and_ends_as_a_provider_refusal(tmp_path: Path, voice_service) -> None:
+    def stall(_request: object) -> Response:
+        def body() -> Iterator[bytes]:
+            yield b"{"
+            voice_service.released.wait(timeout=10)
+
+        return Response(body(), 200, {"Content-Length": "100"})
+
+    voice_service.expect_request("/speak").respond_with_handler(stall)
+    url = voice_service.url_for("/speak")
+    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=1, retries=1))
+    retries = [line for line in lines if isinstance(line, Log) and line.level is Level.WARNING]
+    assert len(retries) == 1 and "stopped answering" in retries[0].message
+    last = lines[-1]
+    assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.PROVIDER
+
+
+def test_a_held_project_names_the_lock_on_its_last_line(tmp_path: Path) -> None:
+    root = write_project(tmp_path)
+    project = decktalk.open(root, machine=a_host_machine(root))
+    project.workspace.build.mkdir(parents=True, exist_ok=True)
+    held = threading.Event()
+    done = threading.Event()
+
+    def hold() -> None:
+        with FileLock(project.workspace.build / ".lock"):
+            held.set()
+            done.wait(timeout=10)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    held.wait(timeout=5)
+    try:
+        with pytest.raises(ProjectLocked):
+            project.cue()
+    finally:
+        done.set()
+        holder.join()
+    [path] = (root / "build" / "events").glob("*.jsonl")
+    last = LINES.validate_json(path.read_text(encoding="utf-8").splitlines()[-1])
+    assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.LOCKED
+
+
+def test_a_stage_missing_its_input_names_it_on_its_last_line(tmp_path: Path) -> None:
+    root = write_project(tmp_path)
+    project = decktalk.open(root, machine=a_host_machine(root))
+    with pytest.raises(NotBuiltError):
+        project.cue()
+    [path] = (root / "build" / "events").glob("*.jsonl")
+    last = LINES.validate_json(path.read_text(encoding="utf-8").splitlines()[-1])
+    assert isinstance(last, RunDone) and last.error is not None
+    assert last.error.code is ErrorCode.NOT_BUILT and "takes.json" in last.error.message
