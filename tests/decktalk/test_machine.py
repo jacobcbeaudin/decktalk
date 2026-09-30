@@ -15,7 +15,7 @@ import pytest
 
 from decktalk import machine as machine_module
 from decktalk.errors import ApprovalRequired, Cancel, Cancelled, ErrorCode, InputError
-from decktalk.events import Event, Level, Log, RunDone, RunStart, StageDone, StageStart
+from decktalk.events import Event, Fetch, Level, Log, RunDone, RunStart, StageDone, StageStart
 from decktalk.findings import (
     Applicability,
     Certainty,
@@ -1065,7 +1065,7 @@ def test_a_subscriber_that_raises_becomes_a_line_and_never_stops_the_run(tmp_pat
     seen: list[Event] = []
 
     def angry(event: Event) -> None:
-        if event.event == "log" and event.message == "one":
+        if isinstance(event, Log) and event.message == "one":
             raise RuntimeError("no")
         seen.append(event)
 
@@ -1091,5 +1091,5 @@ def test_a_run_binds_the_toolchain_and_the_download_listener_for_its_own_length(
         assert bound_tools().cache_dir == str(tmp_path / "cache")
         announce("ffmpeg", 10, 100)
     assert bound_tools().cache_dir == ""
-    fetched = [line for line in seen if line.event == "fetch"]
+    fetched = [line for line in seen if isinstance(line, Fetch)]
     assert [(line.tool, line.bytes, line.total_bytes) for line in fetched] == [("ffmpeg", 10, 100)]

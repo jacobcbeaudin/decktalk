@@ -8,6 +8,7 @@ import pytest
 
 from decktalk.artifacts import Takes
 from decktalk.errors import InputError, NotBuiltError, ToolError
+from decktalk.events import FindingEvent
 from decktalk.inputs import Inputs
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import Encoder
@@ -72,7 +73,7 @@ def test_a_page_section_with_no_recording_plays_black_and_is_a_certain_finding(t
     rows = render_sections(inputs, opened.run, takes, only=None, strict=False)
     assert [row.substitute for row in rows] == [Substitute.BLACK] * 3
     assert opened.codes() == ["FILE_MISSING"] * 3
-    said = next(line.finding.message for line in opened.lines if getattr(line, "finding", None) is not None)
+    said = next(line.finding.message for line in opened.of(FindingEvent))
     assert "build/recordings/01.webm" in said
     assert "a black frame plays" in said
 

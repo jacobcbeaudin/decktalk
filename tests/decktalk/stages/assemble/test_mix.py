@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from decktalk.events import FindingEvent
 from decktalk.inputs.markers import Marker
 from decktalk.media import ffmpeg
 from decktalk.stages.assemble.mix import (
@@ -118,7 +119,7 @@ def test_a_music_bed_the_project_names_and_has_not_got_is_a_certain_finding(tmp_
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
     plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, soundscape=True)
     assert opened.codes() == ["FILE_MISSING"]
-    said = next(line.finding for line in opened.lines if getattr(line, "finding", None) is not None)
+    said = next(line.finding for line in opened.of(FindingEvent))
     assert "media/bed.mp3" in said.message
     assert said.location.where == "media/bed.mp3"
     assert "[music]" not in plan.filter

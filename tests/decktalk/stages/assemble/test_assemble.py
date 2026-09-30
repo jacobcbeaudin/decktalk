@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import InputError, NotBuiltError, ToolError
+from decktalk.events import Progress
 from decktalk.media import audio, browser
 from decktalk.results import AssembleResult, Substitute, Word
 from decktalk.stages.assemble import assemble
@@ -98,7 +99,7 @@ def test_a_run_says_how_far_through_its_own_passes_it_is(tmp_path, monkeypatch):
     labels = opened.progress()
     assert labels[:3] == ["cut section 1", "cut section 2", "cut section 3"]
     assert labels[-1] == "publish the film"
-    lines = [line for line in opened.lines if getattr(line, "label", None) is not None]
+    lines = opened.of(Progress)
     assert {line.total for line in lines} == {len(labels)}
     assert [line.done for line in lines] == list(range(1, len(labels) + 1))
 
