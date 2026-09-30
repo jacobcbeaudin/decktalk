@@ -94,6 +94,7 @@ def test_the_two_command_facts_are_class_facts_and_never_fields() -> None:
         assert isinstance(model.reports_findings, bool)
         assert isinstance(model.spends, bool)
         assert not {"reports_findings", "spends"} & set(model.model_fields)
+    assert results.InitResult.reports_findings is False
 
 
 def test_every_result_that_spends_also_reports_what_it_judged() -> None:

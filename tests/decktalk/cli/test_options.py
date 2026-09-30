@@ -9,7 +9,7 @@ import typer
 
 from decktalk.cli.options import GLOBALS, FailOn, Force, one_section, pairs, restated, sections_of, shared_for
 from decktalk.findings import Certainty
-from decktalk.results import RESULTS, BuildResult, InitResult, StatusResult, WordsResult
+from decktalk.results import BuildResult, StatusResult, WordsResult
 
 
 def test_a_section_selection_is_parsed_by_the_library_and_kept_in_order() -> None:
@@ -59,14 +59,6 @@ def test_a_result_that_buys_gains_the_three_spending_flags() -> None:
 
 def test_a_result_that_is_not_a_result_gains_the_globals_alone() -> None:
     assert {param.name for param in shared_for(dict)} == {name for name, _, _ in GLOBALS}
-
-
-def test_every_published_result_answers_both_questions_about_its_command() -> None:
-    """The derivation reads two facts off the model, so every published result has to state them."""
-    for model in RESULTS.values():
-        assert isinstance(model.reports_findings, bool)
-        assert isinstance(model.spends, bool)
-    assert InitResult.reports_findings is False
 
 
 def test_a_command_can_restate_a_flag_without_touching_the_shared_one() -> None:
