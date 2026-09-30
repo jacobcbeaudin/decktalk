@@ -260,14 +260,26 @@ def _in_pool(work: Callable[[TakePlan], None], plans: list[TakePlan], *, workers
         extra={"data": {"workers": chosen, "jobs": len(plans), "requested": workers}},
     )
     first: BaseException | None = None
+    # A cancelled future never wakes `as_completed`, so a plan that has not started is stopped by this
+    # flag instead, and every future finishes. The worker that fails raises it, so no plan starts after.
+    stopped = threading.Event()
+
+    def unless_stopped(plan: TakePlan) -> None:
+        if stopped.is_set():
+            return
+        try:
+            work(plan)
+        except BaseException:
+            stopped.set()
+            raise
+
     with ThreadPoolExecutor(max_workers=chosen) as pool:
-        running = {pool.submit(contextvars.copy_context().run, work, plan): plan for plan in plans}
+        running = {pool.submit(contextvars.copy_context().run, unless_stopped, plan): plan for plan in plans}
         for finished in as_completed(running):
-            if finished.cancelled() or (failure := finished.exception()) is None:
+            if (failure := finished.exception()) is None:
                 continue
             if first is None:
                 first = failure
-                pool.shutdown(wait=False, cancel_futures=True)
                 continue
             # A request already sent that failed after the first failure may still have been paid for,
             # so it is recorded rather than lost behind the one that is raised.

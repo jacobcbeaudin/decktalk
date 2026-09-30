@@ -373,3 +373,18 @@ def test_every_section_that_failed_is_recorded_and_the_first_is_raised(caplog: p
         _in_pool(work, planned(1, 2), workers=2)
     later = [record for record in caplog.records if record.levelname == "WARNING"]
     assert [data_of(record)["section"] for record in later] == [2]
+
+
+def test_a_failure_stops_every_plan_not_yet_started_and_the_pool_returns() -> None:
+    """A cancelled future never woke the pool's wait, so a failure with plans still queued could hang it."""
+    started: list[int] = []
+
+    def work(plan: TakePlan) -> None:
+        started.append(plan.segment.index)
+        raise ProviderError(f"section {plan.segment.index} failed")
+
+    for _ in range(50):
+        started.clear()
+        with pytest.raises(ProviderError, match="section 1"):
+            _in_pool(work, planned(*range(1, 21)), workers=1)
+        assert started == [1]
