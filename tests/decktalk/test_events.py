@@ -407,3 +407,35 @@ def test_pruning_survives_a_file_another_run_removed_first(tmp_path, monkeypatch
 
     monkeypatch.setattr(Path, "glob", racing)
     assert len(JsonlSink.prune(directory, 1)) == 2
+
+
+def test_a_runs_lines_reach_its_file_in_the_order_of_their_seq_whatever_thread_wrote_them(tmp_path) -> None:
+    """Recorders log from their own threads, and a file whose lines ran out of order read as a lost line."""
+    path = tmp_path / "r1.jsonl"
+    stream = Events()
+    start = threading.Barrier(8)
+
+    def chatter(worker: int) -> None:
+        start.wait(timeout=5)
+        for number in range(200):
+            stream.emit("r1", Log, level=Level.DEBUG, message=f"worker {worker} line {number}")
+
+    with stream.subscribe(JsonlSink(path)):
+        threads = [threading.Thread(target=chatter, args=(worker,)) for worker in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    seqs = [json.loads(line)["seq"] for line in path.read_text("utf-8").splitlines()]
+    assert seqs == list(range(1600))
+
+
+def test_a_line_that_fails_to_build_takes_no_number() -> None:
+    stream = Events()
+    seen: list[Event] = []
+    stream.subscribe(seen.append)
+    stream.emit("r1", Log, level=Level.INFO, message="one")
+    with pytest.raises(ValidationError):
+        stream.emit("r1", Log, level="loud", message="refused")
+    stream.emit("r1", Log, level=Level.INFO, message="two")
+    assert [line.seq for line in seen] == [0, 1]

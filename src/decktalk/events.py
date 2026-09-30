@@ -16,7 +16,6 @@ every file and a reader could not tell a gap from a lost line.
 
 from __future__ import annotations
 
-import itertools
 import threading
 from collections.abc import Callable, Iterable
 from contextvars import ContextVar
@@ -331,8 +330,9 @@ class Events:
     def __init__(self, *, source: Events | None = None) -> None:
         self._source = source or self
         self._subscriptions: list[Subscription] = []
-        self._counters: dict[str, itertools.count[int]] = {}
+        self._counters: dict[str, int] = {}
         self._lock = threading.Lock()
+        self._order = threading.RLock()
 
     def subscribe(self, listener: Listener, *, runs: Iterable[str] | None = None) -> Subscription:
         """Attach a renderer, which receives every event of the named runs, or of every run."""
@@ -361,14 +361,20 @@ class Events:
         counter for every run it ever made.
         """
         source = self._source
-        with source._lock:
-            counter = source._counters.setdefault(run, itertools.count())
-            seq = next(counter)
-        event = kind(time=datetime.now(UTC), seq=seq, run=run, **fields)
-        self._deliver(event)
-        if isinstance(event, RunDone):
+        # A number is taken, the line is built and it is delivered under one lock, so the lines of a
+        # run reach every file in the order of their `seq` whichever threads wrote them, and a line
+        # that fails to build takes no number. The lock is reentrant because a delivery that reports
+        # a subscriber's failure emits again on the same thread.
+        with source._order:
             with source._lock:
-                source._counters.pop(run, None)
+                seq = source._counters.get(run, 0)
+            event = kind(time=datetime.now(UTC), seq=seq, run=run, **fields)
+            with source._lock:
+                source._counters[run] = seq + 1
+            self._deliver(event)
+            if isinstance(event, RunDone):
+                with source._lock:
+                    source._counters.pop(run, None)
         return event
 
     def _deliver(self, event: Event) -> None:
