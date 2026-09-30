@@ -912,12 +912,9 @@ def _edited(edit: Edit, lines: list[str], path: Path, root: Path) -> list[str]:
             hint="Make the change by hand, or run the command the finding names.",
             location=at(path, root),
         )
-    index = (edit.line or 1) - 1
     if edit.old is not None:
-        _still_reads(edit, lines, index, path, root)
-    edited = list(lines)
-    edited[index : index + (1 if edit.old is not None else 0)] = [edit.new + "\n"] if edit.new else []
-    return edited
+        _still_reads(edit, lines, (edit.line or 1) - 1, path, root)
+    return edit.applied(lines)
 
 
 def _still_reads(edit: Edit, lines: list[str], index: int, path: Path, root: Path) -> None:

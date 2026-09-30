@@ -359,13 +359,10 @@ def _rename_fix(text: str, wire: str, renamed: str | None, *, where: Path) -> tu
 def _as_applied(text: str, edit: Edit) -> str:
     """The file as this edit would leave it, which is how the next edit's line is worked out.
 
-    It is the applier's own arithmetic, held here so that two fixes offered by one call cannot both
-    be written against the same original line and land one on top of the other.
+    It is the applier's own arithmetic, so that two fixes offered by one call cannot both be written
+    against the same original line and land one on top of the other.
     """
-    lines = text.splitlines(keepends=True)
-    index = (edit.line or 1) - 1
-    lines[index : index + (1 if edit.old is not None else 0)] = [edit.new + "\n"] if edit.new else []
-    return "".join(lines)
+    return "".join(edit.applied(text.splitlines(keepends=True)))
 
 
 __all__ = [

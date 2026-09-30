@@ -434,6 +434,13 @@ class Edit(Model):
             raise ValueError(f"an edit names exactly one of pointer, key or line, and this one names {found}")
         return self
 
+    def applied(self, lines: list[str]) -> list[str]:
+        """The lines of a file once this line edit is made, which a fix plans its next edit against too."""
+        index = (self.line or 1) - 1
+        edited = list(lines)
+        edited[index : index + (1 if self.old is not None else 0)] = [self.new + "\n"] if self.new else []
+        return edited
+
 
 class EditFix(Model):
     """A fix that changes files, which is what scaffolds a missing cue row or repairs a phrase."""
