@@ -313,26 +313,18 @@ def test_one_progress_line_is_reported_for_every_asset(tmp_path: Path) -> None:
 # ---- what a run selects -----------------------------------------------------------------------
 
 
-def test_only_keeps_the_effects_cued_in_the_sections_it_names(tmp_path: Path) -> None:
-    result = soundscape(an_inputs(tmp_path), a_run(tmp_path), only=[1])
-    assert {item.name for item in result.items} == {"ambience", "chime", "music"}
-
-
-def test_an_effect_cued_in_another_section_is_left_out(tmp_path: Path) -> None:
-    result = soundscape(an_inputs(tmp_path), a_run(tmp_path), only=[2])
-    assert {item.name for item in result.items} == {"music"}
-
-
-def test_the_ambience_bed_is_wanted_only_where_a_selected_section_asks_for_one(tmp_path: Path) -> None:
-    inputs = an_inputs(tmp_path)
-    assert "ambience" in {item.name for item in soundscape(inputs, a_run(tmp_path), only=[1]).items}
-    assert "ambience" not in {item.name for item in soundscape(inputs, a_run(tmp_path), only=[2]).items}
-
-
-def test_the_music_is_wanted_whenever_any_section_is_selected(tmp_path: Path) -> None:
-    inputs = an_inputs(tmp_path)
-    assert "music" in {item.name for item in soundscape(inputs, a_run(tmp_path), only=[2]).items}
-    assert soundscape(inputs, a_run(tmp_path), only=[7]).items == ()
+@pytest.mark.parametrize(
+    ("only", "names"),
+    [
+        pytest.param([1], {"ambience", "chime", "music"}, id="the effects and the bed cued in the section named"),
+        # The ambience bed and the chime are cued in section one, and the music plays under any section.
+        pytest.param([2], {"music"}, id="an effect cued in another section is left out"),
+        pytest.param([7], set(), id="no section selected wants nothing"),
+    ],
+)
+def test_only_keeps_what_the_sections_it_names_ask_for(tmp_path: Path, only: list[int], names: set[str]) -> None:
+    result = soundscape(an_inputs(tmp_path), a_run(tmp_path), only=only)
+    assert {item.name for item in result.items} == names
 
 
 # ---- where the files go -----------------------------------------------------------------------
