@@ -10,6 +10,7 @@ import pytest
 from decktalk.artifacts import stills as module
 from decktalk.artifacts import stored
 from decktalk.artifacts.stills import Stills, still_key
+from support.logs import decisions
 
 
 def a_store(tmp_path: Path) -> Stills:
@@ -100,11 +101,10 @@ def test_every_answer_says_why_it_kept_or_drew_again(tmp_path: Path, caplog: pyt
     """A manifest that would not parse is told apart from one that is not there, although both draw again."""
     store = a_store(tmp_path)
 
-    def why(key: str) -> tuple[bool, str]:
-        caplog.clear()
+    def why(key: str) -> tuple[object, ...]:
         store.find(key)
-        [record] = [record for record in caplog.records if getattr(record, "data", {}).get("cache") == "still"]
-        return record.data["hit"], record.data["why"]  # type: ignore[attr-defined]
+        [said] = decisions(caplog, "still")
+        return said
 
     with caplog.at_level("DEBUG", logger="decktalk"):
         assert why("k") == (False, "no-image")

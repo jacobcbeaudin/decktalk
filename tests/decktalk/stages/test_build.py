@@ -38,6 +38,7 @@ from decktalk.stages import build as build_module
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.build import build
 from decktalk.stages.status import read_kept
+from support.logs import decisions
 from support.runs import RUN_ID, Watched
 
 RATE = 0.30
@@ -561,15 +562,6 @@ def test_an_unchanged_build_keeps_assemble_and_verify(
     assert [found.code for found in result.findings] == [Code.CUE_OFF]
     kept = [line for line in again.of("stage.done") if line.outcome is Outcome.KEPT]  # type: ignore[attr-defined]
     assert [line.stage for line in kept] == [Stage.ASSEMBLE, Stage.VERIFY]  # type: ignore[attr-defined]
-
-
-def decisions(caplog: pytest.LogCaptureFixture, cache: str) -> list[tuple[bool, str]]:
-    """Every decision one cache made while the log was captured, as whether it kept and why."""
-    return [
-        (record.data["hit"], record.data["why"])  # type: ignore[attr-defined]
-        for record in caplog.records
-        if getattr(record, "data", {}).get("cache") == cache
-    ]
 
 
 def test_every_kept_or_remade_stage_says_why(

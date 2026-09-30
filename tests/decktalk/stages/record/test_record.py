@@ -25,6 +25,7 @@ from decktalk.media import browser, ffmpeg, frames
 from decktalk.media.browser import Recording, RecordingSink
 from decktalk.media.pagereport import PageReport
 from decktalk.stages.record import pool, record, stale_recording
+from support.logs import decisions
 from support.projects import write_project
 from support.runs import a_run
 from support.takes import a_take, write_takes
@@ -246,11 +247,9 @@ def test_every_section_recorded_or_kept_says_why(tmp_path: Path, caplog: pytest.
     """A kept section emitted `skipped` with no reason, so a reader could not tell forced from unchanged."""
     inputs = a_project(tmp_path)
 
-    def said(**options: object) -> list[tuple[int, bool, str]]:
-        caplog.clear()
+    def said(**options: object) -> list[tuple[object, ...]]:
         record(inputs, a_run(inputs.root), **options)  # type: ignore[arg-type]
-        rows = [record.data for record in caplog.records if getattr(record, "data", {}).get("cache") == "recording"]
-        return [(row["section"], row["hit"], row["why"]) for row in rows]
+        return decisions(caplog, "recording", "section", "hit", "why")
 
     with caplog.at_level("DEBUG", logger="decktalk"):
         assert said() == [(1, False, "changed"), (2, False, "changed")]

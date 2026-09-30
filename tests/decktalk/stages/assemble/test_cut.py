@@ -27,6 +27,7 @@ from decktalk.stages.assemble.cut import (
     section_targets,
     vfades,
 )
+from support.logs import decisions
 
 from .conftest import MID_CLIP_TOML, TITLED_TOML, draw_slate, open_run, rendered, spoken, take_index, write_project
 
@@ -230,18 +231,14 @@ def test_every_cut_kept_or_encoded_says_why(tmp_path, fake_ffmpeg, caplog):
     takes = take_index(inputs, {n: (f"c{n}", 1.0, 0.8, spoken("word")) for n in (1, 2, 3)})
     _recorded(inputs)
 
-    def said() -> dict[str, tuple[bool, str]]:
-        rows = [record.data for record in caplog.records if getattr(record, "data", {}).get("cache") == "cut"]
-        caplog.clear()
-        return {row["file"]: (row["hit"], row["why"]) for row in rows}
-
     with caplog.at_level("DEBUG", logger="decktalk"):
         render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
-        assert set(said().values()) == {(False, "no-cut")}
+        assert set(decisions(caplog, "cut")) == {(False, "no-cut")}
         inputs.workspace.section_video("01").with_suffix(".json").unlink()
         inputs.workspace.recording("02").write_bytes(b"recorded again")
         render_sections(inputs, open_run(tmp_path).run, takes, only=None, strict=False)
-        assert said() == {"01.mp4": (False, "no-key"), "02.mp4": (False, "key-changed"), "03.mp4": (True, "unchanged")}
+        said = set(decisions(caplog, "cut", "file", "hit", "why"))
+        assert said == {("01.mp4", False, "no-key"), ("02.mp4", False, "key-changed"), ("03.mp4", True, "unchanged")}
 
 
 def test_the_cut_list_records_where_each_section_plays_and_what_stood_in(tmp_path):
