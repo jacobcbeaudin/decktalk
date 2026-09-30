@@ -39,7 +39,7 @@ export type WordEvent = {
   readonly runAt: number;
   /** How many words the line holds. */
   readonly count: number;
-  /** The second the first word was drawn, which is what `PAGE_WORD_LATE` compares with `runAt`. */
+  /** The second the first word was drawn, which the debug log prints beside `runAt`. */
   readonly firstOn: number;
 };
 

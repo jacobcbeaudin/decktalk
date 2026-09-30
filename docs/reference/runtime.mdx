@@ -262,8 +262,7 @@ was due, the second it ran, the frame that ran it and the sentence its reveals d
 as, and it grows two more stamps afterwards, the frame after the one that ran the cue and the one
 after that, because a cue that ran on time but whose next frame began late was held up by the frame
 that drew it rather than before it. A word row carries the line, the second its cue ran, the second
-the voice reaches it and the second its first word was drawn, which is what `PAGE_WORD_LATE`
-compares. Frame gaps and long frames say how well the compositor kept up, because a recording is
+the voice reaches it and the second its first word was drawn, which the debug log prints. Frame gaps and long frames say how well the compositor kept up, because a recording is
 only as good as the frames it was given. Each list is capped at five thousand rows, so a long
 recording cannot grow without a bound.
 

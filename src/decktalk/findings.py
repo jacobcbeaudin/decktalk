@@ -235,12 +235,6 @@ class Code(Enum):
         Certainty.CERTAIN,
         RaisedBy.PYTHON,
     )
-    PAGE_WORD_LATE = (
-        "PAGE_WORD_LATE",
-        "A word-synced element lands after the word it is synced to.",
-        Certainty.UNCERTAIN,
-        RaisedBy.PYTHON,
-    )
     PAGE_THIN_DRAW = (
         "PAGE_THIN_DRAW",
         "A frozen slide draws less of the picture than a change must cross to be seen.",

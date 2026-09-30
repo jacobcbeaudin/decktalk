@@ -146,7 +146,6 @@
               "reference/findings/PAGE_STAGGER_EMPTY",
               "reference/findings/PAGE_MOTION_OVERRUN",
               "reference/findings/PAGE_STAGGER_OVERRUN",
-              "reference/findings/PAGE_WORD_LATE",
               "reference/findings/PAGE_THIN_DRAW",
               "reference/findings/PAGE_NO_DESCRIPTION",
               "reference/findings/PAGE_SWAP_APART",

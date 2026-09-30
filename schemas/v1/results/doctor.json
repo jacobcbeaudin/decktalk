@@ -53,7 +53,6 @@
         "PAGE_STAGGER_EMPTY",
         "PAGE_MOTION_OVERRUN",
         "PAGE_STAGGER_OVERRUN",
-        "PAGE_WORD_LATE",
         "PAGE_THIN_DRAW",
         "PAGE_NO_DESCRIPTION",
         "PAGE_SWAP_APART",

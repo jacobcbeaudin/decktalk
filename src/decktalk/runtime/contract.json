@@ -700,11 +700,6 @@
       "certainty": "certain",
       "raisedBy": "python"
     },
-    "PAGE_WORD_LATE": {
-      "message": "The first synced word of {value} was shown after the voice reached it, so the line trails the speech.",
-      "certainty": "uncertain",
-      "raisedBy": "python"
-    },
     "PAGE_THIN_DRAW": {
       "message": "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
       "certainty": "uncertain",

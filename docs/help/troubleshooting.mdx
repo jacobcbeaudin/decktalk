@@ -166,7 +166,7 @@ decktalk build --no-voice --allow CUE_UNKNOWN
 | A cue resolved and nothing on screen changed | [CUE_NO_CHANGE](/reference/findings/CUE_NO_CHANGE), [CUE_THIN_CHANGE](/reference/findings/CUE_THIN_CHANGE), [PAGE_THIN_DRAW](/reference/findings/PAGE_THIN_DRAW) | [A picture that does not change](#a-picture-that-does-not-change) |
 | The film is black somewhere, stops moving, or a section is short | [PAGE_BLACK](/reference/findings/PAGE_BLACK), [PAGE_STALLED](/reference/findings/PAGE_STALLED), [PAGE_TRUNCATED](/reference/findings/PAGE_TRUNCATED) | [A recording that opens black or stalls](#a-recording-that-opens-black-or-stalls) |
 | Something on the page threw, or a wait never settled | [PAGE_RENDER_THREW](/reference/findings/PAGE_RENDER_THREW), [PAGE_ENTER_THREW](/reference/findings/PAGE_ENTER_THREW), [PAGE_HANDLER_THREW](/reference/findings/PAGE_HANDLER_THREW), [PAGE_SLIDE_HANDLER_THREW](/reference/findings/PAGE_SLIDE_HANDLER_THREW), [PAGE_WAIT_REJECTED](/reference/findings/PAGE_WAIT_REJECTED), [PAGE_WAIT_UNSETTLED](/reference/findings/PAGE_WAIT_UNSETTLED) | [A recording that opens black or stalls](#a-recording-that-opens-black-or-stalls) |
-| A reveal arrived after its word | [CUE_OFF](/reference/findings/CUE_OFF), [PAGE_WORD_LATE](/reference/findings/PAGE_WORD_LATE), [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | [A late landing](#a-late-landing) |
+| A reveal arrived after its word | [CUE_OFF](/reference/findings/CUE_OFF), [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | [A late landing](#a-late-landing) |
 | A motion was still playing when the next cue was read | [PAGE_MOTION_OVERRUN](/reference/findings/PAGE_MOTION_OVERRUN), [PAGE_STAGGER_OVERRUN](/reference/findings/PAGE_STAGGER_OVERRUN), [PAGE_APPEAR_TOO_LONG](/reference/findings/PAGE_APPEAR_TOO_LONG) | [A late landing](#a-late-landing) |
 | A cut slices a word, or the picture pops at a seam | [CUT_SPEECH](/reference/findings/CUT_SPEECH), [CUT_POP](/reference/findings/CUT_POP) | [A late landing](#a-late-landing) |
 | The film is too quiet, too loud or too peaky | [MIX_LOUDNESS](/reference/findings/MIX_LOUDNESS) | [A loudness miss](#a-loudness-miss) |
@@ -443,7 +443,6 @@ picture did not.
 | Code | Certainty | What a viewer would notice |
 |---|---|---|
 | [CUE_OFF](/reference/findings/CUE_OFF) | certain | The picture arrives on the wrong word, or visibly after the right one. |
-| [PAGE_WORD_LATE](/reference/findings/PAGE_WORD_LATE) | uncertain | A line being shown word by word trails the voice reading it. |
 | [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | uncertain | Nothing, yet. The measurement had no onset to work from, so the number is not trustworthy. |
 | [CUT_SPEECH](/reference/findings/CUT_SPEECH) | certain | A word is cut in half at a section boundary. |
 | [CUT_POP](/reference/findings/CUT_POP) | certain | The picture jumps at a boundary that promised to be seamless. |
