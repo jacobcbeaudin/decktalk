@@ -161,20 +161,21 @@ class Session:
         an agent that backgrounds a build name its own events file while the run is live. `heard` is
         the set of notes already printed by an earlier call of the same command, which are not
         printed again.
+
+        Under `--events` stderr carries the JSON lines and nothing else, because a reader parses every
+        line of it. The log lines are among them, and `run.start` already names the events file.
         """
-        renderers: list[output.Renderer] = [
-            output.Notes(self.err, verbose=self.flags.verbose, quiet=self.flags.quiet, heard=heard)
-        ]
-        if opening:
-            renderers.append(output.Opening(self.err))
+        renderers: list[output.Renderer] = []
         if self.terminal.events:
             renderers.append(output.Jsonl(self.err))
-        elif self.terminal.quiet:
-            pass
-        elif self.terminal.live:
-            renderers.append(output.Region(self.err))
         else:
-            renderers.append(output.Lines(self.err))
+            renderers.append(output.Notes(self.err, verbose=self.flags.verbose, quiet=self.flags.quiet, heard=heard))
+            if opening:
+                renderers.append(output.Opening(self.err))
+            if self.terminal.live and not self.terminal.quiet:
+                renderers.append(output.Region(self.err))
+            elif not self.terminal.quiet:
+                renderers.append(output.Lines(self.err))
         for renderer in renderers:
             renderer.open()
         subscriptions = [events.subscribe(renderer) for renderer in renderers]
@@ -212,8 +213,8 @@ class Session:
         return ApprovalRequired(message, hint=hint)
 
     def say(self, message: str) -> None:
-        """One sentence on stderr, which is where everything but the result goes."""
-        if not self.flags.quiet:
+        """One sentence on stderr, which is where everything but the result goes, unless `--events` holds it."""
+        if not self.flags.quiet and not self.terminal.events:
             self.err.print(message)
 
     # ---- the spend gate -----------------------------------------------------------------------
@@ -322,13 +323,20 @@ class Session:
         """Write one refusal, and give back the exit code its own code carries."""
         if self.flags.json_out:
             self._stdout(ErrorResult(ok=False, error=info).model_dump_json(indent=2))
+        elif self.terminal.events:
+            # Every line of stderr is one JSON object under `--events`, so the refusal is one as well.
+            self.err.file.write(ErrorResult(ok=False, error=info).model_dump_json() + "\n")
+            self.err.file.flush()
         else:
             output.error_block(info, self.err)
         return info.code.exit_code
 
     def bug(self, failure: BaseException) -> int:
-        """Report anything DeckTalk did not mean to raise, with its traceback under `-v` alone."""
-        if self.flags.verbose:
+        """Report anything DeckTalk did not mean to raise, with its traceback under `-v` alone.
+
+        The traceback is never written under `--events`, because every line of stderr is JSON there.
+        """
+        if self.flags.verbose and not self.terminal.events:
             self.err.print_exception()
         return self.reported(ErrorInfo.of_failure(failure))
 

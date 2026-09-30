@@ -166,6 +166,25 @@ def test_events_writes_one_json_line_per_moment_on_stderr(run, project, answers)
     assert ran.out.strip().startswith("Built")
 
 
+def test_every_stderr_line_under_events_is_one_json_object(run, project, answers) -> None:
+    """A reader of `--events` parses every line of stderr, so a plain sentence among them breaks it."""
+    made = project(build=answers["build"])
+    made.emits["build"] = (RunStart, {"events_path": Path("build/events/r.jsonl")})
+    ran = run("build", "--no-voice", "--events", "-v")
+    lines = ran.err.splitlines()
+    assert lines
+    assert all(isinstance(json.loads(line), dict) for line in lines)
+    assert not any(line.startswith("run r, events") for line in lines)
+
+
+def test_a_refusal_under_events_is_one_json_object_on_stderr(run, project, answers) -> None:
+    project(build=answers["build"], check=answers["check"])
+    ran = run("build", "--events")
+    assert ran.exit_code == 2
+    [line] = ran.err.splitlines()
+    assert json.loads(line)["error"]["code"] == ErrorCode.APPROVAL.value
+
+
 def test_build_without_a_terminal_and_without_a_flag_refuses_the_spend(run, project, answers) -> None:
     project(build=answers["build"], check=answers["check"])
     ran = run("build")

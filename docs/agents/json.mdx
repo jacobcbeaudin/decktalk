@@ -478,9 +478,9 @@ decktalk build --no-voice --events --json
 {"event":"progress","time":"2026-09-24T10:32:36.878405Z","seq":4,"run":"b906d77fb488","stage":"narrate","section":1,"done":1,"total":3,"unit":"take","label":"Open"}
 ```
 
-DeckTalk's ordinary output also goes to stderr, so a reader takes the lines that parse as JSON and
-leaves the rest. `build` writes one such line of its own before the first stage, naming the run and
-the file its events are appended to.
+Under `--events` every line of stderr is one JSON object. The sentences DeckTalk would otherwise
+print are `log` lines among them, the first line is `run.start`, which names the file the events are
+appended to, and a refusal is written as the one object `{"ok": false, "error": {...}}`.
 
 The discriminator key is `event`, and every line carries `event`, `time`, `seq` and `run`. `seq`
 counts from zero inside its run, so a reader can order lines that arrived out of order.
