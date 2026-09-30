@@ -22,34 +22,17 @@ that decides what a row of it looks like.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from pydantic import Field
 
-from decktalk.artifacts.stored import Stored, engine_digest
+from decktalk.artifacts.stored import Stored, engine_digest, file_digest
 from decktalk.findings import Finding, Model, ProjectPath
 from decktalk.media.pagereport import PageReport
 
 HASH_DIGITS = 16
 """How much of the sha256 keys a recording, which is far more than enough within one project."""
-
-GONE = "gone"
-"""What a file the page asked for and the project no longer has is digested as."""
-
-
-def file_digest(path: Path) -> str:
-    """The head of a file's sha256, or `gone` when the project no longer has it."""
-    if not path.is_file():
-        return GONE
-    with path.open("rb") as handle:
-        return hashlib.file_digest(handle, "sha256").hexdigest()[:HASH_DIGITS]
-
-
-def text_digest(text: str) -> str:
-    """The head of a string's sha256, which is how a slice of a page joins the key."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:HASH_DIGITS]
 
 
 def input_hash(parts: Sequence[str], files: Mapping[str, Path]) -> str:
@@ -107,11 +90,8 @@ class RecordingLog(Stored):
 
 
 __all__ = [
-    "GONE",
     "Luma",
     "RecordingChecks",
     "RecordingLog",
-    "file_digest",
     "input_hash",
-    "text_digest",
 ]

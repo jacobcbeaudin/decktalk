@@ -15,8 +15,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from decktalk.artifacts.recordings import file_digest
-from decktalk.artifacts.stored import Stored, engine_digest
+from decktalk.artifacts.stored import Stored, engine_digest, file_digest
 from decktalk.findings import Model, ProjectPath
 from decktalk.results import SectionKey, SectionKind, SectionNumber, Substitute
 
@@ -58,7 +57,7 @@ class CutKey(Stored):
     well, because a newer engine may encode the same arguments differently.
     """
 
-    digest: str = Field(description="The sha256 of the encode's arguments, its inputs' content and the engine.")
+    digest: str = Field(description="The sha256 of the encode's arguments, its inputs' content digests and the engine.")
 
     @classmethod
     def of(cls, args: Sequence[str], sources: Sequence[Path]) -> CutKey:

@@ -45,6 +45,9 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
+    # Every fingerprint of a file's content is BLAKE3, which hashes a large recording or film on every
+    # core where SHA-256 reads it on one. 1.0 is the first stable release of the mapped, threaded reader.
+    "blake3>=1.0",
     # 3.20.1 is the first release that opens the lock file without following a link, which is what
     # refuses a `build/.lock` planted as a link inside the build directory.
     "filelock>=3.20.1",

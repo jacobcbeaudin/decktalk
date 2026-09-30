@@ -14,6 +14,13 @@ the same: run the stage that writes it again. The hint names that stage, read fr
 through `Artifact.next_step`, so no stage spells a "run this first" sentence of its own. A refusal names the
 file it looked for rather than the artifact's default path, because a project may move its build
 directory.
+
+Every fingerprint of a file's content is `file_digest`, and every fingerprint of content held in
+memory is `content_digest`, which are one hash: BLAKE3. The files a build fingerprints are the
+recordings, the section cuts and the film, which grow with the film, and BLAKE3 spreads one large
+file across every core where SHA-256 reads it on one. The keys taken over those fingerprints stay
+the SHA-256 of `engine_digest`, because a key is a few lines of text, and the paid voice takes keep
+the SHA-256 their names are published as, because a changed take name would buy the take again.
 """
 
 from __future__ import annotations
@@ -24,6 +31,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Self
 
+from blake3 import blake3
 from pydantic import ValidationError
 
 from decktalk.errors import NotBuiltError
@@ -32,6 +40,15 @@ from decktalk.pipeline import Artifact
 
 INDENT = 2
 """How the artifacts are indented, which keeps a diff of one readable in a terminal."""
+
+DIGEST_BYTES = 8
+"""How much of a BLAKE3 names some content, sixteen hex characters, which never collide within one project."""
+
+THREADED_BYTES = 1 << 20
+"""Measured: below a mebibyte, handing a file to several threads costs more than hashing it on one does."""
+
+GONE = "gone"
+"""What a file that is not on disk is digested as, so a key over a missing file still names it."""
 
 UNINSTALLED = "0+unknown"
 """The engine version a checkout that was never installed reports, which is still one fixed name."""
@@ -56,6 +73,23 @@ ENGINE_VERSION = engine_version()
 def engine_digest(*lines: str) -> str:
     """The sha256 of these lines under the engine's own, which is how every kept artifact is keyed."""
     return hashlib.sha256("\n".join([f"engine:{ENGINE_VERSION}", *lines]).encode("utf-8")).hexdigest()
+
+
+def content_digest(data: bytes) -> str:
+    """The BLAKE3 of these bytes, which is how content held in memory joins a key."""
+    return blake3(data).hexdigest(length=DIGEST_BYTES)
+
+
+def file_digest(path: Path) -> str:
+    """The BLAKE3 of a file's bytes, or `gone` when there is no file there.
+
+    The file is mapped rather than read, and a large one is hashed on every core, which is what keeps
+    a film's worth of recordings from costing a build more time the longer the film runs.
+    """
+    if not path.is_file():
+        return GONE
+    threads = blake3.AUTO if path.stat().st_size >= THREADED_BYTES else 1
+    return blake3(max_threads=threads).update_mmap(path).hexdigest(length=DIGEST_BYTES)
 
 
 class Stored(Model):
@@ -102,4 +136,4 @@ def _first_line(error: Exception) -> str:
     return next((line.strip() for line in str(error).splitlines() if line.strip()), type(error).__name__)
 
 
-__all__ = ["ENGINE_VERSION", "Stored", "engine_digest", "engine_version"]
+__all__ = ["ENGINE_VERSION", "GONE", "Stored", "content_digest", "engine_digest", "engine_version", "file_digest"]

@@ -23,11 +23,9 @@ from decktalk.artifacts.recordings import (
     Luma,
     RecordingChecks,
     RecordingLog,
-    file_digest,
     input_hash,
-    text_digest,
 )
-from decktalk.artifacts.stored import Stored
+from decktalk.artifacts.stored import Stored, content_digest, file_digest
 from decktalk.artifacts.takes import (
     PLACEHOLDER_PREFIX,
     TAKE_DIGITS,
@@ -56,10 +54,10 @@ __all__ = [
     "TakeInputs",
     "Takes",
     "Words",
+    "content_digest",
     "file_digest",
     "input_hash",
     "is_placeholder",
     "take_file",
-    "text_digest",
     "words_file",
 ]

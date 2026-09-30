@@ -21,7 +21,6 @@ a project, so a stage can parse one file without loading a whole project.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -29,7 +28,7 @@ from functools import cached_property
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words, file_digest
+from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words, content_digest, file_digest
 from decktalk.artifacts.stills import Stills, still_key
 from decktalk.artifacts.words import words_file
 from decktalk.errors import InputError
@@ -346,7 +345,7 @@ class Inputs:
                 f"policy:{record.page_policy}",
                 f"motion:{motion.reduce}:{motion.scale:g}",
                 f"page:{page}:{file_digest(self.path(page))}",
-                *(f"served:{name}:{hashlib.sha256(body).hexdigest()}" for name, body in served),
+                *(f"served:{name}:{content_digest(body)}" for name, body in served),
             )
         )
 

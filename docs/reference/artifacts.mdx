@@ -367,8 +367,8 @@ Beside each cut, `NN.json` holds the key it was cut from.
 }
 ```
 
-The digest is a sha256 over the whole argument list of the encode, the content of every file it
-read and the engine version. `assemble` keeps a cut whose key still matches rather than encoding it
+The digest is a sha256 over the whole argument list of the encode, the BLAKE3 digest of every file
+it read and the engine version. `assemble` keeps a cut whose key still matches rather than encoding it
 again, so an edit to one section cuts that section again and leaves the others alone. Nothing chooses
 which arguments count, because a key over a hand-picked subset would one day miss an input and ship
 a stale picture, and a new engine version cuts every section again because it may encode the same

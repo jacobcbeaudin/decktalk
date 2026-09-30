@@ -30,11 +30,11 @@ from .artifacts import (
     TakeInputs,
     Takes,
     Words,
+    content_digest,
     file_digest,
     input_hash,
     is_placeholder,
     take_file,
-    text_digest,
     words_file,
 )
 from .artifacts.stored import ENGINE_VERSION as __version__
@@ -374,6 +374,7 @@ __all__ = [
     "WordsResult",
     "Workspace",
     "__version__",
+    "content_digest",
     "explain",
     "file_digest",
     "init",
@@ -382,6 +383,5 @@ __all__ = [
     "open",
     "section_numbers",
     "take_file",
-    "text_digest",
     "words_file",
 ]

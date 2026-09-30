@@ -30,8 +30,8 @@ from pathlib import Path
 
 from pydantic import Field
 
-from decktalk.artifacts.recordings import HASH_DIGITS, file_digest
-from decktalk.artifacts.stored import Stored, engine_digest
+from decktalk.artifacts.recordings import HASH_DIGITS
+from decktalk.artifacts.stored import Stored, engine_digest, file_digest
 from decktalk.errors import NotBuiltError
 
 IMAGE_SUFFIX = ".png"

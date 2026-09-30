@@ -36,8 +36,7 @@ from pathlib import Path
 
 from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
-from decktalk.artifacts.recordings import file_digest
-from decktalk.artifacts.stored import Stored, engine_digest
+from decktalk.artifacts.stored import Stored, engine_digest, file_digest
 from decktalk.errors import DeckTalkError, NotBuiltError
 from decktalk.events import Level, Line, StageStart
 from decktalk.findings import Code, Finding, Location, Model

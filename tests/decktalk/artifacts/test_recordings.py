@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import stored
-from decktalk.artifacts.recordings import GONE, RecordingLog, file_digest, input_hash, text_digest
+from decktalk.artifacts.recordings import RecordingLog, input_hash
 from decktalk.findings import Code, Finding, Location
 from decktalk.media.pagereport import PageReport
 
@@ -24,16 +24,6 @@ def log(**fields: object) -> RecordingLog:
         "report": PageReport(),
     }
     return RecordingLog(**{**base, **fields})
-
-
-def test_a_file_the_project_no_longer_has_digests_to_one_word(tmp_path: Path) -> None:
-    assert file_digest(tmp_path / "gone.png") == GONE
-
-
-def test_two_files_with_the_same_bytes_digest_alike(tmp_path: Path) -> None:
-    (tmp_path / "a").write_bytes(b"same")
-    (tmp_path / "b").write_bytes(b"same")
-    assert file_digest(tmp_path / "a") == file_digest(tmp_path / "b") == text_digest("same")
 
 
 def test_the_order_a_page_asked_for_its_files_in_is_not_part_of_the_key(tmp_path: Path) -> None:

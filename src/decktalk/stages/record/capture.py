@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
-from decktalk.artifacts import CueTimes, RecordingLog, input_hash, text_digest
+from decktalk.artifacts import CueTimes, RecordingLog, content_digest, input_hash
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
@@ -248,8 +248,8 @@ def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float,
         record.color_scheme,
         f"policy:{record.page_policy}",
         f"motion:{motion.reduce}:{motion.scale:g}",
-        f"scene:{text_digest(parts.scene)}",
-        f"page:{text_digest(parts.shared)}",
+        f"scene:{content_digest(parts.scene.encode('utf-8'))}",
+        f"page:{content_digest(parts.shared.encode('utf-8'))}",
     ]
     named = [Path(rel).as_posix() for rel in assets]
     files = {rel: found for rel in named if (found := inputs.path(rel)) != page}

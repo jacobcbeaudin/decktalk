@@ -31,7 +31,7 @@ runs `uv tool install decktalk`, and uv fetches a Python of its own. `uv tool in
 the same thing without the script. `pipx install decktalk` uses a Python that is already on the
 machine, so that one is where the floor bites.
 
-Six packages come with DeckTalk: filelock, Playwright, Pydantic, Rich, tomlkit and Typer. Playwright ships
+Seven packages come with DeckTalk: blake3, filelock, Playwright, Pydantic, Rich, tomlkit and Typer. Playwright ships
 its own browser driver, so Node is not needed. KaTeX is not a dependency at all: the pinned release
 ships inside the wheel, and `decktalk init` copies it into `deck/katex/`, so a project typesets its
 equations with no network and no content delivery network.

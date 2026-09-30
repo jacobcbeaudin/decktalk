@@ -8,7 +8,15 @@ from pathlib import Path
 import pytest
 from pydantic import Field
 
-from decktalk.artifacts.stored import ENGINE_VERSION, Stored, engine_version
+from decktalk.artifacts.stored import (
+    ENGINE_VERSION,
+    GONE,
+    THREADED_BYTES,
+    Stored,
+    content_digest,
+    engine_version,
+    file_digest,
+)
 from decktalk.errors import ErrorCode, NotBuiltError
 from decktalk.pipeline import Artifact
 
@@ -72,3 +80,28 @@ def test_a_refusal_names_the_file_it_looked_for_and_never_the_default_build_dire
         Stored.require(tmp_path / "out" / "narrate" / "takes.json", Artifact.TAKES)
     assert str(refused.value) == "takes.json has not been built."
     assert refused.value.hint == Artifact.TAKES.next_step
+
+
+def test_a_file_that_is_not_there_digests_to_one_word(tmp_path: Path) -> None:
+    assert file_digest(tmp_path / "gone.png") == GONE
+
+
+def test_a_file_and_the_same_bytes_in_memory_digest_alike(tmp_path: Path) -> None:
+    """One hash names content, so a page slice and a file holding the same bytes have one digest."""
+    (tmp_path / "a").write_bytes(b"same")
+    (tmp_path / "b").write_bytes(b"same")
+    assert file_digest(tmp_path / "a") == file_digest(tmp_path / "b") == content_digest(b"same")
+
+
+def test_content_is_named_by_the_head_of_its_blake3() -> None:
+    """The published BLAKE3 test vector for no input at all, cut to the sixteen characters a key holds."""
+    assert content_digest(b"") == "af1349b9f5f9a1a6"
+
+
+def test_a_file_large_enough_to_share_across_threads_digests_as_its_bytes_do(tmp_path: Path) -> None:
+    """A large file is hashed on every core and a small one on one, and the two must agree on a name."""
+    body = bytes(range(256)) * (THREADED_BYTES // 256 + 1)
+    film = tmp_path / "film.mp4"
+    film.write_bytes(body)
+    assert len(body) >= THREADED_BYTES
+    assert file_digest(film) == content_digest(body)
