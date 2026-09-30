@@ -11,19 +11,12 @@ from decktalk.inputs.document import PageSection
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pipeline import Stage
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
-
-BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
-"""One element's box, which every row here shares because none of these cases measures a box."""
+from support.pages import elements
 
 
 def entry(scene: str, moments: dict[str, list[str]], **extra: object) -> MeasuredScene:
     """One scene of a catalog, with one element per moment the slide declares."""
-    elements = {
-        slide: [{"attrs": {"data-in": wire.split(":", 1)[-1]}, "moments": {"data-in": wire}, "text": "", "box": BOX}
-                for wire in wires]
-        for slide, wires in moments.items()
-    }  # fmt: skip
-    return MeasuredScene.model_validate({"scene": scene, "elements": elements, **extra})
+    return MeasuredScene.model_validate({"scene": scene, "elements": elements(moments, text=""), **extra})
 
 
 def section(number: int, *, page: str = "deck/index.html", scene: str = "1") -> PageSection:

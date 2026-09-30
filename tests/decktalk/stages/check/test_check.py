@@ -15,9 +15,10 @@ from decktalk.results import CheckResult, Scope, SpendState
 from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
 from decktalk.toolchain import assets
+from support.pages import a_project, catalog
 from support.runs import a_run, notes
 
-from .conftest import Drawn, a_project, catalog
+from .conftest import Drawn
 
 CUES = {
     "1": {"cues": [{"cue": "1.1:a", "on": "there"}, {"cue": "1.1:b", "on": "again"}]},

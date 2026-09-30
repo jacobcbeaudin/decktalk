@@ -1,4 +1,4 @@
-"""One project and one browser that draws nothing, shared by the four modules of this stage.
+"""One browser that draws nothing, shared by the four modules of this stage, on the project in `support.pages`.
 
 `check` reaches for three things a test must not have: a voice, a browser and an encoder. The voice
 refuses itself, because a project with no credential is exactly what a check is run on. The browser
@@ -8,7 +8,6 @@ a page for is what these tests read back.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -24,58 +23,6 @@ from decktalk.stages import storyboard
 from decktalk.stages.check import scan
 
 from ...conftest import FakePage
-
-TOML = """
-[project]
-name = "demo"
-
-[[section]]
-number = 1
-page = "deck/index.html"
-scene = "1"
-
-[[section]]
-number = 2
-page = "deck/index.html"
-scene = "2"
-"""
-
-SCRIPT = """# Demo
-
-## 1. One
-
-Hello there again.
-
-## 2. Two
-
-Second section speaks as well.
-"""
-
-BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
-"""One element's box, which no case here measures."""
-
-
-def a_project(tmp_path: Path, *, toml: str = TOML, script: str = SCRIPT, cues: dict | None = None) -> Inputs:
-    """A project with a deck, a script and the cue file the case asks for."""
-    (tmp_path / "deck").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "deck" / "index.html").write_text("<div data-scene='1'></div>", encoding="utf-8")
-    (tmp_path / "decktalk.toml").write_text(toml, encoding="utf-8")
-    (tmp_path / "script.md").write_text(script, encoding="utf-8")
-    if cues is not None:
-        (tmp_path / "cues.json").write_text(json.dumps({"sections": cues}, indent=2), encoding="utf-8")
-    return Inputs.load(tmp_path, environ={})
-
-
-def catalog(scene: str, moments: dict[str, list[str]], **extra: object) -> dict[str, Any]:
-    """One scene of a catalog, with one element per moment each slide declares."""
-    elements = {
-        slide: [
-            {"attrs": {"data-in": wire.split(":", 1)[-1]}, "moments": {"data-in": wire}, "text": "x", "box": BOX}
-            for wire in wires
-        ]
-        for slide, wires in moments.items()
-    }
-    return {"scene": scene, "elements": elements, "slides": list(moments), "cues": dict(moments), **extra}
 
 
 def a_report(*scenes: dict[str, Any], warnings: Sequence[dict[str, Any]] = ()) -> PageReport:

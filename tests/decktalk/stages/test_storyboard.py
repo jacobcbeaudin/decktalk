@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -24,47 +23,11 @@ from decktalk.stages.storyboard import (
     storyboard,
     write_page,
 )
+from support.pages import a_project, catalog
 from support.runs import a_run
-
-TOML = """
-[project]
-name = "demo"
-
-[[section]]
-number = 1
-page = "deck/index.html"
-scene = "1"
-
-[[section]]
-number = 2
-page = "deck/index.html"
-scene = "2"
-"""
 
 CUES = {"1": {"cues": [{"cue": "1.1:a", "on": "there"}]}}
 """One cue whose phrase the demo script really speaks, so it resolves to a second."""
-
-SCRIPT = "# Demo\n\n## 1. One\n\nHello there again.\n\n## 2. Two\n\nSecond section speaks as well.\n"
-
-BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
-
-
-def a_project(tmp_path: Path, *, cues: dict | None = None) -> Inputs:
-    (tmp_path / "deck").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "deck" / "index.html").write_text("<div data-scene='1'></div>", encoding="utf-8")
-    (tmp_path / "decktalk.toml").write_text(TOML, encoding="utf-8")
-    (tmp_path / "script.md").write_text(SCRIPT, encoding="utf-8")
-    if cues is not None:
-        (tmp_path / "cues.json").write_text(json.dumps({"sections": cues}, indent=2), encoding="utf-8")
-    return Inputs.load(tmp_path, environ={})
-
-
-def catalog(scene: str, moments: dict[str, list[str]]) -> dict:
-    elements = {
-        slide: [{"attrs": {}, "moments": {"data-in": wire}, "text": "x", "box": BOX} for wire in wires]
-        for slide, wires in moments.items()
-    }
-    return {"scene": scene, "elements": elements, "slides": list(moments), "cues": dict(moments)}
 
 
 @dataclass

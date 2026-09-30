@@ -24,9 +24,10 @@ from decktalk.stages.check.scan import (
     static_findings,
 )
 from decktalk.stages.storyboard import Freeze, Sheet
+from support.pages import BOX, a_project, catalog
 from support.runs import a_run, notes
 
-from .conftest import BOX, Drawn, FakeAssets, a_project, a_report, catalog
+from .conftest import Drawn, FakeAssets, a_report
 
 SLIDES = {"1.1": ("1.1:a", "1.1:b")}
 """One slide with two cues, which is enough to measure a pair and to leave one in front of it."""
@@ -102,14 +103,7 @@ def test_a_page_warning_is_judged_by_the_code_the_page_named() -> None:
 
 def test_an_element_that_describes_nothing_is_judged_from_the_catalog_alone() -> None:
     """The measured rows say what is on the slide, so this judgement needs no picture at all."""
-    entry = MeasuredScene.model_validate(
-        {
-            "scene": "1",
-            "elements": {"1.1": [{"attrs": {}, "moments": {"data-in": "1.1:a"}, "text": "", "box": BOX}]},
-            "slides": ["1.1"],
-            "cues": {"1.1": ["1.1:a"]},
-        }
-    )
+    entry = MeasuredScene.model_validate(catalog("1", {"1.1": ["1.1:a"]}, text=""))
     found = static_findings(entry, TIMES, where="deck/index.html", section=1, settings=settings())
     assert Code.PAGE_NO_DESCRIPTION in {one.code for one in found}
 
