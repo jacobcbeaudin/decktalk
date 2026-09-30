@@ -14,6 +14,7 @@ from decktalk.inputs import Inputs
 from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SpendState, TakeStatus, Voicing, Word
 from decktalk.speech import PROVIDERS, SpeechRequest
+from decktalk.stages import narrate as narrate_stage
 from decktalk.stages.narrate import narrate
 from support.logs import data_of, decisions
 from support.runs import Watched
@@ -72,7 +73,7 @@ def test_a_second_run_keeps_every_take_it_already_has(inputs: Inputs, watched: W
 
 
 def test_every_take_kept_or_made_says_why_and_the_worker_count_is_recorded(
-    inputs: Inputs, watched: Watched, caplog: pytest.LogCaptureFixture
+    inputs: Inputs, watched: Watched, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     with caplog.at_level("DEBUG", logger="decktalk"):
         placeholder(inputs, watched)
@@ -83,6 +84,11 @@ def test_every_take_kept_or_made_says_why_and_the_worker_count_is_recorded(
         placeholder(inputs, watched)
         said = sorted(decisions(caplog, "take", "section", "hit", "why"))
         assert said == [(1, True, "unchanged"), (2, True, "unchanged"), (3, True, "unchanged")]
+        # A take the plan found and the worker then did not is told apart from one never made.
+        monkeypatch.setattr(narrate_stage, "is_cached", lambda *_: False)
+        placeholder(inputs, watched)
+        said = sorted(decisions(caplog, "take", "section", "hit", "why"))
+        assert said == [(1, False, "take-missing"), (2, False, "take-missing"), (3, False, "take-missing")]
 
 
 def test_a_run_told_to_make_them_again_replaces_them(inputs: Inputs, watched: Watched) -> None:

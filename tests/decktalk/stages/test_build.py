@@ -607,14 +607,17 @@ def test_a_changed_input_assembles_and_measures_again(
 
 
 def test_a_film_rewritten_outside_the_build_is_made_again(
-    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A stage run on its own rewrites the film without the record, so the record no longer vouches for it."""
     _built_once(inputs, answers, make_run)
     calls.made.clear()
     inputs.workspace.film.write_bytes(b"another film")
-    build(inputs, make_run(inputs).run)
+    caplog.clear()
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        build(inputs, make_run(inputs).run)
     assert "assemble" in calls.names
+    assert decisions(caplog, "assemble") == [(False, "outputs-changed")]
 
 
 def test_a_new_film_is_measured_again_even_when_its_inputs_are_old(
@@ -628,12 +631,17 @@ def test_a_new_film_is_measured_again_even_when_its_inputs_are_old(
     assert calls.names[-2:] == ["assemble", "verify"]
 
 
-def test_a_run_that_makes_no_film_keeps_nothing(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+def test_a_run_that_makes_no_film_keeps_nothing(
+    inputs: Inputs, watched: Watched, calls: Calls, caplog: pytest.LogCaptureFixture
+) -> None:
     """An assemble that left no film behind has nothing a later build could keep."""
     build(inputs, watched.run)
     calls.made.clear()
-    build(inputs, watched.run)
+    caplog.clear()
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        build(inputs, watched.run)
     assert calls.names[-2:] == ["assemble", "verify"]
+    assert decisions(caplog, "verify") == [(False, "film-missing")]
 
 
 def test_a_run_that_assembles_and_stops_before_verify_keeps_no_measurement(
