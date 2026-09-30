@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from typing import cast
 
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Playwright
+from playwright.sync_api import Page, Playwright
 
 from decktalk.media import browser
 from decktalk.results import Word
@@ -159,3 +159,42 @@ class FakeChromium:
     def started(self) -> Callable[[], AbstractContextManager[Playwright]]:
         """`sync_playwright` as a seam that starts this Chromium's driver, for code that opens its own."""
         return lambda: nullcontext(self.driver())
+
+
+class FakeRoute:
+    """Playwright's route object, as far as a route handler uses it: the answer, or what it did instead."""
+
+    def __init__(self) -> None:
+        self.answer: dict[str, object] | None = None
+        self.continued = False
+        self.aborted: str | None = None
+
+    def fulfill(self, **kwargs: object) -> None:
+        self.answer = kwargs
+
+    def continue_(self) -> None:
+        self.continued = True
+
+    def abort(self, error_code: str) -> None:
+        self.aborted = error_code
+
+
+class FakeRouter:
+    """A Playwright page or context, as far as `route_pages` uses it: it keeps the handler it is given."""
+
+    def __init__(self) -> None:
+        self.handler: Callable[[FakeRoute, object], None] | None = None
+
+    def route(self, _pattern: str, handler: Callable[[FakeRoute, object], None]) -> None:
+        self.handler = handler
+
+    def request(self, url: str) -> FakeRoute:
+        """What the kept handler does with one request for `url`."""
+        assert self.handler is not None, "nothing was routed through this page"
+        route = FakeRoute()
+        self.handler(route, SimpleNamespace(url=url))
+        return route
+
+    def page(self) -> Page:
+        """This router as the page `route_pages` is handed, typed as the one it stands in for."""
+        return cast("Page", self)

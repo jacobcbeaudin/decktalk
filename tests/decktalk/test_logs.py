@@ -36,7 +36,7 @@ from decktalk.settings import ToolsConfig
 from decktalk.speech import http as _http
 from decktalk.stages.narrate import _in_pool
 from decktalk.toolchain import chromium_fetch
-from support.fakes import FakeChromium
+from support.fakes import FakeChromium, FakeRouter
 from support.logs import data_of
 from support.projects import write_project
 from support.runs import a_machine
@@ -346,16 +346,14 @@ def fix_command_fails(run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> N
 
 
 def router_breaks(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
-    handlers: list[Callable[..., None]] = []
-    target = type("Target", (), {"route": lambda _self, _pattern, handler: handlers.append(handler)})()
-    origin.route_pages(target, origin.Allowed.of(tmp, ()), trusted=True)  # type: ignore[arg-type]
+    target = FakeRouter()
+    origin.route_pages(target.page(), origin.Allowed.of(tmp, ()), trusted=True)
 
     def broken(*_args: object) -> None:
         raise OSError("the disk went away")
 
     monkeypatch.setattr(origin, "local_target", broken)
-    route = type("Route", (), {"fulfill": lambda _self, **_kwargs: None})()
-    handlers[0](route, type("Request", (), {"url": f"{origin.ORIGIN}/deck/index.html?q=1"})())
+    target.request(f"{origin.ORIGIN}/deck/index.html?q=1")
 
 
 def two_sections_fail(_run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:

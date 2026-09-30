@@ -9,7 +9,6 @@ import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from threading import Thread
-from typing import Any
 
 import pytest
 
@@ -32,6 +31,7 @@ from decktalk.media.origin import (
     served_url,
 )
 from decktalk.page import Q
+from support.fakes import FakeRouter
 from support.logs import data_of
 
 WHOLE = ("deck", "envlink", "pub", "escape", "leak", "away", "leakhtm")
@@ -157,44 +157,11 @@ def test_the_asset_record_keeps_each_path_once_and_in_order(tmp_path):
     assert assets.missing == ["media/gone.png"]
 
 
-class _Route:
-    """Playwright's route object, as far as the handler under test uses it."""
-
-    def __init__(self) -> None:
-        self.answer: dict[str, object] | None = None
-        self.continued = False
-        self.aborted: str | None = None
-
-    def fulfill(self, **kwargs: object) -> None:
-        self.answer = kwargs
-
-    def continue_(self) -> None:
-        self.continued = True
-
-    def abort(self, error_code: str) -> None:
-        self.aborted = error_code
-
-
-class _Target:
-    """A Playwright page or context, as far as `route_pages` uses it."""
-
-    def __init__(self) -> None:
-        self.handler: Any = None
-
-    def route(self, _pattern: str, handler: Any) -> None:  # noqa: ANN401  (Playwright's own handler type)
-        self.handler = handler
-
-    def request(self, url: str) -> _Route:
-        route = _Route()
-        self.handler(route, type("Request", (), {"url": url})())
-        return route
-
-
 def test_the_router_answers_a_project_file_and_leaves_every_other_origin_alone(tmp_path):
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text("<p>hi</p>", encoding="utf-8")
-    target = _Target()
-    assets = route_pages(target, whole(tmp_path), trusted=True)
+    target = FakeRouter()
+    assets = route_pages(target.page(), whole(tmp_path), trusted=True)
 
     served = target.request(f"{ORIGIN}/deck/index.html")
     assert served.answer == {"status": 200, "content_type": "text/html", "body": b"<p>hi</p>"}
@@ -230,8 +197,8 @@ def test_an_untrusted_page_reaches_no_origin_but_the_projects_own(tmp_path, url)
     """0.5.0 sent every request for another origin to the network, whoever wrote the page."""
     (tmp_path / "deck").mkdir()
     (tmp_path / "deck" / "index.html").write_text("<p>hi</p>", encoding="utf-8")
-    target = _Target()
-    assets = route_pages(target, whole(tmp_path), trusted=False)
+    target = FakeRouter()
+    assets = route_pages(target.page(), whole(tmp_path), trusted=False)
     refused = target.request(url)
     assert refused.aborted == "blockedbyclient"
     assert not refused.continued and refused.answer is None
@@ -419,8 +386,8 @@ def test_a_declaration_outside_the_project_is_dropped_rather_than_opened(tmp_pat
 
 def test_the_router_records_what_it_turned_away(tmp_path):
     """A page reaching for the script is a fact the recording carries, not a 403 only the page saw."""
-    target = _Target()
-    assets = route_pages(target, project(tmp_path), trusted=True)
+    target = FakeRouter()
+    assets = route_pages(target.page(), project(tmp_path), trusted=True)
     refused = target.request(f"{ORIGIN}/script.md")
     assert refused.answer is not None and refused.answer["status"] == 403
     assert assets.refused == [f"script.md ({UNDECLARED})"]
@@ -448,8 +415,8 @@ def test_the_preview_server_refuses_what_the_router_refuses(tmp_path):
 
 def test_a_request_the_router_could_not_answer_is_a_warning_without_its_query(tmp_path, monkeypatch, caplog):
     (tmp_path / "deck").mkdir()
-    target = _Target()
-    route_pages(target, whole(tmp_path), trusted=True)
+    target = FakeRouter()
+    route_pages(target.page(), whole(tmp_path), trusted=True)
 
     def broken(*_args: object) -> None:
         raise OSError("the disk went away")
