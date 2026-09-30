@@ -1,12 +1,13 @@
-"""Generate the settings reference from the committed JSON Schema.
+"""Generate the settings reference from the JSON Schema of decktalk.toml.
 
     uv run scripts/build_settings_reference.py --write    # write the page
     uv run scripts/build_settings_reference.py --check    # exit 1 if the committed page would change
 
-The page is a rendering of the published schema by construction. It reads `schemas/v1/decktalk.json`
-rather than the dataclasses, so a reader of the page and a machine reading the schema are told the
-same thing by the same bytes, and a key that reached the page without reaching the schema is
-impossible rather than merely unlikely.
+The page is a rendering of the published schema by construction. It reads the document
+`build_settings_schema.py` writes to `schemas/v1/decktalk.json` rather than the dataclasses, so a
+reader of the page and a machine reading the schema are told the same thing, and a key that reached
+the page without reaching the schema is impossible rather than merely unlikely. It asks that script
+rather than the committed file, so the two can be written in either order.
 
 It names the keys only a machine may set, because a project file that sets one is refused. It then
 gives the index from a verdict to the keys that move it, because that is the lookup an agent makes
@@ -16,17 +17,16 @@ lookup an agent makes is for a knob that does not exist.
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Any
 
 import tomlkit
 
+import build_settings_schema
 import generated
 
 ROOT = Path(__file__).resolve().parent.parent
-SCHEMA = ROOT / "schemas" / "v1" / "decktalk.json"
 TARGET = ROOT / "docs" / "reference" / "configuration.mdx"
 
 HEADER = """---
@@ -102,11 +102,6 @@ a fact about a codec, a standard, or a tool DeckTalk drives, and it is fixed for
 sample rate is. Neither can be set, and both are here so that a knob you cannot find is a number you
 can read.
 """
-
-
-def schema() -> dict[str, Any]:
-    """The committed schema, which is the one thing this page renders."""
-    return json.loads(SCHEMA.read_text(encoding="utf-8"))
 
 
 def keys(document: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
@@ -204,7 +199,7 @@ def numbers(document: dict[str, Any]) -> list[str]:
 
 def render() -> str:
     """The whole page, which is the header, the index, one section per table, the numbers and the links."""
-    document = schema()
+    document = build_settings_schema.document(machine=False)
     rows = keys(document)
     parts = [HEADER, *machine(rows), *index(rows), *tables(document, rows), *numbers(document), FOOTER]
     return "\n".join(parts).rstrip() + "\n"
