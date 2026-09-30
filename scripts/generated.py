@@ -16,6 +16,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
@@ -50,22 +51,39 @@ def differs(path: Path, text: str) -> str | None:
     return f"line {line} differs from its source" if line else "its length differs from its source"
 
 
+COMMAND_TIMEOUT_SECONDS = 600
+"""Calibration: far longer than any bundle, type check or format takes, so only a tool that hung reaches it."""
+
+
 def command(cmd: list[str | Path], *, stdin: str | None = None) -> str:
-    """One tool, with its output returned and its failure raised with everything it printed."""
+    """One tool, with its output returned and its failure raised with the command, its exit, its time and its output.
+
+    The tool is stopped after `COMMAND_TIMEOUT_SECONDS`, so a hung `npm` or `esbuild` fails the
+    generator with a sentence rather than holding a check run open until its job is killed.
+    """
     # uv runs a generator in an environment of its own, and a nested `uv run` would warn about it.
     env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
-    done = subprocess.run(
-        [str(part) for part in cmd],
-        check=False,
-        cwd=ROOT,
-        env=env,
-        input=stdin,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
+    argv = [str(part) for part in cmd]
+    started = time.monotonic()
+    try:
+        done = subprocess.run(
+            argv,
+            check=False,
+            cwd=ROOT,
+            env=env,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f"{' '.join(argv)} ran for {COMMAND_TIMEOUT_SECONDS} seconds and was stopped.") from None
     if done.returncode != 0:
-        raise SystemExit(f"{cmd[0]} failed:\n{done.stdout}{done.stderr}")
+        seconds = time.monotonic() - started
+        raise SystemExit(
+            f"{' '.join(argv)} exited {done.returncode} after {seconds:.1f} seconds:\n{done.stdout}{done.stderr}"
+        )
     return done.stdout
 
 

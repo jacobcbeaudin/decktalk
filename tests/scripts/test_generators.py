@@ -93,3 +93,15 @@ def test_a_check_over_a_stale_file_and_an_orphan_exits_1_and_names_both(
         generated.STALE.format(path="owned/orphan.json", reason=generated.GONE, script="build_test.py"),
     ]
     assert (owned / "orphan.json").exists() and (owned / "kept.json").read_text(encoding="utf-8") == "old\n"
+
+
+def test_a_tool_that_fails_is_named_with_its_exit_and_its_time():
+    with pytest.raises(SystemExit, match=r"exited 3 after \d+\.\d seconds:\nsaid"):
+        generated.command([sys.executable, "-c", "import sys; print('said'); sys.exit(3)"])
+
+
+def test_a_tool_that_hangs_is_stopped_at_the_limit(monkeypatch):
+    """A hung npm or esbuild held a check run open until the job around it was killed."""
+    monkeypatch.setattr(generated, "COMMAND_TIMEOUT_SECONDS", 0.2)
+    with pytest.raises(SystemExit, match="was stopped"):
+        generated.command([sys.executable, "-c", "import time; time.sleep(5)"])
