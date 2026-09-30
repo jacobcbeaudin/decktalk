@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import time
 from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from types import ModuleType
@@ -45,7 +46,7 @@ from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
 from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, Voicing, counted
-from decktalk.stages import DOLLAR_DIGITS, assemble, clock, cue, narrate, record, since, storyboard, verify
+from decktalk.stages import DOLLAR_DIGITS, assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.status import (
     BUILT,
@@ -146,7 +147,6 @@ def build(
     stage out is a run that does not want its sound, and a second knob for the same decision would
     let a caller skip the stage and still be refused for the file it never asked for.
     """
-    started = clock()
     plan = _plan(stages, skip)
     soundscape = Stage.SOUNDSCAPE not in skip
     _require_what_the_plan_skips(inputs, plan, soundscape=soundscape)
@@ -171,7 +171,7 @@ def build(
             rows.append(_skipped(run, stage))
             continue
         run.check()
-        opened = clock()
+        opened = time.monotonic()
         taken = {name: options[name] for name in OPTIONS[stage]}
         key = _key(stage, inputs, kept, fresh, taken)
         standing = None
@@ -180,14 +180,14 @@ def build(
             cache_decision(log, stage.value, hit=standing is not None, why=why, key=key)
         if standing is not None:
             findings = _keep(stage, run, standing)
-            rows.append(StageRun(stage=stage, outcome=Outcome.KEPT, seconds=since(opened)))
+            rows.append(StageRun(stage=stage, outcome=Outcome.KEPT, seconds=time.monotonic() - opened))
             fresh[stage] = standing
             if stage is Stage.ASSEMBLE:
                 film = inputs.relative(inputs.workspace.film)
         else:
             with run.stage(stage, index=plan.index(stage) + FIRST, count=len(plan)):
                 answer = _call(stage, run, inputs, taken)
-            rows.append(StageRun(stage=stage, outcome=Outcome.OK, seconds=since(opened)))
+            rows.append(StageRun(stage=stage, outcome=Outcome.OK, seconds=time.monotonic() - opened))
             spends += _spend_of(answer)
             findings = [found for found in answer.findings if found.stage is stage]
             if key is not None:
@@ -207,7 +207,6 @@ def build(
         film=film,
         storyboard=board,
         stopped_at=stopped_at,
-        seconds=since(started),
         **stopped,
     )
 

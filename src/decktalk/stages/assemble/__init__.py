@@ -25,7 +25,7 @@ from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import AssembleResult, RenderedSection, counted
-from decktalk.stages import SECOND_DIGITS, clock, since
+from decktalk.stages import SECOND_DIGITS
 from decktalk.stages.assemble.cut import Rendered, cut_list, remove_stray_cuts, render_sections, rendered_starts
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
 from decktalk.stages.assemble.mix import MixPlan, encode_soundtrack, mix_soundtrack
@@ -85,7 +85,6 @@ def assemble(
     strict: bool = False,
 ) -> AssembleResult:
     """Cut, mix, normalize and publish the whole film, with everything a viewer receives beside it."""
-    started = clock()
     takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
     remove_stray_cuts(inputs)
     passes = Passes(run, len(inputs.document.sections))
@@ -125,7 +124,6 @@ def assemble(
         film_seconds=ffmpeg.probe_duration(inputs.workspace.film),
         sections=_rendered_rows(inputs, rows),
         loudness=None if after is None else measured(inputs, after),
-        seconds=since(started),
     )
 
 

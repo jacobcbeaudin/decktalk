@@ -31,6 +31,7 @@ under an old narration t=0.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -51,7 +52,7 @@ from decktalk.media.origin import Allowed
 from decktalk.page import CAPTURE_FPS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
-from decktalk.stages import SECOND_DIGITS, clock, judge, selects, since
+from decktalk.stages import SECOND_DIGITS, judge, selects
 from decktalk.stages.record.capture import (
     Job,
     plan_job,
@@ -323,13 +324,15 @@ def kept_row(inputs: Inputs, run: Run, job: Job) -> SectionRecording:
     A kept section is work the run decided not to do, so its `section.done` carries `skipped` rather
     than `ok` and a renderer counts it apart from a section that was really recorded.
     """
-    started = clock()
+    started = time.monotonic()
     run.check()
     number = job.section.number
     run.emit(SectionStart, stage=Stage.RECORD, section=number)
     previous = job.previous
     seconds = previous.checks.duration_seconds if previous is not None and previous.checks is not None else 0.0
-    run.emit(SectionDone, stage=Stage.RECORD, section=number, outcome=Outcome.SKIPPED, seconds=since(started))
+    run.emit(
+        SectionDone, stage=Stage.RECORD, section=number, outcome=Outcome.SKIPPED, seconds=time.monotonic() - started
+    )
     return row(inputs, job, seconds, kept=True)
 
 
@@ -353,7 +356,6 @@ def record(
     The sections that must be recorded go to a pool of workers as `[record] concurrency` allows, and
     the sections that are kept are reported by this thread, so every row is in section order.
     """
-    started = clock()
     planned = plan(inputs, run, only)
     passed_over(inputs, run, only)
     named = set(only or ())
@@ -377,7 +379,7 @@ def record(
             rows.append(pool.result(number) if number in by_number else kept_row(inputs, run, job))
             label = f"section {number} of {inputs.document.name}"
             run.progress(Stage.RECORD, done=done, total=total, unit=Unit.SECTION, label=label, section=number)
-    return run.result(RecordResult, sections=tuple(rows), seconds=since(started))
+    return run.result(RecordResult, sections=tuple(rows))
 
 
 __all__ = [

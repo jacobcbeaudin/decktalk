@@ -1,4 +1,4 @@
-"""What every stage shares: how a judgement is built, how a selection is read and how a stage is timed.
+"""What every stage shares: how a judgement is built, and how a selection is read.
 
 These helpers are the only code the stage package holds above its own stages, so what they
 promise is held here rather than in each of the twelve modules that call them.
@@ -6,11 +6,9 @@ promise is held here rather than in each of the twelve modules that call them.
 
 from __future__ import annotations
 
-import pytest
-
 from decktalk.findings import Applicability, Certainty, Code, Edit, EditFix, Location
 from decktalk.pipeline import Stage
-from decktalk.stages import judge, selects, since
+from decktalk.stages import judge, selects
 
 
 def test_a_judgement_takes_its_certainty_and_its_page_from_its_code() -> None:
@@ -51,9 +49,3 @@ def test_a_run_that_names_sections_selects_those_alone() -> None:
 def test_an_empty_selection_still_selects_every_section() -> None:
     """An empty run of numbers is a caller that named none, which is every section and not no section."""
     assert selects([])(2)
-
-
-def test_a_stage_is_timed_in_milliseconds(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The clock is held still, because two readings of a running clock differ by the tick between them."""
-    monkeypatch.setattr("decktalk.stages.time.monotonic", lambda: 12.3456789)
-    assert since(2.0) == 10.346

@@ -111,6 +111,12 @@ def test_a_volatile_field_says_so_in_its_own_schema() -> None:
     assert "volatile" not in build["properties"]["film"]
 
 
+def test_an_elapsed_time_is_read_to_the_millisecond() -> None:
+    """The type rounds, so no emitter rounds for itself and a result and an event read one clock alike."""
+    row = results.StageRun(stage=results.Stage.CUE, outcome=results.Outcome.OK, seconds=10.3456789)
+    assert row.seconds == 10.346
+
+
 def test_every_model_uses_the_one_config() -> None:
     for model in models():
         assert {key: model.model_config[key] for key in findings.MODEL} == dict(findings.MODEL), model.__name__

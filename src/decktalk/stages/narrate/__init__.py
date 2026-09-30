@@ -42,7 +42,7 @@ from decktalk.machine import Run
 from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SectionTake, Spend, SpendState, TakeStatus, Voicing
 from decktalk.speech import SpeechProvider
-from decktalk.stages import clock, selects, since
+from decktalk.stages import selects
 from decktalk.stages.narrate.plan import (
     TakePlan,
     is_cached,
@@ -87,7 +87,6 @@ def narrate(
     has seen the price, and the index is written again after every take, so a run that is stopped
     keeps everything it has already paid for.
     """
-    started = clock()
     cfg = inputs.settings.narration
     targets = _targets(inputs, only)
     model = inputs.document.voice.model or cfg.model
@@ -117,7 +116,6 @@ def narrate(
         sections=tuple(made),
         spend=_charged(estimate, made) if paid else estimate,
         takes=inputs.relative(inputs.workspace.takes_path),
-        seconds=since(started),
     )
 
 

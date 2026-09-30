@@ -29,7 +29,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, ClassVar, Literal
 
-from pydantic import Field, JsonValue
+from pydantic import AfterValidator, Field, JsonValue
 
 from decktalk.errors import ErrorInfo
 from decktalk.findings import Code, Finding, Model, ProjectPath
@@ -53,11 +53,19 @@ Written = Annotated[
 ]
 """The files a run wrote, declared once and carried by every result whose command writes any."""
 
+ELAPSED_DIGITS = 3
+"""Truth: a duration is read to the millisecond, which is finer than any frame and coarser than a clock tick."""
+
 Elapsed = Annotated[
     float,
     Field(ge=0, description="How long this call took, in seconds.", json_schema_extra=VOLATILE),
+    AfterValidator(lambda seconds: round(seconds, ELAPSED_DIGITS)),
 ]
-"""A wall-clock duration, which is measured rather than computed and so is never compared."""
+"""A wall-clock duration, which is measured rather than computed and so is never compared.
+
+It is rounded where it is declared, so a run, a stage, a section and a result all read their
+clocks the same way and no emitter rounds for itself.
+"""
 
 NextCommand = Annotated[
     str | None,

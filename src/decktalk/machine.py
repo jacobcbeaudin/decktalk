@@ -254,6 +254,7 @@ class Run:
         self.root = root
         self.written: list[Path] = []
         self.findings: list[Finding] = []
+        self.opened = time.monotonic()
 
     # ---- the stream ---------------------------------------------------------------------
 
@@ -388,11 +389,11 @@ class Run:
         written: Iterable[Path] | None = None,
         **fields: object,
     ) -> R:
-        """Fill one result: this run's id, the judgements it made and the files it wrote.
+        """Fill one result: this run's id, the judgements it made, the files it wrote and how long it took.
 
         `ok` is false when any judgement is certain, which is the one rule every command shares, so
         no stage decides for itself what counts as having found something. A stage that reported its
-        judgements and its files through the run names neither here.
+        judgements and its files through the run names neither here, and no stage times itself.
         """
         judged = tuple(findings) if findings is not None else tuple(self.findings)
         declared = model.model_fields
@@ -401,6 +402,8 @@ class Run:
         if "written" in declared:
             paths = self.written if written is None else list(written)
             fields.setdefault("written", tuple(dict.fromkeys(self._relative(path) for path in paths)))
+        if "seconds" in declared:
+            fields.setdefault("seconds", time.monotonic() - self.opened)
         fields.setdefault("ok", not any(found.certainty is Certainty.CERTAIN for found in judged))
         return model(findings=judged, **cast("dict[str, Any]", fields))
 
@@ -561,7 +564,6 @@ class Machine:
                 JsonlSink.prune(events_path.parent, keep_runs)
             written = JsonlSink(events_path, max_bytes=max_bytes)
             sink = self.events.subscribe(written, runs=[run.id])
-        started = time.monotonic()
         self.events.emit(run.id, RunStart, events_path=relative(events_path, root) if events_path and root else None)
         # What the machine noticed when it was read is said on every run, because the machine was read
         # once and each run's events file is read on its own.
@@ -592,7 +594,7 @@ class Machine:
         finally:
             dropped = written.dropped if written is not None else 0
             self.events.emit(
-                run.id, RunDone, outcome=outcome, seconds=time.monotonic() - started, error=error, dropped=dropped
+                run.id, RunDone, outcome=outcome, seconds=time.monotonic() - run.opened, error=error, dropped=dropped
             )
             if sink is not None:
                 sink.close()

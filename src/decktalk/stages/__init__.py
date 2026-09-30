@@ -28,7 +28,6 @@ than at the end.
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Sequence
 
 from decktalk.findings import Code, Finding, Fix, Location
@@ -105,27 +104,15 @@ def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
     return lambda number: not numbers or number in numbers
 
 
-def since(started: float) -> float:
-    """How long a stage has been running, in seconds, which is what every result reports."""
-    return round(time.monotonic() - started, SECOND_DIGITS)
-
-
-def clock() -> float:
-    """The moment a stage started, read from a clock that cannot go backwards."""
-    return time.monotonic()
-
-
 __all__ = [
     "CHARACTERS_PER_PRICE",
     "DOLLAR_DIGITS",
     "PRICE_KEY",
     "SECOND_DIGITS",
     "SECTION_START_SECONDS",
-    "clock",
     "dollars_for",
     "judge",
     "price_layer",
     "selects",
-    "since",
     "voice_context",
 ]

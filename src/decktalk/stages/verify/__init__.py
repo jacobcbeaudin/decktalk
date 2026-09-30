@@ -29,7 +29,7 @@ from decktalk.machine import Run
 from decktalk.media import ffmpeg, frames
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import VerifyResult
-from decktalk.stages import clock, judge, selects, since
+from decktalk.stages import judge, selects
 from decktalk.stages.verify.measure import cue_checks, film_starts, planned_cues, want_cues
 from decktalk.stages.verify.plan import default_checks, opted_out, thin_change
 from decktalk.stages.verify.seams import cut_checks, planned_seams, seam_checks, start_checks, want_seams
@@ -39,7 +39,6 @@ __all__ = ["opted_out", "thin_change", "verify"]
 
 def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> VerifyResult:
     """Measure the finished film against the clock the earlier stages promised it would keep."""
-    started = clock()
     film = inputs.workspace.film
     if not film.exists():
         raise NotBuiltError(
@@ -73,7 +72,6 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
         cuts=cut_checks(inputs, run, film, inputs.takes(), kept),
         seams=seam_checks(inputs, run, film, seams, decoded),
         cues=cue_checks(inputs, run, film, cues, decoded),
-        seconds=since(started),
     )
 
 

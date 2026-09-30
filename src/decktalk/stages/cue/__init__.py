@@ -33,7 +33,7 @@ from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import measured_rows, overlap_findings, scene_entry
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import CueResult, SectionCues, Word
-from decktalk.stages import clock, selects, since
+from decktalk.stages import selects
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import ambiguity, resolve_sections, short_section
 
@@ -47,7 +47,6 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None, allow_un
     so a run aimed at one section never drops the cues of the rest. `allow_unknown` keeps a row no
     page declares out of the findings, which is the author saying they know about it.
     """
-    started = clock()
     wanted = selects(only)
     takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
     cued = [block for block in inputs.cues() if wanted(block.number)]
@@ -79,7 +78,6 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None, allow_un
         CueResult,
         sections=sections,
         file=inputs.relative(written),
-        seconds=since(started),
     )
 
 

@@ -54,7 +54,7 @@ from decktalk.results import (
 from decktalk.settings import ElevenLabsConfig
 from decktalk.speech import get_provider
 from decktalk.speech.elevenlabs import MUSIC_PATH, SOUND_PATH, ElevenLabs
-from decktalk.stages import DOLLAR_DIGITS, clock, dollars_for, judge, price_layer, selects, since, voice_context
+from decktalk.stages import DOLLAR_DIGITS, dollars_for, judge, price_layer, selects, voice_context
 from decktalk.stages.soundscape.ledger import (
     LEDGER_FILE,
     UNFINISHED_DIGEST,
@@ -365,7 +365,6 @@ def soundscape(
     not find. A request the service refuses raises `PROVIDER`, so a run that returns has nothing
     else to judge.
     """
-    started = clock()
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
     path = inputs.workspace.soundscape_dir / LEDGER_FILE
@@ -405,7 +404,7 @@ def soundscape(
                     stage=Stage.SOUNDSCAPE,
                 )
             )
-    return run.result(SoundscapeResult, items=tuple(rows), spend=spend, seconds=since(started))
+    return run.result(SoundscapeResult, items=tuple(rows), spend=spend)
 
 
 __all__ = [
