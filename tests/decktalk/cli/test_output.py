@@ -19,7 +19,6 @@ from decktalk.findings import Certainty, Code
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     RESULTS,
-    BuildResult,
     ConfigGetResult,
     ConfigSetResult,
     ConfigUnsetResult,
@@ -29,11 +28,10 @@ from decktalk.results import (
     Scope,
     SettingValue,
     VerifyResult,
-    Voicing,
 )
 from support.samples import sample
 
-from .conftest import finding, spend
+from .conftest import ANSWERS, finding
 
 
 def written(render, *args: object) -> str:
@@ -398,31 +396,15 @@ def test_a_download_shows_its_size_in_the_unit_a_person_reads() -> None:
 
 
 def test_a_finished_build_names_its_film_its_price_and_what_it_found() -> None:
-    built = BuildResult(
-        ok=True,
-        run="r",
-        stages=(),
-        voice=Voicing.PLACEHOLDER,
-        spend=spend(),
-        film=Path("build/final/demo.mp4"),
-        findings=(finding(),),
-        seconds=1.0,
-    )
+    built = ANSWERS["build"].model_copy(update={"film": Path("build/final/demo.mp4"), "findings": (finding(),)})
     said = recorded(built)
     assert "Built build/final/demo.mp4, $0.12, 1 finding" in said
     assert "1 findings" not in said
 
 
 def test_a_build_that_stopped_says_where_it_stopped() -> None:
-    stopped = BuildResult(
-        ok=False,
-        run="r",
-        stages=(),
-        voice=Voicing.PLACEHOLDER,
-        spend=spend(),
-        stopped_at=Stage.CUE,
-        findings=(finding(), finding()),
-        seconds=1.0,
+    stopped = ANSWERS["build"].model_copy(
+        update={"ok": False, "stopped_at": Stage.CUE, "findings": (finding(), finding())}
     )
     said = recorded(stopped)
     assert "Stopped at cue, $0.12, 2 findings" in said

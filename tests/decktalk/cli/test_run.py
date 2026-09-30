@@ -17,7 +17,6 @@ from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
     AssembleResult,
-    BuildResult,
     ClipResult,
     CueResult,
     FixOutcome,
@@ -28,7 +27,7 @@ from decktalk.results import (
     Voicing,
 )
 
-from .conftest import Fake, finding, spend
+from .conftest import ANSWERS, Fake, finding, spend
 
 NARRATE = NarrateResult(ok=True, run="r", voice=Voicing.PLACEHOLDER, sections=(), spend=spend(), seconds=1.0)
 CUE = CueResult(ok=True, run="r", sections=(), seconds=1.0)
@@ -240,14 +239,6 @@ def test_applying_one_fix_says_so_in_the_singular(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(made, "say", said.append)
     applied = FixOutcome(code=Code.CUE_THIN_CHANGE, title="Move the cue.", applied=True)
     fake = Fake(apply=ApplyResult(ok=True, run="r", fixes=(applied,)))
-    built = BuildResult(
-        ok=False,
-        run="r",
-        stages=(),
-        voice=Voicing.PLACEHOLDER,
-        spend=spend(),
-        findings=(finding(fix=True),),
-        seconds=1.0,
-    )
+    built = ANSWERS["build"].model_copy(update={"ok": False, "findings": (finding(fix=True),)})
     commands._offered(made, fake, built, True)  # ty: ignore[invalid-argument-type]
     assert said == ["Applied 1 fix. Run decktalk build again to make the film from them."]
