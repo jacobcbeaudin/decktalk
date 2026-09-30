@@ -9,6 +9,7 @@ import pytest
 from decktalk import settings as knobs
 from decktalk.cli import config as commands
 from decktalk.results import ConfigGetResult, ConfigListResult, Layer
+from support.links import link
 from support.projects import write_project
 
 
@@ -70,10 +71,7 @@ def test_set_refuses_a_project_file_that_links_out_of_the_project(run, project_d
     victim = tmp_path_factory.mktemp("elsewhere") / "victim.toml"
     victim.write_text("[video]\ncrf = 18\n", encoding="utf-8")
     (project_dir / "decktalk.toml").unlink()
-    try:
-        (project_dir / "decktalk.toml").symlink_to(victim)
-    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
-        pytest.skip("this machine does not let an unprivileged user make a link")
+    link(project_dir / "decktalk.toml", victim)
     ran = run("-p", str(project_dir), "config", "set", "video.crf", "20")
     assert ran.exit_code != 0
     assert "leads outside the project" in ran.err

@@ -44,6 +44,7 @@ from decktalk.results import (
     Voicing,
 )
 from decktalk.results import Layer as SettingLayer
+from support.links import link
 from support.projects import MINIMAL_TOML, write_project
 from support.runs import a_machine
 
@@ -403,13 +404,10 @@ def test_a_lock_file_that_cannot_be_a_lock_is_a_refusal_that_names_it(tmp_path: 
     build = project.workspace.build
     build.mkdir(parents=True, exist_ok=True)
     (build / "kept.json").write_text("{}", encoding="utf-8")
-    try:
-        if planted == "link":
-            (build / LOCK_FILE).symlink_to(build / "kept.json")
-        else:
-            (build / LOCK_FILE).mkdir()
-    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
-        pytest.skip("this machine does not let an unprivileged user make a link")
+    if planted == "link":
+        link(build / LOCK_FILE, build / "kept.json")
+    else:
+        (build / LOCK_FILE).mkdir()
     with pytest.raises(InputError, match=r"\.lock cannot be used as the build lock") as refused:
         project.cue()
     assert refused.value.code is ErrorCode.INPUT

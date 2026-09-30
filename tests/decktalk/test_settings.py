@@ -42,6 +42,7 @@ from decktalk.settings import (
     write,
 )
 from decktalk.tomlmap import Bounds, Key, Nature, Source
+from support.links import link
 
 SCHEMA = Path(__file__).resolve().parents[2] / "schemas" / "v1" / "decktalk.json"
 
@@ -518,10 +519,7 @@ class TestTheWriter:
         kept.parent.mkdir()
         kept.write_text("", encoding="utf-8")
         path = tmp_path / "decktalk.toml"
-        try:
-            path.symlink_to(kept)
-        except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
-            pytest.skip("this machine does not let an unprivileged user make a link")
+        link(path, kept)
         write(path, "record.concurrency", "2", scope=Scope.MACHINE, environ={})
         assert path.is_symlink()
         assert "concurrency = 2" in kept.read_text(encoding="utf-8")
@@ -535,10 +533,7 @@ class TestTheWriter:
         victim.write_text("[video]\nwidth = 640\n", encoding="utf-8")
         root = tmp_path / "project"
         root.mkdir()
-        try:
-            (root / "decktalk.toml").symlink_to(victim)
-        except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
-            pytest.skip("this machine does not let an unprivileged user make a link")
+        link(root / "decktalk.toml", victim)
         with pytest.raises(InputError, match="leads outside the project"):
             if removing:
                 unset(root / "decktalk.toml", "video.width", scope=Scope.PROJECT, environ={})

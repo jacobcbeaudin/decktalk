@@ -13,7 +13,6 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
-import os
 import stat
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,6 +30,7 @@ from decktalk.stages import status
 from decktalk.stages.assemble import cut
 from decktalk.stages.soundscape import Planned
 from decktalk.stages.soundscape.ledger import DIGEST_DIGITS, request_digest
+from support.links import link
 
 
 def test_every_file_is_replaced_and_keeps_the_mode_it_had(tmp_path: Path) -> None:
@@ -72,10 +72,7 @@ def test_a_draft_is_never_written_through_a_link_already_under_its_name(
     (tmp_path / "notes.txt").write_text("one\n", encoding="utf-8")
     elsewhere = tmp_path / "elsewhere.txt"
     elsewhere.write_text("mine\n", encoding="utf-8")
-    try:
-        os.symlink(elsewhere, tmp_path / ".notes.txt.planted.draft")
-    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
-        pytest.skip("this machine does not let an unprivileged user make a link")
+    link(tmp_path / ".notes.txt.planted.draft", elsewhere)
     with pytest.raises(FileExistsError):
         replace_all({tmp_path / "notes.txt": "changed\n"})
     assert elsewhere.read_text(encoding="utf-8") == "mine\n"

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import logging
-import os
 import socket
 import subprocess
 import sys
@@ -51,6 +50,7 @@ from decktalk.speech import VoiceContext, get_provider
 from decktalk.toolchain import assets, command_line
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
+from support.links import link
 from support.logs import data_of
 from support.paths import REPO
 from support.runs import a_machine
@@ -893,10 +893,7 @@ def test_an_edit_through_a_link_that_leaves_the_project_is_refused(tmp_path: Pat
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "notes.txt").write_text("mine\n", encoding="utf-8")
-    try:
-        (root / "shared").symlink_to(outside, target_is_directory=True)
-    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
-        pytest.skip("this machine does not let an unprivileged user make a link")
+    link(root / "shared", outside)
     done, why = applied(a_machine(tmp_path), an_edit("shared/notes.txt", line=1, old="mine"), root)
     assert not done and "outside the project" in why
     assert (outside / "notes.txt").read_text(encoding="utf-8") == "mine\n"
@@ -922,10 +919,7 @@ def test_a_runtime_copy_that_links_to_another_file_is_never_written_through(tmp_
     root = tmp_path / "project"
     (root / "deck").mkdir(parents=True)
     (root / "script.md").write_text("mine\n", encoding="utf-8")
-    try:
-        (root / "deck" / assets.RUNTIME_FILE).symlink_to(root / "script.md")
-    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
-        pytest.skip("this machine does not let an unprivileged user make a link")
+    link(root / "deck" / assets.RUNTIME_FILE, root / "script.md")
     done, why = applied(a_machine(tmp_path), a_runtime_fix(f"deck/{assets.RUNTIME_FILE}"), root)
     assert not done and "not a copy of the runtime" in why
     assert (root / "script.md").read_text(encoding="utf-8") == "mine\n"
@@ -987,10 +981,7 @@ def test_a_link_planted_where_a_fix_writes_its_draft_is_a_refusal_and_is_never_w
     (root / "notes.txt").write_text("one\n", encoding="utf-8")
     elsewhere = tmp_path / "elsewhere.txt"
     elsewhere.write_text("mine\n", encoding="utf-8")
-    try:
-        (root / ".notes.txt.planted.draft").symlink_to(elsewhere)
-    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
-        pytest.skip("this machine does not let an unprivileged user make a link")
+    link(root / ".notes.txt.planted.draft", elsewhere)
     done, why = applied(a_machine(tmp_path), an_edit("notes.txt", line=1, old="one"), root)
     assert not done and "could not be read or written" in why
     assert elsewhere.read_text(encoding="utf-8") == "mine\n"
@@ -1074,27 +1065,21 @@ def test_a_runtime_fix_aimed_at_a_directory_is_a_refusal(tmp_path: Path) -> None
     assert not done and "could not be read or written" in why
 
 
-@pytest.mark.parametrize("link", ["symbolic", "hard"])
+@pytest.mark.parametrize("kind", ["symbolic", "hard"])
 def test_a_settings_fix_never_writes_through_a_project_file_linked_out_of_the_project(
-    tmp_path: Path, link: str
+    tmp_path: Path, kind: str
 ) -> None:
     """A project that arrives with its `decktalk.toml` linked elsewhere chose where a settings fix writes."""
     root = tmp_path / "project"
     root.mkdir()
     outside = tmp_path / "victim.toml"
     outside.write_text('[project]\nname = "victim"\n', encoding="utf-8")
-    try:
-        if link == "symbolic":
-            (root / "decktalk.toml").symlink_to(outside)
-        else:
-            os.link(outside, root / "decktalk.toml")
-    except OSError:  # pragma: no cover  (Windows makes a link only in developer mode)
-        pytest.skip("this machine does not let an unprivileged user make a link")
+    link(root / "decktalk.toml", outside, hard=kind == "hard")
     fix = SettingFix(title="t", applicability=Applicability.SAFE, key="video.width", value="1280")
     with a_machine(tmp_path).run() as run:
         outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
     assert outside.read_text(encoding="utf-8") == '[project]\nname = "victim"\n'
-    if link == "symbolic":
+    if kind == "symbolic":
         assert not outcome.applied and "outside the project" in (outcome.why or "")
     else:
         assert outcome.applied and "width = 1280" in (root / "decktalk.toml").read_text(encoding="utf-8")
