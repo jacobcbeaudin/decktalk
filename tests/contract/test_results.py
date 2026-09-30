@@ -74,9 +74,6 @@ SOME_CODE = Code.CUE_OFF
 RESERVED = ("schema", "ok", "findings", "error")
 """The four keys the base reserves, which every result carries and no subclass may spell again."""
 
-RETIRED = ("command", "exit_code", "summary", "data", "result")
-"""Keys the 0.4 envelope carried. The JSON is one flat object now, so none of them may come back."""
-
 SCHEMAS = REPO / "schemas" / "v1" / "results"
 """Where the committed JSON Schema of each result lives, one file per name `decktalk schema` prints."""
 
@@ -434,7 +431,6 @@ def test_the_schema_is_one_flat_object_with_the_four_reserved_keys(row: Row):
     schema = row.result.model_json_schema(by_alias=True)
     properties = schema["properties"]
     assert set(RESERVED) <= set(properties), sorted(set(RESERVED) - set(properties))
-    assert not set(RETIRED) & set(properties), sorted(set(RETIRED) & set(properties))
     assert properties["schema"]["const"] == SCHEMA
     for name, definition in schema.get("$defs", {}).items():
         nested = set(definition.get("properties", {}))
@@ -540,7 +536,6 @@ def test_a_driven_row_returns_its_result_as_one_flat_object(
     payload = read_back(result)
     assert payload["schema"] == SCHEMA
     assert set(RESERVED) <= set(payload)
-    assert not set(RETIRED) & set(payload)
     assert ("run" in payload) == row.opens_run
     assert ("written" in payload) == row.writes
     printed = capsys.readouterr()

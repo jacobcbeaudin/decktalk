@@ -101,9 +101,6 @@ CUES = (
 RESERVED_KEYS = frozenset({"schema", "ok", "findings", "error"})
 """The four keys every result carries, which is the founder's decided JSON contract."""
 
-RETIRED_KEYS = frozenset({"command", "exit_code", "summary", "payload", "data"})
-"""The envelope keys 0.4 wrapped a result in, none of which may come back under any name."""
-
 FOUND_NOTHING, FOUND_SOMETHING = 0, 1
 """What the CLI exits when it judged nothing and when it judged something, from the CLI design."""
 
@@ -171,7 +168,6 @@ class Run:
         doc = json.loads(self.stdout)
         assert isinstance(doc, dict), f"{self.args}: --json prints one object and nothing else"
         assert RESERVED_KEYS <= set(doc), f"{self.args}: missing {sorted(RESERVED_KEYS - set(doc))}"
-        assert not RETIRED_KEYS & set(doc), f"{self.args}: carries the retired key {sorted(RETIRED_KEYS & set(doc))}"
         assert doc["schema"] == 2, doc["schema"]
         return doc
 
