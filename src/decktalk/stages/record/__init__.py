@@ -42,7 +42,7 @@ from playwright.sync_api import Browser
 from decktalk.artifacts import RecordingChecks, RecordingLog, Takes
 from decktalk.errors import InputError
 from decktalk.events import Level, SectionDone, SectionStart, Unit
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs, PageSection
 from decktalk.logs import cache_decision
 from decktalk.machine import Run
@@ -52,7 +52,7 @@ from decktalk.media.origin import Allowed
 from decktalk.page import CAPTURE_FPS, SECOND_DIGITS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
-from decktalk.stages import judge, selects
+from decktalk.stages import selects
 from decktalk.stages.record.capture import (
     Job,
     plan_job,

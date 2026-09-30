@@ -22,7 +22,7 @@ from pathlib import Path
 from decktalk.artifacts import CueTimes, Takes
 from decktalk.errors import InputError
 from decktalk.events import Level
-from decktalk.findings import Code, Location
+from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, PageSection
 from decktalk.inputs.cues import SECTION_END, SECTION_START, Spoken
 from decktalk.inputs.document import MixEffect
@@ -34,7 +34,6 @@ from decktalk.media.audio import gain
 from decktalk.media.encode import Encoder
 from decktalk.page import MILLISECONDS, SECOND_DIGITS
 from decktalk.pipeline import Artifact, Stage
-from decktalk.stages import judge
 from decktalk.stages.assemble.cut import Rendered, concat, rendered_starts
 
 CLIP_FADE_SECONDS = 0.02

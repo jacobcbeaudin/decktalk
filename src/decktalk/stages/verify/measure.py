@@ -15,7 +15,7 @@ from pathlib import Path
 
 from decktalk.artifacts import CueTimes
 from decktalk.events import Level, Unit
-from decktalk.findings import Code, Location
+from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
 from decktalk.machine import Run
@@ -27,7 +27,6 @@ from decktalk.pagescan import measured_rows, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, SkipReason
 from decktalk.settings import CLICK_LEVEL_DBFS
-from decktalk.stages import judge
 from decktalk.stages.verify.plan import (
     HALF_FRAME,
     Neighbour,

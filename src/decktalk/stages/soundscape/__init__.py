@@ -37,7 +37,7 @@ from typing import Any
 
 from decktalk.errors import InputError
 from decktalk.events import Level, Unit
-from decktalk.findings import Code, Location
+from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, MusicSpec, SoundSpec
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
@@ -55,7 +55,7 @@ from decktalk.results import (
 from decktalk.settings import ElevenLabsConfig
 from decktalk.speech import get_provider
 from decktalk.speech.elevenlabs import MUSIC_PATH, SOUND_PATH, ElevenLabs
-from decktalk.stages import DOLLAR_DIGITS, dollars_for, judge, price_layer, selects, voice_context
+from decktalk.stages import DOLLAR_DIGITS, dollars_for, price_layer, selects, voice_context
 from decktalk.stages.soundscape.ledger import (
     LEDGER_FILE,
     UNFINISHED_DIGEST,

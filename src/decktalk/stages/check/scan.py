@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs.document import PageSection
 from decktalk.machine import Run
 from decktalk.media import frames
@@ -26,7 +26,7 @@ from decktalk.page import Attr
 from decktalk.pagescan import Slides, measured_rows, slide_findings
 from decktalk.results import SkipReason
 from decktalk.settings import Settings
-from decktalk.stages import SECTION_START_SECONDS, judge
+from decktalk.stages import SECTION_START_SECONDS
 from decktalk.stages.check.freeze import FramePair, first_state, last_state, plan_frames
 from decktalk.stages.storyboard import Freeze, Sheet
 from decktalk.stages.verify import thin_change

@@ -17,9 +17,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs.script import Segment
-from decktalk.stages import judge
 from decktalk.stages.narrate.script_rules import (
     BRACKET_RE,
     PLACEHOLDER_RE,

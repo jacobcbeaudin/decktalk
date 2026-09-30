@@ -40,7 +40,7 @@ from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 from decktalk.artifacts.stored import Stored, engine_digest, file_digest
 from decktalk.errors import DeckTalkError, NotBuiltError
 from decktalk.events import Level, Line, StageStart
-from decktalk.findings import Code, Finding, Location, Model
+from decktalk.findings import Code, Finding, Location, Model, judge
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.paths import at
 from decktalk.inputs.workspace import EVENTS_SUFFIX
@@ -50,7 +50,6 @@ from decktalk.page import Q
 from decktalk.pipeline import PIPELINE, Artifact, Stage
 from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult
 from decktalk.settings import PROJECT_FILE
-from decktalk.stages import judge
 from decktalk.stages.record import stale_recording
 
 log = logging.getLogger(__name__)

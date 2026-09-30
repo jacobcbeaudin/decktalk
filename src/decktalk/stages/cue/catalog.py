@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.files import json_text
-from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
+from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location, judge
 from decktalk.inputs.cues import CuedSection
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.paths import relative
@@ -31,7 +31,6 @@ from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import scene_cues, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import counted
-from decktalk.stages import judge
 
 JSON_INDENT = 2
 """How a scaffolded `cues.json` is indented, which keeps a diff of one readable in a terminal."""

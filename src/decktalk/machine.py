@@ -68,6 +68,7 @@ from decktalk.findings import (
     Location,
     RuntimeFix,
     SettingFix,
+    judge,
 )
 from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.paths import at, contained, relative
@@ -957,18 +958,15 @@ def fixes_of(given: Finding | Iterable[Finding]) -> tuple[tuple[Code, Fix], ...]
 def _missing_findings(tools: tuple[InstalledTool, ...]) -> tuple[Finding, ...]:
     """One judgement per component a build needs and this machine has not got."""
     return tuple(
-        # The code owns the certainty and the docs page, so a raiser names the code and nothing else.
-        Finding.model_validate(
-            {
-                "code": Code.FILE_MISSING,
-                "message": f"{tool.tool} is not on this machine, so a build that needs it cannot run.",
-                "location": Location(where=tool.tool),
-                "fix": CommandFix(
-                    title=f"Fetch {tool.tool} into the cache.",
-                    applicability=Applicability.SAFE,
-                    command=("decktalk", "install"),
-                ),
-            }
+        judge(
+            Code.FILE_MISSING,
+            f"{tool.tool} is not on this machine, so a build that needs it cannot run.",
+            Location(where=tool.tool),
+            fix=CommandFix(
+                title=f"Fetch {tool.tool} into the cache.",
+                applicability=Applicability.SAFE,
+                command=("decktalk", "install"),
+            ),
         )
         for tool in tools
         if tool.version is None and tool.path is None

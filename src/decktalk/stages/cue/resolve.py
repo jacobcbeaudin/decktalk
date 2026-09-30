@@ -16,12 +16,12 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from decktalk.files import json_text
-from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
+from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location, judge
 from decktalk.inputs.cues import SECTION_END, SECTION_START, Cue, CuedSection, Spoken, norm
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Stage
 from decktalk.results import CueTime, SectionCues, Word
-from decktalk.stages import SECTION_START_SECONDS, judge
+from decktalk.stages import SECTION_START_SECONDS
 
 REPEATS_MIN = 2
 """How many times a phrase has to occur before a cue that names no occurrence is ambiguous."""

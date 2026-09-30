@@ -11,14 +11,13 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.media import audio
 from decktalk.media.audio import gain
 from decktalk.pipeline import Stage
 from decktalk.results import Loudness
-from decktalk.stages import judge
 from decktalk.stages.assemble.mix import encode_soundtrack
 
 LIMITER_HEADROOM_DB = 0.3

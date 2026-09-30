@@ -12,7 +12,7 @@ from itertools import pairwise
 from pathlib import Path
 
 from decktalk.artifacts import Takes
-from decktalk.findings import Code, Location
+from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
 from decktalk.inputs.timeline import narration_offsets
@@ -21,7 +21,6 @@ from decktalk.media import audio, frames
 from decktalk.media.frames import Decoded, Size, Wanted
 from decktalk.pipeline import Stage
 from decktalk.results import CutCheck, SeamCheck, StartCheck
-from decktalk.stages import judge
 from decktalk.stages.verify.plan import EPSILON, HALF_FRAME, frame_size
 
 STEP_WINDOW_SECONDS = 0.05

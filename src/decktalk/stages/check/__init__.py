@@ -32,7 +32,7 @@ from pathlib import Path
 from playwright.sync_api import Page
 
 from decktalk.errors import InputError
-from decktalk.findings import Applicability, Code, Finding, Location, ProjectPath, RuntimeFix
+from decktalk.findings import Applicability, Code, Finding, Location, ProjectPath, RuntimeFix, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.paths import at
@@ -43,7 +43,7 @@ from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
 from decktalk.results import CheckResult, Panel, SectionCues, SpendState
-from decktalk.stages import judge, selects
+from decktalk.stages import selects
 from decktalk.stages.check.scan import (
     judged_pages,
     landing_findings,

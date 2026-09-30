@@ -28,7 +28,7 @@ from decktalk.artifacts.cuts import CutKey
 from decktalk.artifacts.stills import still_key
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Level, Unit
-from decktalk.findings import Code, Location
+from decktalk.findings import Code, Location, judge
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.document import frame_dip
 from decktalk.logs import cache_decision
@@ -38,7 +38,7 @@ from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
-from decktalk.stages import judge, selects
+from decktalk.stages import selects
 
 log = logging.getLogger(__name__)
 

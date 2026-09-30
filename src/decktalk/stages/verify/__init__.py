@@ -23,13 +23,13 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from decktalk.errors import NotBuiltError
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.media import ffmpeg, frames
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import VerifyResult
-from decktalk.stages import judge, selects
+from decktalk.stages import selects
 from decktalk.stages.verify.measure import cue_checks, film_starts, planned_cues, want_cues
 from decktalk.stages.verify.plan import default_checks, opted_out, thin_change
 from decktalk.stages.verify.seams import cut_checks, planned_seams, seam_checks, start_checks, want_seams

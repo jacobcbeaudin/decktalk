@@ -548,6 +548,18 @@ class Finding(Model):
         return self
 
 
+def judge(
+    code: Code, message: str, location: Location, *, stage: Stage | None = None, fix: Fix | None = None
+) -> Finding:
+    """One judgement, built through validation so the code fills its own certainty and its own page.
+
+    A raiser names the code, the sentence, the place and sometimes the fix. Writing the certainty
+    out beside the code would be the second spelling of one fact, which is what the code owning it
+    exists to prevent.
+    """
+    return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage, "fix": fix})
+
+
 __all__ = [
     "Applicability",
     "Certainty",

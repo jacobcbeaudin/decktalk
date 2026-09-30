@@ -12,13 +12,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from decktalk.artifacts import Luma, RecordingChecks
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.media import ffmpeg, frames
 from decktalk.media.browser import Recording
 from decktalk.pagescan import asset_findings, page_findings
 from decktalk.pipeline import Stage
 from decktalk.settings import Settings
-from decktalk.stages import judge
 
 LUMA_POINTS = (0.1, 0.5, 0.9)
 """Derived: a tenth, a half and nine tenths of a recording, which is where its brightness is read."""

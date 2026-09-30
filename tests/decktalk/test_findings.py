@@ -18,6 +18,7 @@ from decktalk.findings import (
     RaisedBy,
     RuntimeFix,
     SettingFix,
+    judge,
 )
 from decktalk.pipeline import Stage
 
@@ -203,3 +204,27 @@ def test_a_command_fix_that_names_anything_else_is_refused(command: tuple[str, .
     # A fix read from JSON is run by apply, so an open argv would run any program on that machine.
     with pytest.raises(ValidationError, match="DeckTalk's own calls"):
         CommandFix(title="Run it.", applicability=Applicability.SAFE, command=command)
+
+
+def test_a_judgement_takes_its_certainty_and_its_page_from_its_code() -> None:
+    """A raiser names the code and the code owns the rest, so no stage spells one fact twice."""
+    found = judge(Code.CUE_OFF, "the reveal lands 0.42s after its word, past the 0.08s limit.", Location(where="3:a"))
+    assert found.certainty is Certainty.CERTAIN
+    assert found.url == Code.CUE_OFF.url
+
+
+def test_a_judgement_carries_the_stage_that_raised_it() -> None:
+    """`check` predicts and `verify` measures, and the stage is what tells the two apart."""
+    found = judge(Code.CUE_NO_CHANGE, "nothing changed at 1.20s.", Location(where="3:a"), stage=Stage.VERIFY)
+    assert found.stage is Stage.VERIFY
+
+
+def test_a_judgement_carries_the_fix_it_was_given() -> None:
+    fix = EditFix(
+        title="Add the missing cue row.",
+        applicability=Applicability.SAFE,
+        edits=(Edit(file="cues.json", line=2, new='{"cue": "3.1:a", "on": ""}'),),
+    )
+    found = judge(Code.CUE_MISSING, "the page declares 3.1:a and cues.json lists 0 rows for it.",
+                  Location(where="3.1:a"), fix=fix)  # fmt: skip
+    assert found.fix is fix

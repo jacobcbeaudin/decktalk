@@ -30,9 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from decktalk.findings import Code, Finding, Fix, Location
 from decktalk.inputs import Inputs
-from decktalk.pipeline import Stage
 from decktalk.results import Layer
 from decktalk.speech import VoiceContext
 
@@ -47,18 +45,6 @@ DOLLAR_DIGITS = 2
 
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
-
-
-def judge(
-    code: Code, message: str, location: Location, *, stage: Stage | None = None, fix: Fix | None = None
-) -> Finding:
-    """One judgement, built through validation so the code fills its own certainty and its own page.
-
-    A raiser names the code, the sentence, the place and sometimes the fix. Writing the certainty
-    out beside the code would be the second spelling of one fact, which is what the code owning it
-    exists to prevent.
-    """
-    return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage, "fix": fix})
 
 
 def dollars_for(characters: int, inputs: Inputs) -> float:
@@ -107,7 +93,6 @@ __all__ = [
     "PRICE_KEY",
     "SECTION_START_SECONDS",
     "dollars_for",
-    "judge",
     "price_layer",
     "selects",
     "voice_context",

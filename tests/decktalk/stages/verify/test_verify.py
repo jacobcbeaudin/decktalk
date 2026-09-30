@@ -9,11 +9,10 @@ import pytest
 from decktalk.artifacts import CueTimes
 from decktalk.errors import Cancelled, NotBuiltError
 from decktalk.events import Event, Progress, Unit
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.pipeline import Stage
 from decktalk.results import CueTime, SectionCues, VerifyResult
-from decktalk.stages import judge
 from decktalk.stages.verify import verify
 from support.pages import write_log
 

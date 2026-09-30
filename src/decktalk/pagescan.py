@@ -25,7 +25,7 @@ from itertools import pairwise
 from pathlib import Path
 
 from decktalk import page
-from decktalk.findings import Code, Finding, Location
+from decktalk.findings import Code, Finding, Location, judge
 from decktalk.media.pagereport import ElementRow, MeasuredScene, PageReport
 from decktalk.page import SECOND_DIGITS, Attr, measurable
 from decktalk.pipeline import Stage
@@ -45,15 +45,6 @@ CUES_FIELD = "cues"
 
 Slides = dict[str, tuple[str, ...]]
 """Each slide of one scene, in page order, with the wire ids of the cues it declares in cue order."""
-
-
-def judged(code: Code, message: str, location: Location, *, stage: Stage | None = None) -> Finding:
-    """One judgement, built through validation so the code fills its own certainty and its own page.
-
-    A raiser names the code, the sentence and the place. Writing the certainty out beside the code
-    would be the second spelling of one fact, which is what the code owning it exists to prevent.
-    """
-    return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage})
 
 
 def scene_entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
@@ -116,7 +107,7 @@ def page_findings(
     is a page code the contract publishes and the sentence is the page's own, written for a person.
     """
     return [
-        judged(
+        judge(
             row.code,
             row.message,
             Location(where=row.slide or row.cue or page, file=Path(page), section=section, cue=row.cue),
@@ -136,7 +127,7 @@ def motion_findings(rows: Iterable[ElementRow], *, where: str, section: int | No
         staggered = bool(row.attrs.get(Attr.STAGGER.value))
         code = Code.PAGE_STAGGER_OVERRUN if staggered else Code.PAGE_MOTION_OVERRUN
         found.append(
-            judged(
+            judge(
                 code=code,
                 message=(
                     f"the moment {row.cue} is still moving {span:.2f}s after it fires, which is past the "
@@ -151,7 +142,7 @@ def motion_findings(rows: Iterable[ElementRow], *, where: str, section: int | No
 def description_findings(rows: Iterable[ElementRow], *, where: str, section: int | None) -> list[Finding]:
     """One judgement per element that changes the picture and says nothing about what it changed."""
     return [
-        judged(
+        judge(
             code=Code.PAGE_NO_DESCRIPTION,
             message=(
                 f"the moment {row.cue} changes the picture and carries no description, so the transcript "
@@ -180,7 +171,7 @@ def swap_findings(
         if apart <= SWAP_APART_SECONDS:
             continue
         found.append(
-            judged(
+            judge(
                 code=Code.PAGE_SWAP_APART,
                 message=(
                     f"the swap at {row.cue} lands {apart:.2f}s from {partner}, which is over the "
@@ -205,7 +196,7 @@ def overlap_findings(
         if apart >= playing or playing == 0.0:
             continue
         found.append(
-            judged(
+            judge(
                 code=Code.CUE_OVERLAP,
                 message=(
                     f"the moment {second} fires {apart:.2f}s after {first}, which is still playing for "
@@ -220,7 +211,7 @@ def overlap_findings(
 def asset_findings(origins: Iterable[str], *, where: str, section: int | None = None) -> list[Finding]:
     """One judgement per other origin a page reached for, which the film does not own and cannot replay."""
     return [
-        judged(
+        judge(
             code=Code.PAGE_CDN_ASSET,
             message=(
                 f"the page loaded an asset from {origin}, which the project does not own, so the film "
@@ -257,7 +248,6 @@ __all__ = [
     "Slides",
     "asset_findings",
     "description_findings",
-    "judged",
     "measured_rows",
     "motion_findings",
     "overlap_findings",
