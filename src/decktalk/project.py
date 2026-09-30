@@ -83,6 +83,9 @@ LOCK_FILE = ".lock"
 OWNER_FILE = ".lock.owner"
 """What the note that names the writer holding the lock is called, beside the lock itself."""
 
+CLOSE_POLL_SECONDS = 0.05
+"""Calibration: how often a serving origin looks for a close, so closing it returns at once rather than in 0.5 s."""
+
 SECTION_RANGE = re.compile(r"^(\d+)(?:-(\d+))?$")
 """One item of a section selection, which is a number or two numbers with a dash between them."""
 
@@ -485,7 +488,7 @@ class Project:
                 url=served_url(server),
                 port=int(server.server_address[1]),
             )
-            threading.Thread(target=server.serve_forever, daemon=True).start()
+            threading.Thread(target=server.serve_forever, args=(CLOSE_POLL_SECONDS,), daemon=True).start()
             return Origin(server, result)
 
     # ---- how every call is made -----------------------------------------------------------------
