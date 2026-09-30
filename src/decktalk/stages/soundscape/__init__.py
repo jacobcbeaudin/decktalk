@@ -53,7 +53,7 @@ from decktalk.results import (
 )
 from decktalk.settings import ElevenLabsConfig
 from decktalk.speech import get_provider
-from decktalk.speech.elevenlabs import ElevenLabs
+from decktalk.speech.elevenlabs import MUSIC_PATH, SOUND_PATH, ElevenLabs
 from decktalk.stages import DOLLAR_DIGITS, clock, dollars_for, judge, price_layer, selects, since, voice_context
 from decktalk.stages.soundscape.ledger import (
     LEDGER_FILE,
@@ -68,12 +68,6 @@ AMBIENCE_NAME = "ambience"
 
 MUSIC_NAME = "music"
 """What the music bed is called, which the `[soundscape]` table does not name either."""
-
-SOUND_PATH = "/sound-generation"
-"""Where a sound request goes on the service, which is part of what a ledger row is keyed by."""
-
-MUSIC_PATH = "/music"
-"""Where a music request goes on the service, which is the other endpoint a row may be keyed by."""
 
 SOUND_PROVIDER = "elevenlabs"
 """The voice the soundscape buys from, which is the one provider that also makes sounds and music."""

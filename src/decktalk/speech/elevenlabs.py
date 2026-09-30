@@ -28,6 +28,12 @@ from .http import post_bytes, post_json
 PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 ELEVENLABS_DOMAIN = "elevenlabs.io"
 
+SOUND_PATH = "/sound-generation"
+"""Where a sound request goes on the service, which is also part of what a soundscape ledger row is keyed by."""
+
+MUSIC_PATH = "/music"
+"""Where a music request goes on the service, which is the other endpoint a ledger row may be keyed by."""
+
 
 def check_api_base(api_base: str, *, allow_any: bool) -> str:
     """`api_base` when it is an https URL on an ElevenLabs host or the machine allows any, and otherwise an error.
@@ -169,13 +175,13 @@ class ElevenLabs:
         )
 
     def sound_effect(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.checked_base}/sound-generation?output_format={output_format}"
+        url = f"{self.checked_base}{SOUND_PATH}?output_format={output_format}"
         return post_bytes(
             url, body, self._headers(), timeout=self.context.sound_timeout_seconds, retries=self.context.retries
         )
 
     def music(self, body: dict[str, Any], *, output_format: str) -> bytes:
-        url = f"{self.checked_base}/music?output_format={output_format}"
+        url = f"{self.checked_base}{MUSIC_PATH}?output_format={output_format}"
         return post_bytes(
             url, body, self._headers(), timeout=self.context.sound_timeout_seconds, retries=self.context.retries
         )
