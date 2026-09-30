@@ -520,58 +520,38 @@ def test_the_callers_threshold_reaches_the_build(tmp_path: Path, fake_stages: di
 # ---- applying a fix --------------------------------------------------------------------------------
 
 
-def test_a_safe_edit_that_only_adds_puts_its_line_in_without_losing_one(tmp_path: Path) -> None:
-    """A fix that scaffolds a missing row adds it, which is what makes `check --fix` idempotent."""
+def fixing(edit: Edit) -> Finding:
+    """A finding whose one safe fix is `edit`."""
+    fix = EditFix(title="Repair the row.", applicability=Applicability.SAFE, edits=(edit,))
+    return Finding(code=Code.CUE_MISSING, message="x", location=Location(where=edit.file.as_posix()), fix=fix)
+
+
+@pytest.mark.parametrize(
+    ("before", "edit", "after"),
+    [
+        # A fix that scaffolds a missing row adds it, which is what makes `check --fix` idempotent.
+        ("one\ntwo\n", Edit(file=Path("notes.txt"), line=2, new="three"), "one\nthree\ntwo\n"),
+        ("one\ntwo\n", Edit(file=Path("notes.txt"), line=2, old="two", new="three"), "one\nthree\n"),
+        # The cue file's own fix writes the whole of one, so the file it names is not there to be read.
+        (None, Edit(file=Path("cues.json"), line=1, new='{"sections": {}}'), '{"sections": {}}\n'),
+    ],
+    ids=["adds", "replaces", "creates"],
+)
+def test_a_safe_edit_leaves_its_file_reading_what_it_said(
+    tmp_path: Path, before: str | None, edit: Edit, after: str
+) -> None:
     project = a_project(tmp_path)
-    (tmp_path / "notes.txt").write_text("one\ntwo\n", encoding="utf-8")
-    fix = EditFix(
-        title="Add the missing row.",
-        applicability=Applicability.SAFE,
-        edits=(Edit(file=Path("notes.txt"), line=2, new="three"),),
-    )
-    found = Finding(code=Code.CUE_MISSING, message="x", location=Location(where="notes.txt"), fix=fix)
-    result = project.apply(found)
-    assert result.fixes[0].applied and result.fixes[0].files == (Path("notes.txt"),)
-    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "one\nthree\ntwo\n"
-
-
-def test_a_safe_edit_that_replaces_a_line_puts_its_own_there(tmp_path: Path) -> None:
-    project = a_project(tmp_path)
-    (tmp_path / "notes.txt").write_text("one\ntwo\n", encoding="utf-8")
-    fix = EditFix(
-        title="Repair the row.",
-        applicability=Applicability.SAFE,
-        edits=(Edit(file=Path("notes.txt"), line=2, old="two", new="three"),),
-    )
-    found = Finding(code=Code.CUE_MISSING, message="x", location=Location(where="notes.txt"), fix=fix)
-    project.apply(found)
-    assert (tmp_path / "notes.txt").read_text(encoding="utf-8") == "one\nthree\n"
-
-
-def test_a_safe_edit_at_line_one_writes_the_file_the_fix_exists_to_create(tmp_path: Path) -> None:
-    """The cue file's own fix writes the whole of one, so the file it names is not there to be read."""
-    project = a_project(tmp_path)
-    fix = EditFix(
-        title="Write the cue file.",
-        applicability=Applicability.SAFE,
-        edits=(Edit(file=Path("cues.json"), line=1, new='{"sections": {}}'),),
-    )
-    found = Finding(code=Code.CUE_MISSING, message="x", location=Location(where="cues.json"), fix=fix)
-    result = project.apply(found)
-    assert result.fixes[0].applied and result.fixes[0].files == (Path("cues.json"),)
-    assert (tmp_path / "cues.json").read_text(encoding="utf-8") == '{"sections": {}}\n'
+    if before is not None:
+        (tmp_path / edit.file).write_text(before, encoding="utf-8")
+    result = project.apply(fixing(edit))
+    assert result.fixes[0].applied and result.fixes[0].files == (edit.file,)
+    assert (tmp_path / edit.file).read_text(encoding="utf-8") == after
 
 
 def test_an_edit_into_a_file_that_is_not_there_says_so_rather_than_raising(tmp_path: Path) -> None:
     """A fix that changes a line needs the lines, and a caller is told that in a sentence it can print."""
     project = a_project(tmp_path)
-    fix = EditFix(
-        title="Repair the row.",
-        applicability=Applicability.SAFE,
-        edits=(Edit(file=Path("notes.txt"), line=4, old="two", new="three"),),
-    )
-    found = Finding(code=Code.CUE_MISSING, message="x", location=Location(where="notes.txt"), fix=fix)
-    outcome = project.apply(found).fixes[0]
+    outcome = project.apply(fixing(Edit(file=Path("notes.txt"), line=4, old="two", new="three"))).fixes[0]
     assert not outcome.applied and "notes.txt" in outcome.why
     assert not (tmp_path / "notes.txt").exists()
 
