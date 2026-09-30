@@ -81,6 +81,15 @@ def test_a_field_reported_as_something_other_than_a_list_is_one_sentence():
     assert any(line.startswith("the page reported cues as dict") for line in report.unreadable), report.unreadable
 
 
+def test_a_label_reported_as_something_other_than_text_is_one_sentence():
+    """A page answering `version: 5` raised an uncaught ValidationError and lost the whole recording."""
+    report = pagereport.read({**REPORTED, "version": 5, "slide": ["1.1"]})
+    assert report.version is None and report.slide is None
+    assert report.warnings, "the rest of what the page said is still read"
+    assert "the page reported version as int rather than text" in report.unreadable
+    assert "the page reported slide as list rather than text" in report.unreadable
+
+
 def test_the_catalog_keeps_what_the_recorder_does_not_read():
     """`pagescan.py` is the catalog's reader, so the slides and the cues survive this boundary."""
     scene = pagereport.read(REPORTED).catalog[0]

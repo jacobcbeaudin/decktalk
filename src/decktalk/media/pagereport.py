@@ -230,8 +230,14 @@ def read(given: object) -> PageReport:
     if not isinstance(given, dict):
         said = f"the page answered with {type(given).__name__} rather than a report"
         return PageReport(unreadable=(said,))
-    fields: dict[str, object] = {name: given.get(name) for name in ("version", "mode", "scene", "slide")}
+    fields: dict[str, object] = {}
     unreadable: list[str] = []
+    for name in ("version", "mode", "scene", "slide"):
+        said = given.get(name)
+        if said is None or isinstance(said, str):
+            fields[name] = said
+        else:
+            unreadable.append(f"the page reported {name} as {type(said).__name__} rather than text")
     for field in ROWS:
         kept, refused = _rows(field, given.get(field, []))
         fields[field] = tuple(kept)
