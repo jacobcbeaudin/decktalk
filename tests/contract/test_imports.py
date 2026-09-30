@@ -30,49 +30,34 @@ import rustworkx as rx
 
 from support.paths import SRC
 
-LAYERS: dict[str, tuple[str, int]] = {
+LAYERS: dict[str, tuple[str, ...]] = {
     # The words every layer above shares, which import nothing but each other, and the one rule by
     # which a file a person owns is replaced.
-    "files": ("vocabulary", 0),
-    "pipeline": ("vocabulary", 1),
-    "findings": ("vocabulary", 2),
-    "secret": ("vocabulary", 3),
-    "errors": ("vocabulary", 4),
-    "locate": ("vocabulary", 5),
-    "page": ("vocabulary", 6),
+    "vocabulary": ("files", "pipeline", "findings", "secret", "errors", "locate", "page"),
     # The frozen models and the settings tree, which every layer above reads and none of them writes.
-    "results": ("models", 7),
-    "events": ("models", 8),
-    # The bridge from standard logging to the stream, which reads the stream and nothing above it.
-    "logs": ("models", 9),
-    "catalog": ("models", 10),
-    "tomlmap": ("models", 11),
-    "settings": ("models", 12),
+    # `logs` is the bridge from standard logging to the stream, which reads the stream and nothing above it.
+    "models": ("results", "events", "logs", "catalog", "tomlmap", "settings"),
     # One job each, and no knowledge of a project.
-    "toolchain": ("leaves", 13),
-    "captions": ("leaves", 14),
-    "speech": ("leaves", 15),
-    "media": ("leaves", 16),
-    "pagescan": ("leaves", 17),
-    "template": ("leaves", 18),
-    "artifacts": ("leaves", 19),
+    "leaves": ("toolchain", "captions", "speech", "media", "pagescan", "template", "artifacts"),
     # The object a caller drives, and the stages it drives.
-    "inputs": ("sdk", 20),
-    "machine": ("sdk", 21),
-    "explain": ("sdk", 22),
-    "stages": ("sdk", 23),
-    "project": ("sdk", 24),
+    "sdk": ("inputs", "machine", "explain", "stages", "project"),
     # The first client, and the package's public surface.
-    "cli": ("cli", 25),
-    "__init__": ("cli", 26),
-    "__main__": ("cli", 27),
+    "cli": ("cli", "__init__", "__main__"),
 }
-"""Every top-level module and package of decktalk, with its layer and its rank inside that layer.
+"""Every top-level module and package of decktalk under its layer, lowest first, each ranked by where it stands.
 
-`project` ranks above `stages` because it calls a stage by name through `import_module`, which is a
-string and which no AST walk can see. Declaring the rank the code really has is what keeps that one
-edge honest, and it is why `stages` may not import `project` back.
+A module's rank is its place in the whole table read top to bottom, so a layer is always one run of
+ranks and no two modules share one. `project` ranks above `stages` because it calls a stage by name
+through `import_module`, which is a string and which no AST walk can see. Declaring the rank the
+code really has is what keeps that one edge honest, and it is why `stages` may not import `project`
+back.
 """
+
+RANKS: dict[str, tuple[str, int]] = {
+    name: (layer, rank)
+    for rank, (layer, name) in enumerate((layer, name) for layer, names in LAYERS.items() for name in names)
+}
+"""Every module's layer and rank, read off `LAYERS` in order."""
 
 ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     # build runs the six stages in the order `PIPELINE` gives them.
@@ -217,21 +202,14 @@ def private(name: str) -> bool:
 def test_every_module_is_placed_in_a_layer():
     """A new top-level module joins the table above, which is what makes the rule enforceable."""
     top = {unit(dotted(p)) for p in modules()}
-    missing = sorted(top - set(LAYERS))
+    missing = sorted(top - set(RANKS))
     assert missing == [], f"{missing} have no row in LAYERS, so no rule holds over what they import."
 
 
-def test_every_layer_holds_a_run_of_consecutive_ranks():
-    """A layer is a name for a run of ranks, so a module cannot be filed under one and ranked in another."""
-    for layer in dict.fromkeys(name for name, _ in LAYERS.values()):
-        ranks = sorted(rank for name, rank in LAYERS.values() if name == layer)
-        assert ranks == list(range(ranks[0], ranks[-1] + 1)), f"the {layer} layer is not one run of ranks: {ranks}"
-
-
-def test_every_rank_is_held_by_exactly_one_module():
-    """Two modules at one rank could import each other, which is the sideways edge this table refuses."""
-    ranks = [rank for _, rank in LAYERS.values()]
-    assert sorted(ranks) == sorted(set(ranks)), "two modules share a rank, so neither is above the other."
+def test_every_module_is_ranked_once():
+    """A module listed twice would hold two ranks, and the later one would quietly win."""
+    listed = [name for names in LAYERS.values() for name in names]
+    assert len(listed) == len(RANKS), f"{sorted(n for n in RANKS if listed.count(n) > 1)} are listed twice."
 
 
 def test_every_import_target_resolves_to_a_ranked_module():
@@ -254,10 +232,10 @@ def test_no_import_points_up_a_layer_or_sideways_within_one():
     bad: list[str] = []
     for edge in edges():
         source_unit, target_unit = unit(edge.source), unit(edge.target)
-        if source_unit == target_unit or target_unit not in LAYERS or source_unit not in LAYERS:
+        if source_unit == target_unit or target_unit not in RANKS or source_unit not in RANKS:
             continue
-        source_layer, source_rank = LAYERS[source_unit]
-        target_layer, target_rank = LAYERS[target_unit]
+        source_layer, source_rank = RANKS[source_unit]
+        target_layer, target_rank = RANKS[target_unit]
         if target_rank < source_rank:
             continue
         bad.append(

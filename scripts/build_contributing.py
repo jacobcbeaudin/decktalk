@@ -57,8 +57,8 @@ DATA_DIRS = {
 """The directories of the package that hold no Python. A new one fails the run until it is named here."""
 
 
-def layers() -> dict[str, tuple[str, int]]:
-    """The layer and rank of every top-level module, read from the table the test suite enforces."""
+def layers() -> dict[str, tuple[str, ...]]:
+    """Every layer, lowest first, with its modules in import order, read from the table the test suite enforces."""
     tree = ast.parse(IMPORT_TEST.read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "LAYERS" and node.value:
@@ -90,12 +90,11 @@ def entries(directory: Path, depth: int) -> list[tuple[int, str, str]]:
 def package_rows() -> list[tuple[int, str, str]]:
     """Every row of the tree: the layers in import order, then the directories that hold no Python."""
     rows: list[tuple[int, str, str]] = []
-    ranked = sorted(layers().items(), key=lambda item: (item[1][1], item[0]))
-    for layer in dict.fromkeys(rank[0] for _, rank in ranked):
+    for layer, names in layers().items():
         if layer not in LAYER_NOTES:
             raise SystemExit(f"the {layer} layer has no clause in LAYER_NOTES, so its line cannot be written.")
         rows.append((0, layer, LAYER_NOTES[layer]))
-        for name, _ in [item for item in ranked if item[1][0] == layer]:
+        for name in names:
             module, package = SRC / f"{name}.py", SRC / name
             if package.is_dir() and (package / "__init__.py").is_file():
                 rows.append((1, f"{name}/", summary(package / "__init__.py")))
@@ -103,7 +102,7 @@ def package_rows() -> list[tuple[int, str, str]]:
             elif module.is_file():
                 rows.append((1, f"{name}.py", summary(module)))
             else:
-                raise SystemExit(f"{name} is ranked in LAYERS and is neither a module nor a package.")
+                raise SystemExit(f"{name} is listed in LAYERS and is neither a module nor a package.")
 
     rows.append((0, "packaged data", "what ships in the wheel and holds no Python"))
     known = {p.name for p in SRC.iterdir() if p.is_dir() and not (p / "__init__.py").is_file()}
