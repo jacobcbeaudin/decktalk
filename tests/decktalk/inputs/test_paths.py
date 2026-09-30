@@ -12,6 +12,7 @@ from hypothesis import strategies as st
 
 from decktalk.errors import ErrorCode, InputError
 from decktalk.inputs.paths import at, confined, contained, relative
+from support.links import link
 
 
 def test_a_path_under_the_project_is_published_relative_to_it(tmp_path: Path) -> None:
@@ -111,21 +112,16 @@ def test_a_directory_under_the_build_linked_out_of_it_refuses_the_tree(tmp_path:
     assert refused.value.location is not None and refused.value.location.file == Path("build", depth)
 
 
-def test_a_file_under_the_build_linked_out_of_it_refuses_the_tree(tmp_path: Path) -> None:
-    """ffmpeg and a plain write both follow a link at the file they overwrite."""
-    root, outside = tmp_path / "project", tmp_path / "victim.mp3"
-    outside.write_bytes(b"")
-    (root / "build" / "narrate").mkdir(parents=True)
-    (root / "build" / "narrate" / "narration.mp3").symlink_to(outside)
-    with pytest.raises(InputError):
-        confined(root, root / "build")
+@pytest.mark.parametrize("hard", [False, True], ids=["symbolic", "hard"])
+def test_a_file_under_the_build_linked_out_of_it_refuses_the_tree(tmp_path: Path, hard: bool) -> None:
+    """A write through either kind of link lands outside the build.
 
-
-def test_a_file_under_the_build_hard_linked_elsewhere_refuses_the_tree(tmp_path: Path) -> None:
-    """A write that truncates a hard link truncates every other name for the same contents."""
+    ffmpeg and a plain write both follow a symbolic link at the file they overwrite, and a write that
+    truncates a hard link truncates every other name for the same contents.
+    """
     root, outside = tmp_path / "project", tmp_path / "victim.json"
     outside.write_text("{}", encoding="utf-8")
-    (root / "build").mkdir(parents=True)
-    (root / "build" / "takes.json").hardlink_to(outside)
+    (root / "build" / "narrate").mkdir(parents=True)
+    link(root / "build" / "narrate" / "takes.json", outside, hard=hard)
     with pytest.raises(InputError):
         confined(root, root / "build")
