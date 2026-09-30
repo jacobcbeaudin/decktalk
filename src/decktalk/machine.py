@@ -56,7 +56,7 @@ from decktalk.events import (
 )
 from decktalk.events import FindingEvent as FindingLine
 from decktalk.events import SpendEvent as SpendLine
-from decktalk.files import replace_all
+from decktalk.files import current_text, replace_all
 from decktalk.findings import (
     FIX_COMMANDS,
     Applicability,
@@ -797,7 +797,7 @@ def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, .
     for one in fix.edits:
         path = _inside(root, one.file)
         if one.key is not None:
-            text = staged[settings_file] if settings_file in staged else _read(settings_file)
+            text = staged[settings_file] if settings_file in staged else current_text(settings_file)
             staged[settings_file] = edit(text, one.key, one.new, scope=scope, file=settings_file).text
             continue
         lines = staged[path].splitlines(keepends=True) if path in staged else _lines_under(one, path, root)
@@ -807,11 +807,6 @@ def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, .
             validate(staged[path], path, holds)
     replace_all(staged)
     return tuple(staged)
-
-
-def _read(path: Path) -> str:
-    """The text of a file a fix changes, which is empty when the fix is the one that creates it."""
-    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def _replace_runtime(root: Path, named: Path) -> Path:

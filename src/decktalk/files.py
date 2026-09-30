@@ -68,6 +68,11 @@ def _move_over(drafts: Mapping[Path, Path]) -> None:
         raise
 
 
+def current_text(path: Path) -> str:
+    """The text a file holds before a change replaces it, which is empty when the change creates it."""
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
 def json_text(value: object, *, indent: int | None = None) -> str:
     """One value as JSON text, written by pydantic-core, whose serializer is Rust.
 
@@ -79,4 +84,4 @@ def json_text(value: object, *, indent: int | None = None) -> str:
     return to_json(value, indent=indent, fallback=str).decode("utf-8")
 
 
-__all__ = ["json_text", "replace_all"]
+__all__ = ["current_text", "json_text", "replace_all"]

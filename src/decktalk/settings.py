@@ -38,7 +38,7 @@ from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
 from .errors import InputError
-from .files import replace_all
+from .files import current_text, replace_all
 from .findings import Code, Location, Model, ProjectPath
 from .locate import locate, refused_line
 from .page import CAPTURE_FPS, MEASURABLE_SPAN_SECONDS
@@ -1377,7 +1377,7 @@ def _layers(
     The layers are read separately rather than after merging, because a merged mapping has already
     forgotten which file wrote each key, and the file is half of what makes the record useful.
     """
-    texts = {layer: path.read_text(encoding="utf-8") if path and path.exists() else "" for layer, path in files.items()}
+    texts = {layer: current_text(path) if path else "" for layer, path in files.items()}
     rows: dict[str, tuple[LayerValue, ...]] = {}
     for key in KEYS:
         found = [LayerValue(layer=Layer.DEFAULT, value=json_value(key.default))]
@@ -1562,7 +1562,7 @@ def write(
     the value written is the value in force.
     """
     target = _target(path, scope)
-    edited = edit(_text(target), key, value, scope=scope, file=path, measured=measured)
+    edited = edit(current_text(target), key, value, scope=scope, file=path, measured=measured)
     validate(edited.text, path, scope)
     if not dry_run:
         replace_all({target: edited.text})
@@ -1597,7 +1597,7 @@ def unset(path: Path, key: str, *, scope: Scope, environ: Mapping[str, str]) -> 
     """
     _scoped_key(key, scope, action="taken out of", rerun=f"decktalk config unset {key}")
     target = _target(path, scope)
-    document = _document(_text(target), path)
+    document = _document(current_text(target), path)
     previous = stated(document, key)
     if previous is not ABSENT:
         _take(document, key.split("."))
@@ -1632,11 +1632,6 @@ def _target(path: Path, scope: Scope) -> Path:
             location=Location(where=path.name, file=Path(path.name)),
         )
     return target
-
-
-def _text(path: Path) -> str:
-    """The text of a settings file, which is empty when the file is not there yet."""
-    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def _document(text: str, file: Path) -> tomlkit.TOMLDocument:
