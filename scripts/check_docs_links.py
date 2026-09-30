@@ -39,7 +39,8 @@ NAV = DOCS / "docs.json"
 FENCE = re.compile(r"^(?P<fence>```+|~~~+).*?^(?P=fence)", re.MULTILINE | re.DOTALL)
 MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.DOTALL)
 CODE_SPAN = re.compile(r"`[^`\n]*`")
-MD_LINK = re.compile(r"(?<!\\)\[[^\]\n]*\]\(\s*(?P<target>[^)\s]+)")
+# A link's text may wrap onto a second line, as a page wrapped at its width does, so it may hold a newline.
+MD_LINK = re.compile(r"(?<!\\)\[[^\]]*\]\(\s*(?P<target>[^)\s]+)")
 ATTR_LINK = re.compile(r"\b(?:href|src)\s*=\s*\"(?P<target>[^\"]+)\"")
 HEADING = re.compile(r"^#{1,6}\s+(?P<text>.+?)\s*#*\s*$", re.MULTILINE)
 EXTERNAL = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//)")
