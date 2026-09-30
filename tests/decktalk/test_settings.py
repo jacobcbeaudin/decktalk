@@ -344,8 +344,11 @@ class TestScope:
     )
     def test_a_slate_colour_that_is_not_a_hex_colour_is_refused_at_load(self, hostile: str) -> None:
         """The colour is placed inside a filter graph and a stylesheet, so only a colour ever reaches either."""
-        for where in ({"project": {"video": {"slate_color": hostile}}, "environ": {}},
-                      {"project": {}, "environ": {"DECKTALK_VIDEO_SLATE_COLOR": hostile}}):  # fmt: skip
+        places: list[dict[str, Any]] = [
+            {"project": {"video": {"slate_color": hostile}}, "environ": {}},
+            {"project": {}, "environ": {"DECKTALK_VIDEO_SLATE_COLOR": hostile}},
+        ]
+        for where in places:
             with pytest.raises(InputError, match="video.slate_color") as caught:
                 load(machine={}, **where)
             assert caught.value.code is ErrorCode.INPUT

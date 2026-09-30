@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
 
-def alignment(text: str, *, per_char: float = 0.1) -> dict[str, object]:
+
+def alignment(text: str, *, per_char: float = 0.1) -> dict[str, list[Any]]:
     """A character alignment of `text` at a fixed pace, which is what the endpoint answers with."""
     return {
         "characters": list(text),

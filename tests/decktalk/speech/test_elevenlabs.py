@@ -10,6 +10,8 @@ import base64
 import io
 import json
 import urllib.error
+from email.message import Message
+from typing import Any
 
 import pytest
 
@@ -44,9 +46,9 @@ class Answer(io.BytesIO):
         self.close()
 
 
-def answers(monkeypatch: pytest.MonkeyPatch, reply: object, *, status: int = 200) -> list[dict[str, object]]:
+def answers(monkeypatch: pytest.MonkeyPatch, reply: object, *, status: int = 200) -> list[dict[str, Any]]:
     """Answer every request with one canned reply, and give back what was asked, headers and all."""
-    asked: list[dict[str, object]] = []
+    asked: list[dict[str, Any]] = []
 
     def urlopen(request, *, timeout):  # noqa: ANN001, ANN202  (urllib's own signature)
         asked.append(
@@ -59,7 +61,7 @@ def answers(monkeypatch: pytest.MonkeyPatch, reply: object, *, status: int = 200
         )
         body = json.dumps(reply).encode() if not isinstance(reply, bytes) else reply
         if status != 200:
-            raise urllib.error.HTTPError(request.full_url, status, "no", {}, io.BytesIO(body))  # type: ignore[arg-type]
+            raise urllib.error.HTTPError(request.full_url, status, "no", Message(), io.BytesIO(body))
         return Answer(body)
 
     monkeypatch.setattr(_http, "urlopen", urlopen)
@@ -68,7 +70,7 @@ def answers(monkeypatch: pytest.MonkeyPatch, reply: object, *, status: int = 200
 
 def provider(**over: object) -> ElevenLabs:
     """The provider a project with these values would build, which is how a run builds one."""
-    fields: dict[str, object] = {
+    fields: dict[str, Any] = {
         "secrets": None,
         "api_base": BASE,
         "context_chars": 10,
@@ -76,12 +78,12 @@ def provider(**over: object) -> ElevenLabs:
         "sound_timeout_seconds": 30,
         **over,
     }
-    return ElevenLabs(VoiceContext(**fields), Secret(SENTINEL, "ELEVENLABS_API_KEY"))  # type: ignore[arg-type]
+    return ElevenLabs(VoiceContext(**fields), Secret(SENTINEL, "ELEVENLABS_API_KEY"))
 
 
 def request(**over: object) -> SpeechRequest:
-    fields: dict[str, object] = {"text": SPOKEN, "voice_id": VOICE, "model": "eleven_v3", **over}
-    return SpeechRequest(**fields)  # type: ignore[arg-type]
+    fields: dict[str, Any] = {"text": SPOKEN, "voice_id": VOICE, "model": "eleven_v3", **over}
+    return SpeechRequest(**fields)
 
 
 # ---- the base -----------------------------------------------------------------------------------
@@ -233,9 +235,9 @@ def test_a_break_tag_is_skipped_and_punctuation_is_stripped_from_a_word():
 def _columns(text: str) -> tuple[list[str], list[float], list[float]]:
     rows = alignment(text)
     return (
-        list(rows["characters"]),  # type: ignore[arg-type]
-        list(rows["character_start_times_seconds"]),  # type: ignore[arg-type]
-        list(rows["character_end_times_seconds"]),  # type: ignore[arg-type]
+        list(rows["characters"]),
+        list(rows["character_start_times_seconds"]),
+        list(rows["character_end_times_seconds"]),
     )
 
 

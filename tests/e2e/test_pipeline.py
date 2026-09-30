@@ -33,6 +33,7 @@ import sys
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import IO, Any
 
 import pytest
@@ -65,7 +66,7 @@ from support.timing_policy import (
 )
 
 # An advisory lock on the output directory, where the platform has one.
-fcntl = importlib.util.find_spec("fcntl") and importlib.import_module("fcntl")
+fcntl: ModuleType | None = importlib.import_module("fcntl") if importlib.util.find_spec("fcntl") else None
 
 BUILD_BUDGET_SECONDS = budget(BASE_BUDGET_SECONDS + FIRST_FETCH_SECONDS)
 """How long one test may take, which is generous enough for a cold Chromium fetch on a slow runner.
