@@ -151,6 +151,11 @@ select = [
 # A fake of a third-party seam takes the arguments the real one takes, and reads the ones it judges.
 ignore-variadic-names = true
 
+[tool.ty.environment]
+# pytest puts scripts/ on the path so a test imports the script it tests by name, and ty reads the
+# same root, so those imports resolve to the scripts rather than to nothing.
+extra-paths = ["scripts"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Two modules of the tree are named plan.py, so their mirrored test files share a basename.

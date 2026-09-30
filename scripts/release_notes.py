@@ -1,6 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# ///
 """Print the release notes of a final version: every section its candidates and its own release wrote.
 
     python scripts/release_notes.py 0.5.0    # the notes GitHub shows for v0.5.0
