@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from decktalk.findings import Code
+from decktalk.findings import Code, RaisedBy
 from decktalk.media import pagereport
-from decktalk.page import REPORT, PageWarning, RaisedBy
+from decktalk.page import REPORT
 
 REPORTED = {
     "version": "0.5.0",
@@ -110,16 +110,9 @@ def test_the_report_names_every_field_the_contract_names():
     assert set(REPORT) <= named, set(REPORT) - named
 
 
-def test_the_contract_and_the_finding_vocabulary_hold_one_list_of_page_codes():
-    """Two enums name these codes, so a real warning would be dropped the day they disagree."""
-    for warning in PageWarning:
-        code = Code[warning.name]
-        assert code.raised_by.value == warning.raised_by.value, code
-
-
 def test_a_code_decktalk_measures_itself_is_refused_when_a_page_reports_it():
     """Half the page codes are measured from the frames, and a page reporting one decides its own verdict."""
-    measured = next(w for w in PageWarning if w.raised_by is not RaisedBy.RUNTIME)
+    measured = next(c for c in Code if c.name.startswith("PAGE_") and c.raised_by is not RaisedBy.RUNTIME)
     report = pagereport.read({**REPORTED, "warnings": [{"code": measured.name, "message": "not mine to say"}]})
     assert report.warnings == ()
     assert report.unreadable and "warnings[0]" in report.unreadable[0]

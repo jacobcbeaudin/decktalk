@@ -21,7 +21,8 @@ import pytest
 
 import build_runtime
 from decktalk import page
-from decktalk.page import ATTRS, CAPTURE_FPS, EXEMPT, FRAME_STEP_MS, Attr, PageWarning, Subject
+from decktalk.findings import Certainty, Code
+from decktalk.page import ATTRS, CAPTURE_FPS, EXEMPT, FRAME_STEP_MS, Attr, Subject
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 CONTRACT_JSON = ROOT / "src" / "decktalk" / "runtime" / "contract.json"
@@ -99,13 +100,18 @@ def test_the_table_holds_the_rows_the_design_froze():
 
 def test_no_code_spells_its_own_certainty_and_every_one_is_a_sentence():
     """A reader dispatches on the code and reads the certainty beside it, never out of the word."""
-    for code in PageWarning:
-        assert code.message.endswith("."), f"{code.name} does not print a whole sentence"
-        assert "?" not in code.message
-        assert "certain" not in code.name.lower()
-    assert PageWarning.PAGE_STAGGER_OVERRUN.certain, "the stagger arithmetic is exact, so its finding is certain"
-    assert not PageWarning.PAGE_SWAP_APART.certain
-    assert not PageWarning.PAGE_THIN_DRAW.certain
+    for name, row in contract_codes().items():
+        assert row["message"].endswith("."), f"{name} does not print a whole sentence"
+        assert "?" not in row["message"]
+        assert "certain" not in name.lower()
+    assert Code.PAGE_STAGGER_OVERRUN.certainty is Certainty.CERTAIN, "the stagger arithmetic is exact"
+    assert Code.PAGE_SWAP_APART.certainty is Certainty.UNCERTAIN
+    assert Code.PAGE_THIN_DRAW.certainty is Certainty.UNCERTAIN
+
+
+def test_an_attribute_publishes_the_name_of_the_code_that_judges_it():
+    """The schema carries the code an agent dispatches on, never the sentence the page prints."""
+    assert ATTRS[Attr.IN].model_dump(mode="json")["code"] == "PAGE_MOMENT_UNKNOWN"
 
 
 # ---- the generation ------------------------------------------------------------------------
@@ -131,20 +137,23 @@ def test_the_committed_contract_is_what_the_typescript_says():
     assert done.returncode == 0, done.stdout + done.stderr
 
 
+def contract_codes() -> dict[str, dict[str, str]]:
+    """Every page code the TypeScript contract publishes, with its sentence, certainty and side."""
+    return json.loads(CONTRACT_JSON.read_text(encoding="utf-8"))["codes"]
+
+
 def test_the_page_codes_are_the_same_list_the_finding_codes_carry():
     """One `Code` enum is written by hand, and this is the check that keeps its page half honest."""
-    findings = pytest.importorskip("decktalk.findings", reason="the finding codes land with the core models")
-    written = {name for name in findings.Code.__members__ if name.startswith("PAGE_")}
-    assert written == set(PageWarning.__members__)
+    written = {name for name in Code.__members__ if name.startswith("PAGE_")}
+    assert written == set(contract_codes())
 
 
-def test_the_page_codes_carry_the_same_certainty_the_finding_codes_carry():
-    """A result serialises the certainty `findings.py` holds and the console prints the one the page
-    holds, so a reader who saw both would be told two different things about the same code."""
-    findings = pytest.importorskip("decktalk.findings", reason="the finding codes land with the core models")
-    for name, warning in PageWarning.__members__.items():
-        certain = findings.Code[name].certainty is findings.Certainty.CERTAIN
-        assert warning.certain == certain, f"{name} is certain in one registry and uncertain in the other"
+def test_the_page_codes_carry_the_certainty_and_the_side_the_finding_codes_carry():
+    """A result serialises what `findings.py` holds and the console prints what the page holds, so a
+    reader who saw both would otherwise be told two different things about the same code."""
+    for name, row in contract_codes().items():
+        assert row["certainty"] == Code[name].certainty.value, f"{name} is certain in one registry only"
+        assert row["raisedBy"] == Code[name].raised_by.value, f"{name} is raised by two sides"
 
 
 CONTRACT_CASES = ROOT / "tests" / "data" / "contract_cases.json"

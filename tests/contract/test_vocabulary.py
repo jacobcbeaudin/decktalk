@@ -92,10 +92,10 @@ DEFINING = {
 }
 """The modules that define the enums, where every word of the vocabulary is written once.
 
-`page.py` is here although no enum below is declared in it, because it publishes the page's half of
-the finding codes as `PageWarning` and its own closed word sets, so it spells the same words by
-being the contract. The mirrored test of each of these modules is here for the same reason: holding
-the frozen list is its whole subject, so it writes every word out on purpose.
+`page.py` is here although no enum below is declared in it, because it publishes the page's own
+closed word sets, so it spells the same words by being the contract. The mirrored test of each of
+these modules is here for the same reason: holding the frozen list is its whole subject, so it
+writes every word out on purpose.
 """
 
 KEY_READERS = {"get", "pop", "setdefault"}
