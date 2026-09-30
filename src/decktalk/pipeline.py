@@ -53,12 +53,14 @@ class Outcome(Enum):
     A caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`
     and `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the
     run planned and did not repeat, because nothing it reads had changed since it last ran, and
-    `skipped` is a stage the run did not plan at all.
+    `skipped` is a stage the run did not plan at all. `stopped` is a run, a stage or a section the
+    caller cancelled or interrupted, which is kept apart from `failed` because nothing went wrong.
     """
 
     OK = "ok"
     KEPT = "kept"
     SKIPPED = "skipped"
+    STOPPED = "stopped"
     FAILED = "failed"
 
 

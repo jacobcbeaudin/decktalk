@@ -123,3 +123,18 @@ def test_a_cancelled_run_raises_the_class_that_carries_the_interrupt_code() -> N
 def test_every_error_field_publishes_one_sentence() -> None:
     for name, field in ErrorInfo.model_fields.items():
         assert field.description, name
+
+
+def test_a_refusal_ends_a_run_with_its_own_code() -> None:
+    info = ErrorInfo.of_failure(ToolError("ffmpeg failed.", hint="Run decktalk doctor."))
+    assert (info.code, info.message, info.hint) == (ErrorCode.TOOL, "ffmpeg failed.", "Run decktalk doctor.")
+
+
+def test_an_interrupt_ends_a_run_as_cancelled() -> None:
+    assert ErrorInfo.of_failure(KeyboardInterrupt()).code is ErrorCode.CANCELLED
+
+
+def test_anything_else_ends_a_run_as_a_bug_named_by_its_type_and_message() -> None:
+    info = ErrorInfo.of_failure(KeyError("page"))
+    assert (info.code, info.message) == (ErrorCode.INTERNAL, "KeyError: 'page'")
+    assert info.docs == ErrorCode.INTERNAL.url

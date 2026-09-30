@@ -36,7 +36,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, InputError, ToolError
+from decktalk.errors import STOPS, ApprovalRequired, Cancel, DeckTalkError, ErrorInfo, InputError, ToolError
 from decktalk.events import (
     Event,
     Events,
@@ -293,13 +293,17 @@ class Run:
     def _timed(
         self, start: type[Event], done: type[Event], *, opening: Mapping[str, int] | None = None, **both: object
     ) -> Iterator[None]:
-        """Emit `start`, run the block, and emit `done` with how it ended and how long it took."""
+        """Emit `start`, run the block, and emit `done` with how it ended and how long it took.
+
+        A block the caller cancelled or interrupted ends as stopped, because nothing in it failed.
+        """
         started = time.monotonic()
         self.emit(start, **both, **(opening or {}))
         try:
             yield
-        except BaseException:
-            self.emit(done, **both, outcome=Outcome.FAILED, seconds=time.monotonic() - started)
+        except BaseException as failure:
+            ended = Outcome.STOPPED if isinstance(failure, STOPS) else Outcome.FAILED
+            self.emit(done, **both, outcome=ended, seconds=time.monotonic() - started)
             raise
         self.emit(done, **both, outcome=Outcome.OK, seconds=time.monotonic() - started)
 
@@ -527,7 +531,7 @@ class Machine:
         # reaches `--json` and the events file where a log line does not.
         for note in self.notes:
             run.note(note, level=Level.WARNING)
-        outcome = Outcome.OK
+        outcome, error = Outcome.OK, None
         try:
             # The toolchain, the download listener, the voices, the rule about `.env` and the
             # environment a launched browser is built from are what this run renders, fetches, speaks,
@@ -542,11 +546,14 @@ class Machine:
                 reading_dotenv(self.dotenv),
             ):
                 yield run
-        except BaseException:
-            outcome = Outcome.FAILED
+        except BaseException as failure:
+            # The reason goes on the run's last line as well as up the stack, because the file under
+            # build/events is read after the process that raised it is gone.
+            outcome = Outcome.STOPPED if isinstance(failure, STOPS) else Outcome.FAILED
+            error = ErrorInfo.of_failure(failure)
             raise
         finally:
-            self.events.emit(run.id, RunDone, outcome=outcome, seconds=time.monotonic() - started)
+            self.events.emit(run.id, RunDone, outcome=outcome, seconds=time.monotonic() - started, error=error)
             if sink is not None:
                 sink.close()
 

@@ -286,7 +286,8 @@ is `certain` or `uncertain`. `location` carries a required `where` naming the ob
 appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are twelve names:
 `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`, `section.done`, `progress`,
 `finding`, `spend`, `take.charged`, `fetch` and `log`. `run.done`, `stage.done` and `section.done` carry an
-`outcome` of `ok`, `kept`, `skipped` or `failed`.
+`outcome` of `ok`, `kept`, `skipped`, `stopped` or `failed`, and `run.done` carries the `error` of a run
+that did not finish.
 
 Whole contract: [The JSON contract](/agents/json).
 

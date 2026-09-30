@@ -488,7 +488,7 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `event` | What it says | Its own fields |
 |---|---|---|
 | `run.start` | A run opened. | `events_path` |
-| `run.done` | A run closed. | `outcome`, `seconds` |
+| `run.done` | A run closed, and why when it did not finish. | `outcome`, `seconds`, `error` |
 | `stage.start` | A stage began, with its place in the run's plan. | `stage`, `index`, `count` |
 | `stage.done` | A stage ended. | `stage`, `outcome`, `seconds` |
 | `section.start` | One section of a stage began. | `stage`, `section` |
@@ -498,14 +498,21 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `spend` | A price was worked out. | `spend` |
 | `take.charged` | The provider was paid for one take. | `section`, `take`, `characters`, `dollars` |
 | `fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
-| `log` | One sentence the library would have printed. | `level`, `message` |
+| `log` | One sentence the library would have printed. | `level`, `message`, `source`, `stage`, `section`, `data` |
 
-`outcome` is `ok`, `kept`, `skipped` or `failed`, and it is on `run.done`, `stage.done` and
-`section.done`. `kept` is a stage the run planned and did not repeat, because nothing it reads had
-changed since it last ran, and `skipped` is a stage the run did not plan or did not reach. One field
+`outcome` is `ok`, `kept`, `skipped`, `stopped` or `failed`, and it is on `run.done`, `stage.done`
+and `section.done`. `kept` is a stage the run planned and did not repeat, because nothing it reads had
+changed since it last ran, `skipped` is a stage the run did not plan or did not reach, and `stopped`
+is a run the caller cancelled or interrupted. One field
 replaces four event names, so a caller reads one field rather than branching four ways to learn the
 same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`,
 and `level` on a log line is `debug`, `info`, `warning` or `error`.
+
+`run.done` carries `error` in the shape a result's `error` takes when the run stopped or failed, and
+null when it finished, so the events file of a failed run says why. A `log` line carries `source`,
+the module that wrote it such as `media.ffmpeg`, or null for a stage's own sentence, and the `stage`
+and `section` it was written in. Its `data` is a flat map of the measured values behind the
+sentence, so a reader filters on a value rather than parsing English.
 
 A `finding` line carries the judgement in the same shape the result will carry, so an agent that
 watches the stream can react before the call returns.

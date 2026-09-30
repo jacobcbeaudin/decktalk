@@ -26,8 +26,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, get_args
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
+from decktalk.errors import ErrorInfo
 from decktalk.findings import Finding, Model, ProjectPath
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Elapsed, Run, SectionNumber, Spend
@@ -79,6 +80,10 @@ class RunDone(Event):
     event: Literal["run.done"] = Field("run.done", description=MOMENT)
     outcome: Outcome = Field(description="Whether the run finished, was stopped, or failed.")
     seconds: Elapsed
+    error: ErrorInfo | None = Field(
+        None,
+        description="Why the run stopped or failed, in the shape a result's error takes, or null when it finished.",
+    )
 
 
 class StageStart(Event):
@@ -175,12 +180,49 @@ class Fetch(Event):
     total_bytes: int | None = Field(None, ge=0, description="How large the download is, or null when unstated.")
 
 
+Scalar = str | int | float | bool | None
+"""One measured value a log line carries, which is flat so a reader filters on it without parsing."""
+
+
 class Log(Event):
-    """One sentence the library would have printed, had the library printed anything."""
+    """One sentence the library would have printed, had the library printed anything.
+
+    A stage says its sentence through its run, and a module below the stages writes a standard
+    logging record, which the bridge in `logs.py` turns into this line. Both carry where they were
+    written, so a reader can tie a line from one of several parallel recorders to its section
+    without parsing the sentence.
+    """
 
     event: Literal["log"] = Field("log", description=MOMENT)
     level: Level = Field(description="How much this line matters.")
     message: str = Field(description="One sentence.")
+    source: str | None = Field(
+        None, description="The module that wrote this line, such as media.ffmpeg, or null for a stage's own sentence."
+    )
+    stage: Stage | None = Field(None, description="The stage this line was written in, or null outside every stage.")
+    section: SectionNumber | None = Field(
+        None, description="The section this line was written in, or null outside every section."
+    )
+    data: dict[str, Scalar] | None = Field(
+        None,
+        description="The measured values behind the sentence by name, each a string, a number, a boolean or null.",
+    )
+
+    @field_validator("data", mode="before")
+    @classmethod
+    def _flat(cls, given: object) -> object:
+        """Keep a scalar as it is and store anything else as its `repr`, so no object reaches a line.
+
+        A header map or a path handed over by mistake is written as text, which the redaction every
+        event passes through then sees, rather than refused, because a log line that raises would lose
+        the moment it was written to record.
+        """
+        if not isinstance(given, dict):
+            return given
+        return {
+            str(name): value if value is None or isinstance(value, str | int | float | bool) else repr(value)
+            for name, value in given.items()
+        }
 
 
 Line = Annotated[

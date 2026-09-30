@@ -26,7 +26,7 @@ from typer._click import Context
 from decktalk import project as projects
 from decktalk.cli import output
 from decktalk.cli.options import FailOn, When, pairs
-from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorCode, ErrorInfo
+from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorInfo
 from decktalk.events import Events
 from decktalk.files import json_text
 from decktalk.findings import Certainty, Code, Finding
@@ -330,13 +330,7 @@ class Session:
         """Report anything DeckTalk did not mean to raise, with its traceback under `-v` alone."""
         if self.flags.verbose:
             self.err.print_exception()
-        info = ErrorInfo(
-            code=ErrorCode.INTERNAL,
-            message=f"{type(failure).__name__}: {failure}",
-            hint="Run the command again with -v for the traceback, and open an issue with it.",
-            docs=ErrorCode.INTERNAL.url,
-        )
-        return self.reported(info)
+        return self.reported(ErrorInfo.of_failure(failure))
 
 
 def _spend_sentence(spend: Spend | None) -> str:

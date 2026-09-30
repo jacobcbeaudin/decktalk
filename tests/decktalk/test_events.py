@@ -75,6 +75,34 @@ def test_the_twelve_names_are_the_ones_the_design_named() -> None:
     assert list(EVENTS) == list(NAMES)
 
 
+def test_a_log_line_carries_where_it_was_written_and_what_it_measured() -> None:
+    line = Log(
+        time=datetime.now(UTC),
+        seq=0,
+        run="r1",
+        level=Level.DEBUG,
+        message="ffmpeg exited 0.",
+        source="media.ffmpeg",
+        stage=Stage.ASSEMBLE,
+        section=2,
+        data={"exit": 0, "seconds": 0.25, "argv": "ffmpeg -y out.mp4", "killed": False, "limit": None},
+    )
+    parsed = TypeAdapter(Line).validate_json(line.model_dump_json())
+    assert parsed == line
+
+
+def test_an_object_in_a_log_lines_data_is_kept_as_text() -> None:
+    """A header map passed by mistake becomes text the redaction sees, never an object a writer walks."""
+    line = Log(time=datetime.now(UTC), seq=0, run="r1", level=Level.DEBUG, message="m", data={"headers": {"a": "b"}})
+    assert line.data == {"headers": "{'a': 'b'}"}
+
+
+def test_a_log_line_from_an_earlier_release_still_parses() -> None:
+    old = '{"event":"log","time":"2026-01-01T00:00:00Z","seq":0,"run":"r1","level":"info","message":"m"}'
+    parsed = TypeAdapter(Line).validate_json(old)
+    assert isinstance(parsed, Log) and (parsed.source, parsed.stage, parsed.section, parsed.data) == (None,) * 4
+
+
 def test_skip_and_fail_are_outcomes_rather_than_names() -> None:
     assert not [name for name in EVENTS if name.endswith((".skip", ".fail"))]
     assert "outcome" in EVENTS["stage.done"].model_fields

@@ -191,6 +191,29 @@ class ErrorInfo(Model):
             docs=error.code.url,
         )
 
+    @classmethod
+    def of_failure(cls, failure: BaseException) -> ErrorInfo:
+        """Whatever ended a run as a result carries it, which is how a run's last line says why it ended.
+
+        A refusal keeps its own code. An interrupt is the caller stopping the run, as a cancel token
+        is. Anything else is a bug in DeckTalk, and only its type and message are kept, because a
+        traceback carries locals and paths that nothing has checked for a secret.
+        """
+        if isinstance(failure, DeckTalkError):
+            return cls.of(failure)
+        if isinstance(failure, KeyboardInterrupt):
+            return cls(code=ErrorCode.CANCELLED, message="The run was interrupted.", docs=ErrorCode.CANCELLED.url)
+        return cls(
+            code=ErrorCode.INTERNAL,
+            message=f"{type(failure).__name__}: {failure}",
+            hint="Run the command again with -v for the traceback, and open an issue with it.",
+            docs=ErrorCode.INTERNAL.url,
+        )
+
+
+STOPS = (Cancelled, KeyboardInterrupt)
+"""What a caller raises to stop a run, which ends it as stopped rather than as failed."""
+
 
 __all__ = [
     "ApprovalRequired",

@@ -129,7 +129,7 @@ def test_a_span_whose_ends_are_the_wrong_way_round_is_empty() -> None:
 
 
 def test_one_outcome_field_replaces_four_event_names() -> None:
-    assert [outcome.value for outcome in Outcome] == ["ok", "kept", "skipped", "failed"]
+    assert [outcome.value for outcome in Outcome] == ["ok", "kept", "skipped", "stopped", "failed"]
 
 
 def test_every_stage_reaches_its_own_row() -> None:

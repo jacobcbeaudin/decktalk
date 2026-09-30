@@ -216,6 +216,44 @@ def test_a_run_that_fails_closes_as_failed_and_lets_the_failure_through(tmp_path
     with here.events.subscribe(seen.append), pytest.raises(ZeroDivisionError), here.run():
         raise ZeroDivisionError
     assert isinstance(seen[-1], RunDone) and seen[-1].outcome is Outcome.FAILED
+    assert seen[-1].error is not None and seen[-1].error.code is ErrorCode.INTERNAL
+    assert seen[-1].error.message == "ZeroDivisionError: "
+
+
+def test_a_refused_run_names_its_refusal_on_its_last_line(tmp_path: Path) -> None:
+    """The events file is read after the process is gone, so its last line has to say why the run failed."""
+    here = a_machine(tmp_path)
+    events = tmp_path / "build" / "events"
+    with pytest.raises(InputError), here.run(root=tmp_path, events_dir=events) as run:
+        raise InputError("cues.json is not JSON.", hint="Fix cues.json.")
+    last = RunDone.model_validate_json((events / f"{run.id}.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert last.outcome is Outcome.FAILED
+    assert last.error is not None
+    assert (last.error.code, last.error.message, last.error.hint) == (
+        ErrorCode.INPUT,
+        "cues.json is not JSON.",
+        "Fix cues.json.",
+    )
+
+
+def test_a_finished_run_carries_no_error(tmp_path: Path) -> None:
+    here = a_machine(tmp_path)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here.run():
+        pass
+    assert isinstance(seen[-1], RunDone) and seen[-1].error is None
+
+
+@pytest.mark.parametrize("stop", [Cancelled("The caller stopped this run."), KeyboardInterrupt()])
+def test_a_cancelled_or_interrupted_run_ends_as_stopped_rather_than_failed(tmp_path: Path, stop: BaseException) -> None:
+    here = a_machine(tmp_path)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), pytest.raises(type(stop)), here.run() as run, run.section(Stage.RECORD, 1):
+        raise stop
+    section = next(line for line in seen if line.event == "section.done")
+    assert getattr(section, "outcome", None) is Outcome.STOPPED
+    assert isinstance(seen[-1], RunDone) and seen[-1].outcome is Outcome.STOPPED
+    assert seen[-1].error is not None and seen[-1].error.code is ErrorCode.CANCELLED
 
 
 def test_a_run_with_a_project_writes_its_own_file_and_says_where(tmp_path: Path) -> None:

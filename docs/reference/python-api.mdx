@@ -457,7 +457,7 @@ There are twelve names and twelve models. Skip and fail are not names, because `
 | `event` | Class | What it carries beyond the four |
 |---|---|---|
 | `run.start` | `RunStart` | `events_path`, the file this run's lines are appended to, or null when no project holds one. |
-| `run.done` | `RunDone` | `outcome`, `seconds`. |
+| `run.done` | `RunDone` | `outcome`, `seconds`, and `error` in the shape a result's error takes when the run stopped or failed. |
 | `stage.start` | `StageStart` | `stage`, `index` counting from one, `count` of stages the run planned. |
 | `stage.done` | `StageDone` | `stage`, `outcome`, `seconds`. |
 | `section.start` | `SectionStart` | `stage`, `section`. |
@@ -467,10 +467,11 @@ There are twelve names and twelve models. Skip and fail are not names, because `
 | `spend` | `SpendEvent` | `spend`, with its state saying whether it is an estimate. |
 | `take.charged` | `TakeCharged` | `section`, `take`, `characters` and `dollars` for one take the provider was paid for. |
 | `fetch` | `Fetch` | `tool`, `bytes`, `total_bytes` or null. |
-| `log` | `Log` | `level`, `message`. |
+| `log` | `Log` | `level`, `message`, and `source`, `stage`, `section` and a flat `data` map, each null when unknown. |
 
-`Outcome` is `OK`, `KEPT`, `SKIPPED` or `FAILED`. `KEPT` is a stage a build planned and did not
-repeat, because nothing it reads had changed since the last build ran it. `Unit` is `TAKE`,
+`Outcome` is `OK`, `KEPT`, `SKIPPED`, `STOPPED` or `FAILED`. `KEPT` is a stage a build planned and
+did not repeat, because nothing it reads had changed since the last build ran it, and `STOPPED` is
+a run, a stage or a section its caller cancelled or interrupted. `Unit` is `TAKE`,
 `SECTION`, `ASSET`, `PASS` or `PROBE`, so a renderer names the thing rather than a bare number:
 narrate counts takes, record counts sections, soundscape counts assets, assemble counts encoding
 passes and verify counts probes. `Level` is `DEBUG`, `INFO`, `WARNING` or `ERROR`.

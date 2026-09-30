@@ -467,11 +467,12 @@
       "type": "object"
     },
     "Outcome": {
-      "description": "How a stage or a section ended, which is the one field that replaces four event names.\n\nA caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`\nand `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the\nrun planned and did not repeat, because nothing it reads had changed since it last ran, and\n`skipped` is a stage the run did not plan at all.",
+      "description": "How a stage or a section ended, which is the one field that replaces four event names.\n\nA caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`\nand `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the\nrun planned and did not repeat, because nothing it reads had changed since it last ran, and\n`skipped` is a stage the run did not plan at all. `stopped` is a run, a stage or a section the\ncaller cancelled or interrupted, which is kept apart from `failed` because nothing went wrong.",
       "enum": [
         "ok",
         "kept",
         "skipped",
+        "stopped",
         "failed"
       ],
       "title": "Outcome",

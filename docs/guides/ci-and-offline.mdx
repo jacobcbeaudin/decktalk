@@ -77,14 +77,15 @@ stderr with neither in the other's way.
 {/* sample: the stderr of decktalk status --json --events on a starter */}
 ```json
 {"event":"run.start","time":"2026-09-24T10:24:34.641901Z","seq":0,"run":"200d55f26212","events_path":"build/events/200d55f26212.jsonl"}
-{"event":"run.done","time":"2026-09-24T10:24:34.649525Z","seq":1,"run":"200d55f26212","outcome":"ok","seconds":0.007681916933506727}
+{"event":"run.done","time":"2026-09-24T10:24:34.649525Z","seq":1,"run":"200d55f26212","outcome":"ok","seconds":0.007681916933506727,"error":null}
 ```
 
 `event` is the discriminator, and there are twelve names: `run.start`, `run.done`, `stage.start`,
 `stage.done`, `section.start`, `section.done`, `progress`, `finding`, `spend`, `take.charged`, `fetch`
 and `log`. A
-`stage.done` and a `section.done` each carry an `outcome` of `ok`, `kept`, `skipped` or `failed`, so
-a job can tell work that was done from work that was kept.
+`stage.done` and a `section.done` each carry an `outcome` of `ok`, `kept`, `skipped`, `stopped` or
+`failed`, so a job can tell work that was done from work that was kept, and a failed run's
+`run.done` carries its `error`.
 
 Every run appends the same lines to `build/events/<run>.jsonl` whether `--events` was passed or not,
 and the first line names that file. So a job that backgrounds a build can follow the file, and
