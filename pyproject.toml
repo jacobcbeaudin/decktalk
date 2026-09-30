@@ -88,8 +88,6 @@ dev = [
     # `scripts/build_assets.py` traces the wordmark's letters out of a WOFF2 face, and fontTools reads
     # WOFF2 only with the Brotli decoder its `woff` extra brings.
     "fonttools[woff]>=4.50",
-    # `contract/test_results.py` validates every real output against the committed JSON Schema, so the
-    # validator is a development dependency rather than something the schema generator reimplements.
     # What a renderer writes is held as the literal text in the test. CI only ever compares: the `CI`
     # variable turns the plugin's writing off, and under `-n auto` asking it to write is refused.
     # `pytest -p no:xdist --inline-snapshot=create,fix <file>` is how a person writes one.
@@ -97,6 +95,9 @@ dev = [
     # `scripts/build_outbound_reference.py` renders its page from a template that reads as the page
     # does, with a loop where each table is written from the data file.
     "jinja2>=3.1",
+    # The suite validates every command's real output and every setting's default against the
+    # committed JSON Schema, so the validator is a development dependency rather than something the
+    # schema generator reimplements.
     "jsonschema>=4.23",
     # `contract/test_installer.py` runs install.sh under a terminal of its own, because the script
     # branches on `[ -t 1 ]`, and pexpect is that terminal and the Ctrl-C it sends.
@@ -109,7 +110,7 @@ dev = [
     "pytest-timeout>=2.3",
     # The unit row runs under `-n auto`, which halves the time every push waits on.
     "pytest-xdist>=3.6",
-    # `scripts/check_docs_links.py` parses each page's front matter, and `scripts/test_check.py` reads
+    # `scripts/check_docs_links.py` parses each page's front matter, and `tests/scripts/test_check.py` reads
     # `ci.yml` against the check table, so both read YAML as the YAML it is rather than search it as text.
     "pyyaml>=6",
     "ruff>=0.16.8",
