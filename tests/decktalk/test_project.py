@@ -82,10 +82,15 @@ def fake_stages(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Call]]:
         return stage
 
     for name, model in answers.items():
-        module = types.ModuleType(f"decktalk.stages.{name}")
-        setattr(module, name, make(name, model))
-        monkeypatch.setitem(sys.modules, f"decktalk.stages.{name}", module)
+        a_stage(monkeypatch, name, make(name, model))
     return calls
+
+
+def a_stage(monkeypatch: pytest.MonkeyPatch, name: str, call: object) -> None:
+    """A module at `decktalk.stages.<name>` holding `call` under the stage's name, which is the whole seam."""
+    module = types.ModuleType(f"decktalk.stages.{name}")
+    setattr(module, name, call)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
 
 
 def _filler(name: str) -> dict[str, Any]:
@@ -233,18 +238,14 @@ def test_a_stage_is_handed_the_inputs_the_run_and_its_own_options(
 def test_a_result_that_is_not_the_one_the_command_is_named_after_is_a_bug(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    module = types.ModuleType("decktalk.stages.cue")
-    module.cue = lambda inputs, run, **options: run.result(StatusResult, name="t", script=Path("s"),
-                                                           cues=Path("c"), sections=())  # fmt: skip
-    monkeypatch.setitem(sys.modules, "decktalk.stages.cue", module)
+    answer = {"name": "t", "script": Path("s"), "cues": Path("c"), "sections": ()}
+    a_stage(monkeypatch, "cue", lambda _inputs, run, **_options: run.result(StatusResult, **answer))
     with pytest.raises(TypeError, match="cue answered with StatusResult"):
         a_project(tmp_path).cue()
 
 
 def test_the_stage_seam_is_one_function_named_after_its_own_stage(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = types.ModuleType("decktalk.stages.verify")
-    module.verify = "the one function"
-    monkeypatch.setitem(sys.modules, "decktalk.stages.verify", module)
+    a_stage(monkeypatch, "verify", "the one function")
     assert stage_call(Stage.VERIFY.value) == "the one function"
 
 
