@@ -89,6 +89,7 @@ class Stills:
         try:
             kept = StillManifest.read(self.manifest(key))
         except NotBuiltError:
+            # silent: the reason is returned and recorded as the cache decision.
             return None, "manifest-unreadable"
         if kept is None:
             return None, "no-manifest"

@@ -255,6 +255,7 @@ class Session:
         try:
             return project.check(pages=False, frames=False).spend
         except DeckTalkError:
+            # silent: the check run's own run.done line carries why it could not price.
             return None
 
     def storyboard_line(self, project: Project) -> str:

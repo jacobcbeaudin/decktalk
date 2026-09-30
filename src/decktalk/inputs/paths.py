@@ -35,6 +35,7 @@ def relative(path: Path, root: Path) -> Path:
     try:
         return path.resolve().relative_to(root.resolve())
     except ValueError:
+        # silent: a path outside the project is named as it was given.
         return path
 
 

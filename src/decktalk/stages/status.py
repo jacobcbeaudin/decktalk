@@ -121,6 +121,7 @@ def read_kept(inputs: Inputs) -> Kept:
     try:
         return Kept.read(kept_path(inputs)) or Kept()
     except NotBuiltError:
+        # silent: a record that will not read keeps nothing, and the build says no-record.
         return Kept()
 
 

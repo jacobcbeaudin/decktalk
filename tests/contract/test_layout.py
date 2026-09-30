@@ -66,6 +66,7 @@ ALLOW = {
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
     "contract/test_selection.py": "The collection hook in `tests/conftest.py`.",
+    "contract/test_silent.py": "Every except block and every child process in `src/decktalk`, read as its AST.",
     "contract/test_take_hash.py": "`tests/data/take_hash.json`, the golden digests of the founder's film.",
     "contract/test_timing_policy.py": "`tests/support/timing_policy.py`, the suite's own timing rule.",
     "contract/test_vocabulary.py": (

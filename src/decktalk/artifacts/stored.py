@@ -63,6 +63,7 @@ def engine_version() -> str:
     try:
         return version("decktalk")
     except PackageNotFoundError:
+        # silent: an engine run from a checkout has no installed version to read.
         return UNINSTALLED
 
 

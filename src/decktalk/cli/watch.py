@@ -61,6 +61,7 @@ def loop(
             built = _once(session, project, skip=skip, only=_touched(project, changed) or only, force=force)
             _stale(session, project)
     except KeyboardInterrupt:
+        # silent: an interrupt is how a person ends the watch loop.
         session.say("Stopped.")
     finally:
         origin.close()
@@ -161,6 +162,7 @@ def _stamps(project: Project) -> dict[Path, float]:
             try:
                 found[here / name] = (here / name).stat().st_mtime
             except OSError:
+                # silent: a file removed between the listing and its stat is not there to watch.
                 continue
     return found
 

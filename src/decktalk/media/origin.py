@@ -223,6 +223,7 @@ class Allowed:
             opened = (named / INDEX).resolve() if directory else named
             contained = opened.is_relative_to(self.root)
         except (OSError, ValueError):
+            # silent: a path the system cannot resolve is refused as unusable.
             return Target(refused=UNUSABLE)
         if not contained:
             return Target(refused=OUTSIDE)

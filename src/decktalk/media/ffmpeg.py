@@ -360,6 +360,7 @@ def installed_paths(tools: ToolsConfig | None = None) -> tuple[str, str] | None:
     try:
         named = _named(tools or bound_tools())
     except ToolError:
+        # silent: doctor reports a pair it cannot resolve as missing.
         return None
     return named or ffmpeg_fetch.installed_pinned() or _path_pair()
 
@@ -462,6 +463,7 @@ def probe_rate(path: Path | str) -> Fraction:
     try:
         rate = Fraction(text)
     except (ValueError, ZeroDivisionError):
+        # silent: a rate that is not a fraction is refused just below as unreadable.
         rate = Fraction(0)
     if rate <= 0:
         raise ToolError(f"ffprobe could not read the frame rate of {Path(path).name}.", location=_at(path))

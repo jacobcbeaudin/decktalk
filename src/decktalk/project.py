@@ -620,11 +620,13 @@ def _read_owner(note: Path) -> tuple[int, str] | None:
     try:
         text = "" if note.is_symlink() else note.read_text(encoding="utf-8")
     except OSError:
+        # silent: an owner note that cannot be read names no owner.
         return None
     pid, _, run = text.strip().partition(" ")
     try:
         return int(pid), run
     except ValueError:
+        # silent: an owner note that does not parse names no owner.
         return None
 
 

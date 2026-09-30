@@ -117,6 +117,7 @@ def _key_of(path: Path) -> CutKey | None:
     try:
         return CutKey.read(path)
     except NotBuiltError:
+        # silent: a key that will not read is recorded as the cut's cache decision.
         return None
 
 

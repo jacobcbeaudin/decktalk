@@ -475,6 +475,7 @@ class JsonlSink:
             try:
                 dated.append((path.stat().st_mtime, path))
             except FileNotFoundError:
+                # silent: another run pruned the same file first.
                 continue
         files = [path for _, path in sorted(dated, key=lambda pair: pair[0], reverse=True)]
         gone = tuple(files[keep:])

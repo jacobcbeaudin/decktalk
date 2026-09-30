@@ -658,6 +658,7 @@ class Machine:
             # refusal, so it is loaded by the one question that needs it.
             from playwright.sync_api import sync_playwright  # noqa: PLC0415
         except ImportError:
+            # silent: a machine without the browser driver reports a row with no browser.
             return InstalledTool(tool=CHROMIUM)
         with sync_playwright() as playwright:
             try:

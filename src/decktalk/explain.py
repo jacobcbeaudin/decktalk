@@ -140,6 +140,7 @@ def _opened(project: Path, machine: Machine) -> Inputs | None:
     try:
         return Inputs.load(project, environ=machine.environ, machine=machine.tables)
     except InputError:
+        # silent: a project that will not load explains the settings without its layer.
         return None
 
 
@@ -216,6 +217,7 @@ def _cues(project: Inputs) -> tuple[tuple[str, tuple[Cue, ...]], ...]:
     try:
         resolved = project.cue_times()
     except DeckTalkError:
+        # silent: a project with no cue times has none to explain.
         return ()
     if resolved is None:
         return ()

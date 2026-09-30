@@ -210,6 +210,7 @@ def _voice_id(inputs: Inputs) -> str:
     try:
         return voice_id_of(inputs)
     except InputError:
+        # silent: a project that names no voice is judged for that elsewhere.
         return ""
 
 

@@ -62,6 +62,7 @@ def _quota(text: str) -> float | None:
     try:
         quota, period = float(parts[0]), float(parts[1])
     except ValueError:
+        # silent: a quota that is not two numbers states no limit.
         return None
     return quota / period if quota > 0 and period > 0 else None
 
@@ -71,6 +72,7 @@ def _read(path: Path) -> str | None:
     try:
         return path.read_text(encoding="ascii").strip()
     except OSError:
+        # silent: a machine without the kernel file has no quota.
         return None
 
 

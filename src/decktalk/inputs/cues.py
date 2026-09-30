@@ -152,6 +152,7 @@ def phrase_lines(text: str) -> list[tuple[str, int]]:
         try:
             phrase = from_json(match.group(1))
         except ValueError:
+            # silent: a phrase that is not a JSON string is not a phrase.
             continue
         found.append((phrase, text.count("\n", 0, match.start()) + 1))
     return found

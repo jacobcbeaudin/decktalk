@@ -90,6 +90,7 @@ def price_layer(inputs: Inputs) -> Layer:
     try:
         return inputs.layers.winner(PRICE_KEY).layer
     except KeyError:
+        # silent: a price no layer states is the default's.
         return Layer.DEFAULT
 
 

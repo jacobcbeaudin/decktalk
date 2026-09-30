@@ -51,6 +51,7 @@ def installed_chromium(pw: Playwright) -> str | None:
     try:
         path = pw.chromium.executable_path
     except PlaywrightError:  # pragma: no cover - a driver that cannot answer is a machine without it
+        # silent: a driver that cannot answer is a machine without the browser.
         return None
     return str(path) if Path(path).is_file() else None
 

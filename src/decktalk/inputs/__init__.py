@@ -200,6 +200,7 @@ class Inputs:
         try:
             headings = {segment.index: segment.title for segment in self.script()}
         except InputError:
+            # silent: a script that will not parse is reported by check, and the chapters fall back to their numbers.
             headings = {}
         return {
             section.number: section.chapter or headings.get(section.number) or f"Section {section.number}"

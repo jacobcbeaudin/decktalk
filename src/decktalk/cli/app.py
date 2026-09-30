@@ -418,6 +418,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (UsageError, ClickException) as refused:
         return _session().reported(_usage(refused))
     except (typer.Abort, KeyboardInterrupt):
+        # silent: the interrupt is reported as the CANCELLED refusal below.
         return _session().failed(Cancelled("The caller stopped the run."))
     except DeckTalkError as refused:
         return _session().failed(refused)

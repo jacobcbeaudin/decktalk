@@ -193,6 +193,7 @@ def serve(
     try:
         origin.wait()
     except KeyboardInterrupt:
+        # silent: an interrupt is how a person ends the report.
         pass
     finally:
         origin.close()
