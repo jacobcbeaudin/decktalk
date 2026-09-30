@@ -236,11 +236,12 @@ def test_a_reply_that_stalls_is_a_provider_failure_asked_for_again(service, wait
     assert len(service.log) == 2 and len(waits) == 1
 
 
-def test_a_reply_that_keeps_stalling_ends_as_a_provider_error_rather_than_a_timeout(service, waits):
+def test_a_reply_that_stalls_on_the_last_attempt_ends_as_a_provider_error_rather_than_a_timeout(service):
+    """The retry before it is the test above, so one attempt is the whole of what this one needs."""
     service.expect_request("/stall").respond_with_handler(service.stalls)
     with pytest.raises(ProviderError, match="stopped answering") as caught:
-        _http.post_json(service.url_for("/stall"), {}, {}, timeout=1, retries=1)
-    assert caught.value.retryable is True and len(waits) == 1
+        _http.post_json(service.url_for("/stall"), {}, {}, timeout=1, retries=0)
+    assert caught.value.retryable is True
     assert isinstance(caught.value.__cause__, TimeoutError)
 
 
