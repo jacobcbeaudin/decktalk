@@ -14,6 +14,7 @@ soundtrack missing its music is still a soundtrack and a film that stopped for o
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -124,12 +125,7 @@ def ramp_expr(start: float, end: float, ramp: float) -> str:
 
 def max_expr(terms: list[str]) -> str:
     """The largest of several ramps at each moment, which is how overlapping spans are joined."""
-    if not terms:
-        return "0"
-    expression = terms[0]
-    for term in terms[1:]:
-        expression = f"max({expression},{term})"
-    return expression
+    return functools.reduce(lambda joined, term: f"max({joined},{term})", terms) if terms else "0"
 
 
 def encode_soundtrack(inputs: Inputs, src: Path, dst: Path, *, filters: str | None = None) -> None:
