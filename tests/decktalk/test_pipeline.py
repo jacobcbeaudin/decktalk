@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from graphlib import CycleError, TopologicalSorter
+from graphlib import CycleError
 
 import pytest
 
@@ -58,14 +58,10 @@ def test_the_one_stage_that_spends_names_the_way_to_spend_nothing() -> None:
 
 
 def test_the_declared_order_is_one_the_graph_admits() -> None:
-    """Each stage is ready, in the graph's own sense, by the time the declared order reaches it."""
-    graph = TopologicalSorter(NEEDS)
-    graph.prepare()
-    ready: set[Stage] = set()
-    for stage in Stage:
-        ready |= set(graph.get_ready())
-        assert stage in ready, f"{stage.value} runs before a stage whose artifact it reads"
-        graph.done(stage)
+    """Every stage comes after each stage whose artifact it reads, which makes the order a topological one."""
+    order = list(Stage)
+    for at, stage in enumerate(order):
+        assert NEEDS[stage] <= set(order[:at]), f"{stage.value} runs before a stage whose artifact it reads"
 
 
 def test_the_graph_is_the_table_read_as_edges() -> None:
