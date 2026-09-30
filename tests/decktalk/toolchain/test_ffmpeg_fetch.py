@@ -40,12 +40,6 @@ class Response(io.BytesIO):
         super().__init__(data)
         self.headers = {"Content-Length": str(len(data))}
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        self.close()
-
 
 def serve(monkeypatch, archives: dict[str, bytes]) -> list[str]:
     """Answer urlopen from a dict of url -> bytes, recording the URLs asked for."""

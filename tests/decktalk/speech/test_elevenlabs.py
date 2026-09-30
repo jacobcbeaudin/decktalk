@@ -39,12 +39,6 @@ REPLY = {"audio_base64": base64.b64encode(AUDIO).decode(), "alignment": alignmen
 class Answer(io.BytesIO):
     status = 200
 
-    def __enter__(self) -> Answer:
-        return self
-
-    def __exit__(self, *_exc: object) -> None:
-        self.close()
-
 
 def answers(monkeypatch: pytest.MonkeyPatch, reply: object, *, status: int = 200) -> list[dict[str, Any]]:
     """Answer every request with one canned reply, and give back what was asked, headers and all."""
