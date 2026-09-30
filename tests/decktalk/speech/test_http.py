@@ -62,12 +62,6 @@ def test_the_credential_headers_survive_a_redirect_inside_one_origin():
     assert explicit.get_header("Xi-api-key") == SENTINEL  # the default port is the same origin
 
 
-@pytest.fixture(scope="session")
-def httpserver_listen_address():
-    """127.0.0.1 by number, so `localhost` is a second host on the same machine for a redirect."""
-    return ("127.0.0.1", 0)
-
-
 def _echo(request: Request) -> Response:
     """A service that names the key it refused, which is the case the scrubber exists for."""
     pad = "." * int(request.args.get("pad", 0))

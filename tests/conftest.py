@@ -70,5 +70,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 @pytest.fixture(scope="session")
 def httpserver_listen_address() -> tuple[str, int]:
-    """Every loopback listener binds 127.0.0.1 by number, because a page under test is given that address."""
+    """Every loopback listener binds 127.0.0.1 by number, because a page under test is given that address.
+
+    It also leaves `localhost` a second host on the same machine, which a redirect test needs.
+    """
     return ("127.0.0.1", 0)
