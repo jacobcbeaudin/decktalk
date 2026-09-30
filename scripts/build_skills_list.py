@@ -20,12 +20,11 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+import generated
+from decktalk.template import SKILL_NAMES
+from decktalk.toolchain import assets
 
-import generated  # noqa: E402
-from decktalk.template import SKILL_NAMES  # noqa: E402  (after sys.path)
-from decktalk.toolchain import assets  # noqa: E402
+ROOT = Path(__file__).resolve().parent.parent
 
 TARGET = ROOT / "docs" / "agents" / "skills.mdx"
 

@@ -14,12 +14,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+import generated
+from decktalk.cli import catalog
+from decktalk.cli.options import Group
 
-import generated  # noqa: E402
-from decktalk.cli import catalog  # noqa: E402  (after sys.path, so a checkout needs no install)
-from decktalk.cli.options import Group  # noqa: E402
+ROOT = Path(__file__).resolve().parent.parent
 
 TARGET = ROOT / "AGENTS.md"
 

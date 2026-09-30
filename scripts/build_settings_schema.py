@@ -29,19 +29,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-
-import generated  # noqa: E402
-from decktalk.results import Scope  # noqa: E402  (after sys.path, so a checkout needs no install)
-from decktalk.settings import (  # noqa: E402
+import generated
+from decktalk.results import Scope
+from decktalk.settings import (
     DOCUMENT_TABLES,
     KEYS,
     NUMBERS,
     SHARED_TABLES,
     Settings,
 )
-from decktalk.tomlmap import Key  # noqa: E402
+from decktalk.tomlmap import Key
+
+ROOT = Path(__file__).resolve().parent.parent
 
 BASE = "https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1"
 DRAFT = "https://json-schema.org/draft/2020-12/schema"

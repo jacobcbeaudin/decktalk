@@ -18,11 +18,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+import generated
+from decktalk.catalog import result_schemas
 
-import generated  # noqa: E402
-from decktalk.catalog import result_schemas  # noqa: E402  (after sys.path, so a checkout needs no install)
+ROOT = Path(__file__).resolve().parent.parent
 
 TARGET = ROOT / "schemas" / "v1" / "results"
 DIALECT = "https://json-schema.org/draft/2020-12/schema"

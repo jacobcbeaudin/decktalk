@@ -501,7 +501,6 @@ def check_codes(data: dict[str, Any]) -> None:
     The enum is written by hand, because generating it would be circular and would have one
     generator writing another module's file, so this is the check that keeps the two lists one list.
     """
-    sys.path.insert(0, str(ROOT / "src"))
     # The package is imported here alone, because every other step of this script reads TypeScript and
     # JSON, and a module-level import would make the runtime depend on the Python it generates.
     from decktalk.findings import Code  # noqa: PLC0415

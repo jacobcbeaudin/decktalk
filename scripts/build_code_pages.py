@@ -18,13 +18,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
+import generated
+from decktalk.cli import catalog
+from decktalk.errors import ErrorCode
+from decktalk.findings import Code, RaisedBy
 
-import generated  # noqa: E402
-from decktalk.cli import catalog  # noqa: E402  (after sys.path, so a checkout needs no install)
-from decktalk.errors import ErrorCode  # noqa: E402
-from decktalk.findings import Code, RaisedBy  # noqa: E402
+ROOT = Path(__file__).resolve().parent.parent
 
 RUNTIME = ROOT / "docs" / "reference" / "runtime.mdx"
 ERRORS = ROOT / "docs" / "reference" / "errors"
