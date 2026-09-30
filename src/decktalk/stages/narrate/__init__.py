@@ -261,13 +261,27 @@ def _in_pool(work: Callable[[TakePlan], None], plans: list[TakePlan], *, workers
         chosen,
         extra={"data": {"workers": chosen, "jobs": len(plans), "requested": workers}},
     )
+    first: BaseException | None = None
     with ThreadPoolExecutor(max_workers=chosen) as pool:
-        running = [pool.submit(contextvars.copy_context().run, work, plan) for plan in plans]
+        running = {pool.submit(contextvars.copy_context().run, work, plan): plan for plan in plans}
         for finished in as_completed(running):
-            failure = finished.exception()
-            if failure is not None:
-                pool.shutdown(wait=True, cancel_futures=True)
-                raise failure
+            if finished.cancelled() or (failure := finished.exception()) is None:
+                continue
+            if first is None:
+                first = failure
+                pool.shutdown(wait=False, cancel_futures=True)
+                continue
+            # A request already sent that failed after the first failure may still have been paid for,
+            # so it is recorded rather than lost behind the one that is raised.
+            section = running[finished].segment.index
+            log.warning(
+                "Section %d also failed while the first failure was being raised.",
+                section,
+                exc_info=failure,
+                extra={"data": {"section": section}},
+            )
+    if first is not None:
+        raise first
 
 
 def _one_take(

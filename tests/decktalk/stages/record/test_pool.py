@@ -125,6 +125,35 @@ def test_the_first_failure_is_the_one_raised_and_it_stops_the_others():
     assert 1 in stopped
 
 
+def test_a_second_section_that_failed_on_its_own_is_recorded_and_a_halted_one_is_not(caplog):
+    both_running = threading.Barrier(2)
+
+    def one(_browser: object, job: int, halt: Halt) -> int:
+        if job in (1, 2):
+            both_running.wait(timeout=5)
+            if job == 2:
+                time.sleep(0.1)
+            raise ToolError(f"section {job} would not load")
+        halt.check()
+        time.sleep(0.5)
+        halt.check()
+        return job
+
+    with (
+        caplog.at_level("DEBUG", logger="decktalk"),
+        Pool([1, 2, 3], 3, launcher([]), one, Cancel()) as recording,
+        pytest.raises(ToolError, match="section 1"),
+    ):
+        recording.result(3)
+    later = [
+        record
+        for record in caplog.records
+        if record.name == "decktalk.stages.record.pool" and record.levelname == "WARNING"
+    ]
+    assert [record.data["section"] for record in later] == [2]  # type: ignore[attr-defined]
+    assert "section 2 would not load" in later[0].exc_info[1].args[0]  # type: ignore[index]
+
+
 def test_a_cancelled_run_stops_every_worker():
     cancel = Cancel()
 

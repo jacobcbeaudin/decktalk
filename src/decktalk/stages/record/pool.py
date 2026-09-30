@@ -197,7 +197,17 @@ class Pool[R]:
                     row.set_result(self.one(opened, job, self.halt))
                 except BaseException as exc:  # noqa: BLE001  (handed to the caller, who raises it on its own thread)
                     with self.lock:
+                        later = self.first is not None
                         self.first = self.first or exc
+                    if later and not isinstance(exc, Cancelled):
+                        # Only the first failure is raised, and a section stopped by the halt has nothing to
+                        # say, but a second section that failed on its own is recorded rather than lost.
+                        log.warning(
+                            "Section %d also failed while the first failure was being raised.",
+                            job,
+                            exc_info=exc,
+                            extra={"data": {"section": job}},
+                        )
                     self.halt.halted.set()
                     row.set_exception(exc)
 

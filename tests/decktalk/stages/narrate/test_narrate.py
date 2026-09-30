@@ -365,3 +365,24 @@ def test_a_section_that_left_the_script_leaves_the_index(
     index = Takes.read(shorter.workspace.takes_path)
     assert index is not None
     assert [row.section for row in index.sections] == [1, 2]
+
+
+def test_every_section_that_failed_is_recorded_and_the_first_is_raised(caplog: pytest.LogCaptureFixture) -> None:
+    """A paid request that failed after the first failure was lost, although it may have been charged."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    from decktalk.stages.narrate import _in_pool  # noqa: PLC0415
+
+    both_sent = threading.Barrier(2)
+
+    def work(plan: SimpleNamespace) -> None:
+        both_sent.wait(timeout=5)
+        if plan.segment.index == 2:
+            threading.Event().wait(0.1)
+        raise ProviderError(f"section {plan.segment.index} failed")
+
+    plans = [SimpleNamespace(segment=SimpleNamespace(index=number)) for number in (1, 2)]
+    with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ProviderError, match="section 1"):
+        _in_pool(work, plans, workers=2)  # type: ignore[arg-type]
+    later = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert [record.data["section"] for record in later] == [2]  # type: ignore[attr-defined]
