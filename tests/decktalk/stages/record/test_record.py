@@ -30,6 +30,8 @@ from support.projects import write_project
 from support.runs import a_run
 from support.takes import a_take, write_takes
 
+from .conftest import PAGE, a_report
+
 TOML = """
 [project]
 name = "demo"
@@ -43,12 +45,6 @@ scene = "1"
 number = 2
 page = "deck/index.html"
 scene = "2"
-"""
-
-PAGE = """<!doctype html><html><body>
-<div data-scene="1"><template data-slide="1.1"><p data-in="open">one</p></template></div>
-<div data-scene="2"><template data-slide="2.1"><p data-in="open">two</p></template></div>
-</body></html>
 """
 
 SPAN_SECONDS = 4.0
@@ -73,10 +69,6 @@ def a_project(tmp_path: Path, *, takes: bool = True, extra: str = "", machine: d
     if takes:
         write_takes(inputs, *(a_take(section, seconds=SPAN_SECONDS, voiced=False) for section in (1, 2)))
     return Inputs.load(tmp_path, environ={}, machine=machine)
-
-
-def a_report(**fields: object) -> PageReport:
-    return PageReport.model_validate({"version": "0.5.0", "mode": "cue", "scene": "1", "slide": "1.1", **fields})
 
 
 class Driven:

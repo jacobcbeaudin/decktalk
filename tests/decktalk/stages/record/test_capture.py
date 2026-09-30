@@ -29,6 +29,8 @@ from decktalk.stages.record.capture import (
 )
 from support.projects import write_project
 
+from .conftest import PAGE
+
 TOML = """
 [project]
 name = "demo"
@@ -56,12 +58,6 @@ slate = "media/slate.png"
 file = "media/chime.wav"
 section = 1
 cue = "1.1:open"
-"""
-
-PAGE = """<!doctype html><html><body>
-<div data-scene="1"><template data-slide="1.1"><p data-in="open">one</p></template></div>
-<div data-scene="2"><template data-slide="2.1"><p data-in="open">two</p></template></div>
-</body></html>
 """
 
 

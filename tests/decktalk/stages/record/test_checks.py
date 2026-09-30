@@ -25,6 +25,8 @@ from decktalk.stages.record.checks import (
     stall_finding,
 )
 
+from .conftest import a_report
+
 PAGE = "deck/index.html"
 """The page every row here is about, as `decktalk.toml` spells it."""
 
@@ -33,10 +35,6 @@ WHERE = Path("build/recordings/01.webm")
 
 SECTION = 1
 """The section every row here belongs to."""
-
-
-def a_report(**fields: object) -> PageReport:
-    return PageReport.model_validate({"version": "0.5.0", "mode": "cue", "scene": "1", "slide": "1.1", **fields})
 
 
 def a_recording(report: PageReport, *, external: tuple[str, ...] = (), wanted: float = 10.0) -> Recording:
