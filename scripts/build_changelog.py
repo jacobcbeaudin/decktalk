@@ -130,15 +130,23 @@ def once(block: str) -> str:
     return "\n".join(kept)
 
 
-def body(release: Release) -> str:
-    """One release's sections as Markdown, with each section named once however many cuts wrote it."""
+SECTION = "**{name}**"
+"""How the docs page names a section, which the release notes write as a heading instead."""
+
+
+def body(release: Release, section: str = SECTION) -> str:
+    """One release's sections as Markdown, with each section named once however many cuts wrote it.
+
+    A section with no line under it is left out, because a name with nothing beneath it tells the
+    reader nothing.
+    """
     parts: list[str] = []
     for name, lines in release.sections.items():
         block = once("\n".join(lines).strip("\n"))
         if name == PREAMBLE:
             parts.append(block)
-            continue
-        parts.append(f"**{name}**\n\n{block}" if block else f"**{name}**")
+        elif block:
+            parts.append(f"{section.format(name=name)}\n\n{block}")
     return re.sub(r"\n{3,}", "\n\n", "\n\n".join(part for part in parts if part).strip("\n"))
 
 

@@ -47,6 +47,12 @@ def test_a_final_release_carries_every_candidate_of_its_series() -> None:
     assert notes == "### Bug Fixes\n\n* the last fix\n* a candidate fix\n\n### Features\n\n* the feature\n"
 
 
+def test_a_change_a_squash_merge_carried_twice_is_listed_once() -> None:
+    """The notes fold duplicates exactly as the docs page does, because both render through one body."""
+    twice = CHANGELOG.replace("* the last fix\n", "* the last fix ([abc1234](l))\n* the last fix ([def5678](l))\n")
+    assert release_notes.notes(twice, "0.5.0").count("the last fix") == 1
+
+
 def test_an_older_release_is_left_out() -> None:
     assert "older" not in release_notes.notes(CHANGELOG, "0.5.0")
 

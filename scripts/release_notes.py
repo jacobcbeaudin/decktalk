@@ -22,7 +22,7 @@ import argparse
 import re
 import sys
 
-from build_changelog import PREAMBLE, SOURCE, parse
+from build_changelog import SOURCE, body, parse
 
 FINAL = re.compile(r"\d+\.\d+\.\d+")
 """A final version, which is the only kind whose notes this prints."""
@@ -35,14 +35,7 @@ def notes(text: str, version: str) -> str:
     release = next((release for release in parse(text) if release.base == version), None)
     if release is None:
         raise SystemExit(f"CHANGELOG.md has no entry for {version}")
-    parts = []
-    for name, chunks in release.sections.items():
-        block = "\n".join(chunks).strip("\n")
-        if name == PREAMBLE:
-            parts.append(block)
-        elif block:
-            parts.append(f"### {name}\n\n{block}")
-    return re.sub(r"\n{3,}", "\n\n", "\n\n".join(part for part in parts if part)).strip("\n") + "\n"
+    return body(release, section="### {name}") + "\n"
 
 
 def main() -> int:
