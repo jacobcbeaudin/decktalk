@@ -23,6 +23,7 @@ reader who cannot find a knob learns the number is deliberately not one.
 
 from __future__ import annotations
 
+import functools
 import operator
 import sys
 import tomllib
@@ -33,6 +34,7 @@ from typing import Any, cast
 
 import tomlkit
 from pydantic import Field, JsonValue
+from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
 from .errors import InputError
@@ -1405,11 +1407,8 @@ def _stated(doc: Mapping[str, Any], dotted: str) -> object:
     return found
 
 
-def json_value(value: object) -> JsonValue:
-    """One value as JSON carries it, which turns the tuple a TOML array becomes into a list."""
-    if isinstance(value, tuple):
-        return [json_value(item) for item in value]
-    return cast("JsonValue", value)
+json_value: Callable[[object], JsonValue] = functools.partial(to_jsonable_python, fallback=str)
+"""One value as JSON carries it: a tuple as a list, an enum as its value, and anything else unknown as its text."""
 
 
 def value_of(settings: Settings, dotted: str) -> object:

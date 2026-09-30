@@ -12,10 +12,9 @@ library's own registry.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from enum import Enum
 from typing import Any
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import TypeAdapter
 from typer._click import Context, Parameter
 from typer._click.core import Command
 from typer.main import get_command
@@ -26,6 +25,7 @@ from decktalk import settings as knobs
 from decktalk.cli.app import PROGRAM, app
 from decktalk.findings import Code
 from decktalk.results import RESULTS, Result
+from decktalk.settings import json_value
 from decktalk.tomlmap import PUBLISHED, Key
 
 PURPOSE_LIMIT = 120
@@ -100,17 +100,6 @@ def _param(param: Parameter, context: Context) -> dict[str, Any]:
     if "--set" in param.opts:
         row["keys"] = SETTINGS_KEYSPACE
     return row
-
-
-def json_value(value: object) -> JsonValue:
-    """A value as JSON carries it, which is its own value for a scalar and its name for an enum."""
-    if isinstance(value, Enum):
-        return json_value(value.value)
-    if isinstance(value, (list, tuple)):
-        return [json_value(item) for item in value]
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    return str(value)
 
 
 def globals_() -> list[dict[str, Any]]:
@@ -246,7 +235,6 @@ __all__ = [
     "document",
     "findings",
     "globals_",
-    "json_value",
     "named",
     "names",
     "page_schema",

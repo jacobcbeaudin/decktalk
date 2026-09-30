@@ -23,7 +23,6 @@ from typer._click import Context
 from decktalk import settings as knobs
 from decktalk.cli import session as sessions
 from decktalk.cli.app import CONTEXT, DeckTalkGroup, app, command
-from decktalk.cli.catalog import json_value
 from decktalk.cli.options import Group
 from decktalk.errors import InputError
 from decktalk.events import Level
@@ -39,6 +38,7 @@ from decktalk.results import (
     Scope,
     SettingValue,
 )
+from decktalk.settings import json_value
 from decktalk.tomlmap import Key as KeyRecord
 
 SENTENCE_ENDS = (".", "?", "!")
