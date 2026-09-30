@@ -8,10 +8,12 @@ import os
 import socket
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError
 
 from decktalk import machine as machine_module
 from decktalk.errors import ApprovalRequired, Cancel, Cancelled, ErrorCode, InputError
@@ -46,9 +48,10 @@ from decktalk.project import open as open_project
 from decktalk.results import Layer, Scope, Spend, SpendState, StatusResult, Voicing
 from decktalk.settings import BY_ID, ToolsConfig
 from decktalk.speech import VoiceContext, get_provider
-from decktalk.toolchain import assets
+from decktalk.toolchain import assets, command_line
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
+from support.logs import data_of
 from support.paths import REPO
 from support.runs import a_machine
 
@@ -620,6 +623,21 @@ def test_doctor_reports_every_component_and_fetches_nothing(tmp_path: Path, monk
     assert result.bias_ms is None  # the bias is measured only when a caller asks
 
 
+def a_driver(executable: Path, launch: Callable[[], object]) -> type:
+    """A browser driver whose Chromium lives at `executable` and is launched by `launch`."""
+
+    class Driver:
+        chromium = SimpleNamespace(launch=launch, executable_path=str(executable))
+
+        def __enter__(self) -> Driver:
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            return None
+
+    return Driver
+
+
 def test_the_browser_row_names_where_its_chromium_lives(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A person told the browser is there still has to find it, so doctor names its path."""
     executable = tmp_path / "chrome"
@@ -631,18 +649,25 @@ def test_the_browser_row_names_where_its_chromium_lives(tmp_path: Path, monkeypa
         def close(self) -> None:
             return None
 
-    class Driver:
-        chromium = SimpleNamespace(launch=Launched, executable_path=str(executable))
-
-        def __enter__(self) -> Driver:
-            return self
-
-        def __exit__(self, *_exc: object) -> None:
-            return None
-
-    monkeypatch.setattr("playwright.sync_api.sync_playwright", Driver)
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", a_driver(executable, Launched))
     row = a_machine(tmp_path)._browser_row()
     assert (row.version, row.path) == ("140.0", executable)
+
+
+def test_a_browser_that_will_not_launch_is_a_row_and_a_warning_that_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The row can only say there is no browser, so the first line of the launch error goes on the log."""
+
+    def refuse() -> object:
+        raise PlaywrightError("Executable doesn't exist\nat /nowhere/chrome")
+
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", a_driver(tmp_path / "chrome", refuse))
+    row = a_machine(tmp_path)._browser_row()
+    assert (row.version, row.path) == (None, None)
+    [said] = [record for record in caplog.records if record.name == "decktalk.machine"]
+    assert (said.levelname, said.getMessage()) == ("WARNING", "Chromium did not launch.")
+    assert data_of(said) == {"reason": "Executable doesn't exist"}
 
 
 def test_a_measured_doctor_keeps_the_number_it_measured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -791,7 +816,7 @@ def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_ma
 
 
 def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     here = a_machine(tmp_path)
 
@@ -803,6 +828,13 @@ def test_a_command_that_runs_past_its_timeout_is_stopped_and_reported(
     with here.run() as run:
         outcome = apply_fix(run, Code.FILE_MISSING, fix, root=tmp_path, scope=Scope.MACHINE, unsafe=False)
     assert not outcome.applied and "was stopped" in (outcome.why or "")
+    [said] = [record for record in caplog.records if record.name == "decktalk.machine"]
+    assert said.levelname == "WARNING" and "(timeout)" in said.getMessage()
+    assert data_of(said) == {
+        "argv": command_line([sys.executable, "-m", *INSTALL]),
+        "reason": "timeout",
+        "limit": FIX_TIMEOUT_SECONDS,
+    }
 
 
 def test_a_command_built_without_validation_is_still_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
