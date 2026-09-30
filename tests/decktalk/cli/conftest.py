@@ -13,11 +13,12 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
 
-from decktalk.cli import main
+from decktalk.cli import catalog, main
 from decktalk.cli import session as sessions
 from decktalk.events import Event, Events
 from decktalk.findings import Applicability, Code, EditFix, Finding, Location
@@ -123,6 +124,11 @@ def machine(monkeypatch: pytest.MonkeyPatch):
         return fake
 
     return install
+
+
+def commands() -> dict[str, dict[str, Any]]:
+    """Every command the parser really has, by the words a caller types to reach it."""
+    return {str(row["command"]): row for row in catalog.walk()}
 
 
 def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:

@@ -16,6 +16,8 @@ from decktalk.cli.app import PROMPT_FLAGS, command
 from decktalk.cli.options import Group
 from decktalk.results import RESULTS, Result, WordsResult
 
+from .conftest import commands
+
 TOP_LINES = (
     "Every picture lands on its word. DeckTalk turns a markdown script, HTML",
     "slides and your voice into one narrated mp4.",
@@ -49,11 +51,6 @@ BUILD_METAVARS = ("--max-cost N", "--from STAGE", "--to STAGE", "--skip STAGE", 
 """Every metavar `build` publishes, because a metavar is what an agent writes after the flag."""
 
 
-def rows() -> dict[str, dict[str, object]]:
-    """Every command of the tree, by the words a caller types to reach it."""
-    return {str(row["command"]): row for row in catalog.walk()}
-
-
 def flat(text: str) -> str:
     """One help page as one line, because a sentence is promised and its wrapping is not."""
     return " ".join(text.split())
@@ -71,28 +68,28 @@ def test_the_build_help_says_what_it_promised(run, sentence: str) -> None:
 
 def test_every_command_sits_in_a_declared_group() -> None:
     declared = {group.value for group in Group}
-    assert {str(row["group"]) for row in rows().values()} <= declared
+    assert {str(row["group"]) for row in commands().values()} <= declared
 
 
 def test_every_command_answers_with_a_result_the_registry_knows() -> None:
-    answered = {row["result"] for row in rows().values() if row["result"]}
+    answered = {row["result"] for row in commands().values() if row["result"]}
     assert answered <= set(RESULTS)
 
 
-@pytest.mark.parametrize("name", sorted(rows()))
+@pytest.mark.parametrize("name", sorted(commands()))
 def test_the_finding_flags_are_exactly_on_the_commands_that_judge(name: str) -> None:
-    row = rows()[name]
-    flags = {opt for param in row["params"] for opt in param["opts"]}  # ty: ignore[not-iterable]
+    row = commands()[name]
+    flags = {opt for param in row["params"] for opt in param["opts"]}
     model = _model(row)
     judges = model is not None and model.reports_findings
     assert ("--fail-on" in flags) is judges
     assert ("--allow" in flags) is judges
 
 
-@pytest.mark.parametrize("name", sorted(rows()))
+@pytest.mark.parametrize("name", sorted(commands()))
 def test_the_spending_flags_are_exactly_on_the_commands_that_buy(name: str) -> None:
-    row = rows()[name]
-    flags = {opt for param in row["params"] for opt in param["opts"]}  # ty: ignore[not-iterable]
+    row = commands()[name]
+    flags = {opt for param in row["params"] for opt in param["opts"]}
     model = _model(row)
     spends = model is not None and model.spends
     assert ("--spend" in flags) is spends
@@ -105,18 +102,18 @@ def _model(row: dict[str, object]) -> type[Result] | None:
     return RESULTS.get(str(row["result"])) if row["result"] else None
 
 
-@pytest.mark.parametrize("name", sorted(rows()))
+@pytest.mark.parametrize("name", sorted(commands()))
 def test_every_command_help_names_every_field_its_result_carries_and_its_docs(run, name: str) -> None:
     said = flat(run(*name.split(), "--help").out)
-    model = _model(rows()[name])
+    model = _model(commands()[name])
     for field in model.model_fields.keys() - Result.model_fields.keys() if model else ():
         assert field in said, f"{name} --help leaves out {field}"
     assert f"#decktalk-{name.replace(' ', '-')}" in said
 
 
-@pytest.mark.parametrize("name", sorted(rows()))
+@pytest.mark.parametrize("name", sorted(commands()))
 def test_every_command_carries_the_globals_after_its_own_name(name: str) -> None:
-    flags = {opt for param in rows()[name]["params"] for opt in param["opts"]}  # ty: ignore[not-iterable]
+    flags = {opt for param in commands()[name]["params"] for opt in param["opts"]}
     assert {"--json", "--events", "--color", "--no-input", "-v", "-q", "-p"} <= flags
 
 
@@ -161,7 +158,7 @@ def test_a_global_works_before_and_after_the_command_name(run, project, answers)
 
 
 def test_every_flag_that_answers_a_prompt_is_one_the_tree_really_has() -> None:
-    flags = {opt for row in rows().values() for param in row["params"] for opt in param["opts"]}
+    flags = {opt for row in commands().values() for param in row["params"] for opt in param["opts"]}
     assert PROMPT_FLAGS <= flags
 
 

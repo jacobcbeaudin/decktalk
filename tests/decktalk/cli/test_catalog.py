@@ -11,16 +11,15 @@ from decktalk.cli import catalog
 from decktalk.errors import ErrorCode
 from decktalk.findings import Code
 from decktalk.results import RESULTS
-from decktalk.settings import KEYS
+from decktalk.settings import BY_ID, KEYS
+
+from .conftest import commands
 
 SCHEMA_DIR = Path(__file__).resolve().parents[3] / "schemas" / "v1"
 """Where the committed schemas sit, which the rendered settings document is held equal to."""
 
 ROW_KEYS = ("command", "group", "purpose", "result", "params")
 """What one command row publishes, which is what an agent reads before it writes a command line."""
-
-BY_ID = {key.id: key for key in KEYS}
-"""Every settings key by its dotted id, which is how a finding row names it."""
 
 PARAM_KEYS = ("opts", "type", "metavar", "default", "repeatable", "envvar", "help", "hidden")
 """What one parameter row publishes, which is what an agent writes after the flag."""
@@ -40,12 +39,12 @@ def test_every_purpose_is_a_whole_sentence() -> None:
 
 def test_every_parameter_publishes_what_an_agent_writes_after_it() -> None:
     for row in catalog.walk():
-        for param in row["params"]:  # ty: ignore[not-iterable]
+        for param in row["params"]:
             assert set(param) >= set(PARAM_KEYS)
 
 
 def test_an_argument_says_whether_it_is_required_and_whether_it_repeats() -> None:
-    rows = {row["command"]: row for row in catalog.walk()}
+    rows = commands()
     (paths,) = [param for param in rows["check"]["params"] if param["opts"] == ["paths"]]
     (key,) = [param for param in rows["config get"]["params"] if param["opts"] == ["key"]]
     assert (paths["required"], paths["repeatable"]) == (False, True)

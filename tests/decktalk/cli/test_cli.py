@@ -50,6 +50,8 @@ from decktalk.results import (
 )
 from support.paths import REPO
 
+from .conftest import commands
+
 SURFACE: dict[str, tuple[object, str, type[Result] | None]] = {
     "init": (machines, "init", InitResult),
     "install": (Machine, "install", InstallResult),
@@ -82,11 +84,6 @@ exemption in the product, so its row carries no model.
 
 EXPECTED_COMMANDS = 18
 """How many commands the tree has, counting the nested group as the one command a reader types."""
-
-
-def commands() -> dict[str, dict[str, object]]:
-    """Every command the parser really has, by the words a caller types to reach it."""
-    return {str(row["command"]): row for row in catalog.walk()}
 
 
 def test_every_command_has_a_row_and_every_row_has_a_command() -> None:
