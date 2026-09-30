@@ -13,7 +13,6 @@ A prompt an agent cannot answer and a flag that does not exist are the same fail
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -34,9 +33,6 @@ from decktalk.findings import Certainty, Code, Finding
 from decktalk.machine import Machine
 from decktalk.project import Project
 from decktalk.results import ErrorResult, Result, Spend, Voicing
-
-NO_COLOR = "NO_COLOR"
-"""The variable a reader sets to ask every tool for no colour, which is honoured before any flag."""
 
 FOUND_SOMETHING = 1
 """What a run exits with when it judged something at or above the threshold `--fail-on` set."""
@@ -103,7 +99,9 @@ class Session:
         self.out, self.err = (
             Console(
                 stderr=stderr,
-                no_color=flags.color is When.NEVER,
+                # None hands the choice to rich, which reads NO_COLOR, so the variable a reader sets to
+                # ask every tool for no colour is honoured before any flag, `--color always` included.
+                no_color=True if flags.color is When.NEVER else None,
                 force_terminal=True if flags.color is When.ALWAYS else None,
                 soft_wrap=True,
             )
@@ -112,7 +110,7 @@ class Session:
         self.terminal = Terminal(
             is_terminal=self.err.is_terminal,
             is_dumb=self.err.is_dumb_terminal,
-            no_color=self.err.no_color or bool(os.environ.get(NO_COLOR)),
+            no_color=self.err.no_color,
             json=flags.json_out,
             events=flags.events,
             quiet=flags.quiet,

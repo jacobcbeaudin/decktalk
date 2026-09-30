@@ -36,6 +36,19 @@ def test_the_live_region_needs_a_terminal_with_one_stream_to_itself() -> None:
     assert not terminal(events=True).live
 
 
+def test_no_color_in_the_environment_outranks_every_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+    for color in When:
+        made = session(color=color)
+        assert made.out.no_color and made.err.no_color and made.terminal.no_color, color
+
+
+def test_color_never_turns_colour_off_without_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    assert session(color=When.NEVER).terminal.no_color
+    assert not session(color=When.ALWAYS).terminal.no_color
+
+
 def test_a_run_that_judged_nothing_exits_zero() -> None:
     made = session()
     assert made.exit_code(_status()) == 0
