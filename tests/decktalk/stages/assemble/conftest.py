@@ -7,20 +7,18 @@ is what keeps a test here about the cut, the mix and the publish rather than abo
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 from decktalk.artifacts import CueTimes, Take, Takes, Words
 from decktalk.errors import Cancel
-from decktalk.events import Event
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Run
 from decktalk.media import ffmpeg
 from decktalk.results import CueTime, SectionCues, Word
-from decktalk.settings import ToolsConfig
 from decktalk.stages.assemble.cut import Rendered
+from support.runs import RUN_ID, Watched, a_machine
 from support.takes import a_take, write_takes
 
 PAGES_TOML = """
@@ -124,12 +122,8 @@ def write_project(root: Path, toml: str = PAGES_TOML) -> Inputs:
     return Inputs.load(root, environ={})
 
 
-@dataclass
-class Opened:
+class Opened(Watched):
     """One open run and every line it put on the stream, which is what a test reads it back from."""
-
-    run: Run
-    lines: list[Event] = field(default_factory=list)
 
     def notes(self) -> list[str]:
         """Every sentence the run said, which is what a stage says instead of printing."""
@@ -146,14 +140,8 @@ class Opened:
 
 def open_run(root: Path) -> Opened:
     """A run on a machine that read nothing, with every line it emits collected for the test."""
-    machine = Machine(
-        environ={},
-        tables={},
-        config_path=root / "config.toml",
-        cwd=root,
-        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(root / "cache"))),
-    )
-    opened = Opened(run=Run(machine, id="r1", cancel=Cancel(), root=root))
+    machine = a_machine(root)
+    opened = Opened(run=Run(machine, id=RUN_ID, cancel=Cancel(), root=root))
     machine.events.subscribe(opened.lines.append)
     return opened
 
