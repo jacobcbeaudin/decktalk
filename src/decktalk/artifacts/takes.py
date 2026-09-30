@@ -24,6 +24,7 @@ settings, so a section lands the same way whether this run voiced its take or fo
 from __future__ import annotations
 
 import hashlib
+import itertools
 import json
 from typing import Any
 
@@ -199,11 +200,8 @@ class Takes(Stored):
     @property
     def starts(self) -> dict[int, float]:
         """Where each section begins in the joined narration, added up in the order the takes are joined."""
-        at, out = 0.0, {}
-        for take in self.sections:
-            out[take.section] = round(at, 3)
-            at += take.span_seconds
-        return out
+        ats = itertools.accumulate((take.span_seconds for take in self.sections), initial=0.0)
+        return {take.section: round(at, 3) for take, at in zip(self.sections, ats, strict=False)}
 
     def start(self, section: int) -> float | None:
         """Where a section begins in the joined narration, or None when it has no take."""
