@@ -145,9 +145,7 @@ def concat_audio(parts: list[Placement], out: Path, *, bitrate: str, sample_rate
     silence after that, whatever the file holds past the cut. Where every file lands, and what sounds
     there, is therefore arithmetic over the placements and never depends on the files around it.
     """
-    inputs: list[str] = []
-    for part in parts:
-        inputs += ffmpeg.source(part.path)
+    inputs = [arg for part in parts for arg in ffmpeg.source(part.path)]
     steps, shaped = [], set()
     for i, part in enumerate(parts):
         chain = []
@@ -181,9 +179,7 @@ def crossfade_join(parts: list[Path], out: Path, *, crossfade_seconds: float, bi
     if len(parts) == 1:
         shutil.copyfile(parts[0], out)
         return
-    inputs: list[str] = []
-    for p in parts:
-        inputs += ffmpeg.source(p)
+    inputs = [arg for part in parts for arg in ffmpeg.source(part)]
     chain, prev = "", "[0:a]"
     for i in range(1, len(parts)):
         label = "[a]" if i == len(parts) - 1 else f"[m{i}]"
