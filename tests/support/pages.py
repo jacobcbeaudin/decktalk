@@ -1,16 +1,21 @@
-"""A two-section project on one page, and the catalog that page publishes, for every stage that reads one.
+"""A two-section project on one page, the catalog that page publishes and the log its recording left.
 
-`check`, `storyboard`, `cue` and `verify` each judge what a page declared about its elements. They
-share this project and this catalog builder, so a change to the catalog's shape is made once.
+`check`, `storyboard`, `cue`, `verify` and `assemble` each judge what a page declared about itself.
+They share this project, this catalog builder and this log writer, so a change to either shape is
+made once.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from decktalk.artifacts import RecordingLog
+from decktalk.findings import Finding
 from decktalk.inputs import Inputs
+from decktalk.media.pagereport import PageReport
 
 TOML = """
 [project]
@@ -68,3 +73,25 @@ def catalog(scene: str, moments: dict[str, list[str]], *, text: str = "x", **ext
     """One scene of a catalog, with its elements, its slides and the cues each slide declares."""
     found = elements(moments, text=text)
     return {"scene": scene, "elements": found, "slides": list(moments), "cues": dict(moments), **extra}
+
+
+def write_log(
+    inputs: Inputs,
+    section: int,
+    *,
+    report: PageReport | None = None,
+    findings: Sequence[Finding] = (),
+    requested_seconds: float = 2.0,
+) -> None:
+    """The log one section's recording left, carrying what its page said and what the recorder judged."""
+    RecordingLog(
+        section=section,
+        url="http://project.localhost/deck/index.html",
+        input_hash="abc",
+        requested_seconds=requested_seconds,
+        settle_seconds=0.1,
+        load_seconds=0.1,
+        clock_start_seconds=0.2,
+        findings=tuple(findings),
+        report=report or PageReport(),
+    ).write(inputs.workspace.recording_log(f"{section:02d}"))

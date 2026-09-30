@@ -8,20 +8,18 @@ every sample the stage would read is a value the test names.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Cut, Cuts, RecordingLog
+from decktalk.artifacts import Cut, Cuts
 from decktalk.errors import Cancel
-from decktalk.findings import Finding
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg, frames
-from decktalk.media.pagereport import PageReport
 from decktalk.results import SectionCues, Voicing
 from support.runs import a_machine
 from support.takes import a_take, write_takes
@@ -137,22 +135,6 @@ def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> N
     workspace.narration_path.write_bytes(b"narration")
     for section in inputs.document.sections:
         workspace.section_video(section.key).write_bytes(b"cut")
-
-
-def write_log(inputs: Inputs, section: int, found: Sequence[Finding] = ()) -> None:
-    """One recording log, so `verify` has something to repeat rather than measure again."""
-    inputs.workspace.recordings_dir.mkdir(parents=True, exist_ok=True)
-    RecordingLog(
-        section=section,
-        url="http://project.localhost/deck/index.html",
-        input_hash="abc",
-        requested_seconds=SECTION_SECONDS,
-        settle_seconds=0.1,
-        load_seconds=0.1,
-        clock_start_seconds=0.2,
-        findings=tuple(found),
-        report=PageReport(),
-    ).write(inputs.workspace.recording_log(f"{section:02d}"))
 
 
 @pytest.fixture(autouse=True)

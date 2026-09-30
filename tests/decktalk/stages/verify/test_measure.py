@@ -6,7 +6,6 @@ from collections.abc import Callable
 
 import pytest
 
-from decktalk.artifacts import RecordingLog
 from decktalk.events import Event, Level, Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
@@ -27,6 +26,7 @@ from decktalk.stages.verify.measure import (
     neighbours_of,
     planned_cues,
 )
+from support.pages import elements, write_log
 
 from .conftest import SECTION_SECONDS, Measurements, opened
 
@@ -65,36 +65,10 @@ def test_a_film_with_no_cut_list_falls_back_to_the_section_files(
 def test_a_cues_forward_span_is_read_from_the_catalog_the_page_published(assembled: Callable[..., Inputs]) -> None:
     """The catalog says what each effect is, so the forward allowance is the page's own arithmetic."""
     inputs = assembled(CUES)
-    inputs.workspace.recordings_dir.mkdir(parents=True, exist_ok=True)
-    report = PageReport.model_validate(
-        {
-            "catalog": [
-                {
-                    "scene": "1",
-                    "elements": {
-                        "1.1": [
-                            {
-                                "attrs": {"data-in": "a", "data-in-style": "draw"},
-                                "moments": {"data-in": "1.1:a"},
-                                "text": "",
-                                "box": {"x": 0, "y": 0, "w": 10, "h": 10},
-                            }
-                        ]
-                    },
-                }
-            ]
-        }
-    )
-    RecordingLog(
-        section=1,
-        url="http://project.localhost/deck/index.html",
-        input_hash="abc",
-        requested_seconds=SECTION_SECONDS,
-        settle_seconds=0.1,
-        load_seconds=0.1,
-        clock_start_seconds=0.2,
-        report=report,
-    ).write(inputs.workspace.recording_log("01"))
+    [drawn] = elements({"1.1": ["1.1:a"]}, text="")["1.1"]
+    drawn["attrs"]["data-in-style"] = "draw"
+    report = PageReport.model_validate({"catalog": [{"scene": "1", "elements": {"1.1": [drawn]}}]})
+    write_log(inputs, 1, report=report, requested_seconds=SECTION_SECONDS)
     assert declared_spans(inputs, 1) == {"1.1:a": pytest.approx(ENTRANCES["draw"].seconds)}
 
 

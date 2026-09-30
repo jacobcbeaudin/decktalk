@@ -15,8 +15,9 @@ from decktalk.pipeline import Stage
 from decktalk.results import CueTime, SectionCues, VerifyResult
 from decktalk.stages import judge
 from decktalk.stages.verify import verify
+from support.pages import write_log
 
-from .conftest import PAGES_TOML, SECTION_SECONDS, Measurements, opened, write_log
+from .conftest import PAGES_TOML, SECTION_SECONDS, Measurements, opened
 
 CUES = {1: {"1.1:a": 2.0}}
 """One cue, well inside its section."""
@@ -102,7 +103,8 @@ def test_a_recording_logs_own_judgement_is_reported_again(assembled: Callable[..
     write_log(
         inputs,
         1,
-        [
+        requested_seconds=SECTION_SECONDS,
+        findings=[
             judge(
                 Code.PAGE_RENDER_THREW,
                 "a slide's render threw, so the slide is not on screen.",

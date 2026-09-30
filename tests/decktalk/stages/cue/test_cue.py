@@ -17,6 +17,7 @@ from decktalk.media.pagereport import PageReport
 from decktalk.pipeline import Stage
 from decktalk.results import CueResult, Word
 from decktalk.stages.cue import cue
+from support.pages import elements, write_log
 from support.runs import a_run
 from support.takes import a_take, write_takes
 
@@ -42,9 +43,6 @@ WORDS = (
 )
 """The words section one speaks, before its own lead is added to them."""
 
-BOX = {"x": 0, "y": 0, "w": 10, "h": 10}
-"""One element's box, which none of these cases measures."""
-
 
 def a_project(tmp_path: Path, *, cues: dict | None = None, voiced: bool = True) -> Inputs:
     """A project with one take for section one, and the cue file the case asks for."""
@@ -61,28 +59,8 @@ def a_project(tmp_path: Path, *, cues: dict | None = None, voiced: bool = True) 
 
 def a_recording(inputs: Inputs, section: int, scene: str, moments: dict[str, list[str]]) -> None:
     """A recording log for one section, carrying the catalog its page published."""
-    elements = {
-        slide: [{"attrs": {}, "moments": {"data-in": wire}, "text": "", "box": BOX} for wire in wires]
-        for slide, wires in moments.items()
-    }
-    report = PageReport.model_validate({"catalog": [{"scene": scene, "elements": elements}]})
-    path = inputs.workspace.recording_log(f"{section:02d}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "section": section,
-                "url": "http://project.localhost/deck/index.html",
-                "input_hash": "abc",
-                "requested_seconds": 2.0,
-                "settle_seconds": 0.1,
-                "load_seconds": 0.1,
-                "clock_start_seconds": 0.2,
-                "report": report.model_dump(mode="json"),
-            }
-        ),
-        encoding="utf-8",
-    )
+    report = PageReport.model_validate({"catalog": [{"scene": scene, "elements": elements(moments, text="")}]})
+    write_log(inputs, section, report=report)
 
 
 def lines(run: Run) -> list[Event]:

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from decktalk.artifacts import Cut, Cuts, RecordingLog, Words
+from decktalk.artifacts import Cut, Cuts, Words
 from decktalk.captions import CaptionCue
 from decktalk.errors import ToolError
 from decktalk.inputs import Inputs
@@ -38,24 +38,11 @@ from decktalk.stages.assemble.publish import (
     uncaptioned_sounds,
     with_sound_captions,
 )
+from support.pages import write_log
 
 from .conftest import MID_CLIP_TOML, TITLED_TOML, cue_times, open_run, rendered, spoken, take_index, write_project
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
-
-
-def a_log(inputs, section: int, cues: tuple[CueRow, ...]) -> None:
-    """One recording log on disk, carrying what the page said about the cues it ran."""
-    RecordingLog(
-        section=section,
-        url="http://project.localhost/deck/index.html",
-        input_hash="h",
-        requested_seconds=2.0,
-        settle_seconds=0.1,
-        load_seconds=0.1,
-        clock_start_seconds=0.2,
-        report=PageReport(cues=cues),
-    ).write(inputs.workspace.recording_log(f"{section:02d}"))
 
 
 # ---- the transcript ---------------------------------------------------------------------------
@@ -66,26 +53,22 @@ def test_described_cues_sort_on_the_time_alone(tmp_path):
     before the arrival it belongs to. The runtime composes one sentence per cue in document order,
     so the second is the whole of the rule."""
     inputs = write_project(tmp_path)
-    a_log(
-        inputs,
-        1,
-        (
-            CueRow(id="1.1:a", due=1.0, ran=1.0, describe="the arrival"),
-            CueRow(id="1.1:b", due=1.0, ran=1.0, describe="a step back"),
-        ),
-    )
+    arrival = CueRow(id="1.1:a", due=1.0, ran=1.0, describe="the arrival")
+    back = CueRow(id="1.1:b", due=1.0, ran=1.0, describe="a step back")
+    write_log(inputs, 1, report=PageReport(cues=(arrival, back)))
     assert described_cues(inputs, 1, 0.0) == ((1.0, "the arrival"), (1.0, "a step back"))
 
 
 def test_described_cues_are_placed_where_their_section_plays(tmp_path):
     inputs = write_project(tmp_path)
-    a_log(inputs, 1, (CueRow(id="1.1:a", due=0.5, ran=0.75, describe="the reveal"),))
+    write_log(inputs, 1, report=PageReport(cues=(CueRow(id="1.1:a", due=0.5, ran=0.75, describe="the reveal"),)))
     assert described_cues(inputs, 1, 4.0) == ((4.75, "the reveal"),)
 
 
 def test_a_cue_that_described_nothing_is_not_in_the_transcript(tmp_path):
     inputs = write_project(tmp_path)
-    a_log(inputs, 1, (CueRow(id="1.1:a", due=1.0, ran=1.0), CueRow(id="1.1:b", due=2.0, ran=2.0, describe="  ")))
+    blank = CueRow(id="1.1:b", due=2.0, ran=2.0, describe="  ")
+    write_log(inputs, 1, report=PageReport(cues=(CueRow(id="1.1:a", due=1.0, ran=1.0), blank)))
     assert described_cues(inputs, 1, 0.0) == ()
 
 
