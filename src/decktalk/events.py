@@ -91,6 +91,9 @@ class RunDone(Event):
         None,
         description="Why the run stopped or failed, in the shape a result's error takes, or null when it finished.",
     )
+    dropped: int = Field(
+        0, ge=0, description="How many lines the events file left out once it reached output.events_max_bytes."
+    )
 
 
 class StageStart(Event):
@@ -190,6 +193,21 @@ class Fetch(Event):
 Scalar = str | int | float | bool | None
 """One measured value a log line carries, which is flat so a reader filters on it without parsing."""
 
+LINE_CHARS = 2000
+"""Truth: the most characters a log line's message or any one of its values keeps, which is a page of text.
+
+A page's error or a tool's complaint is text someone else chose, and a line with no limit would let
+one of them fill the events file alone.
+"""
+
+CUT = " (cut)"
+"""What a text cut to `LINE_CHARS` ends with, so a reader knows the rest was there."""
+
+
+def _cut(text: str) -> str:
+    """The text held to `LINE_CHARS`, which runs after redaction so no prefix of a secret can survive the cut."""
+    return text if len(text) <= LINE_CHARS else text[:LINE_CHARS] + CUT
+
 
 class Log(Event):
     """One sentence the library would have printed, had the library printed anything.
@@ -214,6 +232,20 @@ class Log(Event):
         None,
         description="The measured values behind the sentence by name, each a string, a number, a boolean or null.",
     )
+
+    @field_validator("message", mode="after")
+    @classmethod
+    def _short(cls, message: str) -> str:
+        """Hold the sentence to `LINE_CHARS`, after the event's own redaction has run."""
+        return _cut(message)
+
+    @field_validator("data", mode="after")
+    @classmethod
+    def _short_values(cls, data: dict[str, Scalar] | None) -> dict[str, Scalar] | None:
+        """Hold every text value to `LINE_CHARS`, after the event's own redaction has run."""
+        if data is None:
+            return None
+        return {name: _cut(value) if isinstance(value, str) else value for name, value in data.items()}
 
     @field_validator("data", mode="before")
     @classmethod
@@ -362,36 +394,92 @@ class Events:
                 self.emit(event.run, Log, level=Level.ERROR, message=message)
 
 
+KEPT_PAST_THE_BOUND = frozenset(
+    (
+        "run.start",
+        "run.done",
+        "stage.start",
+        "stage.done",
+        "section.start",
+        "section.done",
+        "finding",
+        "spend",
+        "take.charged",
+    )
+)
+"""The lines a bounded file always keeps: the run's own shape, its judgements and every dollar it spent.
+
+Each of them is bounded by the stages and sections of the run rather than by the tools it called, and
+the money lines are the ledger a host bills from, so none of them is ever left out.
+"""
+
+LOUD = frozenset((Level.WARNING, Level.ERROR))
+"""The log levels a bounded file keeps after it has left the quieter ones out."""
+
+LOUD_HEADROOM = 2
+"""How many times its bound a file may reach before warnings and errors are left out too.
+
+The quiet lines go first, so a file at its bound still says what went wrong, and a run that warns
+without end still stops somewhere.
+"""
+
+
 class JsonlSink:
     """A subscriber that appends one JSON line per event to a file, creating it at the first line.
 
     One file per run, never truncated, so a watch loop running beside a build by hand cannot
-    overwrite what the other is writing.
+    overwrite what the other is writing. `max_bytes` bounds the file: once it is reached, progress,
+    fetch, debug and info lines are left out and counted, warnings and errors follow them past
+    `LOUD_HEADROOM` times the bound, and the lines in `KEPT_PAST_THE_BOUND` are always written.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, max_bytes: int | None = None) -> None:
         self.path = path
+        self.max_bytes = max_bytes
+        self.written = 0
+        """How many bytes this sink has appended, which is what the bound is compared against."""
+        self.dropped = 0
+        """How many lines this sink left out, which the run's last line reports."""
         self._lock = threading.Lock()
 
+    def _keeps(self, event: Event) -> bool:
+        """Whether this line is written, given how much of the bound the file has already used."""
+        if self.max_bytes is None or self.written < self.max_bytes or event.event in KEPT_PAST_THE_BOUND:
+            return True
+        loud = isinstance(event, Log) and event.level in LOUD
+        return loud and self.written < self.max_bytes * LOUD_HEADROOM
+
     def __call__(self, event: Event) -> None:
+        line = (event.model_dump_json() + "\n").encode()
         with self._lock:
+            if not self._keeps(event):
+                self.dropped += 1
+                return
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as sink:
-                sink.write(event.model_dump_json() + "\n")
+            with self.path.open("ab") as sink:
+                sink.write(line)
+            self.written += len(line)
 
     @staticmethod
     def prune(directory: Path, keep: int) -> tuple[Path, ...]:
         """Delete all but the newest `keep` event files, and say which ones went.
 
         A directory of every run this project ever made would grow without limit, and the runs a
-        caller wants are the recent ones.
+        caller wants are the recent ones. Another run may prune the same directory at the same time,
+        so a file that is gone before it is looked at or removed is simply one fewer to prune.
         """
         if not directory.is_dir():
             return ()
-        files = sorted(directory.glob("*.jsonl"), key=lambda path: path.stat().st_mtime, reverse=True)
+        dated: list[tuple[float, Path]] = []
+        for path in directory.glob("*.jsonl"):
+            try:
+                dated.append((path.stat().st_mtime, path))
+            except FileNotFoundError:
+                continue
+        files = [path for _, path in sorted(dated, key=lambda pair: pair[0], reverse=True)]
         gone = tuple(files[keep:])
         for path in gone:
-            path.unlink()
+            path.unlink(missing_ok=True)
         return gone
 
 

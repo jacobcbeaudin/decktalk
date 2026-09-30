@@ -48,7 +48,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --where machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.cache_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds`, `tools.cache_dir` and `host.presentation_bias_ms`.
+`narration.concurrency`, `narration.retries`, `narration.cache_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `output.events_max_bytes`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds`, `tools.cache_dir` and `host.presentation_bias_ms`.
 
 ## Which key moves which failure
 
@@ -288,6 +288,12 @@ These keys switch the files a build writes beside the final mp4 and how long the
 |---|---|---|---|---|---|---|---|
 | `timestamped_copy` | boolean | `false` | takes any value of its type |  | project |  | Write a second copy of the final mp4 named with the date and time. |
 | `events_keep_runs` | integer | `20` | must be between 1 and 1000 | runs | project |  | How many runs of event files `build/events/` keeps before the oldest is deleted. |
+| `events_max_bytes` | integer | `8388608` | must be between 65536 and 1073741824 | bytes | machine |  | Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its spending are always kept. |
+
+<Warning>
+**`output.events_max_bytes`** A file with no bound grows with every tool call a long film makes, on a disk a host shares.
+
+</Warning>
 
 ## `[tools]`
 

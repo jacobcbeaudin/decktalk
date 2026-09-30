@@ -237,6 +237,17 @@ def test_a_refused_run_names_its_refusal_on_its_last_line(tmp_path: Path) -> Non
     )
 
 
+def test_a_run_says_on_its_last_line_how_many_lines_its_bounded_file_left_out(tmp_path: Path) -> None:
+    here = a_machine(tmp_path)
+    events = tmp_path / "build" / "events"
+    with here.run(root=tmp_path, events_dir=events, max_bytes=1) as run:
+        for number in range(5):
+            logging.getLogger("decktalk.media.ffmpeg").debug("call %d", number)
+    lines = (events / f"{run.id}.jsonl").read_text(encoding="utf-8").splitlines()
+    last = RunDone.model_validate_json(lines[-1])
+    assert last.dropped == 5 and [line for line in lines if '"log"' in line] == []
+
+
 def test_a_finished_run_carries_no_error(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []

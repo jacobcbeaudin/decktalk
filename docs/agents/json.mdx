@@ -488,7 +488,7 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `event` | What it says | Its own fields |
 |---|---|---|
 | `run.start` | A run opened. | `events_path` |
-| `run.done` | A run closed, and why when it did not finish. | `outcome`, `seconds`, `error` |
+| `run.done` | A run closed, and why when it did not finish. | `outcome`, `seconds`, `error`, `dropped` |
 | `stage.start` | A stage began, with its place in the run's plan. | `stage`, `index`, `count` |
 | `stage.done` | A stage ended. | `stage`, `outcome`, `seconds` |
 | `section.start` | One section of a stage began. | `stage`, `section` |
@@ -522,7 +522,11 @@ after, along with `sections`, `characters`, `dollars`, `ceiling_dollars`,
 `price_per_1000_characters` and `price_layer`.
 
 `build/events/` keeps the most recent `output.events_keep_runs` runs and deletes the oldest, and
-that key defaults to 20. Run `decktalk config explain output.events_keep_runs` for its range.
+that key defaults to 20. Run `decktalk config explain output.events_keep_runs` for its range. One
+file stops taking progress, fetch, debug and info lines once it reaches `output.events_max_bytes`,
+8 MiB by default, and keeps every line about the run, its stages and sections, its findings and its
+spending. `run.done` says in `dropped` how many lines were left out, so a reader can tell a bounded
+file from a quiet run.
 
 ## Watching from Python
 

@@ -477,7 +477,10 @@ narrate counts takes, record counts sections, soundscape counts assets, assemble
 passes and verify counts probes. `Level` is `DEBUG`, `INFO`, `WARNING` or `ERROR`.
 
 `JsonlSink` is the subscriber that appends one JSON line per event to a file. Every run of a project
-gets one, at `build/events/<run>.jsonl`, and `output.events_keep_runs` prunes the oldest.
+gets one, at `build/events/<run>.jsonl`, and `output.events_keep_runs` prunes the oldest. A sink given
+`max_bytes`, as every project run's is from `output.events_max_bytes`, leaves progress, fetch, debug
+and info lines out once the file reaches it, keeps every line about the run's shape, its findings
+and its spending, and reports how many it left out as `dropped` on `run.done`.
 
 ```python
 import decktalk

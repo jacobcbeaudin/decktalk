@@ -530,7 +530,7 @@ class Project:
         tree is confined before the run opens, whether or not the stage itself writes.
         """
         self.workspace.confine()
-        keep = self.inputs.settings.output.events_keep_runs
+        output = self.inputs.settings.output
         opening = new_run()
         self._runs.add(opening)
         with self.machine.run(
@@ -540,7 +540,8 @@ class Project:
             max_cost=max_cost,
             root=self.root,
             events_dir=self.workspace.events_dir,
-            keep_runs=keep,
+            keep_runs=output.events_keep_runs,
+            max_bytes=output.events_max_bytes,
         ) as run:
             # What the load noticed, such as a misspelled key, is said on every run of the project,
             # because the project was loaded once and each run's events file is read on its own.

@@ -793,6 +793,17 @@ class OutputConfig:
         unit="runs",
         bounds=Bounds(ge=1, le=1000),
     )
+    events_max_bytes: int = tune(
+        8_388_608,
+        "Bytes one run's events file may reach before debug and info lines are left out of it. "
+        "Lines about the run, its stages, its sections, its findings and its spending are always kept.",
+        unit="bytes",
+        bounds=Bounds(ge=65_536, le=1_073_741_824),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        see_also=("output.events_keep_runs",),
+        hazard="A file with no bound grows with every tool call a long film makes, on a disk a host shares.",
+    )
 
 
 @dataclass(frozen=True)

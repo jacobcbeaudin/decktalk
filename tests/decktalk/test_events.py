@@ -7,6 +7,7 @@ import os
 import threading
 import typing
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -15,9 +16,12 @@ from pydantic import TypeAdapter, ValidationError
 
 from decktalk.errors import ErrorCode, ErrorInfo
 from decktalk.events import (
+    CUT,
     EVENTS,
+    LINE_CHARS,
     Event,
     Events,
+    FindingEvent,
     JsonlSink,
     Level,
     Line,
@@ -25,7 +29,9 @@ from decktalk.events import (
     Progress,
     RunDone,
     RunStart,
+    StageDone,
     StageStart,
+    TakeCharged,
     Unit,
 )
 from decktalk.findings import Code, Finding, Location
@@ -318,3 +324,86 @@ def test_a_line_built_by_the_stream_holds_no_registered_secret() -> None:
     stream.subscribe(seen.append)
     stream.emit("r1", Log, level=Level.INFO, message=f"key={CANARY}")
     assert seen[0].model_dump_json().count("<secret ELEVENLABS_API_KEY>") == 1
+
+
+# ---- a bounded file ---------------------------------------------------------------------------------
+
+BOUND = 65_536
+"""The smallest bound the setting allows, which a few thousand debug lines pass quickly."""
+
+
+def test_a_bounded_file_keeps_every_lifecycle_and_money_line_and_counts_what_it_left_out(tmp_path) -> None:
+    path = tmp_path / "r1.jsonl"
+    sink = JsonlSink(path, max_bytes=BOUND)
+    stream = Events()
+    kept_kinds = {"stage.start", "finding", "take.charged", "stage.done"}
+    sent_kept = 0
+    with stream.subscribe(sink):
+        stream.emit("r1", RunStart, events_path="build/events/r1.jsonl")
+        for number in range(10_000):
+            stream.emit("r1", Log, level=Level.DEBUG, message=f"ffmpeg call {number} exited 0.")
+            if number % 500 == 0:
+                stream.emit("r1", StageStart, stage=Stage.ASSEMBLE, index=1, count=1)
+                stream.emit("r1", FindingEvent, finding=FINDING)
+                stream.emit("r1", TakeCharged, section=1, take="0f3a9c1e", characters=10, dollars=0.01)
+                stream.emit("r1", StageDone, stage=Stage.ASSEMBLE, outcome=Outcome.OK, seconds=1.0)
+                sent_kept += 4
+    lines = [json.loads(line) for line in path.read_text("utf-8").splitlines()]
+    assert sum(1 for line in lines if line["event"] in kept_kinds) == sent_kept
+    logged = sum(1 for line in lines if line["event"] == "log")
+    assert logged + sink.dropped == 10_000 and sink.dropped > 0
+    kept_bytes = sum(len(json.dumps(line)) for line in lines if line["event"] != "log")
+    assert path.stat().st_size <= BOUND + kept_bytes + len(lines)
+
+
+def test_a_bounded_file_keeps_warnings_after_it_has_left_the_quiet_lines_out(tmp_path) -> None:
+    path = tmp_path / "r1.jsonl"
+    sink = JsonlSink(path, max_bytes=BOUND)
+    stream = Events()
+    with stream.subscribe(sink):
+        while sink.written < BOUND:
+            stream.emit("r1", Log, level=Level.INFO, message="x" * 200)
+        stream.emit("r1", Progress, stage=Stage.NARRATE, done=1, total=3, unit=Unit.TAKE, label="left out")
+        stream.emit("r1", Log, level=Level.DEBUG, message="left out")
+        stream.emit("r1", Log, level=Level.WARNING, message="kept")
+    said = path.read_text("utf-8")
+    assert '"kept"' in said and "left out" not in said
+    assert sink.dropped == 2
+
+
+def test_an_unbounded_file_leaves_nothing_out(tmp_path) -> None:
+    sink = JsonlSink(tmp_path / "r1.jsonl")
+    stream = Events()
+    with stream.subscribe(sink):
+        for _ in range(100):
+            stream.emit("r1", Log, level=Level.DEBUG, message="x" * 1000)
+    assert sink.dropped == 0
+
+
+def test_a_long_message_and_a_long_value_are_cut_and_say_so() -> None:
+    line = Log(time=datetime.now(UTC), seq=0, run="r1", level=Level.INFO, message="m" * 5000, data={"tail": "t" * 5000})
+    assert line.message == "m" * LINE_CHARS + CUT
+    assert line.data == {"tail": "t" * LINE_CHARS + CUT}
+
+
+@given(padding=st.integers(min_value=LINE_CHARS - len(CANARY), max_value=LINE_CHARS))
+def test_the_cut_runs_after_redaction_so_no_prefix_of_a_secret_survives(padding: int) -> None:
+    line = Log(time=datetime.now(UTC), seq=0, run="r1", level=Level.INFO, message="x" * padding + CANARY)
+    for length in range(8, len(CANARY) + 1):
+        assert CANARY[:length] not in line.message
+
+
+def test_pruning_survives_a_file_another_run_removed_first(tmp_path, monkeypatch) -> None:
+    """Two runs of one project prune one directory, and a file the other removed is one fewer to prune."""
+    directory = tmp_path / "events"
+    directory.mkdir()
+    for name in ("a", "b", "c"):
+        (directory / f"{name}.jsonl").write_text("{}\n", encoding="utf-8")
+    real = Path.glob
+
+    def racing(self: Path, pattern: str):  # noqa: ANN202  (Path.glob's own signature)
+        yield from real(self, pattern)
+        yield self / "removed-by-another-run.jsonl"
+
+    monkeypatch.setattr(Path, "glob", racing)
+    assert len(JsonlSink.prune(directory, 1)) == 2

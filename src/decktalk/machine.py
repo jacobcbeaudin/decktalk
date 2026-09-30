@@ -543,6 +543,7 @@ class Machine:
         root: Path | None = None,
         events_dir: Path | None = None,
         keep_runs: int | None = None,
+        max_bytes: int | None = None,
     ) -> Iterator[Run]:
         """Open one run on the stream, write its lines beside the project, and close it however it ends.
 
@@ -553,11 +554,12 @@ class Machine:
         """
         run = Run(self, id=id or new_run(), cancel=cancel or Cancel(), voice=voice, max_cost=max_cost, root=root)
         events_path = events_dir / f"{run.id}{EVENTS_SUFFIX}" if events_dir is not None else None
-        sink = None
+        sink, written = None, None
         if events_path is not None:
             if keep_runs is not None:
                 JsonlSink.prune(events_path.parent, keep_runs)
-            sink = self.events.subscribe(JsonlSink(events_path), runs=[run.id])
+            written = JsonlSink(events_path, max_bytes=max_bytes)
+            sink = self.events.subscribe(written, runs=[run.id])
         started = time.monotonic()
         self.events.emit(run.id, RunStart, events_path=relative(events_path, root) if events_path and root else None)
         # What the machine noticed when it was read is said on every run, because the machine was read
@@ -587,7 +589,10 @@ class Machine:
             error = ErrorInfo.of_failure(failure)
             raise
         finally:
-            self.events.emit(run.id, RunDone, outcome=outcome, seconds=time.monotonic() - started, error=error)
+            dropped = written.dropped if written is not None else 0
+            self.events.emit(
+                run.id, RunDone, outcome=outcome, seconds=time.monotonic() - started, error=error, dropped=dropped
+            )
             if sink is not None:
                 sink.close()
 

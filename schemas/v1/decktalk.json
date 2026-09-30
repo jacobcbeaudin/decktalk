@@ -1402,6 +1402,23 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_OUTPUT_EVENTS_KEEP_RUNS"
+        },
+        "events_max_bytes": {
+          "description": "Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its spending are always kept.",
+          "type": "integer",
+          "default": 8388608,
+          "minimum": 65536,
+          "maximum": 1073741824,
+          "x-range": "must be between 65536 and 1073741824",
+          "x-unit": "bytes",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "A file with no bound grows with every tool call a long film makes, on a disk a host shares.",
+          "x-see-also": [
+            "output.events_keep_runs"
+          ],
+          "x-environment": "DECKTALK_OUTPUT_EVENTS_MAX_BYTES"
         }
       },
       "additionalProperties": false
