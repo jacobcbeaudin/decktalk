@@ -35,6 +35,7 @@ from blake3 import blake3
 from pydantic import ValidationError
 
 from decktalk.errors import NotBuiltError
+from decktalk.files import replace_all
 from decktalk.findings import Model
 from decktalk.pipeline import Artifact
 
@@ -124,11 +125,8 @@ class Stored(Model):
 
     def write(self, path: Path) -> Path:
         """Write this artifact over `path` in one step, and give back the path it was written to."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_name(f".{path.name}.writing")
         text = json.dumps(self.model_dump(mode="json"), indent=INDENT, allow_nan=False)
-        temporary.write_text(text + "\n", encoding="utf-8")
-        temporary.replace(path)
+        replace_all({path: text + "\n"})
         return path
 
 
