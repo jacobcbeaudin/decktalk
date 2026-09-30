@@ -439,8 +439,8 @@ def page_errors(page: Page, caught: list[str], label: str) -> list[str]:
     try:
         if not evaluate(page, HAS_CATALOG_JS):
             errors.append(NO_CATALOG)
-    except ToolError:
-        # silent: a page that cannot answer has no catalog, which is the error recorded.
+    except ToolError as unanswered:
+        log.debug("[page] %s  could not say whether it has a catalog: %s", label, unanswered)
         errors.append(NO_CATALOG)
     for e in errors:
         log.debug("[page] %s  page error: %s", label, e)

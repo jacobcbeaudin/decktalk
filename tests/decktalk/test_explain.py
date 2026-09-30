@@ -193,6 +193,14 @@ class TestWhereTheExplainerReads:
         found = explain("verify.cue_offset_max_ms", project=tmp_path)
         assert found.layer is Layer.PROJECT and found.measured is False
 
+    def test_cue_times_that_will_not_read_explain_the_key_and_say_why_nothing_was_measured(
+        self, project: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        (project / "out" / "cue-times.json").write_text("{", encoding="utf-8")
+        with caplog.at_level("INFO", logger="decktalk"):
+            assert explain("verify.cue_offset_max_ms", project=project).measured is False
+        assert any("cue-times.json" in record.getMessage() for record in caplog.records)
+
     def test_the_machine_layer_is_the_machine_the_caller_named(self, tmp_path: Path) -> None:
         here = Machine(
             environ={"DECKTALK_TOOLS_TIMEOUT_SECONDS": "40"},

@@ -22,6 +22,7 @@ a project, so a stage can parse one file without loading a whole project.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
@@ -55,6 +56,8 @@ from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import Word
 from decktalk.settings import PROJECT_FILE, Layers, Settings, key_warnings, load, read_project_toml
+
+log = logging.getLogger(__name__)
 
 ENV_FILE = ".env"
 """What a project calls the file its speech credential lives in, which is never committed."""
@@ -200,8 +203,11 @@ class Inputs:
         """
         try:
             headings = {segment.index: segment.title for segment in self.script()}
-        except InputError:
-            # silent: a script that will not parse is reported by check, and the chapters fall back to their numbers.
+        except InputError as unread:
+            log.debug(
+                "The script did not parse, so a section with no chapter of its own is named by its number.",
+                exc_info=unread,
+            )
             headings = {}
         return {
             section.number: section.chapter or headings.get(section.number) or f"Section {section.number}"

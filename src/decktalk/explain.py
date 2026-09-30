@@ -11,6 +11,7 @@ own resolved times, through the artifact that holds them and the build directory
 from __future__ import annotations
 
 import itertools
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,8 @@ from .settings import (
     value_of,
 )
 from .tomlmap import Key
+
+log = logging.getLogger(__name__)
 
 Cue = tuple[float, str]
 """One resolved cue as the explainer reads it, which is its second and its wire id, in that order so it sorts."""
@@ -105,8 +108,8 @@ def _opened(project: Path, machine: Machine) -> Inputs | None:
     """
     try:
         return Inputs.load(project, environ=machine.environ, machine=machine.tables)
-    except InputError:
-        # silent: a project that will not load explains the settings without its layer.
+    except InputError as refused:
+        log.info("The project did not load (%s), so the key is explained without the project's own layer.", refused)
         return None
 
 
@@ -177,8 +180,8 @@ def _cues(project: Inputs) -> tuple[tuple[str, tuple[Cue, ...]], ...]:
     """
     try:
         resolved = project.cue_times()
-    except DeckTalkError:
-        # silent: a project with no cue times has none to explain.
+    except DeckTalkError as refused:
+        log.info("The cue times could not be read (%s), so no cue is weighed against the key.", refused)
         return ()
     if resolved is None:
         return ()
