@@ -192,15 +192,6 @@ def test_a_fetch_that_fails_is_a_tool_error_rather_than_a_return_code(monkeypatc
         browser.launch(pw, policy=browser.TRUSTED)
 
 
-def test_a_fetch_that_never_finishes_is_stopped_and_refused(monkeypatch) -> None:
-    def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        raise subprocess.TimeoutExpired(cmd, float(kwargs["timeout"]))  # type: ignore[arg-type]
-
-    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
-    with pytest.raises(ToolError, match="longer than"):
-        chromium_fetch.fetch_chromium(env={})
-
-
 def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, on_disk) -> None:
     """`chromium()` is what every stage calls, so the wiring from it to the fetch is worth one test.
     Playwright itself is replaced here, so this never reaches a real browser either."""
@@ -245,12 +236,12 @@ def test_every_installer_run_leaves_its_command_exit_and_output_on_the_record(mo
     assert data["output_tail"] == "line 1 | ERROR: host unreachable"
 
 
-def test_an_installer_that_never_finishes_says_it_was_stopped(monkeypatch, caplog) -> None:
+def test_a_fetch_that_never_finishes_is_stopped_refused_and_says_it_was_stopped(monkeypatch, caplog) -> None:
     def run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         raise subprocess.TimeoutExpired(cmd, float(kwargs["timeout"]))  # type: ignore[arg-type]
 
     monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
-    with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ToolError):
+    with caplog.at_level("DEBUG", logger="decktalk"), pytest.raises(ToolError, match="longer than"):
         chromium_fetch.fetch_chromium(env={})
     assert [data_of(record)["reason"] for record in caplog.records if data_of(record)] == ["timeout"]
 
