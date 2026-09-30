@@ -284,6 +284,12 @@ def test_the_plain_lines_renderer_writes_one_line_per_stage_that_ended() -> None
     assert "Record" in said
 
 
+def test_a_stage_line_says_how_the_stage_ended_when_it_did_not_end_ok() -> None:
+    """A pipe gets only these lines, so a failed stage must not read like one that finished."""
+    assert "failed" in heard(output.Lines, _stage_done().model_copy(update={"outcome": Outcome.FAILED}))
+    assert "ok" not in heard(output.Lines, _stage_done())
+
+
 def test_the_events_renderer_writes_the_library_s_own_line() -> None:
     assert '"event":"stage.done"' in heard(output.Jsonl, _stage_done())
 

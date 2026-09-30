@@ -82,13 +82,15 @@ class Report:
     total: int = 0
 
     def line(self) -> Text:
-        """The stage's own row, which is its name, what it is working on and how long it took."""
+        """The stage's own row: its name, what it is working on, how long it took, and how it ended when not ok."""
         name = self.stage.value.title().rjust(STAGE_COLUMN)
         text = Text(f"{name} {self.label}")
         if self.seconds is not None:
             text.append(f"   {clock(self.seconds)}", style=QUIET_STYLE)
         elif self.total:
             text.append(f"   {self.done}/{self.total}", style=QUIET_STYLE)
+        if self.outcome not in (None, Outcome.OK):
+            text.append(f"   {self.outcome.value}")
         return text
 
 
