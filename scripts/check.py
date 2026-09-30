@@ -604,7 +604,7 @@ GROUPS: tuple[Group, ...] = (
             generator("build_contributing"),
             generator("build_changelog"),
             generator("build_assets"),
-            (*UV, "python", "scripts/check_docs_links.py", CHECK),
+            (*UV, "python", "scripts/check_docs_links.py"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),

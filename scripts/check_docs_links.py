@@ -1,9 +1,8 @@
 """Check every page's front matter, every internal link in docs/ and the navigation in docs/docs.json.
 
-    uv run scripts/check_docs_links.py            # print what was checked, and every problem
-    uv run scripts/check_docs_links.py --check    # print the problems alone
+    uv run scripts/check_docs_links.py    # every problem, or what was checked when there is none
 
-Both modes exit 1 when something is wrong. Four things are checked, and no network is used.
+It exits 1 when something is wrong. Four things are checked, and no network is used.
 
 - Every page opens with front matter that YAML parses into a title and a description. The docs
   host parses it the same way and refuses the whole deploy when one page fails, and a plain value
@@ -235,9 +234,7 @@ def problems(pages: dict[str, Page]) -> list[str]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--check", action="store_true", help="print the problems alone")
-    args = ap.parse_args()
+    argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()
     pages = read_pages()
     found = problems(pages)
     for line in found:
@@ -245,11 +242,8 @@ def main() -> int:
     if found:
         print(f"{len(found)} front matter, link or navigation problems in docs/.")
         return 1
-    if not args.check:
-        links = sum(len(p.links) for p in pages.values())
-        print(
-            f"{len(pages)} pages, {links} links, every front matter parses and every link and navigation entry resolves."
-        )
+    links = sum(len(p.links) for p in pages.values())
+    print(f"{len(pages)} pages, {links} links, every front matter parses and every link and navigation entry resolves.")
     return 0
 
 
