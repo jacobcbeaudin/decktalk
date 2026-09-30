@@ -67,8 +67,6 @@ def explain(
     candidate = _candidate(known, here, value)
     cues = _cues(opened) if opened else ()
     layers = here.layers.of(known.id)
-    winner = here.layers.winner(known.id).layer
-    stated = next((layer for layer in layers if layer.layer is winner), None)
     return ConfigExplainResult(
         ok=True,
         key=known.id,
@@ -89,9 +87,7 @@ def explain(
         decides=known.decides,
         environment=known.environment,
         layers=layers,
-        layer=winner,
-        file=stated.file if stated else None,
-        line=stated.line if stated else None,
+        layer=here.layers.winner(known.id).layer,
         numbers=_numbers(known, here.settings, candidate),
         candidate=None if candidate is None else json_value(value_of(candidate, known.id)),
         clamped=_clamped(known, candidate or here.settings, cues),

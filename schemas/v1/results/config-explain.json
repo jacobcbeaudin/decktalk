@@ -839,35 +839,7 @@
     },
     "layer": {
       "$ref": "#/$defs/Layer",
-      "description": "Which layer set the value in force."
-    },
-    "file": {
-      "anyOf": [
-        {
-          "format": "path",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "The file that set it, or null when no file did.",
-      "title": "File"
-    },
-    "line": {
-      "anyOf": [
-        {
-          "minimum": 1,
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "The line in that file, or null.",
-      "title": "Line"
+      "description": "Which layer set the value in force, whose file and line are the last of `layers`."
     },
     "layers": {
       "description": "Every layer that stated this key, lowest first.",

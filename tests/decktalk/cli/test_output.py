@@ -126,9 +126,9 @@ key10 = value13 (override)
   sentence12
   type type11, default default14, range16
   unit unit15
-  hazard hazard43
-  decides PAGE_STALLED
-  docs docs44
+  hazard hazard41
+  decides PAGE_NO_DESCRIPTION
+  docs docs42
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,

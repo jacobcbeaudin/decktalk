@@ -639,9 +639,9 @@ class ConfigExplainResult(Result):
     evidence: str | None = Field(None, description="What produces the value, for a stated key.")
     requires: str | None = Field(None, description="A relation to another key or number, enforced at load.")
     see_also: tuple[str, ...] = Field((), description="Keys and published numbers that move with this one.")
-    layer: Layer = Field(description="Which layer set the value in force.")
-    file: ProjectPath | None = Field(None, description="The file that set it, or null when no file did.")
-    line: int | None = Field(None, ge=1, description="The line in that file, or null.")
+    layer: Layer = Field(
+        description="Which layer set the value in force, whose file and line are the last of `layers`."
+    )
     layers: tuple[LayerValue, ...] = Field(description="Every layer that stated this key, lowest first.")
     environment: str = Field(description="The environment variable that sets this key.")
     decides: tuple[Code, ...] = Field((), description="The findings whose verdict this key moves.")
