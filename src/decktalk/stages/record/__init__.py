@@ -56,10 +56,7 @@ from decktalk.stages import selects
 from decktalk.stages.record.capture import (
     Job,
     plan_job,
-    scene_params,
-    scene_url,
     section_hash,
-    words_query,
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
 from decktalk.stages.record.pool import Halt, Pool, automatic
@@ -68,7 +65,7 @@ from decktalk.stages.record.start import find_start
 log = logging.getLogger(__name__)
 
 
-@dataclass(eq=False)
+@dataclass(frozen=True, eq=False)
 class LogSink:
     """Where one section's recording log is kept, cleared before the capture and written after it.
 
@@ -84,7 +81,6 @@ class LogSink:
     url: str
     seconds: float
     path: Path
-    recording: Recording | None = None
 
     def clear(self) -> None:
         """Delete the log of the recording that is about to be replaced, before anything is captured."""
@@ -92,7 +88,6 @@ class LogSink:
 
     def write(self, recording: Recording) -> None:
         """Write what the recorder knows about the webm now on disk, before anything measures it."""
-        self.recording = recording
         self.log(recording).write(self.path)
 
     def log(
@@ -374,11 +369,7 @@ def record(
 
 
 __all__ = [
-    "Job",
     "LogSink",
     "record",
-    "scene_params",
-    "scene_url",
     "stale_recording",
-    "words_query",
 ]
