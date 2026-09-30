@@ -20,7 +20,7 @@ that flag, so every hosted runner gated and the founder's decision lived only in
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, Protocol, cast
+from typing import Any, cast
 
 import pytest
 
@@ -222,16 +222,7 @@ def test_every_platform_the_project_runs_on_has_a_factor() -> None:
 # ---- the leg that carries the decision ---------------------------------------------------------
 
 
-class Row(Protocol):
-    """What this file reads of a `GROUPS` row, which is a structural type because the table is a
-    module loaded from a path and its own dataclass is therefore not a name this file can import."""
-
-    name: str
-    runners: tuple[str, ...]
-    commands: tuple[tuple[str, ...], ...]
-
-
-def suites(group: Row) -> list[tuple[str, ...]]:
+def suites(group: check.Group) -> list[tuple[str, ...]]:
     """Every command of a group that runs the suite, which is the only kind `--timing` reaches."""
     return [command for command in group.commands if "pytest" in command]
 
