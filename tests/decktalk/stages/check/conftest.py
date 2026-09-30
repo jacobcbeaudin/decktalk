@@ -23,6 +23,8 @@ from decktalk.media.pagereport import PageReport
 from decktalk.stages import storyboard
 from decktalk.stages.check import scan
 
+from ...conftest import FakePage
+
 TOML = """
 [project]
 name = "demo"
@@ -79,22 +81,6 @@ def catalog(scene: str, moments: dict[str, list[str]], **extra: object) -> dict[
 def a_report(*scenes: dict[str, Any], warnings: Sequence[dict[str, Any]] = ()) -> PageReport:
     """What one page says about itself, as the reader at the boundary would have read it."""
     return PageReport.model_validate({"catalog": list(scenes), "warnings": list(warnings)})
-
-
-@dataclass
-class FakePage:
-    """A Chromium page that answers every call and remembers which URLs it was pointed at."""
-
-    urls: list[str] = field(default_factory=list)
-
-    def goto(self, url: str, **_kwargs: object) -> None:
-        self.urls.append(url)
-
-    def evaluate(self, _script: str, *_args: object) -> object:
-        return None
-
-    def wait_for_timeout(self, _ms: float) -> None:
-        """A page a test drives has nothing to settle, so waiting on it does nothing."""
 
 
 @dataclass
