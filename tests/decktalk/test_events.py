@@ -70,28 +70,19 @@ PAYLOADS: dict[str, dict[str, object]] = {
     "spend": {"spend": SPEND},
     "take.charged": {"section": 2, "take": "0f3a9c1e", "characters": 118, "dollars": 0.04},
     "fetch": {"tool": "ffmpeg", "bytes": 1024, "total_bytes": 4096},
-    "log": {"level": Level.INFO, "message": "One sentence."},
+    "log": {
+        "level": Level.DEBUG,
+        "message": "ffmpeg exited 0.",
+        "source": "media.ffmpeg",
+        "stage": Stage.ASSEMBLE,
+        "section": 2,
+        "data": {"exit": 0, "seconds": 0.25, "argv": "ffmpeg -y out.mp4", "killed": False, "limit": None},
+    },
 }
 
 
 def test_the_twelve_names_are_the_ones_the_design_named() -> None:
     assert list(EVENTS) == list(NAMES)
-
-
-def test_a_log_line_carries_where_it_was_written_and_what_it_measured() -> None:
-    line = Log(
-        time=datetime.now(UTC),
-        seq=0,
-        run="r1",
-        level=Level.DEBUG,
-        message="ffmpeg exited 0.",
-        source="media.ffmpeg",
-        stage=Stage.ASSEMBLE,
-        section=2,
-        data={"exit": 0, "seconds": 0.25, "argv": "ffmpeg -y out.mp4", "killed": False, "limit": None},
-    )
-    parsed = TypeAdapter(Line).validate_json(line.model_dump_json())
-    assert parsed == line
 
 
 def test_an_object_in_a_log_lines_data_is_kept_as_text() -> None:
@@ -252,21 +243,6 @@ def test_pruning_keeps_the_newest_runs_and_leaves_the_directory_alone_when_it_is
     gone = JsonlSink.prune(directory, 2)
     assert [path.name for path in gone] == ["a.jsonl"]
     assert sorted(path.name for path in directory.iterdir()) == ["b.jsonl", "c.jsonl"]
-
-
-def test_a_progress_line_carries_the_count_so_no_renderer_works_out_a_fraction() -> None:
-    line = Progress(
-        time=datetime(2026, 9, 24, 3, 0, tzinfo=UTC),
-        seq=0,
-        run="r1",
-        stage=Stage.RECORD,
-        section=2,
-        done=1,
-        total=3,
-        unit=Unit.SECTION,
-        label="section 2",
-    )
-    assert (line.done, line.total, line.unit) == (1, 3, Unit.SECTION)
 
 
 def test_the_sink_path_travels_on_the_line_that_opens_the_run() -> None:
