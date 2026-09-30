@@ -32,7 +32,6 @@ the one place the key sits in clear text.
 from __future__ import annotations
 
 import http.client
-import json
 import logging
 import time
 import urllib.error
@@ -41,6 +40,8 @@ import urllib.request
 from collections.abc import Callable, Mapping
 from http.client import HTTPResponse
 from typing import Any
+
+from pydantic_core import from_json, to_json
 
 from ..errors import ProviderError
 
@@ -199,7 +200,7 @@ def post[T](
     worth trying again is asked for again like a busy answer, and a flag that says a refusal may be
     retried is one a retry honours.
     """
-    data = json.dumps(body).encode()
+    data = to_json(body)
     path = urllib.parse.urlsplit(url).path
     attempt = 0
     while True:
@@ -256,8 +257,8 @@ def post_json(url: str, body: dict[str, Any], headers: dict[str, str], *, timeou
 
     def parse(reply: bytes) -> dict[str, Any]:
         try:
-            answered = json.loads(reply or b"{}")
-        except json.JSONDecodeError as exc:
+            answered = from_json(reply or b"{}")
+        except ValueError as exc:
             # A reply that is not JSON is a gateway or a proxy answering for the service, which never
             # reached it, so asking again is honest.
             raise ProviderError(f"{shown(url)} answered with something that is not JSON.", retryable=True) from exc
