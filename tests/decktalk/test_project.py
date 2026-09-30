@@ -27,7 +27,7 @@ from decktalk.events import Event, Level, Log
 from decktalk.files import replace_all
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Machine, Run
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
 from decktalk.project import LOCK_FILE, OWNER_FILE, Origin, Project, section_numbers, stage_call
@@ -45,16 +45,7 @@ from decktalk.results import (
 )
 from decktalk.results import Layer as SettingLayer
 from support.projects import MINIMAL_TOML, write_project
-
-
-def a_machine(tmp_path: Path, **environ: str) -> Machine:
-    return Machine(
-        environ=environ,
-        tables={},
-        config_path=tmp_path / "machine.toml",
-        cwd=tmp_path,
-        toolchain=Toolchain(),
-    )
+from support.runs import a_machine
 
 
 def a_project(tmp_path: Path, toml: str = MINIMAL_TOML, **environ: str) -> Project:
