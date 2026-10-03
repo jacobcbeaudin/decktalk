@@ -90,8 +90,9 @@ choice.
 
 No DeckTalk environment variable has its value printed, logged or placed in a request body. The one
 exception is `DECKTALK_ALLOW_ANY_API_BASE`, which is a switch and never a secret. An error message
-that quotes a reply from a service has every credential in it replaced before the quote is cut to
-length.
+that quotes a reply from a service has every credential the request carried replaced before the quote
+is cut to length, whatever header carried it. A redirect to another host, scheme or port never carries
+a header that holds a credential.
 
 KaTeX ships inside the wheel, so an equation needs no download and no content delivery network.
 

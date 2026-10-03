@@ -12,6 +12,18 @@
       "title": "Applicability",
       "type": "string"
     },
+    "Billing": {
+      "description": "How a voice bills what it makes, which its adapter declares and every price is worked out by.\n\nA provider DeckTalk does not ship declares nothing, so its bill is `undeclared`: its price is\nnothing anybody stated, and a spend cap refuses to guard it. A build's total that adds a bill per\ncharacter to a bill per second is `mixed`, and carries the rate of each.",
+      "enum": [
+        "per_character",
+        "per_second",
+        "free",
+        "undeclared",
+        "mixed"
+      ],
+      "title": "Billing",
+      "type": "string"
+    },
     "Certainty": {
       "description": "Whether a finding is wrong for sure or only probably wrong.\n\nThe threshold a run fails on is `--fail-on`, which names a threshold and never a field value, so\nthese two words are read and never compared against a flag.",
       "enum": [
@@ -72,6 +84,7 @@
         "CUE_OVERLAP",
         "TAKE_PLACEHOLDER",
         "TAKE_SPOKEN_SYMBOL",
+        "TAKE_PAUSE_DROPPED",
         "TAKE_MISSING",
         "CUT_SPEECH",
         "CUT_POP",
@@ -645,6 +658,13 @@
           "title": "Characters",
           "type": "integer"
         },
+        "seconds": {
+          "default": 0.0,
+          "description": "How many seconds of audio this price is for, which a per-second bill is priced on.",
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        },
         "dollars": {
           "description": "The price at the stated rate, in US dollars.",
           "minimum": 0,
@@ -657,11 +677,41 @@
           "title": "Ceiling Dollars",
           "type": "number"
         },
+        "billing": {
+          "$ref": "#/$defs/Billing",
+          "description": "How the voice bills, which its adapter declares and the rate is per."
+        },
         "price_per_1000_characters": {
-          "description": "The rate this price was worked out at.",
+          "description": "The rate a per-character bill was worked out at, per 1,000 characters.",
           "minimum": 0,
           "title": "Price Per 1000 Characters",
           "type": "number"
+        },
+        "price_per_second": {
+          "default": 0.0,
+          "description": "The rate a per-second bill was worked out at, per second of audio.",
+          "minimum": 0,
+          "title": "Price Per Second",
+          "type": "number"
+        },
+        "price_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The dotted key that states the rate, or null when the voice declares none to state.",
+          "title": "Price Key"
+        },
+        "averaged": {
+          "default": false,
+          "description": "True when the price is several rates together, such as music and effects bought at their own, so the rate is what they average to and `price_key` names the one least surely stated.",
+          "title": "Averaged",
+          "type": "boolean"
         },
         "price_layer": {
           "$ref": "#/$defs/Layer",
@@ -674,6 +724,7 @@
         "characters",
         "dollars",
         "ceiling_dollars",
+        "billing",
         "price_per_1000_characters",
         "price_layer"
       ],

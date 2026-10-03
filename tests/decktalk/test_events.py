@@ -36,7 +36,7 @@ from decktalk.events import (
 )
 from decktalk.findings import Code, Finding, Location
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Layer
+from decktalk.results import Layer, SoundKind
 from decktalk.secret import Secret
 from support.spends import a_spend
 
@@ -51,6 +51,7 @@ NAMES = (
     "finding",
     "spend",
     "take.charged",
+    "sound.charged",
     "fetch",
     "log",
 )
@@ -69,6 +70,13 @@ PAYLOADS: dict[str, dict[str, object]] = {
     "finding": {"finding": FINDING},
     "spend": {"spend": SPEND},
     "take.charged": {"section": 2, "take": "0f3a9c1e", "characters": 118, "dollars": 0.04},
+    "sound.charged": {
+        "item": "chime",
+        "sound": SoundKind.EFFECT,
+        "digest": "80835435cc361352",
+        "seconds": 0.5,
+        "dollars": 0.001,
+    },
     "fetch": {"tool": "ffmpeg", "bytes": 1024, "total_bytes": 4096},
     "log": {
         "level": Level.DEBUG,
@@ -81,7 +89,7 @@ PAYLOADS: dict[str, dict[str, object]] = {
 }
 
 
-def test_the_twelve_names_are_the_ones_the_design_named() -> None:
+def test_the_thirteen_names_are_the_ones_the_design_named() -> None:
     assert list(EVENTS) == list(NAMES)
 
 

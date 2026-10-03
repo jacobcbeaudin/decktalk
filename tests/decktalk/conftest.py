@@ -6,8 +6,10 @@ test ends, and hands back the fake so the test reads what the stage asked of it.
 
 from __future__ import annotations
 
+import socket
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -16,6 +18,26 @@ from decktalk.speech import PROVIDERS
 from decktalk.speech import http as speech_http
 from support.fakes import FAKE_VOICE_NAME, FakeFfmpeg, FakeVoice
 from support.service import Service
+
+LOOPBACK = frozenset(("127.0.0.1", "::1", "localhost", "0.0.0.0", "::", "", None))
+"""The addresses a unit test may resolve, which are this machine's own and nothing a key could be sent to."""
+
+
+@pytest.fixture(autouse=True)
+def only_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail any test that resolves a host other than this machine, before a byte could leave it.
+
+    The fake voice stands in under the shipped voice's name, so a test that forgot it would build the
+    real adapter, and this is what stops that test reaching the service with whatever key it holds.
+    """
+    resolve = socket.getaddrinfo
+
+    def guarded(host: str | bytes | None, *args: int, **kwargs: int) -> list[Any]:
+        if host not in LOOPBACK:
+            raise AssertionError(f"a unit test tried to reach {host!r}, which is not this machine")
+        return resolve(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded)
 
 
 @pytest.fixture
@@ -47,7 +69,7 @@ def fake_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> FakeFfmpeg:
 
 @pytest.fixture
 def fake_voice(monkeypatch: pytest.MonkeyPatch) -> FakeVoice:
-    """A provider registered under `test-voice`, with the registry as it was when the test ends.
+    """A fake registered under the shipped voice's name, with the registry as it was when the test ends.
 
     `PROVIDERS` is a process-global mapping, so a test that registers a provider and leaves it there
     decides what the next test resolves. Setting the entry through `monkeypatch` is what keeps one

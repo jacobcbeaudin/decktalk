@@ -99,7 +99,7 @@ def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, monke
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
     monkeypatch.setattr("decktalk.stages.assemble.cut.section_slate", lambda *_args: None)
-    enc = Encoder(inputs.settings.video)
+    enc = Encoder(inputs.settings.video, inputs.settings.audio)
     (slot,) = inputs.document.clip_sections
     row = render_clip(inputs, opened.run, enc, slot, tmp_path / "out.mp4", 0.0, strict=False)
     _judge_missing(opened.run, [row])
@@ -117,7 +117,7 @@ def test_strict_refuses_a_missing_clip_unless_the_section_is_optional(tmp_path, 
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
     monkeypatch.setattr("decktalk.stages.assemble.cut.section_slate", lambda *_args: None)
-    enc = Encoder(inputs.settings.video)
+    enc = Encoder(inputs.settings.video, inputs.settings.audio)
     real, slot = inputs.document.clip_sections
     out = tmp_path / "out.mp4"
 
@@ -293,7 +293,13 @@ def test_a_clip_the_project_names_opens_as_one_file_and_follows_no_name_inside_i
     (tmp_path / "media" / "clip.mp4").write_bytes(b"")
     (slot,) = inputs.document.clip_sections
     render_clip(
-        inputs, open_run(tmp_path).run, Encoder(inputs.settings.video), slot, tmp_path / "out.mp4", 0.0, strict=True
+        inputs,
+        open_run(tmp_path).run,
+        Encoder(inputs.settings.video, inputs.settings.audio),
+        slot,
+        tmp_path / "out.mp4",
+        0.0,
+        strict=True,
     )
     opened = ffmpeg.source(inputs.path("media/clip.mp4"))
     assert any(call[: len(opened)] == opened for call in fake_ffmpeg.calls)
@@ -339,7 +345,7 @@ def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch
         inputs = write_project(tmp_path, base.format(chapter=chapter, video=video))
         (slot,) = inputs.document.clip_sections
         run = open_run(tmp_path).run
-        render_clip(inputs, run, Encoder(inputs.settings.video), slot, out, 0.0, strict=False)
+        render_clip(inputs, run, Encoder(inputs.settings.video, inputs.settings.audio), slot, out, 0.0, strict=False)
         return section_slate(inputs, run, slot), out.with_suffix(".json").read_text(encoding="utf-8")
 
     first, first_key = cut("Demo one")

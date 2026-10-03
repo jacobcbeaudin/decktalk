@@ -58,8 +58,9 @@ own in the captions.
 ## The soundscape stage
 
 `soundscape` is the fourth stage of the six. It generates the music, the ambience bed and the effects
-this project describes, from the prompts in `[soundscape]`, through the ElevenLabs sound and music
-endpoints. It spends, which is why it runs where it does: it is the last stage that can buy anything,
+this project describes, from the prompts in `[soundscape]`, through the sound provider
+`[soundscape] provider` names, which is ElevenLabs's sound and music endpoints with the key and
+`api_base` of `[elevenlabs]`. It spends, which is why it runs where it does: it is the last stage that can buy anything,
 so `decktalk build --to record` stops before it and an unpaid draft loop never reaches it.
 
 It is a stage like any other, so `decktalk build` reaches it with `--from soundscape`,
@@ -78,9 +79,16 @@ reads before approving a spend. With neither flag, a run that would buy somethin
 on a terminal, and a run with nothing left to buy asks nothing. `--max-cost N` refuses before the
 first call when the most the run can cost is over N dollars.
 
-The price is the prompt characters at `voice.price_per_1000_characters`, because that is the one rate
-a project publishes. A sound request is billed by the service per second of audio, so the figure is
-what the spend gate holds and never an invoice.
+A sound is priced per second of audio, at the rate in the sound provider's own table. Each kind
+states its rate per minute of audio as `price_per_minute` in its own table, `[soundscape.ambience]`,
+`[soundscape.effects]` or `[soundscape.music]`, and a request costs the seconds it asks for at that
+rate. A rate nobody stated is zero from the `default` layer, and `--max-cost` refuses a run that buys
+at one, because the cap would guard a made-up price. The speech rate,
+`[elevenlabs] price_per_1000_characters`, never prices a sound.
+
+Every request the provider is paid for is a `sound.charged` line on the stream the moment it answers,
+one per bed or effect and one per part of the music, and a run that bought something reports its
+spend as `charged`.
 
 ### What each table declares
 
@@ -90,17 +98,20 @@ what the spend gate holds and never an invoice.
 | `[soundscape.ambience]` | `text` | The ambience bed, asked for as a loop so it meets its own end. |
 | `[soundscape.effects.<name>]` | `text` | One effect, named by `<name>`. |
 
-`[soundscape.music]` also takes `seconds`, which is 360 by default and must be a whole number,
-`force_instrumental`, which is true by default, `model_id` and `out`. `[soundscape.ambience]` and
-`[soundscape.effects.<name>]` each take `duration_seconds`, `prompt_influence`, `model_id` and `out`.
-A key a table leaves out is filled from `[elevenlabs]`, which holds `sound_model`, `music_model`,
-`ambience_seconds`, `ambience_prompt_influence`, `effect_seconds` and `effect_prompt_influence` with
-their own ranges. [Configuration](/reference/configuration) lists every one of them.
+Each table holds its prompt and its file beside the settings that size its request, spelled the
+same way in every table. `[soundscape.music]` also takes `force_instrumental`, which is true by
+default, and `out`, and its settings are `model`, `duration_seconds`, which is 360 by default and
+must be a whole number, `bitrate`, `max_chunk_seconds` and `crossfade_seconds`.
+`[soundscape.ambience]` takes `out`, and its settings are `model`, `duration_seconds` and
+`prompt_influence`. `[soundscape.effects]` holds the same three settings for every effect, and each
+`[soundscape.effects.<name>]` takes `out` and may set any of the three for itself. Each of the three
+tables also states its `price_per_minute`. `[soundscape] provider` names the sound provider, and
+`[soundscape] timeout_seconds` is how long one request may take. [Configuration](/reference/configuration#soundscape)
+lists every setting with its range.
 
-Music longer than `[elevenlabs] max_music_chunk_seconds` is asked for in equal parts, because the
+Music longer than `[soundscape.music] max_chunk_seconds` is asked for in equal parts, because the
 service will not write a long piece in one answer. Each part is told which one it is so it keeps the
-key and the tempo, and the parts are joined with a crossfade of
-`[elevenlabs] music_crossfade_seconds`.
+key and the tempo, and the parts are joined with a crossfade of `[soundscape.music] crossfade_seconds`.
 
 ```toml decktalk.toml
 [mix]
@@ -140,7 +151,8 @@ path the mix will read. An effect has no such shortcut, because one generated so
 several places, so a `[[mix.effects]] file` points at `build/soundscape/<name>.mp3` by hand.
 
 `build/soundscape/ledger.json` records what this project has already bought, keyed by the request
-that bought it. An item whose request still matches its row and whose audio is still on disk is kept
+that bought it: the endpoint as the sound provider publishes it and the request body, and never
+`api_base`, so a project that moves to another host of the same service buys nothing again. An item whose request still matches its row and whose audio is still on disk is kept
 rather than bought again, and the ledger is written after every paid call, so a run stopped half way
 through a long piece keeps what it has and asks only for the rest.
 
@@ -158,7 +170,7 @@ default of -6 dB against a `music_db` of -24, the music plays at -30 dB there.
 - A spoken section carries speech from where it starts until the end of its last word, or until it
   ends when it says nothing at all.
 - A clip carries speech for the whole of its own length, because its dialogue is its own.
-- Each edge of a span ramps over `[audio] duck_ramp_seconds`, which is 0.5 seconds by default.
+- Each edge of a span ramps over `[mix] duck_ramp_seconds`, which is 0.5 seconds by default.
 
 The music therefore begins to rise in the last half second of speech and is at full level through the
 silence after it, and it stays down under a whole clip.
@@ -169,14 +181,14 @@ silence after it, and it stays down under a whole clip.
 </Frame>
 
 The ambience bed is shaped the same way and for a different reason. It plays under the page sections
-that ask for one, it ramps over `[audio] ambience_ramp_seconds`, and it reaches
-`[audio] ambience_pad_seconds` past each edge of its section, so the room does not appear and vanish
+that ask for one, it ramps over `[mix] ambience_ramp_seconds`, and it reaches
+`[mix] ambience_pad_seconds` past each edge of its section, so the room does not appear and vanish
 exactly on a cut.
 
 ### The mix mechanics
 
-These are the five `[audio]` keys. They set the shape of the mix, and the levels are project content
-that lives in `[mix]`.
+These are the five settings of `[mix]`. They set the shape of the mix, beside the files and the levels
+that are the table's project content.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -227,14 +239,14 @@ After the layers are summed, the loudness pass brings the whole mix to one progr
 
 1. It measures the integrated loudness, the true peak and the loudness range of the mix.
 2. It applies one plain gain, which is the distance from the measured loudness to
-   `[mix.loudness] target_lufs`. A plain gain keeps the dynamics of the mix intact.
+   `[audio] target_lufs`. A plain gain keeps the dynamics of the mix intact.
 3. It runs a true-peak limiter at 192 kHz, so an inter-sample peak becomes a sample the limiter can
-   see. The limiter sits 0.3 dB under `[mix.loudness] true_peak_max_dbtp`, attacks in 5 milliseconds
+   see. The limiter sits 0.3 dB under `[audio] true_peak_max_dbtp`, attacks in 5 milliseconds
    and releases in 50, which is long enough not to pump on speech.
 4. It measures the result again.
 
 The defaults are -16 LUFS and a -1.5 dBTP ceiling, so the limiter acts on peaks above -1.8 dBTP.
-`[mix.loudness] range_max_lu` is the loudness range the measurement is made against, and its default
+`[audio] range_max_lu` is the loudness range the measurement is made against, and its default
 is 11 LU.
 
 [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) reports what the pass could not fix. It is raised

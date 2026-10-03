@@ -255,17 +255,57 @@ def registry(cls: type[Any], *, prefix: tuple[str, ...] = ()) -> tuple[Key, ...]
     return tuple(out)
 
 
-def unknown_key_message(key: str, known: Iterable[str], where: str) -> str:
-    """The warning for one key that DeckTalk does not read, with the closest known key when one is near."""
+def unknown_key_message(
+    key: str, known: Iterable[str], where: str, *, at: str = "", anywhere: Iterable[str] = ()
+) -> str:
+    """The warning for one key that DeckTalk does not read, with the closest known key when one is near.
+
+    `anywhere` is every dotted key a reader could have meant and `at` is the dotted name of this key's
+    table. A key the typed one names is offered first, wherever it lives, because a key that moved to
+    another table is still written under the table it used to live in. Otherwise a name in the same
+    table spelled nearly like it is offered, and then the nearest key anywhere. A key in the same
+    table is offered by its own name and any other in full.
+    """
+    dotted = f"{at}.{key}" if at else key
+    named = named_key(dotted, anywhere)
     close = difflib.get_close_matches(key, sorted(known), n=1)
-    hint = f" (did you mean '{close[0]}'?)" if close else ""
+    near = named if named is not None else close[0] if close else nearest(dotted, anywhere)
+    if near is not None and at and near.startswith(f"{at}.") and "." not in near.removeprefix(f"{at}."):
+        near = near.removeprefix(f"{at}.")
+    hint = f" (did you mean '{near}'?)" if near else ""
     return f"{where}: ignoring unknown key '{key}'{hint}."
 
 
-def unknown_key_warnings(table: Mapping[str, Any], known: Iterable[str], where: str) -> list[str]:
-    """One warning per key in `table` that is not in `known`. An unknown key is ignored, not an error."""
+def unknown_key_warnings(
+    table: Mapping[str, Any], known: Iterable[str], where: str, *, at: str = "", anywhere: Iterable[str] = ()
+) -> list[str]:
+    """One warning per key in `table` that is not in `known`. An unknown key is ignored, not an error.
+
+    A table nobody knows is warned about key by key, so each of its keys meets the key it most likely
+    meant rather than the table being named once.
+    """
     names = set(known)
-    return [unknown_key_message(key, names, where) for key in sorted(set(table) - names)]
+    leaves = [
+        leaf
+        for key in sorted(set(table) - names)
+        for leaf in (
+            [f"{key}.{inner}" for inner in _leaves(table[key])]
+            if isinstance(table[key], Mapping) and table[key]
+            else [key]
+        )
+    ]
+    return [unknown_key_message(leaf, names, where, at=at, anywhere=anywhere) for leaf in leaves]
+
+
+def _leaves(table: Mapping[str, Any], prefix: str = "") -> list[str]:
+    """Every scalar of a nested table by its dotted name inside that table."""
+    out: list[str] = []
+    for name, value in table.items():
+        if isinstance(value, Mapping) and value:
+            out += _leaves(value, f"{prefix}{name}.")
+        else:
+            out.append(f"{prefix}{name}")
+    return out
 
 
 NAMED_PART_MIN = 3
@@ -275,20 +315,53 @@ A shorter part, such as `db` or `a`, sits inside too many names to say which one
 """
 
 
-def did_you_mean(key: str, known: Iterable[str]) -> str:
-    """The key one nobody knows most likely meant, as a clause a refusal appends, or nothing when none is near.
+def nearest(key: str, known: Iterable[str]) -> str | None:
+    """The key one nobody knows most likely meant, or None when none is near.
 
     The last part of a key names the thing it sets, and a person who remembers that thing and not
-    its table writes it under the wrong one, as `record.fps` for `video.output_fps`. So a key whose
-    last part holds the typed one is offered first, the closest spelling among them when there are
-    several, and the closest spelling of the whole key is offered only when no such key exists.
+    its table writes it under the wrong one, as `record.fps` for `video.output_fps`, or under the
+    table it used to live in, as `elevenlabs.music_model` for `soundscape.music.model`. So a key
+    named by the typed one is offered first, then a key whose last part is spelled nearly like it,
+    the closest whole key among them when there are several, and the closest spelling of the whole
+    key only when none exists.
+    """
+    names = sorted(known)
+    part = key.rsplit(".", 1)[-1]
+    named = named_key(key, names)
+    if named is not None:
+        return named
+    alike = set(difflib.get_close_matches(part, {name.rsplit(".", 1)[-1] for name in names}))
+    holding = [name for name in names if name.rsplit(".", 1)[-1] in alike]
+    close = difflib.get_close_matches(key, holding, n=1, cutoff=0) if holding else []
+    close = close or difflib.get_close_matches(key, names, n=1)
+    return close[0] if close else None
+
+
+def named_key(key: str, known: Iterable[str]) -> str | None:
+    """The closest key whose last part holds the typed last part, or whose whole name holds each of its words.
+
+    Either is a key the typed one names rather than one spelled like it, which is what lets a key
+    written under the table it used to live in find the table it lives in now.
     """
     names = sorted(known)
     part = key.rsplit(".", 1)[-1]
     holding = [name for name in names if len(part) >= NAMED_PART_MIN and part in name.rsplit(".", 1)[-1]]
+    holding = holding or [name for name in names if _covers(name, part)]
     close = difflib.get_close_matches(key, holding, n=1, cutoff=0) if holding else []
-    close = close or difflib.get_close_matches(key, names, n=1)
-    return f" Did you mean '{close[0]}'?" if close else ""
+    return close[0] if close else None
+
+
+def _covers(name: str, part: str) -> bool:
+    """Whether every word of `part` opens a word of the dotted key `name`, so `effect_seconds` finds `effects`."""
+    words = [word for word in part.split("_") if len(word) >= NAMED_PART_MIN]
+    held = re.split(r"[._]", name)
+    return len(words) > 1 and all(any(word.startswith(typed) for word in held) for typed in words)
+
+
+def did_you_mean(key: str, known: Iterable[str]) -> str:
+    """The key one nobody knows most likely meant, as a clause a refusal appends, or nothing when none is near."""
+    near = nearest(key, known)
+    return f" Did you mean '{near}'?" if near else ""
 
 
 class Table:
@@ -418,15 +491,15 @@ class Table:
     def unknown(self, known: Iterable[str]) -> list[str]:
         return sorted(set(self.data) - set(known))
 
-    def note_unknown(self, known: Iterable[str]) -> list[str]:
+    def note_unknown(self, known: Iterable[str], *, anywhere: Iterable[str] = ()) -> list[str]:
         """Every key this table does not read, as one sentence each.
 
         An unknown key is ignored rather than refused, so the sentence is a note a caller carries
         into what it returns. It is not written anywhere here, because a library that decided where
         a note went would decide it for every caller, and a note nobody can read is a note nobody
-        acts on.
+        acts on. `anywhere` is every dotted key a key of this table may have moved to.
         """
-        return unknown_key_warnings(self.data, known, self.where)
+        return unknown_key_warnings(self.data, known, self.where, at=self.table, anywhere=anywhere)
 
 
 def _is_optional(annotation: Any) -> bool:
@@ -562,6 +635,8 @@ __all__ = [
     "Table",
     "did_you_mean",
     "from_mapping",
+    "named_key",
+    "nearest",
     "read_value",
     "registry",
     "tune",

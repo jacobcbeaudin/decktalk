@@ -45,7 +45,7 @@ from decktalk.inputs import Inputs
 from decktalk.logs import cache_decision
 from decktalk.machine import Run, Threshold
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
-from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, counted
+from decktalk.results import Billing, BuildResult, Layer, Result, Spend, SpendState, StageRun, counted
 from decktalk.stages import DOLLAR_DIGITS, assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.status import (
@@ -377,17 +377,40 @@ def _stopped(
 
 
 def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
-    """What the whole run cost, which is every stage that priced anything added together."""
+    """What the whole run cost, which is every stage that priced anything added together.
+
+    The total is billed the way the stages that buy something at a price bill, so a free voice beside
+    a paid soundscape leaves the sound's bill and rate to the total. When those are one bill, its rate
+    is the total's. When a bill per character meets a bill per second the total is `mixed`: it carries
+    each rate and counts both the characters and the seconds, and the rate it names is the least
+    surely stated, so a sentence never prices sound at the speech rate or speech at the sound one. A
+    stage whose bill nobody declared makes the whole total undeclared, because no part of DeckTalk can
+    price it.
+    """
     if not spends:
         return narrate.spend_of([], inputs, state=SpendState.ESTIMATE)
+    buying = [spend for spend in spends if spend.buys] or list(spends)
+    deciding = [spend for spend in buying if not spend.free] or buying
+    bills = list(dict.fromkeys(spend.billing for spend in deciding))
+    if Billing.UNDECLARED in bills:
+        bills = [Billing.UNDECLARED]
+    first = {bill: next(spend for spend in deciding if spend.billing is bill) for bill in bills}
+    unstated = [spend for spend in deciding if spend.price_layer is Layer.DEFAULT]
+    named = (unstated or deciding)[0]
+    per_character, per_second = first.get(Billing.PER_CHARACTER), first.get(Billing.PER_SECOND)
     return Spend(
         state=SpendState.CHARGED if any(s.state is SpendState.CHARGED for s in spends) else SpendState.ESTIMATE,
         sections=tuple(sorted({number for spend in spends for number in spend.sections})),
         characters=sum(spend.characters for spend in spends),
+        seconds=sum(spend.seconds for spend in spends),
         dollars=round(sum(spend.dollars for spend in spends), DOLLAR_DIGITS),
         ceiling_dollars=round(sum(spend.ceiling_dollars for spend in spends), DOLLAR_DIGITS),
-        price_per_1000_characters=spends[0].price_per_1000_characters,
-        price_layer=spends[0].price_layer,
+        billing=bills[0] if len(bills) == 1 else Billing.MIXED,
+        price_per_1000_characters=per_character.price_per_1000_characters if per_character else 0.0,
+        price_per_second=per_second.price_per_second if per_second else 0.0,
+        price_key=named.price_key,
+        averaged=any(spend.averaged for spend in deciding),
+        price_layer=named.price_layer,
     )
 
 

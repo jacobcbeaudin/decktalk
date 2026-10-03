@@ -29,16 +29,17 @@ than at the end.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import Any
 
 from decktalk.inputs import Inputs
-from decktalk.results import Layer
-from decktalk.speech import VoiceContext
-
-PRICE_KEY = "voice.price_per_1000_characters"
-"""The key that states what speech costs, whose layer decides whether a spend ceiling may refuse a run."""
+from decktalk.results import Billing, Layer
+from decktalk.speech import DECLARED, VoiceContext, base_of, billing_of, table_of
 
 CHARACTERS_PER_PRICE = 1000
-"""Truth: the price is stated per thousand characters, which is how every provider bills speech."""
+"""Truth: a per-character rate is stated per thousand characters, which is how a declared rate key reads."""
+
+SECONDS_PER_PRICE = 1
+"""Truth: a per-second rate is stated per second of audio, which is how a declared rate key reads."""
 
 DOLLAR_DIGITS = 2
 """Truth: a price in dollars is read to the cent, which is the smallest unit anybody is charged."""
@@ -47,37 +48,91 @@ SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
 
 
-def dollars_for(characters: int, inputs: Inputs) -> float:
-    """What this many characters cost at the project's stated rate, unrounded.
+def voice_model(inputs: Inputs) -> str:
+    """The model that reads this project, which is `[voice] model` or the provider's own default.
 
-    One take's charge is stated at full precision, because a ledger that adds rounded cents per take
-    drifts from the run's own total, which is rounded once, after the sum.
+    The default is read from the provider's own table, so changing `[voice] provider` never sends one
+    vendor's model id to another, and a provider with no table is sent no model it did not ask for.
     """
-    return characters / CHARACTERS_PER_PRICE * inputs.settings.voice.price_per_1000_characters
+    voice = inputs.settings.voice
+    table = table_of(inputs.settings, voice.provider)
+    return voice.model or (table.model if table is not None else "")
 
 
-def price_layer(inputs: Inputs) -> Layer:
-    """Which layer stated the price, because a ceiling may not guard a price nobody has stated."""
+def price_key(provider: str) -> str | None:
+    """The dotted key that states `provider`'s rate, or None for a provider whose bill has no rate to state."""
+    declared, rate = DECLARED.get(provider), billing_of(provider).rate
+    return f"{declared.table}.{rate}" if declared is not None and rate is not None else None
+
+
+def rate_of(inputs: Inputs, provider: str | None = None) -> float:
+    """What `provider` charges per unit it bills by, which is `[voice] provider`'s rate unless one is named.
+
+    The unit is the one its adapter declares: 1,000 characters for a per-character bill and a second
+    of audio for a per-second one. A free voice, and a provider that declares no bill, charge nothing.
+    """
+    name = provider or inputs.settings.voice.provider
+    rate, table = billing_of(name).rate, table_of(inputs.settings, name)
+    return float(getattr(table, rate)) if rate is not None and table is not None else 0.0
+
+
+def dollars_for(amount: float, inputs: Inputs, provider: str | None = None) -> float:
+    """What this much of what the provider bills by costs at its stated rate, unrounded.
+
+    `amount` is counted in what its adapter declares it bills by: characters for a per-character
+    bill, seconds of audio for a per-second one. One take's charge is stated at full precision,
+    because a ledger that adds rounded cents per take drifts from the run's own total, which is
+    rounded once, after the sum.
+    """
+    name = provider or inputs.settings.voice.provider
+    per = CHARACTERS_PER_PRICE if billing_of(name).by is Billing.PER_CHARACTER else SECONDS_PER_PRICE
+    return amount / per * rate_of(inputs, name)
+
+
+def billed(characters: int, seconds: float, provider: str) -> float:
+    """Which of a take's characters and seconds `provider`'s bill counts, which is nothing for a voice with no rate."""
+    by = billing_of(provider).by
+    return characters if by is Billing.PER_CHARACTER else seconds if by is Billing.PER_SECOND else 0.0
+
+
+def price_layer(inputs: Inputs, provider: str | None = None) -> Layer:
+    """Which layer stated the rate, because a ceiling may not guard a price nobody has stated."""
+    key = price_key(provider or inputs.settings.voice.provider)
+    if key is None:
+        # silent: a provider whose bill has no rate to state has the default's rate of nothing.
+        return Layer.DEFAULT
     try:
-        return inputs.layers.winner(PRICE_KEY).layer
+        return inputs.layers.winner(key).layer
     except KeyError:
         # silent: a price no layer states is the default's.
         return Layer.DEFAULT
 
 
-def voice_context(inputs: Inputs) -> VoiceContext:
-    """What a speech provider is built from, taken from this project's tuning and its own `.env`.
+def rate_fields(inputs: Inputs, provider: str | None = None) -> dict[str, Any]:
+    """The fields of a `Spend` that say how `provider` bills, at what rate, and who stated it."""
+    name = provider or inputs.settings.voice.provider
+    by, rate = billing_of(name).by, rate_of(inputs, name)
+    return {
+        "billing": by,
+        "price_per_1000_characters": rate if by is Billing.PER_CHARACTER else 0.0,
+        "price_per_second": rate if by is Billing.PER_SECOND else 0.0,
+        "price_key": price_key(name),
+        "price_layer": price_layer(inputs, name),
+    }
 
-    The context carries five values and no settings tree, so the speech layer imports no settings
-    class and a provider built in a test is built the way a run builds one.
+
+def voice_context(inputs: Inputs, provider: str | None = None) -> VoiceContext:
+    """What a speech provider is built from, taken from its own table, this project's tuning and its own `.env`.
+
+    The base URL is read from the provider's own table under the key its adapter declares, so a
+    provider with no table is handed none.
     """
     settings = inputs.settings
     return VoiceContext(
         secrets=inputs.env,
-        api_base=settings.elevenlabs.api_base,
+        api_base=base_of(settings, provider or settings.voice.provider),
         context_chars=settings.narration.context_chars,
         speech_timeout_seconds=settings.narration.timeout_seconds,
-        sound_timeout_seconds=settings.elevenlabs.timeout_seconds,
     )
 
 
@@ -90,10 +145,15 @@ def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
 __all__ = [
     "CHARACTERS_PER_PRICE",
     "DOLLAR_DIGITS",
-    "PRICE_KEY",
+    "SECONDS_PER_PRICE",
     "SECTION_START_SECONDS",
+    "billed",
     "dollars_for",
+    "price_key",
     "price_layer",
+    "rate_fields",
+    "rate_of",
     "selects",
     "voice_context",
+    "voice_model",
 ]

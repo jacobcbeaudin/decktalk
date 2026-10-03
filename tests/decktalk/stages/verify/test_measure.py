@@ -104,7 +104,7 @@ def test_the_click_is_the_loudest_sample_in_the_window(
     assembled: Callable[..., Inputs], measured: Measurements
 ) -> None:
     inputs = assembled(CUES)
-    rate = inputs.settings.video.sample_rate
+    rate = inputs.settings.audio.sample_rate
     measured.samples = [0] * rate
     measured.samples[rate // 4] = 20000
     heard = click_seconds(inputs.workspace.film, 2.0, inputs)

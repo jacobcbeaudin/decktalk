@@ -50,7 +50,8 @@ spelled with forward slashes on all three platforms.
 my-lesson/build/
   narrate/
     takes.json                  which section plays which take, and the clock the join makes
-    <hash>.mp3                  one take, named by the content that produced it
+    <hash>.mp3                  one take, named by the content that produced it, under the suffix of
+                                the format its voice declares, which is .mp3 for ElevenLabs
     <hash>.words.json           that take's words, in seconds after the take starts
     narration.mp3               the takes joined into one track, which assemble mixes under the picture
   cue-times.json                every cue resolved to a second on its own section's clock
@@ -138,7 +139,7 @@ the file cannot hold a total that disagrees with what it lists.
 | `sections[].hash` | The digest of the inputs this take was made from, which names its files. |
 | `sections[].voiced` | True when a provider spoke this take, false on a placeholder. |
 | `sections[].word_count` | How many words this take speaks. |
-| `sections[].characters` | How many characters were sent to the voice, which is what is billed. |
+| `sections[].characters` | How many characters were sent to the voice, which a per-character bill counts. |
 | `sections[].estimated_seconds` | How long the script said this take would run. |
 | `sections[].duration_seconds` | How long the audio file runs, measured from its own bytes. |
 | `sections[].speech_end_seconds` | Where the last word ends, or null. |
@@ -166,9 +167,14 @@ The digest of a voiced take is taken over exactly these, joined by newlines in t
 | `provider` | Two services reading one sentence are two different takes. |
 | `voice` | Two voices reading one sentence are two different takes. The voice id is a published name rather than a secret, so it is written into the file a reader can see. |
 | `model` | A model changes how the same words are read. |
-| `output_format` | The bytes asked for. |
-| `settings` | The provider's voice settings, as compact JSON with its keys sorted. |
+| `output_format` | The bytes asked for, in the format the provider declares, such as `[elevenlabs] output_format`. |
+| `settings` | The take identity the provider declares, `[voice] speed` and its own fields such as `[elevenlabs] stability`, as compact JSON with its keys sorted. |
 | `text` | The exact text sent to the voice, with its pause tags. |
+
+Every input but `text` refuses a newline before anything is sent, and `text` comes last, so the
+joined payload reads back as exactly one set of inputs and no two sets share a take. The take's file
+is named by the digest under the suffix of the format it holds, which is `.mp3` for every ElevenLabs
+format.
 
 **This is why an edit voices only the sections whose words changed.** Edit one paragraph of
 `script.md` and only that section's text moves, so only that section's digest moves, so `narrate`
@@ -352,7 +358,7 @@ Beside them is `ledger.json`, which is what this project has already bought.
 |---|---|
 | `items[].name` | What the author calls this item in `decktalk.toml`. |
 | `items[].kind` | `music`, `ambience` or `effect`. |
-| `items[].digest` | The digest of the request this file was made from, which is the endpoint and the body. |
+| `items[].digest` | The digest of the request this file was made from, which is the endpoint as the sound provider publishes it and the body, and never `api_base`. |
 | `items[].file` | The audio this request produced, project-relative. |
 | `items[].seconds` | How long that audio runs, or null when unmeasured. |
 | `items[].parts` | The digest of each music part, in the order they are joined, and empty for a single request. |
@@ -504,7 +510,7 @@ the other is writing. `--events` prints the same lines on stderr as they happen.
 {"event":"run.done","time":"2026-09-24T10:23:12.301882Z","seq":9,"run":"a41e586449ed","outcome":"ok","seconds":0.026}
 ```
 
-`event` is the discriminator and there are twelve names. `time`, `seq` and `run` are on every line,
+`event` is the discriminator and there are thirteen names. `time`, `seq` and `run` are on every line,
 and `seq` counts per run rather than per machine, so a reader can tell a gap from a lost line.
 [Python API](/reference/python-api) gives every field of every line.
 

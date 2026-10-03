@@ -93,7 +93,7 @@ class FakeDecoded:
 def opened(root: Path) -> Iterator[Run]:
     """One run on a machine that read nothing, which is what the facade would hand the stage."""
     machine = a_machine(root)
-    with machine.run(cancel=Cancel(), spend=False, root=root) as run:
+    with machine._run(cancel=Cancel(), spend=False, root=root) as run:
         yield run
 
 

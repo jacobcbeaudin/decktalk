@@ -53,6 +53,7 @@ from .tomlmap import (
     Source,
     did_you_mean,
     from_mapping,
+    named_key,
     read_value,
     registry,
     tune,
@@ -68,6 +69,9 @@ X264_PRESETS = ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium"
 
 COLOR_SCHEMES = ("light", "dark", "no-preference")
 """Truth: the values Chromium reports for `prefers-color-scheme`."""
+
+VOICE_ID = r"^[A-Za-z0-9_-]*$"
+"""Truth: the letters a provider's voice id is spelled in, and nothing that could leave a path segment."""
 
 HEX_COLOR = r"^(#|0[xX])[0-9A-Fa-f]{6}$"
 """Truth: a colour written as six hex digits after the prefix a stylesheet or ffmpeg reads, and nothing else."""
@@ -134,23 +138,6 @@ class VideoConfig:
         ),
         decides=(Code.CUE_NO_CHANGE, Code.CUE_THIN_CHANGE, Code.PAGE_THIN_DRAW),
     )
-    audio_bitrate: str = tune(
-        "192k",
-        "AAC bitrate of the final mp4.",
-        bounds=Bounds(enum=("96k", "128k", "160k", "192k", "256k", "320k")),
-    )
-    sample_rate: int = tune(
-        48000,
-        "Audio sample rate of the final mp4. Every audio input is resampled to it once.",
-        unit="hertz",
-        bounds=Bounds(enum=(44100, 48000)),
-        nature=Nature.APPARATUS,
-    )
-    channels: int = tune(
-        2,
-        "Audio channels of the final mp4.",
-        bounds=Bounds(enum=(1, 2)),
-    )
     slate_color: str = tune(
         "0x0e1116",
         "Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB.",
@@ -166,12 +153,6 @@ class VideoConfig:
 class NarrationConfig:
     """These keys govern how the script is turned into audio."""
 
-    model: str = tune(
-        "eleven_multilingual_v2", "Speech model. `[voice] model` and `--set narration.model` override it."
-    )
-    output_format: str = tune(
-        "mp3_44100_128", "Audio format that the speech provider returns. It is part of the narration cache key."
-    )
     concurrency: int = tune(
         2,
         "How many sections `narrate` voices at once.",
@@ -421,37 +402,48 @@ class RecordConfig:
 
 @dataclass(frozen=True)
 class AudioConfig:
-    """These keys set the mix mechanics. Levels are project content and live in `[mix]`."""
+    """These keys are the final audio: its encoding, and the loudness it is normalised to and judged against."""
 
-    duck_ramp_seconds: float = tune(
-        0.5,
-        "Ramp of the music duck at each edge of a spoken span or a clip.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=5),
+    bitrate: str = tune(
+        "192k",
+        "AAC bitrate of the final mp4.",
+        bounds=Bounds(enum=("96k", "128k", "160k", "192k", "256k", "320k")),
     )
-    ambience_ramp_seconds: float = tune(
-        1.0,
-        "Ramp of the ambience bed at each edge of its span.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=10),
+    sample_rate: int = tune(
+        48000,
+        "Audio sample rate of the final mp4. Every audio input is resampled to it once.",
+        unit="hertz",
+        bounds=Bounds(enum=(44100, 48000)),
+        nature=Nature.APPARATUS,
     )
-    ambience_pad_seconds: float = tune(
-        0.5,
-        "Seconds that the ambience bed extends past each edge of its section.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=10),
+    channels: int = tune(
+        2,
+        "Audio channels of the final mp4.",
+        bounds=Bounds(enum=(1, 2)),
     )
-    marker_mute_ramp_seconds: float = tune(
-        0.04,
-        "Ramp into and out of a marker's mute.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=1),
+    target_lufs: float = tune(
+        -16.0,
+        "Programme loudness the final mp4 is normalised to.",
+        unit="LUFS",
+        bounds=Bounds(ge=-30, le=-9),
+        decides=(Code.MIX_LOUDNESS,),
     )
-    marker_boost_ramp_seconds: float = tune(
-        0.3,
-        "Ramp into and out of a marker's swell.",
-        unit="seconds",
-        bounds=Bounds(ge=0, le=5),
+    true_peak_max_dbtp: float = tune(
+        -1.5,
+        "Highest true peak the normalised mix may reach.",
+        unit="dBTP",
+        bounds=Bounds(ge=-9, le=-0.1),
+        decides=(Code.MIX_LOUDNESS,),
+        hazard=(
+            "Four times oversampling under-reads a true peak and the AAC encode overshoots on top of that, "
+            "so a ceiling above about -1 dBTP reports a clean mix that clips on a listener's decoder."
+        ),
+    )
+    range_max_lu: float = tune(
+        11.0,
+        "The loudness range the measurement is made against. It is not a limit, and no mix fails on it.",
+        unit="LU",
+        bounds=Bounds(ge=1, le=20),
     )
 
 
@@ -632,87 +624,79 @@ class VerifyConfig:
 
 @dataclass(frozen=True)
 class VoiceConfig:
-    """These keys are what the speech provider is asked for and what its characters cost."""
+    """These keys are the four every voice has: which provider reads the script, in which voice, model and pace.
 
-    stability: float = tune(
-        0.55,
-        "How closely the voice holds one delivery across takes.",
-        bounds=A_SHARE,
-        hazard="The provider takes a share and refuses anything else, so a value read as a percentage fails "
-        "the request rather than the load.",
+    Everything a provider is particular about, its own fields, its default model and its rate, is in
+    that provider's own table, so changing `provider` never sends one vendor's fields to another.
+    """
+
+    provider: str = tune(
+        "elevenlabs",
+        "The speech provider that reads the script, which is a name the machine's own map answers. An "
+        "unregistered name fails when `narrate` runs rather than at load. DeckTalk ships `elevenlabs`, the "
+        "cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a voice served by a local server, whose "
+        "own keys are `[dtsp]`.",
     )
-    similarity_boost: float = tune(
-        0.75,
-        "How closely the voice holds to the original recording it was cloned from.",
-        bounds=A_SHARE,
+    id: str = tune(
+        "",
+        "The voice that reads the script, as the provider names it. It is a published name rather than a "
+        "credential, so it is committed with the project, and it is one of the inputs every take is named by. "
+        "`DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file.",
+        bounds=Bounds(pattern=VOICE_ID),
+        hazard=(
+            "The id is placed in the path of every speech request, so a value that could hold a slash, a dot "
+            "or a query would let a project somebody else wrote send the key to another endpoint of the service."
+        ),
     )
-    style: float = tune(
-        0.0,
-        "How much expressive style the voice adds beyond the words.",
-        bounds=A_SHARE,
-    )
-    speaker_boost: bool = tune(
-        True,
-        "Whether the provider applies its own speaker boost to the take.",
+    model: str = tune(
+        "",
+        "The provider's model that reads the script. It is empty for the model the provider's own table "
+        "names, such as `[elevenlabs] model` or `[dtsp] model`.",
+        see_also=("elevenlabs.model", "dtsp.model"),
     )
     speed: float = tune(
         1.0,
         "How fast the voice speaks, as a multiple of its natural pace.",
         bounds=Bounds(ge=0.7, le=1.2),
         hazard="The provider refuses a multiple outside its own range, so a slower read is a script change "
-        "rather than a knob.",
-    )
-    price_per_1000_characters: float = tune(
-        0.0,
-        "What this project's plan charges per thousand characters of speech.",
-        unit="currency per 1000 characters",
-        bounds=Bounds(ge=0, le=100),
-        source=Source.STATED,
-        evidence="the plan page of the account whose key this project uses",
-        hazard=(
-            "It is zero until somebody states it, and a spend cap refuses a run while the price is still "
-            "the default, because DeckTalk would otherwise be capping a spend against a number it invented. "
-            "A zero somebody stated says the voice bills nothing, so a run with neither --spend nor --no-spend "
-            "buys from it without asking."
-        ),
-    )
-
-
-@dataclass(frozen=True)
-class LoudnessConfig:
-    """These keys are the programme loudness the final mp4 is normalised to and judged against."""
-
-    target_lufs: float = tune(
-        -16.0,
-        "Programme loudness the final mp4 is normalised to.",
-        unit="LUFS",
-        bounds=Bounds(ge=-30, le=-9),
-        decides=(Code.MIX_LOUDNESS,),
-    )
-    true_peak_max_dbtp: float = tune(
-        -1.5,
-        "Highest true peak the normalised mix may reach.",
-        unit="dBTP",
-        bounds=Bounds(ge=-9, le=-0.1),
-        decides=(Code.MIX_LOUDNESS,),
-        hazard=(
-            "Four times oversampling under-reads a true peak and the AAC encode overshoots on top of that, "
-            "so a ceiling above about -1 dBTP reports a clean mix that clips on a listener's decoder."
-        ),
-    )
-    range_max_lu: float = tune(
-        11.0,
-        "The loudness range the measurement is made against. It is not a limit, and no mix fails on it.",
-        unit="LU",
-        bounds=Bounds(ge=1, le=20),
+        "rather than a setting.",
     )
 
 
 @dataclass(frozen=True)
 class MixConfig:
-    """The tuning half of `[mix]`. The music, the ambience and the levels are project content."""
+    """The settings half of `[mix]`, which is how each layer is ramped. Its files and levels are project content."""
 
-    loudness: LoudnessConfig = field(default_factory=LoudnessConfig)
+    duck_ramp_seconds: float = tune(
+        0.5,
+        "Ramp of the music duck at each edge of a spoken span or a clip.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=5),
+    )
+    ambience_ramp_seconds: float = tune(
+        1.0,
+        "Ramp of the ambience bed at each edge of its span.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=10),
+    )
+    ambience_pad_seconds: float = tune(
+        0.5,
+        "Seconds that the ambience bed extends past each edge of its section.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=10),
+    )
+    marker_mute_ramp_seconds: float = tune(
+        0.04,
+        "Ramp into and out of a marker's mute.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=1),
+    )
+    marker_boost_ramp_seconds: float = tune(
+        0.3,
+        "Ramp into and out of a marker's swell.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=5),
+    )
 
 
 @dataclass(frozen=True)
@@ -739,55 +723,224 @@ class MotionConfig:
     )
 
 
+ELEVENLABS_MP3_FORMATS = (
+    "mp3_22050_32",
+    "mp3_44100_32",
+    "mp3_44100_64",
+    "mp3_44100_96",
+    "mp3_44100_128",
+    "mp3_44100_192",
+)
+"""Truth: the mp3 formats ElevenLabs speech returns, each `codec_rate_bitrate`, which every take ffmpeg reads is in."""
+
+
 @dataclass(frozen=True)
 class ElevenLabsConfig:
-    """These keys point at the ElevenLabs API and size its soundscape requests."""
+    """These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API.
 
-    api_base: str = tune("https://api.elevenlabs.io/v1", "Base URL of the ElevenLabs API.")
-    sound_model: str = tune(
-        "eleven_text_to_sound_v2",
-        "Model for ambience and sound effect requests. A soundscape table can name its own.",
+    The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on
+    elevenlabs.io unless the machine allows any. The soundscape buys from the same API with the same key.
+    """
+
+    model: str = tune(
+        "eleven_multilingual_v2",
+        "The ElevenLabs model that reads the script when `[voice] model` is empty.",
+        see_also=("voice.model",),
     )
-    music_model: str = tune("music_v2", "Model for music requests. A soundscape table can name its own.")
-    music_bitrate: str = tune(
+    stability: float = tune(
+        0.55,
+        "How closely the voice holds one delivery across takes.",
+        bounds=A_SHARE,
+        hazard="ElevenLabs takes a share and refuses anything else, so a value read as a percentage fails "
+        "the request rather than the load.",
+    )
+    similarity_boost: float = tune(
+        0.75,
+        "How closely the voice holds to the original recording it was cloned from.",
+        bounds=A_SHARE,
+    )
+    style: float = tune(
+        0.0,
+        "How much expressive style the voice adds beyond the words.",
+        bounds=A_SHARE,
+    )
+    speaker_boost: bool = tune(
+        True,
+        "Whether ElevenLabs applies its own speaker boost to the take.",
+    )
+    price_per_1000_characters: float = tune(
+        0.0,
+        "What this project's ElevenLabs plan charges per thousand characters of speech.",
+        unit="currency per 1000 characters",
+        bounds=Bounds(ge=0, le=100),
+        source=Source.STATED,
+        evidence="the plan page of the account whose key this project uses",
+        hazard=(
+            "It is zero until somebody states it, and a spend cap refuses a run while the price is still "
+            "the default, because DeckTalk would otherwise be capping a spend against a number it invented. "
+            "ElevenLabs bills per character, so a zero somebody stated still asks before it buys."
+        ),
+    )
+    output_format: str = tune(
+        "mp3_44100_128",
+        "Audio format ElevenLabs returns each take in, as its own codec_rate_bitrate token. It is part of "
+        "every take's digest, and its codec names the take's file.",
+        bounds=Bounds(enum=ELEVENLABS_MP3_FORMATS),
+        hazard="Every take already bought was bought in the format named here, so another one buys every take again.",
+    )
+    api_base: str = tune("https://api.elevenlabs.io/v1", "Base URL of the ElevenLabs API.")
+
+
+@dataclass(frozen=True)
+class DtspConfig:
+    """These keys are the `dtsp` voice's own: where its local server listens and the model it reads with.
+
+    `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is
+    not part of this repository. It needs no key, bills nothing, and `url` may name only a loopback
+    address over http unless the machine allows any host.
+    """
+
+    url: str = tune(
+        "http://127.0.0.1:8765",
+        "Base URL of the local speech server, which must be http on 127.0.0.1, localhost or [::1].",
+        hazard="The script travels to whatever host this names, so a project file can name only this machine.",
+    )
+    model: str = tune(
+        "kokoro-82m",
+        "The model the local server reads the script with when `[voice] model` is empty, as the server names it.",
+        see_also=("voice.model",),
+    )
+
+
+SOUND_PRICE_HAZARD = (
+    "It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is "
+    "still the default, because DeckTalk would otherwise be capping a spend against a number it invented."
+)
+"""Why a sound rate nobody stated refuses a cap, said once for the three tables that state one."""
+
+
+@dataclass(frozen=True)
+class AmbienceConfig:
+    """The settings half of `[soundscape.ambience]`: how the bed is asked for. Its prompt and file are content."""
+
+    model: str = tune("eleven_text_to_sound_v2", "Model the ambience bed is asked for from.")
+    duration_seconds: float = tune(
+        25.0,
+        "Length of the ambience bed that is asked for, which `[mix]` loops under its sections.",
+        unit="seconds",
+        bounds=Bounds(ge=1, le=60),
+    )
+    prompt_influence: float = tune(
+        0.3,
+        "How closely the ambience bed follows its prompt.",
+        bounds=A_SHARE,
+    )
+    price_per_minute: float = tune(
+        0.0,
+        "What this project's sound plan charges per minute of ambience audio, which is priced by the second "
+        "of audio asked for.",
+        unit="currency per minute of audio",
+        bounds=Bounds(ge=0, le=100),
+        source=Source.STATED,
+        evidence="the plan page of the account whose key buys the sound",
+        hazard=SOUND_PRICE_HAZARD,
+        see_also=("soundscape.provider",),
+    )
+
+
+@dataclass(frozen=True)
+class EffectsConfig:
+    """The settings half of `[soundscape.effects]`: how each effect is asked for unless its own table says."""
+
+    model: str = tune(
+        "eleven_text_to_sound_v2", "Model every effect is asked for from, unless its own table names one."
+    )
+    duration_seconds: float = tune(
+        0.5,
+        "Length of every effect that is asked for, unless its own table sets one.",
+        unit="seconds",
+        bounds=Bounds(ge=0.1, le=30),
+    )
+    prompt_influence: float = tune(
+        0.5,
+        "How closely every effect follows its prompt, unless its own table sets how closely.",
+        bounds=A_SHARE,
+    )
+    price_per_minute: float = tune(
+        0.0,
+        "What this project's sound plan charges per minute of effect audio, which is priced by the second "
+        "of audio asked for.",
+        unit="currency per minute of audio",
+        bounds=Bounds(ge=0, le=100),
+        source=Source.STATED,
+        evidence="the plan page of the account whose key buys the sound",
+        hazard=SOUND_PRICE_HAZARD,
+        see_also=("soundscape.provider",),
+    )
+
+
+@dataclass(frozen=True)
+class MusicConfig:
+    """The settings half of `[soundscape.music]`: how the bed is asked for and joined. Its prompt is content."""
+
+    model: str = tune("music_v2", "Model the music is asked for from.")
+    duration_seconds: int = tune(
+        360,
+        "Length of the music that is asked for, which `[mix]` fades out at the end of the film.",
+        unit="seconds",
+        bounds=Bounds(ge=1, le=3600),
+    )
+    bitrate: str = tune(
         "192k",
         "Bitrate of the music file that `soundscape` joins from its chunks.",
         bounds=Bounds(enum=("96k", "128k", "160k", "192k", "256k", "320k")),
     )
-    max_music_chunk_seconds: int = tune(
+    max_chunk_seconds: int = tune(
         300,
         "Longest music request. Longer music is requested in chunks and crossfaded.",
         unit="seconds",
         bounds=Bounds(ge=30, le=600),
         nature=Nature.APPARATUS,
     )
-    music_crossfade_seconds: int = tune(
+    crossfade_seconds: int = tune(
         2,
         "Crossfade between two music chunks.",
         unit="seconds",
         bounds=Bounds(ge=0, le=30),
     )
-    ambience_seconds: float = tune(
-        25.0,
-        "Length of a generated ambience bed. A soundscape table can set `duration_seconds` instead.",
-        unit="seconds",
-        bounds=Bounds(ge=1, le=60),
+    price_per_minute: float = tune(
+        0.0,
+        "What this project's sound plan charges per minute of music audio, which is priced by the second "
+        "of audio asked for.",
+        unit="currency per minute of audio",
+        bounds=Bounds(ge=0, le=100),
+        source=Source.STATED,
+        evidence="the plan page of the account whose key buys the sound",
+        hazard=SOUND_PRICE_HAZARD,
+        see_also=("soundscape.provider",),
     )
-    ambience_prompt_influence: float = tune(
-        0.3,
-        "Prompt influence of an ambience request. A soundscape table can set its own.",
-        bounds=A_SHARE,
+
+
+@dataclass(frozen=True)
+class SoundscapeConfig:
+    """The settings half of `[soundscape]`: how the music, the ambience and the effects are asked for.
+
+    Each item's own table holds its prompt and its file, which are project content, beside the
+    settings that size its request, so a key is spelled the same way the item it sizes spells it.
+    """
+
+    provider: str = tune(
+        "elevenlabs",
+        "The sound provider the music, the ambience and the effects are bought from, which is a name the "
+        "machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys "
+        "with the key and `api_base` of `[elevenlabs]`.",
+        see_also=("elevenlabs.api_base",),
     )
-    effect_seconds: float = tune(
-        0.5,
-        "Length of a generated sound effect. A soundscape table can set `duration_seconds` instead.",
-        unit="seconds",
-        bounds=Bounds(ge=0.1, le=30),
-    )
-    effect_prompt_influence: float = tune(
-        0.5,
-        "Prompt influence of a sound effect request. A soundscape table can set its own.",
-        bounds=A_SHARE,
+    format: str = tune(
+        "mp3_44100_128",
+        "Audio format the music, the ambience and the effects are asked for in. A take's format is its "
+        "voice's own, such as `[elevenlabs] output_format`.",
+        see_also=("elevenlabs.output_format",),
     )
     timeout_seconds: int = tune(
         600,
@@ -796,6 +949,18 @@ class ElevenLabsConfig:
         bounds=Bounds(ge=10, le=3600),
         nature=Nature.APPARATUS,
     )
+    ambience: AmbienceConfig = field(default_factory=AmbienceConfig)
+    music: MusicConfig = field(default_factory=MusicConfig)
+    effects: EffectsConfig = field(default_factory=EffectsConfig)
+
+
+type ProviderTable = ElevenLabsConfig | DtspConfig
+"""The table a speech provider DeckTalk ships owns, one per adapter in the closed set.
+
+Every one carries the provider's own fields and its default `model`, and its adapter declares which
+key holds its base URL and which states its rate, so a reader above the speech layer asks the
+adapter's declaration and never names a vendor.
+"""
 
 
 @dataclass(frozen=True)
@@ -872,6 +1037,8 @@ class Settings:
     mix: MixConfig = field(default_factory=MixConfig)
     motion: MotionConfig = field(default_factory=MotionConfig)
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
+    dtsp: DtspConfig = field(default_factory=DtspConfig)
+    soundscape: SoundscapeConfig = field(default_factory=SoundscapeConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
 
@@ -882,21 +1049,24 @@ KEYS: tuple[Key, ...] = registry(Settings)
 BY_ID: dict[str, Key] = {key.id: key for key in KEYS}
 """Every key by the dotted name a diagnostic prints, `config set` takes and `--set` spells."""
 
-SHARED_TABLES = frozenset(("voice", "mix", "mix.loudness"))
-"""The tables that hold tuning keys beside project content, so the settings loader warns for neither."""
+SHARED_TABLES = frozenset(("mix", "soundscape", "soundscape.ambience", "soundscape.effects", "soundscape.music"))
+"""The tables that hold settings beside project content, so the settings loader warns for neither.
 
-DOCUMENT_TABLES = ("project", "section", "transition", "soundscape")
+The document parser owns these tables' unknown keys, because only it knows the content half.
+"""
+
+DOCUMENT_TABLES = ("project", "section", "transition")
 """The tables of `decktalk.toml` that are project content rather than tuning, named so a refusal can say so.
 
-`voice` and `mix` are missing on purpose: each holds tuning keys declared above beside content keys
-the document owns, so neither is wholly one thing.
+`mix` and `soundscape` are missing on purpose: each holds settings declared above beside content
+keys the document owns, so neither is wholly one thing.
 """
 
 CONFIG_VARIABLE = "DECKTALK_CONFIG"
 """The variable that names a per-machine settings file other than the standard one."""
 
 ALLOW_ANY_API_BASE = "DECKTALK_ALLOW_ANY_API_BASE"
-"""The variable that lets `[elevenlabs] api_base` name a host other than ElevenLabs, for a local mock.
+"""The variable that lets a voice's base URL name a host its adapter does not allow, for a local mock.
 
 The machine reads it when it is built from the process environment and carries the answer as a
 field, because the environment is the user's own machine and a project file is not, so the file
@@ -1202,16 +1372,21 @@ def read_machine_toml(path: Path) -> dict[str, Any]:
 def key_warnings(doc: Mapping[str, Any], where: str) -> list[str]:
     """One warning per key inside a tuning table that DeckTalk does not read, with a near name when there is one.
 
-    A table that also holds project content, such as `[voice]`, is left alone, because the document
+    The near name is looked for in the same table first and then across every table, because a key
+    that moved is still written under the table it used to live in, and no old name is read for it.
+    A table that also holds project content, such as `[mix]`, is left alone, because the document
     parser owns the rest of that table and warning here would call one of its keys unknown.
     """
     out: list[str] = []
-    for table in sorted({key.table for key in KEYS} - SHARED_TABLES):
+    tables = {key.table for key in KEYS}
+    for table in sorted(tables - SHARED_TABLES):
         found = _table(doc, table)
         if found is None:
             continue
-        known = {key.name for key in KEYS if key.table == table}
-        out += unknown_key_warnings(found, known, f"{where}: [{table}]")
+        known = {key.name for key in KEYS if key.table == table} | {
+            inner.removeprefix(f"{table}.").split(".")[0] for inner in tables if inner.startswith(f"{table}.")
+        }
+        out += unknown_key_warnings(found, known, f"{where}: [{table}]", at=table, anywhere=BY_ID)
     return out
 
 
@@ -1223,9 +1398,28 @@ def env_warnings(environ: Mapping[str, str]) -> list[str]:
     """
     known = {key.environment for key in KEYS} | STANDALONE_ENV
     return [
-        unknown_key_message(name, known, "environment")
+        _unknown_variable(name, known)
         for name in sorted(n for n in environ if n.startswith("DECKTALK_") and n not in known)
     ]
+
+
+def _unknown_variable(name: str, known: set[str]) -> str:
+    """The warning for one variable, read as the key it spells so a key that moved tables is found.
+
+    The variable is read as a key of the longest table its name opens with, and the key that one
+    names, by the rule the files' own warnings use, is offered by its variable. A name that opens
+    with no table is offered the closest variable by spelling.
+    """
+    spelled = name.removeprefix("DECKTALK_").lower()
+    tables = sorted({key.table for key in KEYS}, key=len, reverse=True)
+    table = next((t for t in tables if spelled.startswith(t.replace(".", "_") + "_")), None)
+    if table is None:
+        return unknown_key_message(name, known, "environment")
+    dotted = f"{table}.{spelled.removeprefix(table.replace('.', '_') + '_')}"
+    meant = named_key(dotted, BY_ID)
+    if meant is None:
+        return unknown_key_message(name, known, "environment")
+    return f"environment: ignoring unknown key '{name}' (did you mean '{BY_ID[meant].environment}'?)."
 
 
 def _table(doc: Mapping[str, Any], dotted: str) -> Mapping[str, Any] | None:
@@ -1669,56 +1863,23 @@ def nested(flat: Mapping[str, object]) -> dict[str, Any]:
 
 
 __all__ = [
-    "ABSENT",
-    "ALLOW_ANY_API_BASE",
-    "json_value",
-    "nested",
-    "BY_ID",
-    "CONFIG_VARIABLE",
-    "DOCUMENT_TABLES",
-    "ENV_PREFIX",
-    "KEYS",
-    "NUMBERS",
-    "NUMBERS_BY_ID",
-    "PROJECT_FILE",
-    "SHARED_TABLES",
-    "STANDALONE_ENV",
+    "AmbienceConfig",
     "AudioConfig",
+    "DtspConfig",
+    "EffectsConfig",
     "ElevenLabsConfig",
     "Layers",
-    "Loaded",
-    "LoudnessConfig",
     "MixConfig",
     "MotionConfig",
+    "MusicConfig",
     "NarrationConfig",
-    "Number",
     "OutputConfig",
+    "ProviderTable",
     "RecordConfig",
-    "Edited",
     "Settings",
+    "SoundscapeConfig",
     "ToolsConfig",
     "VerifyConfig",
     "VideoConfig",
     "VoiceConfig",
-    "edit",
-    "effective",
-    "env_warnings",
-    "key_warnings",
-    "load",
-    "machine_config_path",
-    "merge_tables",
-    "key_named",
-    "not_a_key",
-    "parse_value",
-    "read_machine_toml",
-    "read_project_toml",
-    "refuse_off_scope",
-    "read_toml",
-    "route",
-    "scoped",
-    "stated",
-    "unset",
-    "validate",
-    "value_of",
-    "write",
 ]

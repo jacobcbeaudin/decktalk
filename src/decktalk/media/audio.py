@@ -131,7 +131,7 @@ def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate
 
 
 def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int) -> list[int]:
-    """Mono 16-bit samples of the audio between start and start + seconds, at `[video] sample_rate`."""
+    """Mono 16-bit samples of the audio between start and start + seconds, at `[audio] sample_rate`."""
     out = ffmpeg.raw(
         "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", *ffmpeg.source(path), "-vn",
         "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-",

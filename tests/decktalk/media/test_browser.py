@@ -564,7 +564,7 @@ def test_a_machine_that_cannot_run_the_sandbox_is_refused_and_never_falls_back(m
 def test_a_run_that_may_spend_opens_no_untrusted_page_and_says_why(tmp_path):
     """The key is in reach of a run that may buy, even one with nothing to buy, so a stranger's page waits."""
     chromium = FakeChromium(INSTALLED)
-    with a_machine(tmp_path).run(spend=True), pytest.raises(ApprovalRequired) as refused:
+    with a_machine(tmp_path)._run(spend=True), pytest.raises(ApprovalRequired) as refused:
         browser.launch(chromium.driver(), policy=browser.UNTRUSTED)
     assert chromium.asked == [], "the refusal comes before any browser starts"
     assert refused.value.code is ErrorCode.APPROVAL
@@ -575,14 +575,14 @@ def test_a_run_that_may_spend_opens_no_untrusted_page_and_says_why(tmp_path):
 def test_a_run_that_may_spend_opens_its_authors_own_page(tmp_path):
     """A trusted page is the author's own deck on the author's own machine, so a voiced build still records it."""
     chromium = FakeChromium(INSTALLED)
-    with a_machine(tmp_path).run(spend=True):
+    with a_machine(tmp_path)._run(spend=True):
         browser.launch(chromium.driver(), policy=browser.TRUSTED)
     assert len(chromium.asked) == 1
 
 
 def test_a_run_that_may_not_spend_opens_an_untrusted_page(tmp_path):
     chromium = FakeChromium(INSTALLED)
-    with a_machine(tmp_path).run(spend=False):
+    with a_machine(tmp_path)._run(spend=False):
         browser.launch(chromium.driver(), policy=browser.UNTRUSTED)
     assert len(chromium.asked) == 1
 

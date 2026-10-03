@@ -104,15 +104,15 @@ Loudness 20.2 LUFS against 23.2.
 Found 1 finding, 1 certain.
 """,
         "BuildResult": """\
-     Stopped at cue, $18.25, 1 finding
-        Next open build/storyboard23
+     Stopped at assemble, $19.25, 1 finding
+        Next open build/storyboard27
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
         "CheckResult": """\
 Checking build/judged12.
-This run spent $16.25 on 15 characters at $18.25 per 1,000 characters.
-Storyboard build/storyboard20
+This run spent $17.25 on 15 characters and about 16 seconds of audio at the rates each stage states.
+Storyboard build/storyboard24
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
@@ -201,7 +201,7 @@ Found 1 finding, 1 certain.
  ────────────────────────────────────────────
  12        placeholder   15           16.2
 
-This run spent $22.25 on 21 characters at $24.25 per 1,000 characters.
+This run spent $23.25 on 21 characters at $26.25 per 1,000 characters.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
@@ -225,7 +225,7 @@ Found 1 finding, 1 certain.
  ───────────────────────────────────────
  name12   ambience   generated   16.2
 
-Would spend $21.25 on the soundscape.
+Would spend $22.25 on the soundscape.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,

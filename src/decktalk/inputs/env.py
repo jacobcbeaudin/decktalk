@@ -1,6 +1,6 @@
 """The project's secrets: `.env` read once, from a path the caller names, and never printed.
 
-    my-lesson/.env   ELEVENLABS_API_KEY (never committed)
+    my-lesson/.env   the key the voice's adapter declares (never committed)
 
 A variable already in the environment wins over the file, and a value that still looks like the
 placeholder `<your key>` counts as unset. No value ever reaches a log line, an error message or a

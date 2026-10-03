@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from decktalk.findings import Code
-from decktalk.machine import VOICE_KEY
 from decktalk.project import PROJECT_VARIABLE
 from decktalk.results import SCHEMA
 from decktalk.settings import CONFIG_VARIABLE
-from decktalk.stages.narrate.plan import VOICE_VARIABLE
+from decktalk.speech import DECLARED
+from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE
 
 HOSTILE_DIRECTORY = "jacob's fïlms 2"
 """The name every temporary root of these suites sits under, because a path is an input like any other.
@@ -54,7 +54,8 @@ def clean_environ(config_dir: Path) -> dict[str, str]:
     project has to build on a machine that has never seen either.
     """
     env = dict(os.environ)
-    for name in (PROJECT_VARIABLE, VOICE_KEY, VOICE_VARIABLE):
+    keys = [declared.key_variable for declared in DECLARED.values() if declared.key_variable]
+    for name in (PROJECT_VARIABLE, *keys, VOICE_ID_VARIABLE):
         env.pop(name, None)
     env[CONFIG_VARIABLE] = str(config_dir / "no-machine-config.toml")
     return env

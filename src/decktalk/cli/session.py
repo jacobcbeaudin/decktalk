@@ -231,8 +231,8 @@ class Session:
         `--spend` and `--no-spend` answer it outright. Unset, the run is priced first, by `price` or
         else by the check that prices a voiced build. A run with nothing to buy is asked nothing and
         buys nothing, unless `forced` says it was told to make what it holds again. A run whose voice
-        somebody stated bills nothing is asked nothing either, and is let buy, because buying from it
-        costs nothing. Otherwise, on a terminal the checkpoint is the storyboard and the price: the run
+        declares itself free is asked nothing either, and is let buy, because buying from it costs
+        nothing. Otherwise, on a terminal the checkpoint is the storyboard and the price: the run
         says what it will cost and where to look at what it is about to narrate, and then it asks.
         Without a terminal there is nobody to ask, so the run refuses and names the two flags that
         answer, and the refusal carries the price so that one call prices the run.
@@ -273,7 +273,7 @@ class Session:
         from decktalk.stages import soundscape  # noqa: PLC0415  (a stage is loaded by the call that needs it)
 
         try:
-            return soundscape.price(project.inputs, only=only, force=force)
+            return soundscape.price(project._inputs, only=only, force=force)
         except DeckTalkError:
             # silent: the run that follows meets the same refusal and reports it.
             return None

@@ -69,7 +69,6 @@ DOCUMENT_SENTENCES = {
     "project": "The film itself: its name, its deck and the files it is built from.",
     "section": "One section of the script, in the order the film plays them.",
     "transition": "How one section is joined to the next.",
-    "soundscape": "The music, the ambience and the sound effects a run generates.",
 }
 """One sentence for each table that is project content, which the document parser owns the keys of."""
 

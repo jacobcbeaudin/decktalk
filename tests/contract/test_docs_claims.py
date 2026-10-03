@@ -14,6 +14,7 @@ prose has nothing holding it in place.
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import subprocess
@@ -160,3 +161,16 @@ def test_every_origin_member_the_python_reference_names_is_one_an_origin_has(tmp
     with decktalk.open(tmp_path, machine=a_machine(tmp_path)).serve(port=0) as origin:
         missing = sorted(name for name in named if not hasattr(origin, name))
     assert not missing, f"the reference names origin members that do not exist: {missing}"
+
+
+def test_the_python_reference_lists_the_root_and_the_public_modules_as_they_are() -> None:
+    """The reference's two surface tables are the first list a newcomer reads, so each names exactly what is there."""
+    page = (REPO / "docs" / "reference" / "python-api.mdx").read_text(encoding="utf-8")
+    section = page.split("## The whole public surface")[1].split("\n## ")[0]
+    root_table, module_table = section.split("| Group | Names |")[1].split("| Module | What it holds |")
+    listed = set(re.findall(r"`(\w+)`", root_table.split("\n\n")[0]))
+    assert listed == set(decktalk.__all__), sorted(listed ^ set(decktalk.__all__))
+    for module_name, held in re.findall(r"^\| `decktalk\.([\w.]+)` \| (.+) \|$", module_table, re.MULTILINE):
+        module = importlib.import_module(f"decktalk.{module_name}")
+        named = set(re.findall(r"`(\w+)`", held))
+        assert named <= set(module.__all__), f"decktalk.{module_name} has no {sorted(named - set(module.__all__))}"

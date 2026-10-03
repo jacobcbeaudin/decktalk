@@ -1,7 +1,13 @@
 """Minimal HTTP on urllib, so a speech provider needs no HTTP dependency.
 
-Every provider request goes through one opener whose redirect handler drops the credential headers
-when a redirect leaves the origin the request was made to, so a key sent to the API host never
+Every request names the `Secret`s it carries, whatever header, query parameter or body field carries
+them, so this module knows a credential by its value and not by the name of the header it travels
+in. A provider that sends its key as `X-API-Key`, or under any other name, is covered the moment it
+names the key, with no list here to extend.
+
+Every provider request goes through one opener whose redirect handler drops every header that holds
+one of those values, and every `Authorization`, `Proxy-Authorization` and `Cookie` header beside
+them, when a redirect leaves the origin the request was made to, so a key sent to the API host never
 follows a 302 anywhere else. A credential belongs to an origin, which is the scheme, the host and
 the port together, so a redirect that keeps the host and drops to http is a different origin and
 loses the headers with it.
@@ -40,19 +46,27 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from http.client import HTTPResponse
 from typing import Any
 
 from pydantic_core import from_json, to_json
 
 from ..errors import ProviderError
+from ..secret import Secret
+from . import LOOPBACK
 
 log = logging.getLogger(__name__)
 
 CREDENTIAL = "<credential>"
-# Every header that carries a credential. None of them follows a redirect to another origin.
-AUTH_HEADERS = ("xi-api-key", "Authorization", "Proxy-Authorization", "Cookie")
+
+AUTH_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie"})
+"""Truth: the standard headers that carry a credential, lower-cased, which never follow a redirect to another origin.
+
+They are the second line behind the secrets a request names: a credential put in one of them
+without being named is still dropped across origins and still scrubbed, the token after its scheme
+on its own as well as the whole value.
+"""
 DEFAULT_PORTS = {"https": 443, "http": 80}
 """Truth: the port a URL means when it names none, which is half of what an origin is."""
 
@@ -105,45 +119,106 @@ def origin(url: str) -> tuple[str, str, int]:
     return scheme, (parts.hostname or "").lower(), parts.port or DEFAULT_PORTS.get(scheme, 0)
 
 
+class Sending(urllib.request.Request):
+    """A request that holds the credentials it carries, so a redirect can tell which headers to drop."""
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        credentials: tuple[str, ...],
+        headers: Mapping[str, str],
+        data: bytes | None = None,
+        method: str | None = None,
+        origin_req_host: str | None = None,
+        unverifiable: bool = False,
+    ) -> None:
+        super().__init__(
+            url,
+            data=data,
+            headers=dict(headers),
+            origin_req_host=origin_req_host,
+            unverifiable=unverifiable,
+            method=method,
+        )
+        self.credentials = credentials
+
+
+def carries_credential(name: str, value: str, credentials: Collection[str]) -> bool:
+    """Whether a header holds a credential: a standard auth header, or any header that holds one of the values."""
+    return name.lower() in AUTH_HEADERS or any(held in value for held in credentials)
+
+
 class DropAuthAcrossOrigins(urllib.request.HTTPRedirectHandler):
-    """Follows redirects as urllib does, minus the credential headers when the origin changes.
+    """Follows redirects as urllib does, minus every credential header when the origin changes.
 
     urllib reproduces custom headers on every redirect, so without this a 302 from the API host to
-    anywhere else would hand that host the key. The comparison is on the whole origin, because a
-    redirect to the same host over http would otherwise put the key on the wire in clear text.
+    anywhere else would hand that host the key. A header is a credential when it is a standard auth
+    header or when it holds one of the values the request carries, whatever it is called. The
+    comparison is on the whole origin, because a redirect to the same host over http would otherwise
+    put the key on the wire in clear text. The request that follows the redirect holds the same
+    credentials, so a second redirect is judged by the same values.
     """
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
         new = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if new is not None and origin(new.full_url) != origin(req.full_url):
-            for name in AUTH_HEADERS:
-                new.remove_header(name.capitalize())  # Request stores header names capitalized.
-        return new
+        if new is None:
+            return None
+        credentials = req.credentials if isinstance(req, Sending) else ()
+        kept = new.headers
+        if origin(new.full_url) != origin(req.full_url):
+            kept = {name: value for name, value in kept.items() if not carries_credential(name, value, credentials)}
+        return Sending(
+            new.full_url,
+            credentials=credentials,
+            headers=kept,
+            origin_req_host=new.origin_req_host,
+            unverifiable=new.unverifiable,
+            method=new.get_method(),
+        )
 
 
 _opener = urllib.request.build_opener(DropAuthAcrossOrigins)
 
+_direct = urllib.request.build_opener(urllib.request.ProxyHandler({}), DropAuthAcrossOrigins)
+"""The opener for a request to this machine, which no proxy the environment names is ever handed."""
+
 
 def urlopen(request: urllib.request.Request, *, timeout: float) -> HTTPResponse:
-    """Open a request through the package's one opener, so the redirect rule applies to every call."""
-    return _opener.open(request, timeout=timeout)
+    """Open a request through the package's openers, so the redirect rule applies to every call.
+
+    A request to a loopback name never goes through a proxy, because a proxy is another machine and
+    what is sent to a local server is meant to stay on this one.
+    """
+    opener = _direct if origin(request.full_url)[1] in LOOPBACK else _opener
+    return opener.open(request, timeout=timeout)
 
 
-def scrub(text: str, headers: Mapping[str, str]) -> str:
+def credentials(headers: Mapping[str, str], secrets: Collection[Secret]) -> tuple[str, ...]:
+    """Every value a request carries that no message may quote, longest first.
+
+    That is the value of every secret the request names, wherever it travels, and the whole value of
+    each standard auth header with the token after its scheme on its own, because a body may quote
+    either. Longest first, so a value that holds another is replaced whole before the shorter one
+    could leave a piece of it behind.
+    """
+    found = {secret.reveal() for secret in secrets}
+    for name, value in headers.items():
+        if name.lower() in AUTH_HEADERS:
+            found.update((value, value.partition(" ")[2]))
+    return tuple(sorted((value for value in found if value), key=len, reverse=True))
+
+
+def scrub(text: str, carried: Collection[str]) -> str:
     """The text with every credential this request carried taken out of it.
 
     A reply body is written by whatever host `api_base` names, so a service that echoes the key back
-    in a 401 would otherwise put it in an error message and on stderr, where a CI job keeps it. Both
-    the whole header value and the token after an `Authorization` scheme are replaced, because a
-    body may quote either.
+    in a 401 would otherwise put it in an error message and on stderr, where a CI job keeps it.
+    `carried` is what `credentials` found in the request, so the values are matched whatever header
+    sent them.
     """
-    names = {h.lower() for h in AUTH_HEADERS}
-    for name, value in headers.items():
-        if name.lower() not in names or not value:
-            continue
-        for secret in (value, value.partition(" ")[2]):
-            if secret:
-                text = text.replace(secret, CREDENTIAL)
+    for value in carried:
+        text = text.replace(value, CREDENTIAL)
     return text
 
 
@@ -152,7 +227,7 @@ def shown(url: str) -> str:
     return url.split("?")[0].split("#")[0]
 
 
-def _http_error(url: str, exc: urllib.error.HTTPError, headers: Mapping[str, str]) -> ProviderError:
+def _http_error(url: str, exc: urllib.error.HTTPError, carried: Collection[str]) -> ProviderError:
     """The failure as a message, with the reply body quoted and every credential taken out of it.
 
     The whole body is scrubbed before it is cut, because a credential that straddles the cut would
@@ -160,23 +235,23 @@ def _http_error(url: str, exc: urllib.error.HTTPError, headers: Mapping[str, str
     """
     with exc:  # The error holds the reply open, so it is closed once its body is read.
         body = exc.read().decode(errors="replace")
-    detail = scrub(body, headers)[:BODY_CHARS]
+    detail = scrub(body, carried)[:BODY_CHARS]
     return ProviderError(f"HTTP {exc.code} from {shown(url)}: {detail}", retryable=exc.code in RETRYABLE_STATUS)
 
 
-def _unreachable(url: str, exc: urllib.error.URLError, headers: Mapping[str, str]) -> ProviderError:
+def _unreachable(url: str, exc: urllib.error.URLError, carried: Collection[str]) -> ProviderError:
     """A request urllib could not send, worth trying again only when nothing connected at all."""
     if isinstance(exc.reason, BROKEN_REPLIES) and not isinstance(exc.reason, UNCONNECTED):
-        return _broken(url, exc.reason, headers)
+        return _broken(url, exc.reason, carried)
     return ProviderError(
-        f"could not reach {shown(url)}: {scrub(str(exc.reason), headers)}",
+        f"could not reach {shown(url)}: {scrub(str(exc.reason), carried)}",
         retryable=isinstance(exc.reason, UNCONNECTED),
     )
 
 
-def _broken(url: str, exc: BaseException, headers: Mapping[str, str]) -> ProviderError:
+def _broken(url: str, exc: BaseException, carried: Collection[str]) -> ProviderError:
     """A reply that broke once the request was connected, which the service may already have billed."""
-    said = scrub(str(exc), headers) or "no reason given"
+    said = scrub(str(exc), carried) or "no reason given"
     return ProviderError(
         f"{shown(url)} stopped answering ({type(exc).__name__}: {said}). {POSSIBLY_CHARGED}", hint=CHARGE_HINT
     )
@@ -221,11 +296,15 @@ def post[T](
     body: dict[str, Any],
     headers: dict[str, str],
     *,
+    secrets: Collection[Secret],
     timeout: float,
     retries: int,
     parse: Callable[[bytes], T],
 ) -> T:
     """One POST, with its reply read by `parse`, and any failure as a `PROVIDER` error that quotes no key.
+
+    `secrets` are every secret the URL, the body or the headers carry, which is what is scrubbed out
+    of every message and what no redirect to another origin is handed, whatever header holds it.
 
     A failure that says the service was busy or could not be connected to is tried again up to
     `retries` more times, and the last failure is the one raised. A reply that arrived may have been
@@ -233,9 +312,10 @@ def post[T](
     """
     data = to_json(body)
     path = urllib.parse.urlsplit(url).path
+    carried = credentials(headers, secrets)
     attempt = 0
     while True:
-        req = urllib.request.Request(url, data=data, method="POST", headers=headers)
+        req = Sending(url, credentials=carried, data=data, method="POST", headers=headers)
         started = time.monotonic()
         asked: str | None = None
         try:
@@ -243,13 +323,13 @@ def post[T](
                 status, reply = resp.status, resp.read()
         except urllib.error.HTTPError as exc:
             _attempted(path, attempt, started, status=exc.code)
-            failure, asked, cause = _http_error(url, exc, headers), exc.headers.get("Retry-After"), exc
+            failure, asked, cause = _http_error(url, exc, carried), exc.headers.get("Retry-After"), exc
         except urllib.error.URLError as exc:
             _attempted(path, attempt, started, reason=type(exc.reason).__name__)
-            failure, cause = _unreachable(url, exc, headers), exc
+            failure, cause = _unreachable(url, exc, carried), exc
         except BROKEN_REPLIES as exc:
             _attempted(path, attempt, started, reason=type(exc).__name__)
-            failure, cause = _broken(url, exc, headers), exc
+            failure, cause = _broken(url, exc, carried), exc
         else:
             _attempted(path, attempt, started, status=status, bytes=len(reply))
             return parse(reply)
@@ -276,13 +356,27 @@ def post[T](
         attempt += 1
 
 
-def post_bytes(url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: float, retries: int) -> bytes:
+def post_bytes(
+    url: str,
+    body: dict[str, Any],
+    headers: dict[str, str],
+    *,
+    secrets: Collection[Secret],
+    timeout: float,
+    retries: int,
+) -> bytes:
     """One POST whose reply is the bytes it carries, which is what the two sound calls make."""
-    return post(url, body, headers, timeout=timeout, retries=retries, parse=bytes)
+    return post(url, body, headers, secrets=secrets, timeout=timeout, retries=retries, parse=bytes)
 
 
 def post_json(
-    url: str, body: dict[str, Any], headers: dict[str, str], *, timeout: float, retries: int
+    url: str,
+    body: dict[str, Any],
+    headers: dict[str, str],
+    *,
+    secrets: Collection[Secret],
+    timeout: float,
+    retries: int,
 ) -> dict[str, Any]:
     """One POST whose reply is a JSON object, which is every call a provider makes but the two sound ones."""
 
@@ -299,4 +393,4 @@ def post_json(
             raise ProviderError(f"{shown(url)} answered with a {type(answered).__name__} rather than an object.")
         return answered
 
-    return post(url, body, headers, timeout=timeout, retries=retries, parse=parse)
+    return post(url, body, headers, secrets=secrets, timeout=timeout, retries=retries, parse=parse)

@@ -5,6 +5,9 @@ from __future__ import annotations
 from decktalk.artifacts import Take, Takes
 from decktalk.inputs import Inputs
 
+TAKE_SUFFIX = ".mp3"
+"""The suffix ElevenLabs's default format, mp3_44100_128, names a take with, which every take here is under."""
+
 
 def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: object) -> Take:
     """One voiced take that runs `seconds` long, with its speech and its sound ending where it ends.

@@ -22,6 +22,7 @@ cycle at all, however far round it goes.
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -213,6 +214,41 @@ def unit(module: str) -> str:
 def private(name: str) -> bool:
     """Whether a name belongs to the module that defines it. A dunder such as __version__ does not."""
     return name.startswith("_") and not name.startswith("__")
+
+
+VENDOR = re.compile(r"eleven|xi-api-key", re.IGNORECASE)
+"""Every spelling of a speech or sound vendor DeckTalk ships: its name, its model ids and its key header."""
+
+VENDOR_ALLOWED: dict[str, str] = {}
+"""Every module above `speech/` that may still name a vendor, each with why. None does.
+
+`settings` ranks below `speech/` and holds each adapter's own table, which is where a vendor's
+fields are declared, so it is not above the boundary and needs no row here.
+"""
+
+
+def test_no_module_above_speech_names_a_vendor():
+    """Everything a vendor is particular about is declared by its adapter, so nothing above `speech/` names one.
+
+    A module ranked above `speech` reads the adapter's declaration and never spells the vendor, in
+    code, in a string or in a docstring, so a second voice or a change of vendor touches nothing above
+    the boundary.
+    """
+    _, boundary = RANKS["speech"]
+    bad = [
+        f"{dotted(path)}:{number}: {line.strip()}"
+        for path in modules()
+        if RANKS[unit(dotted(path))][1] > boundary and dotted(path) not in VENDOR_ALLOWED
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if VENDOR.search(line)
+    ]
+    assert bad == [], "\n".join(bad)
+
+
+def test_every_vendor_allowance_is_still_needed():
+    """An allowance for a module that names no vendor any more is a hole left open."""
+    stale = [name for name in VENDOR_ALLOWED if not VENDOR.search((SRC / f"{name.replace('.', '/')}.py").read_text())]
+    assert stale == [], stale
 
 
 def test_every_module_is_placed_in_a_layer():

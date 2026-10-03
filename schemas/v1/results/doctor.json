@@ -72,6 +72,7 @@
         "CUE_OVERLAP",
         "TAKE_PLACEHOLDER",
         "TAKE_SPOKEN_SYMBOL",
+        "TAKE_PAUSE_DROPPED",
         "TAKE_MISSING",
         "CUT_SPEECH",
         "CUT_POP",
@@ -659,7 +660,7 @@
       "type": "string"
     },
     "voice_key": {
-      "description": "True when the credential a voiced run would use is set.",
+      "description": "True when the credential a voiced run would use is set, or when its voice needs none.",
       "title": "Voice Key",
       "type": "boolean"
     },

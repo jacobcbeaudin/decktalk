@@ -7,6 +7,7 @@ import logging
 import socket
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -45,9 +46,11 @@ from decktalk.media.environment import child_environment
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.project import open as open_project
-from decktalk.results import FixOutcome, Layer, Scope, StatusResult
+from decktalk.results import Billing, FixOutcome, Layer, Scope, StatusResult
 from decktalk.settings import BY_ID, ToolsConfig
-from decktalk.speech import VoiceContext, get_provider
+from decktalk.speech import VoiceContext
+from decktalk.speech.sound import SOUNDS, SoundContext
+from decktalk.stages.narrate.plan import speech_provider
 from decktalk.toolchain import assets, chromium_fetch, command_line
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
@@ -125,7 +128,7 @@ def test_the_cache_is_the_machines_own_when_no_key_moves_it(tmp_path: Path) -> N
         cwd=tmp_path,
         toolchain=Toolchain(cache=tmp_path / "standard"),
     )
-    with here.run():
+    with here._run():
         assert cache_dir() == tmp_path / "standard"
     assert here.cache_dir == tmp_path / "standard"
 
@@ -191,7 +194,7 @@ def test_a_run_hands_its_pair_and_its_cancel_to_every_ffmpeg_call(tmp_path: Path
         cwd=tmp_path,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache")), ffmpeg=pair[0], ffprobe=pair[1]),
     )
-    with here.run() as run:
+    with here._run() as run:
         bound = ffmpeg_module.TOOLS.get()
         assert bound is not None
         assert bound.cancel is run.cancel
@@ -203,7 +206,7 @@ def test_a_browser_is_built_from_the_machines_environment_and_never_the_process(
 ) -> None:
     monkeypatch.setenv("LANG", "the-process-language")
     here = a_machine(tmp_path, LANG="the-machines-language", ELEVENLABS_API_KEY="sk-not-a-key")
-    with here.run():
+    with here._run():
         seen = child_environment()
     assert seen["LANG"] == "the-machines-language"
     assert "ELEVENLABS_API_KEY" not in seen
@@ -215,7 +218,7 @@ def test_a_browser_is_built_from_the_machines_environment_and_never_the_process(
 def test_every_line_of_a_run_carries_its_run_and_counts_from_zero(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run() as run:
+    with here.events.subscribe(seen.append), here._run() as run:
         run.note("one")
         run.note("two")
     assert [line.event for line in seen] == ["run.start", "log", "log", "run.done"]
@@ -226,7 +229,7 @@ def test_every_line_of_a_run_carries_its_run_and_counts_from_zero(tmp_path: Path
 def test_a_run_that_fails_closes_as_failed_and_lets_the_failure_through(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), pytest.raises(ZeroDivisionError), here.run():
+    with here.events.subscribe(seen.append), pytest.raises(ZeroDivisionError), here._run():
         raise ZeroDivisionError
     assert isinstance(seen[-1], RunDone) and seen[-1].outcome is Outcome.FAILED
     assert seen[-1].error is not None and seen[-1].error.code is ErrorCode.INTERNAL
@@ -237,7 +240,7 @@ def test_a_refused_run_names_its_refusal_on_its_last_line(tmp_path: Path) -> Non
     """The events file is read after the process is gone, so its last line has to say why the run failed."""
     here = a_machine(tmp_path)
     events = tmp_path / "build" / "events"
-    with pytest.raises(InputError), here.run(root=tmp_path, events_dir=events) as run:
+    with pytest.raises(InputError), here._run(root=tmp_path, events_dir=events) as run:
         raise InputError("cues.json is not JSON.", hint="Fix cues.json.")
     last = RunDone.model_validate_json((events / f"{run.id}.jsonl").read_text(encoding="utf-8").splitlines()[-1])
     assert last.outcome is Outcome.FAILED
@@ -252,7 +255,7 @@ def test_a_refused_run_names_its_refusal_on_its_last_line(tmp_path: Path) -> Non
 def test_a_run_says_on_its_last_line_how_many_lines_its_bounded_file_left_out(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     events = tmp_path / "build" / "events"
-    with here.run(root=tmp_path, events_dir=events, max_bytes=1) as run:
+    with here._run(root=tmp_path, events_dir=events, max_bytes=1) as run:
         for number in range(5):
             logging.getLogger("decktalk.media.ffmpeg").debug("call %d", number)
     lines = (events / f"{run.id}.jsonl").read_text(encoding="utf-8").splitlines()
@@ -263,7 +266,7 @@ def test_a_run_says_on_its_last_line_how_many_lines_its_bounded_file_left_out(tm
 def test_a_finished_run_carries_no_error(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run():
+    with here.events.subscribe(seen.append), here._run():
         pass
     assert isinstance(seen[-1], RunDone) and seen[-1].error is None
 
@@ -272,7 +275,12 @@ def test_a_finished_run_carries_no_error(tmp_path: Path) -> None:
 def test_a_cancelled_or_interrupted_run_ends_as_stopped_rather_than_failed(tmp_path: Path, stop: BaseException) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), pytest.raises(type(stop)), here.run() as run, run.section(Stage.RECORD, 1):
+    with (
+        here.events.subscribe(seen.append),
+        pytest.raises(type(stop)),
+        here._run() as run,
+        run.section(Stage.RECORD, 1),
+    ):
         raise stop
     section = next(line for line in seen if line.event == "section.done")
     assert getattr(section, "outcome", None) is Outcome.STOPPED
@@ -284,7 +292,7 @@ def test_a_run_with_a_project_writes_its_own_file_and_says_where(tmp_path: Path)
     """One file per run, so a watch loop beside a build by hand cannot overwrite the other's lines."""
     here = a_machine(tmp_path)
     events = tmp_path / "build" / "events"
-    with here.run(root=tmp_path, events_dir=events) as run:
+    with here._run(root=tmp_path, events_dir=events) as run:
         run.note("hello")
     written = events / f"{run.id}.jsonl"
     assert written.exists()
@@ -294,7 +302,7 @@ def test_a_run_with_a_project_writes_its_own_file_and_says_where(tmp_path: Path)
 def test_a_run_says_the_path_its_own_lines_are_going_to(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run(root=tmp_path, events_dir=tmp_path / "build" / "events") as run:
+    with here.events.subscribe(seen.append), here._run(root=tmp_path, events_dir=tmp_path / "build" / "events") as run:
         pass
     assert isinstance(seen[0], RunStart)
     assert seen[0].events_path == Path(f"build/events/{run.id}.jsonl")
@@ -303,7 +311,7 @@ def test_a_run_says_the_path_its_own_lines_are_going_to(tmp_path: Path) -> None:
 def test_a_machine_run_holds_no_project_so_it_writes_no_file(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run():
+    with here.events.subscribe(seen.append), here._run():
         pass
     assert isinstance(seen[0], RunStart) and seen[0].events_path is None
 
@@ -314,7 +322,7 @@ def test_the_oldest_event_files_are_pruned_before_a_new_run_opens(tmp_path: Path
     events.mkdir(parents=True)
     for name in ("a", "b", "c"):
         (events / f"{name}.jsonl").write_text("{}\n", encoding="utf-8")
-    with here.run(root=tmp_path, events_dir=events, keep_runs=1):
+    with here._run(root=tmp_path, events_dir=events, keep_runs=1):
         pass
     assert len(list(events.glob("*.jsonl"))) == 2  # the one kept, and this run's own
 
@@ -322,7 +330,7 @@ def test_the_oldest_event_files_are_pruned_before_a_new_run_opens(tmp_path: Path
 def test_a_stage_opens_and_closes_on_the_stream(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run() as run, run.stage(Stage.NARRATE, index=1, count=2):
+    with here.events.subscribe(seen.append), here._run() as run, run.stage(Stage.NARRATE, index=1, count=2):
         pass
     started = next(line for line in seen if isinstance(line, StageStart))
     done = next(line for line in seen if isinstance(line, StageDone))
@@ -333,7 +341,7 @@ def test_a_stage_opens_and_closes_on_the_stream(tmp_path: Path) -> None:
 def test_a_stage_that_raises_closes_as_failed(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run() as run:
+    with here.events.subscribe(seen.append), here._run() as run:
         with pytest.raises(ValueError, match="no"), run.stage(Stage.RECORD):
             raise ValueError("no")
     assert next(line for line in seen if isinstance(line, StageDone)).outcome is Outcome.FAILED
@@ -343,7 +351,7 @@ def test_a_cancelled_run_stops_at_the_next_section_boundary(tmp_path: Path) -> N
     """A stage checks between sections, so a cancelled run leaves whole artifacts rather than half of one."""
     here = a_machine(tmp_path)
     cancel = Cancel()
-    with here.run(cancel=cancel) as run:
+    with here._run(cancel=cancel) as run:
         with run.section(Stage.RECORD, 1):
             cancel.cancel()
         with pytest.raises(Cancelled), run.section(Stage.RECORD, 2):
@@ -352,7 +360,7 @@ def test_a_cancelled_run_stops_at_the_next_section_boundary(tmp_path: Path) -> N
 
 def test_a_result_carries_the_run_the_judgements_and_the_files(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
-    with here.run(root=tmp_path) as run:
+    with here._run(root=tmp_path) as run:
         run.wrote(tmp_path / "build" / "final" / "a.mp4")
         run.wrote(tmp_path / "build" / "final" / "a.mp4")
         result = run.result(StatusResult, name="t", script=Path("script.md"), cues=Path("cues.json"), sections=())
@@ -365,7 +373,7 @@ def test_a_certain_judgement_is_what_makes_a_result_not_ok(tmp_path: Path) -> No
     certain = Finding(code=Code.CUE_UNRESOLVED, message="x", location=Location(where="cues.json"))
     unsure = Finding(code=Code.PAGE_SWAP_APART, message="y", location=Location(where="deck/index.html"))
     assert certain.certainty is Certainty.CERTAIN and unsure.certainty is Certainty.UNCERTAIN
-    with here.run() as run:
+    with here._run() as run:
         run.found(unsure)
         assert run.result(StatusResult, name="t", script=Path("s"), cues=Path("c"), sections=()).ok
         run.found(certain)
@@ -392,7 +400,7 @@ def test_a_result_is_ok_exactly_when_nothing_reaches_the_threshold_it_was_given(
     tmp_path: Path, threshold: Threshold, found: tuple[Finding, ...], passes: bool
 ) -> None:
     assert CERTAIN.certainty is Certainty.CERTAIN and UNSURE.certainty is Certainty.UNCERTAIN
-    with a_machine(tmp_path).run() as run:
+    with a_machine(tmp_path)._run() as run:
         result = run.result(
             StatusResult, findings=found, threshold=threshold, name="t", script=Path("s"), cues=Path("c"), sections=()
         )
@@ -405,7 +413,7 @@ def test_a_result_is_ok_exactly_when_nothing_reaches_the_threshold_it_was_given(
 
 def test_nothing_is_bought_unless_the_run_may_spend(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
-    with here.run() as run, pytest.raises(ApprovalRequired) as refused:
+    with here._run() as run, pytest.raises(ApprovalRequired) as refused:
         run.approve(a_spend(0.42, 0.42))
     assert refused.value.code is ErrorCode.APPROVAL
     assert "--spend" in (refused.value.hint or "")
@@ -415,24 +423,42 @@ def test_nothing_is_bought_unless_the_run_may_spend(tmp_path: Path) -> None:
 def test_a_run_that_may_not_spend_refuses_even_a_price_of_zero(tmp_path: Path) -> None:
     """Whether a voice bills nothing is the command line's question, so the gate holds to `spend` alone."""
     here = a_machine(tmp_path)
-    free = a_spend(0.0, 0.0).model_copy(update={"price_per_1000_characters": 0.0})
+    free = a_spend(0.0, 0.0, billing=Billing.FREE)
     assert free.free
-    with here.run() as run, pytest.raises(ApprovalRequired):
+    with here._run() as run, pytest.raises(ApprovalRequired):
         run.approve(free)
 
 
-def test_a_zero_price_nobody_stated_is_not_free() -> None:
-    unstated = a_spend(0.0, 0.0, layer=Layer.DEFAULT).model_copy(update={"price_per_1000_characters": 0.0})
-    assert not unstated.free
+def test_free_is_what_the_voice_declares_and_never_a_rate_of_zero() -> None:
+    """A zero rate on a voice that bills is somebody's statement about their plan, stated or not."""
+    assert not a_spend(0.0, 0.0, layer=Layer.DEFAULT).model_copy(update={"price_per_1000_characters": 0.0}).free
+    assert not a_spend(0.0, 0.0).model_copy(update={"price_per_1000_characters": 0.0}).free
+    assert a_spend(0.0, 0.0, billing=Billing.FREE, layer=Layer.DEFAULT).free
+
+
+def test_a_cap_lets_a_free_voice_through_with_no_rate_stated(tmp_path: Path) -> None:
+    here = a_machine(tmp_path)
+    free = a_spend(0.0, 0.0, billing=Billing.FREE, layer=Layer.DEFAULT)
+    with here._run(spend=True, max_cost=0.0) as run:
+        assert run.approve(free) == free
+
+
+def test_a_cap_is_refused_for_a_voice_that_declares_no_bill_with_what_to_declare(tmp_path: Path) -> None:
+    here = a_machine(tmp_path)
+    undeclared = a_spend(0.0, 0.0, billing=Billing.UNDECLARED, layer=Layer.DEFAULT)
+    with here._run(spend=True, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
+        run.approve(undeclared)
+    assert "declares no bill" in str(refused.value)
+    assert "per character, per second or free" in (refused.value.hint or "")
 
 
 def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_path: Path) -> None:
     """A run whose certain part is zero must not be said to spend $0.00, which its ceiling contradicts."""
     here = a_machine(tmp_path)
     unmatched = a_spend(0.0, 0.3)
-    with here.run() as run, pytest.raises(ApprovalRequired) as unvoiced:
+    with here._run() as run, pytest.raises(ApprovalRequired) as unvoiced:
         run.approve(unmatched)
-    with here.run(spend=True, max_cost=0.1) as run, pytest.raises(ApprovalRequired) as capped:
+    with here._run(spend=True, max_cost=0.1) as run, pytest.raises(ApprovalRequired) as capped:
         run.approve(unmatched)
     for refused in (unvoiced, capped):
         assert str(refused.value).startswith(unmatched.sentence)
@@ -441,29 +467,29 @@ def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_p
 
 def test_a_paid_run_inside_its_ceiling_goes_through(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
-    with here.run(spend=True, max_cost=1.0) as run:
+    with here._run(spend=True, max_cost=1.0) as run:
         assert run.approve(a_spend(0.42, 0.9)).dollars == 0.42
 
 
 def test_the_ceiling_is_compared_against_the_most_a_run_can_cost(tmp_path: Path) -> None:
     """Credits go one request at a time, so a cap that stopped a run halfway would be a lie."""
     here = a_machine(tmp_path)
-    with here.run(spend=True, max_cost=0.5) as run, pytest.raises(ApprovalRequired) as refused:
+    with here._run(spend=True, max_cost=0.5) as run, pytest.raises(ApprovalRequired) as refused:
         run.approve(a_spend(0.42, 0.9))
     assert "0.90" in str(refused.value)
 
 
 def test_a_cap_is_refused_while_nobody_has_stated_the_price(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
-    with here.run(spend=True, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
+    with here._run(spend=True, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
         run.approve(a_spend(0.42, 0.9, layer=Layer.DEFAULT))
-    assert "price_per_1000_characters" in (refused.value.hint or "")
+    assert "elevenlabs.price_per_1000_characters" in (refused.value.hint or "")
 
 
 def test_every_priced_request_reaches_the_stream_before_it_is_judged(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run(spend=True) as run:
+    with here.events.subscribe(seen.append), here._run(spend=True) as run:
         run.approve(a_spend(0.42, 0.42))
     assert [line.event for line in seen if line.event == "spend"] == ["spend"]
 
@@ -476,6 +502,12 @@ def test_the_credential_is_asked_about_and_never_read(tmp_path: Path) -> None:
     assert a_machine(tmp_path, ELEVENLABS_API_KEY="sk_real").voice_key
 
 
+def test_the_credential_asked_about_is_the_one_the_voice_declares(tmp_path: Path) -> None:
+    """A voice DeckTalk does not ship declares no variable, so nothing is reported missing for it."""
+    assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="house").voice_key
+    assert not a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="elevenlabs").voice_key
+
+
 def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "none.toml"))
     here = Machine.from_environment()
@@ -486,7 +518,7 @@ def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest
 
 # ---- a machine a host builds -----------------------------------------------------------------
 
-HOST_SECRETS = {"ELEVENLABS_API_KEY": "sk-host-owned", "ELEVENLABS_VOICE_ID": "house-voice"}
+HOST_SECRETS = {"ELEVENLABS_API_KEY": "sk-host-owned", "DECKTALK_VOICE_ID": "house-voice"}
 """What a host hands its voice job: the key and the voice, and nothing else from its own process."""
 
 
@@ -507,7 +539,7 @@ def test_a_credential_a_host_hands_its_machine_never_reaches_a_line(tmp_path: Pa
     canary = "sk_host_canary_5d0c2a9e61"
     here = a_host(tmp_path, environ={"ELEVENLABS_API_KEY": canary, "HOST_DB_PASSWORD": "pw_host_canary_8e4b"})
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run() as run:
+    with here.events.subscribe(seen.append), here._run() as run:
         run.note(f"sent {canary} with pw_host_canary_8e4b")
         logging.getLogger("decktalk.speech.http").debug("headers %s", {"xi-api-key": canary})
     said = "".join(line.model_dump_json() for line in seen)
@@ -522,7 +554,7 @@ def test_what_reading_the_machine_noticed_is_a_warning_on_every_run(tmp_path: Pa
     config.write_text("[video]\npresett = 'veryfast'\n", encoding="utf-8")
     here = a_host(tmp_path, environ={"DECKTALK_VIDEO_CRV": "20"}, config_path=config)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run():
+    with here.events.subscribe(seen.append), here._run():
         pass
     warned = [line.message for line in seen if isinstance(line, Log) and line.level is Level.WARNING]
     assert tuple(warned) == here.notes
@@ -603,26 +635,39 @@ def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> N
 @pytest.mark.usefixtures("no_network")
 def test_a_host_machine_answers_no_voice_its_host_left_out(tmp_path: Path) -> None:
     here = a_host(tmp_path, providers={"house": lambda _context: FakeVoice()})
-    with here.run(), pytest.raises(InputError, match="not a voice this machine answers for"):
-        get_provider("elevenlabs", a_context())
+    with here._run() as run, pytest.raises(InputError, match="not a voice this machine answers for"):
+        run.voices.provider("elevenlabs", a_context())
 
 
 def test_two_machines_in_one_process_answer_with_their_own_voices(tmp_path: Path) -> None:
     first, second = FakeVoice(name="first"), FakeVoice(name="second")
     one = a_host(tmp_path, providers={"elevenlabs": lambda _context: first})
     two = a_host(tmp_path, providers={"elevenlabs": lambda _context: second})
-    with one.run():
-        with two.run():
-            assert get_provider("elevenlabs", a_context()) is second
-        assert get_provider("elevenlabs", a_context()) is first
+    with one._run() as outer:
+        with two._run() as inner:
+            assert inner.voices.provider("elevenlabs", a_context()) is second
+        assert outer.voices.provider("elevenlabs", a_context()) is first
+
+
+def test_a_thread_started_without_the_runs_context_answers_with_the_hosts_voices(tmp_path: Path) -> None:
+    """A worker pool that never copied the context still asks its run, so it cannot reach the shipped voice."""
+    house = FakeVoice(name="house")
+    here = a_host(tmp_path, providers={"elevenlabs": lambda _context: house})
+    project = open_project(a_starter(tmp_path, here), machine=here)
+    answered: list[object] = []
+    with here._run() as run:
+        worker = threading.Thread(target=lambda: answered.append(speech_provider(run, project._inputs)))
+        worker.start()
+        worker.join()
+    assert answered == [house]
 
 
 def test_the_machines_switch_is_stamped_on_every_voice_it_builds(tmp_path: Path) -> None:
     """A stage cannot widen where the key goes, and neither can a context built without the machine."""
     seen: list[VoiceContext] = []
     here = a_host(tmp_path, providers={"elevenlabs": seen.append}, allow_any_api_base=True)
-    with here.run():
-        get_provider("elevenlabs", a_context())
+    with here._run() as run:
+        run.voices.provider("elevenlabs", a_context())
     assert seen[0].allow_any_api_base is True
 
 
@@ -630,28 +675,66 @@ def test_the_machines_retries_are_stamped_on_every_voice_it_builds(tmp_path: Pat
     """A busy voice is asked again as often as the machine says, which no project may change."""
     seen: list[VoiceContext] = []
     here = a_host(tmp_path, providers={"elevenlabs": seen.append}, overrides=("narration.retries=5",))
-    with here.run():
-        get_provider("elevenlabs", a_context())
+    with here._run() as run:
+        run.voices.provider("elevenlabs", a_context())
     assert seen[0].retries == 5
+
+
+def test_a_machine_whose_host_gave_no_table_answers_with_the_shipped_sound_providers(tmp_path: Path) -> None:
+    assert sorted(a_host(tmp_path).sounds.factories) == sorted(SOUNDS)
+
+
+def test_a_host_that_gave_its_voices_and_no_sounds_reaches_no_shipped_sound_provider(tmp_path: Path) -> None:
+    """A machine built with a fake voice must not reach the real sound service by a table its host left out."""
+    here = a_host(tmp_path, providers={"elevenlabs": lambda _context: FakeVoice()})
+    assert dict(here.sounds.factories) == {}
+
+
+def test_the_sound_providers_a_host_supplies_are_the_ones_every_run_carries(tmp_path: Path) -> None:
+    seen: list[SoundContext] = []
+    here = a_host(
+        tmp_path, sound_providers={"house": seen.append}, allow_any_api_base=True, overrides=("narration.retries=5",)
+    )
+    with here._run() as run:
+        run.sounds.provider("house", SoundContext(secrets=NoSecrets(), api_base="", timeout_seconds=1))
+    assert (seen[0].allow_any_api_base, seen[0].retries) == (True, 5)
+
+
+def keyed(voice: FakeVoice) -> Callable[[VoiceContext], FakeVoice]:
+    """A provider that asks its project's secrets for the key before it answers, as the shipped one does."""
+
+    def build(context: VoiceContext) -> FakeVoice:
+        context.secrets.require("ELEVENLABS_API_KEY")
+        return voice
+
+    return build
+
+
+def named_in_the_file(root: Path, voice_id: str) -> None:
+    """Name the voice in the starter's own `[voice] id`, which is where a project commits it."""
+    toml = root / "decktalk.toml"
+    toml.write_text(toml.read_text(encoding="utf-8").replace('id = ""', f'id = "{voice_id}"'), encoding="utf-8")
 
 
 @pytest.mark.usefixtures("no_network")
 def test_a_tenants_env_file_is_never_read_under_a_host_machine(tmp_path: Path) -> None:
     """An upload could carry a `.env`, and the key it names would then pay for the tenant's take."""
-    here = a_host(tmp_path, environ={}, providers={"elevenlabs": lambda _context: FakeVoice()})
+    here = a_host(tmp_path, environ={}, providers={"elevenlabs": keyed(FakeVoice())})
     root = a_starter(tmp_path, here)
-    (root / ".env").write_text("ELEVENLABS_API_KEY=sk-tenant\nELEVENLABS_VOICE_ID=tenant-voice\n", encoding="utf-8")
+    named_in_the_file(root, "tenant-voice")
+    (root / ".env").write_text("ELEVENLABS_API_KEY=sk-tenant\n", encoding="utf-8")
     project = open_project(root, machine=here)
-    with pytest.raises(InputError, match="ELEVENLABS_VOICE_ID is not set"):
+    with pytest.raises(InputError, match="ELEVENLABS_API_KEY is not set"):
         project.narrate(spend=True)
 
 
 @pytest.mark.usefixtures("no_network", "fake_ffmpeg")
 def test_the_authors_own_env_file_is_read_under_a_machine_that_allows_it(tmp_path: Path) -> None:
     voice = FakeVoice()
-    here = a_host(tmp_path, environ={}, providers={"elevenlabs": lambda _context: voice}, dotenv=True)
+    here = a_host(tmp_path, environ={}, providers={"elevenlabs": keyed(voice)}, dotenv=True)
     root = a_starter(tmp_path, here)
-    (root / ".env").write_text("ELEVENLABS_API_KEY=sk-author\nELEVENLABS_VOICE_ID=author-voice\n", encoding="utf-8")
+    named_in_the_file(root, "author-voice")
+    (root / ".env").write_text("ELEVENLABS_API_KEY=sk-author\n", encoding="utf-8")
     assert open_project(root, machine=here).narrate(spend=True).ok
     assert {request.voice_id for request in voice.requests} == {"author-voice"}
 
@@ -663,7 +746,6 @@ def a_context() -> VoiceContext:
         api_base="https://api.elevenlabs.io/v1",
         context_chars=1,
         speech_timeout_seconds=1,
-        sound_timeout_seconds=1,
     )
 
 
@@ -833,7 +915,7 @@ def a_finding(fix: object) -> Finding:
 
 def ran(here: Machine, fix: CommandFix, *, unsafe: bool = False) -> FixOutcome:
     """What applying a machine's fix in a run of its own came to."""
-    with here.run() as run:
+    with here._run() as run:
         return apply_fix(run, Code.FILE_MISSING, fix, root=here.cwd, scope=Scope.MACHINE, unsafe=unsafe)
 
 
@@ -962,7 +1044,7 @@ def an_edit(file: str | Path, **locator: object) -> EditFix:
 
 
 def applied(here: Machine, fix: EditFix | RuntimeFix, root: Path) -> tuple[bool, str]:
-    with here.run() as run:
+    with here._run() as run:
         outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
     return outcome.applied, outcome.why or ""
 
@@ -1151,7 +1233,7 @@ def test_a_settings_fix_never_writes_through_a_project_file_linked_out_of_the_pr
     outside.write_text('[project]\nname = "victim"\n', encoding="utf-8")
     link(root / "decktalk.toml", outside, hard=kind == "hard")
     fix = SettingFix(title="t", applicability=Applicability.SAFE, key="video.width", value="1280")
-    with a_machine(tmp_path).run() as run:
+    with a_machine(tmp_path)._run() as run:
         outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
     assert outside.read_text(encoding="utf-8") == '[project]\nname = "victim"\n'
     if kind == "symbolic":
@@ -1212,7 +1294,7 @@ def test_a_subscriber_that_raises_becomes_a_line_and_never_stops_the_run(tmp_pat
             raise RuntimeError("no")
         seen.append(event)
 
-    with here.events.subscribe(angry), here.run() as run:
+    with here.events.subscribe(angry), here._run() as run:
         run.note("one")
     assert any(isinstance(line, Log) and line.level is Level.ERROR for line in seen)
 
@@ -1230,7 +1312,7 @@ def test_a_run_binds_the_toolchain_and_the_download_listener_for_its_own_length(
     """A fetcher and a filter sit below the event stream, so a run binds both rather than being passed."""
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run():
+    with here.events.subscribe(seen.append), here._run():
         assert bound_tools().cache_dir == str(tmp_path / "cache")
         announce("ffmpeg", 10, 100)
     assert bound_tools().cache_dir == ""

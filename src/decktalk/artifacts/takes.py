@@ -1,7 +1,10 @@
 """The take index, and the frozen inputs a take's name is taken over.
 
-    build/narrate/<hash>.mp3     one take, named by the content that produced it
-    build/narrate/takes.json     which section plays which take, and the clock the join makes
+    build/narrate/<hash>.<suffix>  one take, named by the content that produced it and by what it holds
+    build/narrate/takes.json       which section plays which take, and the clock the join makes
+
+The suffix is the one the voice's adapter declares for its output format, so a take asked for in
+`mp3_44100_128` is `<hash>.mp3`, and a placeholder, which DeckTalk writes itself, is always `.mp3`.
 
 Both sit in the project's `[narration] takes_dir` instead when it names one, so the index travels
 with the takes it lists.
@@ -13,7 +16,9 @@ and two sections with the same words share one take.
 `TakeInputs` is the whole of what that hash is taken over, declared as a model so the set is frozen
 by a shape rather than by a convention. Every byte of speech is paid for once, so adding a field or
 changing the order here re-voices every project there is, which is what
-`tests/decktalk/artifacts/test_takes.py` holds against the digests of a film that was really voiced.
+`tests/contract/test_take_hash.py` holds against the digests of films that were really voiced. Every
+field but the text refuses a newline and the text is last, so the payload, which joins the fields
+with newlines, reads back as one set of inputs and no two sets share a digest.
 The voice id is one of the inputs because two voices reading one sentence are two different takes,
 and it is a published name rather than a secret, so it is written into the file a reader can see.
 
@@ -31,9 +36,10 @@ import itertools
 import json
 from typing import Any, ClassVar
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from decktalk.artifacts.stored import Stored
+from decktalk.errors import InputError
 from decktalk.findings import Model
 from decktalk.results import SectionKey, SectionNumber
 
@@ -42,6 +48,12 @@ TAKE_DIGITS = 16
 
 PLACEHOLDER_PREFIX = "placeholder-"
 """What marks the digest of a take nobody paid for, so the two kinds never share a file name."""
+
+PLACEHOLDER_SUFFIX = ".mp3"
+"""What a placeholder take is written under, which is the mp3 click track DeckTalk writes itself."""
+
+FIELD_SEPARATOR = "\n"
+"""What joins the fields of a digest's payload, which no field but the last may hold."""
 
 PLACEHOLDER_DIGITS = 10
 """How much of the sha256 names a placeholder take, which is regenerated rather than bought."""
@@ -60,7 +72,7 @@ class _Digested(Model):
     @property
     def payload(self) -> str:
         """The bytes the digest is taken of, which is every field in declaration order, newline separated."""
-        return "\n".join(str(getattr(self, name)) for name in type(self).model_fields)
+        return FIELD_SEPARATOR.join(str(getattr(self, name)) for name in type(self).model_fields)
 
 
 class TakeInputs(_Digested):
@@ -70,12 +82,29 @@ class TakeInputs(_Digested):
     who wants to know why a take was voiced again compares two of these rather than guessing.
     """
 
-    provider: str = Field(description="The speech provider that spoke this take, such as elevenlabs.")
+    provider: str = Field(description="The speech provider that spoke this take, as `[voice] provider` names it.")
     voice: str = Field(description="The provider's id for the voice, which is a published name and not a secret.")
     model: str = Field(description="The provider's model id, which changes how the same words are read.")
     output_format: str = Field(description="The audio format asked for, such as mp3_44100_128.")
     settings: str = Field(description="The provider's voice settings as compact JSON with its keys sorted.")
     text: str = Field(description="The exact text sent to the voice, with its pause tags.")
+
+    @model_validator(mode="after")
+    def _one_line_each(self) -> TakeInputs:
+        """Refuse a newline in any field but the text, before anything is sent, so the payload stays one reading.
+
+        The text is the last field and may hold any newline. A newline anywhere before it would let
+        two different sets of inputs join to the same payload and so share one take.
+        """
+        for name in type(self).model_fields:
+            value = getattr(self, name)
+            if name != "text" and FIELD_SEPARATOR in value:
+                raise InputError(
+                    f"the take's {name.replace('_', ' ')} {value!r} holds a newline, and no field a take is named "
+                    "by may hold one but its text, so nothing was sent.",
+                    hint="Take the newline out of the [voice] or provider setting that names it, then run it again.",
+                )
+        return self
 
     @classmethod
     def of(
@@ -121,9 +150,12 @@ class PlaceholderInputs(_Digested):
         return PLACEHOLDER_PREFIX + hashlib.sha256(self.payload.encode("utf-8")).hexdigest()[:PLACEHOLDER_DIGITS]
 
 
-def take_file(digest: str) -> str:
-    """The name of the audio file of the take with this digest."""
-    return f"{digest}.mp3"
+def take_file(digest: str, suffix: str) -> str:
+    """The name of the audio file of the take with this digest, under the suffix of what it holds.
+
+    A placeholder is always the mp3 DeckTalk writes, whatever the voice's own format.
+    """
+    return f"{digest}{PLACEHOLDER_SUFFIX if is_placeholder(digest) else suffix}"
 
 
 def is_placeholder(digest: str) -> bool:
@@ -143,7 +175,9 @@ class Take(Model):
     )
     voiced: bool = Field(description="True when a provider spoke this take, false on a placeholder.")
     word_count: int = Field(ge=0, description="How many words this take speaks.")
-    characters: int = Field(ge=0, description="How many characters were sent to the voice, which is what is billed.")
+    characters: int = Field(
+        ge=0, description="How many characters were sent to the voice, which a per-character bill counts."
+    )
     estimated_seconds: float = Field(ge=0, description="How long the script said this take would run.")
     duration_seconds: float = Field(ge=0, description="How long the audio file runs, measured from its own bytes.")
     speech_end_seconds: float | None = Field(None, ge=0, description="Where the last word ends, or null.")
@@ -151,11 +185,6 @@ class Take(Model):
     lead_seconds: float = Field(0.0, ge=0, description="Silence placed before the take, which is not in the file.")
     tail_seconds: float = Field(0.0, ge=0, description="Silence placed after the take's sound, also not in the file.")
     spoken: str = Field(description="The words the voice says, with the script's punctuation, which captions borrow.")
-
-    @property
-    def file(self) -> str:
-        """The take's audio file, which is named by its digest and lives in the take directory."""
-        return take_file(self.hash)
 
     @property
     def sound_seconds(self) -> float:
@@ -227,6 +256,7 @@ class Takes(Stored):
 
 __all__ = [
     "PLACEHOLDER_PREFIX",
+    "PLACEHOLDER_SUFFIX",
     "TAKE_DIGITS",
     "TAKE_HASH",
     "PlaceholderInputs",

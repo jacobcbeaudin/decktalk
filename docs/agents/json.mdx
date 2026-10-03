@@ -56,7 +56,7 @@ document about schemas is unreadable. Every other command under `--json` prints 
 ```console
 decktalk schema finding     # the Finding model, with its fixes and its codes
 decktalk schema error       # the error object
-decktalk schema event       # the twelve event lines
+decktalk schema event       # the thirteen event lines
 decktalk schema settings    # every knob, its default, its range, its unit and its hazard
 decktalk schema page        # the twenty-four page attributes
 decktalk schema project     # the shape of cues.json
@@ -143,9 +143,14 @@ cost, so it is the one call an agent makes to learn the price of a run.
     "state": "estimate",
     "sections": [1, 2, 3],
     "characters": 0,
+    "seconds": 0.0,
     "dollars": 0.0,
     "ceiling_dollars": 0.14,
+    "billing": "per_character",
     "price_per_1000_characters": 0.3,
+    "price_per_second": 0.0,
+    "price_key": "elevenlabs.price_per_1000_characters",
+    "averaged": false,
     "price_layer": "project"
   },
   "storyboard": null
@@ -209,9 +214,14 @@ judgements about the project rather than a reason the command could not run.
     "state": "estimate",
     "sections": [1, 2, 3],
     "characters": 0,
+    "seconds": 0.0,
     "dollars": 0.0,
     "ceiling_dollars": 0.15,
+    "billing": "per_character",
     "price_per_1000_characters": 0.3,
+    "price_per_second": 0.0,
+    "price_key": "elevenlabs.price_per_1000_characters",
+    "averaged": false,
     "price_layer": "project"
   },
   "storyboard": null
@@ -503,6 +513,7 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `finding` | A judgement was made, carried as it was found. | `finding` |
 | `spend` | A price was worked out. | `spend` |
 | `take.charged` | The provider was paid for one take. | `section`, `take`, `characters`, `dollars` |
+| `sound.charged` | The sound provider was paid for one request. | `item`, `sound`, `digest`, `seconds`, `dollars` |
 | `fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
 | `log` | One sentence the library would have printed. | `level`, `message`, `source`, `stage`, `section`, `data` |
 
@@ -524,8 +535,11 @@ A `finding` line carries the judgement in the same shape the result will carry, 
 watches the stream can react before the call returns.
 
 A `spend` line carries `state`, which is `estimate` before the run buys anything and `charged`
-after, along with `sections`, `characters`, `dollars`, `ceiling_dollars`,
-`price_per_1000_characters` and `price_layer`.
+after, along with `sections`, `characters`, `seconds`, `dollars`, `ceiling_dollars`, `billing`,
+`price_per_1000_characters`, `price_per_second`, `price_key` and `price_layer`. `billing` is how the
+voice declares it bills, `per_character`, `per_second`, `free` or `undeclared`, and says which of
+the two rates the price was worked out at. A build's total is `mixed` when it adds characters of
+speech to seconds of sound, and then carries both rates.
 
 `build/events/` keeps the most recent `output.events_keep_runs` runs and deletes the oldest, and
 that key defaults to 20. Run `decktalk config explain output.events_keep_runs` for its range. One

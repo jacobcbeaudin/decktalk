@@ -22,6 +22,7 @@ from decktalk.machine import Run
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
+    Billing,
     CueResult,
     Layer,
     NarrateResult,
@@ -49,7 +50,7 @@ TOML = """
 [project]
 name = "t"
 
-[voice]
+[elevenlabs]
 price_per_1000_characters = 0.30
 
 [[section]]
@@ -81,7 +82,30 @@ def price(dollars: float = 0.0, *, state: SpendState = SpendState.ESTIMATE) -> S
         characters=int(dollars * 1000),
         dollars=dollars,
         ceiling_dollars=dollars,
+        billing=Billing.PER_CHARACTER,
         price_per_1000_characters=RATE,
+        price_layer=Layer.PROJECT,
+    )
+
+
+SOUND_RATE = 0.002
+"""Dollars per second of sound audio, which a soundscape's own price is quoted at."""
+
+
+def sound_price(seconds: float) -> Spend:
+    """The soundscape's price, which is billed per second of audio rather than per character."""
+    dollars = round(seconds * SOUND_RATE, 2)
+    return Spend(
+        state=SpendState.ESTIMATE,
+        sections=(1,),
+        characters=0,
+        seconds=seconds,
+        dollars=dollars,
+        ceiling_dollars=dollars,
+        billing=Billing.PER_SECOND,
+        price_per_1000_characters=0.0,
+        price_per_second=SOUND_RATE,
+        price_key="soundscape.music.price_per_minute",
         price_layer=Layer.PROJECT,
     )
 
@@ -130,6 +154,10 @@ class Answers:
     verify: list[Finding] = field(default_factory=list)
     narrate_dollars: float = 0.0
     soundscape_dollars: float = 0.0
+    narrate_spend: Spend | None = None
+    """The narration's whole price, when a test needs one other than `narrate_dollars` at the speech rate."""
+    soundscape_spend: Spend | None = None
+    """The soundscape's whole price, when a test needs one other than `soundscape_dollars` at the speech rate."""
     storyboard_page: str | None = "build/storyboard.html"
     film: bytes | None = None
     """What the faked assemble writes as the film, or None when it writes nothing, as most tests want."""
@@ -145,7 +173,7 @@ def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
             written=(),
             spending=False,
             sections=(),
-            spend=price(answers.narrate_dollars),
+            spend=answers.narrate_spend or price(answers.narrate_dollars),
             takes=Path("build/narrate/takes.json"),
             seconds=0.0,
         ),
@@ -167,7 +195,7 @@ def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
             run=RUN_ID,
             written=(),
             items=(),
-            spend=price(answers.soundscape_dollars),
+            spend=answers.soundscape_spend or price(answers.soundscape_dollars),
             seconds=0.0,
         ),
         "assemble": lambda: AssembleResult(
@@ -517,6 +545,58 @@ def test_the_spend_is_every_stage_that_priced_something_added_up(
     assert result.spend.dollars == pytest.approx(1.5)
     assert result.spend.ceiling_dollars == pytest.approx(1.5)
     assert result.spend.price_per_1000_characters == RATE
+
+
+@pytest.mark.usefixtures("calls")
+def test_a_total_of_speech_and_sound_says_it_is_mixed_and_counts_both(
+    inputs: Inputs, watched: Watched, answers: Answers
+) -> None:
+    """Characters and seconds are two bills, so the total names neither one's rate as the whole run's."""
+    answers.narrate_dollars = 0.3
+    answers.soundscape_spend = sound_price(120.0)
+    result = build(inputs, watched.run)
+    assert result.spend.billing is Billing.MIXED
+    assert (result.spend.characters, result.spend.seconds) == (300, 120.0)
+    assert (result.spend.price_per_1000_characters, result.spend.price_per_second) == (RATE, SOUND_RATE)
+    assert result.spend.sentence == (
+        "This run costs $0.54 for 300 characters and about 120 seconds of audio at the rates each stage states."
+    )
+
+
+@pytest.mark.usefixtures("calls")
+def test_a_total_that_buys_only_sound_is_billed_the_way_sound_is(
+    inputs: Inputs, watched: Watched, answers: Answers
+) -> None:
+    """A narration with every take on disk buys nothing, so the sound alone decides how the total bills."""
+    answers.narrate_spend = price(0.0).model_copy(update={"sections": ()})
+    answers.soundscape_spend = sound_price(60.0)
+    result = build(inputs, watched.run)
+    assert result.spend.billing is Billing.PER_SECOND
+    assert result.spend.price_per_second == SOUND_RATE
+    assert result.spend.sentence.endswith("per second of audio.")
+
+
+@pytest.mark.usefixtures("calls")
+def test_a_free_voice_beside_paid_sound_leaves_the_sound_to_bill_the_total(
+    inputs: Inputs, watched: Watched, answers: Answers
+) -> None:
+    """The free takes cost nothing and state no rate, so the total names the rate somebody stated."""
+    answers.narrate_spend = price(0.0).model_copy(update={"billing": Billing.FREE, "price_per_1000_characters": 0.0})
+    answers.soundscape_spend = sound_price(60.0)
+    result = build(inputs, watched.run)
+    assert result.spend.billing is Billing.PER_SECOND
+    assert (result.spend.price_key, result.spend.price_layer) == ("soundscape.music.price_per_minute", Layer.PROJECT)
+
+
+@pytest.mark.usefixtures("calls")
+def test_a_voice_that_declares_no_bill_leaves_the_whole_total_undeclared(
+    inputs: Inputs, watched: Watched, answers: Answers
+) -> None:
+    answers.narrate_spend = price(0.3).model_copy(update={"billing": Billing.UNDECLARED})
+    answers.soundscape_spend = sound_price(60.0)
+    result = build(inputs, watched.run)
+    assert result.spend.billing is Billing.UNDECLARED
+    assert "cannot price it" in result.spend.sentence
 
 
 def test_a_run_that_priced_nothing_still_reports_a_spend(inputs: Inputs, watched: Watched, calls: Calls) -> None:

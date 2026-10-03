@@ -106,53 +106,6 @@
           ],
           "x-environment": "DECKTALK_VIDEO_CRF"
         },
-        "audio_bitrate": {
-          "description": "AAC bitrate of the final mp4.",
-          "type": "string",
-          "default": "192k",
-          "enum": [
-            "96k",
-            "128k",
-            "160k",
-            "192k",
-            "256k",
-            "320k"
-          ],
-          "x-range": "must be one of 96k, 128k, 160k, 192k, 256k, 320k",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_VIDEO_AUDIO_BITRATE"
-        },
-        "sample_rate": {
-          "description": "Audio sample rate of the final mp4. Every audio input is resampled to it once.",
-          "type": "integer",
-          "default": 48000,
-          "enum": [
-            44100,
-            48000
-          ],
-          "x-range": "must be one of 44100, 48000",
-          "x-unit": "hertz",
-          "x-scope": "project",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_VIDEO_SAMPLE_RATE"
-        },
-        "channels": {
-          "description": "Audio channels of the final mp4.",
-          "type": "integer",
-          "default": 2,
-          "enum": [
-            1,
-            2
-          ],
-          "x-range": "must be one of 1, 2",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_VIDEO_CHANNELS"
-        },
         "slate_color": {
           "description": "Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB.",
           "type": "string",
@@ -173,26 +126,6 @@
       "description": "These keys govern how the script is turned into audio.",
       "x-kind": "tuning",
       "properties": {
-        "model": {
-          "description": "Speech model. `[voice] model` and `--set narration.model` override it.",
-          "type": "string",
-          "default": "eleven_multilingual_v2",
-          "x-range": "takes any value of its type",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_NARRATION_MODEL"
-        },
-        "output_format": {
-          "description": "Audio format that the speech provider returns. It is part of the narration cache key.",
-          "type": "string",
-          "default": "mp3_44100_128",
-          "x-range": "takes any value of its type",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_NARRATION_OUTPUT_FORMAT"
-        },
         "concurrency": {
           "description": "How many sections `narrate` voices at once.",
           "type": "integer",
@@ -642,73 +575,101 @@
     },
     "audio": {
       "type": "object",
-      "description": "These keys set the mix mechanics. Levels are project content and live in `[mix]`.",
+      "description": "These keys are the final audio: its encoding, and the loudness it is normalised to and judged against.",
       "x-kind": "tuning",
       "properties": {
-        "duck_ramp_seconds": {
-          "description": "Ramp of the music duck at each edge of a spoken span or a clip.",
-          "type": "number",
-          "default": 0.5,
-          "minimum": 0,
-          "maximum": 5,
-          "x-range": "must be between 0 and 5",
-          "x-unit": "seconds",
+        "bitrate": {
+          "description": "AAC bitrate of the final mp4.",
+          "type": "string",
+          "default": "192k",
+          "enum": [
+            "96k",
+            "128k",
+            "160k",
+            "192k",
+            "256k",
+            "320k"
+          ],
+          "x-range": "must be one of 96k, 128k, 160k, 192k, 256k, 320k",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_AUDIO_DUCK_RAMP_SECONDS"
+          "x-environment": "DECKTALK_AUDIO_BITRATE"
         },
-        "ambience_ramp_seconds": {
-          "description": "Ramp of the ambience bed at each edge of its span.",
-          "type": "number",
-          "default": 1.0,
-          "minimum": 0,
-          "maximum": 10,
-          "x-range": "must be between 0 and 10",
-          "x-unit": "seconds",
+        "sample_rate": {
+          "description": "Audio sample rate of the final mp4. Every audio input is resampled to it once.",
+          "type": "integer",
+          "default": 48000,
+          "enum": [
+            44100,
+            48000
+          ],
+          "x-range": "must be one of 44100, 48000",
+          "x-unit": "hertz",
           "x-scope": "project",
-          "x-nature": "taste",
+          "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_AUDIO_AMBIENCE_RAMP_SECONDS"
+          "x-environment": "DECKTALK_AUDIO_SAMPLE_RATE"
         },
-        "ambience_pad_seconds": {
-          "description": "Seconds that the ambience bed extends past each edge of its section.",
-          "type": "number",
-          "default": 0.5,
-          "minimum": 0,
-          "maximum": 10,
-          "x-range": "must be between 0 and 10",
-          "x-unit": "seconds",
+        "channels": {
+          "description": "Audio channels of the final mp4.",
+          "type": "integer",
+          "default": 2,
+          "enum": [
+            1,
+            2
+          ],
+          "x-range": "must be one of 1, 2",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_AUDIO_AMBIENCE_PAD_SECONDS"
+          "x-environment": "DECKTALK_AUDIO_CHANNELS"
         },
-        "marker_mute_ramp_seconds": {
-          "description": "Ramp into and out of a marker's mute.",
+        "target_lufs": {
+          "description": "Programme loudness the final mp4 is normalised to.",
           "type": "number",
-          "default": 0.04,
-          "minimum": 0,
-          "maximum": 1,
-          "x-range": "must be between 0 and 1",
-          "x-unit": "seconds",
+          "default": -16.0,
+          "minimum": -30,
+          "maximum": -9,
+          "x-range": "must be between -30 and -9",
+          "x-unit": "LUFS",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_AUDIO_MARKER_MUTE_RAMP_SECONDS"
+          "x-decides": [
+            "MIX_LOUDNESS"
+          ],
+          "x-environment": "DECKTALK_AUDIO_TARGET_LUFS"
         },
-        "marker_boost_ramp_seconds": {
-          "description": "Ramp into and out of a marker's swell.",
+        "true_peak_max_dbtp": {
+          "description": "Highest true peak the normalised mix may reach.",
           "type": "number",
-          "default": 0.3,
-          "minimum": 0,
-          "maximum": 5,
-          "x-range": "must be between 0 and 5",
-          "x-unit": "seconds",
+          "default": -1.5,
+          "minimum": -9,
+          "maximum": -0.1,
+          "x-range": "must be between -9 and -0.1",
+          "x-unit": "dBTP",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_AUDIO_MARKER_BOOST_RAMP_SECONDS"
+          "x-hazard": "Four times oversampling under-reads a true peak and the AAC encode overshoots on top of that, so a ceiling above about -1 dBTP reports a clean mix that clips on a listener's decoder.",
+          "x-decides": [
+            "MIX_LOUDNESS"
+          ],
+          "x-environment": "DECKTALK_AUDIO_TRUE_PEAK_MAX_DBTP"
+        },
+        "range_max_lu": {
+          "description": "The loudness range the measurement is made against. It is not a limit, and no mix fails on it.",
+          "type": "number",
+          "default": 11.0,
+          "minimum": 1,
+          "maximum": 20,
+          "x-range": "must be between 1 and 20",
+          "x-unit": "LU",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_AUDIO_RANGE_MAX_LU"
         }
       },
       "additionalProperties": false
@@ -1058,55 +1019,44 @@
     },
     "voice": {
       "type": "object",
-      "description": "These keys are what the speech provider is asked for and what its characters cost.",
-      "x-kind": "mixed",
+      "description": "These keys are the four every voice has: which provider reads the script, in which voice, model and pace. Everything a provider is particular about, its own fields, its default model and its rate, is in that provider's own table, so changing `provider` never sends one vendor's fields to another.",
+      "x-kind": "tuning",
       "properties": {
-        "stability": {
-          "description": "How closely the voice holds one delivery across takes.",
-          "type": "number",
-          "default": 0.55,
-          "minimum": 0,
-          "maximum": 1,
-          "x-range": "must be between 0 and 1",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-hazard": "The provider takes a share and refuses anything else, so a value read as a percentage fails the request rather than the load.",
-          "x-environment": "DECKTALK_VOICE_STABILITY"
-        },
-        "similarity_boost": {
-          "description": "How closely the voice holds to the original recording it was cloned from.",
-          "type": "number",
-          "default": 0.75,
-          "minimum": 0,
-          "maximum": 1,
-          "x-range": "must be between 0 and 1",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_VOICE_SIMILARITY_BOOST"
-        },
-        "style": {
-          "description": "How much expressive style the voice adds beyond the words.",
-          "type": "number",
-          "default": 0.0,
-          "minimum": 0,
-          "maximum": 1,
-          "x-range": "must be between 0 and 1",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_VOICE_STYLE"
-        },
-        "speaker_boost": {
-          "description": "Whether the provider applies its own speaker boost to the take.",
-          "type": "boolean",
-          "default": true,
+        "provider": {
+          "description": "The speech provider that reads the script, which is a name the machine's own map answers. An unregistered name fails when `narrate` runs rather than at load. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a voice served by a local server, whose own keys are `[dtsp]`.",
+          "type": "string",
+          "default": "elevenlabs",
           "x-range": "takes any value of its type",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_VOICE_SPEAKER_BOOST"
+          "x-environment": "DECKTALK_VOICE_PROVIDER"
+        },
+        "id": {
+          "description": "The voice that reads the script, as the provider names it. It is a published name rather than a credential, so it is committed with the project, and it is one of the inputs every take is named by. `DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file.",
+          "type": "string",
+          "default": "",
+          "pattern": "^[A-Za-z0-9_-]*$",
+          "x-range": "must match the pattern ^[A-Za-z0-9_-]*$",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-hazard": "The id is placed in the path of every speech request, so a value that could hold a slash, a dot or a query would let a project somebody else wrote send the key to another endpoint of the service.",
+          "x-environment": "DECKTALK_VOICE_ID"
+        },
+        "model": {
+          "description": "The provider's model that reads the script. It is empty for the model the provider's own table names, such as `[elevenlabs] model` or `[dtsp] model`.",
+          "type": "string",
+          "default": "",
+          "x-range": "takes any value of its type",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-see-also": [
+            "elevenlabs.model",
+            "dtsp.model"
+          ],
+          "x-environment": "DECKTALK_VOICE_MODEL"
         },
         "speed": {
           "description": "How fast the voice speaks, as a multiple of its natural pace.",
@@ -1118,85 +1068,81 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-hazard": "The provider refuses a multiple outside its own range, so a slower read is a script change rather than a knob.",
+          "x-hazard": "The provider refuses a multiple outside its own range, so a slower read is a script change rather than a setting.",
           "x-environment": "DECKTALK_VOICE_SPEED"
-        },
-        "price_per_1000_characters": {
-          "description": "What this project's plan charges per thousand characters of speech.",
-          "type": "number",
-          "default": 0.0,
-          "minimum": 0,
-          "maximum": 100,
-          "x-range": "must be between 0 and 100",
-          "x-unit": "currency per 1000 characters",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "stated",
-          "x-evidence": "the plan page of the account whose key this project uses",
-          "x-hazard": "It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. A zero somebody stated says the voice bills nothing, so a run with neither --spend nor --no-spend buys from it without asking.",
-          "x-environment": "DECKTALK_VOICE_PRICE_PER_1000_CHARACTERS"
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "mix": {
       "type": "object",
-      "description": "The tuning half of `[mix]`. The music, the ambience and the levels are project content.",
+      "description": "The settings half of `[mix]`, which is how each layer is ramped. Its files and levels are project content.",
       "x-kind": "mixed",
       "properties": {
-        "loudness": {
-          "type": "object",
-          "description": "These keys are the programme loudness the final mp4 is normalised to and judged against.",
-          "x-kind": "mixed",
-          "properties": {
-            "target_lufs": {
-              "description": "Programme loudness the final mp4 is normalised to.",
-              "type": "number",
-              "default": -16.0,
-              "minimum": -30,
-              "maximum": -9,
-              "x-range": "must be between -30 and -9",
-              "x-unit": "LUFS",
-              "x-scope": "project",
-              "x-nature": "taste",
-              "x-source": "chosen",
-              "x-decides": [
-                "MIX_LOUDNESS"
-              ],
-              "x-environment": "DECKTALK_MIX_LOUDNESS_TARGET_LUFS"
-            },
-            "true_peak_max_dbtp": {
-              "description": "Highest true peak the normalised mix may reach.",
-              "type": "number",
-              "default": -1.5,
-              "minimum": -9,
-              "maximum": -0.1,
-              "x-range": "must be between -9 and -0.1",
-              "x-unit": "dBTP",
-              "x-scope": "project",
-              "x-nature": "taste",
-              "x-source": "chosen",
-              "x-hazard": "Four times oversampling under-reads a true peak and the AAC encode overshoots on top of that, so a ceiling above about -1 dBTP reports a clean mix that clips on a listener's decoder.",
-              "x-decides": [
-                "MIX_LOUDNESS"
-              ],
-              "x-environment": "DECKTALK_MIX_LOUDNESS_TRUE_PEAK_MAX_DBTP"
-            },
-            "range_max_lu": {
-              "description": "The loudness range the measurement is made against. It is not a limit, and no mix fails on it.",
-              "type": "number",
-              "default": 11.0,
-              "minimum": 1,
-              "maximum": 20,
-              "x-range": "must be between 1 and 20",
-              "x-unit": "LU",
-              "x-scope": "project",
-              "x-nature": "taste",
-              "x-source": "chosen",
-              "x-environment": "DECKTALK_MIX_LOUDNESS_RANGE_MAX_LU"
-            }
-          },
-          "additionalProperties": true
+        "duck_ramp_seconds": {
+          "description": "Ramp of the music duck at each edge of a spoken span or a clip.",
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 5,
+          "x-range": "must be between 0 and 5",
+          "x-unit": "seconds",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_MIX_DUCK_RAMP_SECONDS"
+        },
+        "ambience_ramp_seconds": {
+          "description": "Ramp of the ambience bed at each edge of its span.",
+          "type": "number",
+          "default": 1.0,
+          "minimum": 0,
+          "maximum": 10,
+          "x-range": "must be between 0 and 10",
+          "x-unit": "seconds",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_MIX_AMBIENCE_RAMP_SECONDS"
+        },
+        "ambience_pad_seconds": {
+          "description": "Seconds that the ambience bed extends past each edge of its section.",
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 10,
+          "x-range": "must be between 0 and 10",
+          "x-unit": "seconds",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_MIX_AMBIENCE_PAD_SECONDS"
+        },
+        "marker_mute_ramp_seconds": {
+          "description": "Ramp into and out of a marker's mute.",
+          "type": "number",
+          "default": 0.04,
+          "minimum": 0,
+          "maximum": 1,
+          "x-range": "must be between 0 and 1",
+          "x-unit": "seconds",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_MIX_MARKER_MUTE_RAMP_SECONDS"
+        },
+        "marker_boost_ramp_seconds": {
+          "description": "Ramp into and out of a marker's swell.",
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0,
+          "maximum": 5,
+          "x-range": "must be between 0 and 5",
+          "x-unit": "seconds",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_MIX_MARKER_BOOST_RAMP_SECONDS"
         }
       },
       "additionalProperties": true
@@ -1248,9 +1194,103 @@
     },
     "elevenlabs": {
       "type": "object",
-      "description": "These keys point at the ElevenLabs API and size its soundscape requests.",
+      "description": "These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on elevenlabs.io unless the machine allows any. The soundscape buys from the same API with the same key.",
       "x-kind": "tuning",
       "properties": {
+        "model": {
+          "description": "The ElevenLabs model that reads the script when `[voice] model` is empty.",
+          "type": "string",
+          "default": "eleven_multilingual_v2",
+          "x-range": "takes any value of its type",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-see-also": [
+            "voice.model"
+          ],
+          "x-environment": "DECKTALK_ELEVENLABS_MODEL"
+        },
+        "stability": {
+          "description": "How closely the voice holds one delivery across takes.",
+          "type": "number",
+          "default": 0.55,
+          "minimum": 0,
+          "maximum": 1,
+          "x-range": "must be between 0 and 1",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-hazard": "ElevenLabs takes a share and refuses anything else, so a value read as a percentage fails the request rather than the load.",
+          "x-environment": "DECKTALK_ELEVENLABS_STABILITY"
+        },
+        "similarity_boost": {
+          "description": "How closely the voice holds to the original recording it was cloned from.",
+          "type": "number",
+          "default": 0.75,
+          "minimum": 0,
+          "maximum": 1,
+          "x-range": "must be between 0 and 1",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_ELEVENLABS_SIMILARITY_BOOST"
+        },
+        "style": {
+          "description": "How much expressive style the voice adds beyond the words.",
+          "type": "number",
+          "default": 0.0,
+          "minimum": 0,
+          "maximum": 1,
+          "x-range": "must be between 0 and 1",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_ELEVENLABS_STYLE"
+        },
+        "speaker_boost": {
+          "description": "Whether ElevenLabs applies its own speaker boost to the take.",
+          "type": "boolean",
+          "default": true,
+          "x-range": "takes any value of its type",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_ELEVENLABS_SPEAKER_BOOST"
+        },
+        "price_per_1000_characters": {
+          "description": "What this project's ElevenLabs plan charges per thousand characters of speech.",
+          "type": "number",
+          "default": 0.0,
+          "minimum": 0,
+          "maximum": 100,
+          "x-range": "must be between 0 and 100",
+          "x-unit": "currency per 1000 characters",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "stated",
+          "x-evidence": "the plan page of the account whose key this project uses",
+          "x-hazard": "It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. ElevenLabs bills per character, so a zero somebody stated still asks before it buys.",
+          "x-environment": "DECKTALK_ELEVENLABS_PRICE_PER_1000_CHARACTERS"
+        },
+        "output_format": {
+          "description": "Audio format ElevenLabs returns each take in, as its own codec_rate_bitrate token. It is part of every take's digest, and its codec names the take's file.",
+          "type": "string",
+          "default": "mp3_44100_128",
+          "enum": [
+            "mp3_22050_32",
+            "mp3_44100_32",
+            "mp3_44100_64",
+            "mp3_44100_96",
+            "mp3_44100_128",
+            "mp3_44100_192"
+          ],
+          "x-range": "must be one of mp3_22050_32, mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-hazard": "Every take already bought was bought in the format named here, so another one buys every take again.",
+          "x-environment": "DECKTALK_ELEVENLABS_OUTPUT_FORMAT"
+        },
         "api_base": {
           "description": "Base URL of the ElevenLabs API.",
           "type": "string",
@@ -1260,120 +1300,72 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_ELEVENLABS_API_BASE"
-        },
-        "sound_model": {
-          "description": "Model for ambience and sound effect requests. A soundscape table can name its own.",
+        }
+      },
+      "additionalProperties": false
+    },
+    "dtsp": {
+      "type": "object",
+      "description": "These keys are the `dtsp` voice's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `url` may name only a loopback address over http unless the machine allows any host.",
+      "x-kind": "tuning",
+      "properties": {
+        "url": {
+          "description": "Base URL of the local speech server, which must be http on 127.0.0.1, localhost or [::1].",
           "type": "string",
-          "default": "eleven_text_to_sound_v2",
+          "default": "http://127.0.0.1:8765",
           "x-range": "takes any value of its type",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_SOUND_MODEL"
+          "x-hazard": "The script travels to whatever host this names, so a project file can name only this machine.",
+          "x-environment": "DECKTALK_DTSP_URL"
         },
-        "music_model": {
-          "description": "Model for music requests. A soundscape table can name its own.",
+        "model": {
+          "description": "The model the local server reads the script with when `[voice] model` is empty, as the server names it.",
           "type": "string",
-          "default": "music_v2",
+          "default": "kokoro-82m",
           "x-range": "takes any value of its type",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_MUSIC_MODEL"
-        },
-        "music_bitrate": {
-          "description": "Bitrate of the music file that `soundscape` joins from its chunks.",
-          "type": "string",
-          "default": "192k",
-          "enum": [
-            "96k",
-            "128k",
-            "160k",
-            "192k",
-            "256k",
-            "320k"
+          "x-see-also": [
+            "voice.model"
           ],
-          "x-range": "must be one of 96k, 128k, 160k, 192k, 256k, 320k",
+          "x-environment": "DECKTALK_DTSP_MODEL"
+        }
+      },
+      "additionalProperties": false
+    },
+    "soundscape": {
+      "type": "object",
+      "description": "The settings half of `[soundscape]`: how the music, the ambience and the effects are asked for. Each item's own table holds its prompt and its file, which are project content, beside the settings that size its request, so a key is spelled the same way the item it sizes spells it.",
+      "x-kind": "mixed",
+      "properties": {
+        "provider": {
+          "description": "The sound provider the music, the ambience and the effects are bought from, which is a name the machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys with the key and `api_base` of `[elevenlabs]`.",
+          "type": "string",
+          "default": "elevenlabs",
+          "x-range": "takes any value of its type",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_MUSIC_BITRATE"
+          "x-see-also": [
+            "elevenlabs.api_base"
+          ],
+          "x-environment": "DECKTALK_SOUNDSCAPE_PROVIDER"
         },
-        "max_music_chunk_seconds": {
-          "description": "Longest music request. Longer music is requested in chunks and crossfaded.",
-          "type": "integer",
-          "default": 300,
-          "minimum": 30,
-          "maximum": 600,
-          "x-range": "must be between 30 and 600",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_MAX_MUSIC_CHUNK_SECONDS"
-        },
-        "music_crossfade_seconds": {
-          "description": "Crossfade between two music chunks.",
-          "type": "integer",
-          "default": 2,
-          "minimum": 0,
-          "maximum": 30,
-          "x-range": "must be between 0 and 30",
-          "x-unit": "seconds",
+        "format": {
+          "description": "Audio format the music, the ambience and the effects are asked for in. A take's format is its voice's own, such as `[elevenlabs] output_format`.",
+          "type": "string",
+          "default": "mp3_44100_128",
+          "x-range": "takes any value of its type",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_MUSIC_CROSSFADE_SECONDS"
-        },
-        "ambience_seconds": {
-          "description": "Length of a generated ambience bed. A soundscape table can set `duration_seconds` instead.",
-          "type": "number",
-          "default": 25.0,
-          "minimum": 1,
-          "maximum": 60,
-          "x-range": "must be between 1 and 60",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_AMBIENCE_SECONDS"
-        },
-        "ambience_prompt_influence": {
-          "description": "Prompt influence of an ambience request. A soundscape table can set its own.",
-          "type": "number",
-          "default": 0.3,
-          "minimum": 0,
-          "maximum": 1,
-          "x-range": "must be between 0 and 1",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_AMBIENCE_PROMPT_INFLUENCE"
-        },
-        "effect_seconds": {
-          "description": "Length of a generated sound effect. A soundscape table can set `duration_seconds` instead.",
-          "type": "number",
-          "default": 0.5,
-          "minimum": 0.1,
-          "maximum": 30,
-          "x-range": "must be between 0.1 and 30",
-          "x-unit": "seconds",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_EFFECT_SECONDS"
-        },
-        "effect_prompt_influence": {
-          "description": "Prompt influence of a sound effect request. A soundscape table can set its own.",
-          "type": "number",
-          "default": 0.5,
-          "minimum": 0,
-          "maximum": 1,
-          "x-range": "must be between 0 and 1",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_EFFECT_PROMPT_INFLUENCE"
+          "x-see-also": [
+            "elevenlabs.output_format"
+          ],
+          "x-environment": "DECKTALK_SOUNDSCAPE_FORMAT"
         },
         "timeout_seconds": {
           "description": "Seconds before a sound or music request times out.",
@@ -1386,10 +1378,225 @@
           "x-scope": "project",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_TIMEOUT_SECONDS"
+          "x-environment": "DECKTALK_SOUNDSCAPE_TIMEOUT_SECONDS"
+        },
+        "ambience": {
+          "type": "object",
+          "description": "The settings half of `[soundscape.ambience]`: how the bed is asked for. Its prompt and file are content.",
+          "x-kind": "mixed",
+          "properties": {
+            "model": {
+              "description": "Model the ambience bed is asked for from.",
+              "type": "string",
+              "default": "eleven_text_to_sound_v2",
+              "x-range": "takes any value of its type",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_AMBIENCE_MODEL"
+            },
+            "duration_seconds": {
+              "description": "Length of the ambience bed that is asked for, which `[mix]` loops under its sections.",
+              "type": "number",
+              "default": 25.0,
+              "minimum": 1,
+              "maximum": 60,
+              "x-range": "must be between 1 and 60",
+              "x-unit": "seconds",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_AMBIENCE_DURATION_SECONDS"
+            },
+            "prompt_influence": {
+              "description": "How closely the ambience bed follows its prompt.",
+              "type": "number",
+              "default": 0.3,
+              "minimum": 0,
+              "maximum": 1,
+              "x-range": "must be between 0 and 1",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_AMBIENCE_PROMPT_INFLUENCE"
+            },
+            "price_per_minute": {
+              "description": "What this project's sound plan charges per minute of ambience audio, which is priced by the second of audio asked for.",
+              "type": "number",
+              "default": 0.0,
+              "minimum": 0,
+              "maximum": 100,
+              "x-range": "must be between 0 and 100",
+              "x-unit": "currency per minute of audio",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "stated",
+              "x-evidence": "the plan page of the account whose key buys the sound",
+              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
+              "x-see-also": [
+                "soundscape.provider"
+              ],
+              "x-environment": "DECKTALK_SOUNDSCAPE_AMBIENCE_PRICE_PER_MINUTE"
+            }
+          },
+          "additionalProperties": true
+        },
+        "effects": {
+          "type": "object",
+          "description": "The settings half of `[soundscape.effects]`: how each effect is asked for unless its own table says.",
+          "x-kind": "mixed",
+          "properties": {
+            "model": {
+              "description": "Model every effect is asked for from, unless its own table names one.",
+              "type": "string",
+              "default": "eleven_text_to_sound_v2",
+              "x-range": "takes any value of its type",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_EFFECTS_MODEL"
+            },
+            "duration_seconds": {
+              "description": "Length of every effect that is asked for, unless its own table sets one.",
+              "type": "number",
+              "default": 0.5,
+              "minimum": 0.1,
+              "maximum": 30,
+              "x-range": "must be between 0.1 and 30",
+              "x-unit": "seconds",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_EFFECTS_DURATION_SECONDS"
+            },
+            "prompt_influence": {
+              "description": "How closely every effect follows its prompt, unless its own table sets how closely.",
+              "type": "number",
+              "default": 0.5,
+              "minimum": 0,
+              "maximum": 1,
+              "x-range": "must be between 0 and 1",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_EFFECTS_PROMPT_INFLUENCE"
+            },
+            "price_per_minute": {
+              "description": "What this project's sound plan charges per minute of effect audio, which is priced by the second of audio asked for.",
+              "type": "number",
+              "default": 0.0,
+              "minimum": 0,
+              "maximum": 100,
+              "x-range": "must be between 0 and 100",
+              "x-unit": "currency per minute of audio",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "stated",
+              "x-evidence": "the plan page of the account whose key buys the sound",
+              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
+              "x-see-also": [
+                "soundscape.provider"
+              ],
+              "x-environment": "DECKTALK_SOUNDSCAPE_EFFECTS_PRICE_PER_MINUTE"
+            }
+          },
+          "additionalProperties": true
+        },
+        "music": {
+          "type": "object",
+          "description": "The settings half of `[soundscape.music]`: how the bed is asked for and joined. Its prompt is content.",
+          "x-kind": "mixed",
+          "properties": {
+            "model": {
+              "description": "Model the music is asked for from.",
+              "type": "string",
+              "default": "music_v2",
+              "x-range": "takes any value of its type",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_MODEL"
+            },
+            "duration_seconds": {
+              "description": "Length of the music that is asked for, which `[mix]` fades out at the end of the film.",
+              "type": "integer",
+              "default": 360,
+              "minimum": 1,
+              "maximum": 3600,
+              "x-range": "must be between 1 and 3600",
+              "x-unit": "seconds",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_DURATION_SECONDS"
+            },
+            "bitrate": {
+              "description": "Bitrate of the music file that `soundscape` joins from its chunks.",
+              "type": "string",
+              "default": "192k",
+              "enum": [
+                "96k",
+                "128k",
+                "160k",
+                "192k",
+                "256k",
+                "320k"
+              ],
+              "x-range": "must be one of 96k, 128k, 160k, 192k, 256k, 320k",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_BITRATE"
+            },
+            "max_chunk_seconds": {
+              "description": "Longest music request. Longer music is requested in chunks and crossfaded.",
+              "type": "integer",
+              "default": 300,
+              "minimum": 30,
+              "maximum": 600,
+              "x-range": "must be between 30 and 600",
+              "x-unit": "seconds",
+              "x-scope": "project",
+              "x-nature": "apparatus",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_MAX_CHUNK_SECONDS"
+            },
+            "crossfade_seconds": {
+              "description": "Crossfade between two music chunks.",
+              "type": "integer",
+              "default": 2,
+              "minimum": 0,
+              "maximum": 30,
+              "x-range": "must be between 0 and 30",
+              "x-unit": "seconds",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "chosen",
+              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_CROSSFADE_SECONDS"
+            },
+            "price_per_minute": {
+              "description": "What this project's sound plan charges per minute of music audio, which is priced by the second of audio asked for.",
+              "type": "number",
+              "default": 0.0,
+              "minimum": 0,
+              "maximum": 100,
+              "x-range": "must be between 0 and 100",
+              "x-unit": "currency per minute of audio",
+              "x-scope": "project",
+              "x-nature": "taste",
+              "x-source": "stated",
+              "x-evidence": "the plan page of the account whose key buys the sound",
+              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
+              "x-see-also": [
+                "soundscape.provider"
+              ],
+              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_PRICE_PER_MINUTE"
+            }
+          },
+          "additionalProperties": true
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "output": {
       "type": "object",
@@ -1516,12 +1723,6 @@
     "transition": {
       "type": "object",
       "description": "How one section is joined to the next.",
-      "x-kind": "document",
-      "additionalProperties": true
-    },
-    "soundscape": {
-      "type": "object",
-      "description": "The music, the ambience and the sound effects a run generates.",
       "x-kind": "document",
       "additionalProperties": true
     }

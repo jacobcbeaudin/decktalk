@@ -30,7 +30,7 @@ from pydantic import Field, field_validator, model_validator
 from decktalk.errors import ErrorInfo
 from decktalk.findings import Finding, Model, ProjectPath
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Elapsed, Run, SectionNumber, Spend
+from decktalk.results import Elapsed, Run, SectionNumber, SoundKind, Spend
 from decktalk.secret import redacted
 
 MOMENT = "Which moment this line reports, which is what a reader dispatches on."
@@ -180,6 +180,22 @@ class TakeCharged(Event):
     dollars: float = Field(ge=0, description="What this take cost at the price in force, in US dollars.")
 
 
+class SoundCharged(Event):
+    """The sound provider was paid for one request, which is a soundscape item or one part of its music.
+
+    It is written the moment the provider answers, once per paid request, so a host that keeps its
+    own ledger records every sound it paid for and can tell by the digest that a retried run did not
+    buy the same request twice.
+    """
+
+    event: Literal["sound.charged"] = Field("sound.charged", description=MOMENT)
+    item: str = Field(description="What the author calls the item in decktalk.toml.")
+    sound: SoundKind = Field(description="What kind of sound the item is: music, ambience or an effect.")
+    digest: str = Field(pattern=r"^[0-9a-f]+$", description="The digest of the request that was paid for.")
+    seconds: float = Field(ge=0, description="How many seconds of audio were asked for.")
+    dollars: float = Field(ge=0, description="What this request cost at the rate in force, in US dollars.")
+
+
 class Fetch(Event):
     """A tool is being downloaded, which is the one moment a run stops for the network."""
 
@@ -274,6 +290,7 @@ Line = Annotated[
     | FindingEvent
     | SpendEvent
     | TakeCharged
+    | SoundCharged
     | Fetch
     | Log,
     Field(discriminator="event"),
@@ -494,6 +511,7 @@ __all__ = [
     "RunStart",
     "SectionDone",
     "SectionStart",
+    "SoundCharged",
     "SpendEvent",
     "TakeCharged",
     "StageDone",

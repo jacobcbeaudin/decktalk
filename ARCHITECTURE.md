@@ -7,7 +7,7 @@ introduces it. This note says how the code is arranged and why, for someone abou
 
 ## The one idea
 
-Narration comes back from the speech provider with a start and an end time for every word. Every
+Narration comes back from the voice with a start and an end time for every word. Every
 other time in the system is derived from those word times. A cue names a phrase rather than a
 second, so a reveal follows the voice wherever the voice puts it, and a rewritten sentence moves
 every picture after it without anyone editing a timeline.
@@ -107,7 +107,8 @@ what keeps that one edge honest.
 the documentation of the shape and the enforcement of it come from one source.
 
 The rule buys two things. A speech provider is built from a `VoiceContext` and never from a project,
-so the speech boundary sits in the leaves and a second provider would touch nothing above it. And
+so the speech boundary sits in the leaves, and its closed set of adapters, the ElevenLabs voice and
+the local `dtsp` one, touches nothing above it: a layer test refuses a vendor name above `speech/`. And
 the command line renders from the result objects alone, so it imports no stage and knows no result's
 shape.
 
@@ -202,8 +203,8 @@ keep such a deck from reaching what the service holds.
 
 - **The host builds the machine.** `Machine.from_environment()` is the only reading of the process
   environment, and `Machine.of` reads nothing, so a job sees exactly the variables, the settings
-  file, the cache and the voices its host chose. Such a machine reads no project's `.env`, and the key
-  goes to ElevenLabs and nowhere else unless the host says otherwise.
+  file, the cache and the voices its host chose. Such a machine reads no project's `.env`, and a voice
+  sends its key and its script only to the hosts its adapter allows unless the host says otherwise.
 - **An untrusted page is sealed.** Under `record.page_policy = "untrusted"` Chromium runs with its
   sandbox on or not at all, every request off the project's origin is refused through every channel
   a page can open, and under both policies the browser is handed a scrubbed environment rather than
@@ -214,8 +215,8 @@ keep such a deck from reaching what the service holds.
   `check` and `storyboard` in a render process that holds none. The build directory is the only thing
   that moves between them. A run that may spend refuses to open an untrusted page, at the one place
   a browser starts, so a voiced `build` on a host is refused before it buys anything rather than
-  trusted not to happen. Each paid take is a `take.charged` line on the stream the moment it is
-  bought, which is what a host's own ledger reads.
+  trusted not to happen. Each paid take is a `take.charged` line and each paid sound request a
+  `sound.charged` line on the stream the moment it is bought, which is what a host's own ledger reads.
 
 [The Python API](https://docs.decktalk.ai/reference/python-api#running-decktalk-inside-a-service)
 is the contract a host builds on.

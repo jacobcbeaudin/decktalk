@@ -22,7 +22,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from decktalk.artifacts import Take, Takes, Words, is_placeholder, take_file, words_file
+from decktalk.artifacts import Take, Takes, Words, is_placeholder, words_file
 from decktalk.events import TakeCharged
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import Segment
@@ -30,8 +30,8 @@ from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
 from decktalk.results import Word
-from decktalk.speech import PUNCT, SpeechProvider, SpeechRequest
-from decktalk.stages import dollars_for
+from decktalk.speech import PUNCT, SpeechProvider, SpeechRequest, canonical_text
+from decktalk.stages import billed, dollars_for
 from decktalk.stages.narrate.plan import TakePlan, is_cached
 
 PLACEHOLDER_CLOSE_SECONDS = 0.1
@@ -102,7 +102,7 @@ def take_row(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voi
         hash=digest,
         voiced=voiced,
         word_count=segment.word_count,
-        characters=len(segment.tts_text),
+        characters=len(canonical_text(segment.pieces)),
         estimated_seconds=segment.estimated_seconds(inputs.settings.narration),
         duration_seconds=ffmpeg.probe_duration(workspace.take_path(digest)),
         speech_end_seconds=written.end if written is not None else None,
@@ -115,7 +115,7 @@ def write_placeholder_take(inputs: Inputs, segment: Segment, chapter: str, diges
     """Write one click track and its estimated words, and give back the row and the files."""
     cfg = inputs.settings.narration
     home = inputs.workspace.home_of(digest)
-    out = home / take_file(digest)
+    out = home / inputs.workspace.take_file(digest)
     duration = segment.silent_seconds(cfg)
     words = estimated_words(segment, duration)
     clicks = [word.start for word in words] + ([words[-1].end] if words else [])
@@ -123,7 +123,7 @@ def write_placeholder_take(inputs: Inputs, segment: Segment, chapter: str, diges
         out,
         duration + PLACEHOLDER_CLOSE_SECONDS,
         clicks,
-        sample_rate=inputs.settings.video.sample_rate,
+        sample_rate=inputs.settings.audio.sample_rate,
         bitrate=cfg.mp3_bitrate,
     )
     written = home / words_file(digest)
@@ -140,22 +140,25 @@ def write_voiced_take(
     digest: str,
     request: SpeechRequest,
 ) -> tuple[Take, list[Path]]:
-    """Send one request, write the mp3 and its words as they came, and give back the row and the files.
+    """Send one request, write the audio and its words as they came, and give back the row and the files.
 
     The provider is paid the moment it answers, so the charge goes on the stream before anything
     that could fail writes the take. A host that keeps its own ledger then records every take it
-    paid for, even one whose file never reached the disk.
+    paid for, even one whose file never reached the disk. The charge is the bill the provider
+    declares, and a per-second bill is charged on the length the script gave the take, which is the
+    figure the run was approved at.
     """
     home = inputs.workspace.home_of(digest)
-    out = home / take_file(digest)
+    out = home / inputs.workspace.take_file(digest)
     spoken, words = provider.speak(request)
-    characters = len(request.text)
+    characters = len(canonical_text(request.pieces))
+    seconds = segment.estimated_seconds(inputs.settings.narration)
     run.emit(
         TakeCharged,
         section=segment.index,
         take=digest,
         characters=characters,
-        dollars=dollars_for(characters, inputs),
+        dollars=dollars_for(billed(characters, seconds, inputs.settings.voice.provider), inputs),
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(spoken)
@@ -177,7 +180,7 @@ def keep_at_home(inputs: Inputs, digest: str) -> list[Path]:
     if is_placeholder(digest) or found is None or found == home:
         return []
     home.mkdir(parents=True, exist_ok=True)
-    copied = [home / take_file(digest), home / words_file(digest)]
+    copied = [home / workspace.take_file(digest), home / words_file(digest)]
     for kept in copied:
         shutil.copyfile(found / kept.name, kept)
     return copied
@@ -206,7 +209,7 @@ def join_takes(inputs: Inputs, takes: Takes) -> Path:
         ],
         narration,
         bitrate=cfg.mp3_bitrate,
-        sample_rate=inputs.settings.video.sample_rate,
+        sample_rate=inputs.settings.audio.sample_rate,
     )
     return narration
 

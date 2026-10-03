@@ -7,7 +7,7 @@ description: Every rule of the narration script, from the numbered heading to th
 one cut of the film. `narrate` reads this file, turns each section into a spoken take, and writes
 the word clock that `cue`, `assemble` and `verify` all measure against. This page is the whole rule
 the parser holds you to: the heading, every bracketed direction, how a chapter title is taken, the
-silence a section carries, and the two findings a script can earn.
+silence a section carries, and the three findings a script can earn.
 
 {/* input: src/decktalk/template/starter/script.md, sections 1 and 2 */}
 
@@ -88,11 +88,20 @@ bracketed text are accepted, and every other kind is refused.
 | `[NUMBER]`, `[CLIENT_NAME]` | yes | This is an open placeholder. It matches a capital letter followed by capitals, digits and underscores, and the voice reads its name out, which is what `TAKE_PLACEHOLDER` is for. |
 | `[the docs](https://docs.decktalk.ai)` | the text | A markdown link is replaced by its own text before anything else is read. |
 
-A beat is written into the text the voice receives as a space and a dash, which is the pause the
-voice makes on its own. A timed pause is written as a break tag instead, such as
-`<break time="3s" />`, and a break tag you write yourself is sent exactly as written. `[pause N]` is
-the only direction that sends a break tag, because break tags unsettle the voice when they are
-frequent. [Writing for the ear](/guides/writing-for-the-ear) says when each one is the right choice.
+A pause is data, not text: each paragraph is sent with the pause after it, and the voice's provider
+writes that pause its own way. ElevenLabs writes a beat as a space and a dash, which is the pause the
+voice makes on its own, and a timed pause as a break tag, such as `<break time="3s" />`. A break tag
+you write yourself, such as `<break time="1.5s" />` or `<break time="1500ms"/>`, is read as the
+`[pause N]` it names, so there is one way to ask for a pause, and a break tag with no length the
+parser can read is refused. `[pause N]` is the only direction that asks for measured silence,
+because frequent measured silences unsettle the voice.
+[Writing for the ear](/guides/writing-for-the-ear) says when each one is the right choice.
+
+A model that renders no timed pause cannot voice a section that holds one. ElevenLabs renders one
+only on its v2 family, `eleven_multilingual_v2`, `eleven_flash_v2_5`, `eleven_flash_v2`,
+`eleven_turbo_v2_5` and `eleven_turbo_v2`, and v3 and v4 read no `<break>` tag. `check` reports such a section as
+[`TAKE_PAUSE_DROPPED`](/reference/findings/TAKE_PAUSE_DROPPED), and `narrate` refuses to buy its take
+rather than drop the pause. A beat is a dash every model reads, so a beat is never refused.
 
 ### What a script may not hold
 
@@ -128,17 +137,21 @@ first heading or under an unnumbered heading is left alone.
 
 ## What the voice receives
 
-`narrate` cleans each section in this order, and the text that comes out is the take's cache key.
+`narrate` cleans each section in this order into paragraphs, each with the pause after it.
 
 1. A markdown link becomes its own text.
-2. `[pause N]` becomes a pause marker carrying its seconds.
+2. `[pause N]`, and a break tag written by hand, becomes a pause marker carrying its seconds.
 3. Every other bracketed span that is not a placeholder becomes a pause marker carrying a beat.
 4. The markers of inline code, bold and emphasis are removed.
 5. Heading marks, list bullets and list numbers at the start of a line are removed.
 6. The lines of a paragraph are joined with single spaces, and a blank line separates paragraphs.
-7. Each pause marker becomes a dash or a break tag on the end of the paragraph before it.
+7. Each pause marker becomes the pause after the paragraph before it.
 
-The words the voice actually says carry neither the dashes nor the break tags. Cue matching and the
+The take's cache key is taken over one canonical text of those paragraphs: they are joined by a blank
+line, a timed pause is written as a break tag after its paragraph and a beat as a dash. That text is
+also what ElevenLabs is sent and billed for.
+
+The words the voice actually says carry neither the dashes nor the pauses. Cue matching and the
 captions both read those spoken words, so write every cue phrase in `cues.json` as plain words.
 `build/narrate/takes.json` carries each section's `spoken` text, which is exactly what a cue phrase
 is matched against.
@@ -177,25 +190,26 @@ The take index and a build without voice work a section's length out from its wo
 ```text
 estimated_seconds     = words / narration.words_per_minute * 60
 placeholder length    = words / narration.silent_words_per_minute * 60
-                      + the seconds of every break tag
+                      + the seconds of every timed pause
                       + beats * narration.silent_beat_seconds
 section span          = lead + the take's sound end + tail
 ```
 
-`words` is the count of spoken words, which is the cleaned text with its dashes and break tags
-removed. The break tag total covers every `[pause N]` and every break tag written by hand. A dash
+`words` is the count of spoken words, which is the cleaned text with its dashes removed. The timed
+pause total covers every `[pause N]` and every break tag written by hand. A dash
 with a space before it counts as a beat wherever it appears, including one typed into the prose. The
 defaults are 140 words per minute, 150 for a build without voice, 0.7 seconds for a beat and for
 `tail_min_seconds`, and 0.5 seconds for `lead_seconds`.
 
-## The two findings a script can earn
+## The three findings a script can earn
 
 `decktalk check` judges the script without voicing it, reports every line at once rather than
-stopping on the first, and prices what a voiced run would cost. Two codes cover the script.
+stopping on the first, and prices what a voiced run would cost. Three codes cover the script.
 
 | Code | Certainty | What it names |
 |---|---|---|
 | `TAKE_PLACEHOLDER` | certain | One line of the spoken text holds something a voiced run would read out or swallow. That is an open placeholder such as `[NUMBER]`, and it is also each of the three things `narrate` refuses. One finding is raised per thing found, carrying the line and the section it sits in. |
+| `TAKE_PAUSE_DROPPED` | certain | One section holds a `[pause N]` and `[voice] model` renders no timed pause, which on ElevenLabs is every model outside its v2 family, v3 and v4 among them. One finding is raised per section, and `narrate` refuses to buy the take. |
 | `TAKE_SPOKEN_SYMBOL` | uncertain | One section speaks a word holding a digit or one of the currency signs for dollar, euro and pound, or one of `%`, `&`, `@`, `#`, `*`, `/`, `+`, `=`, `<`, `>`, `~`, `^` and the vertical bar. One finding is raised per section, naming the first five such words. |
 
 {/* sample: decktalk check --no-pages, starter with [IDEA] added to section 3 */}

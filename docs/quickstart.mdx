@@ -308,7 +308,7 @@ part of DeckTalk that costs money. Stop here if you have no account: the film yo
 film.
 
 <Steps>
-  <Step title="Put the two values in .env">
+  <Step title="Put the key in .env and the voice in decktalk.toml">
     <Tabs>
       <Tab title="macOS and Linux">
         ```console
@@ -322,18 +322,26 @@ film.
       </Tab>
     </Tabs>
 
-    Replace the two placeholders with your own values.
+    Replace the placeholder with your key, and write the id of the voice to speak in as `[voice] id`
+    in `decktalk.toml`.
 
     ```dotenv .env
     ELEVENLABS_API_KEY=<your-elevenlabs-key>
-    ELEVENLABS_VOICE_ID=<voice-id>
+    ```
+
+    ```toml decktalk.toml
+    [voice]
+    provider = "elevenlabs"
+    id = "<your voice id>"
     ```
 
     Both values come from your ElevenLabs account. The key is the one credential, and DeckTalk never
     prints it: no value read from `.env` or from the environment reaches a `--json` payload, a log
-    line or an error message. The voice id is a published name rather than a secret. It says which
-    voice to speak in and grants nothing, and it is part of what names a take, so changing it voices
-    every section again.
+    line or an error message. The voice id is a published name rather than a secret, so it is
+    committed with the project. It says which voice to speak in and grants nothing, since a cloned
+    voice is usable only with its own account's key, and it is part of what names a take, so changing
+    it voices every section again. `DECKTALK_VOICE_ID` in the environment overrides it for anyone who
+    keeps it out of the file.
 
     A value that still starts with `<` counts as unset, so the example file as it ships approves
     nothing. A variable already in the environment wins over the file. The starter's `.gitignore`
@@ -357,16 +365,22 @@ film.
       "state": "estimate",
       "sections": [1, 2, 3],
       "characters": 476,
+      "seconds": 31.2,
       "dollars": 0.14,
       "ceiling_dollars": 0.14,
+      "billing": "per_character",
       "price_per_1000_characters": 0.3,
+      "price_per_second": 0.0,
+      "price_key": "elevenlabs.price_per_1000_characters",
+      "averaged": false,
       "price_layer": "project"
     }
     ```
 
     `state` is `estimate` for what a run would cost and `charged` for what one did cost.
     `characters` is what would be sent, `dollars` is that at the stated rate, and `ceiling_dollars`
-    is the most the run can reach. The rate is `[voice] price_per_1000_characters` in your own
+    is the most the run can reach. ElevenLabs declares that it bills per character, so the rate is
+    the key `price_key` names, `[elevenlabs] price_per_1000_characters` in your own
     `decktalk.toml`, and `price_layer` names which of the five settings layers set it, so the figure
     is your plan's and not an invention. [Requirements and costs](/requirements#how-the-price-is-worked-out)
     explains why the two dollar figures can differ.

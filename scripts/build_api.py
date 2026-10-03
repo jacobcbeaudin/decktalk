@@ -1,48 +1,58 @@
-"""Generate src/decktalk/__init__.py, whose `__all__` is the reachable closure of the public surface.
+"""Generate src/decktalk/__init__.py, the root of the public API: about thirty entry points and the errors.
 
     uv run scripts/build_api.py --write    # write the package's __init__.py
     uv run scripts/build_api.py --check    # exit 1 if the committed file would change
 
-A name is exported when a module in `MODULES` lists it, or when it is reachable from the annotation
-of something already exported. A result field annotated with a row type an agent can see in the JSON
-Schema and cannot import would make the Python and the JSON surfaces disagree about one word, and
-leaving that row out of `__all__` does not make it private, it makes it undiscoverable.
-
-`MODULES` is the one list a new public module joins. A module that carries no `__all__` exports
-nothing, which is how the stages and the command line stay private.
+`ROOT` is the one list of names the root carries, grouped by why a caller reaches for each. Every
+other public type lives in a public module, `decktalk.results`, `decktalk.events`,
+`decktalk.findings`, `decktalk.settings`, `decktalk.speech` or `decktalk.speech.sound`, whose own
+`__all__` is its surface. `tests/contract/test_api.py` holds the closure over all of them: every
+type a public field or a public method's signature names is importable from one of them.
 """
 
 from __future__ import annotations
 
-import enum
-import importlib
-import inspect
 import sys
-import types
-import typing
 from pathlib import Path
-
-from pydantic import BaseModel
 
 import generated
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
-TARGET = ROOT / "src" / "decktalk" / "__init__.py"
-PACKAGE = "decktalk"
+TARGET = ROOT_DIR / "src" / "decktalk" / "__init__.py"
 
-MODULES = (
-    "errors",
-    "events",
-    "explain",
-    "findings",
-    "inputs",
-    "machine",
-    "pipeline",
-    "project",
-    "results",
-)
-"""Every module whose `__all__` seeds the closure, in the order the imports are written."""
+ROOT: dict[str, tuple[str, ...]] = {
+    # The calls a caller starts from: open or make a project, explain a code, and read section numbers.
+    "project": ("open", "Project", "Origin", "section_numbers"),
+    "explain": ("explain",),
+    # The machine a project runs on, the tools it drives and the way to stop a run it opened.
+    "machine": ("Machine", "Toolchain", "init"),
+    # The stage names every verb, every result and every event is told by.
+    "pipeline": ("Stage",),
+    # The judgement every call returns and the code and certainty a caller filters it by.
+    "findings": ("Finding", "Code", "Certainty"),
+    # The result every call returns and the price every call that buys states.
+    "results": ("Result", "Spend"),
+    # The stream every run writes to, one line of it, and the file sink a caller subscribes.
+    "events": ("Events", "Event", "JsonlSink"),
+    # The errors a caller catches, the code each carries, and the token that cancels a run.
+    "errors": (
+        "DeckTalkError",
+        "InputError",
+        "NotBuiltError",
+        "ProviderError",
+        "ToolError",
+        "ProjectLocked",
+        "ApprovalRequired",
+        "Cancelled",
+        "Cancel",
+        "ErrorCode",
+    ),
+}
+"""Every root name by the module it is imported from, in the order the imports are written."""
+
+PUBLIC_MODULES = ("events", "findings", "results", "settings", "speech")
+"""The public modules the root imports, so `decktalk.results` and the rest are attributes of the package."""
 
 DOCSTRING = '''"""DeckTalk: narrated presentation videos, cut to the word.
 
@@ -53,72 +63,26 @@ apply. Every call opens a run and writes to one event stream, which any renderer
 Nothing in this package prints, nothing reads the environment except `Machine.from_environment`, and
 a path a result carries is always relative to the project root.
 
-`__all__` is the whole supported Python API. It is generated, and it is the closure of every type
-reachable from an exported annotation, so a type a result can hand you is a type you can import.
-Everything not in it may move without notice.
+`__all__` is the root of the supported Python API: the entry points, the errors and the few types
+every caller names. Every other public type is in a public module: `decktalk.results` for every
+result and row, `decktalk.events` for every event, `decktalk.findings` for the fix and location
+types, `decktalk.settings` for the settings tree, and `decktalk.speech` with `decktalk.speech.sound`
+for the voice and sound protocols. A type a public name can hand you is a type you can import from
+one of them. Everything else may move without notice.
 """'''
 
-VERSION_IMPORT = ("artifacts.stored", ["ENGINE_VERSION as __version__"])
+VERSION_IMPORT = "from .artifacts.stored import ENGINE_VERSION as __version__"
 """Where `__version__` comes from, which is the one reading of the engine version every cache key carries."""
 
 
-def seeds() -> dict[str, list[str]]:
-    """Each module's own declared surface, which is what the closure starts from."""
-    found: dict[str, list[str]] = {}
-    for name in MODULES:
-        module = importlib.import_module(f"{PACKAGE}.{name}")
-        found[name] = sorted(getattr(module, "__all__", ()))
-    return found
-
-
-def annotations_of(obj: object) -> list[object]:
-    """Every annotation one exported object carries, which is where the closure walks next.
-
-    Every annotation is resolved rather than read as it was written, because the package writes
-    `from __future__ import annotations` and a dataclass field then carries the source text of its
-    type instead of the type. A string names no class, so a walk that read it would stop at the
-    first dataclass and call everything beyond it private.
-    """
-    if isinstance(obj, type) and issubclass(obj, BaseModel):
-        return [field.annotation for field in obj.model_fields.values()]
-    if isinstance(obj, type) and issubclass(obj, enum.Enum):
-        return []
-    if isinstance(obj, type) or inspect.isfunction(obj):
-        return list(typing.get_type_hints(obj).values())
-    return [obj]
-
-
-def named(annotation: object) -> list[type]:
-    """Every class this annotation names, opening out unions, containers and annotated aliases."""
-    if isinstance(annotation, type):
-        return [annotation]
-    if isinstance(annotation, types.UnionType) or typing.get_origin(annotation) is not None:
-        return [found for argument in typing.get_args(annotation) for found in named(argument)]
-    return []
-
-
-def closure() -> dict[str, list[str]]:
-    """Every exported name by the module it is imported from, seeds first and then what they reach."""
-    exported: dict[str, list[str]] = {name: list(names) for name, names in seeds().items()}
-    pending = [getattr(importlib.import_module(f"{PACKAGE}.{m}"), n) for m, names in exported.items() for n in names]
-    seen = {id(obj) for obj in pending}
-    while pending:
-        for annotation in annotations_of(pending.pop()):
-            for found in named(annotation):
-                if id(found) in seen or not getattr(found, "__module__", "").startswith(f"{PACKAGE}."):
-                    continue
-                seen.add(id(found))
-                pending.append(found)
-                module = found.__module__.removeprefix(f"{PACKAGE}.")
-                if found.__name__ not in exported.setdefault(module, []):
-                    exported[module].append(found.__name__)
-    return {module: names for module, names in exported.items() if names}
-
-
-def render(exported: dict[str, list[str]]) -> str:
+def render() -> str:
     """The generated module as it is committed, with its imports sorted and wrapped by the project's ruff."""
-    imports = [f"from .{module} import {', '.join(names)}" for module, names in [*exported.items(), VERSION_IMPORT]]
-    every = sorted({name for names in exported.values() for name in names} | {"__version__"})
+    imports = [
+        VERSION_IMPORT,
+        f"from . import {', '.join(f'{name} as {name}' for name in PUBLIC_MODULES)}",
+        *(f"from .{module} import {', '.join(names)}" for module, names in ROOT.items()),
+    ]
+    every = sorted({name for names in ROOT.values() for name in names} | {"__version__"})
     listed = "".join(f'    "{name}",\n' for name in every)
     return generated.ruff(
         "\n".join(
@@ -130,7 +94,7 @@ def render(exported: dict[str, list[str]]) -> str:
 
 def documents() -> dict[Path, str]:
     """The package's __init__.py, which is the one file this generator owns."""
-    return {TARGET: render(closure())}
+    return {TARGET: render()}
 
 
 if __name__ == "__main__":

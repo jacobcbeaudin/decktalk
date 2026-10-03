@@ -22,7 +22,7 @@ from support.takes import a_take
 VOICE_ID = "voice-under-test"
 """The voice every project here is read in, which is one of the inputs a take's digest is over."""
 
-ENVIRON = {"ELEVENLABS_API_KEY": "key-under-test", "ELEVENLABS_VOICE_ID": VOICE_ID}
+ENVIRON = {"ELEVENLABS_API_KEY": "key-under-test", "DECKTALK_VOICE_ID": VOICE_ID}
 """What a machine hands a project, which is the credential and the published voice name."""
 
 TOML = """
@@ -30,7 +30,9 @@ TOML = """
 name = "t"
 
 [voice]
-provider = "test-voice"
+provider = "elevenlabs"
+
+[elevenlabs]
 price_per_1000_characters = 0.30
 
 [narration]

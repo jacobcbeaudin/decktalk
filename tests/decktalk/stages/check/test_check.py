@@ -8,14 +8,14 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import Cancelled
-from decktalk.findings import Applicability, Code
+from decktalk.findings import Applicability, Certainty, Code
 from decktalk.inputs import Inputs
 from decktalk.machine import apply_fix
 from decktalk.results import CheckResult, Scope, SpendState
 from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
 from decktalk.toolchain import assets
-from support.pages import a_project, catalog
+from support.pages import TOML, a_project, catalog
 from support.runs import a_run, notes
 
 from .conftest import Drawn
@@ -255,3 +255,37 @@ def test_an_untrusted_project_opens_its_pages_untrusted(tmp_path: Path, drawn: D
     drawn.report("deck/index.html", *SCENES)
     check(inputs, a_run(tmp_path), frames=False)
     assert drawn.policies == ["untrusted"]
+
+
+PAUSED_SCRIPT = """# Demo
+
+## 1. One
+
+Hello there. [pause 2] Again.
+
+## 2. Two
+
+Second section [beat] speaks as well.
+"""
+"""A script with one timed pause in section 1 and only a beat in section 2."""
+
+
+def on_model(model: str) -> str:
+    """The demo project read on `model`."""
+    return f'{TOML}\n[voice]\nmodel = "{model}"\n'
+
+
+def test_a_timed_pause_on_a_model_that_reads_no_break_tag_is_a_certain_finding(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=on_model("eleven_v3"), script=PAUSED_SCRIPT)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    dropped = [one for one in result.findings if one.code is Code.TAKE_PAUSE_DROPPED]
+    assert [one.location.section for one in dropped] == [1]
+    assert dropped[0].certainty is Certainty.CERTAIN
+    assert "eleven_v3" in dropped[0].message
+    assert result.ok is False
+
+
+def test_a_model_that_reads_a_break_tag_earns_no_pause_finding(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=on_model("eleven_multilingual_v2"), script=PAUSED_SCRIPT)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    assert not [one for one in result.findings if one.code is Code.TAKE_PAUSE_DROPPED]

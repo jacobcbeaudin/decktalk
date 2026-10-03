@@ -63,7 +63,7 @@ have a code and want the candidates before you run anything.
 | `CUE_THIN_CHANGE` | `video.crf`, `verify.probe_diff_luma`, `verify.changed_share_min_percent`, `verify.margin_min_points`, `verify.thin_change_factor` |
 | `CUT_POP` | `verify.cut_change_max_percent` |
 | `CUT_SPEECH` | `narration.tail_min_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds`, `verify.cut_window_seconds`, `verify.cut_max_dbfs` |
-| `MIX_LOUDNESS` | `mix.loudness.target_lufs`, `mix.loudness.true_peak_max_dbtp` |
+| `MIX_LOUDNESS` | `audio.target_lufs`, `audio.true_peak_max_dbtp` |
 | `PAGE_BLACK` | `verify.after_dip_seconds`, `verify.black_max_luma` |
 | `PAGE_CLASS_NOT_REDUCED` | `motion.reduce` |
 | `PAGE_MOTION_OVERRUN` | `motion.scale` |
@@ -83,9 +83,6 @@ These keys set the frame size and the encoding of every recording and of the fin
 | `output_fps` | integer | `25` | must be one of 25, 30, 50, 60 | frames per second | project |  | Frame rate of the final mp4. The recorder's own rate is measured and is not a knob. |
 | `preset` | string | `"medium"` | must be one of ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow |  | project |  | x264 preset. Use veryfast for drafts. |
 | `crf` | integer | `18` | must be between 0 and 32 |  | project | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE`, `PAGE_THIN_DRAW` | x264 quality. A lower value gives higher quality and a larger file. |
-| `audio_bitrate` | string | `"192k"` | must be one of 96k, 128k, 160k, 192k, 256k, 320k |  | project |  | AAC bitrate of the final mp4. |
-| `sample_rate` | integer | `48000` | must be one of 44100, 48000 | hertz | project |  | Audio sample rate of the final mp4. Every audio input is resampled to it once. |
-| `channels` | integer | `2` | must be one of 1, 2 |  | project |  | Audio channels of the final mp4. |
 | `slate_color` | string | `"0x0e1116"` | must match the pattern ^(#\|0[xX])[0-9A-Fa-f]{6}$ |  | project |  | Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB. |
 
 <Warning>
@@ -103,8 +100,6 @@ These keys govern how the script is turned into audio.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `model` | string | `"eleven_multilingual_v2"` | takes any value of its type |  | project |  | Speech model. `[voice] model` and `--set narration.model` override it. |
-| `output_format` | string | `"mp3_44100_128"` | takes any value of its type |  | project |  | Audio format that the speech provider returns. It is part of the narration cache key. |
 | `concurrency` | integer | `2` | must be between 1 and 8 |  | machine |  | How many sections `narrate` voices at once. |
 | `retries` | integer | `3` | must be between 0 and 10 |  | machine |  | How many more times `narrate` asks again when the voice provider answers that it is busy or failed. |
 | `mp3_bitrate` | string | `"128k"` | must be one of 64k, 96k, 128k, 160k, 192k, 256k |  | project |  | Bitrate of the mp3 files that DeckTalk writes, which are the click tracks and the joined narration. |
@@ -163,15 +158,21 @@ These keys tune the headless Chromium recording and how narration t=0 is found i
 
 ## `[audio]`
 
-These keys set the mix mechanics. Levels are project content and live in `[mix]`.
+These keys are the final audio: its encoding, and the loudness it is normalised to and judged against.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `duck_ramp_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project |  | Ramp of the music duck at each edge of a spoken span or a clip. |
-| `ambience_ramp_seconds` | number | `1.0` | must be between 0 and 10 | seconds | project |  | Ramp of the ambience bed at each edge of its span. |
-| `ambience_pad_seconds` | number | `0.5` | must be between 0 and 10 | seconds | project |  | Seconds that the ambience bed extends past each edge of its section. |
-| `marker_mute_ramp_seconds` | number | `0.04` | must be between 0 and 1 | seconds | project |  | Ramp into and out of a marker's mute. |
-| `marker_boost_ramp_seconds` | number | `0.3` | must be between 0 and 5 | seconds | project |  | Ramp into and out of a marker's swell. |
+| `bitrate` | string | `"192k"` | must be one of 96k, 128k, 160k, 192k, 256k, 320k |  | project |  | AAC bitrate of the final mp4. |
+| `sample_rate` | integer | `48000` | must be one of 44100, 48000 | hertz | project |  | Audio sample rate of the final mp4. Every audio input is resampled to it once. |
+| `channels` | integer | `2` | must be one of 1, 2 |  | project |  | Audio channels of the final mp4. |
+| `target_lufs` | number | `-16.0` | must be between -30 and -9 | LUFS | project | `MIX_LOUDNESS` | Programme loudness the final mp4 is normalised to. |
+| `true_peak_max_dbtp` | number | `-1.5` | must be between -9 and -0.1 | dBTP | project | `MIX_LOUDNESS` | Highest true peak the normalised mix may reach. |
+| `range_max_lu` | number | `11.0` | must be between 1 and 20 | LU | project |  | The loudness range the measurement is made against. It is not a limit, and no mix fails on it. |
+
+<Warning>
+**`audio.true_peak_max_dbtp`** Four times oversampling under-reads a true peak and the AAC encode overshoots on top of that, so a ceiling above about -1 dBTP reports a clean mix that clips on a listener's decoder.
+
+</Warning>
 
 ## `[verify]`
 
@@ -216,40 +217,33 @@ These keys are the limits `verify` judges the assembled mp4 against.
 
 ## `[voice]`
 
-These keys are what the speech provider is asked for and what its characters cost.
+These keys are the four every voice has: which provider reads the script, in which voice, model and pace. Everything a provider is particular about, its own fields, its default model and its rate, is in that provider's own table, so changing `provider` never sends one vendor's fields to another.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `stability` | number | `0.55` | must be between 0 and 1 |  | project |  | How closely the voice holds one delivery across takes. |
-| `similarity_boost` | number | `0.75` | must be between 0 and 1 |  | project |  | How closely the voice holds to the original recording it was cloned from. |
-| `style` | number | `0.0` | must be between 0 and 1 |  | project |  | How much expressive style the voice adds beyond the words. |
-| `speaker_boost` | boolean | `true` | takes any value of its type |  | project |  | Whether the provider applies its own speaker boost to the take. |
+| `provider` | string | `"elevenlabs"` | takes any value of its type |  | project |  | The speech provider that reads the script, which is a name the machine's own map answers. An unregistered name fails when `narrate` runs rather than at load. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a voice served by a local server, whose own keys are `[dtsp]`. |
+| `id` | string | `""` | must match the pattern ^[A-Za-z0-9_-]*$ |  | project |  | The voice that reads the script, as the provider names it. It is a published name rather than a credential, so it is committed with the project, and it is one of the inputs every take is named by. `DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file. |
+| `model` | string | `""` | takes any value of its type |  | project |  | The provider's model that reads the script. It is empty for the model the provider's own table names, such as `[elevenlabs] model` or `[dtsp] model`. |
 | `speed` | number | `1.0` | must be between 0.7 and 1.2 |  | project |  | How fast the voice speaks, as a multiple of its natural pace. |
-| `price_per_1000_characters` | number | `0.0` | must be between 0 and 100 | currency per 1000 characters | project |  | What this project's plan charges per thousand characters of speech. |
 
 <Warning>
-**`voice.stability`** The provider takes a share and refuses anything else, so a value read as a percentage fails the request rather than the load.
+**`voice.id`** The id is placed in the path of every speech request, so a value that could hold a slash, a dot or a query would let a project somebody else wrote send the key to another endpoint of the service.
 
-**`voice.speed`** The provider refuses a multiple outside its own range, so a slower read is a script change rather than a knob.
-
-**`voice.price_per_1000_characters`** It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. A zero somebody stated says the voice bills nothing, so a run with neither --spend nor --no-spend buys from it without asking.
+**`voice.speed`** The provider refuses a multiple outside its own range, so a slower read is a script change rather than a setting.
 
 </Warning>
 
-## `[mix.loudness]`
+## `[mix]`
 
-These keys are the programme loudness the final mp4 is normalised to and judged against.
+The settings half of `[mix]`, which is how each layer is ramped. Its files and levels are project content.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `target_lufs` | number | `-16.0` | must be between -30 and -9 | LUFS | project | `MIX_LOUDNESS` | Programme loudness the final mp4 is normalised to. |
-| `true_peak_max_dbtp` | number | `-1.5` | must be between -9 and -0.1 | dBTP | project | `MIX_LOUDNESS` | Highest true peak the normalised mix may reach. |
-| `range_max_lu` | number | `11.0` | must be between 1 and 20 | LU | project |  | The loudness range the measurement is made against. It is not a limit, and no mix fails on it. |
-
-<Warning>
-**`mix.loudness.true_peak_max_dbtp`** Four times oversampling under-reads a true peak and the AAC encode overshoots on top of that, so a ceiling above about -1 dBTP reports a clean mix that clips on a listener's decoder.
-
-</Warning>
+| `duck_ramp_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project |  | Ramp of the music duck at each edge of a spoken span or a clip. |
+| `ambience_ramp_seconds` | number | `1.0` | must be between 0 and 10 | seconds | project |  | Ramp of the ambience bed at each edge of its span. |
+| `ambience_pad_seconds` | number | `0.5` | must be between 0 and 10 | seconds | project |  | Seconds that the ambience bed extends past each edge of its section. |
+| `marker_mute_ramp_seconds` | number | `0.04` | must be between 0 and 1 | seconds | project |  | Ramp into and out of a marker's mute. |
+| `marker_boost_ramp_seconds` | number | `0.3` | must be between 0 and 5 | seconds | project |  | Ramp into and out of a marker's swell. |
 
 ## `[motion]`
 
@@ -267,21 +261,101 @@ These keys decide how much motion a build renders, which changes the film it pro
 
 ## `[elevenlabs]`
 
-These keys point at the ElevenLabs API and size its soundscape requests.
+These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on elevenlabs.io unless the machine allows any. The soundscape buys from the same API with the same key.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
+| `model` | string | `"eleven_multilingual_v2"` | takes any value of its type |  | project |  | The ElevenLabs model that reads the script when `[voice] model` is empty. |
+| `stability` | number | `0.55` | must be between 0 and 1 |  | project |  | How closely the voice holds one delivery across takes. |
+| `similarity_boost` | number | `0.75` | must be between 0 and 1 |  | project |  | How closely the voice holds to the original recording it was cloned from. |
+| `style` | number | `0.0` | must be between 0 and 1 |  | project |  | How much expressive style the voice adds beyond the words. |
+| `speaker_boost` | boolean | `true` | takes any value of its type |  | project |  | Whether ElevenLabs applies its own speaker boost to the take. |
+| `price_per_1000_characters` | number | `0.0` | must be between 0 and 100 | currency per 1000 characters | project |  | What this project's ElevenLabs plan charges per thousand characters of speech. |
+| `output_format` | string | `"mp3_44100_128"` | must be one of mp3_22050_32, mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192 |  | project |  | Audio format ElevenLabs returns each take in, as its own codec_rate_bitrate token. It is part of every take's digest, and its codec names the take's file. |
 | `api_base` | string | `"https://api.elevenlabs.io/v1"` | takes any value of its type |  | project |  | Base URL of the ElevenLabs API. |
-| `sound_model` | string | `"eleven_text_to_sound_v2"` | takes any value of its type |  | project |  | Model for ambience and sound effect requests. A soundscape table can name its own. |
-| `music_model` | string | `"music_v2"` | takes any value of its type |  | project |  | Model for music requests. A soundscape table can name its own. |
-| `music_bitrate` | string | `"192k"` | must be one of 96k, 128k, 160k, 192k, 256k, 320k |  | project |  | Bitrate of the music file that `soundscape` joins from its chunks. |
-| `max_music_chunk_seconds` | integer | `300` | must be between 30 and 600 | seconds | project |  | Longest music request. Longer music is requested in chunks and crossfaded. |
-| `music_crossfade_seconds` | integer | `2` | must be between 0 and 30 | seconds | project |  | Crossfade between two music chunks. |
-| `ambience_seconds` | number | `25.0` | must be between 1 and 60 | seconds | project |  | Length of a generated ambience bed. A soundscape table can set `duration_seconds` instead. |
-| `ambience_prompt_influence` | number | `0.3` | must be between 0 and 1 |  | project |  | Prompt influence of an ambience request. A soundscape table can set its own. |
-| `effect_seconds` | number | `0.5` | must be between 0.1 and 30 | seconds | project |  | Length of a generated sound effect. A soundscape table can set `duration_seconds` instead. |
-| `effect_prompt_influence` | number | `0.5` | must be between 0 and 1 |  | project |  | Prompt influence of a sound effect request. A soundscape table can set its own. |
+
+<Warning>
+**`elevenlabs.stability`** ElevenLabs takes a share and refuses anything else, so a value read as a percentage fails the request rather than the load.
+
+**`elevenlabs.price_per_1000_characters`** It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. ElevenLabs bills per character, so a zero somebody stated still asks before it buys.
+
+**`elevenlabs.output_format`** Every take already bought was bought in the format named here, so another one buys every take again.
+
+</Warning>
+
+## `[dtsp]`
+
+These keys are the `dtsp` voice's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `url` may name only a loopback address over http unless the machine allows any host.
+
+| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
+|---|---|---|---|---|---|---|---|
+| `url` | string | `"http://127.0.0.1:8765"` | takes any value of its type |  | project |  | Base URL of the local speech server, which must be http on 127.0.0.1, localhost or [::1]. |
+| `model` | string | `"kokoro-82m"` | takes any value of its type |  | project |  | The model the local server reads the script with when `[voice] model` is empty, as the server names it. |
+
+<Warning>
+**`dtsp.url`** The script travels to whatever host this names, so a project file can name only this machine.
+
+</Warning>
+
+## `[soundscape]`
+
+The settings half of `[soundscape]`: how the music, the ambience and the effects are asked for. Each item's own table holds its prompt and its file, which are project content, beside the settings that size its request, so a key is spelled the same way the item it sizes spells it.
+
+| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
+|---|---|---|---|---|---|---|---|
+| `provider` | string | `"elevenlabs"` | takes any value of its type |  | project |  | The sound provider the music, the ambience and the effects are bought from, which is a name the machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys with the key and `api_base` of `[elevenlabs]`. |
+| `format` | string | `"mp3_44100_128"` | takes any value of its type |  | project |  | Audio format the music, the ambience and the effects are asked for in. A take's format is its voice's own, such as `[elevenlabs] output_format`. |
 | `timeout_seconds` | integer | `600` | must be between 10 and 3600 | seconds | project |  | Seconds before a sound or music request times out. |
+
+## `[soundscape.ambience]`
+
+The settings half of `[soundscape.ambience]`: how the bed is asked for. Its prompt and file are content.
+
+| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
+|---|---|---|---|---|---|---|---|
+| `model` | string | `"eleven_text_to_sound_v2"` | takes any value of its type |  | project |  | Model the ambience bed is asked for from. |
+| `duration_seconds` | number | `25.0` | must be between 1 and 60 | seconds | project |  | Length of the ambience bed that is asked for, which `[mix]` loops under its sections. |
+| `prompt_influence` | number | `0.3` | must be between 0 and 1 |  | project |  | How closely the ambience bed follows its prompt. |
+| `price_per_minute` | number | `0.0` | must be between 0 and 100 | currency per minute of audio | project |  | What this project's sound plan charges per minute of ambience audio, which is priced by the second of audio asked for. |
+
+<Warning>
+**`soundscape.ambience.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+
+</Warning>
+
+## `[soundscape.effects]`
+
+The settings half of `[soundscape.effects]`: how each effect is asked for unless its own table says.
+
+| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
+|---|---|---|---|---|---|---|---|
+| `model` | string | `"eleven_text_to_sound_v2"` | takes any value of its type |  | project |  | Model every effect is asked for from, unless its own table names one. |
+| `duration_seconds` | number | `0.5` | must be between 0.1 and 30 | seconds | project |  | Length of every effect that is asked for, unless its own table sets one. |
+| `prompt_influence` | number | `0.5` | must be between 0 and 1 |  | project |  | How closely every effect follows its prompt, unless its own table sets how closely. |
+| `price_per_minute` | number | `0.0` | must be between 0 and 100 | currency per minute of audio | project |  | What this project's sound plan charges per minute of effect audio, which is priced by the second of audio asked for. |
+
+<Warning>
+**`soundscape.effects.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+
+</Warning>
+
+## `[soundscape.music]`
+
+The settings half of `[soundscape.music]`: how the bed is asked for and joined. Its prompt is content.
+
+| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
+|---|---|---|---|---|---|---|---|
+| `model` | string | `"music_v2"` | takes any value of its type |  | project |  | Model the music is asked for from. |
+| `duration_seconds` | integer | `360` | must be between 1 and 3600 | seconds | project |  | Length of the music that is asked for, which `[mix]` fades out at the end of the film. |
+| `bitrate` | string | `"192k"` | must be one of 96k, 128k, 160k, 192k, 256k, 320k |  | project |  | Bitrate of the music file that `soundscape` joins from its chunks. |
+| `max_chunk_seconds` | integer | `300` | must be between 30 and 600 | seconds | project |  | Longest music request. Longer music is requested in chunks and crossfaded. |
+| `crossfade_seconds` | integer | `2` | must be between 0 and 30 | seconds | project |  | Crossfade between two music chunks. |
+| `price_per_minute` | number | `0.0` | must be between 0 and 100 | currency per minute of audio | project |  | What this project's sound plan charges per minute of music audio, which is priced by the second of audio asked for. |
+
+<Warning>
+**`soundscape.music.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+
+</Warning>
 
 ## `[output]`
 

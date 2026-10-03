@@ -13,6 +13,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -22,7 +23,6 @@ from decktalk.cli import catalog, main
 from decktalk.cli import session as sessions
 from decktalk.events import Event, Events
 from decktalk.findings import Applicability, Code, EditFix, Finding, Location
-from decktalk.inputs.workspace import Workspace
 from decktalk.project import Project
 from decktalk.results import (
     BuildResult,
@@ -75,7 +75,7 @@ class Fake:
     of what a command-line test needs to say what the client did.
     """
 
-    workspace: Workspace  # set by a test whose command reads the project's folders
+    _inputs: SimpleNamespace  # set by a test whose command reads the project's folders, as `workspace`
 
     def __init__(self, **answers: object) -> None:
         self.answers = dict(answers)

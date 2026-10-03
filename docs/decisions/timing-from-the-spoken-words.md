@@ -3,8 +3,9 @@
 ## Decision
 
 Every time DeckTalk computes is derived from the start and end times of spoken words. A cue names a
-phrase from the narration, never a second. The speech provider returns a time for every word, and
-that list is the only clock in the system.
+phrase from the narration, never a second. Every take ends with a time for every word, supplied by
+the voice itself or by an aligner run over the take's audio against the script, and that list is the
+only clock in the system.
 
 ## Why
 
@@ -19,9 +20,9 @@ person has to notice.
 
 ## What it rules out
 
-- A speech provider with no word timestamps cannot be used, however good the voice is. This is the
-  first question asked of any new provider, and
-  [the provider note](the-provider-interface.md) is where the answer is written down.
+- A voice with no word timestamps never supplies a clock of its own. An aligner times its audio
+  against the script, so the clock is still the words, and
+  [the provider note](the-provider-interface.md) says where each source of word times sits.
 - A cue cannot be placed between two words that are never spoken, so a picture that belongs to no
   phrase has to earn a phrase in the script.
 - A section with no narration resolves no cues. The `cue` stage reports each one as `CUE_UNRESOLVED`
@@ -31,5 +32,5 @@ person has to notice.
 
 ## What would change it
 
-A provider that returns phoneme or character timings rather than word timings would widen what a
-cue may name. Nothing else would.
+A voice or an aligner that returns phoneme or character timings rather than word timings would
+widen what a cue may name. Nothing else would.

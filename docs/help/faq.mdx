@@ -17,8 +17,9 @@ price before they start.
 - `soundscape` generates the music, the ambience bed and the effects the project describes, and is
   billed by the second of audio. It runs after `record`, so a run that stops at the recorder never
   reaches it.
-- `decktalk check` prices a voiced run before anything is bought, using
-  `[voice] price_per_1000_characters` from `decktalk.toml` as what your own plan charges.
+- `decktalk check` prices a voiced run before anything is bought, the way the voice declares it
+  bills. ElevenLabs bills per character, so the price uses `[elevenlabs] price_per_1000_characters`
+  from `decktalk.toml` as what your own plan charges.
 - No run spends without being told to. On the command line that is `--spend`, and `--max-cost N`
   refuses the run before the first call if the most it could cost is over N US dollars. In the
   library it is `spend=True`, and `ApprovalRequired` is raised rather than money
@@ -32,14 +33,21 @@ No. `decktalk init my-deck` and then `decktalk build --no-spend` writes a comple
 placeholder narration that carries a real word clock, so the pacing, the cues and the cuts are all
 real. Nothing contacts a speech service, and no key is read.
 
-A voiced build needs an ElevenLabs API key in `.env` and a voice id. The voice id is a published
-name rather than a credential: it says which voice reads the script, the way a model name says which
-model answers.
+A build voiced by ElevenLabs needs an ElevenLabs API key in `.env` and a voice id as `[voice] id`
+in `decktalk.toml`. The voice id is a published name rather than a credential: it says which voice reads
+the script, the way a model name says which model answers, and a cloned voice is usable only with its
+own account's key, so the id is committed with the project.
 
 ## Can I use a voice other than ElevenLabs?
 
-Not today. ElevenLabs is the one speech provider DeckTalk ships, and the seam above it is internal
-rather than an extension point. There is no plugin path and nothing is read from entry points.
+Yes, a local one. DeckTalk ships two voices: `elevenlabs`, the cloud voice, and `dtsp`, which speaks
+the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this
+repository. Set `provider = "dtsp"` under `[voice]` and the server's address as `[dtsp] url`. It
+needs no key and costs nothing, so buying its takes asks for no `--spend`, and its address must be
+`127.0.0.1`, `localhost` or `[::1]` over http, so the script never leaves the machine.
+
+The set is closed. There is no plugin path and nothing is read from entry points, so the voices a
+build can call are the ones a reader of the code can see.
 
 What that does not lock up is your project. `script.md`, `cues.json`, `decktalk.toml` and the deck
 pages name no service, and a build with `--no-spend` needs none, so the files outlive the choice.
@@ -50,8 +58,8 @@ is made on words, and that requirement is what a second provider would have to m
 
 It sounds like the ElevenLabs voice you pick. Any voice id works, including a clone of your own.
 
-`[voice]` in `decktalk.toml` sets `stability`, `similarity_boost`, `style`, `speaker_boost` and
-`speed`. DeckTalk also sends up to `[narration] context_chars` of the text before and after each
+`[elevenlabs]` in `decktalk.toml` sets `stability`, `similarity_boost`, `style` and `speaker_boost`,
+and `[voice] speed` sets the pace. DeckTalk also sends up to `[narration] context_chars` of the text before and after each
 section with the request, so the rhythm and the tone stay even across a cut that the listener never
 hears as one.
 

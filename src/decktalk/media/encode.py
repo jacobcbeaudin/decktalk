@@ -9,7 +9,7 @@ because a stylesheet and an encoder write one colour two ways.
 
 from __future__ import annotations
 
-from ..settings import VideoConfig
+from ..settings import AudioConfig, VideoConfig
 
 # An mp4 stream's language is an ISO 639-2 three-letter code, while `[project] language` is the BCP 47
 # tag the page and the caption files carry, so the primary subtag is mapped here. A language this
@@ -54,7 +54,7 @@ KEYFRAME_SECONDS = 2
 
 
 class Encoder:
-    """The x264 and AAC settings every intermediate and the final file share.
+    """The x264 and AAC settings every intermediate and the final file share, from `[video]` and `[audio]`.
 
     The frame rate comes from the fps filter in `fit`, so the encoder takes no -r of its
     own. Every output is tagged BT.709 and keyframed every two seconds. The tag is set
@@ -63,7 +63,7 @@ class Encoder:
     those flags.
     """
 
-    def __init__(self, video: VideoConfig) -> None:
+    def __init__(self, video: VideoConfig, sound: AudioConfig) -> None:
         self.v = video
         self.fit = (
             f"scale={video.width}:{video.height}:force_original_aspect_ratio=decrease,"
@@ -85,18 +85,18 @@ class Encoder:
         ]  # fmt: skip
         self.aenc = [
             "-c:a", "aac",
-            "-b:a", video.audio_bitrate,
-            "-ar", str(video.sample_rate),
-            "-ac", str(video.channels),
+            "-b:a", sound.bitrate,
+            "-ar", str(sound.sample_rate),
+            "-ac", str(sound.channels),
         ]  # fmt: skip
         # The soundtrack is mixed into this before anything is measured or limited, because a fixed
         # point sample clips at 0 dBFS and a sum of layers can pass it before the limiter ever runs.
         self.amix = [
             "-c:a", "pcm_f32le",
-            "-ar", str(video.sample_rate),
-            "-ac", str(video.channels),
+            "-ar", str(sound.sample_rate),
+            "-ac", str(sound.channels),
         ]  # fmt: skip
-        self.silence = f"anullsrc=r={video.sample_rate}:cl=stereo"
+        self.silence = f"anullsrc=r={sound.sample_rate}:cl=stereo"
 
     def color_source(self, color: str, seconds: float) -> list[str]:
         size = f"{self.v.width}x{self.v.height}"

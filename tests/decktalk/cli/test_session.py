@@ -14,7 +14,7 @@ from decktalk.cli.options import FailOn, When
 from decktalk.cli.session import Globals, Session, Terminal
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError
 from decktalk.findings import Certainty, Code
-from decktalk.results import CheckResult, Layer, StatusResult
+from decktalk.results import Billing, CheckResult, Layer, StatusResult
 from support.spends import a_spend
 
 from .conftest import ANSWERS, Fake, finding
@@ -216,7 +216,7 @@ def test_a_voice_that_bills_nothing_is_never_asked_and_is_bought_from(
     made.terminal = terminal(is_terminal=is_terminal)
     monkeypatch.setattr(made, "confirm", _never_asked)
     made.spending(spend=None, max_cost=None)
-    free = a_spend(0.0, 0.0, sections=(1, 2)).model_copy(update={"price_per_1000_characters": 0.0})
+    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
     assert made.spends(Fake().project(), price=lambda: free) is True
 
 
@@ -231,18 +231,19 @@ def test_a_run_told_to_make_its_takes_again_is_asked_even_with_nothing_missing()
 def test_no_spend_never_buys_from_a_voice_that_bills_nothing() -> None:
     made = session()
     made.spending(spend=False, max_cost=None)
-    free = a_spend(0.0, 0.0, sections=(1, 2)).model_copy(update={"price_per_1000_characters": 0.0})
+    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
     assert made.spends(Fake().project(), price=lambda: free) is False
 
 
-def test_a_price_of_zero_nobody_stated_is_still_asked_about() -> None:
-    """The default rate is zero, which says nobody has priced speech, never that it is free."""
+@pytest.mark.parametrize("layer", [Layer.DEFAULT, Layer.PROJECT])
+def test_a_price_of_zero_on_a_voice_that_bills_is_still_asked_about(layer: Layer) -> None:
+    """Free is what the voice declares, so a zero rate, stated or the default, never skips the question."""
     made = session()
     made.terminal = terminal(is_terminal=False)
     made.spending(spend=None, max_cost=None)
-    unstated = a_spend(0.0, 0.0, layer=Layer.DEFAULT).model_copy(update={"price_per_1000_characters": 0.0})
+    zero = a_spend(0.0, 0.0, layer=layer).model_copy(update={"price_per_1000_characters": 0.0})
     with pytest.raises(ApprovalRequired):
-        made.spends(Fake().project(), price=lambda: unstated)
+        made.spends(Fake().project(), price=lambda: zero)
 
 
 def _never_asked(question: str, **_: object) -> bool:

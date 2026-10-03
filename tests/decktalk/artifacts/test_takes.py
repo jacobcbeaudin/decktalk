@@ -18,6 +18,7 @@ from hypothesis import strategies as st
 
 from decktalk.artifacts.takes import (
     PLACEHOLDER_PREFIX,
+    PLACEHOLDER_SUFFIX,
     TAKE_DIGITS,
     TAKE_HASH,
     PlaceholderInputs,
@@ -46,6 +47,32 @@ def test_the_payload_is_every_input_in_declaration_order() -> None:
     assert payload[:4] == [INPUTS["provider"], INPUTS["voice"], INPUTS["model"], INPUTS["output_format"]]
     assert payload[4].startswith('{"similarity_boost"')
     assert payload[5] == "hello"
+
+
+@pytest.mark.parametrize("field", ["provider", "voice", "model", "output_format"])
+def test_a_newline_in_any_field_but_the_text_is_refused_with_a_sentence(field: str) -> None:
+    """The payload joins the fields with newlines, so one inside a field could make two inputs one take."""
+    with pytest.raises(InputError, match="holds a newline") as caught:
+        TakeInputs.of(**INPUTS | {field: f"{INPUTS[field]}\nx"}, text="hello")
+    assert caught.value.hint
+
+
+def test_a_newline_inside_a_voice_setting_is_written_escaped_and_never_breaks_a_line() -> None:
+    made = TakeInputs.of(**INPUTS | {"settings": {"style": "a\nb"}}, text="hello")
+    assert len(made.payload.split("\n")) == len(TakeInputs.model_fields)
+
+
+def test_two_sets_of_inputs_that_would_join_to_one_payload_cannot_both_be_made() -> None:
+    """`model="m\nf"` with an empty format joins exactly as `model="m"` with format "f" does, so it is refused."""
+    split = INPUTS | {"model": "m", "output_format": "f"}
+    joined = INPUTS | {"model": "m\nf", "output_format": ""}
+    TakeInputs.of(**split, text="t")
+    with pytest.raises(InputError):
+        TakeInputs.of(**joined, text="t")
+
+
+def test_the_text_keeps_every_newline_it_has() -> None:
+    assert inputs_for("one\n\ntwo").payload.endswith("\none\n\ntwo")
 
 
 def test_the_voice_settings_are_rendered_with_their_keys_sorted() -> None:
@@ -81,8 +108,13 @@ INDEX = Takes(
 )
 
 
-def test_a_take_is_named_by_its_digest() -> None:
-    assert a_take(1, seconds=1.0).file == take_file(f"{1:016x}")
+def test_a_take_is_named_by_its_digest_under_the_suffix_of_what_it_holds() -> None:
+    assert take_file(f"{1:016x}", ".mp3") == "0000000000000001.mp3"
+    assert take_file(f"{1:016x}", ".wav") == "0000000000000001.wav"
+
+
+def test_a_placeholder_is_the_mp3_decktalk_writes_whatever_the_voice_returns() -> None:
+    assert take_file(f"{PLACEHOLDER_PREFIX}0123456789", ".wav") == f"{PLACEHOLDER_PREFIX}0123456789{PLACEHOLDER_SUFFIX}"
 
 
 DIGEST = st.from_regex(TAKE_HASH, fullmatch=True)

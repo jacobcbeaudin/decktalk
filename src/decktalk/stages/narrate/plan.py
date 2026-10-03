@@ -10,8 +10,10 @@ section whose cache could not be checked is priced apart, so the gate is given t
 certainly spends and the figure it can reach, and never a small number that hides a large one.
 
 A price needs no credential. The digest is over the provider's name, the voice id, the model, the
-output format, the voice settings and the text, and none of those is a secret, so the plan reads
-the provider's name from `[voice] provider` and never builds the provider to price a run. A
+output format and the take identity its adapter declares, and the text, and none of those is a
+secret, so the plan reads the provider's name from `[voice] provider` and never builds the provider
+to price a run. The price is the bill its adapter declares: per character, per second of audio, or
+free. A
 service can therefore price an edit on a machine that holds no key, and a one-section edit is priced
 as one section rather than as the whole film.
 """
@@ -24,31 +26,32 @@ from typing import Any
 from decktalk.artifacts import PlaceholderInputs, TakeInputs, Takes
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
+from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
 from decktalk.inputs.workspace import Workspace
+from decktalk.machine import Run
+from decktalk.page import SECOND_DIGITS
 from decktalk.results import Spend, SpendState, TakeStatus
-from decktalk.settings import VoiceConfig
-from decktalk.speech import SpeechProvider, SpeechRequest, get_provider
-from decktalk.stages import DOLLAR_DIGITS, dollars_for, price_layer, voice_context
+from decktalk.settings import BY_ID, PROJECT_FILE
+from decktalk.speech import DECLARED, SpeechProvider, SpeechRequest, canonical_text, output_of, renders_pauses, table_of
+from decktalk.stages import DOLLAR_DIGITS, billed, dollars_for, rate_fields, voice_context
 
 WITHOUT_A_VOICE = "no voice is named, so the cache cannot be checked"
 """Why a section's take is unknown, which is the one state a plan cannot resolve on its own."""
 
 
-def voice_settings(voice: VoiceConfig) -> dict[str, Any]:
-    """What `[voice]` asks the provider for, under the provider's own names.
+def take_identity(inputs: Inputs) -> dict[str, Any]:
+    """The settings `[voice] provider` is sent and a take's digest is taken over, under the provider's own names.
 
-    The names differ in one place, because the provider calls the speaker boost `use_speaker_boost`
-    while the key an author writes is `speaker_boost`. The mapping lives here rather than in the
-    provider, because these five values are also inputs of the take's digest.
+    A shipped provider declares the mapping from its own table and `[voice] speed`. A provider a
+    host registered owns no table, so `speed`, which every voice has, is the whole of it.
     """
-    return {
-        "stability": voice.stability,
-        "similarity_boost": voice.similarity_boost,
-        "style": voice.style,
-        "use_speaker_boost": voice.speaker_boost,
-        "speed": voice.speed,
-    }
+    settings = inputs.settings
+    declared = DECLARED.get(settings.voice.provider)
+    table = table_of(settings, settings.voice.provider)
+    if declared is None or table is None:
+        return {"speed": settings.voice.speed}
+    return declared.identity(table, settings.voice.speed)
 
 
 def take_inputs(inputs: Inputs, segment: Segment, *, provider: str, voice_id: str, model: str) -> TakeInputs:
@@ -57,9 +60,9 @@ def take_inputs(inputs: Inputs, segment: Segment, *, provider: str, voice_id: st
         provider=provider,
         voice=voice_id,
         model=model,
-        output_format=inputs.settings.narration.output_format,
-        settings=voice_settings(inputs.settings.voice),
-        text=segment.tts_text,
+        output_format=output_of(inputs.settings, provider).format,
+        settings=take_identity(inputs),
+        text=canonical_text(segment.pieces),
     )
 
 
@@ -69,7 +72,7 @@ def placeholder_inputs(inputs: Inputs, segment: Segment) -> PlaceholderInputs:
     return PlaceholderInputs(
         words_per_minute=cfg.silent_words_per_minute,
         beat_seconds=cfg.silent_beat_seconds,
-        text=segment.text,
+        text=canonical_text(segment.pieces),
     )
 
 
@@ -82,19 +85,62 @@ def is_cached(digest: str, workspace: Workspace) -> bool:
     return workspace.holding(digest) is not None
 
 
-def speech_provider(inputs: Inputs) -> SpeechProvider:
-    """The provider `[voice] provider` names, built from this project's tuning and its own `.env`."""
-    return get_provider(inputs.document.voice.provider, voice_context(inputs))
+def speech_provider(run: Run, inputs: Inputs) -> SpeechProvider:
+    """The provider `[voice] provider` names in the run's voices, built from the project's tuning and `.env`."""
+    return run.voices.provider(inputs.settings.voice.provider, voice_context(inputs))
+
+
+DROPPED_PAUSE_HINT = (
+    "Pick a model that renders a timed pause, or take the [pause N] directions and break tags out of those sections."
+)
+"""What clears a timed pause the model would drop, which the refusal and the `check` finding both say."""
+
+
+def refuse_dropped_pauses(inputs: Inputs, buying: list[Segment], *, model: str) -> None:
+    """Refuse a run that would buy a take whose timed pause the model drops, before the price is asked for.
+
+    `buying` is the sections the run would voice, so a section already on disk, or one this run
+    leaves alone, never stops it.
+    """
+    dropped = dropped_pauses(inputs, buying, model=model)
+    if dropped:
+        raise InputError(
+            f"[voice] provider {inputs.settings.voice.provider!r} renders no timed pause on model {model!r}, so "
+            f"the pauses in sections {[segment.index for segment in dropped]} would be dropped.",
+            hint=DROPPED_PAUSE_HINT,
+            location=at(inputs.script_path, inputs.root),
+        )
+
+
+def dropped_pauses(inputs: Inputs, segments: list[Segment], *, model: str) -> list[Segment]:
+    """Every section holding a timed pause that `[voice] provider` would drop on this model.
+
+    The provider declares which of its models render a timed pause. A beat is a dash every model
+    reads, so only a section with a timed pause can lose one.
+    """
+    if renders_pauses(inputs.settings.voice.provider, model):
+        return []
+    return [segment for segment in segments if any(piece.timed for piece in segment.pieces)]
 
 
 def voice_id_of(inputs: Inputs) -> str:
     """The voice this project is read in, which is a published name and one of the take's own inputs.
 
-    Two voices reading one sentence are two different takes, so the id names the file. It is read
-    from `.env` because it belongs to the account whose key pays for the take, and it is revealed
-    here because it is a name rather than a secret.
+    Two voices reading one sentence are two different takes, so the id names the file. It is
+    `[voice] id` in `decktalk.toml`, which `DECKTALK_VOICE_ID` overrides, and a voiced run that
+    names neither is refused here before anything is bought.
     """
-    return inputs.env.require(VOICE_VARIABLE)[0].reveal()
+    named = inputs.settings.voice.id
+    if not named:
+        raise InputError(
+            f"no voice is named, because neither [voice] id in {PROJECT_FILE} nor {VOICE_ID_VARIABLE} is set.",
+            hint=(
+                f'Add id = "<your voice id>" under [voice] in {PROJECT_FILE}, or export {VOICE_ID_VARIABLE}, '
+                "which is read from the environment and never from .env."
+            ),
+            location=at(inputs.root / PROJECT_FILE, inputs.root),
+        )
+    return named
 
 
 def named_voice(inputs: Inputs) -> str:
@@ -103,15 +149,14 @@ def named_voice(inputs: Inputs) -> str:
     A run that buys nothing and a price both plan without a voice, with every paid take unchecked,
     so neither is refused for a name only a purchase needs.
     """
-    try:
-        return voice_id_of(inputs)
-    except InputError:
-        # silent: the plan says why the cache could not be checked, and a purchase asks for the name again.
-        return ""
+    return inputs.settings.voice.id
 
 
-VOICE_VARIABLE = "ELEVENLABS_VOICE_ID"
-"""The variable that names the voice, which the starter's `.env.example` already writes."""
+VOICE_ID_VARIABLE = BY_ID["voice.id"].environment
+"""The variable that overrides `[voice] id`, for anyone who keeps the id out of the file."""
+
+UNNAMED = f"[voice] id is empty and {VOICE_ID_VARIABLE} is not set"
+"""Why no voice is named, which the plan, the run's line and the finding all say in these words."""
 
 
 @dataclass(frozen=True)
@@ -134,17 +179,17 @@ class TakePlan:
 
     @property
     def characters_sent(self) -> int:
-        """How many characters of script this section would send, which is what a provider bills."""
-        return len(self.request.text) if self.request else len(self.segment.tts_text)
+        """How many characters of script this section would send, which a per-character bill counts."""
+        return len(canonical_text(self.segment.pieces))
 
 
 def requests_for(inputs: Inputs, targets: list[Segment], *, model: str, voice_id: str) -> dict[int, SpeechRequest]:
     """One request per target section, each carrying the sections either side of it for prosody."""
-    settings = voice_settings(inputs.settings.voice)
-    output_format = inputs.settings.narration.output_format
+    settings = take_identity(inputs)
+    output_format = output_of(inputs.settings, inputs.settings.voice.provider).format
     return {
         segment.index: SpeechRequest(
-            text=segment.tts_text,
+            pieces=segment.pieces,
             voice_id=voice_id,
             model=model,
             voice_settings=settings,
@@ -246,9 +291,9 @@ def voiced_plan(
     """
     requests = requests_for(inputs, targets, model=model, voice_id=voice_id or "")
     if not voice_id:
-        why = f"{WITHOUT_A_VOICE.capitalize()}, because {VOICE_VARIABLE} is not set."
+        why = f"{WITHOUT_A_VOICE.capitalize()}, because {UNNAMED}."
         return plan_takes(inputs, targets, None, requests=requests, force=force), why
-    provider = inputs.document.voice.provider
+    provider = inputs.settings.voice.provider
     digests = {
         segment.index: take_inputs(inputs, segment, provider=provider, voice_id=voice_id, model=model).digest
         for segment in targets
@@ -262,32 +307,44 @@ def placeholder_plan(inputs: Inputs, targets: list[Segment], *, force: bool = Fa
     return plan_takes(inputs, targets, digests, voiced=False, force=force)
 
 
-def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spend:
-    """What these plans cost at the stated rate, with what they can cost priced beside it.
+def seconds_of(inputs: Inputs, plan: TakePlan) -> float:
+    """How long this section's take is expected to run, which a per-second bill is priced on before it exists."""
+    return plan.segment.estimated_seconds(inputs.settings.narration)
 
-    A section whose cache could not be checked may turn out to need a take, so its characters are
-    counted into the ceiling and never into the price, and the gate is then given the figure the run
-    certainly spends and the figure it can reach.
+
+def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spend:
+    """What these plans cost at the bill `[voice] provider` declares, with what they can cost priced beside it.
+
+    A per-character bill counts the characters each take sends, a per-second bill counts the seconds
+    each take is expected to run, and a free voice counts nothing. A section whose cache could not be
+    checked may turn out to need a take, so it is counted into the ceiling and never into the price,
+    and the gate is then given the figure the run certainly spends and the figure it can reach.
     """
-    rate = inputs.settings.voice.price_per_1000_characters
+    provider = inputs.settings.voice.provider
     sending = [plan for plan in plans if plan.status is TakeStatus.VOICED and not plan.unchecked]
     maybe = [plan for plan in plans if plan.unchecked]
     characters = sum(plan.characters_sent for plan in sending)
-    ceiling = characters + sum(plan.characters_sent for plan in maybe)
+    seconds = sum(seconds_of(inputs, plan) for plan in sending)
+    certain = billed(characters, seconds, provider)
+    reach = certain + sum(billed(p.characters_sent, seconds_of(inputs, p), provider) for p in maybe)
     return Spend(
         state=state,
         sections=tuple(plan.segment.index for plan in sending + maybe),
         characters=characters,
-        dollars=round(dollars_for(characters, inputs), DOLLAR_DIGITS),
-        ceiling_dollars=round(dollars_for(ceiling, inputs), DOLLAR_DIGITS),
-        price_per_1000_characters=rate,
-        price_layer=price_layer(inputs),
+        seconds=round(seconds, SECOND_DIGITS),
+        dollars=round(dollars_for(certain, inputs), DOLLAR_DIGITS),
+        ceiling_dollars=round(dollars_for(reach, inputs), DOLLAR_DIGITS),
+        **rate_fields(inputs),
     )
 
 
 __all__ = [
-    "VOICE_VARIABLE",
+    "UNNAMED",
+    "VOICE_ID_VARIABLE",
     "TakePlan",
+    "DROPPED_PAUSE_HINT",
+    "dropped_pauses",
+    "refuse_dropped_pauses",
     "is_cached",
     "miss_reason",
     "named_voice",
@@ -295,10 +352,11 @@ __all__ = [
     "placeholder_plan",
     "plan_takes",
     "requests_for",
+    "seconds_of",
     "speech_provider",
     "spend_of",
     "take_inputs",
     "voice_id_of",
-    "voice_settings",
+    "take_identity",
     "voiced_plan",
 ]

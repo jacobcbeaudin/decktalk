@@ -138,15 +138,15 @@ def test_project_tuning_tables_reach_settings(tmp_path):
 def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch):
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     root = write_project(tmp_path)
-    (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nELEVENLABS_VOICE_ID='abc' # comment\n", encoding="utf-8")
+    (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nOTHER_VARIABLE='abc' # comment\n", encoding="utf-8")
     p = Inputs.load(root, environ={})
     with reading_dotenv(True):
         assert not p.env.get("ELEVENLABS_API_KEY")  # the placeholder counts as unset
-        assert p.env.get("ELEVENLABS_VOICE_ID").reveal() == "abc"
+        assert p.env.get("OTHER_VARIABLE").reveal() == "abc"
         # A secret is named by its variable and never by its value, in a repr as in an error.
-        assert repr(p.env.get("ELEVENLABS_VOICE_ID")) == "<secret ELEVENLABS_VOICE_ID>"
+        assert repr(p.env.get("OTHER_VARIABLE")) == "<secret OTHER_VARIABLE>"
         with pytest.raises(InputError, match="ELEVENLABS_API_KEY") as info:
-            p.env.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
+            p.env.require("ELEVENLABS_API_KEY", "OTHER_VARIABLE")
     assert "abc" not in str(info.value)
 
 
@@ -169,41 +169,43 @@ def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monk
         f"decktalk.toml: [[section]] number=1: ignoring unknown key 'scnee' (did you mean 'scene'?){page}",
         "decktalk.toml: [[section]] number=1: ignoring 'slate_seconds', which applies only to a clip section",
         f"decktalk.toml: [[section]] number=2: ignoring unknown key 'zebra'{page}",
-        f"decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?){page}",
         f"decktalk.toml: [mix]: ignoring unknown key 'music_dbb' (did you mean 'music_db'?){page}",
-        f"decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'seconds'?){page}",
+        f"decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'duration_seconds'?){page}",
         f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",
+        f"decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'elevenlabs.stability'?){page}",
     )
     # A warning, not an error: the load succeeds and every misspelled key keeps its default.
-    assert p.settings.voice.stability == 0.55
+    assert p.settings.elevenlabs.stability == 0.55
     assert p.settings.video.preset == "medium"
-    music = p.document.soundscape.music
-    assert music is not None and music.seconds == 360
+    assert p.document.soundscape.music is not None
+    assert p.settings.soundscape.music.duration_seconds == 360
 
 
 def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     """Each key is written once, as a field, so a table's reader and its class cannot drift apart."""
     toml = (
         "[project]\nname = 't'\nscript = 'script.md'\ncues = 'cues.json'\nbuild = 'build'\nlanguage = 'fr'\n"
-        "[voice]\nprovider = 'elevenlabs'\nmodel = 'm'\nstability = 0.5\nprice_per_1000_characters = 0.3\n"
+        "[voice]\nprovider = 'elevenlabs'\nmodel = 'm'\n"
+        "[elevenlabs]\nstability = 0.5\nprice_per_1000_characters = 0.3\n"
         "[transition]\ndips = [[1, 2]]\ndip_seconds = 0.2\npage_fades_in = true\n"
         "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
         "[[section]]\nnumber = 2\npage = 'deck/b.html'\n"
         "[mix]\nmusic_db = -20\n"
-        "[mix.loudness]\ntarget_lufs = -16\ntrue_peak_max_dbtp = -1.5\nrange_max_lu = 9\n"
+        "[audio]\ntarget_lufs = -16\ntrue_peak_max_dbtp = -1.5\nrange_max_lu = 9\n"
         "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\noffset = 0.1\ncaption = 'a chime'\n"
         "[soundscape.effects.tap]\ntext = 'a tap'\nout = 'tap.mp3'\nduration_seconds = 0.5\n"
-        "prompt_influence = 0.4\nmodel_id = 'sound'\n"
-        "[soundscape.music]\nprompt = 'calm'\nseconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
-        "model_id = 'music'\n"
+        "prompt_influence = 0.4\nmodel = 'sound'\n"
+        "[soundscape.music]\nprompt = 'calm'\nduration_seconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
+        "model = 'music'\n"
     )
     p = Inputs.load(write_project(tmp_path, toml), environ={})
     assert p.notes == ()
     assert p.document.language == "fr"
-    # `[voice]` and `[mix]` are shared, so the document reads its half and neither warns about the other.
-    assert (p.document.voice.provider, p.document.voice.model) == ("elevenlabs", "m")
-    assert p.settings.voice.price_per_1000_characters == 0.3
-    assert p.settings.mix.loudness.range_max_lu == 9
+    # `[mix]` is shared, so the document reads its half and neither warns about the other.
+    assert (p.settings.voice.provider, p.settings.voice.model) == ("elevenlabs", "m")
+    assert p.settings.elevenlabs.price_per_1000_characters == 0.3
+    assert p.settings.audio.range_max_lu == 9
+    assert (p.settings.soundscape.music.duration_seconds, p.settings.soundscape.music.model) == (60, "music")
     assert p.document.mix.effects[0].caption == "a chime"
 
 

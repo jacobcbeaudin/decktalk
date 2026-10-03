@@ -146,7 +146,7 @@ def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *,
     if missed and strict:
         raise ToolError(
             f"the mix missed the loudness it was mastered to in {counted(len(missed), 'way')}.",
-            hint="Publish it as it is, or change [mix.loudness] to what this film is for.",
+            hint="Publish it as it is, or change the loudness keys of [audio] to what this film is for.",
         )
     return after
 

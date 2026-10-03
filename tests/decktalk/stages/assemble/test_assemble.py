@@ -41,7 +41,7 @@ def a_film(inputs, *, voiced: bool = True):
 
 def mastered(monkeypatch: pytest.MonkeyPatch, inputs, off: float = 0.0) -> None:
     """Every loudness reading lands `off` from the target the project masters to."""
-    target = inputs.settings.mix.loudness.target_lufs
+    target = inputs.settings.audio.target_lufs
     reading = audio.Loudness(i=target + off, tp=-2.0, lra=6.0, thresh=-30.0, offset=0.0)
     monkeypatch.setattr(audio, "measure_loudness", lambda *_a, **_k: reading)
 
@@ -72,7 +72,7 @@ def test_the_stage_answers_with_the_result_named_after_it(tmp_path, monkeypatch)
     assert result.film == Path("build/final/t.mp4")
     assert [row.section for row in result.sections] == [1, 2, 3]
     assert result.loudness is not None
-    assert result.loudness.target_lufs == inputs.settings.mix.loudness.target_lufs
+    assert result.loudness.target_lufs == inputs.settings.audio.target_lufs
     assert result.seconds >= 0
 
 

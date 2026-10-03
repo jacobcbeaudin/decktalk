@@ -31,8 +31,12 @@ from decktalk.speech import SpeechRequest
 BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
 """The variable Playwright's driver reads for where its browsers live, spelled here as Playwright documents it."""
 
-FAKE_VOICE_NAME = "test-voice"
-"""The `[voice] provider` value a project under test names, which `fake_voice` answers for."""
+FAKE_VOICE_NAME = "elevenlabs"
+"""The `[voice] provider` a project under test names, which `fake_voice` answers for in place of the shipped voice.
+
+A fake stands in under the shipped name, so the project reads the shipped voice's own table, its
+default model and its stated rate, and the registry entry it replaces is restored when the test ends.
+"""
 
 
 @dataclass
@@ -118,9 +122,6 @@ class FakeVoice:
     def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
         self.requests.append(request)
         return self.audio, list(self.words)
-
-    def cache_key(self, request: SpeechRequest) -> str:  # noqa: ARG002  (the protocol names it)
-        return self.name
 
 
 class BareBrowser:

@@ -138,7 +138,7 @@ decktalk check --section 4 --no-frames
 ```
 
 ```text
-No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
+No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 The takes on disk could not be matched to a voice, so this run costs up to $0.03 at $0.30 per 1,000 characters.
 cues.json: CUE_MISSING section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
@@ -184,15 +184,15 @@ decktalk check --section 4 --no-frames
 ```
 
 ```text
-No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
+No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 The takes on disk could not be matched to a voice, so this run costs up to $0.03 at $0.30 per 1,000 characters.
 ```
 
 Nothing found, and it exits 0. The two lines about the voice are the price explaining itself: with
 no voice id named, no take on disk can be matched to the voice that made it, so the section counts
-toward the most the run can cost rather than toward what it certainly costs. Set
-`ELEVENLABS_VOICE_ID` and the same line states one figure: `This run costs $0.03 for 111 characters
+toward the most the run can cost rather than toward what it certainly costs. Set `[voice] id` in
+`decktalk.toml` and the same line states one figure: `This run costs $0.03 for 111 characters
 at $0.30 per 1,000 characters.`
 
 <Tip>Run `decktalk check` with no flags before a build. It opens the pages, freezes every slide

@@ -316,17 +316,21 @@ def _build_price(
 ) -> Callable[[], Spend | None]:
     """How a build is priced before it is asked about: the narration, else the soundscape it would buy.
 
-    The narration is the price a person approves, so it is the one shown whenever it buys anything.
-    A build whose every take is on disk may still buy its soundscape, so that is priced next. A stage
-    the build does not perform is never priced, so a build that starts past `narrate` asks nothing
-    about narration.
+    The narration is the price a person approves, so it is the one shown whenever it buys anything
+    that costs money. A build whose every take is on disk, or whose voice is free, may still buy its
+    soundscape, so that is priced next, and a free voice never lets a paid sound through unasked. A
+    soundscape that could not be priced beside a free voice leaves the build unpriced, so it is asked
+    about rather than called free. A stage the build does not perform is never priced, so a build that
+    starts past `narrate` asks nothing about narration.
     """
 
     def price() -> Spend | None:
         voiced = session.price(project, only=only) if Stage.NARRATE in planned else None
-        if Stage.SOUNDSCAPE not in planned or (voiced is not None and voiced.buys):
+        if Stage.SOUNDSCAPE not in planned or (voiced is not None and voiced.buys and not voiced.free):
             return voiced
         sounds = session.sound_price(project, only=only, force=force)
+        if voiced is not None and voiced.free:
+            return sounds if sounds is None or sounds.buys else voiced
         if sounds is not None and (sounds.buys or voiced is None):
             return sounds
         return voiced

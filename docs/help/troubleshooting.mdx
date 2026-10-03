@@ -179,7 +179,7 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | A change reaches the picture and not the transcript | [PAGE_NO_DESCRIPTION](/reference/findings/PAGE_NO_DESCRIPTION), [PAGE_CLASS_UNDESCRIBED](/reference/findings/PAGE_CLASS_UNDESCRIBED), [PAGE_CLASS_NOT_REDUCED](/reference/findings/PAGE_CLASS_NOT_REDUCED) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | An equation shows its source, or an error where the maths should be | [PAGE_KATEX_MISSING](/reference/findings/PAGE_KATEX_MISSING), [PAGE_KATEX_ERROR](/reference/findings/PAGE_KATEX_ERROR) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A word-synced line, a count or a stagger has nothing to work on | [PAGE_WORDS_NOT_FOUND](/reference/findings/PAGE_WORDS_NOT_FOUND), [PAGE_STAGGER_EMPTY](/reference/findings/PAGE_STAGGER_EMPTY) | [A page the contract refuses](#a-page-the-contract-refuses) |
-| The script is not ready for a voice to read it | [TAKE_PLACEHOLDER](/reference/findings/TAKE_PLACEHOLDER), [TAKE_SPOKEN_SYMBOL](/reference/findings/TAKE_SPOKEN_SYMBOL) | [A script that is not ready to be voiced](#a-script-that-is-not-ready-to-be-voiced) |
+| The script is not ready for a voice to read it | [TAKE_PLACEHOLDER](/reference/findings/TAKE_PLACEHOLDER), [TAKE_SPOKEN_SYMBOL](/reference/findings/TAKE_SPOKEN_SYMBOL), [TAKE_PAUSE_DROPPED](/reference/findings/TAKE_PAUSE_DROPPED) | [A script that is not ready to be voiced](#a-script-that-is-not-ready-to-be-voiced) |
 | A section plays a placeholder because its take is not on disk | [TAKE_MISSING](/reference/findings/TAKE_MISSING) | [A take that is missing](#a-take-that-is-missing) |
 
 Every code links to its own page, which carries that code's sentence, its certainty and the settings
@@ -497,9 +497,9 @@ boundary be an ordinary cut, which `[transition]` dips through.
 
 **What you see.** `MIX_LOUDNESS`, which is uncertain, with the measured numbers in the message.
 
-The mix is mastered to `mix.loudness.target_lufs`, with `mix.loudness.true_peak_max_dbtp` as the peak
-ceiling. The defaults are -16 LUFS and -1.5 dBTP, which are ordinary values for video on the web.
-`mix.loudness.range_max_lu` is the loudness range the measurement is made against, and no mix fails
+The mix is mastered to `audio.target_lufs`, with `audio.true_peak_max_dbtp` as the peak ceiling. The
+defaults are -16 LUFS and -1.5 dBTP, which are ordinary values for video on the web.
+`audio.range_max_lu` is the loudness range the measurement is made against, and no mix fails
 on it. [Sound](/concepts/sound#loudness) says exactly when `MIX_LOUDNESS` is raised.
 
 **What to do.**
@@ -515,7 +515,7 @@ on it. [Sound](/concepts/sound#loudness) says exactly when `MIX_LOUDNESS` is rai
 2. A film that misses the target by a lot usually has a bed fighting the voice. `[mix] music_db`,
    `[mix] music_duck_db` and `[mix] ambience_db` are where that is settled.
 3. Change the target only when you are mastering for a platform that asks for a different one. Read
-   it whole first with `decktalk config explain mix.loudness.target_lufs`, which prints its range and
+   it whole first with `decktalk config explain audio.target_lufs`, which prints its range and
    the layer that set the value in force, and whose `--json` lists every layer that stated it.
 
 ## A page that loads an asset from a network origin
@@ -619,10 +619,11 @@ separated by a vertical bar, and the transcript prints it.
 |---|---|---|
 | [TAKE_PLACEHOLDER](/reference/findings/TAKE_PLACEHOLDER) | certain | Replace the placeholder on the line the message names with the words you mean. |
 | [TAKE_SPOKEN_SYMBOL](/reference/findings/TAKE_SPOKEN_SYMBOL) | uncertain | Write the symbol out as the voice must say it. |
+| [TAKE_PAUSE_DROPPED](/reference/findings/TAKE_PAUSE_DROPPED) | certain | Set `[voice] model` to one that renders `[pause N]`, such as `eleven_multilingual_v2`, or take the timed pauses out of the section. |
 
-Both come from `decktalk check` reading `script.md`, so both are free to find and both are found
-before a credit is spent. This is the cheapest check there is, and running it in a commit hook with
-`--no-pages` costs nothing.
+All three come from `decktalk check` reading `script.md`, so all three are free to find and all
+three are found before a credit is spent. This is the cheapest check there is, and running it in a
+commit hook with `--no-pages` costs nothing.
 
 Run it before you voice anything, because `narrate` refuses on the same condition. A run that has
 already paid cannot take the money back, so a script the voice must not receive is refused rather
@@ -631,6 +632,11 @@ on the first.
 
 `TAKE_SPOKEN_SYMBOL` is uncertain because sometimes you do mean the symbol. Write out what the voice
 must say, and [Writing for the ear](/guides/writing-for-the-ear) is the guide for it.
+
+`TAKE_PAUSE_DROPPED` names a section with a `[pause N]` on a model that renders no timed pause.
+ElevenLabs renders one only on its v2 family, `eleven_multilingual_v2`, `eleven_flash_v2_5`,
+`eleven_flash_v2`, `eleven_turbo_v2_5` and `eleven_turbo_v2`, and v3 and v4 read no `<break>` tag, so `narrate` refuses to buy a take that would lose the
+pause. A `[beat]` is a dash the voice reads on any model, so a beat alone never raises it.
 
 ## A take that is missing
 
@@ -644,9 +650,10 @@ only that section's timing is estimated, so a draft build exits 0. Pass `--fail-
 missing take fail a run.
 
 A take is found by its text, its voice and its voice settings, so a section reports it after any of
-those changed, and on a fresh clone whose takes were never committed. Without `ELEVENLABS_VOICE_ID`
-no paid take can be matched at all, and the run says so in one line before the findings. Set the
-voice id, which is a published name rather than a secret, and the takes on disk play again.
+those changed, and on a fresh clone whose takes were never committed. Without a voice id no paid take
+can be matched at all, and the run says so in one line before the findings. Set `[voice] id` in
+`decktalk.toml`, which is a published name rather than a secret and is committed with the project,
+and the takes on disk play again.
 
 ## When the answer is not a code
 
@@ -654,8 +661,8 @@ Some things are not judgements. Use the stream.
 
 - `--events` prints one JSON line per event on stderr as it happens, and every run also appends
   `build/events/<run>.jsonl` whether you passed it or not. The discriminator key is `event` and
-  there are twelve names: `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`,
-  `section.done`, `progress`, `finding`, `spend`, `take.charged`, `fetch` and `log`.
+  there are thirteen names: `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`,
+  `section.done`, `progress`, `finding`, `spend`, `take.charged`, `sound.charged`, `fetch` and `log`.
 - `stage.done` and `section.done` carry an `outcome` of `ok`, `skipped` or `failed`, so a run that
   stopped early still says what it did not reach rather than leaving you to infer it from a shorter
   list.

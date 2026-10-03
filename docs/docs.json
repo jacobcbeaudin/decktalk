@@ -166,6 +166,7 @@
               "reference/findings/CUE_OVERLAP",
               "reference/findings/TAKE_PLACEHOLDER",
               "reference/findings/TAKE_SPOKEN_SYMBOL",
+              "reference/findings/TAKE_PAUSE_DROPPED",
               "reference/findings/TAKE_MISSING",
               "reference/findings/CUT_SPEECH",
               "reference/findings/CUT_POP",

@@ -122,7 +122,7 @@ A film that is quieter than everything else on a platform is a film a hard-of-he
 and then gets startled by. The mix is therefore mastered rather than left where the layers landed.
 
 `assemble` measures the whole soundtrack, applies one gain to reach
-[`[mix.loudness] target_lufs`](/reference/configuration#mix-loudness), runs a true-peak limiter at
+[`[audio] target_lufs`](/reference/configuration#audio), runs a true-peak limiter at
 `true_peak_max_dbtp`, and measures the result again. A plain gain keeps the mix's dynamics intact and
 the limiter touches only the peaks that would cross the ceiling, and it runs oversampled so that
 inter-sample peaks are caught, which is what a true-peak ceiling promises.
@@ -219,5 +219,5 @@ rather than the word "transcript" on its own.
 
 - **Read every page attribute:** [The page contract](/concepts/page-contract)
 - **Caption a cued sound:** [Put a sound effect on a cue](/guides/effects-on-a-cue)
-- **Read the loudness keys whole:** [Configuration](/reference/configuration#mix-loudness)
+- **Read the loudness keys whole:** [Configuration](/reference/configuration#audio)
 - **See what the film is measured against:** [Verify](/reference/verify)

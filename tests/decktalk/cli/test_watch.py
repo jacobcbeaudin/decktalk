@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,6 +13,7 @@ from decktalk.errors import InputError
 from decktalk.inputs.workspace import Workspace
 from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult
 from support.spends import a_spend
+from support.takes import TAKE_SUFFIX
 
 from .conftest import Fake
 
@@ -90,8 +92,14 @@ def test_a_build_folder_the_project_names_is_never_watched(tmp_path) -> None:
 def _place(project: Fake, root: Path, *, build: str = "build", takes: str | None = None) -> Fake:
     """Put a fake project at a root, with its build and take folders where a test's settings put them."""
     project.root = root
-    project.workspace = Workspace(
-        root=root, build=root / build, name="demo", takes=None if takes is None else root / takes
+    project._inputs = SimpleNamespace(
+        workspace=Workspace(
+            root=root,
+            build=root / build,
+            name="demo",
+            suffix=TAKE_SUFFIX,
+            takes=None if takes is None else root / takes,
+        )
     )
     return project
 

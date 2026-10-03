@@ -1,6 +1,7 @@
 """Stage one: `script.md` becomes one take per section, indexed by content hash.
 
-    build/narrate/<hash>.mp3         one take, named by the content that produced it
+    build/narrate/<hash>.<suffix>    one take, named by the content that produced it, under the
+                                     suffix its voice declares for what it holds, such as .mp3
     build/narrate/<hash>.words.json  a start and an end for every word in it
     build/narrate/takes.json         which section plays which take, what it cost, and where each
                                      section lands once the takes are joined
@@ -45,14 +46,15 @@ from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SectionTake, Spend, SpendState, TakeStatus
-from decktalk.speech import SpeechProvider
-from decktalk.stages import selects
+from decktalk.speech import SpeechProvider, output_of
+from decktalk.stages import selects, voice_model
 from decktalk.stages.narrate.plan import (
-    VOICE_VARIABLE,
+    VOICE_ID_VARIABLE,
     TakePlan,
     is_cached,
     named_voice,
     placeholder_plan,
+    refuse_dropped_pauses,
     speech_provider,
     spend_of,
     voice_id_of,
@@ -97,9 +99,8 @@ def narrate(
     built only once a take must be bought, and the index is written again after every take, so a run
     that is stopped keeps everything it has already paid for.
     """
-    cfg = inputs.settings.narration
     targets = _targets(inputs, only)
-    model = inputs.document.voice.model or cfg.model
+    model = voice_model(inputs)
     buying = run.spend
     # A run that buys makes a replaced take again, and one that does not keeps every paid take on
     # disk unless it was told to replace them, so `force` alone never discards a paid take there.
@@ -114,15 +115,16 @@ def narrate(
             run.note(why)
         plans, missing = _without_buying(inputs, plans, why=why, force=force, replace_voiced=replace_voiced)
     elif why:
-        # A purchase needs the voice named, so this raises the refusal that says which variable to set.
+        # A purchase needs the voice named, so this raises the refusal that says where to name it.
         voice_id_of(inputs)
     estimate = spend_of(plans, inputs, state=SpendState.ESTIMATE)
     provider: SpeechProvider | None = None
     if any(plan.status is TakeStatus.VOICED for plan in plans):
         # A run that sends nothing buys nothing, so the gate is asked and the voice is built only when
         # something would be bought, and a run that plays what is on disk reads no key at all.
+        refuse_dropped_pauses(inputs, [plan.segment for plan in plans if plan.status is TakeStatus.VOICED], model=model)
         run.approve(estimate)
-        provider = speech_provider(inputs)
+        provider = speech_provider(run, inputs)
     rows, made = _write_takes(inputs, run, plans, provider, model=model)
     index = _index(inputs, rows, model=model)
     run.wrote(index.write(inputs.workspace.takes_path))
@@ -168,7 +170,7 @@ def _take_missing(inputs: Inputs, segment: Segment, *, replaced: bool, unmatched
     if replaced:
         why = "this run was told to replace its paid take, which stays on disk for a run without that flag"
     elif unmatched:
-        why = f"no take on disk can be matched to it until {VOICE_VARIABLE} names the voice"
+        why = f"no take on disk can be matched to it until [voice] id or {VOICE_ID_VARIABLE} names the voice"
     else:
         why = "it has no take of its current text on disk"
     return judge(
@@ -298,7 +300,7 @@ def _one_take(inputs: Inputs, run: Run, plan: TakePlan, provider: SpeechProvider
     if digest is None:
         raise InputError(
             f"section {plan.segment.index} has no take digest, so the voice could not be set up.",
-            hint=f"Set {VOICE_VARIABLE} in .env, or run with --no-spend.",
+            hint=f"Set [voice] id in decktalk.toml or export {VOICE_ID_VARIABLE}, or run with --no-spend.",
             location=at(inputs.workspace.takes_path, inputs.root),
         )
     hit = plan.cached and is_cached(digest, inputs.workspace)
@@ -344,7 +346,7 @@ def _index(inputs: Inputs, rows: dict[int, Take], *, model: str) -> Takes:
     return Takes(
         script=inputs.relative(inputs.script_path).as_posix(),
         model=model,
-        output_format=inputs.settings.narration.output_format,
+        output_format=output_of(inputs.settings, inputs.settings.voice.provider).format,
         sections=tuple(rows[number] for number in sorted(rows)),
     )
 

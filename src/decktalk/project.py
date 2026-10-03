@@ -40,7 +40,7 @@ from decktalk.errors import Cancel, InputError, ProjectLocked
 from decktalk.events import Event, Events, Level, Subscription
 from decktalk.files import replace_all
 from decktalk.findings import Certainty, Code, Finding
-from decktalk.inputs import Document, Inputs, Workspace
+from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.machine import Machine, Run, apply_fixes, new_run
 from decktalk.pipeline import Stage
@@ -199,10 +199,13 @@ class Project:
     at once or, as `serve` does, hands back something the caller closes itself. Nothing here prints,
     nothing reads the environment, and every path a result carries is relative to `root`, so two
     projects in one process share nothing but the machine they were opened on.
+
+    What the project was read into is private: a caller reads `settings` and `layers`, and every other
+    fact about the project comes back on a result.
     """
 
     root: Path
-    inputs: Inputs
+    _inputs: Inputs
     machine: Machine
     events: Events
 
@@ -221,7 +224,7 @@ class Project:
         self.machine = machine
         self.root = root.resolve()
         self.overrides = overrides
-        self.inputs = Inputs.load(
+        self._inputs = Inputs.load(
             self.root,
             environ=machine.environ,
             machine=dict(machine.tables),
@@ -236,19 +239,9 @@ class Project:
     # ---- what the project is -------------------------------------------------------------
 
     @property
-    def document(self) -> Document:
-        """The parsed `decktalk.toml`, which says what this presentation is."""
-        return self.inputs.document
-
-    @property
-    def workspace(self) -> Workspace:
-        """Every path under the build directory, named once."""
-        return self.inputs.workspace
-
-    @property
     def settings(self) -> Settings:
         """Every knob in force for this project on this machine, with each layer already applied."""
-        return self.inputs.settings
+        return self._inputs.settings
 
     @property
     def layers(self) -> Layers:
@@ -257,7 +250,7 @@ class Project:
         It is resolved at `open()` and again at `reload()`, so a watch loop that sees an edited
         project file sees the layer that set each key move with it.
         """
-        return self.inputs.layers
+        return self._inputs.layers
 
     def reload(self) -> Project:
         """This project read again from disk, which is what a watch loop calls when a file changed."""
@@ -265,7 +258,7 @@ class Project:
 
     def sections_touching(self, path: Path) -> tuple[int, ...]:
         """Every section a change to this file would change, in section order."""
-        return self.inputs.sections_touching(path)
+        return self._inputs.sections_touching(path)
 
     # ---- the six verbs, in run order --------------------------------------------------------
 
@@ -483,8 +476,8 @@ class Project:
         from decktalk.media.origin import Allowed, open_server, served_url  # noqa: PLC0415
 
         with self._open(writes=False) as run:
-            allowed = Allowed.of(self.root, self.inputs.served_paths())
-            server = open_server(allowed, host, port, self.inputs.documents())
+            allowed = Allowed.of(self.root, self._inputs.served_paths())
+            server = open_server(allowed, host, port, self._inputs.documents())
             result = run.result(
                 ServeResult,
                 url=served_url(server),
@@ -513,7 +506,7 @@ class Project:
         """
         name = stage.value if isinstance(stage, Stage) else stage
         with self._open(cancel=cancel, spend=spend, max_cost=max_cost, writes=writes) as run:
-            answered = stage_call(name)(self.inputs, run, **options)
+            answered = stage_call(name)(self._inputs, run, **options)
         if not isinstance(answered, model):
             raise TypeError(f"{name} answered with {type(answered).__name__} rather than {model.__name__}")
         return cast("R", answered)
@@ -532,23 +525,23 @@ class Project:
         Every run writes its event lines under the build directory and may prune old ones, so the
         tree is confined before the run opens, whether or not the stage itself writes.
         """
-        self.workspace.confine()
-        output = self.inputs.settings.output
+        self._inputs.workspace.confine()
+        output = self._inputs.settings.output
         opening = new_run()
         self._runs.add(opening)
-        with self.machine.run(
+        with self.machine._run(
             id=opening,
             cancel=cancel,
             spend=spend,
             max_cost=max_cost,
             root=self.root,
-            events_dir=self.workspace.events_dir,
+            events_dir=self._inputs.workspace.events_dir,
             keep_runs=output.events_keep_runs,
             max_bytes=output.events_max_bytes,
         ) as run:
             # What the load noticed, such as a misspelled key, is said on every run of the project,
             # because the project was loaded once and each run's events file is read on its own.
-            for note in self.inputs.notes:
+            for note in self._inputs.notes:
                 run.note(note, level=Level.WARNING)
             with self._lock(run) if writes else nullcontext():
                 yield run
@@ -565,8 +558,8 @@ class Project:
         under a lock nobody holds says so rather than refusing, because a caller cannot clear a file
         it was never told about.
         """
-        path = self.workspace.build / LOCK_FILE
-        note = self.workspace.build / OWNER_FILE
+        path = self._inputs.workspace.build / LOCK_FILE
+        note = self._inputs.workspace.build / OWNER_FILE
         try:
             held = FileLock(path, blocking=False).acquire()
         except Timeout:

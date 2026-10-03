@@ -1,55 +1,205 @@
-# The speech seam is internal, and it asks a voice for one thing
+# Providers, local voices and forced alignment
 
 ## Decision
 
-ElevenLabs is the only speech provider DeckTalk has. The seam above it is internal: `SpeechProvider`,
-`SpeechRequest` and `VoiceContext` live in `src/decktalk/speech/`, none of them is exported from
-`decktalk`, and no result model carries a provider. `PROVIDERS` in `speech/__init__.py` is a written
-out mapping of one name to one factory, and `[voice] provider` may name a key of it.
+The voices DeckTalk can call are a closed set of adapters inside the engine. Each section of narration ends as audio plus a
+start and an end time for every word, and the words come either from the voice itself or from an
+aligner run over the audio. Everything a vendor is particular about, its settings, its key, its
+hosts, its pause markup, its bill and its file format, is declared by its adapter and read from
+there, so nothing above `speech/` names a vendor.
 
-A provider is built from a `VoiceContext`, which carries seven values and no project: `secrets`,
-`api_base`, `context_chars`, `speech_timeout_seconds`, `sound_timeout_seconds`, `retries` and
-`allow_any_api_base`. The one thing
-DeckTalk asks of a voice is audio with a start and an end time for every word.
+### The closed set
+
+The engine ships three speech adapters and names each one in `PROVIDERS` in
+`src/decktalk/speech/__init__.py`:
+
+- `elevenlabs`, the cloud voice, over https.
+- `dtsp`, one HTTP client that talks to `decktalk-voice`, a separate local server that is not part
+  of this repository and runs the local speech and alignment models. It needs no key and speaks
+  to a loopback address.
+- `recorded`, which reads the author's own recording of each section and buys nothing.
+
+There are no entry points and no plugin loading. A project file names an adapter by its key in
+`PROVIDERS` and can never name code. A host that embeds the library may hand `Machine.of` its own
+table, which is how a test runs the real `narrate` against a voice that spends nothing, and that
+table is code the host wrote and imported itself.
+
+The Python protocol types are public, in the `decktalk.speech` module: the provider protocol, the
+request it receives and the speech it returns, the factory, and the request and response types of
+`decktalk-voice`'s `/v1/align`. A host and a contributor therefore have a type to build against,
+and a new adapter still arrives as a change to this tree.
+
+### What an adapter declares
+
+Each adapter declares, in one place:
+
+- **Its settings table.** `[elevenlabs]` and one table per adapter, an `XConfig` whose fields are
+  declared with `tune()` and layered by `tomlmap` like every other table, with the adapter's own
+  bounds. Every vendor field lives there, `stability`, `similarity_boost`, `style` and
+  `speaker_boost` among them.
+- **Its default model**, read from its own table, so changing `[voice] provider` never sends one
+  vendor's model id to another.
+- **Its key variable**, such as `ELEVENLABS_API_KEY`, or none. `doctor`, the plan and every hint
+  name the variable the adapter declares.
+- **Its allowed hosts.** ElevenLabs allows https on `elevenlabs.io` and its subdomains. `dtsp`
+  allows `127.0.0.1`, `localhost` and `[::1]`, over `http`. Any other host needs the machine's own
+  switch, `DECKTALK_ALLOW_ANY_API_BASE`, which a project file cannot set.
+- **How it renders pauses**, NATIVE or STITCHED, per model where a vendor's models differ.
+- **Its billing**: per character, per second of audio, or free, with the rate in its own table.
+- **Its take identity**, the mapping of its own fields that enters the take digest.
+- **Its output format and the file suffix** a take is written under, so a take is named by what it
+  holds.
+
+`[voice]` keeps the four keys every voice has: `provider`, `id`, `model` and `speed`. Each adapter
+bounds `speed` to its own range. The protocol carries no `cache_key`. The digest is taken in one
+place above the boundary, from the take identity the adapter declares.
+
+An adapter is built from its own settings table, a source of secrets, a timeout and a retry count,
+and never from a project, a stage, a path or a build directory. It receives a request and answers
+with audio and, when it has them, timed words.
+
+### Pauses are data
+
+A request carries pieces: each is a run of text and the pause after it in seconds. No request
+carries markup. A NATIVE adapter writes the pause in its own syntax, which for ElevenLabs is a
+`<break time="0.7s" />` tag. A STITCHED adapter is sent one piece at a time, and DeckTalk joins the
+audio with measured silence and moves each piece's word times by where that piece starts.
+
+The take digest is taken over the adapter's canonical rendering of the pieces. ElevenLabs renders
+exactly the text it is sent now, so every ElevenLabs take digest stays byte for byte what it is, and
+`tests/contract/test_take_hash.py` holds the digests of really voiced films against
+`tests/data/take_hash.json`.
+
+`check` refuses a script with pauses on a model whose adapter declares no way to render them, so a
+pause is never dropped without a finding. ElevenLabs v3 and v4 do not read `<break>` tags, so they are
+refused on a script with pauses until their adapter renders those pauses STITCHED.
+
+### Credentials
+
+Every credential is a `Secret`, and only the adapter's header builder reveals it to send it. Every
+request names the secrets it carries, which is the `secrets` argument of `post`, and scrubbing works
+on their values, not on a list of header names: every such value, in whatever header, query parameter
+or body field it travelled, and the token after an `Authorization` scheme, is replaced in any reply
+body or error text before it is quoted. A redirect that leaves the request's origin, its scheme, host
+and port together, drops every header that holds one of those values, whatever it is called, along
+with `Authorization`, `Proxy-Authorization` and `Cookie`, which are the second line for a credential
+no secret names.
+
+### Take identity and money
+
+A take's digest is the sha256 of six fields joined by newlines: the adapter's name, the voice id,
+the model, the output format, the take identity as compact JSON with sorted keys, and the rendered
+text. Every field but the text refuses a newline, and the text is last, so no two sets of inputs
+share a payload and no existing digest moves.
+
+A paid request whose reply broke after it was sent is never sent again, and it is reported as
+possibly charged. A request is retried only when nothing connected, or on a 408, a 429 or a 5xx.
+
+A run either may spend or may not, which is `spend: bool`. The voice is built only when a take must
+be bought, so a run that plays what is on disk reads no key. A run that may not spend plays every
+take on disk and gives each missing section a placeholder and a `TAKE_MISSING` finding. A free
+adapter never asks for approval and needs no `--spend`.
+
+### The voice id
+
+The voice id is `[voice] id` in `decktalk.toml`, and `DECKTALK_VOICE_ID` in the environment
+overrides it for anyone who keeps it out of the file. The id is a published name, not a credential.
+It names which voice reads the script, the way a model name names which model answers, and it grants
+nothing on its own: a voice cloned on an ElevenLabs account is usable only with that account's key.
+The take identity always carries the adapter's name beside the id, because an id means something
+only to the vendor that issued it.
+
+### Sound is its own seam
+
+The sound stage (`soundscape`) buys music, ambience and effects through a `SoundProvider`, a second
+protocol with its own table of adapters beside `PROVIDERS`. It never borrows the speech registry and
+never checks which class a voice is. Sound is priced per second of audio, at a rate in the sound
+adapter's own table, because that is how sound is billed. A sound's ledger digest is taken over the
+endpoint as the service publishes it and the request body, without the configured `api_base`, so
+moving to another host of the same service or to a local mock buys nothing again.
+
+### Alignment
+
+Alignment is a seam inside `narrate`, not a seventh stage. Words a voice returns with its audio are
+used as they come, and are kept beside the take. A voice that returns no word times is paired with
+an aligner, which reads the take's audio and the script's words and returns a time for every word.
+An aligner's words are kept in a words cache of their own, keyed by the digest of the audio plus the
+aligner's id and revision, so a better aligner re-aligns every take and buys none of them again.
+
+A voice without timestamps is therefore a usable voice. The `recorded` adapter is the plainest case:
+it reads the author's own audio for each section, always goes through the aligner, and is free.
+
+DeckTalk owns the client side of `/v1/align`: the request and response types it sends to
+`decktalk-voice` and reads back, in `decktalk.speech`. The aligner contract itself, meaning those
+payloads, how a project chooses between a voice's own times and an aligner's, and what `recorded`
+reads from the project, is reviewed separately before it is built. This record states only the shape
+decided so far: the seam sits in `narrate`, the words have their own key, and the server is out of
+process.
 
 ## Why
 
-The cut is made on words, so word times are the whole requirement. Everything else a speech service
-offers is a setting passed through. Writing the boundary that narrowly means the caching, the
-pricing and the cue resolution above it never have to learn a provider's shape.
+The cut is made on words, so word times are the whole requirement. Who supplies them is not.
+Forced alignment against a script DeckTalk already holds is accurate well inside the cue tolerance,
+so a voice with no timestamps stops being a different feature and becomes one more source of audio.
 
-The seam is internal because a second provider is not a promise DeckTalk is ready to make. What the
-seam is kept for is the test it buys: a stage test runs the real `narrate` against a provider that
-spends nothing, and that is worth a protocol on its own.
+The set is closed because what a build can call should be exactly what a reader of this tree can
+see. A host that runs projects it did not write must not offer a plugin surface, and an entry point
+is one. The loopback server is what keeps the set closed without keeping models out: torch, MLX,
+espeak and a model's weights live in another process, behind one reviewed HTTP client. That process
+boundary is also a safety boundary. The espeak front end that local voices use can call `exit()` on a
+long data path, which inside DeckTalk's process would end the build without a Python exception, and
+outside it ends only the server, which the adapter reports as a provider error.
 
-Building from a `VoiceContext` rather than from a `Project` is what keeps `speech/` in the leaves
-layer. A provider that took a `Project` would drag the whole project model below the model layer,
-and the layering test would refuse it. It also means a provider is built in a test from four numbers
-and a source of secrets, which is what makes that stage test cheap enough to keep in the fast suite.
+The protocol types are public because a closed set still needs a type to build against. A host
+embedding the library, a test and a contributor all write against the same protocol, and none of them
+can load code through a project.
 
-The key is a `Secret` and `[elevenlabs] api_base` must be an https URL on an ElevenLabs host unless
-`DECKTALK_ALLOW_ANY_API_BASE` is set, because the environment is the machine's own and a project
-file is not, so a file alone can never redirect a credential. The voice id is not a secret. It names
-which voice reads the script, the way a model name names which model answers, and it travels in the
-request and in the take hash.
+Every vendor-shaped fact sits on its adapter because each one, left elsewhere, is a bug waiting for a
+second vendor: a credential header not on a list leaks in an error, a vendor's settings in every take
+hash re-voice a film for a field another vendor ignores, a pause tag is read aloud, a format string is
+sent to a service that does not know it, and a sound is priced at the speech rate. Declaring them
+once means `check` can refuse a mismatch before anything is bought, rather than a request failing
+after.
+
+Scrubbing by value is the design fix for credentials because a header list is only as good as the
+vendor its author knew. A value is the thing that must not leak, whatever header carried it.
+
+Take identity is where money is. A digest that moves buys every take again, so the ElevenLabs
+rendering is held byte for byte by a golden test, and the newline rule keeps the payload unambiguous
+without changing any digest that exists. The take hash leaves out the neighbouring text sent for
+prosody, so a take is kept when the section before it changes, which costs a little continuity and
+saves a purchase.
+
+The words have their own key because the audio does not depend on the aligner. Putting the aligner in
+the take digest would buy the audio again to re-align it.
+
+Alignment is not a stage because the six-stage rule makes a step a stage when a user runs it alone on
+files another step did not just write. Re-aligning is `narrate` finding the audio cached and the words
+missing, which it already runs alone, and `cue` still reads one artifact.
+
+Building an adapter from values rather than a `Project` keeps `speech/` in the leaves layer, which the
+layering test holds, and lets a test build one from a few numbers and a source of secrets.
 
 ## What it rules out
 
-- A provider with no word timings cannot sit behind this protocol. It would be a different feature,
-  not a second provider, and [the timing note](timing-from-the-spoken-words.md) says why.
-- No published type names a provider. `decktalk.__all__` carries no `SpeechProvider`, no
-  `SpeechRequest` and no `VoiceContext`, and no result field holds one, so nothing a caller reads
-  back from a run can be dispatched on a provider's identity.
-- DeckTalk loads no plugins and reads no entry points. A provider arrives as a pull request and is
-  named in `PROVIDERS`, so what a build can call is exactly what a reader can see.
-- A provider cannot reach the build directory, so it cannot cache on its own. Caching is one rule
-  above the boundary, keyed by a hash of the text, the voice, the model and the settings.
-- A provider is never handed a path, a stage or a settings object. It receives a `SpeechRequest` and
-  answers with bytes and a list of `Word`.
+- No entry points, no plugin discovery and no adapter named in a project file that is not in the
+  table its machine answers with.
+- No vendor name above `speech/`. A layer test holds it.
+- No new cloud speech provider before the first public launch. The local server and the aligner
+  supply the new voices.
+- No markup in a request, and no pause dropped without a finding.
+- No `cache_key` on the protocol, and no digest spelled outside the one place takes are named.
+- No retry of a paid request whose reply broke after sending.
+- Cloning is a separate command that records the speaker's consent. A build never clones, so a build
+  can never spend on a clone.
+- No licence gate. Each model entry in the local server's registry carries a plain licence field, any
+  model may be used locally, and nothing in DeckTalk filters on that field.
+- No adapter reaches the build directory or caches on its own. Caching is one rule above the
+  boundary.
 
 ## What would change it
 
-A local speech model with word timings would be the first provider that is not an HTTP service. The
-protocol was written to accept one, and `PROVIDERS` is the only place it would be named. Publishing
-the seam is a separate decision, and it would only be worth making once there were two providers
-worth choosing between.
+A model that has to run in DeckTalk's own process, with no way to serve it on loopback, would reopen
+how local voices load. A vendor whose only timing path is a websocket would add a transport to
+`http.py`. A source of phoneme or character times that cues should name directly would widen what a
+word is, which [the timing note](timing-from-the-spoken-words.md) covers.

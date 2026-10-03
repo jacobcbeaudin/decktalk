@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from decktalk.errors import Cancel
 from decktalk.events import Event, Log
@@ -38,6 +40,36 @@ def a_run(
     if lines is not None:
         machine.events.subscribe(lines.append)
     return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, max_cost=max_cost, root=root)
+
+
+def a_voiced_run(root: Path, providers: Mapping[str, Any], *, spend: bool = False) -> Run:
+    """One run opened straight on a machine whose host handed it this voice table, as `Machine.of` takes it."""
+    machine = Machine(
+        environ={},
+        tables={},
+        config_path=root / "machine.toml",
+        cwd=root,
+        toolchain=Toolchain(),
+        providers=providers,
+    )
+    return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, root=root)
+
+
+def a_sounding_run(
+    root: Path, sounds: Mapping[str, Any], *, spend: bool = False, lines: list[Event] | None = None
+) -> Run:
+    """One run opened straight on a machine whose host handed it this sound table, as `Machine.of` takes it."""
+    machine = Machine(
+        environ={},
+        tables={},
+        config_path=root / "machine.toml",
+        cwd=root,
+        toolchain=Toolchain(),
+        sound_providers=sounds,
+    )
+    if lines is not None:
+        machine.events.subscribe(lines.append)
+    return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, root=root)
 
 
 @dataclass

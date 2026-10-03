@@ -6,7 +6,7 @@ import json
 import shutil
 import threading
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -21,15 +21,17 @@ from decktalk.inputs import Inputs
 from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SpendState, TakeStatus, Word
 from decktalk.settings import CONFIG_VARIABLE
-from decktalk.speech import PROVIDERS, SpeechRequest, VoiceContext
+from decktalk.speech import DECLARED, FREE, PROVIDERS, Piece, SpeechRequest, VoiceContext
+from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import narrate as narrate_stage
 from decktalk.stages.narrate import narrate
-from decktalk.stages.narrate.plan import VOICE_VARIABLE
+from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE
 from support.fakes import FAKE_VOICE_NAME, FakeVoice
 from support.interrupts import aimed_signals, interrupts_raise, press_ctrl_c
 from support.logs import data_of, decisions
 from support.projects import load_project
-from support.runs import Watched
+from support.runs import Watched, a_voiced_run
+from support.takes import TAKE_SUFFIX
 
 from .conftest import ENVIRON, SCRIPT, TOML, VOICE_ID
 
@@ -64,7 +66,7 @@ def test_every_file_the_run_wrote_is_reported(inputs: Inputs, watched: Watched) 
     index = Takes.read(inputs.workspace.takes_path)
     assert index is not None
     for row in index.sections:
-        assert take_file(row.hash) in {path.name for path in result.written}
+        assert take_file(row.hash, TAKE_SUFFIX) in {path.name for path in result.written}
         assert words_file(row.hash) in {path.name for path in result.written}
 
 
@@ -254,7 +256,7 @@ class CountedVoice:
 
 @pytest.fixture
 def counted(monkeypatch: pytest.MonkeyPatch) -> CountedVoice:
-    """The `test-voice` provider, counting every time a run builds it."""
+    """The fake voice under the shipped voice's name, counting every time a run builds it."""
     voice = CountedVoice()
     monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, voice)
     return voice
@@ -262,7 +264,7 @@ def counted(monkeypatch: pytest.MonkeyPatch) -> CountedVoice:
 
 def without_the_key(inputs: Inputs) -> tuple[Inputs, Recorded]:
     """The same project on a machine that names the voice and holds no key, with every lookup recorded."""
-    environ = Recorded({VOICE_VARIABLE: VOICE_ID})
+    environ = Recorded({VOICE_ID_VARIABLE: VOICE_ID})
     return Inputs.load(inputs.root, environ=environ), environ
 
 
@@ -311,14 +313,14 @@ def test_paid_takes_that_cannot_be_matched_say_why_and_a_fresh_project_says_noth
     fresh = Inputs.load(inputs.root, environ={})
     first = make_run(fresh)
     narrate(fresh, first.run)
-    assert not [line for line in first.of(Log) if VOICE_VARIABLE in line.message]
+    assert not [line for line in first.of(Log) if VOICE_ID_VARIABLE in line.message]
     narrate(inputs, make_run(inputs, spend=True).run, force=True)
     nameless = Inputs.load(inputs.root, environ={})
     again = make_run(nameless)
     result = narrate(nameless, again.run)
-    assert [line for line in again.of(Log) if VOICE_VARIABLE in line.message]
+    assert [line for line in again.of(Log) if VOICE_ID_VARIABLE in line.message]
     assert missing_sections(result) == [1, 2, 3]
-    assert VOICE_VARIABLE in result.findings[0].message
+    assert VOICE_ID_VARIABLE in result.findings[0].message
 
 
 def test_a_run_that_may_spend_with_every_take_on_disk_builds_no_voice(
@@ -346,10 +348,14 @@ def test_a_run_that_may_spend_buys_the_one_missing_take(
 
 
 def test_a_run_that_may_not_spend_never_buys_even_from_a_voice_that_bills_nothing(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], counted: CountedVoice
+    make_inputs: Callable[..., Inputs],
+    make_run: Callable[..., Watched],
+    counted: CountedVoice,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The free rule is the command line's to apply, so `spend=False` is a promise to buy nothing."""
-    free = make_inputs(toml=TOML.replace("price_per_1000_characters = 0.30", "price_per_1000_characters = 0"))
+    monkeypatch.setitem(DECLARED, "elevenlabs", replace(DECLARED["elevenlabs"], billing=FREE))
+    free = make_inputs()
     result = narrate(free, make_run(free).run)
     assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
     assert missing_sections(result) == [1, 2, 3]
@@ -428,21 +434,18 @@ class RefusesOneSection:
     failed whichever worker the pool handed which section first.
     """
 
-    name = "test-voice"
+    name = FAKE_VOICE_NAME
 
-    def __init__(self, refused: str) -> None:
+    def __init__(self, refused: tuple[Piece, ...]) -> None:
         self.refused = refused
         self.answered = threading.Event()
 
     def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
-        if request.text == self.refused:
+        if request.pieces == self.refused:
             assert self.answered.wait(timeout=10), "no other section was answered"
             raise ProviderError("the voice stopped answering.", retryable=True)
         self.answered.set()
         return b"take", [Word(word="A", start=0.0, end=0.4)]
-
-    def cache_key(self, _request: SpeechRequest) -> str:
-        return self.name
 
 
 def test_the_index_is_checkpointed_after_every_take(
@@ -450,7 +453,7 @@ def test_the_index_is_checkpointed_after_every_take(
 ) -> None:
     """A run that fails keeps every take it has already paid for, so the next run reuses them."""
     (second,) = [segment for segment in inputs.spoken() if segment.index == 2]
-    monkeypatch.setitem(PROVIDERS, "test-voice", lambda _context: RefusesOneSection(second.tts_text))
+    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: RefusesOneSection(second.pieces))
     watched = make_run(inputs, spend=True)
     with pytest.raises(ProviderError):
         narrate(inputs, watched.run)
@@ -470,7 +473,7 @@ class Overlapping:
     voiced one section at a time would break the barrier rather than pass by luck.
     """
 
-    name = "test-voice"
+    name = FAKE_VOICE_NAME
 
     def __init__(self, hold: int = 2) -> None:
         self.hold = hold
@@ -494,16 +497,13 @@ class Overlapping:
             with self.lock:
                 self.in_flight -= 1
 
-    def cache_key(self, _request: SpeechRequest) -> str:
-        return self.name
-
 
 def test_sections_are_voiced_concurrently_and_reported_in_script_order(
     inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Two requests are in flight at once under the default, and the result still reads in order."""
     voice = Overlapping()
-    monkeypatch.setitem(PROVIDERS, "test-voice", lambda _context: voice)
+    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: voice)
     watched = make_run(inputs, spend=True)
     result = narrate(inputs, watched.run)
     assert voice.most == 2
@@ -518,7 +518,7 @@ def test_a_concurrency_of_one_voices_one_section_at_a_time(
     make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     voice = Overlapping(hold=0)
-    monkeypatch.setitem(PROVIDERS, "test-voice", lambda _context: voice)
+    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: voice)
     project = one_at_a_time(make_inputs)
     narrate(project, make_run(project, spend=True).run)
     assert voice.most == 1
@@ -557,7 +557,7 @@ class HeldVoice:
     The count is the bill: a request that started is one the provider charges for.
     """
 
-    name = "test-voice"
+    name = FAKE_VOICE_NAME
 
     def __init__(self, hold: int) -> None:
         self.hold = hold
@@ -578,9 +578,6 @@ class HeldVoice:
         with self.lock:
             self.answered += 1
         return b"take", [Word(word="A", start=0.0, end=0.4)]
-
-    def cache_key(self, _request: SpeechRequest) -> str:
-        return self.name
 
 
 def six_sections(make_inputs: Callable[..., Inputs]) -> Inputs:
@@ -605,7 +602,7 @@ def test_ctrl_c_during_a_paid_run_buys_the_takes_in_flight_and_none_still_queued
     """
     project = six_sections(make_inputs)
     voice = HeldVoice(hold=project.settings.narration.concurrency)
-    monkeypatch.setitem(PROVIDERS, "test-voice", lambda _context: voice)
+    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: voice)
 
     def press() -> None:
         assert voice.in_flight.wait(timeout=10)
@@ -654,7 +651,7 @@ def test_a_clone_of_a_project_that_commits_its_takes_plays_them_with_no_key(
     assert counted.built == 1
     clone = tracked_copy(bought, tmp_path / "clone")
     assert not (clone / "build").exists()
-    environ = Recorded({VOICE_VARIABLE: VOICE_ID})
+    environ = Recorded({VOICE_ID_VARIABLE: VOICE_ID})
     fresh = Inputs.load(clone, environ=environ)
     result = narrate(fresh, make_run(fresh).run)
     assert {row.status for row in result.sections} == {TakeStatus.KEPT}
@@ -678,7 +675,7 @@ def test_a_paid_run_writes_its_takes_their_words_and_the_index_into_the_projects
     result = narrate(project, make_run(project, spend=True).run)
     voice = project.root / "voice"
     hashes = {row.hash for row in result.sections}
-    assert take_files(voice) == {take_file(h) for h in hashes} | {words_file(h) for h in hashes}
+    assert take_files(voice) == {take_file(h, TAKE_SUFFIX) for h in hashes} | {words_file(h) for h in hashes}
     assert (voice / "takes.json").is_file()
     assert project.workspace.takes_path == voice / "takes.json"
     assert result.takes == Path("voice/takes.json")
@@ -706,7 +703,7 @@ def test_a_take_only_the_machine_cache_holds_is_found_and_kept_in_the_project(
     narrate(elsewhere, make_run(elsewhere, spend=True).run)
     assert len(take_files(tmp_path / "machine-takes")) == 6
     load_project(tmp_path / "proj", IN_THE_PROJECT, script=SCRIPT)
-    environ = Recorded({VOICE_VARIABLE: VOICE_ID})
+    environ = Recorded({VOICE_ID_VARIABLE: VOICE_ID})
     project = Inputs.load(tmp_path / "proj", environ=environ, machine=shared)
     watched = make_run(project)
     result = narrate(project, watched.run)
@@ -725,3 +722,162 @@ def test_a_takes_dir_that_is_not_a_directory_inside_the_project_is_refused_at_lo
     with pytest.raises(InputError, match=r"\[narration\] takes_dir") as refused:
         load_project(tmp_path / "proj", toml, script=SCRIPT, environ=ENVIRON)
     assert refused.value.hint
+
+
+# ---- the voices a run carries -------------------------------------------------------------------
+
+
+def the_shipped_voice_is_never_built(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make building the real ElevenLabs provider fail the test, by whichever path it is built."""
+
+    def refuse(*_args: object) -> None:
+        raise AssertionError("the shipped ElevenLabs voice was built")
+
+    monkeypatch.setattr(ElevenLabs, "__post_init__", refuse)
+
+
+def test_a_paid_run_buys_through_the_voices_its_machine_holds_and_never_the_shipped_one(
+    make_inputs: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run opened outside `Machine._run` still answers with its machine's table, so no host is billed elsewhere."""
+    the_shipped_voice_is_never_built(monkeypatch)
+    house = CountedVoice()
+    project = make_inputs()
+    run = a_voiced_run(project.root, {"elevenlabs": house}, spend=True)
+    result = narrate(project, run)
+    assert result.ok
+    assert house.built == 1
+    assert len(house.voice.requests) == 3
+
+
+PAUSED = """## 1. Open
+
+A bowl. [pause 2] A ball.
+
+## 2. Middle
+
+It steps down [beat] the bowl.
+
+## 3. Close
+
+Every picture waited for its word.
+"""
+"""A script with one timed pause in section 1 and one beat in section 2."""
+
+
+def on_elevenlabs(make_inputs: Callable[..., Inputs], model: str) -> Inputs:
+    """The project read by the shipped provider's name on `model`, which the test then stands a fake voice in for."""
+    toml = TOML.replace('provider = "elevenlabs"', f'provider = "elevenlabs"\nmodel = "{model}"')
+    return make_inputs(toml=toml, script=PAUSED, name=model)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_request_carries_each_paragraph_and_its_pause_and_no_markup(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
+) -> None:
+    project = make_inputs(script=PAUSED)
+    narrate(project, make_run(project, spend=True).run)
+    sent: dict[str, SpeechRequest] = {request.pieces[0].text: request for request in fake_voice.requests}
+    assert [(piece.text, piece.pause) for piece in sent["A bowl."].pieces] == [("A bowl.", 2.0), ("A ball.", None)]
+    assert [(piece.text, piece.pause) for piece in sent["It steps down"].pieces] == [
+        ("It steps down", 0.0),
+        ("the bowl.", None),
+    ]
+    assert not any("<" in piece.text for request in fake_voice.requests for piece in request.pieces)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+@pytest.mark.parametrize("model", ["eleven_v3", "eleven_v4"])
+def test_a_model_that_drops_a_timed_pause_is_refused_before_anything_is_bought(
+    make_inputs: Callable[..., Inputs],
+    make_run: Callable[..., Watched],
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+) -> None:
+    voice = FakeVoice()
+    monkeypatch.setitem(PROVIDERS, "elevenlabs", lambda _context: voice)
+    project = on_elevenlabs(make_inputs, model)
+    with pytest.raises(InputError) as caught:
+        narrate(project, make_run(project, spend=True).run)
+    assert voice.requests == []
+    assert model in str(caught.value) and "[1]" in str(caught.value)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_model_that_renders_a_timed_pause_buys_every_section(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    voice = FakeVoice()
+    monkeypatch.setitem(PROVIDERS, "elevenlabs", lambda _context: voice)
+    project = on_elevenlabs(make_inputs, "eleven_multilingual_v2")
+    narrate(project, make_run(project, spend=True).run)
+    assert len(voice.requests) == 3
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_model_that_drops_a_timed_pause_still_buys_a_section_without_one(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refusal reads only the sections the run would buy, so a timed pause elsewhere never stops it."""
+    voice = FakeVoice()
+    monkeypatch.setitem(PROVIDERS, "elevenlabs", lambda _context: voice)
+    project = on_elevenlabs(make_inputs, "eleven_v3")
+    narrate(project, make_run(project, spend=True).run, only=[2])
+    assert [[piece.text for piece in request.pieces] for request in voice.requests] == [["It steps down", "the bowl."]]
+
+
+# ---- the voice id ----------------------------------------------------------------------------
+
+NAMED = TOML.replace("[voice]\n", f'[voice]\nid = "{VOICE_ID}"\n')
+"""The test project with its voice named in `decktalk.toml`, which is where the published name lives."""
+
+KEY_ONLY = {KEY: "key-under-test"}
+"""A machine that holds the credential and names no voice, so the project's own file has to."""
+
+
+def test_the_voice_id_in_decktalk_toml_names_the_voice(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
+) -> None:
+    project = make_inputs(toml=NAMED)
+    on_a_machine = Inputs.load(project.root, environ=KEY_ONLY)
+    narrate(on_a_machine, make_run(on_a_machine, spend=True).run)
+    assert {request.voice_id for request in fake_voice.requests} == {VOICE_ID}
+
+
+def test_decktalk_voice_id_in_the_environment_overrides_the_file(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
+) -> None:
+    """Somebody who keeps the id out of the file exports it, and the export wins over a committed one."""
+    project = make_inputs(toml=NAMED)
+    private = Inputs.load(project.root, environ={**KEY_ONLY, "DECKTALK_VOICE_ID": "kept-private"})
+    narrate(private, make_run(private, spend=True).run)
+    assert {request.voice_id for request in fake_voice.requests} == {"kept-private"}
+
+
+@pytest.mark.usefixtures("fake_voice")
+def test_elevenlabs_voice_id_alone_no_longer_names_the_voice(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched]
+) -> None:
+    """The old variable is read by nothing, so a voiced run with only it is refused naming both places to name it."""
+    project = make_inputs()
+    old = Inputs.load(project.root, environ={**KEY_ONLY, "ELEVENLABS_VOICE_ID": VOICE_ID})
+    with pytest.raises(InputError) as refused:
+        narrate(old, make_run(old, spend=True).run)
+    assert "[voice] id" in str(refused.value) and "DECKTALK_VOICE_ID" in str(refused.value)
+
+
+def test_a_clone_that_commits_its_voice_id_and_its_takes_plays_them_with_no_environment(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], counted: CountedVoice, tmp_path: Path
+) -> None:
+    """With `[voice] id` committed beside `takes_dir`, a fresh clone matches every paid take and misses none."""
+    bought = make_inputs(toml=NAMED.replace("[narration]\n", '[narration]\ntakes_dir = "voice"\n'))
+    narrate(bought, make_run(bought, spend=True).run)
+    clone = tracked_copy(bought, tmp_path / "clone")
+    environ = Recorded({})
+    fresh = Inputs.load(clone, environ=environ)
+    result = narrate(fresh, make_run(fresh).run)
+    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert missing_sections(result) == []
+    assert result.findings == ()
+    assert counted.built == 1
+    assert KEY not in environ.read

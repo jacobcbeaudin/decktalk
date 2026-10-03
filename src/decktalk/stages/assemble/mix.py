@@ -195,7 +195,7 @@ def encode_soundtrack(inputs: Inputs, src: Path, dst: Path, *, filters: str | No
     shaped = ("-af", filters) if filters else ()
     ffmpeg.run(
         "-i", str(src), "-map", "0:v", "-map", "0:a", "-c:v", "copy",
-        *shaped, *Encoder(inputs.settings.video).aenc, "-movflags", "+faststart", str(dst),
+        *shaped, *Encoder(inputs.settings.video, inputs.settings.audio).aenc, "-movflags", "+faststart", str(dst),
     )  # fmt: skip
 
 
@@ -275,9 +275,9 @@ def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, fl
                  speech: list[Span]) -> list[str]:  # fmt: skip
     """The volume factors the music plays under: the duck under speech, and the swells the markers ask for."""
     mix = inputs.document.mix
-    audio = inputs.settings.audio
+    ramps = inputs.settings.mix
     ducked = gain(mix.music_duck_db)
-    factors = [f"(1-{1 - ducked:.5f}*{ramps_expr(speech, audio.duck_ramp_seconds)})"]
+    factors = [f"(1-{1 - ducked:.5f}*{ramps_expr(speech, ramps.duck_ramp_seconds)})"]
     if not mix.music_markers:
         return factors
     markers = inputs.markers()
@@ -298,9 +298,9 @@ def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, fl
         swell = at + marker.mute_seconds
         boosts.append((swell, swell + markers.boost_seconds))
     if boosts:
-        factors.append(f"(1+{gain(markers.boost_db) - 1:.5f}*{ramps_expr(boosts, audio.marker_boost_ramp_seconds)})")
+        factors.append(f"(1+{gain(markers.boost_db) - 1:.5f}*{ramps_expr(boosts, ramps.marker_boost_ramp_seconds)})")
     if mutes:
-        factors.append(f"(1-{ramps_expr(mutes, audio.marker_mute_ramp_seconds)})")
+        factors.append(f"(1-{ramps_expr(mutes, ramps.marker_mute_ramp_seconds)})")
     return factors
 
 
@@ -335,13 +335,13 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
     if not path.exists():
         _missing_sound(inputs, run, mix.ambience, "ambience", Artifact.SOUNDSCAPE.next_step)
         return
-    audio = inputs.settings.audio
-    pad = audio.ambience_pad_seconds
+    ramps = inputs.settings.mix
+    pad = ramps.ambience_pad_seconds
     spans = [(starts[row.number] - pad, starts[row.number] + row.seconds + pad) for row in flagged]
     chain.layer(
         chain.add(LOOP, str(path)),
         f",atrim=duration={total:.3f},asetpts=PTS-STARTPTS,"
-        f"volume='{gain(mix.ambience_db):.5f}*{ramps_expr(spans, audio.ambience_ramp_seconds)}':eval=frame",
+        f"volume='{gain(mix.ambience_db):.5f}*{ramps_expr(spans, ramps.ambience_ramp_seconds)}':eval=frame",
         "amb",
     )
 
@@ -385,7 +385,7 @@ def _missing_sound(inputs: Inputs, run: Run, named: str, what: str, hint: str, *
 
 def plan_mix(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, *, soundscape: bool) -> MixPlan:
     """The whole soundtrack as one graph, laid layer by layer under a picture of a fixed length."""
-    chain = Chain(sample_rate=inputs.settings.video.sample_rate)
+    chain = Chain(sample_rate=inputs.settings.audio.sample_rate)
     starts = rendered_starts(rows)
     total = round(sum(row.seconds for row in rows), SECOND_DIGITS)
     _anchor(chain)
@@ -423,7 +423,7 @@ def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes,
         )
     concat(concat_files, picture)
     plan = plan_mix(inputs, run, rows, takes, soundscape=soundscape)
-    enc = Encoder(inputs.settings.video)
+    enc = Encoder(inputs.settings.video, inputs.settings.audio)
     try:
         graph.write_text(plan.filter, encoding="utf-8")
         ffmpeg.run(

@@ -109,6 +109,7 @@ A finding carries its code, its sentence, its certainty and often a fix an agent
 | `CUE_OVERLAP` | uncertain | Two cues resolve close enough together that a viewer cannot tell them apart. |
 | `TAKE_PLACEHOLDER` | certain | The script still holds an open placeholder, so a voiced run would read it out. |
 | `TAKE_SPOKEN_SYMBOL` | uncertain | The script holds a symbol the voice reads as its name rather than as the thing it means. |
+| `TAKE_PAUSE_DROPPED` | certain | The script asks for a timed pause the voice's model does not render, so a voiced run would drop it. |
 | `TAKE_MISSING` | uncertain | A section has no take of its current text, so a placeholder plays in its place until a run with --spend buys one. |
 | `CUT_SPEECH` | certain | Speech is still sounding at a section cut, so the film slices a word in two. |
 | `CUT_POP` | certain | The picture steps at a section cut, so the film pops on the seam. |

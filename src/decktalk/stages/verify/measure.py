@@ -141,7 +141,7 @@ def click_seconds(
     `ceiling`, so the sound of a neighbouring section is never taken for the click.
     """
     verify = inputs.settings.verify
-    rate = inputs.settings.video.sample_rate
+    rate = inputs.settings.audio.sample_rate
     start = max(floor, expected - verify.click_search_seconds)
     stop = (
         expected + verify.click_search_seconds

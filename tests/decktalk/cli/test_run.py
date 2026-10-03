@@ -17,6 +17,7 @@ from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
     AssembleResult,
+    Billing,
     BuildResult,
     CheckResult,
     ClipResult,
@@ -111,7 +112,7 @@ def test_an_unset_spend_with_nothing_to_buy_runs_without_asking(run, project, tt
 
 @pytest.mark.parametrize("tty", [True, False], ids=["terminal", "no-terminal"])
 def test_an_unset_spend_on_a_voice_that_bills_nothing_runs_without_asking(run, project, tty: bool) -> None:
-    free = a_spend(0.0, 0.0, sections=(1, 2)).model_copy(update={"price_per_1000_characters": 0.0})
+    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
     made = project(narrate=NARRATE, check=_priced(free))
     ran = run("narrate", tty=tty)
     assert ran.exit_code == 0, ran.err
@@ -155,6 +156,41 @@ def test_an_unset_build_whose_takes_are_bought_asks_about_the_sounds_it_would_bu
     made = project(build=ANSWERS["build"], check=_priced(a_spend(0.0, 0.0, sections=())))
     assert run("build").exit_code == ErrorCode.APPROVAL.exit_code
     assert [name for name, _, _ in made.calls if name == "build"] == []
+
+
+def test_an_unset_build_on_a_free_voice_still_asks_about_the_sounds_it_would_buy(run, project, monkeypatch) -> None:
+    """A free voice buys its takes without asking, and the paid soundscape beside it is still asked about."""
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(billing=Billing.PER_SECOND))
+    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
+    made = project(build=ANSWERS["build"], check=_priced(free))
+    ran = run("build")
+    assert ran.exit_code == ErrorCode.APPROVAL.exit_code, ran.err
+    assert [name for name, _, _ in made.calls if name == "build"] == []
+
+
+@pytest.mark.parametrize("sections", [(1, 2), ()], ids=["takes-to-buy", "every-take-on-disk"])
+def test_an_unset_build_on_a_free_voice_whose_sound_cannot_be_priced_is_asked_about(
+    run, project, monkeypatch, sections: tuple[int, ...]
+) -> None:
+    """A soundscape nobody could price is never bought on the strength of a free voice beside it."""
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: None)
+    free = a_spend(0.0, 0.0, sections=sections, billing=Billing.FREE)
+    made = project(build=ANSWERS["build"], check=_priced(free))
+    assert run("build").exit_code == ErrorCode.APPROVAL.exit_code
+    assert [name for name, _, _ in made.calls if name == "build"] == []
+
+
+@pytest.mark.parametrize("tty", [True, False], ids=["terminal", "no-terminal"])
+def test_an_unset_build_on_a_free_voice_with_no_sound_to_buy_runs_without_asking(
+    run, project, monkeypatch, tty: bool
+) -> None:
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
+    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
+    made = project(build=ANSWERS["build"], check=_priced(free))
+    ran = run("build", tty=tty)
+    assert ran.exit_code == 0, ran.err
+    assert "Spend that now?" not in ran.err
+    assert made.called("build")["spend"] is True
 
 
 @pytest.mark.parametrize("span", [("--from", "record"), ("--skip", "narrate", "--skip", "soundscape")])

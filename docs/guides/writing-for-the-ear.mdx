@@ -71,8 +71,8 @@ script asks for one, and they are never spoken.
 
 | Direction | What the voice receives | Use it for |
 |---|---|---|
-| `[beat]` | a dash appended to the paragraph before it | Use it freely, before any reveal that should land on its own. |
-| `[pause 4]` | a `<break time="4s" />` tag | Use it where the viewer should stop and think, and use it rarely. |
+| `[beat]` | a dash after the paragraph before it | Use it freely, before any reveal that should land on its own. |
+| `[pause 4]` | four seconds of silence, which ElevenLabs is sent as a `<break time="4s" />` tag | Use it where the viewer should stop and think, and use it rarely. |
 | Any other bracketed note, on a line of its own | nothing, and a beat after the paragraph before it | Use it as a note to yourself, such as which scene a section plays. |
 
 {/* input: src/decktalk/template/starter/script.md, section 1 */}
@@ -86,7 +86,10 @@ You write what you will say, [beat] and you write the slides that go with it. [b
 Then every picture waits for its own word.
 ```
 
-Only a timed pause sends a break tag, because frequent break tags unsettle the voice. Back-to-back
+Only a timed pause asks for measured silence, because frequent measured silences unsettle the voice.
+ElevenLabs renders a timed pause only on its v2 family, and v3 and v4 read no `<break>` tag, so
+`check` reports a section with a `[pause N]` on any other model as [`TAKE_PAUSE_DROPPED`](/reference/findings/TAKE_PAUSE_DROPPED) and `narrate` refuses to buy
+it, while a `[beat]` reads on every model. Back-to-back
 directions do not add up and the longest one wins, and a direction before the first paragraph of a
 section has nothing to pause after, so it is dropped.
 

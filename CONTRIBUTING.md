@@ -216,8 +216,11 @@ src/decktalk/
       files.py           The caption, chapter and transcript files `assemble` writes beside the final mp4.
       layout.py          Words become caption cues: where each cue starts and ends, and how its one or two lines break.
     speech/              The speech boundary, which is anything that reads text aloud and says when each word was spoken.
-      elevenlabs.py      ElevenLabs, the only speech provider: text read aloud with a time for every word.
+      dtsp.py            `dtsp`, the DeckTalk speech protocol: a voice served by a separate local server, with a time for every word.
+      elevenlabs.py      ElevenLabs, the cloud voice: text read aloud with a time for every word.
       http.py            Minimal HTTP on urllib, so a speech provider needs no HTTP dependency.
+      sound/             The sound boundary, which is anything that writes an effect or a piece of music from a prompt.
+        elevenlabs.py    ElevenLabs sound effects and music, which is the one sound provider DeckTalk ships.
     media/               Everything DeckTalk drives to make a picture and a sound: ffmpeg, ffprobe and headless Chromium.
       audio.py           Audio work on top of ffmpeg, so nothing above this module spells an audio filter by hand.
       browser.py         Headless Chromium through Playwright: recording a page, taking screenshots and drawing slates.
@@ -332,15 +335,20 @@ repository artifact it holds.
 
 A project is opened with `decktalk.open(path)`, six verbs move it forward, every call returns a
 frozen result whose findings carry a code, a location, a certainty and often a fix, and nothing in
-the library prints. `decktalk.__all__` is the whole supported Python API, and it is generated as the
-closure of what the public modules export.
+the library prints. The supported Python API is a root of about thirty names, `decktalk.__all__`,
+which `scripts/build_api.py` generates, and the public modules `decktalk.results`,
+`decktalk.events`, `decktalk.findings`, `decktalk.settings`, `decktalk.speech` and
+`decktalk.speech.sound`, each with its own `__all__`. `tests/contract/test_api.py` walks every public
+field and method signature and fails on a type none of them exports.
 
 You can extend DeckTalk in two places.
 
 - **Pages.** The page contract is `src/decktalk/runtime/src/contract.ts`, and
   [The page contract](https://docs.decktalk.ai/concepts/page-contract) documents it.
-- **Voices.** ElevenLabs is the only provider and the provider seam is internal in this release, so
-  a new provider comes as a pull request rather than as a plugin.
+- **Voices.** The voices are a closed set of adapters in `src/decktalk/speech/`: `elevenlabs` and
+  `dtsp`, which talks to a separate local server. The protocol types in `decktalk.speech` are public,
+  so a host can hand `Machine.of` its own voices, and a new adapter in the set comes as a pull
+  request rather than as a plugin.
 
 ## House rules
 
@@ -398,7 +406,7 @@ stale, and fails with the same sentence naming the file, why it is stale and the
 | `schemas/v1/*.json` | The key table in `src/decktalk/settings.py` | `uv run scripts/build_settings_schema.py --write` |
 | `docs/reference/configuration.mdx` | The published settings schema | `uv run scripts/build_settings_reference.py --write` |
 | `docs/reference/cli.mdx` | The Typer app in `src/decktalk/cli/` | `uv run scripts/build_cli_reference.py --write` |
-| `src/decktalk/__init__.py` | The public modules, as a reachable closure | `uv run scripts/build_api.py --write` |
+| `src/decktalk/__init__.py` | The root names `scripts/build_api.py` lists | `uv run scripts/build_api.py --write` |
 | `docs/reference/errors/*.mdx` and `findings/*.mdx` | `ErrorCode` and `Code` | `uv run scripts/build_code_pages.py --write` |
 | The generated section of `AGENTS.md` | The command table | `uv run scripts/build_agents_doc.py --write` |
 | `docs/reference/what-leaves-your-machine.mdx` | `docs/data/outbound.toml` | `uv run scripts/build_outbound_reference.py --write` |

@@ -114,8 +114,8 @@ def _filler(name: str) -> dict[str, Any]:
 def test_a_project_is_a_directory_and_open_is_what_opens_one(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     assert project.root == tmp_path.resolve()
-    assert project.document.name == "t"
-    assert project.workspace.build == tmp_path / "build"
+    assert project._inputs.document.name == "t"
+    assert project._inputs.workspace.build == tmp_path / "build"
     assert repr(project).startswith("Project(")
 
 
@@ -144,8 +144,8 @@ def test_a_directory_with_no_project_file_names_the_file_and_the_next_action(tmp
 def test_reloading_reads_the_project_again(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     write_project(tmp_path, MINIMAL_TOML.replace('name = "t"', 'name = "renamed"'))
-    assert project.document.name == "t"
-    assert project.reload().document.name == "renamed"
+    assert project._inputs.document.name == "t"
+    assert project.reload()._inputs.document.name == "renamed"
 
 
 def test_an_override_given_for_one_run_reaches_the_settings(tmp_path: Path) -> None:
@@ -232,7 +232,7 @@ def test_a_stage_is_handed_the_inputs_the_run_and_its_own_options(
     project = a_project(tmp_path)
     project.narrate(only=(1, 2), force=True)
     inputs, run, options = fake_stages["narrate"][0]
-    assert inputs is project.inputs
+    assert inputs is project._inputs
     assert run.id and run.root == project.root
     assert options["only"] == (1, 2) and options["force"] is True
 
@@ -282,7 +282,7 @@ def test_what_the_load_noticed_is_a_warning_on_every_run(tmp_path: Path, caplog:
     with project.events.subscribe(seen.append):
         project.cue()
     warned = [line.message for line in seen if isinstance(line, Log) and line.level is Level.WARNING]
-    assert tuple(warned) == project.inputs.notes
+    assert tuple(warned) == project._inputs.notes
     assert any("presett" in note for note in warned)
     assert not [record for record in caplog.records if "presett" in record.getMessage()], "said once, on the run"
 
@@ -304,7 +304,7 @@ def test_one_project_never_sees_another_project_lines(tmp_path: Path) -> None:
 def test_a_run_writes_its_own_lines_beside_the_build(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     result = project.cue()
-    assert (project.workspace.events_dir / f"{result.run}.jsonl").exists()
+    assert (project._inputs.workspace.events_dir / f"{result.run}.jsonl").exists()
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -316,8 +316,8 @@ def test_a_build_directory_linked_out_of_the_project_is_neither_pruned_nor_writt
     victim = outside / "victim.jsonl"
     victim.write_text("not the project's\n", encoding="utf-8")
     project = a_project(root, MINIMAL_TOML + "\n[output]\nevents_keep_runs = 1\n")
-    project.workspace.build.mkdir()
-    project.workspace.events_dir.symlink_to(outside, target_is_directory=True)
+    project._inputs.workspace.build.mkdir()
+    project._inputs.workspace.events_dir.symlink_to(outside, target_is_directory=True)
     with pytest.raises(InputError) as refused:
         project.status()
     assert refused.value.code is ErrorCode.INPUT
@@ -331,12 +331,12 @@ def test_a_take_linked_out_of_the_build_directory_refuses_the_run_that_would_wri
     root.mkdir()
     outside.write_bytes(b"not the project's")
     project = a_project(root)
-    project.workspace.narrate_dir.mkdir(parents=True)
-    (project.workspace.narrate_dir / "narration.mp3").symlink_to(outside)
+    project._inputs.workspace.narrate_dir.mkdir(parents=True)
+    (project._inputs.workspace.narrate_dir / "narration.mp3").symlink_to(outside)
     with pytest.raises(InputError):
         project.narrate()
     assert outside.read_bytes() == b"not the project's"
-    assert not project.workspace.events_dir.exists()
+    assert not project._inputs.workspace.events_dir.exists()
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -346,7 +346,7 @@ def test_a_build_directory_that_is_itself_a_link_out_of_the_project_is_refused(t
     root.mkdir()
     outside.mkdir()
     project = a_project(root)
-    project.workspace.build.symlink_to(outside, target_is_directory=True)
+    project._inputs.workspace.build.symlink_to(outside, target_is_directory=True)
     with pytest.raises(InputError):
         project.cue()
     assert list(outside.iterdir()) == []
@@ -372,7 +372,7 @@ def free(build: Path) -> bool:
 @pytest.mark.usefixtures("fake_stages")
 def test_a_reporting_call_takes_no_lock_and_a_writing_call_does(tmp_path: Path) -> None:
     project = a_project(tmp_path)
-    build = project.workspace.build
+    build = project._inputs.workspace.build
     project.status()
     assert not (build / LOCK_FILE).exists()
     project.cue()
@@ -384,7 +384,7 @@ def test_a_reporting_call_takes_no_lock_and_a_writing_call_does(tmp_path: Path) 
 def test_a_check_that_opens_pages_holds_the_build_and_one_that_reads_alone_does_not(tmp_path: Path) -> None:
     """A check with pages freezes frames and draws the storyboard, which is a writer's work."""
     project = a_project(tmp_path)
-    with held(project.workspace.build):
+    with held(project._inputs.workspace.build):
         project.check(pages=False)
         with pytest.raises(ProjectLocked):
             project.check()
@@ -395,7 +395,7 @@ def test_a_check_that_opens_pages_holds_the_build_and_one_that_reads_alone_does_
 def test_a_lock_file_that_cannot_be_a_lock_is_a_refusal_that_names_it(tmp_path: Path, planted: str) -> None:
     """A link inside the build stays inside, so confinement lets it through, and the lock must refuse it."""
     project = a_project(tmp_path)
-    build = project.workspace.build
+    build = project._inputs.workspace.build
     build.mkdir(parents=True, exist_ok=True)
     (build / "kept.json").write_text("{}", encoding="utf-8")
     if planted == "link":
@@ -412,7 +412,7 @@ def test_a_lock_file_that_cannot_be_a_lock_is_a_refusal_that_names_it(tmp_path: 
 def test_a_second_writer_is_refused_while_the_first_holds_the_build(tmp_path: Path) -> None:
     """The trigger is a build run by hand under a live watch loop, not a service."""
     project = a_project(tmp_path)
-    with held(project.workspace.build), pytest.raises(ProjectLocked) as refused:
+    with held(project._inputs.workspace.build), pytest.raises(ProjectLocked) as refused:
         project.cue()
     assert refused.value.code is ErrorCode.LOCKED
     assert "process 1, run abc" in str(refused.value)
@@ -422,7 +422,7 @@ def test_a_second_writer_is_refused_while_the_first_holds_the_build(tmp_path: Pa
 def test_a_note_nobody_holds_is_taken_and_reported(tmp_path: Path) -> None:
     """A caller cannot clear a file it was never told about, so this is a line and not a refusal."""
     project = a_project(tmp_path)
-    note = project.workspace.build / OWNER_FILE
+    note = project._inputs.workspace.build / OWNER_FILE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("999999 gone\n", encoding="utf-8")
     seen: list[Event] = []
@@ -438,7 +438,7 @@ def test_a_note_that_is_a_link_is_never_followed(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     elsewhere = tmp_path / "elsewhere.txt"
     elsewhere.write_text("7 secret\n", encoding="utf-8")
-    note = project.workspace.build / OWNER_FILE
+    note = project._inputs.workspace.build / OWNER_FILE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.symlink_to(elsewhere)
     with pytest.raises(InputError, match="leads outside the build directory") as refused:
@@ -467,7 +467,7 @@ sys.stdin.read()
 def test_the_system_frees_the_lock_of_a_writer_that_was_killed(tmp_path: Path) -> None:
     """A killed holder releases nothing itself, and the operating system releases the lock for it."""
     project = a_project(tmp_path)
-    build = project.workspace.build
+    build = project._inputs.workspace.build
     build.mkdir(parents=True, exist_ok=True)
     command = [sys.executable, "-c", HOLDER, str(build)]
     with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as holder:
@@ -572,7 +572,7 @@ def test_a_served_preview_reads_its_cue_times_from_the_alias_the_recorder_uses(t
     """A preview has no recorder to put its cues in its URL, so the origin answers the one alias."""
     project = a_project(tmp_path)
     with project.serve(port=0) as origin, urllib.request.urlopen(origin.result.url + PREVIEW_CUE_TIMES) as sent:
-        assert json.loads(sent.read()) == project.inputs.preview_cues()
+        assert json.loads(sent.read()) == project._inputs.preview_cues()
 
 
 def test_a_voiced_build_under_the_untrusted_policy_is_refused_before_it_buys_anything(

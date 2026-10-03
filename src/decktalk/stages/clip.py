@@ -185,7 +185,7 @@ def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
     source = inputs.workspace.take_path(take.hash)
     if not source.is_file():
         raise NotBuiltError(
-            f"section {number} names the take {take.file}, which is not on disk.",
+            f"section {number} names the take {source.name}, which is not on disk.",
             hint=Artifact.TAKES.next_step,
             location=at(source, inputs.root, section=number),
         )
@@ -242,7 +242,7 @@ def _render(
     frames after a trim otherwise, and the sound is the take moved to where the span starts so that
     a span opening inside the section's lead opens on the silence the film has there.
     """
-    settings = inputs.settings.video
+    rate = inputs.settings.audio.sample_rate
     head = max(0.0, lead - span.first_seconds)
     begins = max(0.0, span.first_seconds - lead)
     ends = max(begins + LEAST_AUDIO_SECONDS, span.last_seconds - lead)
@@ -250,8 +250,8 @@ def _render(
     fade_out_at = max(played - EDGE_FADE_SECONDS, 0.0)
     total = span.total_seconds
     sound = (
-        f"[1:a]aresample={settings.sample_rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,"
-        f"adelay=delays={round(head * settings.sample_rate)}S:all=1,volume={gain_db:g}dB,"
+        f"[1:a]aresample={rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,"
+        f"adelay=delays={round(head * rate)}S:all=1,volume={gain_db:g}dB,"
         f"afade=t=in:d={EDGE_FADE_SECONDS},afade=t=out:st={fade_out_at:.6f}:d={EDGE_FADE_SECONDS},"
         f"apad=whole_dur={total:.6f},atrim=duration={total:.6f}[a]"
     )
@@ -259,7 +259,7 @@ def _render(
         f"[0:v]trim=start_frame={span.first}:end_frame={span.last},setpts=PTS-STARTPTS,fps={fps},"
         f"tpad=stop_mode=clone:stop={span.hold}[v]"
     )
-    encoder = Encoder(settings)
+    encoder = Encoder(inputs.settings.video, inputs.settings.audio)
     ffmpeg.run(
         *ffmpeg.source(video), *ffmpeg.source(source),
         "-filter_complex", f"{picture};{sound}",

@@ -45,7 +45,6 @@ from decktalk.inputs.document import (
     Soundscape,
     SoundSpec,
     Transition,
-    Voice,
 )
 from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
@@ -55,6 +54,7 @@ from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import Word
 from decktalk.settings import PROJECT_FILE, Layers, Settings, key_warnings, load, read_project_toml
+from decktalk.speech import output_of
 
 log = logging.getLogger(__name__)
 
@@ -108,7 +108,14 @@ class Inputs:
         return cls(
             root=root,
             document=document,
-            workspace=Workspace(root=root, build=build, name=document.name, takes=takes_dir, shared=shared),
+            workspace=Workspace(
+                root=root,
+                build=build,
+                name=document.name,
+                suffix=output_of(loaded.settings, loaded.settings.voice.provider).suffix,
+                takes=takes_dir,
+                shared=shared,
+            ),
             env=Env(file=root / ENV_FILE, environ=environ),
             settings=loaded.settings,
             layers=loaded.layers,
@@ -419,6 +426,5 @@ __all__ = [
     "SoundSpec",
     "Soundscape",
     "Transition",
-    "Voice",
     "Workspace",
 ]

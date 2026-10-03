@@ -45,6 +45,8 @@ class Workspace:
     root: Path
     build: Path
     name: str
+    suffix: str
+    """What a bought take is written under, which the voice's adapter declares for the format it asks for."""
     takes: Path | None = None
     """The project's own take directory, which `[narration] takes_dir` names inside the project."""
     shared: Path | None = None
@@ -86,8 +88,12 @@ class Workspace:
     def holding(self, digest: str) -> Path | None:
         """The first place that holds both the take of this digest and its words file, or None."""
         places = (self.narrate_dir,) if is_placeholder(digest) else self.take_places
-        both = (take_file(digest), words_file(digest))
+        both = (self.take_file(digest), words_file(digest))
         return next((place for place in places if all((place / name).exists() for name in both)), None)
+
+    def take_file(self, digest: str) -> str:
+        """The name of the audio file of the take with this digest, under the suffix of what it holds."""
+        return take_file(digest, self.suffix)
 
     def home_of(self, digest: str) -> Path:
         """Where the take of this digest is written, which is the build for a placeholder nobody paid for."""
@@ -95,7 +101,7 @@ class Workspace:
 
     def take_path(self, digest: str) -> Path:
         """The audio file of this take where it is found, or where it would be written when it is nowhere."""
-        return (self.holding(digest) or self.home_of(digest)) / take_file(digest)
+        return (self.holding(digest) or self.home_of(digest)) / self.take_file(digest)
 
     def words_path(self, digest: str) -> Path:
         """The words file of this take where it is found, or where it would be written when it is nowhere."""

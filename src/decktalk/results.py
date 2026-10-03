@@ -97,6 +97,21 @@ class SpendState(Enum):
     CHARGED = "charged"
 
 
+class Billing(Enum):
+    """How a voice bills what it makes, which its adapter declares and every price is worked out by.
+
+    A provider DeckTalk does not ship declares nothing, so its bill is `undeclared`: its price is
+    nothing anybody stated, and a spend cap refuses to guard it. A build's total that adds a bill per
+    character to a bill per second is `mixed`, and carries the rate of each.
+    """
+
+    PER_CHARACTER = "per_character"
+    PER_SECOND = "per_second"
+    FREE = "free"
+    UNDECLARED = "undeclared"
+    MIXED = "mixed"
+
+
 class Layer(Enum):
     """Which of the five layers set a settings value, lowest first.
 
@@ -215,9 +230,28 @@ class Spend(Model):
     state: SpendState = Field(description="Whether this is what the run would cost or what it did cost.")
     sections: tuple[SectionNumber, ...] = Field(description="The sections this price covers, in script order.")
     characters: int = Field(ge=0, description="How many characters of script this price is for.")
+    seconds: float = Field(
+        0.0, ge=0, description="How many seconds of audio this price is for, which a per-second bill is priced on."
+    )
     dollars: float = Field(ge=0, description="The price at the stated rate, in US dollars.")
     ceiling_dollars: float = Field(ge=0, description="The most this run can cost, in US dollars.")
-    price_per_1000_characters: float = Field(ge=0, description="The rate this price was worked out at.")
+    billing: Billing = Field(description="How the voice bills, which its adapter declares and the rate is per.")
+    price_per_1000_characters: float = Field(
+        ge=0, description="The rate a per-character bill was worked out at, per 1,000 characters."
+    )
+    price_per_second: float = Field(
+        0.0, ge=0, description="The rate a per-second bill was worked out at, per second of audio."
+    )
+    price_key: str | None = Field(
+        None, description="The dotted key that states the rate, or null when the voice declares none to state."
+    )
+    averaged: bool = Field(
+        False,
+        description=(
+            "True when the price is several rates together, such as music and effects bought at their own, so "
+            "the rate is what they average to and `price_key` names the one least surely stated."
+        ),
+    )
     price_layer: Layer = Field(description="Which layer set that rate, where default means nobody stated it.")
 
     @property
@@ -227,12 +261,33 @@ class Spend(Model):
 
     @property
     def free(self) -> bool:
-        """True when somebody stated that this voice bills nothing, so the command line buys without asking.
+        """True when the voice declares that it bills nothing, so the command line buys without asking.
 
-        A rate of zero that nobody stated is the default, which means nobody has said what speech costs
-        rather than that it costs nothing, so it is never free.
+        Free is what the adapter declares and never a rate of zero, because a zero rate on a voice
+        that bills is somebody's statement about their plan, and a cap or a question still guards it.
         """
-        return self.price_per_1000_characters == 0 and self.price_layer is not Layer.DEFAULT
+        return self.billing is Billing.FREE
+
+    @property
+    def rate(self) -> str:
+        """The rate this price was worked out at, in words, which every sentence that states a price ends on."""
+        if self.billing is Billing.PER_SECOND:
+            stated = f"{rate_money(self.price_per_second)} per second of audio"
+            return f"an average of {stated}" if self.averaged else stated
+        if self.billing is Billing.MIXED:
+            return "the rates each stage states"
+        return f"{money(self.price_per_1000_characters)} per 1,000 characters"
+
+    @property
+    def amount(self) -> str:
+        """What the bill is counted in, which is seconds of audio for a per-second bill and characters otherwise."""
+        # A sound shorter than a second still costs something, so it is never said to be none.
+        audio = f"about {counted(max(round(self.seconds), 1) if self.seconds > 0 else 0, 'second')} of audio"
+        if self.billing is Billing.PER_SECOND:
+            return audio
+        if self.billing is Billing.MIXED:
+            return f"{counted(self.characters, 'character')} and {audio}"
+        return counted(self.characters, "character")
 
     @property
     def sentence(self) -> str:
@@ -243,15 +298,21 @@ class Spend(Model):
         because "about $0.00, up to $0.14" reads as a contradiction to anyone not holding the rule.
         Every surface that states a price states this sentence, so the rule is written once.
         """
-        rate = f"{money(self.price_per_1000_characters)} per 1,000 characters"
+        rate = self.rate
+        if self.free and self.buys and self.ceiling_dollars == 0:
+            voiced = "voiced" if self.state is SpendState.CHARGED else "voices"
+            return f"This run {voiced} {self.amount} for nothing, because the voice is free."
+        if self.billing is Billing.UNDECLARED and self.buys:
+            voiced = "voiced" if self.state is SpendState.CHARGED else "voices"
+            return f"This run {voiced} {self.amount} on a voice that declares no bill, so DeckTalk cannot price it."
         if self.state is SpendState.CHARGED:
             if self.dollars == self.ceiling_dollars == 0:
                 return "This run bought nothing."
-            return f"This run spent {money(self.dollars)} on {counted(self.characters, 'character')} at {rate}."
+            return f"This run spent {money(self.dollars)} on {self.amount} at {rate}."
         if self.ceiling_dollars == 0:
             return "This run buys nothing."
         if self.dollars == self.ceiling_dollars:
-            return f"This run costs {money(self.dollars)} for {counted(self.characters, 'character')} at {rate}."
+            return f"This run costs {money(self.dollars)} for {self.amount} at {rate}."
         if self.dollars == 0:
             return (
                 "The takes on disk could not be matched to a voice, so this run costs up to "
@@ -267,6 +328,24 @@ class Spend(Model):
 def money(dollars: float) -> str:
     """An amount in US dollars as a price is written, to the cent."""
     return f"${dollars:.2f}"
+
+
+CENT = 0.01
+"""Truth: a cent in US dollars, which is the smallest amount anybody is charged."""
+
+RATE_DIGITS = 4
+"""Truth: the significant digits a rate under a cent is written to, which a second of sound is priced at."""
+
+
+def rate_money(dollars: float) -> str:
+    """A rate in US dollars, to the cent unless it is under one, when its own digits are kept.
+
+    A second of generated sound costs a fraction of a cent, which written to the cent would read as
+    free, so a rate that small keeps its significant digits.
+    """
+    if dollars == 0 or dollars >= CENT:
+        return money(dollars)
+    return f"${dollars:.{RATE_DIGITS}g}"
 
 
 class Word(Model):
@@ -546,7 +625,9 @@ class DoctorResult(Result):
     cache: ProjectPath = Field(description="The directory the fetched tools live in.")
     python: str = Field(description="The Python this DeckTalk runs on.")
     platform: str = Field(description="The operating system and processor this machine reports.")
-    voice_key: bool = Field(description="True when the credential a voiced run would use is set.")
+    voice_key: bool = Field(
+        description="True when the credential a voiced run would use is set, or when its voice needs none."
+    )
     bias_ms: float | None = Field(None, description="This host's measured presentation bias, or null when unmeasured.")
 
 
@@ -817,6 +898,7 @@ module loads, so a result declared anywhere else never joins it.
 __all__ = [
     "ApplyResult",
     "AssembleResult",
+    "Billing",
     "BuildResult",
     "CheckResult",
     "ClipResult",
@@ -830,6 +912,7 @@ __all__ = [
     "CueTime",
     "CutCheck",
     "DoctorResult",
+    "ErrorInfo",
     "ErrorResult",
     "FixOutcome",
     "InitResult",
@@ -842,6 +925,7 @@ __all__ = [
     "NarrateResult",
     "Nature",
     "NumberView",
+    "Outcome",
     "Panel",
     "RecordResult",
     "RenderedSection",

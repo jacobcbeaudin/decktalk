@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from filelock import FileLock
 from pydantic import TypeAdapter
+from werkzeug import Request, Response
 
 import decktalk
 from decktalk import logs
@@ -29,7 +30,7 @@ from decktalk.media import browser, ffmpeg, origin
 from decktalk.media.environment import children_see
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Scope
-from decktalk.secret import Secret
+from decktalk.secret import Secret, redact
 from decktalk.settings import ToolsConfig
 from decktalk.speech import http as _http
 from decktalk.stages.pool import Halt, Pool, nothing_to_open
@@ -52,7 +53,7 @@ def test_a_record_written_inside_a_run_becomes_a_line_of_that_run(tmp_path: Path
     seen: list[Event] = []
     with (
         here.events.subscribe(seen.append),
-        here.run() as run,
+        here._run() as run,
         run.stage(Stage.ASSEMBLE),
         run.section(Stage.ASSEMBLE, 3),
     ):
@@ -70,7 +71,7 @@ def test_a_record_written_inside_a_run_becomes_a_line_of_that_run(tmp_path: Path
 def test_a_stages_own_sentence_says_which_section_it_was_said_in(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run() as run, run.section(Stage.RECORD, 2):
+    with here.events.subscribe(seen.append), here._run() as run, run.section(Stage.RECORD, 2):
         run.note("kept.")
     [line] = lines_of(seen)
     assert (line.source, line.stage, line.section) == (None, Stage.RECORD, 2)
@@ -79,7 +80,7 @@ def test_a_stages_own_sentence_says_which_section_it_was_said_in(tmp_path: Path)
 def test_an_exception_on_a_record_is_named_and_its_traceback_is_not_kept(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run():
+    with here.events.subscribe(seen.append), here._run():
         try:
             raise OSError("the disk is full\nand this second line is detail")
         except OSError:
@@ -131,7 +132,7 @@ def test_a_record_that_cannot_be_rendered_is_counted_and_never_printed(
     monkeypatch.setattr(logging.getLogger(), "handlers", [])
     here = a_machine(tmp_path)
     before = HANDLER.failures
-    with here.run():
+    with here._run():
         log.warning("%d cues", "not a number")
     assert HANDLER.failures == before + 1
     assert capsys.readouterr().err == ""
@@ -145,7 +146,7 @@ def test_a_renderer_that_logs_does_not_recurse_into_the_stream(tmp_path: Path) -
         seen.append(event)
         log.info("rendered a %s line", event.event)
 
-    with here.events.subscribe(chatty), here.run() as run:
+    with here.events.subscribe(chatty), here._run() as run:
         run.note("one")
     assert [line.event for line in seen] == ["run.start", "log", "run.done"]
 
@@ -156,7 +157,7 @@ def test_two_runs_on_two_threads_each_keep_their_own_lines(tmp_path: Path) -> No
     both_bound = threading.Barrier(2)
 
     def one(section: int) -> None:
-        with here.run() as run, run.section(Stage.RECORD, section):
+        with here._run() as run, run.section(Stage.RECORD, section):
             both_bound.wait(timeout=5)
             # A worker a stage starts runs under a copy of its parent's context, as the pools do.
             copy_context().run(log.info, "recorded %d", section)
@@ -180,7 +181,7 @@ def test_a_hosts_own_handler_hears_the_record_stamped_with_the_run(
 ) -> None:
     """pytest's capture handler sits on the root logger, where a host's own handler would."""
     here = a_machine(tmp_path)
-    with here.run() as run, run.section(Stage.RECORD, 4):
+    with here._run() as run, run.section(Stage.RECORD, 4):
         log.info("stamped")
     [record] = [record for record in caplog.records if record.getMessage() == "stamped"]
     stamp = vars(record)
@@ -264,7 +265,7 @@ def test_the_run_hears_a_debug_record_the_host_does_not(tmp_path: Path, monkeypa
     monkeypatch.setattr(logging.getLogger(), "level", logging.WARNING)
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run():
+    with here.events.subscribe(seen.append), here._run():
         log.debug("only the run hears this")
     assert [line.message for line in lines_of(seen)] == ["only the run hears this"]
     assert printed.getvalue() == ""
@@ -357,7 +358,7 @@ def recorded(root: Path, fault: Callable[[Run], object], *, limit: float = 600.0
     """Every line of the one run `fault` ran in, read back from its events file."""
     here = a_host_machine(root, limit=limit)
     events = root / "build" / "events"
-    with contextlib.suppress(Exception, KeyboardInterrupt), here.run(root=root, events_dir=events) as run:
+    with contextlib.suppress(Exception, KeyboardInterrupt), here._run(root=root, events_dir=events) as run:
         fault(run)
     return read_back(events)
 
@@ -577,12 +578,37 @@ def test_a_busy_voice_leaves_a_warning_per_retry_and_a_trace_per_attempt(tmp_pat
         service.expect_oneshot_request("/speak").respond_with_data("", 429, {"Retry-After": "2"})
     service.expect_request("/speak").respond_with_json({"ok": True})
     url = service.url_for("/speak")
-    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=5, retries=3))
+    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, secrets=(), timeout=5, retries=3))
     said = [line for line in lines if isinstance(line, Log) and line.source == "speech.http"]
     retries = [line.data or {} for line in said if line.level is Level.WARNING]
     attempts = [line.data or {} for line in said if line.level is Level.DEBUG]
     assert [(data["wait_seconds"], data["wait_source"]) for data in retries] == [(2.0, "retry-after")] * 2
     assert [data["status"] for data in attempts] == [429, 429, 200]
+
+
+def _naming_the_key(status: int) -> Callable[[Request], Response]:
+    """A service that answers `status` and quotes the `X-API-Key` the request carried."""
+    return lambda request: Response(f"bad key {request.headers.get('X-API-Key')}", status)
+
+
+@pytest.mark.usefixtures("waits")
+def test_a_key_sent_as_x_api_key_reaches_no_line_of_the_events_stream(tmp_path: Path, service: Service) -> None:
+    """The key travels under a name no list held, and the registry does not know it, so http.py alone keeps it out."""
+    key = "xk_vendor_key_the_events_stream_never_sees"
+    held = Secret(key, "FAKE_VENDOR_ACCESS")
+    assert redact(key) == key, "the registry holds this value, so it would hide what http.py misses"
+    for _ in range(2):
+        service.expect_oneshot_request("/speak").respond_with_handler(_naming_the_key(503))
+    service.expect_request("/speak").respond_with_handler(_naming_the_key(401))
+    url = service.url_for("/speak")
+    headers = {"X-API-Key": held.reveal(), "Accept": "audio/mpeg"}
+    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, headers, secrets=(held,), timeout=5, retries=3))
+    said = [line for line in lines if isinstance(line, Log) and line.source == "speech.http"]
+    assert [line.level for line in said] == [Level.DEBUG, Level.WARNING] * 2 + [Level.DEBUG]
+    last = lines[-1]
+    assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.PROVIDER
+    assert "401" in last.error.message
+    assert all(key not in line.model_dump_json() for line in lines)
 
 
 @pytest.mark.usefixtures("waits")
@@ -591,7 +617,7 @@ def test_a_stalled_voice_is_sent_once_and_ends_as_a_provider_refusal_that_says_p
 ) -> None:
     service.expect_request("/speak").respond_with_handler(service.stalls)
     url = service.url_for("/speak")
-    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=1, retries=1))
+    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, secrets=(), timeout=1, retries=1))
     assert [line for line in lines if isinstance(line, Log) and line.level is Level.WARNING] == []
     last = lines[-1]
     assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.PROVIDER
@@ -601,12 +627,12 @@ def test_a_stalled_voice_is_sent_once_and_ends_as_a_provider_refusal_that_says_p
 def test_a_held_project_names_the_lock_on_its_last_line(tmp_path: Path) -> None:
     root = write_project(tmp_path)
     project = decktalk.open(root, machine=a_host_machine(root))
-    project.workspace.build.mkdir(parents=True, exist_ok=True)
+    project._inputs.workspace.build.mkdir(parents=True, exist_ok=True)
     held = threading.Event()
     done = threading.Event()
 
     def hold() -> None:
-        with FileLock(project.workspace.build / ".lock"):
+        with FileLock(project._inputs.workspace.build / ".lock"):
             held.set()
             done.wait(timeout=10)
 

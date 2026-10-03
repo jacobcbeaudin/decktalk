@@ -44,7 +44,8 @@ from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
 from decktalk.results import CheckResult, Panel, SectionCues, SpendState
-from decktalk.stages import selects
+from decktalk.speech import check_host
+from decktalk.stages import selects, voice_model
 from decktalk.stages.check.scan import (
     judged_pages,
     landing_findings,
@@ -52,11 +53,11 @@ from decktalk.stages.check.scan import (
     seam_findings,
     static_findings,
 )
-from decktalk.stages.check.script import script_findings
+from decktalk.stages.check.script import pause_findings, script_findings
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
-from decktalk.stages.narrate.plan import named_voice
+from decktalk.stages.narrate.plan import dropped_pauses, named_voice
 from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
 from decktalk.stages.verify import opted_out
 from decktalk.template import stale_runtime
@@ -102,7 +103,12 @@ def check(
     pages: bool = True,
     frames: bool = True,
 ) -> CheckResult:
-    """Judge the script, the cue file and the pages, and price what a voiced build would cost."""
+    """Judge the script, the cue file and the pages, and price what a voiced build would cost.
+
+    A voice whose base URL names a host its adapter does not allow is refused first, so the place a
+    script would be sent is judged before anything is planned, priced or bought.
+    """
+    check_host(inputs.settings, inputs.settings.voice.provider, run.voices)
     wanted = selects(only)
     script = inputs.relative(inputs.script_path)
     segments = _segments(inputs, run)
@@ -191,10 +197,14 @@ def _segments(inputs: Inputs, run: Run) -> list[Segment]:
 
 
 def _plan(inputs: Inputs, run: Run, spoken: Sequence[Segment]) -> list[TakePlan]:
-    """What a voiced run would do with each spoken section, sending nothing and writing nothing."""
+    """What a voiced run would do with each spoken section, and every timed pause its model would drop."""
     if not spoken:
         return []
-    model = inputs.document.voice.model or inputs.settings.narration.model
+    model = voice_model(inputs)
+    dropped = dropped_pauses(inputs, list(spoken), model=model)
+    script = inputs.relative(inputs.script_path)
+    for found in pause_findings(dropped, provider=inputs.settings.voice.provider, model=model, script=script):
+        run.found(found)
     plans, why = voiced_plan(inputs, list(spoken), model=model, voice_id=named_voice(inputs))
     if why:
         run.note(why)

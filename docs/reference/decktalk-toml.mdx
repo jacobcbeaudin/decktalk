@@ -92,10 +92,17 @@ refusal names what it read and would not accept.
 An unknown key inside a known table does not fail the load. DeckTalk warns, names the closest key it
 does read, ignores the key and carries on.
 
-{/* sample: decktalk status in a starter project with stability misspelled under [voice] */}
+{/* sample: decktalk status in a starter project with stability misspelled under [elevenlabs] */}
 
 ```text
-decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?).
+decktalk.toml: [elevenlabs]: ignoring unknown key 'stabilty' (did you mean 'stability'?).
+```
+
+A key spelled under a table it does not live in is warned about the same way, and the closest key is
+named with its own table, because no key is read under any name but its own.
+
+```text
+decktalk.toml: [voice]: ignoring unknown key 'stability' (did you mean 'elevenlabs.stability'?).
 ```
 
 A page section key written on a clip section, or the reverse, gets a warning of its own that names
@@ -207,28 +214,46 @@ hosts the project never named.
 
 ## `[voice]`
 
-`[voice]` is shared. Two keys are the document, saying which voice reads this presentation, and every
-other key in the table is a settings key saying how it reads. The reader of each half ignores the
-other, so neither warns about the other's keys.
+`[voice]` is a settings table of the four keys every voice has. Everything a provider is particular
+about is in that provider's own table, `[elevenlabs]` for ElevenLabs and `[dtsp]` for the local
+voice, so changing `provider` never sends one vendor's fields or model to another.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `provider` | string | `elevenlabs` | The speech provider this project is read by. It is a name the machine's own map answers, and an unregistered name fails when `narrate` runs rather than at load. ElevenLabs is the only provider DeckTalk ships. |
-| `model` | string | `[narration] model` | The provider model this project is read by. |
+| `provider` | string | `elevenlabs` | The speech provider this project is read by. It is a name the machine's own map answers, and an unregistered name fails when `narrate` runs rather than at load. DeckTalk ships `elevenlabs` and `dtsp`. |
+| `id` | string | empty | The voice that reads the script. It is a published name rather than a credential, so it is committed with the project, and `DECKTALK_VOICE_ID` in the environment overrides it for anyone who keeps it out of the file. |
+| `model` | string | empty | The provider model this project is read by. Empty is the provider's own default, such as `[elevenlabs] model` or `[dtsp] model`. |
+| `speed` | number | `1.0` | How fast the voice speaks, as a multiple of its natural pace. |
 
-The API key and the voice id are secrets rather than content, so they live in `.env` as
-`ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`, or in the environment.
+The ElevenLabs API key is the one secret, so it lives in `.env` as `ELEVENLABS_API_KEY`, or in the
+environment. The local voice needs none.
 
-The settings half of the table is `stability`, `similarity_boost`, `style`, `speaker_boost`, `speed`
-and `price_per_1000_characters`. [Configuration](/reference/configuration#voice) has each one with
-its range. Every one of them but `price_per_1000_characters` is part of a take's content hash, so
-changing one makes the next voiced build voice every section again.
+`[elevenlabs]` holds `model`, `stability`, `similarity_boost`, `style`, `speaker_boost`,
+`price_per_1000_characters`, `output_format` and `api_base`. ElevenLabs bills per character, so its
+rate is stated per thousand characters. The soundscape buys from the same API with the same key and
+`api_base`, and its own request settings and its rates per minute of audio are in `[soundscape]`.
+[Configuration](/reference/configuration#elevenlabs) has each one with its range. The voice id, the
+model, `speed`, the four voice fields and `output_format` are part of a take's content hash, so
+changing one makes the next voiced build voice every section again. The price and the API base are
+not.
+
+`[dtsp]` holds `url` and `model` for the local voice, which speaks the DeckTalk speech protocol to
+`decktalk-voice`, a separate local server that is not part of this repository. `url` must be http on
+`127.0.0.1`, `localhost` or `[::1]`, and `decktalk check` refuses any other host unless the machine
+sets `DECKTALK_ALLOW_ANY_API_BASE`. The local voice bills nothing, so buying its takes asks for no
+`--spend`, and a build still asks about a soundscape it would buy. Its takes are named by `dtsp`, the voice id, the model and `speed`, so they never share a
+name with an ElevenLabs take of the same words. [Configuration](/reference/configuration#dtsp) has
+both keys.
 
 ## `[soundscape]`
 
 `[soundscape]` holds the prompts that `decktalk soundscape` generates from. It is optional, and no
 packaged project writes one. Every item writes to `build/soundscape/` unless the table names another
 path, and a generated file that `[mix]` then names is what the film actually plays.
+
+Each item's table is shared: its prompt and its file are the document, and beside them sit the
+settings that size its request, spelled the same way in every table. [Configuration](/reference/configuration#soundscape)
+has every setting with its range, and `[soundscape] timeout_seconds` is how long one request may take.
 
 ```toml decktalk.toml
 [soundscape.ambience]
@@ -239,7 +264,7 @@ text = "one soft glass chime"
 
 [soundscape.music]
 prompt = "calm piano under a lesson, unhurried"
-seconds = 360
+duration_seconds = 360
 ```
 
 ### `[soundscape.ambience]`
@@ -247,36 +272,41 @@ seconds = 360
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `text` | string | required | The prompt. |
-| `duration_seconds` | number | `[elevenlabs] ambience_seconds` | How long a bed to ask for. The bed loops under every section that sets `ambience = true`. |
-| `prompt_influence` | number | `[elevenlabs] ambience_prompt_influence` | How closely the sound follows the prompt. |
-| `model_id` | string | `[elevenlabs] sound_model` | The sound model to ask. |
 | `out` | path | `[mix] ambience`, else `build/soundscape/ambience.mp3` | Where to write it. |
+| `duration_seconds` | number | `25` | A setting: how long a bed to ask for. The bed loops under every section that sets `ambience = true`. |
+| `prompt_influence` | number | `0.3` | A setting: how closely the sound follows the prompt. |
+| `model` | string | `eleven_text_to_sound_v2` | A setting: the sound model to ask. |
 
-### `[soundscape.effects.<name>]`
+### `[soundscape.effects]` and `[soundscape.effects.<name>]`
 
-One table per effect, and `<name>` is the name the file is written under. The keys are the ambience
-keys, with `[elevenlabs] effect_seconds` and `[elevenlabs] effect_prompt_influence` as the two
-defaults and `build/soundscape/<name>.mp3` as the output path. A `[[mix.effects]]` row is what places
-the finished sound in the film.
+`[soundscape.effects]` holds three settings for every effect: `duration_seconds`, which is `0.5`,
+`prompt_influence`, which is `0.5`, and `model`. One `[soundscape.effects.<name>]` table per effect
+names it, and `<name>` is the name the file is written under. It takes `text`, which is required, and
+`out`, which is `build/soundscape/<name>.mp3` by default, and it may set any of the three settings for
+itself. A `[[mix.effects]]` row is what places the finished sound in the film.
 
 ### `[soundscape.music]`
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `prompt` | string | required | The prompt. |
-| `seconds` | integer | `360` | How long a piece to ask for. It is an integer, so `120.5` fails the load. |
 | `force_instrumental` | boolean | `true` | Ask for no vocals. |
-| `model_id` | string | `[elevenlabs] music_model` | The music model to ask. |
 | `out` | path | `[mix] music`, else `build/soundscape/music.mp3` | Where to write it. |
+| `duration_seconds` | integer | `360` | A setting: how long a piece to ask for. It is an integer, so `120.5` fails the load. |
+| `model` | string | `music_v2` | A setting: the music model to ask. |
+| `bitrate` | string | `192k` | A setting: the bitrate of the file joined from the parts. |
+| `max_chunk_seconds` | integer | `300` | A setting: the longest one request asks for. |
+| `crossfade_seconds` | integer | `2` | A setting: the crossfade between two parts. |
 
-A piece longer than `[elevenlabs] max_music_chunk_seconds` is asked for in parts and joined with a
-crossfade, because the service will not write a long piece in one answer.
+A piece longer than `max_chunk_seconds` is asked for in parts and joined with a crossfade, because the
+service will not write a long piece in one answer.
 
 ## `[mix]`
 
 `[mix]` is shared too. The keys below are the document, naming the sound files the film plays and the
-level each one plays at. `[mix.loudness]` is the settings half, and
-[Configuration](/reference/configuration#mix-loudness) has its three keys.
+level each one plays at. The settings half is how each layer is ramped, and
+[Configuration](/reference/configuration#mix) has its five keys. The loudness the final mix is
+mastered to is `[audio]`.
 
 Without `[mix]` the film carries the narration and the audio of any clip, and nothing else.
 
@@ -357,16 +387,17 @@ unit, its scope and its hazard by `decktalk schema settings` and documented in f
 
 | Table | What it sets |
 |---|---|
-| [`[narration]`](/reference/configuration#narration) | The speech model, the pacing, the lead and the tail, the take cache and where a take's sound ends. |
-| [`[voice]`](/reference/configuration#voice) | How the voice reads: its stability, its style, its speed and what your plan charges. |
+| [`[narration]`](/reference/configuration#narration) | The pacing, the lead and the tail, the take cache and where a take's sound ends. |
+| [`[voice]`](/reference/configuration#voice) | The four keys every voice has: its provider, its id, its model and its speed. |
+| [`[elevenlabs]`](/reference/configuration#elevenlabs) | ElevenLabs's own keys: the fields its speech takes, its default model, what your plan charges and its API. |
 | [`[record]`](/reference/configuration#record) | How the recorder drives Chromium, finds narration t=0 and judges a stalled or short recording. |
-| [`[video]`](/reference/configuration#video) | The frame size, the frame rate and the encoding of every recording and of the final mp4. |
-| [`[audio]`](/reference/configuration#audio) | The ramps of the music duck, the ambience bed and each marker. |
-| [`[mix.loudness]`](/reference/configuration#mix-loudness) | The loudness, the true peak and the range the final mix is mastered to. |
+| [`[video]`](/reference/configuration#video) | The frame size, the frame rate and the video encoding of every recording and of the final mp4. |
+| [`[audio]`](/reference/configuration#audio) | The final audio: its bitrate, its sample rate, its channels, and the loudness, the true peak and the range it is mastered to. |
+| [`[mix]`](/reference/configuration#mix) | The ramps of the music duck, the ambience bed and each marker. |
+| [`[soundscape]`](/reference/configuration#soundscape) | How each sound and the music are asked for: their models, their lengths and how the music is joined. |
 | [`[verify]`](/reference/configuration#verify) | Every limit the finished film is measured against. |
 | [`[motion]`](/reference/configuration#motion) | Reduced motion and the multiplier on every declared motion span. |
 | [`[output]`](/reference/configuration#output) | The timestamped copy and how many runs of event files are kept. |
-| [`[elevenlabs]`](/reference/configuration#elevenlabs) | The API base, the sound and music models and the request lengths. |
 | [`[tools]`](/reference/configuration#tools) | Where ffmpeg, ffprobe and the fetched builds live on this machine. |
 
 The per-machine file holds machine-scoped keys alone. A key about the film written there is refused

@@ -54,7 +54,7 @@ def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: 
     take = a_take(1, seconds=2.0, voiced=voiced, spoken=spoken)
     write_takes(inputs, take)
     inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
-    (inputs.workspace.takes_dir / take.file).write_bytes(b"")
+    inputs.workspace.take_path(take.hash).write_bytes(b"")
     return take
 
 

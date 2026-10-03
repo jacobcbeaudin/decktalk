@@ -27,9 +27,9 @@ def write_env(tmp_path: Path, text: str) -> Path:
 
 def test_a_variable_set_to_nothing_is_unset_and_never_a_traceback(tmp_path):
     """Blanking a key is how an author turns it off, so it reads as unset rather than crashing."""
-    env = Env(write_env(tmp_path, "ELEVENLABS_API_KEY=\nELEVENLABS_VOICE_ID=abc\n"), environ={})
+    env = Env(write_env(tmp_path, "ELEVENLABS_API_KEY=\nOTHER_VARIABLE=abc\n"), environ={})
     assert not env.get("ELEVENLABS_API_KEY")
-    assert env.get("ELEVENLABS_VOICE_ID").reveal() == "abc"
+    assert env.get("OTHER_VARIABLE").reveal() == "abc"
 
 
 @pytest.mark.parametrize(
@@ -79,10 +79,10 @@ def test_the_file_is_read_once_however_many_variables_are_asked_for(tmp_path, mo
 
 def test_a_missing_variable_names_itself_the_file_and_the_next_action(tmp_path):
     """The error slot is filled by the raiser that knows, and no value reaches the message."""
-    path = write_env(tmp_path, "ELEVENLABS_VOICE_ID=abc\n")
+    path = write_env(tmp_path, "OTHER_VARIABLE=abc\n")
     env = Env(path, environ={})
     with pytest.raises(InputError) as info:
-        env.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
+        env.require("ELEVENLABS_API_KEY", "OTHER_VARIABLE")
     error = info.value
     assert str(error) == "ELEVENLABS_API_KEY is not set."
     assert error.hint is not None and ".env.example" in error.hint
@@ -100,9 +100,9 @@ def test_the_environment_is_not_a_field_so_no_walker_can_reach_it(tmp_path):
 def test_a_byte_order_mark_does_not_hide_the_first_key(tmp_path):
     """An editor that writes a mark would otherwise leave a correctly pasted key reading as unset."""
     path = tmp_path / ".env"
-    path.write_bytes(b"\xef\xbb\xbfELEVENLABS_API_KEY=sk_real\nELEVENLABS_VOICE_ID=abc\n")
+    path.write_bytes(b"\xef\xbb\xbfELEVENLABS_API_KEY=sk_real\nOTHER_VARIABLE=abc\n")
     values = read_dotenv(path)
-    assert values == {"ELEVENLABS_API_KEY": "sk_real", "ELEVENLABS_VOICE_ID": "abc"}
+    assert values == {"ELEVENLABS_API_KEY": "sk_real", "OTHER_VARIABLE": "abc"}
     assert Env(path, environ={}).get("ELEVENLABS_API_KEY").reveal() == "sk_real"
 
 

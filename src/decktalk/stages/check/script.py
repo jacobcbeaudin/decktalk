@@ -6,10 +6,11 @@ and reports every one of them at once, with the line each sits on, rather than s
 first. The rules themselves live in `stages/narrate/script_rules.py` and are read from there, so
 the scan has one home and the judgement has one raiser.
 
-Two codes cover it. `TAKE_PLACEHOLDER` is certain and names everything a voiced run would read out
+Three codes cover it. `TAKE_PLACEHOLDER` is certain and names everything a voiced run would read out
 or silently swallow, which is the one condition `narrate` refuses on. `TAKE_SPOKEN_SYMBOL` is
 uncertain and names a word holding a digit or a symbol, because "41" may be exactly what the author
-wants the voice to try.
+wants the voice to try. `TAKE_PAUSE_DROPPED` is certain and names a section whose timed pause the
+voice's model does not render, which `narrate` refuses to build the voice for.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from pathlib import Path
 
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs.script import Segment
+from decktalk.stages.narrate.plan import DROPPED_PAUSE_HINT
 from decktalk.stages.narrate.script_rules import (
     BRACKET_RE,
     PLACEHOLDER_RE,
@@ -90,12 +92,31 @@ def symbol_findings(segments: Iterable[Segment], *, script: Path) -> list[Findin
     return found
 
 
+def pause_findings(dropped: Iterable[Segment], *, provider: str, model: str, script: Path) -> list[Finding]:
+    """One certain judgement per section whose timed pauses the voice's model would drop.
+
+    `narrate` refuses to build the voice for such a script, so the finding names each section here,
+    before anything is bought, with the two ways out.
+    """
+    where = script.as_posix()
+    return [
+        judge(
+            Code.TAKE_PAUSE_DROPPED,
+            f"section {segment.index} asks for a timed pause, and [voice] provider {provider!r} renders none on "
+            f"model {model!r}, so a voiced run would drop it. {DROPPED_PAUSE_HINT}",
+            Location(where=where, file=script, section=segment.index),
+        )
+        for segment in dropped
+    ]
+
+
 def script_findings(markdown: str, segments: Sequence[Segment], *, script: Path) -> list[Finding]:
     """Everything a check judges about the script, which is what it would refuse and what it may misread."""
     return [*placeholder_findings(markdown, script=script), *symbol_findings(segments, script=script)]
 
 
 __all__ = [
+    "pause_findings",
     "placeholder_findings",
     "placeholder_rows",
     "script_findings",

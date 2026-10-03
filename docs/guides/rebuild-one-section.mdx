@@ -57,9 +57,16 @@ A take is one section's speech, and it is named by the digest of exactly six thi
 1. the speech provider's name
 2. the voice id
 3. the model
-4. the output format
-5. the voice settings, which are the `[voice]` keys sent with the request
-6. the exact text sent for that section
+4. the output format the provider declares, which for ElevenLabs is `[elevenlabs] output_format`
+5. the take identity the provider declares, which is `[voice] speed` and the provider's own voice
+   fields under the names its service reads, such as `[elevenlabs] stability`
+6. the section's text and pauses, written as one canonical text: each paragraph, a `[pause N]` as a
+   `<break time="Ns" />` tag after it and a beat as a dash, which is exactly the text ElevenLabs is
+   sent
+
+The six are joined with newlines and the text comes last, so every one of the first five is a single
+line: a provider, a voice id, a model or a format that holds a newline is refused before anything is
+sent, and no two sets of six can name the same take.
 
 Nothing else is in it, and each absence is a decision you can rely on.
 
@@ -73,8 +80,9 @@ Nothing else is in it, and each absence is a decision you can rely on.
 - Two sections with the same words come to one digest, so the second is kept rather than bought
   twice.
 
-A take file is named by its digest, so `narrate` sends nothing for a section whose take and words
-file are both on disk. It looks in three places, in this order:
+A take file is named by its digest, under the suffix of the format it holds, which is `.mp3` for
+every ElevenLabs format. `narrate` sends nothing for a section whose take and words file are both on
+disk. It looks in three places, in this order:
 
 1. [`narration.takes_dir`](/reference/configuration#narration), a directory inside the project that
    holds its takes, their words files and the take index. Commit it, and a fresh clone builds the
@@ -143,7 +151,7 @@ disagree, and neither of them compares file times.
 | An image or a stylesheet the page loads | nothing | every section whose log lists that file |
 | `record_margin_seconds`, `lead_seconds` or `tail_seconds` on section N | nothing | section N, because the recorded length moves |
 | `hold_seconds` on section N | nothing | nothing, because the hold is picture that `assemble` adds |
-| The voice id, the model, the output format or a `[voice]` key | every section | every section, because every word time moves |
+| The voice id, the model, the output format, `[voice] speed` or a voice field of the provider's table | every section | every section, because every word time moves |
 | `motion.reduce` or `motion.scale` | nothing | every section |
 | A clip file, `[transition]` or `[mix]` | nothing | nothing |
 

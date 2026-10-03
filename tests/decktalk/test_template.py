@@ -8,6 +8,7 @@ import pytest
 
 from decktalk import template
 from decktalk.errors import ErrorCode, InputError
+from decktalk.inputs import Inputs
 from decktalk.template import (
     DECK_DIR,
     EXAMPLES,
@@ -72,6 +73,13 @@ def test_the_starter_writes_a_project_that_already_builds(tmp_path: Path) -> Non
     assert (tmp_path / "cues.json").exists()
     assert (tmp_path / template.DECK_DIR / "decktalk-runtime.js").exists()
     assert len(written) == len(set(written))  # every path is reported once
+
+
+@pytest.mark.parametrize("example_name", [None, "lesson"])
+def test_every_project_init_writes_loads_with_nothing_to_warn_about(tmp_path: Path, example_name: str | None) -> None:
+    """A key a template still spells under a table it left would be read by nothing, so it is held here."""
+    write_project(tmp_path, name="demo", example_name=example_name, skills=False, force=False)
+    assert Inputs.load(tmp_path, environ={}).notes == ()
 
 
 def test_the_project_name_is_filled_into_the_files_that_carry_it(tmp_path: Path) -> None:

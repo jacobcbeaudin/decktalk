@@ -79,6 +79,7 @@ from decktalk.media.ffmpeg import installed_paths, using_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     ApplyResult,
+    Billing,
     DoctorResult,
     FixOutcome,
     InitResult,
@@ -109,7 +110,8 @@ from decktalk.settings import (
     write,
 )
 from decktalk.settings import Scope as SettingScope
-from decktalk.speech import PROVIDERS, Voices, voicing
+from decktalk.speech import PROVIDERS, ProviderFactory, Voices, key_variable
+from decktalk.speech.sound import SOUNDS, SoundFactory, Sounds
 from decktalk.tomlmap import SWITCHED_OFF
 from decktalk.toolchain import assets, chromium_fetch, command_line, tail, traced
 from decktalk.toolchain.announce import announcing
@@ -120,9 +122,6 @@ if TYPE_CHECKING:  # pragma: no cover
     from decktalk.findings import Fix
 
 log = logging.getLogger(__name__)
-
-VOICE_KEY = "ELEVENLABS_API_KEY"
-"""The one credential a paid run needs, which `doctor` reports as set or not and never reads."""
 
 RUN_DIGITS = 12
 """How much of a random id names a run, which is enough that two runs never share a file."""
@@ -265,10 +264,14 @@ CERTAIN_FAILS = Threshold()
 
 
 class Run:
-    """One call in progress: its id, its stream, its cancel token and its spend gate.
+    """One call in progress: its id, its stream, its cancel token, its spend gate, its voices and its sounds.
 
     A stage is handed one of these and reports through it. It is the only thing a stage has that
     knows about the machine, so a stage can neither read the environment nor print.
+
+    `voices` and `sounds` are the machine's tables, read once when the run opens. A stage builds every
+    provider from them, so a thread the run hands work to answers with the same providers whether or
+    not it copied the context of the thread that opened the run.
     """
 
     def __init__(
@@ -287,6 +290,8 @@ class Run:
         self.spend = spend
         self.max_cost = max_cost
         self.root = root
+        self.voices: Voices = machine.voices
+        self.sounds: Sounds = machine.sounds
         self.written: list[Path] = []
         self.findings: list[Finding] = []
         self.opened = time.monotonic()
@@ -401,10 +406,25 @@ class Run:
             )
         if self.max_cost is None:
             return spend
+        if spend.free:
+            return spend
+        if spend.billing is Billing.UNDECLARED:
+            raise ApprovalRequired(
+                "--max-cost was given and the voice declares no bill, so the cap would guard a made-up price.",
+                hint=(
+                    "A voice DeckTalk ships states how it bills, per character, per second or free, and a voice "
+                    "a host registered itself states nothing DeckTalk can price. Run without --max-cost to buy "
+                    "from one that declares none."
+                ),
+            )
         if spend.price_layer is Layer.DEFAULT:
             raise ApprovalRequired(
-                "--max-cost was given and nothing states what speech costs, so the cap would guard a made-up price.",
-                hint="Set [voice] price_per_1000_characters to what your plan charges, then run it again.",
+                "--max-cost was given and nothing states the rate this run buys at, so the cap would guard a made-up "
+                "price.",
+                hint=(
+                    f"Set {spend.price_key or 'the rate its provider declares'} to what your plan charges, "
+                    "then run it again."
+                ),
             )
         if spend.ceiling_dollars > self.max_cost:
             raise ApprovalRequired(
@@ -459,18 +479,24 @@ class Machine:
     toolchain: Toolchain
     events: Events = field(default_factory=Events, compare=False)
     overrides: tuple[str, ...] = ()
-    providers: Mapping[str, Any] | None = field(default=None, repr=False, compare=False)
-    """The voices this machine answers with by name, or None for the ones DeckTalk ships.
+    providers: Mapping[str, ProviderFactory] | None = field(default=None, repr=False, compare=False)
+    """The voices this machine answers with by name, or None for the closed set DeckTalk ships.
 
-    A host's table replaces the shipped one rather than sitting over it, so a machine built with a
-    fake voice can reach no real one by a name the host left out. Each value is a factory that takes
-    a voice context and answers with a provider, and it is typed loosely on purpose, per the decision
-    that no provider type is a published name.
+    A host's table is code the host wrote and imported itself, not a member of the closed set, and it
+    replaces the shipped one rather than sitting over it, so a machine built with a fake voice can
+    reach no real one by a name the host left out. Each value is a `decktalk.speech.ProviderFactory`.
+    """
+    sound_providers: Mapping[str, SoundFactory] | None = field(default=None, repr=False, compare=False)
+    """The sound providers this machine answers with by name, or None for the ones its voices imply.
+
+    A machine whose host gave neither table answers with the sound providers DeckTalk ships. A host
+    that gave a voice table and no sound table gets none, so a machine built with a fake voice can
+    reach no real sound provider either. Each value is a factory that takes a sound context.
     """
     dotenv: bool = True
     """Whether a project's `.env` is read, which is true for the author's own machine and false for a host's."""
     allow_any_api_base: bool = False
-    """Whether `[elevenlabs] api_base` may name a host other than ElevenLabs, which only a machine decides.
+    """Whether a voice's base URL may name a host its adapter does not allow, which only a machine decides.
 
     It is a field rather than a variable the speech layer reads, so a host that built its machine by
     hand decides it, and a key is never sent elsewhere because the process that runs a call happened
@@ -502,7 +528,8 @@ class Machine:
         config_path: Path,
         cwd: Path,
         cache_dir: Path,
-        providers: Mapping[str, Any] | None = None,
+        providers: Mapping[str, ProviderFactory] | None = None,
+        sound_providers: Mapping[str, SoundFactory] | None = None,
         overrides: Iterable[str] = (),
         dotenv: bool = False,
         allow_any_api_base: bool = False,
@@ -512,9 +539,11 @@ class Machine:
         Nothing here reads the process. `environ` is every variable a run on this machine may see,
         which for a render job is none and for a voice job is the key and the voice id. The machine
         file at `config_path` is read when it is there and is where a machine-scope fix lands.
-        `providers` replaces the shipped voices by name. A project's `.env` is left unread unless
-        `dotenv` says otherwise, and the voice key goes to ElevenLabs and nowhere else unless
-        `allow_any_api_base` says otherwise, because both are what a tenant's upload would reach for.
+        `providers` replaces the shipped voices by name, and `sound_providers` the shipped sound
+        providers. A project's `.env` is left unread unless
+        `dotenv` says otherwise, and a voice sends its key and its script only to the hosts its
+        adapter allows unless `allow_any_api_base` says otherwise, because both are what a tenant's
+        upload would reach for.
         """
         register_environment(environ)
         tables = read_machine_toml(config_path)
@@ -535,6 +564,7 @@ class Machine:
             toolchain=toolchain,
             overrides=pairs,
             providers=providers,
+            sound_providers=sound_providers,
             dotenv=dotenv,
             allow_any_api_base=allow_any_api_base,
             notes=(*env_warnings(environ), *key_warnings(tables, config_path.name), *refused),
@@ -560,6 +590,16 @@ class Machine:
             retries=tuned.narration.retries,
         )
 
+    @property
+    def sounds(self) -> Sounds:
+        """The sound providers this machine answers with, where their key may go and how often they ask again."""
+        if self.sound_providers is not None:
+            factories = self.sound_providers
+        else:
+            factories = SOUNDS if self.providers is None else {}
+        voices = self.voices
+        return Sounds(factories=factories, allow_any_api_base=voices.allow_any_api_base, retries=voices.retries)
+
     def child_environ(self) -> dict[str, str]:
         """The environment a DeckTalk command this machine starts runs with, so the command acts on this machine.
 
@@ -574,13 +614,20 @@ class Machine:
 
     @property
     def voice_key(self) -> bool:
-        """True when the credential a paid run would use is set, which is asked and never revealed."""
-        return bool(self.environ.get(VOICE_KEY))
+        """True when the credential a paid run would use is set, which is asked and never revealed.
+
+        The variable is the one the voice `[voice] provider` names declares, and a voice that declares
+        none needs none. A machine has no project, so the provider is the one its own layers name.
+        """
+        mine = _machine_overrides(self.overrides)
+        provider = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings.voice.provider
+        variable = key_variable(provider)
+        return variable is None or bool(self.environ.get(variable))
 
     # ---- opening a run ------------------------------------------------------------------
 
     @contextmanager
-    def run(
+    def _run(
         self,
         *,
         id: str | None = None,
@@ -614,17 +661,16 @@ class Machine:
             run.note(note, level=Level.WARNING)
         outcome, error = Outcome.OK, None
         try:
-            # The toolchain, the download listener, the voices, the rule about `.env`, the
-            # environment a launched browser is built from and whether the key is in reach are what
-            # this run renders, fetches, speaks, reads secrets and opens pages with. All of them sit
-            # below the event stream, so the run binds them for its own length rather than threading
-            # a machine through every filter, fetcher, provider lookup and browser launch.
+            # The toolchain, the download listener, the rule about `.env`, the environment a launched
+            # browser is built from and whether the key is in reach are what this run renders, fetches,
+            # reads secrets and opens pages with. All of them sit below the event stream, so the run
+            # binds them for its own length rather than threading a machine through every filter,
+            # fetcher and browser launch. The voices are not among them: they travel on the run itself.
             with (
                 self.toolchain.bound(cancel=run.cancel),
                 children_see(self.environ),
                 spending(run.spend),
                 announcing(run.fetching),
-                voicing(self.voices),
                 reading_dotenv(self.dotenv),
                 logging_into(run.logged, run=run.id),
             ):
@@ -656,7 +702,7 @@ class Machine:
         will be offline later, and on Linux, where it is also the one command that installs the
         browser's system libraries and so the one that may ask for a password.
         """
-        with self.run(cancel=cancel) as run:
+        with self._run(cancel=cancel) as run:
             # Whether the browser already launches is the one answer that decides the fetch, the
             # system libraries and the row's `fetched`: a browser that launches has its libraries, so
             # a second `install` fetches nothing and names what was already there.
@@ -678,7 +724,7 @@ class Machine:
         download the pinned build, and the browser row launches the one this machine already has.
         No variable's value is reported, because a variable may hold a credential.
         """
-        with self.run(cancel=cancel) as run:
+        with self._run(cancel=cancel) as run:
             tools = (self._browser_row(), *_encoder_rows(self.toolchain), self._katex_row())
             findings = tuple(run.found(found) for found in _missing_findings(tools))
             return run.result(
@@ -694,7 +740,7 @@ class Machine:
 
     def apply(self, fix: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
         """Carry out the fixes a machine can make, which is turning a machine knob and running a command."""
-        with self.run(root=self.cwd) as run:
+        with self._run(root=self.cwd) as run:
             return apply_fixes(run, fix, root=self.cwd, scope=Scope.MACHINE, unsafe=unsafe)
 
     # ---- the rows `doctor` reports ---------------------------------------------------------
@@ -767,7 +813,7 @@ def init(
 
     here = machine or Machine.from_environment()
     root = here.cwd / Path(path).expanduser()
-    with here.run(root=root) as run:
+    with here._run(root=root) as run:
         written = write_project(root, name=name or root.name, example_name=example, skills=skills, force=force)
         for wrote in written:
             run.wrote(wrote)

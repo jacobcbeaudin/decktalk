@@ -40,7 +40,7 @@ agent cannot answer and a flag that does not exist are the same failure.
 
 | The question | Under `--no-input` |
 |---|---|
-| Spend on the voice? | Refused as `APPROVAL`, with the price in the message and `--spend` and `--no-spend` in the hint. A run with nothing to buy is not asked, and neither is one whose voice's stated price is zero. |
+| Spend on the voice? | Refused as `APPROVAL`, with the price in the message and `--spend` and `--no-spend` in the hint. A run with nothing to buy is not asked, and neither is one whose voice declares itself free. |
 | Apply the fixes this run offered? | None are applied. `--fix` applies every safe one and `--no-fix` applies none. |
 | Discard the takes this run replaces? | Not asked. `--replace-voiced` is itself the authorisation, because a run told to replace a take was told so on purpose. |
 | Fetch what `doctor` found missing? | Nothing is fetched. `--fix` fetches it. |
@@ -82,9 +82,9 @@ stderr with neither in the other's way.
 {"event":"run.done","time":"2026-09-24T10:24:34.649525Z","seq":1,"run":"200d55f26212","outcome":"ok","seconds":0.008,"error":null,"dropped":0}
 ```
 
-`event` is the discriminator, and there are twelve names: `run.start`, `run.done`, `stage.start`,
-`stage.done`, `section.start`, `section.done`, `progress`, `finding`, `spend`, `take.charged`, `fetch`
-and `log`. A
+`event` is the discriminator, and there are thirteen names: `run.start`, `run.done`, `stage.start`,
+`stage.done`, `section.start`, `section.done`, `progress`, `finding`, `spend`, `take.charged`,
+`sound.charged`, `fetch` and `log`. A
 `stage.done` and a `section.done` each carry an `outcome` of `ok`, `kept`, `skipped`, `stopped` or
 `failed`, so a job can tell work that was done from work that was kept, and a failed run's
 `run.done` carries its `error`.
@@ -154,7 +154,7 @@ reach, so a docs-only job, a pre-commit hook and a container with no Chromium ca
 
 {/* sample: the output of decktalk check --no-pages on a starter with no ElevenLabs key and no voice id */}
 ```text
-No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
+No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 no page was opened, so these judgements were not reached: CUE_MISSING, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
 frames were asked for and no page was opened, so no frame was frozen either.
 Checking script.md, cues.json.
@@ -270,14 +270,14 @@ take index, and nothing else, because a placeholder and the joined narration sta
 ```toml
 [narration]
 takes_dir = "voice"
+
+[voice]
+id = "<your voice id>"
 ```
 
-Hand the job the voice id, which is a published name rather than a secret, and leave the key out.
-
-```yaml
-    env:
-      ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID }}
-```
+The voice id is a published name rather than a secret, so it is committed beside the takes and the
+job is handed nothing at all. A project that keeps the id out of the file hands the job
+`DECKTALK_VOICE_ID` instead, and still leaves the key out.
 
 A run without `--spend` plays every take on disk and never builds the voice, so it reads no key. Each
 section whose take is missing plays a placeholder and is reported as

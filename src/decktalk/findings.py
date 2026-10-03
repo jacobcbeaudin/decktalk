@@ -338,6 +338,11 @@ class Code(Enum):
         RaisedBy.PYTHON,
         Certainty.UNCERTAIN,
     )
+    TAKE_PAUSE_DROPPED = (
+        "TAKE_PAUSE_DROPPED",
+        "The script asks for a timed pause the voice's model does not render, so a voiced run would drop it.",
+        RaisedBy.PYTHON,
+    )
     TAKE_MISSING = (
         "TAKE_MISSING",
         "A section has no take of its current text, so a placeholder plays in its place until a run with "

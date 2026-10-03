@@ -250,7 +250,7 @@ def render_sections(
     `passes` is how many passes the whole stage runs, so the cuts count against the same total the
     passes after them do and a renderer never sees one bar restart inside one stage.
     """
-    enc = Encoder(inputs.settings.video)
+    enc = Encoder(inputs.settings.video, inputs.settings.audio)
     inputs.workspace.final_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.sections_dir.mkdir(parents=True, exist_ok=True)
     dip = frame_dip(inputs.document.transition.dip_seconds, enc.v.output_fps)

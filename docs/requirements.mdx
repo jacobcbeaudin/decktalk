@@ -236,16 +236,21 @@ belongs.
 ## What a voiced run needs
 
 A build without voice needs no account, no API key and no network once the tools are on the machine.
-A voiced build needs two values from ElevenLabs, which is the only speech provider.
+A build voiced by ElevenLabs, the cloud voice, needs two values from ElevenLabs. The local voice,
+`dtsp`, needs only `[voice] id` and a server on this machine, and no key.
 
-| Variable | What it is | Read by |
+| Value | What it is | Read by |
 |---|---|---|
 | `ELEVENLABS_API_KEY` | Your API key. This is the credential. | a voiced build, `decktalk narrate`, `decktalk soundscape` |
-| `ELEVENLABS_VOICE_ID` | The id of the voice to speak in. It is a published name rather than a secret. | a voiced build, `decktalk narrate` |
+| `[voice] id` | The id of the voice to speak in. It is a published name rather than a secret. | a voiced build, `decktalk narrate` |
 
-Put both in `.env` beside `decktalk.toml`, or export them. A variable already in the environment wins
-over the file, and a value that still starts with `<`, such as `<your-elevenlabs-key>`, counts as
-unset, so `.env.example` as it ships approves nothing.
+Put the key in `.env` beside `decktalk.toml`, or export it. A variable already in the environment
+wins over the file, and a value that still starts with `<`, such as `<your-elevenlabs-key>`, counts
+as unset, so `.env.example` as it ships approves nothing.
+
+The voice id is `[voice] id` in `decktalk.toml`, and `DECKTALK_VOICE_ID` in the environment overrides
+it for anyone who keeps it out of the file. It is committed with the project because it grants
+nothing: a voice cloned on an ElevenLabs account is usable only with that account's key.
 
 DeckTalk never prints the key. No value read from `.env` or from the environment reaches a `--json`
 payload, a log line or an error message, and an error that quotes a reply from the service has every
@@ -289,12 +294,14 @@ the one you paid for. It is the one flag on `build` that buys words you already 
 One key sets the rate, and one command reports the price.
 
 ```toml decktalk.toml
-[voice]
+[elevenlabs]
 price_per_1000_characters = 0.30
 ```
 
-`voice.price_per_1000_characters` is what your plan charges per thousand characters. Its default is
-`0.0`, because DeckTalk does not know your plan and will not invent it.
+ElevenLabs declares that it bills per character, so `elevenlabs.price_per_1000_characters` is what your
+plan charges per thousand characters. Its default is `0.0`, because DeckTalk does not know your plan
+and will not invent it. Each voice declares how it bills, per character, per second of audio, or
+free, and the key its rate is set under, and the price is worked out the way it declares.
 
 `decktalk check` prices a voiced run without calling anything, and its result carries a `Spend`.
 
@@ -307,21 +314,34 @@ decktalk check --json
   "state": "estimate",
   "sections": [1, 2, 3],
   "characters": 476,
+  "seconds": 31.2,
   "dollars": 0.14,
   "ceiling_dollars": 0.14,
+  "billing": "per_character",
   "price_per_1000_characters": 0.3,
+  "price_per_second": 0.0,
+  "price_key": "elevenlabs.price_per_1000_characters",
+  "averaged": false,
   "price_layer": "project"
 }
 ```
 
 - `state` is `estimate` for what a run would cost and `charged` for what one did cost.
 - `sections` are the sections the price covers, in script order.
-- `characters` is what would be sent, and `dollars` is that at the stated rate.
+- `characters` is what would be sent, and `seconds` is how long the takes are expected to run.
+- `billing` is how the voice declares it bills: `per_character`, `per_second`, `free`, or
+  `undeclared` for a voice a host registered itself. A build's total is `mixed` when it adds
+  characters of speech to seconds of sound, and then carries both rates.
+- `dollars` is the characters or the seconds the bill counts, at the stated rate.
 - `ceiling_dollars` is the most the run can reach.
+- `price_per_1000_characters` or `price_per_second` is the rate, whichever the bill is counted in.
+- `price_key` is the key that states the rate, or null for a voice with no rate to state.
+- `averaged` is true when the price is several rates together, such as a soundscape's music and
+  effects, so the rate is their average and `price_key` names the one least surely stated.
 - `price_layer` names which of the five settings layers set the rate, where `default` means nobody did.
 
 `dollars` and `ceiling_dollars` differ when a section's cache cannot be checked. A take is named by
-its text and its voice, so with no `ELEVENLABS_VOICE_ID` set no take on disk can be matched to the
+its text and its voice, so with no `[voice] id` named no take on disk can be matched to the
 voice that made it: each unmatched section's characters go into the ceiling and none of them into
 the price. The key is not needed to price a run, because the price never asks the voice anything.
 
@@ -334,6 +354,7 @@ apart.
 | Some sections could not be matched | `This run costs $X for the sections that certainly need a take, and up to $Y if the takes that could not be matched to a voice need one too, at $0.30 per 1,000 characters.` |
 | No section could be matched | `The takes on disk could not be matched to a voice, so this run costs up to $0.14 at $0.30 per 1,000 characters.` |
 | Nothing needs a take | `This run buys nothing.` |
+| The voice declares itself free | `This run voices 476 characters for nothing, because the voice is free.` |
 | After a voiced run | `This run spent $0.14 on 476 characters at $0.30 per 1,000 characters.` |
 
 ### The ceiling
@@ -351,8 +372,8 @@ error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 char
 `--max-cost` also refuses while the price is still the default, before it compares anything.
 
 ```text
-error[APPROVAL]: --max-cost was given and nothing states what speech costs, so the cap would guard a made-up price.
-  hint: Set [voice] price_per_1000_characters to what your plan charges, then run it again.
+error[APPROVAL]: --max-cost was given and nothing states the rate this run buys at, so the cap would guard a made-up price.
+  hint: Set elevenlabs.price_per_1000_characters to what your plan charges, then run it again.
   docs: https://docs.decktalk.ai/reference/errors/APPROVAL
 ```
 

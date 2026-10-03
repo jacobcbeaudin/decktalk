@@ -56,7 +56,7 @@ def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_
     write_takes(inputs, take)
     Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("0123456789abcdef"))
     if take_on_disk:
-        (inputs.workspace.takes_dir / take.file).write_bytes(b"")
+        inputs.workspace.take_path(take.hash).write_bytes(b"")
     if cut:
         inputs.workspace.section_video("01").parent.mkdir(parents=True, exist_ok=True)
         inputs.workspace.section_video("01").write_bytes(b"")

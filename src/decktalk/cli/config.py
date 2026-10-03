@@ -194,7 +194,7 @@ def _told(session: sessions.Session) -> Iterator[None]:
     """
     root = _root(session)
     project = knobs.read_project_toml(root) if (root / knobs.PROJECT_FILE).is_file() else {}
-    with session.watching(session.machine.events), session.machine.run() as run:
+    with session.watching(session.machine.events), session.machine._run() as run:
         for note in knobs.key_warnings(project, knobs.PROJECT_FILE):
             run.note(note, level=Level.WARNING)
         yield

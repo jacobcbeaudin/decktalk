@@ -23,7 +23,7 @@ from decktalk.cli import session as sessions
 from decktalk.errors import Cancelled, DeckTalkError, ErrorInfo
 from decktalk.pipeline import Stage
 from decktalk.project import Project
-from decktalk.results import BuildResult, Layer, Spend, SpendState
+from decktalk.results import Billing, BuildResult, Layer, Spend, SpendState
 
 POLL_SECONDS = 0.4
 """How long the loop sleeps between two readings of the tree, which is under an author's own pause."""
@@ -104,7 +104,8 @@ def _once(
 def _nothing(refusal: ErrorInfo) -> BuildResult:
     """The result a refused rebuild leaves behind, which carries the refusal and no film.
 
-    A run that never opened bought nothing, so its price is nothing at a rate nobody stated.
+    A run that never opened bought nothing and asked no voice how it bills, so its price is nothing
+    on a bill nobody declared, at a rate nobody stated.
     """
     return BuildResult(
         ok=False,
@@ -118,6 +119,7 @@ def _nothing(refusal: ErrorInfo) -> BuildResult:
             characters=0,
             dollars=0.0,
             ceiling_dollars=0.0,
+            billing=Billing.UNDECLARED,
             price_per_1000_characters=0.0,
             price_layer=Layer.DEFAULT,
         ),
@@ -154,7 +156,10 @@ def _stamps(project: Project) -> dict[Path, float]:
     holds. The project's own build and take folders are pruned wherever its settings put them,
     because a build that wrote into a watched folder would start the next build without end.
     """
-    written = {project.workspace.build.resolve(), *(place.resolve() for place in project.workspace.take_places)}
+    written = {
+        project._inputs.workspace.build.resolve(),
+        *(place.resolve() for place in project._inputs.workspace.take_places),
+    }
     found: dict[Path, float] = {}
     for folder, dirs, files in os.walk(project.root):
         here = Path(folder)

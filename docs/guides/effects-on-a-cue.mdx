@@ -20,8 +20,8 @@ the closing band lands.
 - Resolve the cues once, with any build or with `decktalk narrate --no-spend` and then
   `decktalk cue`. An effect plays at the second its cue resolved to, so a cue that has never been
   resolved has no second to sit on, and `cue` needs the word clock `narrate` writes.
-- Put `ELEVENLABS_API_KEY` in `.env` to generate the sound. Generating one spends credits at the
-  rate `[voice] price_per_1000_characters` states.
+- Put `ELEVENLABS_API_KEY` in `.env` to generate the sound. Generating one spends credits for every
+  second of audio asked for, at the rate per minute `[soundscape.effects] price_per_minute` states.
 - Bring your own audio file instead if you have one. Any file ffmpeg can read works, it needs no key,
   and only the fourth step below applies to it.
 
@@ -38,9 +38,9 @@ the closing band lands.
     write it somewhere else, such as `media/tick.mp3`, which is where a sound you want to keep when
     `build/` is deleted belongs.
 
-    The same table may carry `duration_seconds`, `prompt_influence` and `model_id`, each of which
-    replaces the matching key of [`[elevenlabs]`](/reference/configuration#elevenlabs) for this one
-    sound. At the defaults an effect is `effect_seconds` long, which is half a second.
+    The same table may carry `duration_seconds`, `prompt_influence` and `model`, each of which
+    replaces the matching setting of [`[soundscape.effects]`](/reference/configuration#soundscape-effects)
+    for this one sound. At the defaults an effect is half a second long.
   </Step>
 
   <Step title="Read the plan before you buy it">
@@ -59,7 +59,7 @@ the closing band lands.
       "findings": [
         {
           "code": "FILE_MISSING",
-          "message": "the effect tick is planned and its audio is not on disk, so a mix would play without it. Generating it would send 47 characters.",
+          "message": "the effect tick is planned and its audio is not on disk, so a mix would play without it. Generating it would ask for 0.5 seconds of audio.",
           "certainty": "certain",
           "location": {
             "where": "tick",
@@ -89,17 +89,24 @@ the closing band lands.
       "spend": {
         "state": "estimate",
         "sections": [1, 2, 3],
-        "characters": 47,
-        "dollars": 0.01,
-        "ceiling_dollars": 0.01,
-        "price_per_1000_characters": 0.3,
-        "price_layer": "project"
+        "characters": 0,
+        "seconds": 0.5,
+        "dollars": 0.0,
+        "ceiling_dollars": 0.0,
+        "billing": "per_second",
+        "price_per_1000_characters": 0.0,
+        "price_per_second": 0.0,
+        "price_key": "soundscape.effects.price_per_minute",
+        "averaged": false,
+        "price_layer": "default"
       },
       "seconds": 0.0
     }
     ```
 
     `items[0].status` is `planned`, which is the word for an item this run would buy and did not.
+    The price is zero, from the `default` layer, until `[soundscape.effects] price_per_minute` states
+    what your plan charges per minute of audio, and `--max-cost` refuses a run priced that way.
     The one judgement the stage makes is [`FILE_MISSING`](/reference/findings/FILE_MISSING), for an
     item whose audio a mix would look for and not find, so the run exits 1 until the file exists.
   </Step>
@@ -181,7 +188,7 @@ viewer who cannot see or cannot hear it.
 ## What ducks and what does not
 
 The music bed plays at `[mix] music_db` and ducks by `[mix] music_duck_db` under every span that
-carries speech, ramped in and out over `[audio] duck_ramp_seconds` at each edge.
+carries speech, ramped in and out over `[mix] duck_ramp_seconds` at each edge.
 [Sound](/concepts/sound#ducking) owns the whole rule. A span that carries
 speech is a spoken section from its start to its last word, and a clip section for the whole of its
 own length.

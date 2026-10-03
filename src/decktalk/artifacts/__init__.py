@@ -30,6 +30,7 @@ from decktalk.artifacts.recordings import (
 from decktalk.artifacts.stored import Stored, content_digest, file_digest
 from decktalk.artifacts.takes import (
     PLACEHOLDER_PREFIX,
+    PLACEHOLDER_SUFFIX,
     TAKE_DIGITS,
     PlaceholderInputs,
     Take,
@@ -42,6 +43,7 @@ from decktalk.artifacts.words import WORDS_SUFFIX, Words, words_file
 
 __all__ = [
     "PLACEHOLDER_PREFIX",
+    "PLACEHOLDER_SUFFIX",
     "TAKE_DIGITS",
     "WORDS_SUFFIX",
     "Cut",

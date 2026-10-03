@@ -23,9 +23,11 @@ uv or pipx, which needs Python 3.12 or later. Chromium and ffmpeg are announced 
 the first build that needs them, and `decktalk install` fetches them up front instead.
 
 A build without voice needs no account. A voiced build needs `ELEVENLABS_API_KEY` in the project's
-`.env`, and `ELEVENLABS_VOICE_ID`, which is a published name rather than a secret and is part of
-what names a take. A variable already exported wins over `.env`, and a value that still starts with
-`<` counts as unset. ElevenLabs is the only speech provider.
+`.env`, and `[voice] id` in `decktalk.toml`, which is a published name rather than a secret and is
+part of what names a take. `DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file.
+A variable already exported wins over `.env`, and a value that still starts with `<` counts as unset.
+Those are what the ElevenLabs voice needs. The local voice, `provider = "dtsp"`, needs no key, costs
+nothing, and reaches the server `[dtsp] url` names on `127.0.0.1`, `localhost` or `[::1]`.
 
 ## The four files an author writes
 
@@ -248,8 +250,8 @@ missing and reports it as `TAKE_MISSING`, and needs no API key. `--spend` buys w
 asking first. `--max-cost N` refuses before the first call if the most the run can cost is over N US
 dollars, and it is compared against the spend object's `ceiling_dollars`. With neither flag, a run
 with something to buy prices it and asks on a terminal, and without a terminal it refuses with the
-error code `APPROVAL`. A run with nothing to buy is not asked, and neither is one whose voice's
-stated price is zero, which buys without asking. `--no-spend` never buys, whatever the price.
+error code `APPROVAL`. A run with nothing to buy is not asked, and neither is one whose voice
+declares itself free, which buys without asking. `--no-spend` never buys, whatever the price.
 
 **The findings flags** are on every command that can judge something, which are `doctor`, `check`,
 `storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`, `verify` and `build`.
@@ -285,9 +287,9 @@ is `certain` or `uncertain`. `location` carries a required `where` naming the ob
 `Project.apply(finding)` applies one.
 
 `--events` prints one JSON line per event on stderr as it happens, and every run of a project also
-appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are twelve names:
+appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are thirteen names:
 `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`, `section.done`, `progress`,
-`finding`, `spend`, `take.charged`, `fetch` and `log`. `run.done`, `stage.done` and `section.done` carry an
+`finding`, `spend`, `take.charged`, `sound.charged`, `fetch` and `log`. `run.done`, `stage.done` and `section.done` carry an
 `outcome` of `ok`, `kept`, `skipped`, `stopped` or `failed`, and `run.done` carries the `error` of a run
 that did not finish.
 
@@ -337,12 +339,12 @@ under `%APPDATA%\decktalk\` on Windows, and under `$XDG_CONFIG_HOME/decktalk/` o
 --machine` prints the keys a per-machine file may hold, which are the ones about this machine rather
 than about the film.
 
-The knobs sit in `[video]`, `[narration]`, `[record]`, `[audio]`, `[verify]`, `[voice]`,
-`[mix.loudness]`, `[motion]`, `[elevenlabs]`, `[output]` and `[tools]`. `decktalk.toml`
-also carries the tables that are project content rather than tuning, which are `[project]`,
-`[[section]]`, `[transition]`, `[soundscape]` with `[soundscape.effects.<name>]`, and
-`[[mix.effects]]`. `[voice]` and `[mix]` are each both things at once, because each holds content
-keys the document owns beside knobs the settings loader declares.
+The settings sit in `[video]`, `[narration]`, `[record]`, `[audio]`, `[verify]`, `[voice]`, `[mix]`,
+`[motion]`, `[elevenlabs]`, `[soundscape]`, `[output]` and `[tools]`. `decktalk.toml` also carries
+the tables that are project content rather than tuning, which are `[project]`, `[[section]]`,
+`[transition]`, the prompts of `[soundscape]` with `[soundscape.effects.<name>]`, and
+`[[mix.effects]]`. `[mix]` and `[soundscape]` are each both things at once, because each holds
+content keys the document owns beside settings the settings loader declares.
 
 The published range is the safe range. A bound is there because a value past it deletes a check,
 corrupts the evidence a later stage measures or breaks a tool, and the loader refuses a value
