@@ -33,24 +33,14 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from decktalk.inputs import Inputs
-from decktalk.speech import SpeechContext, base_of, table_of
+from decktalk.speech import SpeechContext
 
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
 
 
-def voice_model(inputs: Inputs) -> str:
-    """The model that reads this project, which is the `model` of the provider's own table.
-
-    The model is set in the provider's own table alone, so changing `[voice] provider` never sends one
-    vendor's model id to another, and a provider with no table is sent no model it did not ask for.
-    """
-    table = table_of(inputs.settings, inputs.settings.voice.provider)
-    return table.model if table is not None else ""
-
-
-def speech_context(inputs: Inputs, provider: str | None = None) -> SpeechContext:
-    """What a speech provider is built from, taken from its own table, this project's tuning and its own `.env`.
+def speech_context(inputs: Inputs) -> SpeechContext:
+    """What the voice in force is built from, taken from its own table, this project's tuning and its own `.env`.
 
     The base URL is its own table's `base_url`, which only the machine sets, so a provider with no
     table is handed none.
@@ -58,7 +48,7 @@ def speech_context(inputs: Inputs, provider: str | None = None) -> SpeechContext
     settings = inputs.settings
     return SpeechContext(
         secrets=inputs.env,
-        base_url=base_of(settings, provider or settings.voice.provider),
+        base_url=inputs.voice.base_url,
         context_characters=settings.narration.context_characters,
         speech_timeout_seconds=settings.narration.timeout_seconds,
     )
@@ -74,5 +64,4 @@ __all__ = [
     "SECTION_START_SECONDS",
     "selects",
     "speech_context",
-    "voice_model",
 ]

@@ -44,7 +44,7 @@ from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
 from decktalk.results import CheckResult, Panel, SectionCues
-from decktalk.stages import selects, voice_model
+from decktalk.stages import selects
 from decktalk.stages.check.scan import (
     judged_pages,
     landing_findings,
@@ -155,14 +155,14 @@ def _script_sections(inputs: Inputs, run: Run) -> list[ScriptSection]:
 
 
 def _states(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection]) -> TakeStates:
-    """The take state of each spoken section, and every timed pause its model would drop."""
+    """The take state of each spoken section, and every timed pause the voice in force would drop."""
     if spoken:
-        model = voice_model(inputs)
-        dropped = dropped_pauses(inputs, list(spoken), model=model)
+        voice = inputs.voice
+        dropped = dropped_pauses(inputs, list(spoken))
         script = inputs.relative(inputs.script_path)
-        for found in pause_findings(dropped, provider=inputs.settings.voice.provider, model=model, script=script):
+        for found in pause_findings(dropped, provider=voice.provider, model=voice.model, script=script):
             run.found(found)
-        if not inputs.settings.voice.id:
+        if not voice.id:
             run.note(NO_VOICE_NOTE)
     return take_states(inputs, spoken)
 

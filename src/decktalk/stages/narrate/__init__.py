@@ -52,8 +52,8 @@ from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Cost, NarrateResult, SectionTake, TakeOutcome, Word
-from decktalk.speech import SpeechProvider, output_of, start_hint
-from decktalk.stages import selects, voice_model
+from decktalk.speech import SpeechProvider
+from decktalk.stages import selects
 from decktalk.stages.cost import is_free
 from decktalk.stages.narrate.plan import (
     NO_VOICE_NOTE,
@@ -114,14 +114,13 @@ def narrate(
     that is stopped keeps everything it has already paid for.
     """
     targets = _targets(inputs, only)
-    model = voice_model(inputs)
     free = is_free(inputs)
     # A take is made again only when the run was told to replace it. `force` never feeds this, because
     # it rebuilds what DeckTalk makes itself, and a voice's take is not.
     states = take_states(inputs, targets, replace_voiced=replace_voiced)
     plan = states.plan(spend=run.spend, force=force)
     previous = inputs.takes()
-    if not plan.voiced and not inputs.settings.voice.id and previous is not None and previous.voiced_sections:
+    if not plan.voiced and not inputs.voice.id and previous is not None and previous.voiced_sections:
         # Voiced takes are on disk and cannot be matched without the voice, so the run says why once. A
         # project that never bought a take has nothing to match.
         run.note(NO_VOICE_NOTE)
@@ -138,18 +137,18 @@ def narrate(
     if sending:
         # A run that sends nothing buys nothing, so the gate is asked and the voice is built only when
         # something would be bought, and a run that plays what is on disk reads no key at all.
-        refuse_dropped_pauses(inputs, sending, model=model)
+        refuse_dropped_pauses(inputs, sending)
         run.approve(plan.cost)
         provider = speech_provider(run, inputs)
-    rows, made, unreached = _write_takes(inputs, run, plan.takes, provider, previous, model=model, free=free)
-    index = _index(inputs, rows, model=model)
+    rows, made, unreached = _write_takes(inputs, run, plan.takes, provider, previous, free=free)
+    index = _index(inputs, rows)
     run.wrote(index.write(inputs.workspace.takes_path))
     run.wrote(join_takes(inputs, index))
     _note_what_is_missing(inputs, run, index)
     if unreached:
         run.note(
             f"The voice could not be reached, so section(s) {[section.number for section in unreached]} play a "
-            f"placeholder. {start_hint(inputs.settings.voice.provider)}, then run decktalk narrate again.",
+            f"placeholder. {inputs.voice.start_hint}, then run decktalk narrate again.",
             level=Level.WARNING,
         )
     missing += [_take_missing(inputs, section, UNREACHED, unreached=True) for section in unreached]
@@ -183,9 +182,8 @@ def _take_missing(
     because the takes in it are already made.
     """
     number = section.number
-    provider = inputs.settings.voice.provider
     if unreached:
-        action = f"{start_hint(provider)}, then run decktalk narrate --section {number}."
+        action = f"{inputs.voice.start_hint}, then run decktalk narrate --section {number}."
     elif is_free(inputs):
         # A free voice is called whenever a voice is named, so a free section plays a placeholder only for want of one.
         action = f"Name the voice, then run decktalk narrate --section {number} to make its take for nothing."
@@ -233,7 +231,6 @@ def _write_takes(
     provider: SpeechProvider | None,
     previous: Takes | None,
     *,
-    model: str,
     free: bool,
 ) -> tuple[dict[int, Take], list[SectionTake], list[ScriptSection]]:
     """Make every take this run plans, `[narration] concurrency` at a time, checkpointing after each.
@@ -273,9 +270,7 @@ def _write_takes(
             with progress.lock:
                 progress.rows[number] = row
                 progress.made[number] = made
-                _index(inputs, _placed(inputs, progress.rows, set(progress.made)), model=model).write(
-                    inputs.workspace.takes_path
-                )
+                _index(inputs, _placed(inputs, progress.rows, set(progress.made))).write(inputs.workspace.takes_path)
                 progress.done += 1
                 run.progress(
                     Stage.NARRATE,
@@ -431,12 +426,12 @@ def _placed(inputs: Inputs, rows: dict[int, Take], touched: set[int]) -> dict[in
     }
 
 
-def _index(inputs: Inputs, rows: dict[int, Take], *, model: str) -> Takes:
-    """The take index, in section order, which is the one order the narration is joined in."""
+def _index(inputs: Inputs, rows: dict[int, Take]) -> Takes:
+    """The take index, in section order, which is the one order the narration is joined in, under the voice in force."""
     return Takes(
         script=inputs.relative(inputs.script_path).as_posix(),
-        model=model,
-        output_format=output_of(inputs.settings, inputs.settings.voice.provider).format,
+        model=inputs.voice.model,
+        output_format=inputs.voice.output.format,
         sections=tuple(rows[number] for number in sorted(rows)),
     )
 

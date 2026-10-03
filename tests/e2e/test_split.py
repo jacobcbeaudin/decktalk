@@ -98,12 +98,13 @@ out.write_text(json.dumps({"ok": result.ok, "voiced": voiced}), encoding="utf-8"
 
 RENDER_JOB = """
 import json, os, sys
+from dataclasses import replace
 from pathlib import Path
 
 import decktalk
 from decktalk.artifacts import Takes
+from decktalk.machine import Machine
 from decktalk.media import browser
-from decktalk.speech import PROVIDERS
 
 root, out = Path(sys.argv[1]), Path(sys.argv[2])
 launched = []
@@ -121,8 +122,9 @@ def refuse(_context):
 
 
 browser.child_environment = watched
-PROVIDERS["elevenlabs"] = refuse
-built = decktalk.open(root, threshold=decktalk.Threshold(stop_on=None)).build()
+base = Machine.from_environment()
+here = replace(base, speech_providers=replace(base.speech_providers, factories={"elevenlabs": refuse}))
+built = decktalk.open(root, machine=here, threshold=decktalk.Threshold(stop_on=None)).build()
 takes = Takes.read(root / "build" / "narrate" / "takes.json")
 out.write_text(
     json.dumps(

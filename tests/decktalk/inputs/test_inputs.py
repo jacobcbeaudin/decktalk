@@ -15,7 +15,8 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.document import ClipSection
 from decktalk.inputs.env import reading_dotenv
 from decktalk.pipeline import Artifact
-from decktalk.results import CueTime, SectionCues, Word
+from decktalk.results import BillingBasis, CueTime, SectionCues, Word
+from decktalk.speech import VoiceInForce
 from support.projects import MINIMAL_TOML, write_project
 from support.takes import a_take, narrated, write_takes
 
@@ -798,3 +799,18 @@ def test_the_default_paid_folders_sit_beside_the_build_directory_and_load(tmp_pa
     loaded = Inputs.load(write_project(tmp_path), environ={})
     assert loaded.workspace.takes == loaded.root / "takes"
     assert loaded.workspace.score_dir == loaded.root / "score"
+
+
+def test_a_project_is_read_in_the_voice_its_settings_name_and_its_takes_are_named_by_it(tmp_path: Path) -> None:
+    """The voice is resolved once at load, and the suffix take places look under is the one it is asked for."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "dtsp"\n'), environ={})
+    assert inputs.voice == VoiceInForce.of(inputs.settings)
+    assert inputs.voice.provider == "dtsp"
+    assert inputs.workspace.suffix == inputs.voice.output.suffix
+
+
+def test_a_project_naming_a_voice_no_machine_answers_for_still_loads(tmp_path: Path) -> None:
+    """Only a run that must build the voice refuses an unknown name, so a watch that reloads never fails on one."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "nosuch"\n'), environ={})
+    assert inputs.voice.provider == "nosuch"
+    assert inputs.voice.billing is BillingBasis.UNDECLARED

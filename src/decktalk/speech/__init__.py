@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from types import MappingProxyType
 from typing import Any, Protocol, cast
 
 from ..errors import InputError
@@ -163,9 +164,6 @@ class Billing:
 FREE = Billing(BillingBasis.FREE)
 """The bill of a voice that charges nothing, which never asks before it buys."""
 
-UNDECLARED = Billing(BillingBasis.UNDECLARED)
-"""The bill of a provider a host registered itself, which declares nothing DeckTalk can price."""
-
 
 @dataclass(frozen=True)
 class Output:
@@ -257,28 +255,30 @@ def _dtsp(context: SpeechContext) -> SpeechProvider:
     return Dtsp.for_context(context)
 
 
-DECLARED: dict[str, Declared] = {
-    "elevenlabs": Declared(
-        key_variable="ELEVENLABS_API_KEY",
-        table="elevenlabs",
-        renders_pauses=_elevenlabs_renders_pauses,
-        identity=_elevenlabs_identity,
-        billing=Billing(BillingBasis.PER_CHARACTER, rate="dollars_per_1000_characters"),
-        output=_elevenlabs_output,
-        factory=_elevenlabs,
-    ),
-    "dtsp": Declared(
-        key_variable=None,
-        table="dtsp",
-        # The pieces travel as data and the server joins them with measured silence, so every model renders a pause.
-        renders_pauses=lambda _model: True,
-        identity=_dtsp_identity,
-        billing=FREE,
-        output=_dtsp_output,
-        factory=_dtsp,
-        server="decktalk-voice",
-    ),
-}
+DECLARED: Mapping[str, Declared] = MappingProxyType(
+    {
+        "elevenlabs": Declared(
+            key_variable="ELEVENLABS_API_KEY",
+            table="elevenlabs",
+            renders_pauses=_elevenlabs_renders_pauses,
+            identity=_elevenlabs_identity,
+            billing=Billing(BillingBasis.PER_CHARACTER, rate="dollars_per_1000_characters"),
+            output=_elevenlabs_output,
+            factory=_elevenlabs,
+        ),
+        "dtsp": Declared(
+            key_variable=None,
+            table="dtsp",
+            # The pieces travel as data and the server joins them with measured silence, so every model renders a pause.
+            renders_pauses=lambda _model: True,
+            identity=_dtsp_identity,
+            billing=FREE,
+            output=_dtsp_output,
+            factory=_dtsp,
+            server="decktalk-voice",
+        ),
+    }
+)
 """The closed set: every speech adapter DeckTalk ships, and what each declares about itself, in one place.
 
 A provider a host registered itself is not here. It owns no table, needs no key DeckTalk knows of,
@@ -288,59 +288,95 @@ anybody stated and a spend cap refuses to guard it.
 """
 
 
-def table_of(settings: Settings, provider: str) -> ProviderTable | None:
-    """The settings table `provider` owns, or None for a provider a host registered with no table of its own."""
-    declared = DECLARED.get(provider)
-    return cast("ProviderTable", getattr(settings, declared.table)) if declared is not None else None
+@dataclass(frozen=True)
+class VoiceInForce:
+    """The voice one project is read in: what it is called, what it declares, and what names its takes.
 
-
-def base_of(settings: Settings, provider: str) -> str:
-    """The base URL `provider`'s own table names, or nothing for a provider a host registered with no table."""
-    table = table_of(settings, provider)
-    return table.base_url.rstrip("/") if table is not None else ""
-
-
-def billing_of(provider: str) -> Billing:
-    """How `provider` bills, which a provider a host registered leaves undeclared."""
-    declared = DECLARED.get(provider)
-    return declared.billing if declared is not None else UNDECLARED
-
-
-def start_hint(provider: str) -> str:
-    """What starts `provider` when nothing answered it, naming its server and the setting that says where it listens."""
-    declared = DECLARED.get(provider)
-    if declared is None:
-        return f"Start the voice [voice] provider = {provider!r} answers from"
-    return f"Start {declared.server or 'the voice server'} at the address [{declared.table}] base_url names"
-
-
-def output_of(settings: Settings, provider: str) -> Output:
-    """The format `provider` is asked for and the suffix its takes are written under."""
-    declared, table = DECLARED.get(provider), table_of(settings, provider)
-    return declared.output(table) if declared is not None and table is not None else HOST_OUTPUT
-
-
-def renders_pauses(provider: str, model: str) -> bool:
-    """Whether `provider` renders a timed pause on `model`, so `check` and `narrate` can refuse one it would drop.
-
-    A provider DeckTalk does not ship is one a host registered itself. It is handed the pieces and
-    renders their pauses its own way, so nothing here can say it drops one.
+    It is resolved once from the settings, which already hold `[voice]`, the provider's own table and
+    `DECKTALK_VOICE_ID`, and from the closed set in `DECLARED`. It holds no factory and no secret, so it
+    can never build the provider or read its key. `SpeechProviders.provider` builds it, as it always has.
+    A provider DeckTalk does not declare is one a host registered: it owns no table, its takes are named
+    by `[voice] speed` alone, and its bill is undeclared.
     """
-    declared = DECLARED.get(provider)
-    return declared is None or declared.renders_pauses(model)
+
+    provider: str
+    """`[voice] provider`, the name the machine builds the voice by and the first input of every take digest."""
+    id: str
+    """`[voice] id`, which `DECKTALK_VOICE_ID` overrides, or empty when neither names one."""
+    model: str
+    """The `model` of the provider's own table (N12), the model asked for and never the one served.
+
+    It is empty for a provider with no table.
+    """
+    output: Output
+    """The format it is asked for, which every take digest is over, and the suffix its takes are written under."""
+    billing: BillingBasis
+    """How it bills: per character, per second, free, or undeclared for a provider a host registered."""
+    price_key: str | None
+    """The dotted key that states its rate, such as `elevenlabs.dollars_per_1000_characters`.
+
+    It is None when its bill has no rate.
+    """
+    identity: Mapping[str, Any]
+    """The settings it is sent and a take digest is over, under its own names, a pure function of the settings.
+
+    Read-only.
+    """
+    renders_pauses: bool
+    """Whether its model renders a timed pause. A beat is a dash every model reads, so it is never asked about."""
+    base_url: str
+    """Its own table's `base_url` without a trailing slash, which only the machine sets, or empty."""
+    key_variable: str | None
+    """The variable its credential is read from, which doctor and every hint name, or None when it needs none."""
+    start_hint: str
+    """The sentence that starts it when nothing answered, naming its server and the setting that says where."""
+
+    @classmethod
+    def of(cls, settings: Settings) -> VoiceInForce:
+        """The voice these settings name, with a provider absent from `DECLARED` given a host's defaults."""
+        name, speed = settings.voice.provider, settings.voice.speed
+        declared = DECLARED.get(name)
+        if declared is None:
+            return cls(
+                provider=name,
+                id=settings.voice.id,
+                model="",
+                output=HOST_OUTPUT,
+                billing=BillingBasis.UNDECLARED,
+                price_key=None,
+                identity=MappingProxyType({"speed": speed}),
+                renders_pauses=True,
+                base_url="",
+                key_variable=None,
+                start_hint=f"Start the voice [voice] provider = {name!r} answers from",
+            )
+        table = cast("ProviderTable", getattr(settings, declared.table))
+        rate = declared.billing.rate
+        return cls(
+            provider=name,
+            id=settings.voice.id,
+            model=table.model,
+            output=declared.output(table),
+            billing=declared.billing.by,
+            price_key=f"{declared.table}.{rate}" if rate is not None else None,
+            identity=MappingProxyType(declared.identity(table, speed)),
+            renders_pauses=declared.renders_pauses(table.model),
+            base_url=table.base_url.rstrip("/"),
+            key_variable=declared.key_variable,
+            start_hint=(
+                f"Start {declared.server or 'the voice server'} at the address [{declared.table}] base_url names"
+            ),
+        )
 
 
-def key_variable(provider: str) -> str | None:
-    """The variable `provider` reads its credential from, or None when it declares none."""
-    declared = DECLARED.get(provider)
-    return declared.key_variable if declared is not None else None
-
-
-PROVIDERS: dict[str, SpeechFactory] = {name: declared.factory for name, declared in DECLARED.items()}
+PROVIDERS: Mapping[str, SpeechFactory] = MappingProxyType(
+    {name: declared.factory for name, declared in DECLARED.items()}
+)
 """The factories of the closed set, which is the table a machine answers with unless its host gave another.
 
-It is read off `DECLARED`, so the set is written once and every adapter in it is declared whole. A
-test replaces one entry to run a stage without buying anything.
+It is read off `DECLARED`, so the set is written once and every adapter in it is declared whole. Neither
+table can be changed in place: a test hands its fake voice to the run's machine, as a host does through
+`Machine.of`.
 """
 
 

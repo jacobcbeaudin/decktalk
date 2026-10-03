@@ -72,7 +72,7 @@ from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Artifact
 from decktalk.settings import BY_ID, PROJECT_FILE, Layers, Loaded, Settings
 from decktalk.settings.layers import key_warnings, load, machine_folder, read_project_toml, value_of
-from decktalk.speech import output_of
+from decktalk.speech import VoiceInForce
 
 log = logging.getLogger(__name__)
 
@@ -100,6 +100,8 @@ class Inputs:
     env: Env
     settings: Settings
     layers: Layers
+    voice: VoiceInForce
+    """The voice this project is read in, resolved once from its settings, which every reader asks."""
     notes: tuple[str, ...] = ()
     """Every sentence the load wanted to say, which a caller reports as a line rather than printing."""
 
@@ -131,6 +133,7 @@ class Inputs:
         toml = read_project_toml(root)
         document = Document.from_toml(toml, default_name=root.name)
         loaded = load(root, project=toml, machine=machine, environ=environ, overrides=overrides)
+        voice = VoiceInForce.of(loaded.settings)
         build = contained(root, document.build)
         paid = {key: cls._paid_folder(root, loaded.settings, key, build, document.build) for key in PAID_FOLDERS}
         store = cls._take_store(root, loaded, environ, store)
@@ -143,7 +146,7 @@ class Inputs:
                 root=root,
                 build=build,
                 name=document.name,
-                suffix=output_of(loaded.settings, loaded.settings.voice.provider).suffix,
+                suffix=voice.output.suffix,
                 takes=paid["narration.takes_dir"],
                 score_dir=paid["score.dir"],
                 store=store,
@@ -151,6 +154,7 @@ class Inputs:
             env=Env(file=root / ENV_FILE, environ=environ),
             settings=loaded.settings,
             layers=loaded.layers,
+            voice=voice,
             notes=notes,
         )
 

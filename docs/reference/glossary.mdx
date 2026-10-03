@@ -83,6 +83,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 |---|---|---|---|
 | provider | The service that makes takes, which `[voice] provider` names: `elevenlabs` or `dtsp`. | | [Requirements and costs](/requirements) |
 | voice | The provider's named speaker, which `[voice] id` names. | | [Requirements and costs](/requirements) |
+| voice in force | What `[voice]` resolves to for one project on one machine: the provider, the voice it reads in, the model, and what that provider declares about its output and its bill. Every take's digest and every price is read from it. | | [Requirements and costs](/requirements) |
 | API key | The secret a provider that bills needs. `doctor` reports it as `api_key`: `set`, `missing` or `not_needed`. | voice key | [Requirements and costs](/requirements) |
 | take | One section's spoken audio, named by its digest. Two sections with the same text and voice share one take. | | [Build artifacts](/reference/artifacts) |
 | voiced take | A take a provider spoke, whether that provider bills or is free. | paid take, bought take | [Rebuild one section](/guides/rebuild-one-section) |

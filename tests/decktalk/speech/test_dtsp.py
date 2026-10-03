@@ -25,17 +25,14 @@ from decktalk.errors import ProviderError
 from decktalk.findings import Code
 from decktalk.media import audio
 from decktalk.results import BillingBasis, TakeOutcome
-from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, DtspConfig, Settings
+from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, DtspConfig, Settings, VoiceConfig
 from decktalk.speech import (
     DECLARED,
     PROVIDERS,
     Piece,
     SpeechContext,
     SpeechRequest,
-    billing_of,
-    key_variable,
-    output_of,
-    renders_pauses,
+    VoiceInForce,
 )
 from decktalk.speech import http as speech_http
 from decktalk.speech.dtsp import OUTPUT, SPEECH_PATH, Dtsp
@@ -105,10 +102,11 @@ def request(**over: Any) -> SpeechRequest:
 
 def test_it_is_in_the_closed_set_free_keyless_and_renders_every_pause():
     assert sorted(PROVIDERS) == sorted(DECLARED) == ["dtsp", "elevenlabs"]
-    assert billing_of("dtsp").by is BillingBasis.FREE
-    assert key_variable("dtsp") is None
-    assert renders_pauses("dtsp", "any-model-the-server-has")
-    assert output_of(Settings(), "dtsp") == OUTPUT
+    voice = VoiceInForce.of(Settings(voice=VoiceConfig(provider="dtsp")))
+    assert voice.billing is BillingBasis.FREE
+    assert voice.key_variable is None
+    assert voice.renders_pauses
+    assert voice.output == OUTPUT
 
 
 def test_its_takes_never_share_a_name_with_an_elevenlabs_take_of_the_same_words():

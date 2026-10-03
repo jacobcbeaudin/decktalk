@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import cast
 
 from decktalk.inputs import Inputs
 from decktalk.page import SECOND_DIGITS
@@ -34,7 +35,7 @@ from decktalk.results import (
     StageCost,
     up_to_the_cent,
 )
-from decktalk.speech import DECLARED, billing_of, table_of
+from decktalk.settings.layers import value_of
 from decktalk.speech.sound import SOUND_DECLARED
 
 SECONDS_PER_MINUTE = 60
@@ -92,15 +93,17 @@ def _layer(inputs: Inputs, key: str | None) -> Layer:
 
 
 def _bill(inputs: Inputs, kind: SoundKind | None) -> _Bill:
-    """The bill a take, or a sound of `kind`, is priced at, read from the provider in force for it."""
+    """The bill a take, or a sound of `kind`, is priced at.
+
+    A take is priced at the voice in force's bill, read at the key it names, and a sound at the score
+    provider's.
+    """
     if kind is None:
-        provider = inputs.settings.voice.provider
-        billing = billing_of(provider)
-        table = table_of(inputs.settings, provider)
-        if billing.rate is None or table is None:
-            return _Bill(billing.by, 0.0, None, Layer.DEFAULT)
-        key = f"{DECLARED[provider].table}.{billing.rate}"
-        return _Bill(billing.by, float(getattr(table, billing.rate)), key, _layer(inputs, key))
+        voice = inputs.voice
+        if voice.price_key is None:
+            return _Bill(voice.billing, 0.0, None, Layer.DEFAULT)
+        rate = float(cast("float", value_of(inputs.settings, voice.price_key)))
+        return _Bill(voice.billing, rate, voice.price_key, _layer(inputs, voice.price_key))
     if inputs.settings.score.provider not in SOUND_DECLARED:
         return _Bill(BillingBasis.UNDECLARED, 0.0, None, Layer.DEFAULT)
     table = SOUND_TABLES[kind]
@@ -135,7 +138,7 @@ def is_free(inputs: Inputs) -> bool:
     Free is what the provider declares and never a rate of zero, because a zero rate on a voice that
     bills is somebody's statement about their plan, and a cap or a question still guards it.
     """
-    return billing_of(inputs.settings.voice.provider).by is BillingBasis.FREE
+    return inputs.voice.billing is BillingBasis.FREE
 
 
 def cost_of(inputs: Inputs, buys: Iterable[Buy] = (), *, state: CostState = CostState.ESTIMATE) -> Cost:

@@ -37,6 +37,7 @@ from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
 from decktalk.project import Origin, Project, section_numbers
 from decktalk.results import (
+    BillingBasis,
     BuildResult,
     CheckResult,
     CueResult,
@@ -47,7 +48,7 @@ from decktalk.results import (
 )
 from decktalk.results import Layer as SettingLayer
 from decktalk.settings import ToolsConfig
-from decktalk.speech import SpeechProviders
+from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders
 from decktalk.speech.sound import SoundProviders
 from decktalk.stages.table import CALLS
 from support.costs import a_cost
@@ -733,3 +734,25 @@ def test_a_voiced_build_under_the_untrusted_policy_is_refused_before_it_buys_any
     with pytest.raises(ApprovalRequired, match="untrusted page"):
         decktalk.open(tmp_path, machine=machine).build(spend=True, max_cost=1.0)
     assert chromium.asked == []
+
+
+def test_a_hosts_voice_table_never_changes_the_voice_a_project_is_read_in(tmp_path: Path) -> None:
+    """The voice in force is read from the project's settings, so no machine's table moves a digest or a price."""
+    load_project(tmp_path, MINIMAL_TOML, script="## 1. Open\n\nA bowl.\n")
+    tables: list[Mapping[str, SpeechFactory]] = [PROVIDERS, {"house": lambda _context: FakeVoice()}, {}]
+    voices, prices = [], []
+    for factories in tables:
+        machine = Machine(
+            environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+            tables={},
+            machine_file=tmp_path / "config.toml",
+            cwd=tmp_path,
+            toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
+            speech_providers=SpeechProviders(factories=factories),
+        )
+        project = decktalk.open(tmp_path, machine=machine)
+        voices.append(project._inputs.voice)
+        prices.append(project.price())
+    assert voices[0] == voices[1] == voices[2]
+    assert prices[0] == prices[1] == prices[2]
+    assert prices[0].billing is BillingBasis.PER_CHARACTER

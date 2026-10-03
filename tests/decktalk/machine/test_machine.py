@@ -247,6 +247,7 @@ def test_the_credential_asked_about_is_the_one_the_voice_declares(tmp_path: Path
     """A voice DeckTalk does not ship declares no variable, so nothing is reported missing for it."""
     assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="house").api_key_state is ApiKeyState.NOT_NEEDED
     assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="elevenlabs").api_key_state is ApiKeyState.MISSING
+    assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="dtsp").api_key_state is ApiKeyState.NOT_NEEDED
 
 
 def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -270,6 +271,15 @@ def test_a_timed_pause_on_a_model_that_reads_no_break_tag_is_an_error(tmp_path: 
     assert dropped[0].severity is Severity.ERROR
     assert "eleven_v3" in dropped[0].message
     assert result.ok is False
+
+
+def test_the_pause_finding_reads_the_voice_in_force(tmp_path: Path) -> None:
+    """The finding asks the voice the project is read in, never the provider's table again."""
+    inputs = a_project(tmp_path, toml=on_model("eleven_multilingual_v2"), script=PAUSED_SCRIPT)
+    dropping = replace(inputs, voice=replace(inputs.voice, model="a-model-that-drops-it", renders_pauses=False))
+    result = check(dropping, a_run(tmp_path), pages=False)
+    (dropped,) = [one for one in result.findings if one.code is Code.SCRIPT_PAUSE_DROPPED]
+    assert "a-model-that-drops-it" in dropped.message
 
 
 def test_a_model_that_reads_a_break_tag_earns_no_pause_finding(tmp_path: Path) -> None:

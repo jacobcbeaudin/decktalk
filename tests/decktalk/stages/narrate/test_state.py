@@ -19,8 +19,7 @@ from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import ScriptSection
 from decktalk.results import TakeOutcome, TakeState, Word
-from decktalk.speech import DECLARED, FREE, PROVIDERS, canonical_text
-from decktalk.stages import voice_model
+from decktalk.speech import canonical_text
 from decktalk.stages.cost import cost_of
 from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE, placeholder_inputs, take_inputs
 from decktalk.stages.narrate.state import (
@@ -38,7 +37,7 @@ from decktalk.stages.narrate.state import (
 from support.projects import load_project
 from support.takes import a_take, damage_take, hold_take, write_takes
 
-from .conftest import ENVIRON, SCRIPT, TOML, VOICE_ID
+from .conftest import ENVIRON, FREE_TOML, SCRIPT, TOML, VOICE_ID
 
 MOVED = re.compile(r"the takes directory \S+ holds none of the (\d+) takes? this project played before")
 """The moved clause, which names the folder and a count, so it is matched rather than compared."""
@@ -67,9 +66,8 @@ def section_of(inputs: Inputs, number: int) -> ScriptSection:
 
 def digest_of(inputs: Inputs, number: int, *, voice: str = VOICE_ID) -> str:
     """The voiced take this section's current text names under `voice`."""
-    provider = inputs.settings.voice.provider
     section = section_of(inputs, number)
-    return take_inputs(inputs, section, provider=provider, voice_id=voice, model=voice_model(inputs)).digest
+    return take_inputs(inputs, section, provider=inputs.voice.provider, voice_id=voice, model=inputs.voice.model).digest
 
 
 def stand_in_of(inputs: Inputs, number: int) -> str:
@@ -115,11 +113,6 @@ def outcomes(states: TakeStates, *, spend: bool, force: bool = False) -> list[Ta
     return [plan.outcome for plan in states.plan(spend=spend, force=force).takes]
 
 
-@pytest.fixture
-def free_voice(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(DECLARED, "elevenlabs", replace(DECLARED["elevenlabs"], billing=FREE))
-
-
 # ---- the states ---------------------------------------------------------------------------------
 
 
@@ -129,6 +122,14 @@ def test_a_voiced_take_of_the_current_inputs_the_index_plays_is_voiced_and_settl
     assert states[1].reason == HELD
     assert states[1].digest == digest_of(inputs, 1)
     assert states.settled is True
+
+
+def test_the_take_state_names_takes_by_the_voice_in_force(inputs: Inputs) -> None:
+    """The state reads the voice the project is read in, so another voice in force names other takes."""
+    other = replace(inputs, voice=replace(inputs.voice, id="someone-else"))
+    named = [state.digest for state in take_states(other).values()]
+    assert named == [digest_of(inputs, number, voice="someone-else") for number in (1, 2, 3)]
+    assert named != [state.digest for state in take_states(inputs).values()]
 
 
 def test_a_held_voiced_take_the_index_does_not_play_is_voiced_and_not_settled(inputs: Inputs) -> None:
@@ -211,15 +212,15 @@ def test_a_placeholder_under_a_voice_that_bills_is_settled(inputs: Inputs) -> No
     assert states.settled is True
 
 
-@pytest.mark.usefixtures("free_voice")
-def test_a_placeholder_under_a_named_free_voice_is_not_settled(inputs: Inputs) -> None:
+def test_a_placeholder_under_a_named_free_voice_is_not_settled(make_inputs: Callable[..., Inputs]) -> None:
+    inputs = make_inputs(toml=FREE_TOML)
     states = take_states(stood_in(inputs))
     assert states[1].state is TakeState.PLACEHOLDER
     assert states.settled is False, "a run that buys nothing voices it for nothing"
 
 
-@pytest.mark.usefixtures("free_voice")
-def test_a_placeholder_under_a_free_voice_nobody_named_is_settled(inputs: Inputs) -> None:
+def test_a_placeholder_under_a_free_voice_nobody_named_is_settled(make_inputs: Callable[..., Inputs]) -> None:
+    inputs = make_inputs(toml=FREE_TOML)
     states = take_states(stood_in(reload(inputs, NAMELESS)))
     assert states[1].state is TakeState.PLACEHOLDER
     assert states[1].digest is None
@@ -469,8 +470,10 @@ def test_with_no_voice_named_held_shared_words_count_into_the_ceiling_once(make_
     assert plan.cost.ceiling_dollars == named.cost.dollars
 
 
-@pytest.mark.usefixtures("free_voice")
-def test_a_named_free_voice_voices_without_spend_and_an_unnamed_one_does_not(inputs: Inputs) -> None:
+def test_a_named_free_voice_voices_without_spend_and_an_unnamed_one_does_not(
+    make_inputs: Callable[..., Inputs],
+) -> None:
+    inputs = make_inputs(toml=FREE_TOML)
     assert take_states(inputs).plan(spend=False).voiced is True
     assert take_states(reload(inputs, NAMELESS)).plan(spend=False).voiced is False
 
@@ -543,13 +546,8 @@ def test_certain_sections_are_listed_before_uncertain_ones(inputs: Inputs) -> No
     assert spend.sections == (2, 1, 3)
 
 
-def test_the_price_builds_no_provider(make_inputs: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_price_builds_no_provider(make_inputs: Callable[..., Inputs]) -> None:
     """A price is over names and text, none of them secret, so a machine with no key prices exactly."""
-
-    def refuse(_context: object) -> object:
-        raise AssertionError("a price built the provider")
-
-    monkeypatch.setitem(PROVIDERS, "elevenlabs", refuse)
     project = Inputs.load(make_inputs().root, environ={VOICE_ID_VARIABLE: VOICE_ID})
     plan = take_states(project).plan(spend=True)
     assert all(p.digest is not None for p in plan.takes)

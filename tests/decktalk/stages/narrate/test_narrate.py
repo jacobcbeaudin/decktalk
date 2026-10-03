@@ -6,7 +6,7 @@ import json
 import shutil
 import threading
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
 
@@ -32,12 +32,12 @@ from decktalk.media import audio
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import CostState, NarrateResult, TakeOutcome, Word, up_to_the_cent
 from decktalk.settings import MACHINE_FILE_VARIABLE
-from decktalk.speech import DECLARED, FREE, PROVIDERS, Piece, SpeechContext, SpeechRequest
+from decktalk.speech import Piece, SpeechContext, SpeechFactory, SpeechRequest
 from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import narrate as narrate_stage
 from decktalk.stages.narrate import narrate, take_states
 from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE
-from support.fakes import FAKE_VOICE_NAME, FakeVoice
+from support.fakes import FAKE_VOICE_NAME, FREE_VOICE_NAME, FakeVoice
 from support.git import committed_clone, git, tracked_copy
 from support.interrupts import aimed_signals, interrupts_raise, press_ctrl_c
 from support.logs import data_of, decisions
@@ -45,7 +45,7 @@ from support.projects import load_project
 from support.runs import Watched, a_voiced_run
 from support.takes import TAKE_SUFFIX, damage_take
 
-from .conftest import ENVIRON, SCRIPT, TOML, VOICE_ID
+from .conftest import ENVIRON, FREE_TOML, SCRIPT, TOML, VOICE_ID
 
 KEY = "ELEVENLABS_API_KEY"
 """The credential a voiced take is bought with, which a run that buys nothing never reads."""
@@ -331,10 +331,11 @@ class CountedVoice:
 
 
 @pytest.fixture
-def counted(monkeypatch: pytest.MonkeyPatch) -> CountedVoice:
-    """The fake voice under the shipped voice's name, counting every time a run builds it."""
+def counted(voices: dict[str, SpeechFactory]) -> CountedVoice:
+    """The fake voice under both shipped voices' names, counting every time a run builds it."""
     voice = CountedVoice()
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, voice)
+    voices[FAKE_VOICE_NAME] = voice
+    voices[FREE_VOICE_NAME] = voice
     return voice
 
 
@@ -441,17 +442,11 @@ class Unreachable:
         raise ProviderError("could not reach http://127.0.0.1:1/v1/speech/timed: refused", reached=False)
 
 
-@pytest.fixture
-def free_voice(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The shipped voice's name, declared free, so the project reads a voice that bills nothing."""
-    monkeypatch.setitem(DECLARED, FAKE_VOICE_NAME, replace(DECLARED[FAKE_VOICE_NAME], billing=FREE))
-
-
-@pytest.mark.usefixtures("free_voice")
 def test_a_run_that_may_not_spend_voices_every_missing_take_from_a_voice_that_bills_nothing(
-    inputs: Inputs, make_run: Callable[..., Watched], counted: CountedVoice
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], counted: CountedVoice
 ) -> None:
     """Spend gates money and nothing else, so a free voice makes every missing take with no `--spend`."""
+    inputs = make_inputs(toml=FREE_TOML)
     watched = make_run(inputs)
     result = narrate(inputs, watched.run)
     assert watched.run.spend is False
@@ -461,11 +456,12 @@ def test_a_run_that_may_not_spend_voices_every_missing_take_from_a_voice_that_bi
     assert result.cost.free and result.cost.dollars == 0
 
 
-@pytest.mark.usefixtures("free_voice", "counted")
+@pytest.mark.usefixtures("counted")
 def test_a_take_from_a_voice_that_bills_nothing_puts_no_charge_on_the_stream(
-    inputs: Inputs, make_run: Callable[..., Watched]
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched]
 ) -> None:
     """`take.charged` is a ledger line of money paid, as `sound.charged` is, so a free take writes none."""
+    inputs = make_inputs(toml=FREE_TOML)
     for spend in (False, True):
         fresh = make_run(inputs, spend=spend)
         result = narrate(inputs, fresh.run, replace_voiced=True)
@@ -483,14 +479,14 @@ def test_a_run_that_may_not_spend_sends_nothing_to_a_voice_that_bills(
     assert all("--spend to buy its take" in found.message for found in result.findings)
 
 
-@pytest.mark.usefixtures("free_voice")
 @pytest.mark.parametrize("spend", [False, True])
 def test_a_free_voice_whose_server_is_down_plays_placeholders_and_says_to_start_it(
-    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch, spend: bool
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], spend: bool, voices: dict[str, SpeechFactory]
 ) -> None:
     """An unreachable free voice degrades as a missing take does, and its hint starts the server, never buys."""
+    inputs = make_inputs(toml=FREE_TOML)
     down = Unreachable()
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: down)
+    voices[FREE_VOICE_NAME] = lambda _context: down
     result = narrate(inputs, make_run(inputs, spend=spend).run)
     assert result.ok is True
     assert {row.outcome for row in result.sections} == {TakeOutcome.PLACEHOLDER}
@@ -505,12 +501,12 @@ def test_a_free_voice_whose_server_is_down_plays_placeholders_and_says_to_start_
     assert 1 <= len(down.requests) <= inputs.settings.narration.concurrency, "the run kept asking a server that is down"
 
 
-@pytest.mark.usefixtures("free_voice")
 def test_a_free_voice_that_could_not_be_reached_is_reported_as_voicing_nothing(
-    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
     """Every section played a placeholder, so the run voiced nothing and its charged cost counts nothing."""
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: Unreachable())
+    inputs = make_inputs(toml=FREE_TOML)
+    voices[FREE_VOICE_NAME] = lambda _context: Unreachable()
     result = narrate(inputs, make_run(inputs).run)
     assert result.cost.state is CostState.CHARGED
     assert result.cost.characters == 0
@@ -518,24 +514,25 @@ def test_a_free_voice_that_could_not_be_reached_is_reported_as_voicing_nothing(
     assert result.cost.sentence == "This run bought nothing."
 
 
-@pytest.mark.usefixtures("free_voice")
 def test_a_section_sharing_words_with_a_take_a_down_voice_never_made_plays_a_placeholder_too(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
     """The section that would read the shared take finds none, so it stands in under a placeholder name."""
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: Unreachable())
-    doubled = make_inputs(script="## 1. Open\n\nA bowl.\n\n## 2. Middle\n\nA bowl.\n\n## 3. Close\n\nA ball.\n")
+    voices[FREE_VOICE_NAME] = lambda _context: Unreachable()
+    doubled = make_inputs(
+        toml=FREE_TOML, script="## 1. Open\n\nA bowl.\n\n## 2. Middle\n\nA bowl.\n\n## 3. Close\n\nA ball.\n"
+    )
     result = narrate(doubled, make_run(doubled).run)
     assert {row.outcome for row in result.sections} == {TakeOutcome.PLACEHOLDER}
     assert missing_sections(result) == [1, 2, 3]
     assert all(is_placeholder(row.digest) for row in result.sections)
 
 
-@pytest.mark.usefixtures("free_voice")
 def test_a_free_voice_with_no_voice_named_plays_placeholders_that_say_to_name_it(
-    inputs: Inputs, make_run: Callable[..., Watched], counted: CountedVoice
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], counted: CountedVoice
 ) -> None:
     """A free voice makes nothing until a voice is named, and its finding never sends the author to `--spend`."""
+    inputs = make_inputs(toml=FREE_TOML)
     nameless = Inputs.load(inputs.root, environ={})
     result = narrate(nameless, make_run(nameless).run)
     assert counted.built == 0
@@ -544,10 +541,10 @@ def test_a_free_voice_with_no_voice_named_plays_placeholders_that_say_to_name_it
 
 
 def test_a_paid_voice_that_cannot_be_reached_still_fails_the_run(
-    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    inputs: Inputs, make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
     """A placeholder stands in for a free voice only, because a voiced take the author asked to buy is not optional."""
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: Unreachable())
+    voices[FAKE_VOICE_NAME] = lambda _context: Unreachable()
     with pytest.raises(ProviderError):
         narrate(inputs, make_run(inputs, spend=True).run)
 
@@ -784,13 +781,16 @@ def test_a_run_reads_the_take_index_twice(
 
 
 def test_a_take_bought_again_re_places_every_section_that_plays_it(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    make_inputs: Callable[..., Inputs],
+    make_run: Callable[..., Watched],
+    monkeypatch: pytest.MonkeyPatch,
+    voices: dict[str, SpeechFactory],
 ) -> None:
     """Sections 1 and 3 play one take, so buying it again for 3 measures 1 on the new bytes too."""
-    a_voice_saying(monkeypatch, b"FIRST")
+    a_voice_saying(voices, b"FIRST")
     doubled = make_inputs(script=SCRIPT.replace("Every picture waited for its word.", "A bowl. [beat] A ball."))
     narrate(doubled, make_run(doubled, spend=True).run)
-    a_voice_saying(monkeypatch, b"A LONGER SECOND TAKE")
+    a_voice_saying(voices, b"A LONGER SECOND TAKE")
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 1.5)
     result = narrate(doubled, make_run(doubled, spend=True).run, only=[3], replace_voiced=True)
     assert [row.section for row in result.sections] == [3, 1]
@@ -831,11 +831,11 @@ class RefusesOneSection:
 
 
 def test_the_index_is_checkpointed_after_every_take(
-    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    inputs: Inputs, make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
     """A run that fails keeps every take it has already paid for, so the next run reuses them."""
     (second,) = [section for section in inputs.spoken() if section.number == 2]
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: RefusesOneSection(second.pieces))
+    voices[FAKE_VOICE_NAME] = lambda _context: RefusesOneSection(second.pieces)
     watched = make_run(inputs, spend=True)
     with pytest.raises(ProviderError):
         narrate(inputs, watched.run)
@@ -865,7 +865,7 @@ class Overlapping:
         self.most = 0
         self.sent = 0
 
-    def speak(self, _request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:  # noqa: ARG002  (the name the protocol calls it by)
         with self.lock:
             self.sent += 1
             self.in_flight += 1
@@ -881,11 +881,11 @@ class Overlapping:
 
 
 def test_sections_are_voiced_concurrently_and_reported_in_script_order(
-    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    inputs: Inputs, make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
     """Two requests are in flight at once under the default, and the result still reads in order."""
     voice = Overlapping()
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: voice)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
     watched = make_run(inputs, spend=True)
     result = narrate(inputs, watched.run)
     assert voice.most == 2
@@ -897,10 +897,10 @@ def test_sections_are_voiced_concurrently_and_reported_in_script_order(
 
 
 def test_a_concurrency_of_one_voices_one_section_at_a_time(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
     voice = Overlapping(hold=0)
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: voice)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
     project = one_at_a_time(make_inputs)
     narrate(project, make_run(project, spend=True).run)
     assert voice.most == 1
@@ -949,7 +949,7 @@ class HeldVoice:
         self.in_flight = threading.Event()
         self.release = threading.Event()
 
-    def speak(self, _request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:  # noqa: ARG002  (the name the protocol calls it by)
         with self.lock:
             self.sent += 1
             held = self.sent <= self.hold
@@ -974,7 +974,7 @@ def six_sections(make_inputs: Callable[..., Inputs]) -> Inputs:
 
 @aimed_signals
 def test_ctrl_c_during_a_paid_run_buys_the_takes_in_flight_and_none_still_queued(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
     """A pool that waits for every queued section after Ctrl-C buys all of them, and only those in flight are wanted.
 
@@ -984,7 +984,7 @@ def test_ctrl_c_during_a_paid_run_buys_the_takes_in_flight_and_none_still_queued
     """
     project = six_sections(make_inputs)
     voice = HeldVoice(hold=project.settings.narration.concurrency)
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: voice)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
 
     def press() -> None:
         assert voice.in_flight.wait(timeout=10)
@@ -1239,10 +1239,10 @@ def in_the_store(tmp_path: Path, name: str, *, toml: str = TOML) -> Inputs:
     return load_project(tmp_path / name, toml, script=SCRIPT, environ=ENVIRON, machine=machine)
 
 
-def a_voice_saying(monkeypatch: pytest.MonkeyPatch, audio: bytes) -> FakeVoice:
+def a_voice_saying(voices: dict[str, SpeechFactory], audio: bytes) -> FakeVoice:
     """A fake voice under the shipped voice's name that answers every request with these bytes."""
     voice = FakeVoice(audio=audio)
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: voice)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
     return voice
 
 
@@ -1263,7 +1263,7 @@ def test_a_run_that_does_not_spend_never_buys_and_never_fills_an_empty_store(
 
 @pytest.mark.parametrize("replace_voiced", [False, True], ids=["plain", "a-replace-run-whose-section-was-missing"])
 def test_a_take_another_project_voiced_after_this_run_was_priced_is_played_and_not_bought_again(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replace_voiced: bool
+    make_run: Callable[..., Watched], tmp_path: Path, replace_voiced: bool, voices: dict[str, SpeechFactory]
 ) -> None:
     """A copy another project bought once this run was priced is a copy the store holds when the lock is won, so it
     plays. Only a run told to replace this take buys it again, and a section this project never voiced is not one."""
@@ -1280,7 +1280,7 @@ def test_a_take_another_project_voiced_after_this_run_was_priced_is_played_and_n
             return voice_b
         return voice_a
 
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, factory)
+    voices[FAKE_VOICE_NAME] = factory
     result = narrate(b, make_run(b, spend=True).run, only=[1], replace_voiced=replace_voiced)
     digest = result.sections[0].digest
     assert len(voice_a.requests) == 1
@@ -1290,7 +1290,7 @@ def test_a_take_another_project_voiced_after_this_run_was_priced_is_played_and_n
 
 
 def test_a_take_another_project_voiced_first_is_reported_as_bought_nothing(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory]
 ) -> None:
     """A take the store answered was never paid for by this run, so its charged cost is nothing, never the price."""
     a = in_the_store(tmp_path, "a")
@@ -1305,7 +1305,7 @@ def test_a_take_another_project_voiced_first_is_reported_as_bought_nothing(
             return voice_b
         return voice_a
 
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, factory)
+    voices[FAKE_VOICE_NAME] = factory
     watched = make_run(b, spend=True)
     result = narrate(b, watched.run, only=[1])
     assert watched.of(TakeCharged) == []
@@ -1334,11 +1334,11 @@ def agrees(place: Path, digest: str) -> bool:
 
 
 def test_a_take_the_takes_directory_cannot_hold_is_kept_in_the_store_and_copied_in_by_the_next_run(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory]
 ) -> None:
     """A take is paid for the moment the voice answers, so the store is written first, and a takes directory that
     cannot hold it costs one more run and no second purchase."""
-    voice = a_voice_saying(monkeypatch, b"PAID")
+    voice = a_voice_saying(voices, b"PAID")
     a = in_the_store(tmp_path, "a")
     digest = take_states(a)[1].digest
     assert digest is not None
@@ -1358,18 +1358,18 @@ def test_a_take_the_takes_directory_cannot_hold_is_kept_in_the_store_and_copied_
 
 
 def test_a_re_buy_over_a_damaged_project_copy_sets_it_aside_first(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory]
 ) -> None:
     """A copy of the same length passes the size check, so only its BLAKE3 tells it is damaged, and it is set
     aside before the take voiced again replaces it rather than overwritten."""
-    a_voice_saying(monkeypatch, b"FIRST")
+    a_voice_saying(voices, b"FIRST")
     a = in_the_store(tmp_path, "a")
     digest = narrate(a, make_run(a, spend=True).run, only=[1]).sections[0].digest
     takes = a.workspace.takes
     audio_name, words_name = take_file(digest, TAKE_SUFFIX), words_file(digest)
     (takes / audio_name).write_bytes(b"XXXXX")
     shutil.rmtree(tmp_path / STORED)
-    a_voice_saying(monkeypatch, b"SECOND")
+    a_voice_saying(voices, b"SECOND")
     watched = make_run(a, spend=True)
     narrate(a, watched.run, only=[1], replace_voiced=True)
     assert (takes / audio_name).read_bytes() == b"SECOND"
@@ -1379,28 +1379,28 @@ def test_a_re_buy_over_a_damaged_project_copy_sets_it_aside_first(
 
 
 def test_a_re_buy_replaces_a_store_copy_that_does_not_hold_the_bytes_its_words_recorded(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory]
 ) -> None:
     """The store keeps its first good pair, and a copy whose audio was swapped for bytes of the same length is not
     one, so a re-buy writes the store and moves the damaged copy aside."""
-    a_voice_saying(monkeypatch, b"FIRST")
+    a_voice_saying(voices, b"FIRST")
     a = in_the_store(tmp_path, "a")
     digest = narrate(a, make_run(a, spend=True).run, only=[1]).sections[0].digest
     store = tmp_path / STORED
     audio_name = take_file(digest, TAKE_SUFFIX)
     (store / audio_name).write_bytes(b"XXXXX")
     b = in_the_store(tmp_path, "b")
-    a_voice_saying(monkeypatch, b"SECOND")
+    a_voice_saying(voices, b"SECOND")
     narrate(b, make_run(b, spend=True).run, only=[1], replace_voiced=True)
     assert (store / audio_name).read_bytes() == b"SECOND"
     assert (store / f"{audio_name}.unreadable").read_bytes() == b"XXXXX"
 
 
 def test_a_run_kept_waiting_past_store_wait_seconds_is_refused_naming_it_and_buys_nothing(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory]
 ) -> None:
     """The wait on another run's voicing is its own machine setting, so the refusal names it and no request times."""
-    voice = a_voice_saying(monkeypatch, b"PAID")
+    voice = a_voice_saying(voices, b"PAID")
     store = tmp_path / STORED
     toml = TOML.replace("[narration]\n", "[narration]\ntimeout_seconds = 10\n")
     machine = {"narration": {"store_dir": str(store), "store_wait_seconds": 1}}
@@ -1415,10 +1415,10 @@ def test_a_run_kept_waiting_past_store_wait_seconds_is_refused_naming_it_and_buy
 
 
 def test_a_takes_directory_that_cannot_be_written_is_refused_before_the_voice_is_asked(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory]
 ) -> None:
     """A take is paid for the moment the voice answers, so a place that cannot hold it is refused before that."""
-    voice = a_voice_saying(monkeypatch, b"PAID")
+    voice = a_voice_saying(voices, b"PAID")
     a = in_the_store(tmp_path, "a")
     a.workspace.takes.write_bytes(b"")
     watched = make_run(a, spend=True)
@@ -1429,9 +1429,9 @@ def test_a_takes_directory_that_cannot_be_written_is_refused_before_the_voice_is
 
 
 def test_a_take_store_that_cannot_be_made_is_refused_naming_store_dir_before_the_voice_is_asked(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory]
 ) -> None:
-    voice = a_voice_saying(monkeypatch, b"PAID")
+    voice = a_voice_saying(voices, b"PAID")
     a = in_the_store(tmp_path, "a")
     (tmp_path / STORED).write_bytes(b"")
     with pytest.raises(InputError, match=r"\[narration\] store_dir"):
@@ -1440,10 +1440,10 @@ def test_a_take_store_that_cannot_be_made_is_refused_naming_store_dir_before_the
 
 
 def test_a_run_that_keeps_a_take_heals_a_damaged_store_copy_from_the_takes_directory(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    make_run: Callable[..., Watched], tmp_path: Path, voices: dict[str, SpeechFactory]
 ) -> None:
     """A run that does not spend never buys, and still replaces a damaged store copy with its own whole one."""
-    voice = a_voice_saying(monkeypatch, b"PAID")
+    voice = a_voice_saying(voices, b"PAID")
     a = in_the_store(tmp_path, "a")
     digest = narrate(a, make_run(a, spend=True).run, only=[1]).sections[0].digest
     store = tmp_path / STORED
@@ -1454,11 +1454,10 @@ def test_a_run_that_keeps_a_take_heals_a_damaged_store_copy_from_the_takes_direc
     assert len(voice.requests) == 1
 
 
-@pytest.mark.usefixtures("free_voice")
 def test_a_take_a_free_voice_makes_is_written_through_to_the_store_too(
     make_run: Callable[..., Watched], tmp_path: Path, counted: CountedVoice
 ) -> None:
-    a = in_the_store(tmp_path, "a")
+    a = in_the_store(tmp_path, "a", toml=FREE_TOML)
     narrate(a, make_run(a).run)
     assert len(counted.voice.requests) == 3
     assert take_files(tmp_path / STORED) == take_files(a.workspace.takes)
@@ -1529,13 +1528,10 @@ def test_a_request_carries_each_paragraph_and_its_pause_and_no_markup(
 @pytest.mark.usefixtures("fake_ffmpeg")
 @pytest.mark.parametrize("model", ["eleven_v3", "eleven_v4"])
 def test_a_model_that_drops_a_timed_pause_is_refused_before_anything_is_bought(
-    make_inputs: Callable[..., Inputs],
-    make_run: Callable[..., Watched],
-    monkeypatch: pytest.MonkeyPatch,
-    model: str,
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], model: str, voices: dict[str, SpeechFactory]
 ) -> None:
     voice = FakeVoice()
-    monkeypatch.setitem(PROVIDERS, "elevenlabs", lambda _context: voice)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
     project = on_elevenlabs(make_inputs, model)
     with pytest.raises(InputError) as caught:
         narrate(project, make_run(project, spend=True).run)
@@ -1545,10 +1541,10 @@ def test_a_model_that_drops_a_timed_pause_is_refused_before_anything_is_bought(
 
 @pytest.mark.usefixtures("fake_ffmpeg")
 def test_a_model_that_renders_a_timed_pause_buys_every_section(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
     voice = FakeVoice()
-    monkeypatch.setitem(PROVIDERS, "elevenlabs", lambda _context: voice)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
     project = on_elevenlabs(make_inputs, "eleven_multilingual_v2")
     narrate(project, make_run(project, spend=True).run)
     assert len(voice.requests) == 3
@@ -1556,11 +1552,11 @@ def test_a_model_that_renders_a_timed_pause_buys_every_section(
 
 @pytest.mark.usefixtures("fake_ffmpeg")
 def test_a_model_that_drops_a_timed_pause_still_buys_a_section_without_one(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
 ) -> None:
     """The refusal reads only the sections the run would buy, so a timed pause elsewhere never stops it."""
     voice = FakeVoice()
-    monkeypatch.setitem(PROVIDERS, "elevenlabs", lambda _context: voice)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
     project = on_elevenlabs(make_inputs, "eleven_v3")
     narrate(project, make_run(project, spend=True).run, only=[2])
     assert [[piece.text for piece in request.pieces] for request in voice.requests] == [["It steps down", "the bowl."]]

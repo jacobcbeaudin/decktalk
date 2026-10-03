@@ -282,7 +282,7 @@ def played_takes(inputs: Inputs, states: TakeStates | None) -> set[str] | None:
     that one. Both are counted, so no take the film still needs is ever called unplayed. With no voice
     named, or no take states read, the script's own takes have no digest, so nothing is claimed.
     """
-    if states is None or not inputs.settings.voice.id:
+    if states is None or not inputs.voice.id:
         return None
     named = {state.digest for state in states.values() if state.digest is not None}
     index = inputs.takes()

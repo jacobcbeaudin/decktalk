@@ -19,21 +19,18 @@ import pytest
 from decktalk.errors import InputError, ProviderError
 from decktalk.results import BillingBasis
 from decktalk.secret import Secret
-from decktalk.settings import ElevenLabsConfig, Settings
+from decktalk.settings import ElevenLabsConfig, Settings, VoiceConfig
 from decktalk.speech import (
     BEAT,
     HOST_OUTPUT,
     PROVIDERS,
-    Billing,
     Output,
     Piece,
     SpeechContext,
     SpeechProvider,
     SpeechProviders,
     SpeechRequest,
-    billing_of,
-    output_of,
-    renders_pauses,
+    VoiceInForce,
 )
 from decktalk.speech import http as _http
 from decktalk.speech.elevenlabs import (
@@ -152,7 +149,7 @@ def test_a_timed_pause_is_refused_on_a_model_that_reads_no_break_tag_before_anyt
         provider().speak(request(model=model))
     assert asked == []
     assert model in str(caught.value) and "eleven_multilingual_v2" in (caught.value.hint or "")
-    assert not renders_pauses("elevenlabs", model)
+    assert not VoiceInForce.of(Settings(elevenlabs=ElevenLabsConfig(model=model))).renders_pauses
 
 
 def test_a_beat_and_plain_text_are_sent_to_any_model_as_the_canonical_text(monkeypatch):
@@ -164,12 +161,15 @@ def test_a_beat_and_plain_text_are_sent_to_any_model_as_the_canonical_text(monke
 
 @pytest.mark.parametrize("model", sorted(BREAK_MODELS))
 def test_every_model_that_reads_a_break_tag_is_declared_to_render_a_pause(model):
-    assert renders_pauses("elevenlabs", model)
+    assert VoiceInForce.of(Settings(elevenlabs=ElevenLabsConfig(model=model))).renders_pauses
 
 
 def test_a_provider_a_host_registered_renders_its_own_pauses():
     """DeckTalk cannot say a host's own provider drops a pause, because it is handed the pieces as data."""
-    assert renders_pauses("a-host-voice", "eleven_v3")
+    voice = VoiceInForce.of(
+        Settings(voice=VoiceConfig(provider="a-host-voice"), elevenlabs=ElevenLabsConfig(model="eleven_v3"))
+    )
+    assert voice.renders_pauses
 
 
 def test_the_voice_id_is_a_plain_name_in_the_request_and_the_url(monkeypatch):
@@ -195,14 +195,17 @@ def test_elevenlabs_declares_its_format_and_names_a_take_by_the_codec_in_it():
     """The format is the service's token, and its codec is the file's suffix, so an mp3 take is `.mp3`."""
     assert output(ElevenLabsConfig()) == Output(format=FORMAT, suffix=".mp3")
     assert output(ElevenLabsConfig(output_format="mp3_22050_32")).suffix == ".mp3"
-    assert output_of(Settings(), "elevenlabs") == Output(format=FORMAT, suffix=".mp3")
-    assert output_of(Settings(), "a-host-voice") == HOST_OUTPUT == Output(format=FORMAT, suffix=".mp3")
+    assert VoiceInForce.of(Settings()).output == Output(format=FORMAT, suffix=".mp3")
+    host = VoiceInForce.of(Settings(voice=VoiceConfig(provider="a-host-voice")))
+    assert host.output == HOST_OUTPUT == Output(format=FORMAT, suffix=".mp3")
 
 
 def test_elevenlabs_declares_it_bills_per_character_at_the_rate_its_own_table_states():
-    assert billing_of("elevenlabs") == Billing(BillingBasis.PER_CHARACTER, rate="dollars_per_1000_characters")
+    voice = VoiceInForce.of(Settings())
+    assert voice.billing is BillingBasis.PER_CHARACTER
+    assert voice.price_key == "elevenlabs.dollars_per_1000_characters"
     assert hasattr(ElevenLabsConfig(), "dollars_per_1000_characters")
-    assert billing_of("a-host-voice").by is BillingBasis.UNDECLARED
+    assert VoiceInForce.of(Settings(voice=VoiceConfig(provider="a-host-voice"))).billing is BillingBasis.UNDECLARED
 
 
 def test_the_normalised_alignment_is_read_when_the_written_one_is_absent(monkeypatch):

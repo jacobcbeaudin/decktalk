@@ -1,8 +1,10 @@
 """What every stage that buys costs: the bill, the rate, the layer, the rounding and the total, held in one place.
 
 Every case prices real inputs loaded from a project file, so a rate is read the way a run reads it.
-A bill the shipped voice does not declare is declared for one case by replacing its declaration, and
-the invariants are held over many runs at once with Hypothesis, each bill named outside the search.
+A free bill is read by naming the voice DeckTalk ships that bills nothing, an undeclared one by naming a
+host's voice, and a per-second one, which no shipped voice declares, by replacing the voice in force on one
+project's inputs. The invariants are held over many runs at once with Hypothesis, each bill named outside
+the search.
 """
 
 from __future__ import annotations
@@ -20,9 +22,9 @@ from hypothesis import strategies as st
 from decktalk.inputs import Inputs
 from decktalk.pipeline import Stage
 from decktalk.results import BillingBasis, Cost, CostState, Layer, SoundKind, money, rate_money, up_to_the_cent
-from decktalk.speech import DECLARED, FREE, Billing
 from decktalk.stages.cost import Buy, charge_of, cost_of, is_free, total
 from support.costs import a_cost
+from support.fakes import FREE_VOICE_NAME
 from support.projects import MINIMAL_TOML, load_project
 
 SPEECH = MINIMAL_TOML + "\n[elevenlabs]\ndollars_per_1000_characters = 0.3\n"
@@ -122,13 +124,8 @@ def project(tmp_path: Path, toml: str) -> Inputs:
     return load_project(tmp_path, toml, environ={})
 
 
-def declare(monkeypatch: pytest.MonkeyPatch, bill: Billing) -> None:
-    """Have the shipped voice declare this bill, which is the one thing a price reads about how it bills."""
-    monkeypatch.setitem(DECLARED, "elevenlabs", replace(DECLARED["elevenlabs"], billing=bill))
-
-
-PER_SECOND_VOICE = Billing(BillingBasis.PER_SECOND, rate="dollars_per_1000_characters")
-"""The shipped voice declared to bill per second, at the rate its own table states, read per minute."""
+FREE_VOICE = f'\n[voice]\nprovider = "{FREE_VOICE_NAME}"\n'
+"""What names the voice DeckTalk ships that bills nothing."""
 
 
 def an_effect(seconds: float, *, sections: tuple[int, ...] = (1,)) -> Buy:
@@ -172,20 +169,24 @@ VOICE_BILLS = (BillingBasis.PER_CHARACTER, BillingBasis.PER_SECOND, BillingBasis
 """Every bill a voice can declare, which a host's own voice leaves undeclared."""
 
 
-def a_voice_billed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bill: BillingBasis) -> Inputs:
-    """The speech project with its voice billed this way: declared so, or a host's own voice for undeclared."""
+def a_voice_billed(tmp_path: Path, bill: BillingBasis) -> Inputs:
+    """The speech project with its voice billed this way.
+
+    A free voice is the one DeckTalk ships that bills nothing and an undeclared one is a host's own. No
+    shipped voice bills per second, so that bill replaces the one the voice in force declares, at the rate
+    its own table states, read per minute.
+    """
     if bill is BillingBasis.PER_SECOND:
-        declare(monkeypatch, PER_SECOND_VOICE)
+        inputs = project(tmp_path, SPEECH)
+        return replace(inputs, voice=replace(inputs.voice, billing=BillingBasis.PER_SECOND))
     if bill is BillingBasis.FREE:
-        declare(monkeypatch, FREE)
+        return project(tmp_path, SPEECH + FREE_VOICE)
     return project(tmp_path, SPEECH + HOUSE_VOICE if bill is BillingBasis.UNDECLARED else SPEECH)
 
 
 @pytest.mark.parametrize("bill", VOICE_BILLS)
-def test_a_take_is_priced_at_the_bill_its_provider_declares(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bill: BillingBasis
-) -> None:
-    spend = cost_of(a_voice_billed(tmp_path, monkeypatch, bill), TAKES)
+def test_a_take_is_priced_at_the_bill_its_provider_declares(tmp_path: Path, bill: BillingBasis) -> None:
+    spend = cost_of(a_voice_billed(tmp_path, bill), TAKES)
     assert spend.billing is bill
     assert spend.state is CostState.ESTIMATE
     assert spend.sections == (1, 2)
@@ -379,12 +380,9 @@ def test_a_total_that_buys_only_sound_is_billed_the_way_sound_is(tmp_path: Path)
     assert whole.sentence.endswith("per minute of audio.")
 
 
-def test_a_free_voice_beside_paid_sound_leaves_the_sound_to_bill_the_total(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_free_voice_beside_paid_sound_leaves_the_sound_to_bill_the_total(tmp_path: Path) -> None:
     """The free takes cost nothing and state no rate, so the total names the rate somebody stated."""
-    declare(monkeypatch, FREE)
-    inputs = project(tmp_path, SOUND)
+    inputs = project(tmp_path, SOUND + FREE_VOICE)
     whole = total([cost_of(inputs, TAKES), cost_of(inputs, [an_effect(60.0)])])
     assert whole.billing is BillingBasis.PER_SECOND
     assert (whole.price_key, whole.price_layer) == ("score.effects.dollars_per_minute", Layer.PROJECT)
@@ -405,20 +403,19 @@ def test_a_total_of_costs_that_buy_nothing_still_names_a_rate(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize(
-    ("bill", "dollars", "said"),
+    ("voice", "dollars", "said"),
     [
-        (FREE, 0.0, "This run voiced 39 characters for nothing, because the voice is free."),
-        (DECLARED["elevenlabs"].billing, 0.30, "This run spent $0.30"),
+        (FREE_VOICE, 0.0, "This run voiced 39 characters for nothing, because the voice is free."),
+        ("", 0.30, "This run spent $0.30"),
     ],
     ids=["free-voice", "paid-voice"],
 )
 def test_a_charged_total_counts_only_the_stages_that_had_leave_to_buy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bill: Billing, dollars: float, said: str
+    tmp_path: Path, voice: str, dollars: float, said: str
 ) -> None:
     """A score that only priced what it would buy is never reported as spent beside a narration that bought."""
-    declare(monkeypatch, bill)
-    inputs = project(tmp_path, SOUND)
-    characters = 39 if bill is FREE else 1000
+    inputs = project(tmp_path, SOUND + voice)
+    characters = 39 if voice else 1000
     narrated = cost_of(inputs, [Buy(characters=characters, seconds=3.9, sections=(1,))], state=CostState.CHARGED)
     whole = total([narrated, cost_of(inputs, [an_effect(60.0)])])
     assert whole.state is CostState.CHARGED
@@ -443,24 +440,21 @@ def test_a_total_adds_only_billed_seconds(tmp_path: Path) -> None:
 # ---- free and one request's charge ---------------------------------------------------------------
 
 
-def test_free_is_what_the_voice_declares_and_never_a_rate_of_zero(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_free_is_what_the_voice_declares_and_never_a_rate_of_zero(tmp_path: Path) -> None:
     """A zero rate on a voice that bills is somebody's statement about their plan, stated or not."""
     assert not a_cost(0.0, 0.0, layer=Layer.DEFAULT).model_copy(update={"dollars_per_1000_characters": 0.0}).free
     assert not a_cost(0.0, 0.0).model_copy(update={"dollars_per_1000_characters": 0.0}).free
     assert a_cost(0.0, 0.0, billing=BillingBasis.FREE, layer=Layer.DEFAULT).free
-    zero = project(tmp_path, MINIMAL_TOML + "\n[elevenlabs]\ndollars_per_1000_characters = 0.0\n")
+    zero_rate = MINIMAL_TOML + "\n[elevenlabs]\ndollars_per_1000_characters = 0.0\n"
+    zero = project(tmp_path / "a-paid-voice", zero_rate)
     assert not is_free(zero) and not cost_of(zero, TAKES).free
-    declare(monkeypatch, FREE)
-    assert is_free(zero) and cost_of(zero, TAKES).free
+    free = project(tmp_path / "a-free-voice", zero_rate + FREE_VOICE)
+    assert is_free(free) and cost_of(free, TAKES).free
 
 
 @pytest.mark.parametrize("bill", VOICE_BILLS)
-def test_is_free_charge_of_and_the_costs_billing_read_one_declaration(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bill: BillingBasis
-) -> None:
-    inputs = a_voice_billed(tmp_path, monkeypatch, bill)
+def test_is_free_charge_of_and_the_costs_billing_read_one_declaration(tmp_path: Path, bill: BillingBasis) -> None:
+    inputs = a_voice_billed(tmp_path, bill)
     free = is_free(inputs)
     assert free is (charge_of(inputs, TAKES[0]) is None)
     assert free is (cost_of(inputs, TAKES).billing is BillingBasis.FREE)
@@ -476,14 +470,11 @@ def test_charge_of_is_the_exact_decimal_of_one_request(tmp_path: Path) -> None:
 # ---- money --------------------------------------------------------------------------------------
 
 
-def test_a_certain_price_rounds_up_to_the_cent_with_its_ceiling(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_certain_price_rounds_up_to_the_cent_with_its_ceiling(tmp_path: Path) -> None:
     """39 characters at 30 cents per 1,000 is $0.0117, which a run can pay, so it is never stated as a cent less."""
     priced = cost_of(project(tmp_path, SPEECH), [Buy(characters=39, seconds=3.8, sections=(1,))])
     assert priced.dollars == priced.ceiling_dollars == 0.02
-    declare(monkeypatch, FREE)
-    free = cost_of(project(tmp_path, SPEECH), [Buy(sections=(1,))])
+    free = cost_of(project(tmp_path, SPEECH + FREE_VOICE), [Buy(sections=(1,))])
     assert free.dollars == free.ceiling_dollars == 0.0
     assert money(free.dollars) == "$0.00"
 
@@ -621,10 +612,9 @@ def test_each_stage_that_buys_has_one_row_in_pipeline_order(tmp_path: Path) -> N
     assert [row.stage for row in total([scored, narrated]).stages] == [Stage.NARRATE, Stage.SCORE]
 
 
-def test_a_stage_row_keeps_its_own_state_in_a_charged_total(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_stage_row_keeps_its_own_state_in_a_charged_total(tmp_path: Path) -> None:
     """A free voice voiced and the score only priced, so the score's row stays an estimate and is not spent."""
-    declare(monkeypatch, FREE)
-    inputs = project(tmp_path, SOUND)
+    inputs = project(tmp_path, SOUND + FREE_VOICE)
     narrated = cost_of(inputs, [Buy(characters=39, seconds=3.9, sections=(1,))], state=CostState.CHARGED)
     whole = total([narrated, cost_of(inputs, [an_effect(60.0)])])
     assert [(row.stage, row.state) for row in whole.stages] == [
@@ -642,9 +632,12 @@ def test_one_stage_in_two_costs_is_refused(tmp_path: Path) -> None:
         total([cost_of(inputs, TAKES), cost_of(inputs, TAKES)])
 
 
-def two_stages(tmp_path: Path, state: CostState = CostState.ESTIMATE) -> Cost:
-    """39 characters of narration at 30 cents per 1,000 beside 60 seconds of score at twelve cents a minute."""
-    inputs = project(tmp_path, SOUND)
+def two_stages(tmp_path: Path, state: CostState = CostState.ESTIMATE, voice: str = "") -> Cost:
+    """39 characters of narration at 30 cents per 1,000 beside 60 seconds of score at twelve cents a minute.
+
+    `voice` is what the project adds to name its voice, which is the paid one when it adds nothing.
+    """
+    inputs = project(tmp_path, SOUND + voice)
     narrated = cost_of(inputs, [Buy(characters=39, seconds=3.9, sections=(1,))], state=state)
     return total([narrated, cost_of(inputs, [an_effect(60.0)], state=state)])
 
@@ -675,11 +668,8 @@ def test_the_total_names_each_stage_that_buys_at_a_price(tmp_path: Path) -> None
         ),
     ],
 )
-def test_a_free_voice_beside_a_paid_score_names_both(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: CostState, said: str
-) -> None:
-    declare(monkeypatch, FREE)
-    whole = two_stages(tmp_path, state)
+def test_a_free_voice_beside_a_paid_score_names_both(tmp_path: Path, state: CostState, said: str) -> None:
+    whole = two_stages(tmp_path, state, voice=FREE_VOICE)
     assert (whole.billing, whole.free, whole.seconds) == (BillingBasis.PER_SECOND, False, 63.9)
     assert whole.sentence == said
 

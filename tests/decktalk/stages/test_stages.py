@@ -15,8 +15,7 @@ import json
 from pathlib import Path
 
 from decktalk.artifacts import TakeInputs
-from decktalk.stages import selects, voice_model
-from decktalk.stages.narrate.plan import take_identity
+from decktalk.stages import selects
 from support.paths import DATA
 from support.projects import MINIMAL_TOML, load_project
 
@@ -48,13 +47,13 @@ def test_the_digest_inputs_from_the_providers_table_are_the_ones_every_paid_take
 ) -> None:
     """The ElevenLabs fields sit in `[elevenlabs]` and speed in `[voice]`, and the JSON they make has not moved."""
     project = load_project(tmp_path, MINIMAL_TOML, environ={})
-    identity = take_identity(project)
-    assert voice_model(project) == GOLDEN["model"]
+    identity = dict(project.voice.identity)
+    assert project.voice.model == GOLDEN["model"]
     assert identity == GOLDEN["settings"]
     built = TakeInputs.of(
         provider=project.settings.voice.provider,
         voice=GOLDEN["voice"],
-        model=voice_model(project),
+        model=project.voice.model,
         output_format=project.settings.elevenlabs.output_format,
         settings=identity,
         text="hello",
@@ -66,17 +65,17 @@ def test_the_digest_inputs_from_the_providers_table_are_the_ones_every_paid_take
 
 def test_the_providers_own_fields_reach_the_digest_from_its_own_table(tmp_path: Path) -> None:
     project = load_project(tmp_path, MINIMAL_TOML + "\n[elevenlabs]\nstability = 0.4\n[voice]\nspeed = 1.1\n")
-    assert take_identity(project)["stability"] == 0.4
-    assert take_identity(project)["speed"] == 1.1
+    assert dict(project.voice.identity)["stability"] == 0.4
+    assert dict(project.voice.identity)["speed"] == 1.1
 
 
 def test_a_voice_with_no_table_is_sent_no_vendors_model_and_no_vendors_fields(tmp_path: Path) -> None:
     """Changing `[voice] provider` never carries ElevenLabs's model or its fields into another voice's digest."""
     project = load_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "house"\n', environ={})
-    assert voice_model(project) == ""
-    assert take_identity(project) == {"speed": 1.0}
+    assert project.voice.model == ""
+    assert dict(project.voice.identity) == {"speed": 1.0}
 
 
 def test_the_model_is_the_one_the_providers_own_table_names(tmp_path: Path) -> None:
     project = load_project(tmp_path, MINIMAL_TOML + '\n[elevenlabs]\nmodel = "eleven_turbo_v2_5"\n', environ={})
-    assert voice_model(project) == "eleven_turbo_v2_5"
+    assert project.voice.model == "eleven_turbo_v2_5"

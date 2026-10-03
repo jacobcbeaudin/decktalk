@@ -26,7 +26,7 @@ from playwright.sync_api import Page, Playwright
 
 from decktalk.media import pages
 from decktalk.results import Word
-from decktalk.speech import SpeechRequest
+from decktalk.speech import DECLARED, SpeechContext, SpeechFactory, SpeechProvider, SpeechRequest
 
 BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
 """The variable Playwright's driver reads for where its browsers live, spelled here as Playwright documents it."""
@@ -35,8 +35,29 @@ FAKE_VOICE_NAME = "elevenlabs"
 """The `[voice] provider` a project under test names, which `fake_voice` answers for in place of the shipped voice.
 
 A fake stands in under the shipped name, so the project reads the shipped voice's own table, its
-default model and its stated rate, and the registry entry it replaces is restored when the test ends.
+default model and its stated rate, and the fake is registered only on the machine of the test's runs.
 """
+
+FREE_VOICE_NAME = "dtsp"
+"""The voice DeckTalk ships that bills nothing, which a project under test names to be read by a free voice."""
+
+
+def refusing_voices() -> dict[str, SpeechFactory]:
+    """A voice table naming every voice DeckTalk ships, each refusing to be built, for a test to put its fakes in.
+
+    A run on this table answers a fake registered under a name in place of the refusal, so a test that
+    forgot its fake fails at the build and never reaches a real adapter or a voice served on this machine.
+    """
+    return {name: _refused(name) for name in DECLARED}
+
+
+def _refused(name: str) -> SpeechFactory:
+    """A factory that refuses to build the shipped voice `name`."""
+
+    def build(_context: SpeechContext) -> SpeechProvider:
+        raise AssertionError(f"the test built the shipped voice {name!r}, which it never faked")
+
+    return build
 
 
 @dataclass

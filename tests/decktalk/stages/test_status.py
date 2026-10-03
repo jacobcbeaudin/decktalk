@@ -15,13 +15,12 @@ from decktalk.inputs import Inputs
 from decktalk.page import Q
 from decktalk.pipeline import Stage
 from decktalk.results import SectionKind, StatusResult, TakeState
-from decktalk.speech import DECLARED, FREE
-from decktalk.stages import kept, voice_model
+from decktalk.stages import kept
 from decktalk.stages import status as stage
 from decktalk.stages.narrate.plan import placeholder_inputs, take_inputs
 from decktalk.stages.narrate.state import CHANGED, UNINDEXED, WITHOUT_A_VOICE, take_states
 from decktalk.stages.status import next_command, source_of, status
-from support.fakes import FakeFfmpeg
+from support.fakes import FREE_VOICE_NAME, FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
 from support.runs import a_run, notes
@@ -363,6 +362,15 @@ def test_the_report_names_the_two_files_the_author_writes(tmp_path: Path) -> Non
 VOICED = TOML.replace("[[section]]", '[voice]\nid = "voice-under-test"\n\n[[section]]', 1)
 """The demo project with its voice named, which is what lets the report name the take each section plays."""
 
+FREE_VOICED = VOICED.replace("[voice]\n", f'[voice]\nprovider = "{FREE_VOICE_NAME}"\n', 1)
+"""The demo project with its voice named and read by the voice DeckTalk ships that bills nothing."""
+
+
+def test_no_take_is_claimed_played_when_the_voice_in_force_names_none(tmp_path: Path) -> None:
+    """Without a voice in force the script's own takes have no digest, so status claims nothing played."""
+    inputs = a_project(tmp_path, toml=VOICED)
+    assert stage.played_takes(replace(inputs, voice=replace(inputs.voice, id="")), take_states(inputs)) is None
+
 
 def played_digest(inputs: Inputs) -> str:
     """The digest of the take section one plays, taken the one way narrate takes it."""
@@ -372,8 +380,8 @@ def played_digest(inputs: Inputs) -> str:
 def played_digest_of(inputs: Inputs, number: int) -> str:
     """The digest of the take this section plays, taken the one way narrate takes it."""
     section = next(section for section in inputs.spoken() if section.number == number)
-    voice = inputs.settings.voice
-    return take_inputs(inputs, section, provider=voice.provider, voice_id=voice.id, model=voice_model(inputs)).digest
+    voice = inputs.voice
+    return take_inputs(inputs, section, provider=voice.provider, voice_id=voice.id, model=voice.model).digest
 
 
 def a_take_pair(inputs: Inputs, digest: str, *, audio: bytes = b"audio", words: bytes = b"{}") -> list[Path]:
@@ -557,10 +565,9 @@ def test_a_script_that_will_not_parse_leaves_every_take_state_null(tmp_path: Pat
 
 
 @pytest.mark.usefixtures("recordings_stand")
-def test_a_free_voice_s_placeholders_name_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_free_voice_s_placeholders_name_build(tmp_path: Path) -> None:
     """A named free voice makes its takes for nothing, so a project playing placeholders is not finished."""
-    monkeypatch.setitem(DECLARED, "elevenlabs", replace(DECLARED["elevenlabs"], billing=FREE))
-    inputs = a_project(tmp_path, toml=VOICED)
+    inputs = a_project(tmp_path, toml=FREE_VOICED)
     [section] = inputs.spoken()
     stand_in = placeholder_inputs(inputs, section).digest
     inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)

@@ -81,7 +81,7 @@ from decktalk.settings.layers import (
     route,
     scoped,
 )
-from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders, key_variable
+from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders, VoiceInForce
 from decktalk.speech.sound import SOUNDS, SoundFactory, SoundProviders
 from decktalk.toolchain import assets, chromium_fetch
 from decktalk.toolchain.announce import announcing
@@ -342,8 +342,10 @@ class Machine:
         none needs none. A machine has no project, so the provider is the one its own layers name.
         """
         mine = _machine_overrides(self.overrides)
-        provider = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings.voice.provider
-        variable = key_variable(provider)
+        settings = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings
+        # The machine's default voice, which no project names: doctor runs with no project open.
+        default_voice = VoiceInForce.of(settings)
+        variable = default_voice.key_variable
         if variable is None:
             return ApiKeyState.NOT_NEEDED
         return ApiKeyState.SET if self.environ.get(variable) else ApiKeyState.MISSING

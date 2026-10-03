@@ -25,14 +25,11 @@ from decktalk.inputs.script import ScriptSection
 from decktalk.inputs.take_places import TakeFiles
 from decktalk.results import Cost, CostState, SectionTake, TakeOutcome, TakeState, counted
 from decktalk.settings import PROJECT_FILE
-from decktalk.speech import SpeechRequest, canonical_text, output_of
-from decktalk.stages import voice_model
+from decktalk.speech import SpeechRequest, canonical_text
 from decktalk.stages.cost import Buy, cost_of, is_free
 from decktalk.stages.narrate.plan import (
     VOICE_ID_VARIABLE,
-    named_voice,
     placeholder_inputs,
-    take_identity,
     take_inputs,
 )
 from decktalk.stages.narrate.takes import estimated_words
@@ -129,8 +126,6 @@ class _Reading:
         self.replace_voiced = replace_voiced
         self.spoken = tuple(spoken)
         self.rows = dict(rows)
-        self.voice = named_voice(inputs)
-        self.model = voice_model(inputs)
         self.matched: dict[int, str] = {}
         """The digest of the voiced row each UNCHECKED section matched by its text."""
         self.stand_ins: dict[int, str] = {}
@@ -165,7 +160,7 @@ class _Reading:
         self.stand_ins[number] = placeholder_inputs(self.inputs, section).digest
         here = self.rows.get(number)
         elsewhere = {other.spoken for other in self.spoken if other.number != number}
-        digest = self.digest_of(section) if self.voice else None
+        digest = self.digest_of(section) if self.inputs.voice.id else None
         if digest is not None:
             state, reason = self._named(section, digest, here, elsewhere)
         else:
@@ -181,9 +176,9 @@ class _Reading:
         return SectionTakeState(section, state, _moved(self.inputs, self.unheld) if gone else reason, digest, gone)
 
     def digest_of(self, section: ScriptSection) -> str:
-        """The voiced take this section's current text, voice, model and voice settings name."""
-        provider = self.inputs.settings.voice.provider
-        return take_inputs(self.inputs, section, provider=provider, voice_id=self.voice, model=self.model).digest
+        """The voiced take this section's current text and the voice in force name."""
+        voice = self.inputs.voice
+        return take_inputs(self.inputs, section, provider=voice.provider, voice_id=voice.id, model=voice.model).digest
 
     def _named(
         self, section: ScriptSection, digest: str, here: Take | None, elsewhere: set[str]
@@ -320,7 +315,7 @@ class TakeStates(Mapping[int, SectionTakeState]):
         read from `spend` and the voice's bill: a free named voice always voices.
         """
         inputs = self._inputs
-        voiced = spend or (is_free(inputs) and bool(self._reading.voice))
+        voiced = spend or (is_free(inputs) and bool(inputs.voice.id))
         selected = [state.section for state in self._states.values()]
         requests = self._requests(selected) if voiced else {}
         plans: list[TakePlan] = []
@@ -387,16 +382,14 @@ class TakeStates(Mapping[int, SectionTakeState]):
 
     def _requests(self, selected: Sequence[ScriptSection]) -> dict[int, SpeechRequest]:
         """One request per selected section, each carrying the selected sections either side of it for prosody."""
-        inputs = self._inputs
-        settings = take_identity(inputs)
-        output_format = output_of(inputs.settings, inputs.settings.voice.provider).format
+        voice = self._inputs.voice
         return {
             section.number: SpeechRequest(
                 pieces=section.pieces,
-                voice_id=self._reading.voice,
-                model=self._reading.model,
-                voice_settings=settings,
-                output_format=output_format,
+                voice_id=voice.id,
+                model=voice.model,
+                voice_settings=dict(voice.identity),
+                output_format=voice.output.format,
                 previous_text=selected[at - 1].spoken if at else None,
                 next_text=selected[at + 1].spoken if at + 1 < len(selected) else None,
             )

@@ -16,6 +16,7 @@ import pytest
 from decktalk.artifacts import Take
 from decktalk.inputs import Inputs
 from decktalk.media import audio
+from support.fakes import FREE_VOICE_NAME
 from support.projects import load_project
 from support.takes import a_take
 
@@ -54,6 +55,9 @@ number = 3
 page = "deck/index.html"
 scene = "3"
 """
+
+FREE_TOML = TOML.replace('provider = "elevenlabs"', f'provider = "{FREE_VOICE_NAME}"')
+"""The same project read by the voice DeckTalk ships that bills nothing."""
 
 SCRIPT = """# Notes
 
