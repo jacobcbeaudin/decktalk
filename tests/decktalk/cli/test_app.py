@@ -106,6 +106,34 @@ def test_every_command_help_names_every_field_its_result_carries_and_its_docs(ru
     assert f"#decktalk-{name.replace(' ', '-')}" in said
 
 
+RATIONALE = {
+    "narrate": "It names the transformation",
+    "cue": "so the stage is called what everything around it is called",
+    "soundscape": "so that the unpaid draft loop stops at a recording",
+    "assemble": "the editing room's word for joining shots into a cut",
+    "verify": "the product's whole claim written as a measurement",
+    "clip": "so the command that makes one is called what the file is called",
+    "storyboard": "One panel of a storyboard is still a storyboard",
+    "config list": "An agent cannot turn a knob it cannot enumerate",
+    "config unset": "editing a validated file is library work",
+    "config explain": "the whole instruction set rests on",
+}
+"""One sentence of each command's design note, which its docstring keeps after the form feed Click cuts at."""
+
+
+@pytest.mark.parametrize(("name", "note"), sorted(RATIONALE.items()))
+def test_a_command_s_help_leaves_out_why_it_was_designed(run, name: str, note: str) -> None:
+    """A reader of `--help` needs what the command does, and the reason behind its name is for its maintainer."""
+    assert flat(note) not in flat(run(*name.split(), "--help").out)
+
+
+def test_the_serve_help_says_its_output_stays_open_while_it_serves(run) -> None:
+    """The command flushes its one object and then serves, so a caller reading to the end of the stream waits."""
+    said = flat(run("serve", "--help").out)
+    assert "closes stdout" not in said
+    assert "standard output stays open while it serves" in said
+
+
 @pytest.mark.parametrize("name", sorted(commands()))
 def test_every_command_carries_the_globals_after_its_own_name(name: str) -> None:
     flags = {opt for param in commands()[name]["params"] for opt in param["opts"]}

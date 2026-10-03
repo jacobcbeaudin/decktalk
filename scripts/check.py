@@ -76,9 +76,6 @@ def measuring(name: str, *selection: str) -> tuple[str, ...]:
     return (*PYTEST, *selection, *MEASURE, f"--junitxml={REPORTS / f'{name}.xml'}")
 
 
-WHEEL_TEST = "tests/contract/test_wheel.py"
-"""The test of the built wheel, which only the wheel group runs, right after `uv build` writes one."""
-
 LINT_TESTS = (
     "tests/contract/test_prose.py",
     "tests/contract/test_vocabulary.py",
@@ -90,15 +87,12 @@ They are lint rather than behaviour, so they run once in the lint row. In the un
 on three Pythons for one answer and counted as a fifth of the tests the suite claimed.
 """
 
-ELSEWHERE: dict[str, str] = {
-    WHEEL_TEST: "wheel",
-    **dict.fromkeys(LINT_TESTS, "lint"),
-}
+ELSEWHERE: dict[str, str] = dict.fromkeys(LINT_TESTS, "lint")
 """Every test file the unit suite leaves to another row, and the row that runs it instead.
 
-A contract held by two rows runs twice for one answer, and the wheel test built a wheel of its own in
-unit on three Pythons and again in the wheel row on three platforms, which was nine builds per pull
-request. Each file named here runs in its row alone, and a test holds every name to that row.
+A contract held by two rows runs twice for one answer. Each file named here runs in its row alone,
+and a test holds every name to that row. A suite that needs something beyond Python is left out of
+the unit suite by its marker rather than here.
 """
 
 
@@ -235,6 +229,32 @@ INSTALL_THE_PINNED_VERSION = f"""
     got="${{got#decktalk }}"
     if [ "$got" != "$DECKTALK_VERSION" ]; then
       echo "pinned $DECKTALK_VERSION, installed $got"
+      exit 1
+    fi
+"""
+
+
+# The lockfile holds every dependency at its newest, so every other row passes whatever a floor in
+# pyproject.toml says. This one installs the package fresh with each direct dependency at the lowest
+# version its floor allows, on the lowest Python, and runs the command line: the version, a project
+# written and judged without a browser, the whole schema, and a refused flag, which reaches the
+# parser's own refusal through the classes the command line subclasses and catches.
+RUN_AT_THE_FLOORS = f"""
+    scratch="$(mktemp -d)"
+    trap 'rm -rf "$scratch"' EXIT
+    uv venv --quiet --python {FLOOR} "$scratch/venv"
+    uv pip install --python "$scratch/venv" --resolution lowest-direct .
+    decktalk="$scratch/venv/bin/decktalk"
+    "$decktalk" --version
+    "$decktalk" init "$scratch/project" --defaults --no-input
+    "$decktalk" check --no-pages -p "$scratch/project"
+    "$decktalk" schema >/dev/null
+    set +e
+    "$decktalk" check --no-such-flag -p "$scratch/project"
+    code=$?
+    set -e
+    if [ "$code" -ne 2 ]; then
+      echo "expected exit 2 for a flag the command does not take, got $code"
       exit 1
     fi
 """
@@ -572,6 +592,16 @@ GROUPS: tuple[Group, ...] = (
         env=measured("unit"),
     ),
     Group(
+        name="floors",
+        why="The command line installed with every direct dependency at the lowest version pyproject.toml allows.",
+        commands=(("sh", "-euc", RUN_AT_THE_FLOORS),),
+        runners=(LINUX,),
+        pythons=(FLOOR,),
+        tools=(),
+        timeout=10,
+        when=("pr", "main"),
+    ),
+    Group(
         name="node",
         why="The runtime's pure functions and the release's next version, under node --test, with no framework.",
         commands=(("node", "--test", RUNTIME_TESTS, SCRIPT_TESTS),),
@@ -655,7 +685,7 @@ GROUPS: tuple[Group, ...] = (
         why="What `uv build` writes, opened on a machine that has only the wheel and the tag.",
         commands=(
             ("uv", "build"),
-            (*PYTEST, WHEEL_TEST),
+            (*PYTEST, "-m", "wheel"),
             (*UV, "scripts/check_wheel.py"),
         ),
         runners=EVERY_PLATFORM,

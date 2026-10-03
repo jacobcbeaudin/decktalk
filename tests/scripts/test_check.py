@@ -101,7 +101,7 @@ def test_a_preparation_fetches_only_what_the_tools_cache_keeps(monkeypatch: pyte
     assert ran == [check.INSTALL]
 
 
-@pytest.mark.parametrize("marker", tools.SUITE_MARKERS)
+@pytest.mark.parametrize("marker", tools.INSTALLED)
 def test_every_suite_that_needs_a_tool_runs_after_the_install(marker: str) -> None:
     rows = [group for group in check.GROUPS if any(marker in command for command in group.commands)]
     assert rows, f"no row runs the {marker} suite"
@@ -222,6 +222,17 @@ def test_a_file_the_unit_suite_leaves_elsewhere_runs_in_its_row_alone(path: str)
     assert f"--ignore={path}" in unit
 
 
+@pytest.mark.parametrize("marker", tools.BUILT)
+def test_a_suite_that_reads_a_build_runs_in_one_row_right_after_uv_build(marker: str) -> None:
+    rows = [
+        (group.name, group.commands) for group in check.GROUPS if marker in map(check.selected_marker, group.commands)
+    ]
+    assert [name for name, _ in rows] == ["wheel"], rows
+    ((_, commands),) = rows
+    assert commands[0] == ("uv", "build")
+    assert check.selected_marker(commands[1]) == marker
+
+
 def test_only_the_unit_row_runs_in_parallel() -> None:
     parallel = [group.name for group in check.GROUPS for command in group.commands if "-n" in command]
     assert parallel == ["unit"]
@@ -229,6 +240,16 @@ def test_only_the_unit_row_runs_in_parallel() -> None:
 
 def test_the_scaffold_build_judges_a_release_after_it_is_cut() -> None:
     assert check.BY_NAME["scaffold"].when == ("schedule",)
+
+
+def test_a_pull_request_runs_the_command_line_at_every_floor_pyproject_declares() -> None:
+    """The lockfile holds every dependency at its newest, so only a row that installs at the floors judges them."""
+    floors = check.BY_NAME["floors"]
+    (script,) = (part for command in floors.commands for part in command if "\n" in part)
+    assert "--resolution lowest-direct" in script
+    assert f"--python {check.FLOOR}" in script
+    assert "--version" in script
+    assert "pr" in floors.when
 
 
 # ---- a suite the run named fails when its tool is missing -----------------------------------------

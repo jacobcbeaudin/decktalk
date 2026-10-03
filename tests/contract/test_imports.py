@@ -92,6 +92,19 @@ else fails until its reason is written down or the shared rule moves below both 
 """
 
 
+ALLOWED_PRIVATE_MODULES: dict[tuple[str, str], str] = {
+    # Typer publishes `typer.Context` and no name for the help formatter, the parameter, the command
+    # or the refusals its parser raises, and Click's own classes are not the ones Typer makes.
+    ("cli.app", "typer._click"): "the Click classes Typer carries and publishes no name for",
+}
+"""Every private module of another distribution that one module of decktalk reaches into, with why.
+
+A module whose name starts with `_` is its distribution's own and may appear, move or vanish in any
+release, whatever floor `pyproject.toml` declares. One module per reason holds the reach, so a
+release that moves it breaks one import rather than every file that copied it.
+"""
+
+
 @dataclass(frozen=True)
 class Edge:
     """One import, from the module that makes it to the module it names."""
@@ -309,3 +322,51 @@ def test_no_module_imports_a_private_name_from_another_module():
                 if private(alias.name):
                     bad.append(f"{source.replace('.', '/')}.py:{node.lineno}: imports {alias.name} from {base}")
     assert not bad, "\n".join(sorted(set(bad)))
+
+
+def private_modules() -> list[tuple[str, str, int]]:
+    """Every import of a module outside decktalk whose dotted name has a private part, as source, name and line."""
+    found: list[tuple[str, str, int]] = []
+    for path in modules():
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.level == 0:
+                names = [node.module or ""]
+            elif isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            else:
+                continue
+            found += [
+                (dotted(path), name, node.lineno)
+                for name in names
+                if not name.startswith("decktalk") and any(private(part) for part in name.split("."))
+            ]
+    return found
+
+
+def reached(name: str) -> str:
+    """The private module an import reaches into, which is its name up to and including the first private part."""
+    parts = name.split(".")
+    first = next(index for index, part in enumerate(parts) if private(part))
+    return ".".join(parts[: first + 1])
+
+
+def test_no_module_reaches_into_another_distributions_private_module():
+    """A private module is not part of the version range a floor declares, so one module holds each reach.
+
+    A floor is a promise about public names. A private module can be missing at the floor and still
+    present in the lockfile, and then every file that imports it fails on a fresh install at the floor
+    while every test run from the lockfile passes.
+    """
+    bad = [
+        f"{source.replace('.', '/')}.py:{line}: imports {name}, which is private to its distribution"
+        for source, name, line in private_modules()
+        if (source, reached(name)) not in ALLOWED_PRIVATE_MODULES
+    ]
+    assert not bad, "\n".join(sorted(bad))
+
+
+def test_every_allowed_private_module_is_one_the_code_still_reaches():
+    """An exception nothing uses is a hole left open, so the list only holds reaches that are really made."""
+    made = {(source, reached(name)) for source, name, _ in private_modules()}
+    stale = sorted(pair for pair in ALLOWED_PRIVATE_MODULES if pair not in made)
+    assert stale == [], f"{stale} are allowed and no longer made, so the exception can go."

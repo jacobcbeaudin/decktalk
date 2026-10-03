@@ -2,22 +2,28 @@
 
 Location answers what a test is about and the marker answers what it needs, so the marker decides
 selection and nothing else does. A bare `pytest` runs everything that needs no tool, and each of the
-five suite markers is reached by naming it: `pytest -m browser`, `pytest -m media`, `pytest -m e2e`,
-`pytest -m scaffold`, `pytest -m platform`. The rule lives in a hook rather than in `addopts`
-because an `-m` written in `addopts` is replaced whole by the `-m` a person types, so `-m "not e2e"`
-used to admit the five-minute scaffold build and `-m unit` used to select nothing and exit green.
+six suite markers is reached by naming it: `pytest -m browser`, `pytest -m media`, `pytest -m e2e`,
+`pytest -m scaffold`, `pytest -m platform`, `pytest -m wheel`. A file that carries no marker of its
+own and still needs something beyond Python is marked by its path as it is collected. The rule
+lives in a hook rather than in `addopts` because an `-m` written in `addopts` is replaced whole by
+the `-m` a person types, so `-m "not e2e"` used to admit the five-minute scaffold build and
+`-m unit` used to select nothing and exit green.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from hypothesis import settings
 
-from support.tools import FETCHED, SUITE_MARKERS, machine_tools
+from support.tools import FETCHED, MARKED_BY_PATH, SUITE_MARKERS, machine_tools
 
 pytest_plugins = ["pytester"]
+
+HERE = Path(__file__).parent
+"""The directory the paths in `MARKED_BY_PATH` are read under."""
 
 # A property test draws its examples from a seed derived from the test itself and keeps no example
 # database, so every machine and every CI run tries the same examples in the same order and a
@@ -39,6 +45,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def selected_suites(markexpr: str) -> frozenset[str]:
     """The suite markers a `-m` expression names, whether it asks for them or refuses them."""
     return frozenset(name for name in SUITE_MARKERS if name in markexpr)
+
+
+def pytest_itemcollected(item: pytest.Item) -> None:
+    """Mark an item whose file is in `MARKED_BY_PATH`, before `-m` or the hook below reads its markers."""
+    if item.path.is_relative_to(HERE) and (marker := MARKED_BY_PATH.get(item.path.relative_to(HERE).as_posix())):
+        item.add_marker(marker)
 
 
 @pytest.hookimpl(trylast=True)

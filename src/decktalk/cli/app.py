@@ -26,6 +26,12 @@ from pathlib import Path
 from typing import Annotated, Any, cast
 
 import typer
+
+# Typer carries its own copy of Click and publishes no name for the classes a subclass of its commands
+# is handed or for the refusals its parser raises. Click's own classes are different classes, so an
+# `except` or an annotation written against them would miss every object Typer makes. This module is
+# the one place that reaches into the copy, and `catalog.py` takes the two it needs from here. A
+# command function names its context as `typer.Context`, which is the name Typer publishes for it.
 from typer._click import Context, HelpFormatter, Parameter
 from typer._click.core import Command
 from typer._click.exceptions import ClickException, NoSuchOption, UsageError

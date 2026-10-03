@@ -43,7 +43,7 @@ from decktalk.events import Level, StageDone
 from decktalk.findings import Certainty, Code, Finding
 from decktalk.inputs import Inputs
 from decktalk.logs import cache_decision
-from decktalk.machine import Run
+from decktalk.machine import Run, Threshold
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
 from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, Voicing, counted
 from decktalk.stages import DOLLAR_DIGITS, assemble, cue, narrate, record, storyboard, verify
@@ -127,13 +127,16 @@ def build(
     set on the command line. A code in `allow` never stops the run, `Certainty.CERTAIN` stops on a
     certain finding, `Certainty.UNCERTAIN` stops on any finding, and None lets every stage run so
     that `verify` measures what the earlier stages made. The stages after a stop are reported as
-    skipped and the result names the stage in `stopped_at`.
+    skipped and the result names the stage in `stopped_at`. The result's `ok` is read from the same
+    threshold, so it is false on a run that stopped and on one whose verify judged something the
+    threshold fails on, and true on a run whose every finding was allowed or under the line.
 
     Whether the film carries the soundscape is read from `skip`, because a run told to leave the
     stage out is a run that does not want its sound, and a second knob for the same decision would
     let a caller skip the stage and still be refused for the file it never asked for.
     """
     plan = _plan(stages, skip)
+    threshold = Threshold(stop_on=stop_on, allow=frozenset(allow))
     soundscape = Stage.SOUNDSCAPE not in skip
     _require_what_the_plan_skips(inputs, plan, soundscape=soundscape)
     options: dict[str, object] = {
@@ -180,20 +183,19 @@ def build(
                 fresh[stage] = _remember(stage, inputs, key, taken, findings)
             if stage is Stage.ASSEMBLE:
                 film = _film_of(answer)
-        if stage is not Stage.VERIFY and _stopped(stage, findings, run, plan, allow=allow, stop_on=stop_on):
+        if stage is not Stage.VERIFY and _stopped(stage, findings, run, plan, threshold):
             stopped_at = stage
     if fresh:
         run.wrote(_kept_after(kept, fresh).write(kept_path(inputs)))
-    stopped = {"ok": False} if stopped_at is not None else {}
     return run.result(
         BuildResult,
+        threshold=threshold,
         stages=tuple(rows),
         voice=run.voice,
         spend=_total(spends, inputs),
         film=film,
         storyboard=board,
         stopped_at=stopped_at,
-        **stopped,
     )
 
 
@@ -358,12 +360,10 @@ def _stopped(
     findings: Sequence[Finding],
     run: Run,
     plan: tuple[Stage, ...],
-    *,
-    allow: Collection[Code],
-    stop_on: Certainty | None,
+    threshold: Threshold,
 ) -> bool:
     """Whether the stage that just ran judged something that stops the run, said on the stream when it did."""
-    stopping = [found for found in findings if _stops(found, allow, stop_on)]
+    stopping = [found for found in findings if threshold.reaches(found)]
     if not stopping:
         return False
     later = plan[plan.index(stage) + 1 :]
@@ -374,13 +374,6 @@ def _stopped(
         level=Level.WARNING,
     )
     return True
-
-
-def _stops(found: Finding, allow: Collection[Code], stop_on: Certainty | None) -> bool:
-    """Whether one finding stops the run, which the caller's allowed codes and threshold decide."""
-    if stop_on is None or found.code in allow:
-        return False
-    return stop_on is Certainty.UNCERTAIN or found.certainty is Certainty.CERTAIN
 
 
 def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:

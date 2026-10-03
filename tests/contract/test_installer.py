@@ -14,9 +14,10 @@ called all do what they say.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -259,6 +260,17 @@ def test_the_plain_path_still_names_every_step(clean_run: Install) -> None:
 # /dev/tty then opens. Popen with a pty on stdout would leave that pointing at pytest's own.
 
 
+def interruptible() -> None:
+    """Give the forked run the default Ctrl-C, whatever disposition the process that started pytest had.
+
+    A shell that is not interactive starts a background job with SIGINT ignored, and a child inherits
+    that. POSIX lets a shell refuse a `trap` on a signal that was ignored when it started, so without
+    this a pytest started with `&` would run an installer whose INT trap never fires, and the
+    interrupt test would see a run that finished as if nothing had interrupted it.
+    """
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
 def run_pty(
     args: list[str],
     env: dict[str, str],
@@ -274,7 +286,13 @@ def run_pty(
     import pexpect  # noqa: PLC0415 - its pty spawn needs termios, which is what pytestmark refuses Windows on
 
     child = pexpect.spawn(
-        "/bin/sh", [str(SCRIPT), *args], env=env, timeout=timeout, encoding="utf-8", codec_errors="replace"
+        "/bin/sh",
+        [str(SCRIPT), *args],
+        env=env,
+        timeout=timeout,
+        encoding="utf-8",
+        codec_errors="replace",
+        preexec_fn=interruptible,
     )
     try:
         started = time.monotonic()
@@ -306,6 +324,20 @@ def test_no_color_is_honoured_on_a_terminal(tmp_path: Path) -> None:
     assert "\033[" not in out, repr(out)
 
 
+@pytest.fixture(params=["foreground", "background"], ids=["pytest in the foreground", "pytest as a background job"])
+def started(request: pytest.FixtureRequest) -> Iterator[None]:
+    """How the shell that started pytest left SIGINT: as it was, or ignored, as `pytest &` leaves it."""
+    if request.param == "foreground":
+        yield
+        return
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
+@pytest.mark.usefixtures("started")
 def test_an_interrupt_puts_the_cursor_back_and_keeps_the_log(tmp_path: Path) -> None:
     """The spinner hides the cursor. Before there was a trap, a Ctrl-C mid-spinner left a terminal
     with no cursor in it until the next `reset`, and threw away the log of what had happened."""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import logging
 import os
 import subprocess
@@ -126,9 +127,10 @@ def test_a_record_that_cannot_be_rendered_is_counted_and_never_printed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(logging, "raiseExceptions", True)
-    # pytest's own capture handler on the root logger raises on a bad record, and a host's handler is
-    # the host's business, so the record is kept to the package's handler alone.
-    monkeypatch.setattr(LOGGER, "propagate", False)
+    # pytest's own capture handlers raise on a bad record, and a host's handler is the host's
+    # business, so the record is kept to the package's handler alone.
+    monkeypatch.setattr(LOGGER, "handlers", [HANDLER])
+    monkeypatch.setattr(logging.getLogger(), "handlers", [])
     here = a_machine(tmp_path)
     before = HANDLER.failures
     with here.run():
@@ -196,11 +198,13 @@ def test_a_level_the_host_chose_is_kept_and_the_handler_is_installed_once(monkey
     assert LOGGER.level == logging.WARNING
 
 
-def test_the_package_logger_hears_debug_when_nobody_chose_a_level(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_package_logger_hears_every_level_when_nobody_chose_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(LOGGER, "handlers", [])
     monkeypatch.setattr(LOGGER, "level", logging.NOTSET)
+    monkeypatch.setattr(LOGGER, "propagate", True)
     install()
-    assert LOGGER.level == logging.DEBUG
+    assert (LOGGER.level, LOGGER.propagate) == (logs.EVERY, False)
+    assert LOGGER.isEnabledFor(logging.DEBUG)
 
 
 def test_the_place_is_restored_when_a_block_closes() -> None:
@@ -221,6 +225,90 @@ def test_a_hosts_own_handler_never_sees_a_registered_secret(caplog: pytest.LogCa
     log.warning(f"sent {canary}", extra={"data": {"header": canary}})
     heard = f"{caplog.records[-1].getMessage()} {data_of(caplog.records[-1])}"
     assert canary not in heard and "<secret ELEVENLABS_API_KEY>" in heard
+
+
+def test_a_host_that_admits_warnings_hears_nothing_below_them() -> None:
+    """Importing the package leaves the host's levels in charge of what the host's handlers print.
+
+    It runs in a fresh interpreter, because pytest's own handlers and levels would decide it here.
+    """
+    said = "\n".join(
+        f"logging.getLogger({name!r}).log({level}, 'a sentence the host did not admit')"
+        for name in ("decktalk", "decktalk.media.ffmpeg", "decktalk.stages.narrate")
+        for level in (logging.DEBUG, logging.INFO)
+    )
+    ran = subprocess.run(
+        [sys.executable, "-c", f"import logging\nlogging.basicConfig(level=logging.WARNING)\nimport decktalk\n{said}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert (ran.stdout, ran.stderr) == ("", "")
+
+
+def test_a_host_hears_a_warning_and_a_level_it_set_on_the_package_logger() -> None:
+    script = """
+import logging
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
+import decktalk
+logging.getLogger("decktalk.media.ffmpeg").warning("a warning")
+logging.getLogger("decktalk.media.ffmpeg").info("not admitted")
+logging.getLogger("decktalk").setLevel(logging.DEBUG)
+logging.getLogger("decktalk.media.ffmpeg").debug("admitted by the host")
+"""
+    ran = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
+    assert ran.stderr.splitlines() == ["WARNING a warning", "DEBUG admitted by the host"]
+
+
+def test_the_run_hears_a_debug_record_the_host_does_not(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    printed = io.StringIO()
+    monkeypatch.setattr(logging.getLogger(), "handlers", [logging.StreamHandler(printed)])
+    monkeypatch.setattr(logging.getLogger(), "level", logging.WARNING)
+    here = a_machine(tmp_path)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here.run():
+        log.debug("only the run hears this")
+    assert [line.message for line in lines_of(seen)] == ["only the run hears this"]
+    assert printed.getvalue() == ""
+
+
+def raised_with(canary: str) -> None:
+    """Write a warning while an exception that names `canary` is being handled, as a module would."""
+    try:
+        raise OSError(f"refused the key {canary}\nand {canary} again on the second line")
+    except OSError:
+        log.warning("could not write", exc_info=True)
+
+
+def handed(field: str) -> Callable[[str], None]:
+    """Write a record that already carries `field` holding `canary`, as a host's own code can."""
+
+    def write(canary: str) -> None:
+        given = {"name": log.name, "levelno": logging.WARNING, "levelname": "WARNING", "msg": "could not write"}
+        log.handle(logging.makeLogRecord(given | {field: canary}))
+
+    return write
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        pytest.param(raised_with, id="exc_info"),
+        pytest.param(handed("exc_text"), id="exc_text"),
+        pytest.param(handed("stack_info"), id="stack_info"),
+    ],
+)
+def test_a_hosts_formatter_never_prints_a_secret_from_an_exception_or_a_stack(
+    written: Callable[[str], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host's formatter appends the traceback and the stack to the sentence, so they are redacted as it is."""
+    canary = "sk_exception_canary_5e1d"
+    Secret(canary, "ELEVENLABS_API_KEY")
+    printed = io.StringIO()
+    monkeypatch.setattr(logging.getLogger(), "handlers", [logging.StreamHandler(printed)])
+    written(canary)
+    assert printed.getvalue() and canary not in printed.getvalue()
+    assert "<secret ELEVENLABS_API_KEY>" in printed.getvalue()
 
 
 # ---- every failure path leaves a record --------------------------------------------------------------

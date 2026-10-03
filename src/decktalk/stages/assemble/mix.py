@@ -14,7 +14,6 @@ soundtrack missing its music is still a soundtrack and a film that stopped for o
 
 from __future__ import annotations
 
-import functools
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -120,14 +119,71 @@ def delay(seconds: float) -> str:
     return f"adelay={round(seconds * MILLISECONDS)}:all=1"
 
 
+type Span = tuple[float, float]
+"""One stretch of the film, as the second it starts and the second it ends."""
+
+
+def second(seconds: float) -> str:
+    """A moment as the graph writes it, to the millisecond, which is the moment ffmpeg reads."""
+    return f"{seconds:.{SECOND_DIGITS}f}"
+
+
 def ramp_expr(start: float, end: float, ramp: float) -> str:
-    """Zero outside the span, one inside it, with a straight ramp of `ramp` seconds at both edges."""
-    return f"min(1,max(0,(t-{start:.3f})/{ramp}))*min(1,max(0,({end:.3f}-t)/{ramp}))"
+    """Zero outside the span, one inside it, with a straight ramp of `ramp` seconds at both edges.
+
+    A ramp of no length is a step, because dividing by it gives ffmpeg 0/0 on a frame that starts
+    exactly at an edge, and that NaN silences the frame.
+    """
+    if ramp == 0:
+        return f"gt(t,{second(start)})*lt(t,{second(end)})"
+    return f"min(1,max(0,(t-{second(start)})/{ramp}))*min(1,max(0,({second(end)}-t)/{ramp}))"
 
 
 def max_expr(terms: list[str]) -> str:
-    """The largest of several ramps at each moment, which is how overlapping spans are joined."""
-    return functools.reduce(lambda joined, term: f"max({joined},{term})", terms) if terms else "0"
+    """The largest of several ramps at each moment, halved at each level so it nests log2 of them deep."""
+    if len(terms) <= 1:
+        return terms[0] if terms else "0"
+    half = len(terms) // 2
+    return f"max({max_expr(terms[:half])},{max_expr(terms[half:])})"
+
+
+def ramp_groups(spans: list[Span]) -> list[list[Span]]:
+    """The spans in the order they start, joined wherever one starts before the group before it has ended.
+
+    A ramp is zero at and outside the edges of its span, so two groups that do not overlap are never
+    both above zero at one moment. Spans are compared as the graph writes them, to the millisecond.
+    """
+    groups: list[list[Span]] = []
+    reach = 0.0
+    for span in sorted(spans, key=lambda span: float(second(span[0]))):
+        start, end = (float(second(edge)) for edge in span)
+        if groups and start < reach:
+            groups[-1].append(span)
+            reach = max(reach, end)
+        else:
+            groups.append([span])
+            reach = end
+    return groups
+
+
+def ramps_expr(spans: list[Span], ramp: float) -> str:
+    """The largest ramp over every span at each moment, as a balanced search tree on t.
+
+    Each leaf is the ramps of one group, and each branch asks whether t is before the first start
+    of its later half, so a moment evaluates log2(groups) comparisons and the ramps of one group. It
+    equals the largest of every ramp at every moment, because only the group that t falls among can
+    be above zero, and it nests log2 of the spans deep where one fold of them nests once per span,
+    which ffmpeg refuses at a hundred.
+    """
+    groups = ramp_groups(spans)
+
+    def tree(lo: int, hi: int) -> str:
+        if hi - lo == 1:
+            return max_expr([ramp_expr(start, end, ramp) for start, end in groups[lo]])
+        mid = (lo + hi) // 2
+        return f"if(lt(t,{second(groups[mid][0][0])}),{tree(lo, mid)},{tree(mid, hi)})"
+
+    return tree(0, len(groups)) if groups else "0"
 
 
 def encode_soundtrack(inputs: Inputs, src: Path, dst: Path, *, filters: str | None = None) -> None:
@@ -163,14 +219,14 @@ def resolve_marker_time(marker: Marker, starts: Mapping[int, float], takes: Take
     return None if found is None else starts[marker.section] + words[found].start + marker.offset
 
 
-def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]) -> list[tuple[float, float]]:
+def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]) -> list[Span]:
     """Every span of the film that carries speech, which is what the music ducks under.
 
     A spoken section speaks from where it starts until its last word, or until it ends when it says
     nothing at all, and a clip speaks for the whole of its own length because its dialogue is its own.
     """
     offsets = narration_offsets([row.section for row in rows], takes, starts)
-    spans: list[tuple[float, float]] = []
+    spans: list[Span] = []
     for take in takes.sections:
         offset = offsets[take.section]
         said = takes.speech_end(take.section)
@@ -216,12 +272,12 @@ def _clip_audio(chain: Chain, rows: list[Rendered], starts: Mapping[int, float])
 
 
 def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, float],
-                 speech: list[tuple[float, float]]) -> list[str]:  # fmt: skip
+                 speech: list[Span]) -> list[str]:  # fmt: skip
     """The volume factors the music plays under: the duck under speech, and the swells the markers ask for."""
     mix = inputs.document.mix
     audio = inputs.settings.audio
     ducked = gain(mix.music_duck_db)
-    factors = [f"(1-{1 - ducked:.5f}*{max_expr([ramp_expr(a, b, audio.duck_ramp_seconds) for a, b in speech])})"]
+    factors = [f"(1-{1 - ducked:.5f}*{ramps_expr(speech, audio.duck_ramp_seconds)})"]
     if not mix.music_markers:
         return factors
     markers = inputs.markers()
@@ -230,26 +286,26 @@ def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, fl
         return factors
     for note in markers.notes:
         run.note(note, level=Level.WARNING)
-    boosts: list[str] = []
-    mutes: list[str] = []
+    boosts: list[Span] = []
+    mutes: list[Span] = []
     for marker in markers.markers:
         at = resolve_marker_time(marker, starts, takes, inputs)
         if at is None:
             run.note(f"The marker {marker.name!r} is unresolved, so it shapes nothing.", level=Level.WARNING)
             continue
         if marker.mute_seconds > 0:
-            mutes.append(ramp_expr(at, at + marker.mute_seconds, audio.marker_mute_ramp_seconds))
+            mutes.append((at, at + marker.mute_seconds))
         swell = at + marker.mute_seconds
-        boosts.append(ramp_expr(swell, swell + markers.boost_seconds, audio.marker_boost_ramp_seconds))
+        boosts.append((swell, swell + markers.boost_seconds))
     if boosts:
-        factors.append(f"(1+{gain(markers.boost_db) - 1:.5f}*{max_expr(boosts)})")
+        factors.append(f"(1+{gain(markers.boost_db) - 1:.5f}*{ramps_expr(boosts, audio.marker_boost_ramp_seconds)})")
     if mutes:
-        factors.append(f"(1-{max_expr(mutes)})")
+        factors.append(f"(1-{ramps_expr(mutes, audio.marker_mute_ramp_seconds)})")
     return factors
 
 
 def _music(chain: Chain, inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, float],
-           speech: list[tuple[float, float]], total: float) -> None:  # fmt: skip
+           speech: list[Span], total: float) -> None:  # fmt: skip
     """The music bed, ducked under every span that carries speech and shaped by the markers."""
     mix = inputs.document.mix
     if not mix.music:
@@ -281,14 +337,11 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
         return
     audio = inputs.settings.audio
     pad = audio.ambience_pad_seconds
-    spans = [
-        ramp_expr(starts[row.number] - pad, starts[row.number] + row.seconds + pad, audio.ambience_ramp_seconds)
-        for row in flagged
-    ]
+    spans = [(starts[row.number] - pad, starts[row.number] + row.seconds + pad) for row in flagged]
     chain.layer(
         chain.add(LOOP, str(path)),
         f",atrim=duration={total:.3f},asetpts=PTS-STARTPTS,"
-        f"volume='{gain(mix.ambience_db):.5f}*{max_expr(spans)}':eval=frame",
+        f"volume='{gain(mix.ambience_db):.5f}*{ramps_expr(spans, audio.ambience_ramp_seconds)}':eval=frame",
         "amb",
     )
 
@@ -356,9 +409,12 @@ def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes,
     """Join the section cuts and lay the whole soundtrack under them, into one work file.
 
     The soundtrack is written as floating-point samples, so a sum of layers louder than 0 dBFS is
-    carried rather than clipped, and the delivery encoder runs once, downstream of the limiter.
+    carried rather than clipped, and the delivery encoder runs once, downstream of the limiter. The
+    graph reaches ffmpeg as a file read with `-/filter_complex`, because a long film's graph runs
+    past the 32,767 characters a Windows command line holds.
     """
     picture = inputs.workspace.final_dir / ".picture.mp4"
+    graph = work.with_suffix(".graph")
     concat_files = [row.path for row in rows]
     if not concat_files:
         raise InputError(
@@ -369,13 +425,15 @@ def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes,
     plan = plan_mix(inputs, run, rows, takes, soundscape=soundscape)
     enc = Encoder(inputs.settings.video)
     try:
+        graph.write_text(plan.filter, encoding="utf-8")
         ffmpeg.run(
             "-i", str(picture), *mix_input_args(plan),
-            "-filter_complex", plan.filter,
+            "-/filter_complex", str(graph),
             "-map", "0:v", "-map", "[a]", "-c:v", "copy", *enc.amix, str(work),
         )  # fmt: skip
     finally:
         picture.unlink(missing_ok=True)
+        graph.unlink(missing_ok=True)
     return plan
 
 
@@ -387,6 +445,7 @@ __all__ = [
     "Chain",
     "MixInput",
     "MixPlan",
+    "Span",
     "delay",
     "encode_soundtrack",
     "max_expr",
@@ -394,6 +453,9 @@ __all__ = [
     "mix_soundtrack",
     "plan_mix",
     "ramp_expr",
+    "ramp_groups",
+    "ramps_expr",
     "resolve_marker_time",
+    "second",
     "speech_spans",
 ]

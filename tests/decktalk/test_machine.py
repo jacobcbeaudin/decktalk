@@ -33,6 +33,7 @@ from decktalk.machine import (
     FIX_TIMEOUT_SECONDS,
     InstalledTool,
     Machine,
+    Threshold,
     Toolchain,
     apply_fix,
     fixes_of,
@@ -361,6 +362,34 @@ def test_a_certain_judgement_is_what_makes_a_result_not_ok(tmp_path: Path) -> No
         assert run.result(StatusResult, name="t", script=Path("s"), cues=Path("c"), sections=()).ok
         run.found(certain)
         assert not run.result(StatusResult, name="t", script=Path("s"), cues=Path("c"), sections=()).ok
+
+
+CERTAIN = Finding(code=Code.CUE_UNRESOLVED, message="x", location=Location(where="cues.json"))
+UNSURE = Finding(code=Code.PAGE_SWAP_APART, message="y", location=Location(where="deck/index.html"))
+
+
+@pytest.mark.parametrize(
+    ("threshold", "found", "passes"),
+    [
+        (Threshold(), (UNSURE,), True),
+        (Threshold(), (CERTAIN,), False),
+        (Threshold(stop_on=Certainty.UNCERTAIN), (UNSURE,), False),
+        (Threshold(stop_on=None), (CERTAIN, UNSURE), True),
+        (Threshold(allow=frozenset({Code.CUE_UNRESOLVED})), (CERTAIN,), True),
+        (Threshold(stop_on=Certainty.UNCERTAIN, allow=frozenset({Code.CUE_UNRESOLVED})), (CERTAIN, UNSURE), False),
+    ],
+    ids=["unsure", "sure", "any-unsure", "off", "allowed", "allowed-but-any"],
+)
+def test_a_result_is_ok_exactly_when_nothing_reaches_the_threshold_it_was_given(
+    tmp_path: Path, threshold: Threshold, found: tuple[Finding, ...], passes: bool
+) -> None:
+    assert CERTAIN.certainty is Certainty.CERTAIN and UNSURE.certainty is Certainty.UNCERTAIN
+    with a_machine(tmp_path).run() as run:
+        result = run.result(
+            StatusResult, findings=found, threshold=threshold, name="t", script=Path("s"), cues=Path("c"), sections=()
+        )
+    assert result.ok is passes
+    assert threshold.fails(found) is not passes
 
 
 # ---- the spend gate -------------------------------------------------------------------------

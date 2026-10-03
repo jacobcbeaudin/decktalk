@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,7 +17,7 @@ from decktalk.findings import Certainty, Code
 from decktalk.results import CheckResult, StatusResult, Voicing
 from support.spends import a_spend
 
-from .conftest import Fake, finding
+from .conftest import ANSWERS, Fake, finding
 
 
 def session(flags: Globals | None = None) -> Session:
@@ -71,6 +72,43 @@ def test_the_exit_code_fails_on_what_the_threshold_names_and_nothing_it_allows(
     if fail_on is not None:
         made.judging(fail_on=fail_on, allow=allow)
     assert made.exit_code(_status(*(finding(one) for one in found))) == code
+
+
+@pytest.mark.parametrize(
+    ("argv", "found"),
+    [
+        (("check",), ()),
+        (("check",), (Code.CUE_THIN_CHANGE,)),
+        (("check", "--fail-on", "any"), (Code.CUE_THIN_CHANGE,)),
+        (("check",), (Code.CUE_UNRESOLVED,)),
+        (("check", "--fail-on", "never"), (Code.CUE_UNRESOLVED,)),
+        (("check", "--allow", Code.CUE_UNRESOLVED.value), (Code.CUE_UNRESOLVED,)),
+        (("check", "--allow", Code.CUE_UNRESOLVED.value, "--fail-on", "any"), (Code.CUE_UNRESOLVED,)),
+        (("build", "--no-voice", "--allow", Code.CUE_UNKNOWN.value), (Code.CUE_UNKNOWN,)),
+        (("build", "--no-voice", "--fail-on", "any"), (Code.CUE_THIN_CHANGE,)),
+    ],
+    ids=["nothing", "unsure", "any-unsure", "sure", "never", "allowed", "allowed-any", "build-allowed", "build-any"],
+)
+def test_ok_under_json_is_true_exactly_when_the_exit_code_is_0(run, project, argv: tuple[str, ...], found) -> None:
+    """A workflow that reads `.ok` and one that reads the exit code agree about the same run.
+
+    The fake answers the way the library does for a caller that named no threshold, so `ok` on stdout
+    is the command line's own reading of `--fail-on` and `--allow`.
+    """
+    judged = tuple(finding(code) for code in found)
+    answer = ANSWERS[argv[0]].model_copy(
+        update={"findings": judged, "ok": not any(one.certainty is Certainty.CERTAIN for one in judged)}
+    )
+    project(**{argv[0]: answer})
+    ran = run(*argv, "--json")
+    assert json.loads(ran.out)["ok"] is (ran.exit_code == 0), (ran.exit_code, ran.out)
+
+
+def test_ok_under_json_is_false_whenever_the_command_could_not_run(run, project) -> None:
+    project(check=InputError("decktalk.toml is not valid TOML."))
+    ran = run("check", "--json", "--fail-on", "never")
+    assert ran.exit_code == ErrorCode.INPUT.exit_code
+    assert json.loads(ran.out)["ok"] is False
 
 
 def test_a_thin_change_is_the_uncertain_judgement_the_table_uses() -> None:

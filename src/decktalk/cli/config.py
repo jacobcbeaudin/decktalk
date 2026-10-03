@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from typer._click import Context
+from typer import Context
 
 from decktalk import settings as knobs
 from decktalk.cli import session as sessions
@@ -75,8 +75,10 @@ def list_keys(
 ) -> ConfigListResult:
     """Print every key, its value and the layer that set it.
 
+    It hands over every key at once, and `config explain` reads one whole.
+    \f
     An agent cannot turn a knob it cannot enumerate, so this is the call that hands it every knob at
-    once, and `config explain` is the call that reads one whole.
+    once.
     """
     session = sessions.of(ctx)
     with _told(session):
@@ -137,10 +139,11 @@ def unset_key(
     One key needs no permission. A whole table is many keys at once, so it is removed only when
     `--all` says so, and on a terminal it is confirmed first.
 
+    A table is every key the file states under it, removed in one write, and the value that now
+    applies is the first key's, because the three scalars describe one key and `keys` names the rest.
+    \f
     The removal itself is the settings layer's, because editing a validated file is library work and
-    a second editor here would be a second thing to keep true. A table is every key the file states
-    under it, removed in one write, and the value that now applies is the first key's, because the
-    three scalars describe one key and `keys` names the rest.
+    a second editor here would be a second thing to keep true.
     """
     session = sessions.of(ctx)
     _named(key)
@@ -165,9 +168,10 @@ def explain_key(
 ) -> ConfigExplainResult:
     """Print one key whole: what it does, what may be set, and what set it.
 
-    This is the knob read the whole instruction set rests on, because it answers the four questions
-    in order: what does this change, what may I write, what happens at the edge, and which finding
-    does it move.
+    It answers four questions in order: what does this change, what may I write, what happens at
+    the edge, and which finding does it move.
+    \f
+    This is the knob read the whole instruction set rests on.
     """
     session = sessions.of(ctx)
     root = _root(session)

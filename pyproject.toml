@@ -55,7 +55,10 @@ dependencies = [
     "pydantic>=2.11",
     "rich>=13",
     "tomlkit>=0.13",
-    "typer>=0.15",
+    # 0.26 is the first release that carries its own copy of Click, whose classes the command line
+    # subclasses and whose refusals it catches. Click is no dependency of its own, because the
+    # objects Typer makes are instances of the copy and never of Click.
+    "typer>=0.26",
 ]
 
 [project.urls]
@@ -179,6 +182,7 @@ markers = [
     "e2e: needs Chromium and ffmpeg, and builds the pipeline fixture in tests/e2e, about a minute",
     "scaffold: needs Chromium and ffmpeg, and builds every packaged project without a voice, about five minutes",
     "platform: needs the machine it runs on, whose filesystem and fetched toolchain are what it asserts",
+    "wheel: needs the wheel `uv build` writes into dist/, and is given to tests/contract/test_wheel.py by its path",
 ]
 # Selection is `tests/conftest.py`'s collection hook rather than an `-m` here, because a person's own
 # `-m` replaces this line whole and would admit every suite it did not name.

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from typer._click import Context
+from typer import Context
 
 from decktalk.cli import session as sessions
 from decktalk.cli import watch as watching
@@ -113,8 +113,9 @@ def narrate(
 ) -> NarrateResult:
     """Voice each section of script.md and time every word.
 
-    It names the transformation, which is text to a spoken take, and it owns the take index and the
-    word clock every later stage measures against.
+    It owns the take index and the word clock every later stage measures against.
+    \f
+    It names the transformation, which is text to a spoken take.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
@@ -134,6 +135,8 @@ def narrate(
 def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueResult:
     """Turn each cue phrase into a second on its section clock.
 
+    It reads cues.json, writes the cue times and reports the CUE findings.
+    \f
     The input is cues.json, the output is the cue times, the findings are the CUE codes and every
     page moment names a cue, so the stage is called what everything around it is called.
     """
@@ -172,8 +175,9 @@ def soundscape(
 ) -> SoundscapeResult:
     """Generate the music, the ambience bed and the effects.
 
-    It runs after `record` so that the unpaid draft loop stops at a recording, and before `assemble`
-    because the mix consumes what it writes.
+    It runs after `record` and before `assemble`, whose mix consumes what it writes.
+    \f
+    It runs after `record` so that the unpaid draft loop stops at a recording.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
@@ -193,7 +197,7 @@ def assemble(
     ctx: Context, section: Sections = None, skip: SkipSoundscape = None, set_: Overrides = None
 ) -> AssembleResult:
     """Cut, mix and encode the sections into one mp4.
-
+    \f
     It is the editing room's word for joining shots into a cut, where render, encode and mix each
     name one of the things it does.
     """
@@ -222,8 +226,9 @@ def _skipped_here(skip: Stage | None) -> Stage | None:
 def verify(ctx: Context, section: Sections = None, set_: Overrides = None) -> VerifyResult:
     """Measure the finished mp4: every start, cut, seam and landing.
 
-    It measures the film against the clock the earlier stages promised, which is the product's whole
-    claim written as a measurement.
+    It measures the film against the clock the earlier stages promised.
+    \f
+    That clock is the product's whole claim written as a measurement.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
@@ -316,7 +321,7 @@ def clip(
     set_: Overrides = None,
 ) -> ClipResult:
     """Cut a span of a built section into its own file.
-
+    \f
     A clip is one thing in this product, which is a short video file, so the command that makes one
     is called what the file is called.
     """

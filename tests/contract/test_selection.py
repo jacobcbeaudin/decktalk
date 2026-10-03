@@ -45,12 +45,17 @@ def test_asks_this_machine():
 """
 
 
+WHEEL = "def test_reads_the_built_wheel():\n    pass\n"
+"""A test at the wheel test's own path, which carries no marker and is marked by where it is."""
+
+
 @pytest.fixture
 def suite(pytester):
-    """A throwaway project running the real hook over one test per marker."""
+    """A throwaway project running the real hook over one test per marker, the wheel's at its own path."""
     pytester.makeconftest(CONFTEST)
     pytester.makeini(INI)
     pytester.makepyfile(test_suite=SUITE)
+    pytester.makepyfile(**{"contract/test_wheel": WHEEL})
     return pytester
 
 
@@ -66,10 +71,18 @@ def suite(pytester):
     ],
 )
 def test_each_selection_runs_exactly_one_test(suite, args):
-    suite.runpytest(*args).assert_outcomes(passed=1, deselected=4)
+    suite.runpytest(*args).assert_outcomes(passed=1, deselected=5)
+
+
+def test_the_wheel_test_is_marked_by_its_path_and_runs_only_when_named(suite):
+    """It reads the wheel `uv build` wrote into `dist/`, which a fresh clone does not have."""
+    assert "test_reads_the_built_wheel" not in suite.runpytest("-v").stdout.str()
+    named = suite.runpytest("-v", "-m", "wheel")
+    named.assert_outcomes(passed=1, deselected=5)
+    named.stdout.fnmatch_lines(["*contract/test_wheel.py::test_reads_the_built_wheel PASSED*"])
 
 
 def test_an_empty_selection_is_an_error_naming_the_markers(suite):
     result = suite.runpytest("-m", "browser", "-k", "nothing_matches_this")
     assert result.ret != 0
-    result.stderr.fnmatch_lines(["*no test was selected*browser, media, e2e, scaffold, platform*"])
+    result.stderr.fnmatch_lines(["*no test was selected*browser, media, e2e, scaffold, platform, wheel*"])

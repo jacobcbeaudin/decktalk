@@ -193,3 +193,32 @@ def test_no_edit_is_offered_when_the_row_is_not_on_the_line_it_was_read_from() -
     )
     assert found.fix is None
     assert "'in ten'" in found.message
+
+
+# ---- a section that speaks a symbol as a word of its own ----------------------------------------
+
+SYMBOLS = Spoken.of(
+    (
+        Word(word="Our", start=0.0, end=0.2),
+        Word(word="R", start=0.3, end=0.4),
+        Word(word="&", start=0.5, end=0.6),
+        Word(word="D", start=0.7, end=0.8),
+        Word(word="teams", start=0.9, end=1.2),
+        Word(word="state-of-the-art", start=1.3, end=2.0),
+    )
+)
+"""A section whose voice gave back `&` as its own word and said one hyphenated word."""
+
+
+def test_a_phrase_with_a_symbol_or_a_hyphenated_word_resolves_to_its_first_word() -> None:
+    assert anchor_time(Cue(cue="1.1:a", on="R & D"), SYMBOLS) == 0.3
+    assert anchor_time(Cue(cue="1.1:a", on="state of the art"), SYMBOLS) == 1.3
+
+
+def test_the_phrase_offered_for_a_symbol_or_a_hyphenated_word_resolves_on_its_first_word() -> None:
+    offered = nearest_phrase(Cue(cue="1.1:a", on="R & D team"), SYMBOLS)
+    assert offered is not None
+    assert anchor_time(Cue(cue="1.1:a", on=offered), SYMBOLS) == 0.3
+    offered = nearest_phrase(Cue(cue="1.1:a", on="teams state of the arts"), SYMBOLS)
+    assert offered is not None
+    assert anchor_time(Cue(cue="1.1:a", on=offered), SYMBOLS) == 0.9

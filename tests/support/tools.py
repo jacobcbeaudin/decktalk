@@ -17,12 +17,28 @@ from pathlib import Path
 
 import pytest
 
-SUITE_MARKERS = ("browser", "media", "e2e", "scaffold", "platform")
-"""The markers that name what a test needs beyond Python. Every one is registered in `pyproject.toml`.
+INSTALLED = ("browser", "media", "e2e", "scaffold", "platform")
+"""The markers of the suites that need what `decktalk install` fetches.
 
 `platform` is the machine itself rather than a tool: those tests assert what this filesystem and
 this fetched toolchain really do, so a runner that has fetched nothing would fail them and the
-default suite may not collect them. `tests/conftest.py` selects by these and nothing else is one.
+default suite may not collect them.
+"""
+
+BUILT = ("wheel",)
+"""The marker of the suite that reads the wheel `uv build` wrote into `dist/`, which no fetch provides."""
+
+SUITE_MARKERS = (*INSTALLED, *BUILT)
+"""The markers that name what a test needs beyond Python. Every one is registered in `pyproject.toml`.
+
+`tests/conftest.py` selects by these and nothing else is one.
+"""
+
+MARKED_BY_PATH = {"contract/test_wheel.py": "wheel"}
+"""The suite marker of each test file that carries none of its own, keyed by its path under `tests/`.
+
+The wheel test reads a file only `uv build` makes, so the collection hook marks it by where it is
+and a fresh clone's bare run never collects a test of a wheel it has not built.
 """
 
 FETCHED = ("media", "platform")

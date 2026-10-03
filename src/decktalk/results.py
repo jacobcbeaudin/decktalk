@@ -1,10 +1,11 @@
 """What every call returns: one frozen result per command, each a flat object a reader can dispatch on.
 
 `Result` reserves four keys and every result carries them. `schema` is the shape version, `ok` is
-true when the command ran and judged nothing certain, `findings` holds every judgement and `error`
-is filled only when the command could not run at all. A result whose command opens a run also
-declares `run`, and one whose command writes files also declares `written`, so a reader learns from
-the schema which commands do those things rather than meeting a null on the ones that do not.
+true when the command ran and judged nothing its threshold fails on, `findings` holds every
+judgement and `error` is filled only when the command could not run at all. A result whose command
+opens a run also declares `run`, and one whose command writes files also declares `written`, so a
+reader learns from the schema which commands do those things rather than meeting a null on the ones
+that do not.
 
 A result also declares two facts about its own command rather than about its own JSON.
 `reports_findings` says the command can report a judgement and `spends` says it can buy something,
@@ -277,7 +278,12 @@ class Result(Model):
     """True when the command answering with this can buy something, so it takes the three spending flags."""
 
     schema_: Literal[2] = Field(SCHEMA, alias="schema", description="The shape version of this object.")
-    ok: bool = Field(description="True when the command ran and judged nothing certain.")
+    ok: bool = Field(
+        description=(
+            "True when the command ran and judged nothing its threshold fails on, which is the one "
+            "--fail-on and --allow set, so it is true exactly when the command exits 0."
+        )
+    )
     findings: tuple[Finding, ...] = Field((), description="Every judgement this call made, certain first.")
     error: ErrorInfo | None = Field(None, description="Filled only when the command could not run.")
 

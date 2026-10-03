@@ -235,6 +235,36 @@ class Toolchain:
         return replace(self, ffmpeg=Path(ffmpeg), ffprobe=Path(ffprobe))
 
 
+@dataclass(frozen=True)
+class Threshold:
+    """Which findings fail a run: the least certain one that counts, and the codes that never count.
+
+    It is the one rule `ok`, the exit code and the point a build stops at are all read from, so a
+    caller that reads `ok` and one that reads the exit code agree about every run. The default fails
+    on a certain finding of any code.
+    """
+
+    stop_on: Certainty | None = Certainty.CERTAIN
+    """The least certain finding that fails the run, or None when no finding does."""
+
+    allow: frozenset[Code] = frozenset()
+    """Codes that never fail the run, whatever their certainty, though they are still reported."""
+
+    def reaches(self, finding: Finding) -> bool:
+        """Whether one finding fails the run."""
+        if self.stop_on is None or finding.code in self.allow:
+            return False
+        return self.stop_on is Certainty.UNCERTAIN or finding.certainty is Certainty.CERTAIN
+
+    def fails(self, findings: Iterable[Finding]) -> bool:
+        """Whether any of these findings fails the run."""
+        return any(self.reaches(found) for found in findings)
+
+
+CERTAIN_FAILS = Threshold()
+"""The threshold of a caller that names none, which fails on a certain finding of any code."""
+
+
 class Run:
     """One call in progress: its id, its stream, its cancel token and its spend gate.
 
@@ -393,13 +423,15 @@ class Run:
         *,
         findings: Iterable[Finding] | None = None,
         written: Iterable[Path] | None = None,
+        threshold: Threshold = CERTAIN_FAILS,
         **fields: object,
     ) -> R:
         """Fill one result: this run's id, the judgements it made, the files it wrote and how long it took.
 
-        `ok` is false when any judgement is certain, which is the one rule every command shares, so
-        no stage decides for itself what counts as having found something. A stage that reported its
-        judgements and its files through the run names neither here, and no stage times itself.
+        `ok` is false when any judgement reaches `threshold`, which is the caller's own and is the
+        same rule its exit code is read from, so no stage decides for itself what counts as having
+        found something. A stage that reported its judgements and its files through the run names
+        neither here, and no stage times itself.
         """
         judged = tuple(findings) if findings is not None else tuple(self.findings)
         declared = model.model_fields
@@ -410,7 +442,7 @@ class Run:
             fields.setdefault("written", tuple(dict.fromkeys(self._relative(path) for path in paths)))
         if "seconds" in declared:
             fields.setdefault("seconds", time.monotonic() - self.opened)
-        fields.setdefault("ok", not any(found.certainty is Certainty.CERTAIN for found in judged))
+        fields.setdefault("ok", not threshold.fails(judged))
         return model(findings=judged, **cast("dict[str, Any]", fields))
 
     def _relative(self, path: Path) -> Path:

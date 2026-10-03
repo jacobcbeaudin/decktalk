@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 import typer
-from typer._click import Context
+from typer import Context
 
 from decktalk.cli import catalog
 from decktalk.cli.app import command

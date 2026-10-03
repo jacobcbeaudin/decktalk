@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-from typer._click import Context
+from typer import Context
 
 from decktalk.cli import session as sessions
 from decktalk.cli.app import command
@@ -159,10 +159,11 @@ def storyboard(
 ) -> StoryboardResult:
     """Freeze every slide at every cue onto one page.
 
-    One panel of a storyboard is still a storyboard, so the name survives every selector, and the
-    page it writes is the checkpoint a voiced build points at before it buys. The five selectors
+    The page it writes is the checkpoint a voiced build points at before it buys. The five selectors
     narrow the sheet and a selector that matches nothing draws nothing, which is what a section
     number that matches no section already does.
+    \f
+    One panel of a storyboard is still a storyboard, so the name survives every selector.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
@@ -183,8 +184,9 @@ def serve(
 ) -> ServeResult:
     """Serve the project on a local origin over http.
 
-    It prints where the deck is served and then closes stdout, so a caller that captured the output
-    reads one object and is not left waiting on a stream that never ends.
+    It prints where the deck is served as one object, flushed at once, and then serves until it is
+    interrupted. Its standard output stays open while it serves, so a caller reads the object as it
+    arrives rather than waiting for the stream to end.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)

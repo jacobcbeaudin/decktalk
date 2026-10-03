@@ -433,7 +433,7 @@ def test_no_threshold_runs_every_stage_whatever_it_finds(
     result = build(inputs, watched.run, stop_on=None)
     assert calls.names[-1] == "verify"
     assert result.stopped_at is None
-    assert result.ok is False
+    assert result.ok is True
 
 
 def test_an_allowed_code_lets_a_cue_no_page_declares_through(
@@ -455,6 +455,7 @@ def test_any_allowed_code_is_forgiven_the_same_way(
     result = build(inputs, watched.run, allow=[Code.PAGE_BLACK])
     assert calls.names[-1] == "verify"
     assert result.stopped_at is None
+    assert result.ok is True
 
 
 @pytest.mark.usefixtures("calls")

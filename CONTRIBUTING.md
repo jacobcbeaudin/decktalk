@@ -73,7 +73,8 @@ command that reproduces it, because a job name scrolls away and the first line o
 | Group | What it runs | Needs | Where | Gates on |
 |---|---|---|---|---|
 | `lint` | `uv lock --check`, and 7 more | npm | Linux | pr, main |
-| `unit` | `uv run pytest -q -rs -n auto --ignore=tests/contract/test_wheel.py --ignore=tests/contract/test_prose.py --ignore=tests/contract/test_vocabulary.py --ignore=tests/contract/test_numbers.py --cov --cov-report= --junitxml=tests/out/junit/unit.xml` | nothing beyond uv | Linux | pr, main |
+| `unit` | `uv run pytest -q -rs -n auto --ignore=tests/contract/test_prose.py --ignore=tests/contract/test_vocabulary.py --ignore=tests/contract/test_numbers.py --cov --cov-report= --junitxml=tests/out/junit/unit.xml` | nothing beyond uv | Linux | pr, main |
+| `floors` | `sh -euc <shell script>` | nothing beyond uv | Linux | pr, main |
 | `node` | `node --test tests/decktalk/runtime/src/*.test.ts tests/scripts/*.test.mjs` | npm | Linux | pr, main |
 | `browser` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | Linux | pr, main |
 | `media` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | Linux | pr, main |
@@ -97,12 +98,13 @@ other. `tests/decktalk/` mirrors `src/decktalk/` one file per module, `tests/con
 rules that belong to no module, `tests/platform/` holds what exists only because there are three
 platforms, and `tests/e2e/` holds the two suites that build a whole project.
 
-Four markers name a tool, and they partition: `browser`, `media`, `e2e` and `scaffold`. A bare
-`pytest` runs everything that needs no tool, and a suite is reached by naming its marker. The rule
-lives in a hook in `tests/conftest.py` rather than in `addopts`, because an `-m` written in
-`addopts` is replaced whole by the `-m` you type, which is how `-m "not e2e"` used to admit the five
-minute scaffold build. **An empty selection is an error rather than a pass**, and the message names
-the markers.
+Six markers name what a suite needs beyond Python: `browser`, `media`, `e2e` and `scaffold` name a
+tool, `platform` names the machine and its fetched toolchain, and `wheel` names the wheel `uv build`
+writes into `dist/`. A bare `pytest` runs everything that needs none of them, and a suite is reached
+by naming its marker. The rule lives in a hook in `tests/conftest.py` rather than in `addopts`,
+because an `-m` written in `addopts` is replaced whole by the `-m` you type, which is how
+`-m "not e2e"` used to admit the five minute scaffold build. **An empty selection is an error
+rather than a pass**, and the message names the markers.
 
 ```console
 uv run pytest -q                      # everything that needs no tool

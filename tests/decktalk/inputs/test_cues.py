@@ -13,7 +13,10 @@ from hypothesis import strategies as st
 from decktalk.errors import InputError
 from decktalk.inputs import cues as cues_module
 from decktalk.inputs.cues import Spoken, load_cues, norm
+from decktalk.inputs.script import parse_script
 from decktalk.results import Word
+from decktalk.speech import PUNCT
+from decktalk.stages.narrate.takes import estimated_words
 
 
 def write_cues(root: Path, rows: list[dict[str, object]]) -> Path:
@@ -115,9 +118,9 @@ def test_the_nth_occurrence_is_found_and_one_past_the_last_is_none() -> None:
 def test_the_words_are_normalised_once_when_they_are_read(monkeypatch: pytest.MonkeyPatch) -> None:
     """A long section with many cues would otherwise normalise every word once per cue."""
     calls: list[str] = []
-    real = cues_module.norm
+    real = cues_module.pieces
     monkeypatch.setattr(
-        cues_module, "norm", lambda token, case_sensitive=False: calls.append(token) or real(token, case_sensitive)
+        cues_module, "pieces", lambda token, case_sensitive=False: calls.append(token) or real(token, case_sensitive)
     )
     said = Spoken.of((Word(word="a", start=0.0, end=0.1), Word(word="b", start=0.2, end=0.3)))
     before = len(calls)
@@ -167,3 +170,92 @@ def test_a_word_whose_case_folds_to_other_letters_matches_its_phrase(spoken: str
     # Before, the transcript was lowered while the phrase was folded, so "Straße" never matched itself.
     said = Spoken.of((Word(word=spoken, start=0.0, end=0.4),))
     assert said.find(phrase) == 0
+
+
+# ---- words a voice speaks as a symbol, and words joined by hyphens ------------------------------
+
+SCRIPT = "Our R & D team ships state-of-the-art tools / fast, with Q & A on input / output."
+"""A line of ordinary script text whose `&` and `/` a voice gives back as words of their own."""
+
+SPOKEN_SCRIPT = Spoken.of(
+    tuple(Word(word=token.strip(PUNCT), start=float(i), end=i + 0.5) for i, token in enumerate(SCRIPT.split()))
+)
+"""The line as a voice's transcript reads it, split on spaces with the edge punctuation stripped."""
+
+
+@pytest.mark.parametrize(
+    ("phrase", "index"),
+    [
+        ("R & D", 1),
+        ("R & D team", 1),
+        ("Q & A", 11),
+        ("tools / fast", 7),
+        ("input / output", 15),
+        ("& D", 2),
+        ("/ output", 16),
+        ("R D", 1),
+    ],
+)
+def test_a_phrase_with_a_symbol_the_voice_speaks_as_its_own_word_resolves(phrase: str, index: int) -> None:
+    """A word with no letter in it is skipped on both sides, and a phrase that opens on one lands on it."""
+    assert SPOKEN_SCRIPT.find(phrase) == index
+
+
+@pytest.mark.parametrize(
+    ("phrase", "index"),
+    [
+        ("state-of-the-art", 6),
+        ("state of the art", 6),
+        ("stateoftheart", 6),
+        ("ships state of the art tools", 5),
+        ("the art tools", 6),
+        ("of the", 6),
+    ],
+)
+def test_a_hyphenated_word_matches_whole_and_by_its_parts(phrase: str, index: int) -> None:
+    """A phrase that starts inside a hyphenated word lands on the start of the word that holds it."""
+    assert SPOKEN_SCRIPT.find(phrase) == index
+
+
+def test_a_phrase_written_with_a_hyphen_matches_the_parts_a_voice_spoke_apart() -> None:
+    said = Spoken.of(tuple(Word(word=w, start=float(i), end=i + 0.5) for i, w in enumerate("a zig zag line".split())))
+    assert said.find("zig-zag") == 1
+    assert said.find("zig zag line") == 1
+
+
+def test_a_hyphenated_word_counts_once_where_its_whole_and_its_parts_both_match() -> None:
+    assert SPOKEN_SCRIPT.matches("state-of-the-art") == [6]
+
+
+@pytest.mark.parametrize(("phrase", "index"), [("R & D", 1), ("state of the art", 6), ("tools / fast", 7)])
+def test_the_placeholder_words_of_a_run_without_voice_resolve_the_same_phrases(phrase: str, index: int) -> None:
+    (segment,) = parse_script(f"## 1. Open\n\n{SCRIPT}\n")
+    assert Spoken.of(estimated_words(segment, 8.0)).find(phrase) == index
+
+
+SYMBOL = st.sampled_from(["&", "/", "+", "-", "—", "..."])
+"""A word a voice may speak that carries no letter or digit, so the matcher reads nothing from it."""
+
+PIECE = st.text(string.ascii_letters + string.digits, min_size=1, max_size=4)
+
+ANY_WORD = st.one_of(
+    WORD, SYMBOL, st.lists(PIECE, min_size=2, max_size=3).map("-".join), st.lists(PIECE, min_size=2).map("/".join)
+)
+"""A plain word, a word with no letter in it, or a word whose parts a hyphen or a slash joins."""
+
+
+@given(st.lists(ANY_WORD, min_size=1, max_size=10), st.data())
+def test_any_run_of_spoken_words_resolves_on_or_before_its_own_first_word(
+    words: list[str], data: st.DataObject
+) -> None:
+    start = data.draw(st.integers(min_value=0, max_value=len(words) - 1))
+    end = data.draw(st.integers(min_value=start + 1, max_value=len(words)))
+    said = Spoken.of(tuple(Word(word=word, start=float(i), end=i + 0.5) for i, word in enumerate(words)))
+    phrase = " ".join(words[start:end])
+    if not any(norm(word) for word in words[start:end]):
+        assert said.matches(phrase) == []
+        return
+    found = said.matches(phrase)
+    assert start in found
+    assert found[0] <= start
+    assert said.find(phrase) == found[0]

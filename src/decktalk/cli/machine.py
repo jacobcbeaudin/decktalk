@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from typer._click import Context
+from typer import Context
 
 from decktalk import machine as machines
 from decktalk.cli import session as sessions

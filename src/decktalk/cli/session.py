@@ -21,7 +21,7 @@ from typing import Any
 
 import typer
 from rich.console import Console
-from typer._click import Context
+from typer import Context
 
 from decktalk import project as projects
 from decktalk.cli import output
@@ -29,8 +29,8 @@ from decktalk.cli.options import FailOn, When, pairs
 from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorInfo
 from decktalk.events import Events
 from decktalk.files import json_text
-from decktalk.findings import Certainty, Code, Finding
-from decktalk.machine import Machine
+from decktalk.findings import Code, Finding
+from decktalk.machine import Machine, Threshold
 from decktalk.project import Project
 from decktalk.results import ErrorResult, Result, Spend, Voicing, counted
 
@@ -270,6 +270,11 @@ class Session:
         """Hold the threshold and the carried codes this run's exit code is worked out from."""
         self.fail_on, self.allowed = fail_on, allow
 
+    @property
+    def threshold(self) -> Threshold:
+        """The threshold `--fail-on` and `--allow` name, which the exit code and `ok` are both read from."""
+        return Threshold(stop_on=self.fail_on.stops_on, allow=self.allowed)
+
     def report(self, result: Result) -> int:
         """Write the result the way the terminal asked for it, and give back the exit code.
 
@@ -277,14 +282,18 @@ class Session:
         this itself, so it is written once and the exit code is worked out however often it is asked
         for.
         """
+        code = self.exit_code(result)
         if self._said:
-            return self.exit_code(result)
+            return code
         self._said = True
+        # The library judged the result against the threshold its caller passed, and most commands
+        # take none, so `ok` is read again from the exit code that `--fail-on` and `--allow` decide.
+        judged = result.model_copy(update={"ok": code == 0})
         if self.flags.json_out:
-            self._stdout(result.model_dump_json(indent=2))
+            self._stdout(judged.model_dump_json(indent=2))
         else:
-            output.render(result, self.out)
-        return self.exit_code(result)
+            output.render(judged, self.out)
+        return code
 
     def document(self, contract: object) -> int:
         """Write one contract document on stdout, which is the one output that carries no envelope.
@@ -305,12 +314,7 @@ class Session:
         """0 found nothing, 1 found something at the threshold, and the code's own when it could not run."""
         if result.error is not None:
             return result.error.code.exit_code
-        judged = [found for found in result.findings if found.code not in self.allowed]
-        if self.fail_on is FailOn.NEVER or not judged:
-            return 0
-        if self.fail_on is FailOn.ANY:
-            return FOUND_SOMETHING
-        return FOUND_SOMETHING if any(found.certainty is Certainty.CERTAIN for found in judged) else 0
+        return FOUND_SOMETHING if self.threshold.fails(result.findings) else 0
 
     def failed(self, error: DeckTalkError) -> int:
         """Report a refusal as the one error block, or as the one error object under `--json`."""

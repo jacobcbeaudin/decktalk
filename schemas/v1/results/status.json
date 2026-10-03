@@ -664,7 +664,7 @@
       "type": "integer"
     },
     "ok": {
-      "description": "True when the command ran and judged nothing certain.",
+      "description": "True when the command ran and judged nothing its threshold fails on, which is the one --fail-on and --allow set, so it is true exactly when the command exits 0.",
       "title": "Ok",
       "type": "boolean"
     },

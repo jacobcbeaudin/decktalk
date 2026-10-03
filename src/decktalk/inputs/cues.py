@@ -196,48 +196,118 @@ APOSTROPHES = str.maketrans({"\u2019": "'", "\u02bc": "'"})
 """The typographic apostrophes a script or a voice's transcript may carry, read as the plain one."""
 
 
-def norm(token: str, case_sensitive: bool = False) -> str:
-    """One word as the matcher compares it: composed, apostrophes plain, punctuation dropped.
+def pieces(token: str, case_sensitive: bool = False) -> list[str]:
+    """One word as the parts the matcher compares: composed, apostrophes plain, split where it is punctuated.
 
     A word is composed first, because the same accented letter can arrive as one character from the
     script and as a letter plus a combining mark from a transcript, and the two must compare equal.
-    Case is folded rather than lowered, so letters whose lower case differs across forms still match.
+    Every ignored character but a combining mark divides two parts, so `state-of-the-art` is four
+    parts and `R&D` is two, while a mark is dropped from inside the letter it sits on. Case is folded
+    rather than lowered, so letters whose lower case differs across forms still match.
     """
-    token = UNMATCHED.sub("", unicodedata.normalize("NFC", token).translate(APOSTROPHES))
-    return token if case_sensitive else token.casefold()
+    composed = unicodedata.normalize("NFC", token).translate(APOSTROPHES)
+    spaced = "".join(_kept(char) for char in composed)
+    return [part if case_sensitive else part.casefold() for part in spaced.split()]
+
+
+def _kept(char: str) -> str:
+    """The character itself when the matcher keeps it, nothing for a combining mark, and a space for a divider."""
+    if not UNMATCHED.match(char):
+        return char
+    return "" if unicodedata.category(char).startswith("M") else " "
+
+
+def norm(token: str, case_sensitive: bool = False) -> str:
+    """One word as the matcher compares it whole, which is its parts written together."""
+    return "".join(pieces(token, case_sensitive))
 
 
 @dataclass(frozen=True)
-class Spoken:
-    """One section's words, with the form the matcher compares each of them in worked out once.
+class Reading:
+    """A section's words as one run of tokens, with the index of the word each token was read from."""
+
+    exact: tuple[str, ...]
+    """Every token as a case-sensitive match compares it."""
+
+    folded: tuple[str, ...]
+    """Every token as a match without case compares it."""
+
+    at: tuple[int, ...]
+    """The index in the section's words of the word each token was read from."""
+
+    @classmethod
+    def of_tokens(cls, tokens: Sequence[Sequence[str]]) -> Reading:
+        """The tokens of every word in order, each word given as its own tokens with case kept."""
+        placed = [(index, token) for index, word in enumerate(tokens) for token in word]
+        exact = tuple(token for _, token in placed)
+        return cls(exact=exact, folded=tuple(one.casefold() for one in exact), at=tuple(index for index, _ in placed))
+
+    def starts(self, target: Sequence[str], case_sensitive: bool) -> set[int]:
+        """The word every occurrence of these tokens starts in."""
+        said, width, wanted = self.exact if case_sensitive else self.folded, len(target), tuple(target)
+        return {self.at[i] for i in range(len(said) - width + 1) if said[i : i + width] == wanted}
+
+
+@dataclass(frozen=True)
+class Spoken(Reading):
+    """One section's words, read once into the tokens the matcher compares, each tied back to its word.
 
     A section is matched against once per cue, and a long section with many cues would otherwise
-    normalise every one of its words again for each of them, so the two forms are made here when the
+    normalise every one of its words again for each of them, so the tokens are made here when the
     words are read and every phrase is matched against these.
+
+    The words are read twice. Its own tokens read a word that punctuation divides as its parts, so
+    `state-of-the-art` is `state`, `of`, `the` and `art`, and `whole` reads each word as one token, so
+    the same word is `stateoftheart`. A word with no letter or digit in it, such as the `&` or the `/`
+    a voice gives back as a word of its own, is no token in either, and a phrase drops it the same way.
     """
 
     words: tuple[Word, ...]
-    folded: tuple[str, ...]
-    """Every word as a match without case compares it."""
+    whole: Reading
 
-    exact: tuple[str, ...]
-    """Every word as a case-sensitive match compares it."""
+    bare: frozenset[int]
+    """The index of every word that holds no token, which a phrase that opens on such a word lands on."""
 
     @classmethod
     def of(cls, words: Sequence[Word]) -> Spoken:
-        """These words with both of their matched forms worked out once."""
-        exact = tuple(norm(word.word, case_sensitive=True) for word in words)
-        return cls(words=tuple(words), folded=tuple(one.casefold() for one in exact), exact=exact)
+        """These words with both of their readings worked out once."""
+        split = [pieces(word.word, case_sensitive=True) for word in words]
+        parts, whole = Reading.of_tokens(split), Reading.of_tokens([["".join(word)] if word else [] for word in split])
+        return cls(
+            exact=parts.exact,
+            folded=parts.folded,
+            at=parts.at,
+            words=tuple(words),
+            whole=whole,
+            bare=frozenset(range(len(split))) - set(whole.at),
+        )
 
     def matches(self, phrase: str, case_sensitive: bool = False) -> list[int]:
-        """Index of the first word of every occurrence of phrase, in order."""
-        target = [t for t in (norm(t, case_sensitive) for t in phrase.split()) if t]
-        if not target:
+        """Index of the word every occurrence of phrase starts on, in order.
+
+        The phrase matches where its words equal a run of the words read whole, or where its parts
+        equal a run of the parts, so `state of the art` and `state-of-the-art` both find a spoken
+        `state-of-the-art`. A phrase that starts on a part inside a word lands on that word's start,
+        and one that opens on words holding no token lands on as many of those as the section speaks
+        straight before the match.
+        """
+        written = [pieces(token, case_sensitive) for token in phrase.split()]
+        whole = ["".join(word) for word in written if word]
+        if not whole:
             return []
-        said, width = self.exact if case_sensitive else self.folded, len(target)
-        return [i for i in range(len(said) - width + 1) if list(said[i : i + width]) == target]
+        lead = next(index for index, word in enumerate(written) if word)
+        found = self.whole.starts(whole, case_sensitive) | self.starts(
+            [part for word in written for part in word], case_sensitive
+        )
+        return sorted({self._opened(start, lead) for start in found})
+
+    def _opened(self, start: int, lead: int) -> int:
+        """The match's first word, moved back over up to `lead` words that hold no token."""
+        while lead and start - 1 in self.bare:
+            start, lead = start - 1, lead - 1
+        return start
 
     def find(self, phrase: str, occurrence: int = 1, case_sensitive: bool = False) -> int | None:
-        """Index of the first word of the n-th occurrence of phrase, or None."""
+        """Index of the word the n-th occurrence of phrase starts on, or None."""
         found = self.matches(phrase, case_sensitive)
         return found[occurrence - 1] if 1 <= occurrence <= len(found) else None

@@ -17,13 +17,12 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from pydantic import TypeAdapter
-from typer._click import Context, Parameter
-from typer._click.core import Command
+from typer import Context
 from typer.main import get_command
 
 from decktalk import page
 from decktalk import settings as knobs
-from decktalk.cli.app import PROGRAM, app
+from decktalk.cli.app import PROGRAM, Command, Parameter, app
 from decktalk.errors import ErrorCode
 from decktalk.events import Line
 from decktalk.findings import Code, Finding
