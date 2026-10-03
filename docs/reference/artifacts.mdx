@@ -164,8 +164,8 @@ from the takes on disk, keeps every take it finds and buys nothing for it.
 | Field | Meaning |
 |---|---|
 | `script` | The script these takes were made from, project-relative. |
-| `model` | The provider model every voiced row was spoken by. |
-| `output_format` | The audio format every row was asked for in. |
+| `model` | The provider model the last run that wrote this index asked for. |
+| `output_format` | The audio format the last run that wrote this index asked for. |
 | `sections[].section` | The section this row is about, as the author numbered it. |
 | `sections[].key` | The section's key, which names its files under the build directory. |
 | `sections[].chapter` | The section's title, which the film's chapter marker carries. |
@@ -219,6 +219,14 @@ what the digest test in the repository holds it to.
 A placeholder take is named the same way over its own three inputs, which are the pace it is sized
 at, how long a declared pause is held, and the text it stands in for. Its digest carries the prefix
 `placeholder-`, so a run that writes placeholders can never overwrite a voiced take.
+
+A take is current when the current inputs name its digest. Each spoken section's take state is read
+from that rule alone: `voiced` when a voiced take of the current inputs is held, `unchecked` when a
+voiced take of this text is held and no voice is named to match it, `stale` when the take index's
+voiced take for the section or its text is held under another digest, `placeholder` when only a
+placeholder of the current text is held, and `missing` when nothing the section could play is held.
+`status`, `check`, `narrate` and `watch` read the same five states. `stale` lasts until a run that
+does not spend rewrites the take index to the placeholder it plays.
 
 ## `takes/<digest>.words.json`
 

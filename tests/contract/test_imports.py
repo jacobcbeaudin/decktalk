@@ -85,7 +85,7 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.status", "stages.record"): "the rule that decides a recording is stale",
     # A take is named by narrate's digest alone, so the report that lists the takes no section plays
     # names each section's take the way narrate does rather than spelling a digest of its own.
-    ("stages.status", "stages.narrate"): "the digest a section's take is named by",
+    ("stages.status", "stages.narrate"): "the take state of every section, which narrate plans by",
     # The film still stands, and the next command is named, by the one rule a build keeps a stage by.
     ("stages.status", "stages.kept"): "the rule that decides the film and its measurement still stand",
     # The score is ready to mix once its bought music is joined, which the stage that joins it decides.

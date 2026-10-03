@@ -584,8 +584,8 @@
           "title": "Key",
           "type": "string"
         },
-        "status": {
-          "$ref": "#/$defs/TakeStatus",
+        "outcome": {
+          "$ref": "#/$defs/TakeOutcome",
           "description": "What this run did about this section's take."
         },
         "characters": {
@@ -631,7 +631,7 @@
       "required": [
         "section",
         "key",
-        "status",
+        "outcome",
         "characters",
         "digest"
       ],
@@ -660,14 +660,14 @@
       "title": "Stage",
       "type": "string"
     },
-    "TakeStatus": {
+    "TakeOutcome": {
       "description": "What one run did about one section's take.",
       "enum": [
         "voiced",
         "kept",
         "placeholder"
       ],
-      "title": "TakeStatus",
+      "title": "TakeOutcome",
       "type": "string"
     }
   },

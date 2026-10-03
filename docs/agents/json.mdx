@@ -83,33 +83,33 @@ decktalk schema cues        # the shape of cues.json
       "key": "01",
       "kind": "page",
       "source": "deck/index.html?scene=1",
-      "voiced": false,
-      "voiced_stale": false,
+      "take_state": "missing",
+      "take_reason": "it has no voiced take yet",
       "recorded": false,
       "assembled": false,
-      "stale": false
+      "recording_stale": false
     },
     {
       "section": 2,
       "key": "02",
       "kind": "page",
       "source": "deck/index.html?scene=2",
-      "voiced": false,
-      "voiced_stale": false,
+      "take_state": "missing",
+      "take_reason": "it has no voiced take yet",
       "recorded": false,
       "assembled": false,
-      "stale": false
+      "recording_stale": false
     },
     {
       "section": 3,
       "key": "03",
       "kind": "page",
       "source": "deck/index.html?scene=3",
-      "voiced": false,
-      "voiced_stale": false,
+      "take_state": "missing",
+      "take_reason": "it has no voiced take yet",
       "recorded": false,
       "assembled": false,
-      "stale": false
+      "recording_stale": false
     }
   ],
   "film": null,
@@ -124,6 +124,9 @@ decktalk schema cues        # the shape of cues.json
 what to run. It is null once the film on disk is the one the last build measured. `runs` lists every
 run of this project whose events file is still open. `unplayed` lists the takes on disk that no
 section plays, and is null when no voice is named, because then no take can be matched to a section.
+`take_state` is what the disk holds for each spoken section: `voiced`, `unchecked`, `stale`,
+`placeholder` or `missing`, with `take_reason` saying why in words. narrate, check and watch read the
+same rule.
 
 ## A result that judged the project
 
@@ -476,9 +479,9 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 
 `outcome` is `ran`, `kept`, `skipped`, `stopped` or `failed`, and it is on `run.done`, `stage.done`
 and `section.done`. `kept` is a stage the run planned and did not repeat, because nothing it reads had
-changed since it last ran, `skipped` is a stage the run did not plan or did not reach, and `stopped`
-is a run the caller cancelled or interrupted. One field
-replaces four event names, so a caller reads one field rather than branching four ways to learn the
+changed since it last ran, or a section whose take narrate found on disk. `skipped` is a stage the
+run did not plan or did not reach, and `stopped` is a run the caller cancelled or interrupted. One
+field replaces four event names, so a caller reads one field rather than branching four ways to learn the
 same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`, because narrate
 counts takes, record sections, score assets, assemble encoding passes and verify probes, and `level` on a log line is `debug`, `info`, `warning` or `error`.
 

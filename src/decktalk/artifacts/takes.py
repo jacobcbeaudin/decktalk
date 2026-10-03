@@ -220,8 +220,8 @@ class Takes(Stored):
     label: ClassVar[str] = "the take index"
 
     script: str = Field(description="The script these takes were made from, project-relative.")
-    model: str = Field(description="The provider model every voiced row was spoken by.")
-    output_format: str = Field(description="The audio format every row was asked for in.")
+    model: str = Field(description="The provider model the last run that wrote this index asked for.")
+    output_format: str = Field(description="The audio format the last run that wrote this index asked for.")
     sections: tuple[Take, ...] = Field((), description="One row per narrated section, in section order.")
 
     @property

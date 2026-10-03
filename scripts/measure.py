@@ -42,7 +42,7 @@ from typing import Any
 
 import check
 import check_coverage
-from decktalk.results import TakeStatus
+from decktalk.results import TakeOutcome
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "docs" / "data" / "measured.json"
@@ -103,7 +103,7 @@ def landing(verifies: list[dict[str, Any]], *, limit_ms: float) -> dict[str, Any
         raise SystemExit("verify measured no reveal in any run, so there is no landing error to publish.")
     return {
         "run": RUN,
-        "voice": TakeStatus.PLACEHOLDER.value,
+        "voice": TakeOutcome.PLACEHOLDER.value,
         "limit_ms": limit_ms,
         "reveals": len(distances),
         "skipped": skipped,

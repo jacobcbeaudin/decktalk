@@ -52,7 +52,7 @@ from pathlib import Path
 import decktalk
 from decktalk.machine import Machine
 from decktalk.media import browser, ffmpeg
-from decktalk.results import TakeStatus, Word
+from decktalk.results import TakeOutcome, Word
 
 root, cache, out = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 KEY, SENTINEL = "ELEVENLABS_API_KEY", "sk-split-sentinel-not-a-credential"
@@ -92,7 +92,7 @@ here = Machine.of(
     speech_providers={"elevenlabs": Tone},
 )
 result = decktalk.open(root, machine=here).narrate(spend=True)
-voiced = [take.section for take in result.sections if take.status is TakeStatus.VOICED]
+voiced = [take.section for take in result.sections if take.outcome is TakeOutcome.VOICED]
 out.write_text(json.dumps({"ok": result.ok, "voiced": voiced}), encoding="utf-8")
 '''
 

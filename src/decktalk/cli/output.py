@@ -51,6 +51,7 @@ from decktalk.results import (
     ServeResult,
     StatusResult,
     StoryboardResult,
+    TakeState,
     VerifyResult,
     WordsResult,
     counted,
@@ -314,16 +315,16 @@ def _doctor(result: DoctorResult) -> Iterable[RenderableType]:
 
 
 def _status(result: StatusResult) -> Iterable[RenderableType]:
-    table = _table("Section", "Key", "Plays", "Voiced", "Recorded", "Assembled", "Stale")
+    table = _table("Section", "Key", "Plays", "Take", "Recorded", "Assembled", "Stale")
     for section in result.sections:
         table.add_row(
             str(section.section),
             section.key,
             section.source,
-            _yes(section.voiced),
+            section.take_state.value if section.take_state else "",
             _yes(section.recorded),
             _yes(section.assembled),
-            _yes(section.stale or section.voiced_stale),
+            _yes(section.recording_stale or section.take_state is TakeState.STALE),
         )
     yield table
     if result.film is not None:
@@ -363,7 +364,7 @@ def _serve(result: ServeResult) -> Iterable[RenderableType]:
 def _narrate(result: NarrateResult) -> Iterable[RenderableType]:
     table = _table("Section", "Take", "Characters", "Seconds")
     for take in result.sections:
-        table.add_row(str(take.section), take.status.value, str(take.characters), _length(take.seconds))
+        table.add_row(str(take.section), take.outcome.value, str(take.characters), _length(take.seconds))
     yield table
     yield Text(result.cost.sentence)
 
@@ -396,9 +397,9 @@ def _record(result: RecordResult) -> Iterable[RenderableType]:
 
 
 def _score(result: ScoreResult) -> Iterable[RenderableType]:
-    table = _table("Item", "Kind", "Status", "Seconds")
+    table = _table("Item", "Kind", "Outcome", "Seconds")
     for item in result.items:
-        table.add_row(item.name, item.kind.value, item.status.value, _length(item.seconds))
+        table.add_row(item.name, item.kind.value, item.outcome.value, _length(item.seconds))
     yield table
     yield Text(result.cost.sentence)
 

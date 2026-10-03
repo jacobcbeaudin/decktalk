@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 import build_measured
-from decktalk.results import TakeStatus
+from decktalk.results import TakeOutcome
 
 RUN: dict[str, Any] = {
     "what": "the starter `decktalk init` writes, built with the placeholder voice",
@@ -32,7 +32,7 @@ DATA: dict[str, Any] = {
     "landing": [
         {
             "run": "measure",
-            "voice": TakeStatus.PLACEHOLDER.value,
+            "voice": TakeOutcome.PLACEHOLDER.value,
             "limit_ms": 80.0,
             "reveals": 6,
             "skipped": 0,

@@ -17,6 +17,7 @@ import time
 import uuid
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -60,6 +61,13 @@ RUN_DIGITS = 12
 def new_run() -> str:
     """A fresh run id, which names this run's events file and its rows in `status`."""
     return uuid.uuid4().hex[:RUN_DIGITS]
+
+
+@dataclass
+class Ending:
+    """How a block the run timed ended, which the block may set before it returns."""
+
+    outcome: Outcome = Outcome.RAN
 
 
 class Run:
@@ -152,11 +160,11 @@ class Run:
         """Raise `Cancelled` when the caller has asked the run to stop, which a stage calls between sections."""
         self.cancel.check()
 
-    def stage(self, stage: Stage, *, index: int = 1, count: int = 1) -> AbstractContextManager[None]:
+    def stage(self, stage: Stage, *, index: int = 1, count: int = 1) -> AbstractContextManager[Ending]:
         """Open and close one stage on the stream, whatever the stage does inside."""
         return self._timed(StageStart, StageDone, stage=stage, opening={"index": index, "count": count})
 
-    def section(self, stage: Stage, section: int) -> AbstractContextManager[None]:
+    def section(self, stage: Stage, section: int) -> AbstractContextManager[Ending]:
         """Open and close one section of one stage on the stream, and check the cancel token first."""
         self.check()
         return self._timed(SectionStart, SectionDone, stage=stage, section=section)
@@ -164,22 +172,24 @@ class Run:
     @contextmanager
     def _timed(
         self, start: type[Event], done: type[Event], *, opening: Mapping[str, int] | None = None, **both: object
-    ) -> Iterator[None]:
+    ) -> Iterator[Ending]:
         """Emit `start`, run the block, and emit `done` with how it ended and how long it took.
 
-        A block the caller cancelled or interrupted ends as stopped, because nothing in it failed.
+        A block the caller cancelled or interrupted ends as stopped, because nothing in it failed. A
+        block that returns normally ends as its `Ending` says, which is ran unless the block set it.
         """
         started = time.monotonic()
         self.emit(start, **both, **(opening or {}))
         stage, section = both.get("stage"), both.get("section")
+        ending = Ending()
         try:
             with within(stage=cast("Stage | None", stage), section=cast("int | None", section)):
-                yield
+                yield ending
         except BaseException as failure:
             ended = Outcome.STOPPED if isinstance(failure, STOPS) else Outcome.FAILED
             self.emit(done, **both, outcome=ended, elapsed_seconds=time.monotonic() - started)
             raise
-        self.emit(done, **both, outcome=Outcome.RAN, elapsed_seconds=time.monotonic() - started)
+        self.emit(done, **both, outcome=ending.outcome, elapsed_seconds=time.monotonic() - started)
 
     def fetching(self, tool: str, done_bytes: int, total_bytes: int | None = None) -> None:
         """A tool is arriving, which is the one moment a run stops for the network.

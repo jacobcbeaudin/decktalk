@@ -172,11 +172,11 @@ decktalk status
 
 {/* sample: decktalk status on a fresh starter */}
 ```text
- Section   Key   Plays                     Voiced   Recorded   Assembled   Stale
- ───────────────────────────────────────────────────────────────────────────────
- 1         01    deck/index.html?scene=1   no       no         no          no
- 2         02    deck/index.html?scene=2   no       no         no          no
- 3         03    deck/index.html?scene=3   no       no         no          no
+ Section   Key   Plays                     Take      Recorded   Assembled   Stale
+ ────────────────────────────────────────────────────────────────────────────────
+ 1         01    deck/index.html?scene=1   missing   no         no          no
+ 2         02    deck/index.html?scene=2   missing   no         no          no
+ 3         03    deck/index.html?scene=3   missing   no         no          no
 
 Next   decktalk narrate --no-spend
 ```
@@ -201,11 +201,11 @@ loop dispatches on.
       "key": "01",
       "kind": "page",
       "source": "deck/index.html?scene=1",
-      "voiced": false,
-      "voiced_stale": false,
+      "take_state": "missing",
+      "take_reason": "it has no voiced take yet",
       "recorded": false,
       "assembled": false,
-      "stale": false
+      "recording_stale": false
     }
   ],
   "film": null,
@@ -218,11 +218,12 @@ loop dispatches on.
 
 Two fields carry the two caches.
 
-- `voiced` is true when a take of this section's current script text is on disk. It goes false the
-  moment you edit the words, which is how you find what the next voiced run would buy.
-- `stale` is true when the recording on disk no longer matches the project. The row carries the fact
-  and the stream carries the sentence, so a reader that dispatches on the boolean is still told which
-  of the several things moved.
+- `take_state` is what the disk holds for this section, with `take_reason` saying why. It goes
+  `stale` when the text, the voice, the model or the voice settings change, and `voiced` again once a
+  voiced run buys the take, which is how you find what the next voiced run would buy.
+- `recording_stale` is true when the recording on disk no longer matches the project. The row
+  carries the fact and the stream carries the sentence, so a reader that dispatches on the boolean is
+  still told which of the several things moved.
 
 `next` is the whole command to run next, read off the pipeline rather than guessed. It is
 `decktalk build` whenever anything on disk is stale, and null once the film on disk is the one the

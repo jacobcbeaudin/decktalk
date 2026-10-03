@@ -254,25 +254,26 @@ cache paths.
 
     {/* sample: decktalk status, after the build above */}
     ```text
-     Section   Key   Plays                     Voiced   Recorded   Assembled   Stale
-     ───────────────────────────────────────────────────────────────────────────────
-     1         01    deck/index.html?scene=1   no       yes        yes         no
-     2         02    deck/index.html?scene=2   no       yes        yes         no
-     3         03    deck/index.html?scene=3   no       yes        yes         no
+     Section   Key   Plays                     Take          Recorded   Assembled   Stale
+     ────────────────────────────────────────────────────────────────────────────────────
+     1         01    deck/index.html?scene=1   placeholder   yes        yes         no
+     2         02    deck/index.html?scene=2   placeholder   yes        yes         no
+     3         03    deck/index.html?scene=3   placeholder   yes        yes         no
 
     Film   build/final/my-lesson.mp4, 0:50 long
     ```
 
-    One row per section, with the scene of the page it plays. `Voiced` is true when a voice spoke a
-    take of that section's current text. A build that does not spend writes a placeholder take instead, so
-    it reads `no` here while `Recorded` and `Assembled` read `yes`. `Stale` is the column that matters
-    after an edit: it marks a section whose inputs have moved since the film was cut. `status` is a
-    reading of the project rather than a third opinion beside `check` and `verify`, and the one thing
-    it judges is a file the project names and has not got, which is a `FILE_MISSING` error.
+    One row per section, with the scene of the page it plays. `Take` is the section's take state:
+    `voiced` once a voice has spoken a take of its current text, voice and settings. A build that does
+    not spend writes a placeholder take instead, so it reads `placeholder` here while `Recorded` and
+    `Assembled` read `yes`. `Stale` is the column that matters after an edit: it marks a section whose
+    inputs have moved since the film was cut. `status` is a reading of the project rather than a third
+    opinion beside `check` and `verify`, and the one thing it judges is a file the project names and
+    has not got, which is a `FILE_MISSING` error.
 
-    Before the first build the same table reads `no` in every column, and a `Next` line under it
-    reads `decktalk narrate --no-spend`. Once the film on disk is the one the last build measured,
-    there is nothing next, so the line is gone.
+    Before the first build the same table reads `missing` under `Take` and `no` in every other column,
+    and a `Next` line under it reads `decktalk narrate --no-spend`. Once the film on disk is the one
+    the last build measured, there is nothing next, so the line is gone.
   </Step>
 </Steps>
 

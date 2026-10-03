@@ -13,15 +13,25 @@ from typing import IO, Any
 
 import pytest
 
-from decktalk.artifacts import ProviderWords, Takes, file_digest, is_placeholder, take_file, words_file
+from decktalk.artifacts import (
+    PLACEHOLDER_PREFIX,
+    PLACEHOLDER_SUFFIX,
+    ProviderWords,
+    Takes,
+    file_digest,
+    is_placeholder,
+    take_file,
+    words_file,
+)
 from decktalk.artifacts import words as words_module
 from decktalk.cli import main
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError, ProviderError
-from decktalk.events import CostPriced, RunLog, SectionStart, StageProgress, TakeCharged, Unit
+from decktalk.events import CostPriced, RunLog, SectionDone, SectionStart, StageProgress, TakeCharged, Unit
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
-from decktalk.pipeline import Artifact, Stage
-from decktalk.results import CostState, NarrateResult, TakeStatus, Word
+from decktalk.media import audio
+from decktalk.pipeline import Artifact, Outcome, Stage
+from decktalk.results import CostState, NarrateResult, TakeOutcome, Word
 from decktalk.settings import MACHINE_FILE_VARIABLE
 from decktalk.speech import DECLARED, FREE, PROVIDERS, Piece, SpeechContext, SpeechRequest
 from decktalk.speech.elevenlabs import ElevenLabs
@@ -35,7 +45,7 @@ from support.interrupts import aimed_signals, interrupts_raise, press_ctrl_c
 from support.logs import data_of, decisions
 from support.projects import load_project
 from support.runs import Watched, a_voiced_run
-from support.takes import TAKE_SUFFIX
+from support.takes import TAKE_SUFFIX, damage_take
 
 from .conftest import ENVIRON, SCRIPT, TOML, VOICE_ID
 
@@ -55,7 +65,7 @@ def test_a_run_without_voice_writes_a_take_for_every_spoken_section(inputs: Inpu
     assert isinstance(result, NarrateResult)
     assert result.spend is False
     assert [row.section for row in result.sections] == [1, 2, 3]
-    assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.PLACEHOLDER}
     assert result.ok is True
     assert missing_sections(result) == [1, 2, 3]
 
@@ -87,7 +97,7 @@ def test_the_index_is_written_in_section_order(inputs: Inputs, watched: Watched)
 def test_a_second_run_keeps_every_take_it_already_has(inputs: Inputs, watched: Watched) -> None:
     placeholder(inputs, watched)
     again = placeholder(inputs, watched)
-    assert {row.status for row in again.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in again.sections} == {TakeOutcome.KEPT}
 
 
 def test_a_first_run_says_each_take_was_made_and_not_made_again(
@@ -113,16 +123,33 @@ def test_every_take_kept_or_made_says_why_and_the_worker_count_is_recorded(
         said = sorted(decisions(caplog, "take", "section", "hit", "why"))
         assert said == [(1, True, "unchanged"), (2, True, "unchanged"), (3, True, "unchanged")]
         # A take the plan found and the worker then did not is told apart from one never made.
-        monkeypatch.setattr(narrate_stage, "is_held", lambda *_: False)
+        real = narrate_stage._write_takes
+
+        def gone_before_the_workers(*args: Any, **kwargs: Any) -> object:
+            for path in inputs.workspace.narrate_dir.glob(f"{PLACEHOLDER_PREFIX}*{PLACEHOLDER_SUFFIX}"):
+                path.unlink()
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(narrate_stage, "_write_takes", gone_before_the_workers)
         placeholder(inputs, watched)
         said = sorted(decisions(caplog, "take", "section", "hit", "why"))
         assert said == [(1, False, "take-missing"), (2, False, "take-missing"), (3, False, "take-missing")]
 
 
+def test_a_take_the_run_kept_ends_its_section_as_kept(inputs: Inputs, make_run: Callable[..., Watched]) -> None:
+    """A section whose take was on disk did not run, so its line on the stream says kept, as its row does."""
+    first = make_run(inputs)
+    narrate(inputs, first.run)
+    assert {line.outcome for line in first.of(SectionDone)} == {Outcome.RAN}
+    second = make_run(inputs)
+    narrate(inputs, second.run)
+    assert [line.outcome for line in second.of(SectionDone)] == [Outcome.KEPT] * 3
+
+
 def test_a_run_told_to_make_them_again_replaces_them(inputs: Inputs, watched: Watched) -> None:
     placeholder(inputs, watched)
     again = placeholder(inputs, watched, force=True)
-    assert {row.status for row in again.sections} == {TakeStatus.PLACEHOLDER}
+    assert {row.outcome for row in again.sections} == {TakeOutcome.PLACEHOLDER}
 
 
 def test_a_section_the_run_left_out_keeps_the_take_it_had(inputs: Inputs, watched: Watched) -> None:
@@ -186,7 +213,7 @@ def test_a_paid_run_sends_one_request_per_section_and_reports_what_it_charged(
     watched = make_run(inputs, spend=True)
     result = narrate(inputs, watched.run)
     assert len(fake_voice.requests) == 3
-    assert {row.status for row in result.sections} == {TakeStatus.VOICED}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.VOICED}
     assert result.cost.state is CostState.CHARGED
     assert result.cost.sections == (1, 2, 3)
     assert result.cost.dollars > 0
@@ -295,7 +322,7 @@ def test_a_run_that_does_not_spend_plays_every_paid_take_with_no_key_and_no_voic
     assert counted.built == 1
     elsewhere, environ = without_the_key(inputs)
     result = narrate(elsewhere, make_run(elsewhere).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert result.findings == ()
     assert result.cost.dollars == 0
     assert counted.built == 1, "a run with every take on disk built a voice"
@@ -309,7 +336,11 @@ def test_a_missing_take_without_spend_is_a_placeholder_and_one_finding(
     narrate(inputs, make_run(inputs, spend=True).run, only=[1])
     elsewhere, environ = without_the_key(inputs)
     result = narrate(elsewhere, make_run(elsewhere).run)
-    assert [row.status for row in result.sections] == [TakeStatus.KEPT, TakeStatus.PLACEHOLDER, TakeStatus.PLACEHOLDER]
+    assert [row.outcome for row in result.sections] == [
+        TakeOutcome.KEPT,
+        TakeOutcome.PLACEHOLDER,
+        TakeOutcome.PLACEHOLDER,
+    ]
     assert missing_sections(result) == [2, 3]
     assert [found.code for found in result.findings] == [Code.TAKE_MISSING, Code.TAKE_MISSING]
     assert all(found.severity is Severity.WARNING for found in result.findings)
@@ -320,7 +351,7 @@ def test_a_missing_take_without_spend_is_a_placeholder_and_one_finding(
 
 
 @pytest.mark.usefixtures("counted")
-def test_paid_takes_that_cannot_be_matched_say_why_and_a_fresh_project_says_nothing(
+def test_paid_takes_that_cannot_be_matched_are_kept_and_say_why_and_a_fresh_project_says_nothing(
     inputs: Inputs, make_run: Callable[..., Watched]
 ) -> None:
     """Without the voice id no voiced take can be matched, which is worth a line only where one exists."""
@@ -329,12 +360,14 @@ def test_paid_takes_that_cannot_be_matched_say_why_and_a_fresh_project_says_noth
     narrate(fresh, first.run)
     assert not [line for line in first.of(RunLog) if VOICE_ID_VARIABLE in line.message]
     narrate(inputs, make_run(inputs, spend=True).run, force=True)
+    played = {row.digest for row in Takes.require(inputs.workspace.takes_path, Artifact.TAKES).sections}
     nameless = Inputs.load(inputs.root, environ={})
     again = make_run(nameless)
     result = narrate(nameless, again.run)
     assert [line for line in again.of(RunLog) if VOICE_ID_VARIABLE in line.message]
-    assert missing_sections(result) == [1, 2, 3]
-    assert VOICE_ID_VARIABLE in result.findings[0].message
+    assert missing_sections(result) == []
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
+    assert {row.digest for row in Takes.require(inputs.workspace.takes_path, Artifact.TAKES).sections} == played
 
 
 def test_a_run_that_may_spend_with_every_take_on_disk_builds_no_voice(
@@ -343,7 +376,7 @@ def test_a_run_that_may_spend_with_every_take_on_disk_builds_no_voice(
     narrate(inputs, make_run(inputs, spend=True).run)
     elsewhere, environ = without_the_key(inputs)
     result = narrate(elsewhere, make_run(elsewhere, spend=True).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert result.spend is True
     assert counted.built == 1
     assert KEY not in environ.read
@@ -355,7 +388,7 @@ def test_a_run_that_may_spend_buys_the_one_missing_take(
     narrate(inputs, make_run(inputs, spend=True).run, only=[1, 3])
     sent = len(counted.voice.requests)
     result = narrate(inputs, make_run(inputs, spend=True).run)
-    assert [row.status for row in result.sections] == [TakeStatus.KEPT, TakeStatus.VOICED, TakeStatus.KEPT]
+    assert [row.outcome for row in result.sections] == [TakeOutcome.KEPT, TakeOutcome.VOICED, TakeOutcome.KEPT]
     assert len(counted.voice.requests) == sent + 1
     assert result.cost.sections == (2,)
     assert result.findings == ()
@@ -388,7 +421,7 @@ def test_a_run_that_may_not_spend_voices_every_missing_take_from_a_voice_that_bi
     result = narrate(inputs, watched.run)
     assert watched.run.spend is False
     assert len(counted.voice.requests) == 3
-    assert {row.status for row in result.sections} == {TakeStatus.VOICED}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.VOICED}
     assert missing_sections(result) == []
     assert result.cost.free and result.cost.dollars == 0
 
@@ -401,7 +434,7 @@ def test_a_take_from_a_voice_that_bills_nothing_puts_no_charge_on_the_stream(
     for spend in (False, True):
         fresh = make_run(inputs, spend=spend)
         result = narrate(inputs, fresh.run, replace_voiced=True)
-        assert {row.status for row in result.sections} == {TakeStatus.VOICED}
+        assert {row.outcome for row in result.sections} == {TakeOutcome.VOICED}
         assert fresh.of(TakeCharged) == []
 
 
@@ -410,7 +443,7 @@ def test_a_run_that_may_not_spend_sends_nothing_to_a_voice_that_bills(
 ) -> None:
     result = narrate(inputs, make_run(inputs).run)
     assert counted.built == 0 and counted.voice.requests == []
-    assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.PLACEHOLDER}
     assert missing_sections(result) == [1, 2, 3]
     assert all("--spend to buy its take" in found.message for found in result.findings)
 
@@ -425,7 +458,7 @@ def test_a_free_voice_whose_server_is_down_plays_placeholders_and_says_to_start_
     monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: down)
     result = narrate(inputs, make_run(inputs, spend=spend).run)
     assert result.ok is True
-    assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.PLACEHOLDER}
     assert missing_sections(result) == [1, 2, 3]
     assert all(found.severity is Severity.WARNING for found in result.findings)
     assert all("could not be reached" in found.message for found in result.findings)
@@ -445,7 +478,7 @@ def test_a_section_sharing_words_with_a_take_a_down_voice_never_made_plays_a_pla
     monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: Unreachable())
     doubled = make_inputs(script="## 1. Open\n\nA bowl.\n\n## 2. Middle\n\nA bowl.\n\n## 3. Close\n\nA ball.\n")
     result = narrate(doubled, make_run(doubled).run)
-    assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.PLACEHOLDER}
     assert missing_sections(result) == [1, 2, 3]
     assert all(is_placeholder(row.digest) for row in result.sections)
 
@@ -478,7 +511,7 @@ def test_a_run_told_to_make_takes_again_while_it_may_spend_buys_no_take(
     narrate(inputs, make_run(inputs, spend=True).run)
     bought = len(counted.voice.requests)
     result = narrate(inputs, make_run(inputs, spend=True).run, force=True)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert len(counted.voice.requests) == bought, "a forced run bought a take it already held"
     assert result.cost.sections == ()
     assert counted.built == 1
@@ -490,7 +523,7 @@ def test_a_run_told_to_replace_paid_takes_while_it_may_spend_buys_them_again(
 ) -> None:
     narrate(inputs, make_run(inputs, spend=True).run)
     result = narrate(inputs, make_run(inputs, spend=True).run, only=[2], replace_voiced=True)
-    assert [row.status for row in result.sections] == [TakeStatus.VOICED]
+    assert [row.outcome for row in result.sections] == [TakeOutcome.VOICED]
     assert len(counted.voice.requests) == 4
 
 
@@ -500,7 +533,11 @@ def test_two_sections_with_the_same_words_and_no_take_are_two_findings_and_one_p
     doubled = make_inputs(script=SCRIPT.replace("It steps down the bowl.", "Every picture waited for its word."))
     result = narrate(doubled, make_run(doubled).run)
     assert missing_sections(result) == [1, 2, 3]
-    assert [row.status for row in result.sections] == [TakeStatus.PLACEHOLDER, TakeStatus.PLACEHOLDER, TakeStatus.KEPT]
+    assert [row.outcome for row in result.sections] == [
+        TakeOutcome.PLACEHOLDER,
+        TakeOutcome.PLACEHOLDER,
+        TakeOutcome.KEPT,
+    ]
     assert result.sections[1].digest == result.sections[2].digest
 
 
@@ -594,7 +631,7 @@ def test_a_run_told_to_make_takes_again_without_spend_keeps_every_paid_take(
 ) -> None:
     narrate(inputs, make_run(inputs, spend=True).run)
     result = narrate(inputs, make_run(inputs).run, force=True)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert result.findings == ()
 
 
@@ -602,11 +639,116 @@ def test_a_run_told_to_make_takes_again_without_spend_keeps_every_paid_take(
 def test_a_run_told_to_replace_a_paid_take_does(inputs: Inputs, make_run: Callable[..., Watched]) -> None:
     narrate(inputs, make_run(inputs, spend=True).run)
     result = narrate(inputs, make_run(inputs).run, replace_voiced=True)
-    assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.PLACEHOLDER}
     assert missing_sections(result) == [1, 2, 3]
     assert "told to replace its voiced take" in result.findings[0].message
     again = narrate(inputs, make_run(inputs).run)
-    assert {row.status for row in again.sections} == {TakeStatus.KEPT}, "the voiced takes stayed on disk"
+    assert {row.outcome for row in again.sections} == {TakeOutcome.KEPT}, "the voiced takes stayed on disk"
+
+
+@pytest.mark.usefixtures("counted")
+def test_a_run_with_no_voice_named_keeps_the_voiced_takes_it_cannot_match(
+    inputs: Inputs, make_run: Callable[..., Watched]
+) -> None:
+    """A voiced take of a section's current text is the one the film plays, voice named or not."""
+    bought = narrate(inputs, make_run(inputs, spend=True).run)
+    nameless = Inputs.load(inputs.root, environ={})
+    result = narrate(nameless, make_run(nameless).run)
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
+    assert [row.digest for row in result.sections] == [row.digest for row in bought.sections]
+    assert missing_sections(result) == []
+
+
+INSERTED = SCRIPT.replace("## 2. Middle", "## 2. New\n\nA new thought arrives.\n\n## 3. Middle").replace(
+    "## 3. Close", "## 4. Close"
+)
+"""Section 2 inserted, so the old 2 and 3 are 3 and 4 now."""
+
+
+@pytest.mark.usefixtures("counted")
+def test_one_section_inserted_and_narrated_alone_says_it_has_no_voiced_take(
+    inputs: Inputs, make_run: Callable[..., Watched]
+) -> None:
+    """Its number's row holds words another section speaks now, which says nothing about the new section."""
+    narrate(inputs, make_run(inputs, spend=True).run)
+    four = TOML + '\n[[section]]\nnumber = 4\npage = "deck/index.html"\nscene = "4"\n'
+    moved = load_project(inputs.root, four, script=INSERTED, environ=ENVIRON)
+    result = narrate(moved, make_run(moved).run, only=[2])
+    [found] = result.findings
+    assert "because it has no voiced take yet." in found.message
+
+
+@pytest.mark.usefixtures("counted")
+def test_a_placeholder_section_in_a_moved_takes_directory_keeps_its_own_reason(
+    inputs: Inputs, make_run: Callable[..., Watched]
+) -> None:
+    """Only a section whose row was voiced lost its take with the folder, so only it says the folder moved."""
+    narrate(inputs, make_run(inputs, spend=True).run, only=[1, 2])
+    narrate(inputs, make_run(inputs).run)
+    inputs.workspace.takes.rename(inputs.root / "voice")
+    moved = Inputs.load(inputs.root, environ=ENVIRON)
+    result = narrate(moved, make_run(moved).run)
+    by_section = {found.location.section: found.message for found in result.findings}
+    assert "holds none of the 2 takes this project played before" in by_section[1]
+    assert "because it has no voiced take yet." in by_section[3]
+    assert "holds none of" not in by_section[3]
+
+
+@pytest.mark.usefixtures("counted")
+def test_a_damaged_take_without_spend_and_told_to_replace_plays_a_placeholder_and_says_so(
+    inputs: Inputs, make_run: Callable[..., Watched]
+) -> None:
+    bought = narrate(inputs, make_run(inputs, spend=True).run)
+    damage_take(inputs, bought.sections[1].digest)
+    result = narrate(inputs, make_run(inputs).run, only=[2], replace_voiced=True)
+    assert [row.outcome for row in result.sections] == [TakeOutcome.PLACEHOLDER]
+    [found] = result.findings
+    assert "because this run was told to replace its voiced take." in found.message
+
+
+def test_a_damaged_take_is_bought_again_when_the_run_is_told_to_replace_it_and_may_spend(
+    inputs: Inputs, make_run: Callable[..., Watched], counted: CountedVoice
+) -> None:
+    bought = narrate(inputs, make_run(inputs, spend=True).run)
+    damage_take(inputs, bought.sections[1].digest)
+    sent = len(counted.voice.requests)
+    result = narrate(inputs, make_run(inputs, spend=True).run, only=[2], replace_voiced=True)
+    assert [row.outcome for row in result.sections] == [TakeOutcome.VOICED]
+    assert len(counted.voice.requests) == sent + 1
+
+
+@pytest.mark.usefixtures("counted")
+def test_a_run_reads_the_take_index_twice(
+    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once for the take states and once for the rows the run rewrites, however many sections it plays."""
+    narrate(inputs, make_run(inputs).run)
+    reads: list[None] = []
+    real = Inputs.takes
+
+    def counted_reads(self: Inputs) -> Takes | None:
+        reads.append(None)
+        return real(self)
+
+    monkeypatch.setattr(Inputs, "takes", counted_reads)
+    narrate(inputs, make_run(inputs).run)
+    assert len(reads) == 2
+
+
+def test_a_take_bought_again_re_places_every_section_that_plays_it(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sections 1 and 3 play one take, so buying it again for 3 measures 1 on the new bytes too."""
+    a_voice_saying(monkeypatch, b"FIRST")
+    doubled = make_inputs(script=SCRIPT.replace("Every picture waited for its word.", "A bowl. [beat] A ball."))
+    narrate(doubled, make_run(doubled, spend=True).run)
+    a_voice_saying(monkeypatch, b"A LONGER SECOND TAKE")
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 1.5)
+    result = narrate(doubled, make_run(doubled, spend=True).run, only=[3], replace_voiced=True)
+    assert [row.section for row in result.sections] == [3, 1]
+    index = Takes.read(doubled.workspace.takes_path)
+    assert index is not None
+    assert [row.sound_end_seconds for row in index.sections] == [1.5, 0.8, 1.5]
 
 
 @pytest.mark.usefixtures("fake_voice")
@@ -724,7 +866,7 @@ def test_two_sections_with_the_same_words_buy_one_take_under_a_pool(
     watched = make_run(doubled, spend=True)
     result = narrate(doubled, watched.run)
     assert len(fake_voice.requests) == 2
-    assert [row.status for row in result.sections] == [TakeStatus.VOICED, TakeStatus.KEPT, TakeStatus.VOICED]
+    assert [row.outcome for row in result.sections] == [TakeOutcome.VOICED, TakeOutcome.KEPT, TakeOutcome.VOICED]
     assert sorted(line.section for line in watched.of(TakeCharged)) == [1, 3]
 
 
@@ -840,7 +982,7 @@ def test_a_clone_of_a_project_that_commits_its_takes_plays_them_with_no_key(
     environ = Recorded({VOICE_ID_VARIABLE: VOICE_ID})
     fresh = Inputs.load(clone, environ=environ)
     result = narrate(fresh, make_run(fresh).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert {row.file.parent for row in result.sections if row.file is not None} == {Path("voice")}
     assert missing_sections(result) == []
     assert result.findings == ()
@@ -874,7 +1016,7 @@ def test_a_placeholder_is_build_output_and_never_lands_in_the_projects_takes_dir
 ) -> None:
     project = make_inputs(toml=IN_THE_PROJECT)
     result = narrate(project, make_run(project).run)
-    assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.PLACEHOLDER}
     assert take_files(project.root / "voice") == set()
     assert len(take_files(project.workspace.narrate_dir)) == 6
 
@@ -892,7 +1034,7 @@ def test_a_take_only_the_machine_cache_holds_is_found_and_kept_in_the_project(
     project = Inputs.load(tmp_path / "proj", environ=environ, machine=shared)
     watched = make_run(project)
     result = narrate(project, watched.run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert result.findings == ()
     assert counted.built == 1
     assert KEY not in environ.read
@@ -1061,7 +1203,7 @@ def test_a_damaged_store_copy_behind_a_good_project_copy_changes_nothing(
     project, store, (first, *_rest) = on_a_machine_with_a_store(make_run, tmp_path)
     (store / words_file(first)).write_text("{", encoding="utf-8")
     result = narrate(project, make_run(project).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert result.findings == ()
 
 
@@ -1082,7 +1224,7 @@ def test_a_damaged_project_copy_is_moved_aside_and_the_stores_good_copy_plays(
     sent = len(counted.voice.requests)
     watched = make_run(project)
     result = narrate(project, watched.run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert len(counted.voice.requests) == sent
     assert (takes / audio_name).read_bytes() == (store / audio_name).read_bytes()
     assert (takes / words_name).read_bytes() == (store / words_name).read_bytes()
@@ -1103,7 +1245,7 @@ def test_a_take_is_hashed_whole_once_per_run_however_many_sections_play_it(
     real = words_module.file_digest
     monkeypatch.setattr(words_module, "file_digest", lambda path: hashed.append(path) or real(path))
     result = narrate(project, make_run(project).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert sorted(path.name for path in hashed) == sorted(
         {take_file(row.digest, TAKE_SUFFIX) for row in result.sections}
     )
@@ -1160,7 +1302,7 @@ def test_a_run_that_does_not_spend_never_writes_the_store(make_run: Callable[...
     shutil.rmtree(store)
     store.mkdir()
     result = narrate(project, make_run(project).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert take_files(store) == set()
 
 
@@ -1371,7 +1513,7 @@ def test_a_clone_that_commits_its_voice_id_and_its_takes_plays_them_with_no_envi
     environ = Recorded({})
     fresh = Inputs.load(clone, environ=environ)
     result = narrate(fresh, make_run(fresh).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert missing_sections(result) == []
     assert result.findings == ()
     assert counted.built == 1
@@ -1400,7 +1542,7 @@ def test_a_take_index_that_does_not_read_after_a_voiced_run_is_rebuilt_and_buys_
     sent = len(counted.voice.requests)
     project.workspace.takes_path.write_text(written, encoding="utf-8")
     result = narrate(project, make_run(project, spend=spend).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert result.findings == ()
     assert result.cost.dollars == 0
     assert len(counted.voice.requests) == sent, "a take index that did not read bought a take again"
@@ -1422,7 +1564,7 @@ def test_a_take_index_whose_rows_name_the_take_hash_is_rebuilt_with_its_digest(
     ]
     project.workspace.takes_path.write_text(json.dumps(rows), encoding="utf-8")
     result = narrate(project, make_run(project, spend=spend).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert result.findings == ()
     assert len(counted.voice.requests) == sent, "an index in an older shape bought a take again"
     written = json.loads(project.workspace.takes_path.read_text(encoding="utf-8"))
@@ -1446,7 +1588,7 @@ def test_a_take_index_that_does_not_read_with_no_voice_named_buys_nothing(
     assert missing_sections(result) == [1, 2, 3]
     assert len(counted.voice.requests) == sent
     named = narrate(inputs, make_run(inputs).run)
-    assert {row.status for row in named.sections} == {TakeStatus.KEPT}, "the voiced takes stayed on disk"
+    assert {row.outcome for row in named.sections} == {TakeOutcome.KEPT}, "the voiced takes stayed on disk"
 
 
 @pytest.mark.parametrize("written", list(UNREADABLE.values()), ids=list(UNREADABLE))
@@ -1458,6 +1600,6 @@ def test_a_placeholder_only_take_index_that_does_not_read_is_rebuilt_not_refused
     before = Takes.read(inputs.workspace.takes_path)
     inputs.workspace.takes_path.write_text(written, encoding="utf-8")
     result = narrate(inputs, make_run(inputs).run)
-    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert missing_sections(result) == [1, 2, 3]
     assert Takes.read(inputs.workspace.takes_path) == before

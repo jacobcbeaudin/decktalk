@@ -98,6 +98,18 @@ def test_a_cancelled_or_interrupted_run_ends_as_stopped_rather_than_failed(tmp_p
     assert seen[-1].error is not None and seen[-1].error.code is ErrorCode.CANCELLED
 
 
+@pytest.mark.parametrize("outcome", [Outcome.RAN, Outcome.KEPT])
+def test_a_block_that_says_how_it_ended_is_reported_with_that_outcome(tmp_path: Path, outcome: Outcome) -> None:
+    """A block that found its work done already says so, and one that says nothing ran."""
+    here = a_machine(tmp_path)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here._run() as run, run.section(Stage.NARRATE, 1) as ending:
+        if outcome is not Outcome.RAN:
+            ending.outcome = outcome
+    section = next(line for line in seen if line.event == "section.done")
+    assert getattr(section, "outcome", None) is outcome
+
+
 def test_a_run_with_a_project_writes_its_own_file_and_says_where(tmp_path: Path) -> None:
     """One file per run, so a watch loop beside a build by hand cannot overwrite the other's lines."""
     here = a_machine(tmp_path)

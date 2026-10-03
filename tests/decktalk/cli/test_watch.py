@@ -7,7 +7,8 @@ from pathlib import Path
 from decktalk.cli import watch
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import InputError
-from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult
+from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, TakeState
+from decktalk.stages.narrate.state import CHANGED, HELD
 from support.costs import a_cost
 
 from .conftest import Fake
@@ -70,15 +71,30 @@ def test_the_loop_stamps_the_files_the_project_says_an_author_edits(tmp_path) ->
     assert set(watch._stamps(project.project())) == {tmp_path / "script.md"}
 
 
-def test_a_voiced_take_of_older_words_is_named_with_the_command_that_voices_it(capsys, tmp_path) -> None:
-    """`voiced` is false once the words moved, so the row that says the take is stale is its own field."""
+def test_a_stale_take_is_named_with_the_command_that_voices_it(capsys, tmp_path) -> None:
     project = Fake(status=_status(stale=True))
     project.root = tmp_path
     made = Session(Globals(), command="build")
     watch._stale(made, project.project())
     said = capsys.readouterr().err
-    assert "no longer matches the script" in said
+    assert "has a stale voiced take" in said
     assert "decktalk narrate --section 2 --spend" in said
+
+
+def test_a_voice_change_is_announced_with_the_row_s_reason(capsys, tmp_path) -> None:
+    """The row says why its take is stale, so the line names the input that moved rather than guessing."""
+    project = Fake(status=_status(stale=True))
+    project.root = tmp_path
+    watch._stale(Session(Globals(), command="build"), project.project())
+    said = capsys.readouterr().err
+    assert f"because {CHANGED}." in said
+
+
+def test_a_current_take_is_not_announced(capsys, tmp_path) -> None:
+    project = Fake(status=_status(stale=False))
+    project.root = tmp_path
+    watch._stale(Session(Globals(), command="build"), project.project())
+    assert "stale" not in capsys.readouterr().err
 
 
 def _stop(_seconds: float) -> None:
@@ -100,11 +116,11 @@ def _status(*, stale: bool = False) -> StatusResult:
                 key="02",
                 kind=SectionKind.PAGE,
                 source="deck/index.html",
-                voiced=not stale,
-                voiced_stale=stale,
+                take_state=TakeState.STALE if stale else TakeState.VOICED,
+                take_reason=CHANGED if stale else HELD,
                 recorded=True,
                 assembled=True,
-                stale=False,
+                recording_stale=False,
             ),
         ),
     )

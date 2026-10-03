@@ -2,8 +2,19 @@
 
 from __future__ import annotations
 
-from decktalk.artifacts import Take, Takes
+from decktalk.artifacts import (
+    AudioPrint,
+    EstimatedWords,
+    ProviderWords,
+    Take,
+    Takes,
+    Words,
+    is_placeholder,
+    take_file,
+    words_file,
+)
 from decktalk.inputs import Inputs
+from decktalk.results import Word
 
 TAKE_SUFFIX = ".mp3"
 """The suffix ElevenLabs's default format, mp3_44100_128, names a take with, which every take here is under."""
@@ -37,3 +48,26 @@ def write_takes(inputs: Inputs, *takes: Take) -> Takes:
     index = Takes(script="script.md", model="m", output_format="mp3_44100_128", sections=takes)
     index.write(inputs.workspace.takes_path)
     return index
+
+
+def hold_take(inputs: Inputs, digest: str, *, audio: bytes = b"take", words: tuple[Word, ...] = ()) -> None:
+    """Put a good pair of this take on disk: its audio and the words file that vouches for it.
+
+    A voiced take goes to the takes directory with the words a provider would send back, and a
+    placeholder goes under the build with estimated words, which is where each kind is looked for.
+    """
+    if is_placeholder(digest):
+        place = inputs.workspace.narrate_dir
+        said: Words = EstimatedWords(words=words)
+    else:
+        place = inputs.workspace.takes
+        said = ProviderWords(words=words, audio=AudioPrint.of(audio, suffix=TAKE_SUFFIX))
+    place.mkdir(parents=True, exist_ok=True)
+    (place / take_file(digest, TAKE_SUFFIX)).write_bytes(audio)
+    said.write(place / words_file(digest))
+
+
+def damage_take(inputs: Inputs, digest: str) -> None:
+    """Have this voiced take's words vouch for other audio than the file holds, which is a damaged copy."""
+    words = ProviderWords(audio=AudioPrint.of(b"another take", suffix=TAKE_SUFFIX))
+    words.write(inputs.workspace.takes / words_file(digest))

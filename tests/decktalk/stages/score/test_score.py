@@ -26,7 +26,7 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.workspace import LEDGER_FILE
 from decktalk.media import audio
 from decktalk.pipeline import Stage
-from decktalk.results import BillingBasis, CostState, Layer, SoundKind, SoundStatus, rate_money
+from decktalk.results import BillingBasis, CostState, Layer, SoundKind, SoundOutcome, rate_money
 from decktalk.speech.sound import SoundContext
 from decktalk.stages import score as stage
 from decktalk.stages.score import ledger as ledger_module
@@ -155,7 +155,7 @@ def test_the_items_are_the_ambience_the_effects_and_the_music_in_the_order_the_t
 def test_a_run_nobody_approved_plans_every_item_and_writes_nothing(tmp_path: Path) -> None:
     inputs = an_inputs(tmp_path)
     result = score(inputs, a_run(tmp_path))
-    assert {item.status for item in result.items} == {SoundStatus.PLANNED}
+    assert {item.outcome for item in result.items} == {SoundOutcome.PLANNED}
     assert result.written == ()
     assert not (inputs.workspace.ledger_path).exists()
 
@@ -324,7 +324,7 @@ def test_a_price_no_layer_records_is_the_default_price_and_not_a_crash(
 def test_a_paid_run_buys_every_item_and_writes_it_under_the_workspace(tmp_path: Path, service: FakeService) -> None:
     inputs = an_inputs(tmp_path)
     result = score(inputs, a_run(tmp_path, spend=True))
-    assert {item.status for item in result.items} == {SoundStatus.GENERATED}
+    assert {item.outcome for item in result.items} == {SoundOutcome.GENERATED}
     assert len(service.sounds) == 2
     assert len(service.music_bodies) == 1
     assert (inputs.workspace.score_dir / "ambience.mp3").is_file()
@@ -337,7 +337,7 @@ def test_a_run_that_may_not_spend_buys_no_sound_whatever_sound_costs(tmp_path: P
     """Only the run's own spend lets it buy, so a sound somebody stated is free is still not bought without it."""
     free = RATED.replace("0.6", "0").replace("1.2", "0").replace("0.3", "0")
     result = score(an_inputs(tmp_path, free), a_run(tmp_path))
-    assert {item.status for item in result.items} == {SoundStatus.PLANNED}
+    assert {item.outcome for item in result.items} == {SoundOutcome.PLANNED}
     assert service.sounds == []
 
 
@@ -373,7 +373,7 @@ def test_a_second_run_keeps_every_item_whose_request_has_not_moved(tmp_path: Pat
     score(inputs, a_run(tmp_path, spend=True))
     sent = len(service.sounds) + len(service.music_bodies)
     again = score(inputs, a_run(tmp_path, spend=True))
-    assert {item.status for item in again.items} == {SoundStatus.KEPT}
+    assert {item.outcome for item in again.items} == {SoundOutcome.KEPT}
     assert len(service.sounds) + len(service.music_bodies) == sent
 
 
@@ -384,9 +384,9 @@ def test_an_item_whose_prompt_moved_is_bought_again_and_the_rest_are_kept(tmp_pa
     service.sounds.clear()
     moved = an_inputs(tmp_path, TOML.replace("a bright chime", "a dull chime"))
     again = score(moved, a_run(tmp_path, spend=True))
-    statuses = {item.name: item.status for item in again.items}
-    assert statuses["chime"] is SoundStatus.GENERATED
-    assert statuses["ambience"] is SoundStatus.KEPT
+    outcomes = {item.name: item.outcome for item in again.items}
+    assert outcomes["chime"] is SoundOutcome.GENERATED
+    assert outcomes["ambience"] is SoundOutcome.KEPT
     assert [body["text"] for body in service.sounds] == ["a dull chime"]
 
 
@@ -410,7 +410,7 @@ def test_replace_score_with_spend_buys_every_held_item_and_every_music_part_agai
     sounds, parts = len(service.sounds), len(service.music_bodies)
     priced = stage.price(inputs, replace_score=True)
     again = score(inputs, a_run(tmp_path, spend=True), replace_score=True)
-    assert {item.status for item in again.items} == {SoundStatus.GENERATED}
+    assert {item.outcome for item in again.items} == {SoundOutcome.GENERATED}
     assert (len(service.sounds), len(service.music_bodies)) == (2 * sounds, 2 * parts)
     assert priced.seconds == again.cost.seconds
     assert len(joined) == 2
@@ -425,7 +425,7 @@ def test_replace_score_without_spend_buys_nothing_and_keeps_every_held_item(
     score(inputs, a_run(tmp_path, spend=True))
     sent = len(service.sounds) + len(service.music_bodies)
     again = score(inputs, a_run(tmp_path), replace_score=True)
-    assert {item.status for item in again.items} == {SoundStatus.KEPT}
+    assert {item.outcome for item in again.items} == {SoundOutcome.KEPT}
     assert len(service.sounds) + len(service.music_bodies) == sent
     assert again.findings == ()
 
@@ -508,7 +508,7 @@ def test_a_run_after_the_build_directory_is_deleted_buys_no_sound_again(
     shutil.rmtree(inputs.workspace.build)
     again = score(Inputs.load(tmp_path, environ={}), a_run(tmp_path, spend=True))
     assert (len(service.sounds), len(service.music_bodies)) == sent
-    assert {item.status for item in again.items} == {SoundStatus.KEPT}
+    assert {item.outcome for item in again.items} == {SoundOutcome.KEPT}
     assert again.cost.seconds == 0 and again.findings == ()
     assert len(joined) == 2 and joined[-1][1].is_file()
 
@@ -526,7 +526,7 @@ def test_a_run_that_may_not_spend_never_writes_the_score_directory(tmp_path: Pat
     shutil.rmtree(inputs.workspace.build)
     played = score(inputs, a_run(tmp_path / "bought"))
     assert files_under(tmp_path / "bought" / "score") == kept
-    assert {item.status for item in played.items} == {SoundStatus.KEPT} and played.findings == ()
+    assert {item.outcome for item in played.items} == {SoundOutcome.KEPT} and played.findings == ()
     assert len(service.sounds) + len(service.music_bodies) == sent
 
 
@@ -542,7 +542,7 @@ def test_a_run_that_does_not_spend_leaves_a_checkout_that_commits_its_score_clea
     fresh = Inputs.load(clone, environ={})
     played = score(fresh, a_run(clone))
     assert git(clone, "status", "--porcelain") == ""
-    assert {item.status for item in played.items} == {SoundStatus.KEPT}
+    assert {item.outcome for item in played.items} == {SoundOutcome.KEPT}
     assert len(service.sounds) + len(service.music_bodies) == sent
 
 
@@ -686,7 +686,7 @@ def test_a_paid_run_buys_through_the_sound_provider_its_machine_holds(tmp_path: 
     fake = FakeService()
     run = a_sounding_run(tmp_path, {"elevenlabs": lambda _context: fake}, spend=True)
     result = score(an_inputs(tmp_path), run)
-    assert {item.status for item in result.items} == {SoundStatus.GENERATED}
+    assert {item.outcome for item in result.items} == {SoundOutcome.GENERATED}
     assert [body["text"] for body in fake.sounds] == ["a quiet room", "a bright chime"]
     assert [body["prompt"] for body in fake.music_bodies] == ["warm strings"]
 

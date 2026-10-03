@@ -516,15 +516,28 @@
           "title": "Source",
           "type": "string"
         },
-        "voiced": {
-          "description": "True when a voice spoke a take of this section's current text.",
-          "title": "Voiced",
-          "type": "boolean"
+        "take_state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TakeState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the disk holds for this spoken section, or null for a clip or when the take states could not be read."
         },
-        "voiced_stale": {
-          "description": "True when a voice spoke a take of this section's older text, which a voiced run would replace.",
-          "title": "Voiced Stale",
-          "type": "boolean"
+        "take_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The clause a TAKE_MISSING finding says after because, for a reader: dispatch on take_state.",
+          "title": "Take Reason"
         },
         "recorded": {
           "description": "True when a recording of this section is on disk.",
@@ -536,9 +549,9 @@
           "title": "Assembled",
           "type": "boolean"
         },
-        "stale": {
-          "description": "True when what is on disk no longer matches what the project says.",
-          "title": "Stale",
+        "recording_stale": {
+          "description": "True when the recording on disk no longer matches what the project says.",
+          "title": "Recording Stale",
           "type": "boolean"
         }
       },
@@ -547,11 +560,11 @@
         "key",
         "kind",
         "source",
-        "voiced",
-        "voiced_stale",
+        "take_state",
+        "take_reason",
         "recorded",
         "assembled",
-        "stale"
+        "recording_stale"
       ],
       "title": "SectionStatus",
       "type": "object"
@@ -576,6 +589,18 @@
         "verify"
       ],
       "title": "Stage",
+      "type": "string"
+    },
+    "TakeState": {
+      "description": "What the disk holds for one spoken section, judged against its current text, voice, model and voice settings.",
+      "enum": [
+        "voiced",
+        "unchecked",
+        "stale",
+        "placeholder",
+        "missing"
+      ],
+      "title": "TakeState",
       "type": "string"
     },
     "UnplayedTakes": {

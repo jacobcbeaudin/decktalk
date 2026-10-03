@@ -31,6 +31,7 @@ from pathlib import Path
 
 from playwright.sync_api import Page
 
+from decktalk.artifacts import EstimatedWords
 from decktalk.errors import InputError
 from decktalk.files import current_text
 from decktalk.findings import Code, Finding, Location, ProjectPath, judge
@@ -42,7 +43,7 @@ from decktalk.media.browser import chromium
 from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
-from decktalk.results import CheckResult, CostState, Panel, SectionCues
+from decktalk.results import CheckResult, Panel, SectionCues
 from decktalk.stages import selects, voice_model
 from decktalk.stages.check.scan import (
     judged_pages,
@@ -54,8 +55,8 @@ from decktalk.stages.check.scan import (
 from decktalk.stages.check.script import pause_findings, script_findings
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
-from decktalk.stages.narrate import TakePlan, cost_of, planned_words, voiced_plan
-from decktalk.stages.narrate.plan import dropped_pauses, named_voice
+from decktalk.stages.narrate import TakeStates, take_states
+from decktalk.stages.narrate.plan import NO_VOICE_NOTE, dropped_pauses
 from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
 from decktalk.stages.verify import opted_out
 
@@ -110,9 +111,9 @@ def check(
         run.found(found)
 
     extra = _named_pages(inputs, paths)
-    plans = _plan(inputs, run, spoken)
-    cost = cost_of(plans, inputs, state=CostState.ESTIMATE)
-    resolved, times = _resolve(inputs, run, plans, wanted)
+    states = _states(inputs, run, spoken)
+    cost = states.plan(spend=True).cost
+    resolved, times = _resolve(inputs, run, states, wanted)
     sections = [one for one in inputs.document.page_sections if wanted(one.number)]
 
     looked = _look(inputs, run, sections, extra, times, frames=frames) if pages else _unreached(run, frames=frames)
@@ -153,23 +154,21 @@ def _script_sections(inputs: Inputs, run: Run) -> list[ScriptSection]:
         return []
 
 
-def _plan(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection]) -> list[TakePlan]:
-    """What a voiced run would do with each spoken section, and every timed pause its model would drop."""
-    if not spoken:
-        return []
-    model = voice_model(inputs)
-    dropped = dropped_pauses(inputs, list(spoken), model=model)
-    script = inputs.relative(inputs.script_path)
-    for found in pause_findings(dropped, provider=inputs.settings.voice.provider, model=model, script=script):
-        run.found(found)
-    plans, why = voiced_plan(inputs, list(spoken), model=model, voice_id=named_voice(inputs))
-    if why:
-        run.note(why)
-    return plans
+def _states(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection]) -> TakeStates:
+    """The take state of each spoken section, and every timed pause its model would drop."""
+    if spoken:
+        model = voice_model(inputs)
+        dropped = dropped_pauses(inputs, list(spoken), model=model)
+        script = inputs.relative(inputs.script_path)
+        for found in pause_findings(dropped, provider=inputs.settings.voice.provider, model=model, script=script):
+            run.found(found)
+        if not inputs.settings.voice.id:
+            run.note(NO_VOICE_NOTE)
+    return take_states(inputs, spoken)
 
 
 def _resolve(
-    inputs: Inputs, run: Run, plans: Sequence[TakePlan], wanted: Callable[[int], bool]
+    inputs: Inputs, run: Run, states: TakeStates, wanted: Callable[[int], bool]
 ) -> tuple[tuple[SectionCues, ...], dict[int, dict[str, float]]]:
     """Every cue resolved against the words a voiced run would leave, and the seconds they landed on.
 
@@ -177,9 +176,9 @@ def _resolve(
     held take's own words or the evenly spaced words of a placeholder, so a cue phrase is judged
     before anything is voiced rather than after.
     """
-    planned = {plan.section.number: planned_words(inputs, plan) for plan in plans}
-    words = {number: row[0] for number, row in planned.items()}
-    estimated = {number for number, row in planned.items() if row[2]}
+    planned = {number: states.planned_words(number) for number in states}
+    words = {number: found.words for number, found in planned.items()}
+    estimated = {number for number, found in planned.items() if isinstance(found, EstimatedWords)}
     cued = [block for block in inputs.cues() if wanted(block.number)]
     sections, found, _notes = resolve_sections(
         cued,

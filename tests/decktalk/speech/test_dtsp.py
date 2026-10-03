@@ -24,7 +24,7 @@ from decktalk.cli import main
 from decktalk.errors import ProviderError
 from decktalk.findings import Code
 from decktalk.media import audio
-from decktalk.results import BillingBasis, TakeStatus
+from decktalk.results import BillingBasis, TakeOutcome
 from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, DtspConfig, Settings
 from decktalk.speech import (
     DECLARED,
@@ -253,7 +253,7 @@ def test_narrate_voices_a_lesson_through_the_local_server_with_no_key_and_no_spe
     code, out, err = command("narrate", "--json")
     assert code == 0, err
     result = json.loads(out)
-    assert [row["status"] for row in result["sections"]] == [TakeStatus.VOICED.value] * 2
+    assert [row["outcome"] for row in result["sections"]] == [TakeOutcome.VOICED.value] * 2
     assert result["spend"] is True
     assert result["cost"]["billing"] == BillingBasis.FREE.value and result["cost"]["dollars"] == 0
     assert len(server.requests) == 2
@@ -273,7 +273,7 @@ def test_a_run_with_no_spend_still_voices_every_missing_take_through_the_local_s
     assert code == 0, err
     result = json.loads(out)
     assert result["spend"] is False
-    assert [row["status"] for row in result["sections"]] == [TakeStatus.VOICED.value] * 2
+    assert [row["outcome"] for row in result["sections"]] == [TakeOutcome.VOICED.value] * 2
     assert [found["code"] for found in result["findings"]] == []
     assert len(server.requests) == 2
 
@@ -296,7 +296,7 @@ def test_a_local_server_that_is_not_running_plays_placeholders_and_says_to_start
     code, out, err = command("narrate", flag, "--json")
     assert code == 0, err
     result = json.loads(out)
-    assert [row["status"] for row in result["sections"]] == [TakeStatus.PLACEHOLDER.value] * 2
+    assert [row["outcome"] for row in result["sections"]] == [TakeOutcome.PLACEHOLDER.value] * 2
     assert [found["code"] for found in result["findings"]] == [Code.TAKE_MISSING.value] * 2
     for found in result["findings"]:
         assert "Start decktalk-voice" in found["message"]

@@ -13,8 +13,9 @@ from decktalk.machine.fixes import apply_fix
 from decktalk.results import CheckResult, CostState, Scope
 from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
-from support.pages import TOML, a_project, catalog
+from support.pages import SCRIPT, TOML, a_project, catalog
 from support.runs import a_run, notes
+from support.takes import a_take, hold_take, write_takes
 
 from .conftest import Drawn
 
@@ -67,6 +68,45 @@ def test_a_project_with_no_credential_is_priced_rather_than_refused(tmp_path: Pa
     # The plan says which credential was missing, and says it once.
     assert len([one for one in said if "is not set" in one]) == 1
     assert not any("priced as new" in one for one in said)
+
+
+PRICED = TOML.replace("[[section]]", "[elevenlabs]\ndollars_per_1000_characters = 0.30\n\n[[section]]", 1)
+"""The demo project at a stated rate, so a take it must buy has a price above nothing."""
+
+
+def voiced_once(tmp_path: Path) -> Inputs:
+    """The demo project with a voiced take of each section held and indexed, read with no voice named."""
+    inputs = a_project(tmp_path, toml=PRICED, cues=CUES)
+    rows = [a_take(section.number, spoken=section.spoken) for section in inputs.spoken()]
+    for row in rows:
+        hold_take(inputs, row.digest)
+    write_takes(inputs, *rows)
+    return inputs
+
+
+def test_a_check_reads_the_take_index_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    inputs = voiced_once(tmp_path)
+    reads: list[None] = []
+    real = Inputs.takes
+
+    def counted(self: Inputs) -> object:
+        reads.append(None)
+        return real(self)
+
+    monkeypatch.setattr(Inputs, "takes", counted)
+    check(inputs, a_run(tmp_path), pages=False)
+    assert len(reads) == 1
+
+
+def test_with_no_voice_named_an_edited_section_is_priced_as_certain(tmp_path: Path) -> None:
+    """A take of older words is needed whatever the voice is, so its characters go into the price."""
+    voiced_once(tmp_path)
+    edited = a_project(
+        tmp_path, toml=PRICED, script=SCRIPT.replace("Hello there again.", "Hello once more there again."), cues=CUES
+    )
+    result = check(edited, a_run(tmp_path), pages=False)
+    assert result.cost.sections == (1, 2)
+    assert result.cost.dollars > 0
 
 
 def test_a_cue_phrase_nothing_speaks_is_judged_before_anything_is_voiced(tmp_path: Path) -> None:

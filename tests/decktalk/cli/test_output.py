@@ -32,8 +32,9 @@ from decktalk.results import (
     SettingValue,
     SoundItem,
     SoundKind,
-    SoundStatus,
+    SoundOutcome,
     StatusResult,
+    TakeState,
     VerifyResult,
 )
 from support.samples import sample
@@ -225,7 +226,7 @@ Found 1 finding, 1 error.
 """,
         "ScoreResult": """\
 
- Item     Kind       Status      Seconds
+ Item     Kind       Outcome     Seconds
  ───────────────────────────────────────
  name12   ambience   generated   16.2
 
@@ -236,15 +237,15 @@ Found 1 finding, 1 error.
 """,
         "StatusResult": """\
 
- Section   Key     Plays      Voiced   Recorded   Assembled   Stale
- ──────────────────────────────────────────────────────────────────
- 14        key15   source17   no       no         yes         yes
+ Section   Key     Plays      Take          Recorded   Assembled   Stale
+ ───────────────────────────────────────────────────────────────────────
+ 14        key15   source17   placeholder   no         yes         no
 
-Film   build/film18, 0:19 long
-Live   run20 writing build/events_file21
-Takes  24 takes and 25 aligned words files in build/directory23/ that no section plays (26 bytes). DeckTalk never
+Film   build/film20, 0:21 long
+Live   run22 writing build/events_file23
+Takes  26 takes and 27 aligned words files in build/directory25/ that no section plays (28 bytes). DeckTalk never
 deletes from the takes directory, so remove the ones you no longer want with git rm.
-Next   next28
+Next   next30
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,
@@ -491,17 +492,17 @@ def test_the_score_states_its_price_in_the_one_money_sentence() -> None:
 
 def test_a_length_not_known_yet_is_said_rather_than_printed_as_zero() -> None:
     """A planned sound has no length before it is bought, and null is not 0.0 seconds."""
-    planned = SoundItem(name="tick", kind=SoundKind.EFFECT, status=SoundStatus.PLANNED, prompt="a tick")
+    planned = SoundItem(name="tick", kind=SoundKind.EFFECT, outcome=SoundOutcome.PLANNED, prompt="a tick")
     result = sample(ScoreResult, every=True).model_copy(update={"items": (planned,)})
     said = recorded(result, width=200)
     (row,) = [line for line in said.splitlines() if "tick" in line]
     assert row.split()[-2:] == ["not", "yet"], said
 
 
-def test_a_voiced_take_of_older_words_shows_its_section_as_stale() -> None:
-    """`voiced` is no once the words moved, so the Stale column is what tells a reader the take is out of date."""
+def test_a_stale_take_shows_its_section_as_stale() -> None:
+    """A take whose inputs moved marks the Stale column as a recording that moved does."""
     result = sample(StatusResult, every=True)
-    row = result.sections[0].model_copy(update={"voiced": False, "voiced_stale": True, "stale": False})
+    row = result.sections[0].model_copy(update={"take_state": TakeState.STALE, "recording_stale": False})
     said = recorded(result.model_copy(update={"sections": (row,)}), width=200)
     (line,) = [line for line in said.splitlines() if line.split()[:1] == [str(row.section)]]
     assert line.split()[-1] == "yes", said

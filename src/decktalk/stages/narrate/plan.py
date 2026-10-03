@@ -1,54 +1,31 @@
-"""The take plan: what a run would voice, what it already holds, and what that would cost.
+"""What a take is named by, and the refusals a run meets before it voices one.
 
 A take is identified by its input digest and by nothing else, so two sections with the same words
 share one take and renumbering or retitling a section moves no file and voices nothing. `TakeInputs`
 is the whole of what that digest is taken over, so this module fills that model and never spells a
 digest of its own.
 
-The plan is also the approval stop. Nothing is bought until `Run.approve` has seen the price, and a
-section whose take could not be matched is priced apart, so the gate is given the figure the run
-certainly spends and the figure it can reach, and never a small number that hides a large one.
-
-A price needs no credential. The digest is over the provider's name, the voice id, the model, the
-output format and the take identity its adapter declares, and the text, and none of those is a
-secret, so the plan reads the provider's name from `[voice] provider` and never builds the provider
-to price a run. The price is the bill its adapter declares: per character, per second of audio, or
-free. A
-service can therefore price an edit on a machine that holds no key, and a one-section edit is priced
-as one section rather than as the whole film.
+The digest is over the provider's name, the voice id, the model, the output format and the take
+identity its adapter declares, and the text, and none of those is a secret, so a take is named, and
+a run priced, from `[voice] provider` without building the provider or reading its key. What a run
+refuses before it voices anything is here too: a voiced take damaged in every place that holds it, a
+timed pause the model would drop, and a purchase with no voice named.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from decktalk.artifacts import PlaceholderInputs, TakeInputs, Takes, is_placeholder, words_file
+from decktalk.artifacts import PlaceholderInputs, TakeInputs, is_placeholder, words_file
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.inputs.script import ScriptSection
-from decktalk.inputs.workspace import Workspace
 from decktalk.machine.run import Run
-from decktalk.page import SECOND_DIGITS
-from decktalk.results import DOLLAR_DIGITS, Cost, CostState, TakeStatus
 from decktalk.settings import BY_ID, PROJECT_FILE
-from decktalk.speech import DECLARED, SpeechProvider, SpeechRequest, canonical_text, output_of, renders_pauses, table_of
-from decktalk.stages import billed, dollars_for, rate_fields, speech_context
-
-WITHOUT_A_VOICE = "no voice is named, so no take on disk can be matched"
-"""Why a section's take is unknown, which is the one state a plan cannot resolve on its own."""
-
-CHANGED = "the text, the voice, the model or the voice settings changed"
-"""Why a section's words are on disk under another digest, which only one of a take's inputs moving explains."""
-
-NO_VOICED_TAKE = "it has no voiced take yet"
-"""Why a section plays a placeholder with nothing changed, worded as a clause so the plan and the `TAKE_MISSING` finding
-read it alike, and true of a section that has a placeholder already as much as of one that has nothing."""
-
-SHARED = "another section of this run voices these words"
-"""Why a section sends nothing for words an earlier section of the same run already plans to make."""
+from decktalk.speech import DECLARED, SpeechProvider, canonical_text, output_of, renders_pauses, table_of
+from decktalk.stages import speech_context
 
 
 def take_identity(inputs: Inputs) -> dict[str, Any]:
@@ -85,16 +62,6 @@ def placeholder_inputs(inputs: Inputs, section: ScriptSection) -> PlaceholderInp
         beat_seconds=cfg.placeholder_beat_seconds,
         text=canonical_text(section.pieces),
     )
-
-
-def is_held(digest: str, workspace: Workspace) -> bool:
-    """True when some place a take is looked for holds a good copy of this take and its words file.
-
-    The places are the project's takes directory, then the machine's take store, so a clone that committed
-    its takes and a laptop that keeps them for every project both find them. A placeholder is looked
-    for under the build alone, because a build makes it again for nothing.
-    """
-    return workspace.holding(digest) is not None
 
 
 def refuse_damaged(inputs: Inputs, number: int, digest: str) -> None:
@@ -197,219 +164,26 @@ VOICE_ID_VARIABLE = BY_ID["voice.id"].environment
 UNNAMED = f"[voice] id is empty and {VOICE_ID_VARIABLE} is not set"
 """Why no voice is named, which the plan, the run's line and the finding all say in these words."""
 
-
-@dataclass(frozen=True)
-class TakePlan:
-    """What a run would do with one section, and why."""
-
-    section: ScriptSection
-    status: TakeStatus
-    reason: str = ""
-    chapter: str = ""
-    digest: str | None = None
-    request: SpeechRequest | None = None
-    unchecked: bool = False
-    """No take on disk could be matched at all, because there was no voice to ask what the digest is."""
-
-    @property
-    def held(self) -> bool:
-        """The take this section plays is on disk already, so the run sends nothing for it."""
-        return self.status is TakeStatus.KEPT
-
-    @property
-    def characters_sent(self) -> int:
-        """How many characters of script this section would send, which a per-character bill counts."""
-        return len(canonical_text(self.section.pieces))
-
-
-def requests_for(
-    inputs: Inputs, targets: list[ScriptSection], *, model: str, voice_id: str
-) -> dict[int, SpeechRequest]:
-    """One request per target section, each carrying the sections either side of it for prosody."""
-    settings = take_identity(inputs)
-    output_format = output_of(inputs.settings, inputs.settings.voice.provider).format
-    return {
-        section.number: SpeechRequest(
-            pieces=section.pieces,
-            voice_id=voice_id,
-            model=model,
-            voice_settings=settings,
-            output_format=output_format,
-            previous_text=targets[at - 1].spoken if at else None,
-            next_text=targets[at + 1].spoken if at + 1 < len(targets) else None,
-        )
-        for at, section in enumerate(targets)
-    }
-
-
-def miss_reason(
-    previous: Takes | None, section: ScriptSection, digest: str, *, voiced: bool, elsewhere: set[str]
-) -> str:
-    """Why this section's take is not on disk, as a clause the plan, the log and the `TAKE_MISSING` finding all carry.
-
-    A take is found by its content, so the index is searched by content before it is searched by
-    section number. `elsewhere` is the spoken text of every other section this run is planning, which
-    is what tells an inserted section from an edited one: a row whose words now belong to another
-    section says nothing about the section that took its number.
-    """
-    rows = previous.sections if previous is not None else ()
-    if any(row.digest == digest for row in rows):
-        return "the take or its words file is missing"
-    same_words = [row for row in rows if row.spoken == section.spoken]
-    if same_words:
-        return NO_VOICED_TAKE if voiced and not any(r.voiced for r in same_words) else CHANGED
-    row = next((r for r in rows if r.section == section.number), None)
-    return CHANGED if row is not None and row.spoken not in elsewhere else NO_VOICED_TAKE
-
-
-def plan_takes(
-    inputs: Inputs,
-    targets: list[ScriptSection],
-    digests: dict[int, str] | None,
-    *,
-    requests: dict[int, SpeechRequest] | None = None,
-    voiced: bool = True,
-    again: bool = False,
-) -> list[TakePlan]:
-    """What a run would do with each target section, sending nothing and writing nothing.
-
-    `digests` is None when the provider could not be set up, and a section already holding a paid
-    take is then unchecked while every other section still needs one. The request is carried on
-    every plan either way, so a run that cannot match a take still prices what it would send.
-
-    Two sections with the same words come to one digest, so the second of them is already covered by
-    the first and is planned as kept rather than sent and paid for twice. `again` makes each section
-    whatever is on disk for it, and its callers decide it, because making a voiced take again buys it.
-    """
-    previous = inputs.takes()
-    chapters = inputs.chapters()
-    wanted = TakeStatus.VOICED if voiced else TakeStatus.PLACEHOLDER
-    plans: list[TakePlan] = []
-    planned: set[str] = set()
-    for section in targets:
-        chapter = chapters.get(section.number, section.title)
-        request = (requests or {}).get(section.number)
-        if digests is None:
-            plans.append(_unchecked_plan(previous, section, chapter, request))
-            continue
-        digest = digests[section.number]
-        if digest in planned:
-            plans.append(TakePlan(section, TakeStatus.KEPT, SHARED, chapter, digest, request))
-        elif again:
-            plans.append(TakePlan(section, wanted, "this run was told to make it again", chapter, digest, request))
-            planned.add(digest)
-        elif is_held(digest, inputs.workspace):
-            plans.append(TakePlan(section, TakeStatus.KEPT, "", chapter, digest, request))
-        else:
-            refuse_damaged(inputs, section.number, digest)
-            elsewhere = {other.spoken for other in targets if other.number != section.number}
-            reason = miss_reason(previous, section, digest, voiced=voiced, elsewhere=elsewhere)
-            plans.append(TakePlan(section, wanted, reason, chapter, digest, request))
-            planned.add(digest)
-    return plans
-
-
-def _unchecked_plan(
-    previous: Takes | None, section: ScriptSection, chapter: str, request: SpeechRequest | None
-) -> TakePlan:
-    """The plan for one section when there is no voice to ask what its digest would be.
-
-    Only a voiced take is in doubt, because only a voiced take could turn out to be the one this run
-    would ask for. A section with no take, or with a take without voice, needs a voiced take whatever
-    the voice is, so it is priced as certain rather than counted into the ceiling alone.
-    """
-    row = previous.of(section.number) if previous is not None else None
-    if row is not None and row.voiced:
-        return TakePlan(section, TakeStatus.VOICED, WITHOUT_A_VOICE, chapter=chapter, request=request, unchecked=True)
-    return TakePlan(section, TakeStatus.VOICED, NO_VOICED_TAKE, chapter=chapter, request=request)
-
-
-def voiced_plan(
-    inputs: Inputs, targets: list[ScriptSection], *, model: str, voice_id: str | None, replace: bool = False
-) -> tuple[list[TakePlan], str | None]:
-    """(what a voiced run would do, why no take could be matched), buying nothing.
-
-    The provider is named by `[voice] provider` and is never built here, because building one needs
-    the credential and a price does not. The one input a plan cannot do without is the voice id, and
-    a project that names none is planned with every section it has paid for unchecked. `replace`
-    plans every take again, which buys it again, so it is the run's `replace_voiced` and never `force`.
-    """
-    requests = requests_for(inputs, targets, model=model, voice_id=voice_id or "")
-    if not voice_id:
-        why = f"{WITHOUT_A_VOICE.capitalize()}, because {UNNAMED}."
-        return plan_takes(inputs, targets, None, requests=requests, again=replace), why
-    provider = inputs.settings.voice.provider
-    digests = {
-        section.number: take_inputs(inputs, section, provider=provider, voice_id=voice_id, model=model).digest
-        for section in targets
-    }
-    return plan_takes(inputs, targets, digests, requests=requests, again=replace), None
-
-
-def placeholder_plan(inputs: Inputs, targets: list[ScriptSection], *, force: bool = False) -> list[TakePlan]:
-    """The placeholder each of these sections plays in place of a missing take, found by content too.
-
-    A placeholder costs nothing, so it is the one take `force` makes again.
-    """
-    digests = {section.number: placeholder_inputs(inputs, section).digest for section in targets}
-    return plan_takes(inputs, targets, digests, voiced=False, again=force)
-
-
-def seconds_of(inputs: Inputs, plan: TakePlan) -> float:
-    """How long this section's take is expected to run, which a per-second bill is priced on before it exists."""
-    return plan.section.estimated_seconds(inputs.settings.narration)
-
-
-def cost_of(plans: list[TakePlan], inputs: Inputs, *, state: CostState) -> Cost:
-    """What these plans cost at the bill `[voice] provider` declares, with what they can cost priced beside it.
-
-    A per-character bill counts the characters each take sends, a per-second bill counts the seconds
-    each take is expected to run, and a free voice counts nothing. A section whose take could not be
-    matched may turn out to need a take, so it is counted into the ceiling and never into the price,
-    and the gate is then given the figure the run certainly spends and the figure it can reach.
-    """
-    provider = inputs.settings.voice.provider
-    sending = [plan for plan in plans if plan.status is TakeStatus.VOICED and not plan.unchecked]
-    maybe = [plan for plan in plans if plan.unchecked]
-    characters = sum(plan.characters_sent for plan in sending)
-    seconds = sum(seconds_of(inputs, plan) for plan in sending)
-    certain = billed(characters, seconds, provider)
-    reach = certain + sum(billed(p.characters_sent, seconds_of(inputs, p), provider) for p in maybe)
-    return Cost(
-        state=state,
-        sections=tuple(plan.section.number for plan in sending + maybe),
-        characters=characters,
-        seconds=round(seconds, SECOND_DIGITS),
-        dollars=round(dollars_for(certain, inputs), DOLLAR_DIGITS),
-        ceiling_dollars=round(dollars_for(reach, inputs), DOLLAR_DIGITS),
-        **rate_fields(inputs),
-    )
+NO_VOICE_NOTE = (
+    f"No voice is named, so no take on disk can be matched, because [voice] id is empty and {VOICE_ID_VARIABLE} "
+    "is not set."
+)
+"""The line a run that prices or plays takes with no voice named says once, naming where the voice is set."""
 
 
 __all__ = [
-    "CHANGED",
-    "NO_VOICED_TAKE",
-    "SHARED",
+    "NO_VOICE_NOTE",
     "UNNAMED",
     "VOICE_ID_VARIABLE",
-    "TakePlan",
     "DROPPED_PAUSE_HINT",
     "dropped_pauses",
     "damaged_refusal",
     "refuse_damaged",
     "refuse_dropped_pauses",
-    "is_held",
-    "miss_reason",
     "named_voice",
     "placeholder_inputs",
-    "placeholder_plan",
-    "plan_takes",
-    "requests_for",
-    "seconds_of",
     "speech_provider",
-    "cost_of",
     "take_inputs",
     "voice_id_of",
     "take_identity",
-    "voiced_plan",
 ]

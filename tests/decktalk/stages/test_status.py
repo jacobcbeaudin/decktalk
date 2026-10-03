@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -13,16 +14,18 @@ from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.page import Q
 from decktalk.pipeline import Stage
-from decktalk.results import SectionKind, StatusResult
+from decktalk.results import SectionKind, StatusResult, TakeState
+from decktalk.speech import DECLARED, FREE
 from decktalk.stages import kept, voice_model
 from decktalk.stages import status as stage
-from decktalk.stages.narrate.plan import take_inputs
-from decktalk.stages.status import next_command, source_of, status, voiced_text
+from decktalk.stages.narrate.plan import placeholder_inputs, take_inputs
+from decktalk.stages.narrate.state import CHANGED, UNINDEXED, WITHOUT_A_VOICE, take_states
+from decktalk.stages.status import next_command, source_of, status
 from support.fakes import FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
 from support.runs import a_run, notes
-from support.takes import TAKE_SUFFIX, a_take, write_takes
+from support.takes import TAKE_SUFFIX, a_take, damage_take, write_takes
 
 TOML = """
 [project]
@@ -52,11 +55,12 @@ def a_project(tmp_path: Path, *, script: str | None = SCRIPT, toml: str = TOML) 
 
 
 def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: bool = True) -> Take:
-    """One take for section one, written to the index with its audio file beside it."""
+    """One take for section one, written to the index with its audio and its words file beside it, so it is held."""
     take = a_take(1, seconds=2.0, voiced=voiced, spoken=spoken)
     write_takes(inputs, take)
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.take_path(take.digest).write_bytes(b"")
+    inputs.workspace.take_path(take.digest).write_bytes(b"audio")
+    inputs.workspace.words_path(take.digest).write_text("{}", encoding="utf-8")
     return take
 
 
@@ -93,7 +97,7 @@ def built_up_to(inputs: Inputs, steps: int) -> None:
 def test_a_project_is_told_the_next_stage_its_artifacts_leave(tmp_path: Path, steps: int, command: str) -> None:
     inputs = a_project(tmp_path)
     built_up_to(inputs, steps)
-    assert next_command(inputs) == command
+    assert next_command(inputs, take_states(inputs)) == command
 
 
 def measured(inputs: Inputs) -> None:
@@ -114,7 +118,7 @@ def test_a_film_the_last_build_measured_leaves_nothing_next(tmp_path: Path, monk
     inputs = a_project(tmp_path)
     built_up_to(inputs, 4)
     measured(inputs)
-    assert next_command(inputs) is None
+    assert next_command(inputs, take_states(inputs)) is None
     assert status(inputs, a_run(tmp_path)).next is None
 
 
@@ -124,13 +128,13 @@ def test_a_script_edit_after_the_build_names_build(tmp_path: Path) -> None:
     built_up_to(inputs, 4)
     measured(inputs)
     (tmp_path / "script.md").write_text(SCRIPT.replace("again", "once more"), encoding="utf-8")
-    assert next_command(inputs) == "decktalk build"
+    assert next_command(inputs, take_states(inputs)) == "decktalk build"
 
 
 def test_a_stale_recording_names_build(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     built_up_to(inputs, 4)
-    assert next_command(inputs, stale=True) == "decktalk build"
+    assert next_command(inputs, take_states(inputs), stale=True) == "decktalk build"
 
 
 def test_a_film_changed_since_the_build_names_build(tmp_path: Path) -> None:
@@ -139,7 +143,7 @@ def test_a_film_changed_since_the_build_names_build(tmp_path: Path) -> None:
     built_up_to(inputs, 4)
     measured(inputs)
     inputs.workspace.film.write_bytes(b"another film")
-    assert next_command(inputs) == "decktalk build"
+    assert next_command(inputs, take_states(inputs)) == "decktalk build"
 
 
 # ---- the sections ------------------------------------------------------------------------------
@@ -153,41 +157,45 @@ def test_a_page_section_names_the_scene_it_plays_with_the_runtime_s_own_word(tmp
     assert source_of(clip) == "media/b-roll.mp4"
 
 
-def test_a_section_is_voiced_when_a_take_of_its_current_text_is_on_disk(
-    tmp_path: Path, fake_ffmpeg: FakeFfmpeg
-) -> None:
-    inputs = a_project(tmp_path)
-    take_on_disk(inputs)
+def test_a_section_is_voiced_when_a_take_of_its_current_inputs_is_held(tmp_path: Path, fake_ffmpeg: FakeFfmpeg) -> None:
+    inputs = a_project(tmp_path, toml=VOICED)
+    digest = played_digest(inputs)
+    write_takes(inputs, a_take(1, digest=digest, spoken="Hello there again."))
+    a_take_pair(inputs, digest)
     result = status(inputs, a_run(tmp_path))
-    assert [row.voiced for row in result.sections] == [True, False]
+    assert [row.take_state for row in result.sections] == [TakeState.VOICED, None]
     assert [row.kind for row in result.sections] == [SectionKind.PAGE, SectionKind.CLIP]
     assert fake_ffmpeg.calls == []
 
 
-def test_a_placeholder_take_does_not_make_a_section_voiced(tmp_path: Path) -> None:
-    """`voiced` is the take's own word, so the column that says what this project has paid for
-    counted a run without a voice as though it had bought every section."""
+def test_a_held_placeholder_reads_placeholder(tmp_path: Path) -> None:
+    """A placeholder is not a take a voice spoke, so the state that says what was paid for never counts it."""
     inputs = a_project(tmp_path)
-    take_on_disk(inputs, voiced=False)
+    [section] = inputs.spoken()
+    stand_in = placeholder_inputs(inputs, section).digest
+    write_takes(inputs, a_take(1, digest=stand_in, voiced=False, spoken="Hello there again."))
+    inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
+    (inputs.workspace.narrate_dir / take_file(stand_in, TAKE_SUFFIX)).write_bytes(b"click")
+    (inputs.workspace.narrate_dir / words_file(stand_in)).write_text("{}", encoding="utf-8")
     result = status(inputs, a_run(tmp_path))
-    assert result.sections[0].voiced is False
+    assert result.sections[0].take_state is TakeState.PLACEHOLDER
 
 
-def test_a_take_of_older_words_does_not_make_a_section_voiced(tmp_path: Path) -> None:
+def test_a_take_of_older_words_is_stale(tmp_path: Path) -> None:
     """A take the author has since rewritten is not a take of what this section says now."""
     inputs = a_project(tmp_path)
     take_on_disk(inputs, spoken="Something else entirely.")
     result = status(inputs, a_run(tmp_path))
-    assert result.sections[0].voiced is False
-    assert result.sections[0].voiced_stale is True, "a voiced take of older words is reported as stale"
+    assert result.sections[0].take_state is TakeState.STALE
+    assert result.sections[0].take_reason == CHANGED
 
 
 @pytest.mark.parametrize(("spoken", "bought"), [("Hello there again.", True), ("Something else.", False)])
-def test_a_take_that_is_current_or_never_voiced_is_not_voiced_stale(tmp_path: Path, spoken: str, bought: bool) -> None:
+def test_a_current_take_or_an_old_placeholder_is_not_stale(tmp_path: Path, spoken: str, bought: bool) -> None:
     """A placeholder of older words was never bought, so there is nothing to voice again."""
     inputs = a_project(tmp_path)
     take_on_disk(inputs, spoken=spoken, voiced=bought)
-    assert status(inputs, a_run(tmp_path)).sections[0].voiced_stale is False
+    assert status(inputs, a_run(tmp_path)).sections[0].take_state is not TakeState.STALE
 
 
 def test_a_recorded_section_says_so_and_a_cut_one_says_so(tmp_path: Path) -> None:
@@ -211,7 +219,7 @@ def test_whether_a_recording_still_stands_is_asked_of_record(tmp_path: Path, mon
     said: list[RunLog] = []
     run.machine.events.subscribe(lambda event: said.append(event) if isinstance(event, RunLog) else None)
     result = status(inputs, run)
-    assert result.sections[0].stale is True
+    assert result.sections[0].recording_stale is True
     # A reading a reader may act on is a warning, because it is not what the author asked for.
     assert any("its page changed" in line.message and line.level is Level.WARNING for line in said)
 
@@ -219,7 +227,7 @@ def test_whether_a_recording_still_stands_is_asked_of_record(tmp_path: Path, mon
 def test_a_section_with_no_recording_is_never_stale(tmp_path: Path) -> None:
     """Nothing on disk cannot have stopped matching the project, so the row says what it has."""
     result = status(a_project(tmp_path), a_run(tmp_path))
-    assert [row.stale for row in result.sections] == [False, False]
+    assert [row.recording_stale for row in result.sections] == [False, False]
 
 
 # ---- what the project has not got ---------------------------------------------------------------
@@ -350,16 +358,6 @@ def test_the_report_names_the_two_files_the_author_writes(tmp_path: Path) -> Non
     assert result.name == "demo"
 
 
-def test_a_script_that_will_not_parse_is_recorded_rather_than_read_as_no_words(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    unparsed = a_project(tmp_path, script="# Demo\n\nNo section heading anywhere.\n")
-    with caplog.at_level("DEBUG", logger="decktalk"):
-        assert voiced_text(unparsed) == {}
-    [record] = [record for record in caplog.records if record.name == "decktalk.stages.status"]
-    assert record.exc_info is not None and "no '## N. Title' section" in str(record.exc_info[1])
-
-
 # ---- takes no section plays --------------------------------------------------------------------
 
 VOICED = TOML.replace("[[section]]", '[voice]\nid = "voice-under-test"\n\n[[section]]', 1)
@@ -368,7 +366,12 @@ VOICED = TOML.replace("[[section]]", '[voice]\nid = "voice-under-test"\n\n[[sect
 
 def played_digest(inputs: Inputs) -> str:
     """The digest of the take section one plays, taken the one way narrate takes it."""
-    [section] = inputs.spoken()
+    return played_digest_of(inputs, 1)
+
+
+def played_digest_of(inputs: Inputs, number: int) -> str:
+    """The digest of the take this section plays, taken the one way narrate takes it."""
+    section = next(section for section in inputs.spoken() if section.number == number)
     voice = inputs.settings.voice
     return take_inputs(inputs, section, provider=voice.provider, voice_id=voice.id, model=voice_model(inputs)).digest
 
@@ -432,3 +435,132 @@ def test_with_no_voice_named_no_take_is_called_unplayed(tmp_path: Path) -> None:
     old = a_take_pair(inputs, "00000000000000ab")
     assert status(inputs, a_run(tmp_path)).unplayed is None
     assert all(path.is_file() for path in old)
+
+
+# ---- each section's take state -------------------------------------------------------------------
+
+TWO = VOICED + '\n[[section]]\nnumber = 3\npage = "deck/index.html"\nscene = "3"\n'
+"""The voiced demo project with a second page section, so one section's refusal leaves another to read."""
+
+TWO_SCRIPT = SCRIPT + "\n## 3. Three\n\nThe third one closes.\n"
+
+
+def finished(inputs: Inputs, *rows: Take) -> None:
+    """Every artifact a build writes on disk and measured, with these rows as the take index."""
+    write_takes(inputs, *rows)
+    inputs.workspace.cue_times_path.write_text('{"sections": []}', encoding="utf-8")
+    inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.recording("01").write_bytes(b"")
+    inputs.workspace.film.parent.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.film.write_bytes(b"film")
+    measured(inputs)
+
+
+@pytest.fixture
+def recordings_stand(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The recording here has no log beside it, so the recorder's own rule is told it still stands."""
+    monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: None)
+
+
+@pytest.mark.usefixtures("recordings_stand")
+def test_a_voice_change_makes_the_take_stale_and_names_build(tmp_path: Path) -> None:
+    before = a_project(tmp_path, toml=VOICED)
+    digest = played_digest(before)
+    a_take_pair(before, digest)
+    after = a_project(tmp_path, toml=VOICED.replace("voice-under-test", "another-voice"))
+    finished(after, a_take(1, digest=digest, spoken="Hello there again."))
+    result = status(after, a_run(tmp_path))
+    assert result.sections[0].take_state is TakeState.STALE
+    assert result.sections[0].take_reason == CHANGED
+    assert result.next == "decktalk build"
+
+
+@pytest.mark.usefixtures("recordings_stand")
+def test_a_held_take_the_index_does_not_play_names_build(tmp_path: Path) -> None:
+    """The take is voiced, and a run that buys nothing would still rewrite the index to play it."""
+    inputs = a_project(tmp_path, toml=VOICED)
+    a_take_pair(inputs, played_digest(inputs))
+    [section] = inputs.spoken()
+    stand_in = placeholder_inputs(inputs, section).digest
+    finished(inputs, a_take(1, digest=stand_in, voiced=False, spoken="Hello there again."))
+    result = status(inputs, a_run(tmp_path))
+    assert result.sections[0].take_state is TakeState.VOICED
+    assert result.sections[0].take_reason == UNINDEXED
+    assert result.next == "decktalk build"
+
+
+@pytest.mark.usefixtures("recordings_stand")
+def test_with_no_voice_named_a_held_take_is_unchecked_and_names_no_build(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path)
+    played = a_take(1, digest="00000000000000ef", spoken="Hello there again.")
+    a_take_pair(inputs, played.digest)
+    finished(inputs, played)
+    result = status(inputs, a_run(tmp_path))
+    assert result.sections[0].take_state is TakeState.UNCHECKED
+    assert result.sections[0].take_reason == WITHOUT_A_VOICE
+    assert result.next is None
+
+
+@pytest.mark.usefixtures("recordings_stand")
+def test_a_renamed_takes_directory_is_one_warning_and_names_nothing_next(tmp_path: Path) -> None:
+    """A folder that moved is not a script edit, so the report names the setting rather than a build that buys."""
+    inputs = a_project(tmp_path, toml=VOICED)
+    digest = played_digest(inputs)
+    a_take_pair(inputs, digest)
+    finished(inputs, a_take(1, digest=digest, spoken="Hello there again."))
+    inputs.workspace.takes.rename(tmp_path / "voice")
+    run = a_run(tmp_path)
+    said: list[RunLog] = []
+    run.machine.events.subscribe(lambda event: said.append(event) if isinstance(event, RunLog) else None)
+    result = status(inputs, run)
+    assert result.sections[0].take_state is TakeState.MISSING
+    assert result.next is None
+    warned = [line.message for line in said if line.level is Level.WARNING and "takes_dir" in line.message]
+    assert warned == [
+        "The takes directory takes holds none of the 1 take this project played before, which is what a renamed "
+        "or missing folder looks like, so no build is named next. Point [narration] takes_dir at the folder that "
+        "holds them."
+    ]
+
+
+def test_a_take_damaged_everywhere_is_an_error_line_and_only_its_row_has_no_take_state(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=TWO, script=TWO_SCRIPT)
+    damaged = played_digest_of(inputs, 1)
+    a_take_pair(inputs, damaged)
+    damage_take(inputs, damaged)
+    write_takes(inputs, a_take(1, digest=damaged, spoken="Hello there again."))
+    run = a_run(tmp_path)
+    said: list[RunLog] = []
+    run.machine.events.subscribe(lambda event: said.append(event) if isinstance(event, RunLog) else None)
+    result = status(inputs, run)
+    assert [row.take_state for row in result.sections] == [None, None, TakeState.MISSING]
+    assert [line for line in said if line.level is Level.ERROR and "section 1 plays" in line.message]
+
+
+def test_a_script_that_will_not_parse_leaves_every_take_state_null(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, script="# Demo\n\nNo section heading anywhere.\n")
+    result = status(inputs, a_run(tmp_path))
+    assert [row.take_state for row in result.sections] == [None, None]
+    assert [row.take_reason for row in result.sections] == [None, None]
+
+
+@pytest.mark.usefixtures("recordings_stand")
+def test_a_free_voice_s_placeholders_name_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A named free voice makes its takes for nothing, so a project playing placeholders is not finished."""
+    monkeypatch.setitem(DECLARED, "elevenlabs", replace(DECLARED["elevenlabs"], billing=FREE))
+    inputs = a_project(tmp_path, toml=VOICED)
+    [section] = inputs.spoken()
+    stand_in = placeholder_inputs(inputs, section).digest
+    inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
+    (inputs.workspace.narrate_dir / take_file(stand_in, TAKE_SUFFIX)).write_bytes(b"click")
+    (inputs.workspace.narrate_dir / words_file(stand_in)).write_text("{}", encoding="utf-8")
+    finished(inputs, a_take(1, digest=stand_in, voiced=False, spoken="Hello there again."))
+    result = status(inputs, a_run(tmp_path))
+    assert result.sections[0].take_state is TakeState.PLACEHOLDER
+    assert result.next == "decktalk build"
+
+
+def test_a_clip_row_has_no_take_state(tmp_path: Path) -> None:
+    result = status(a_project(tmp_path), a_run(tmp_path))
+    assert result.sections[1].kind is SectionKind.CLIP
+    assert (result.sections[1].take_state, result.sections[1].take_reason) == (None, None)

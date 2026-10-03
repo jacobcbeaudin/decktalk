@@ -158,7 +158,7 @@ def build(
         BuildResult,
         stages=tuple(rows),
         spend=run.spend,
-        cost=total(spends) if spends else narrate.cost_of([], inputs, state=CostState.ESTIMATE),
+        cost=total(spends) if spends else narrate.take_states(inputs, ()).plan(spend=True).cost,
         film=film,
         stopped_at=stopped_at,
     )

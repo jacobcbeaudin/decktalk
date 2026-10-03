@@ -50,22 +50,17 @@ from decktalk.inputs.paths import at
 from decktalk.inputs.script import ScriptSection
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
-from decktalk.pipeline import Stage
-from decktalk.results import Cost, CostState, NarrateResult, SectionTake, TakeStatus, counted
+from decktalk.pipeline import Outcome, Stage
+from decktalk.results import Cost, CostState, NarrateResult, SectionTake, TakeOutcome
 from decktalk.speech import SpeechProvider, is_free, output_of, start_hint
 from decktalk.stages import selects, voice_model
 from decktalk.stages.narrate.plan import (
-    NO_VOICED_TAKE,
+    NO_VOICE_NOTE,
     VOICE_ID_VARIABLE,
-    TakePlan,
-    cost_of,
-    is_held,
-    named_voice,
-    placeholder_plan,
+    placeholder_inputs,
     refuse_dropped_pauses,
     speech_provider,
     voice_id_of,
-    voiced_plan,
 )
 from decktalk.stages.narrate.script_rules import (
     ascending,
@@ -74,13 +69,13 @@ from decktalk.stages.narrate.script_rules import (
     shown,
     symbol_tokens,
 )
+from decktalk.stages.narrate.state import NarratePlan, SectionTakeState, TakePlan, TakeStates, take_states
 from decktalk.stages.narrate.takes import (
     buying_alone,
     copy_from_store,
     estimated_words,
     join_takes,
     place,
-    planned_words,
     take_row,
     write_placeholder_take,
     write_voiced_take,
@@ -115,34 +110,32 @@ def narrate(
     targets = _targets(inputs, only)
     model = voice_model(inputs)
     free = is_free(inputs.settings.voice.provider)
-    # A take is made again only when a run that may call the voice was told to replace it. `force`
-    # never feeds this, because it rebuilds what DeckTalk makes itself, and a voice's take is not.
-    plans, why = voiced_plan(
-        inputs, targets, model=model, voice_id=named_voice(inputs), replace=(run.spend or free) and replace_voiced
-    )
-    # Spend gates money and nothing else, so a voice that bills nothing makes every missing take
-    # whether or not the run may spend, once a voice is named to make them in.
-    buying = run.spend or (free and why is None)
-    missing: list[Finding] = []
-    if not buying:
-        previous = inputs.takes()
-        if why and previous is not None and previous.voiced_sections:
-            # Voiced takes are on disk and cannot be matched without the voice, so the run says why each
-            # of them plays a placeholder. A project that never bought a take has nothing to match.
-            run.note(why)
-        plans, missing = _without_buying(inputs, plans, why=why, force=force, replace_voiced=replace_voiced)
-    elif why:
+    # A take is made again only when the run was told to replace it. `force` never feeds this, because
+    # it rebuilds what DeckTalk makes itself, and a voice's take is not.
+    states = take_states(inputs, targets, replace_voiced=replace_voiced)
+    plan = states.plan(spend=run.spend, force=force)
+    previous = inputs.takes()
+    if not plan.voiced and not inputs.settings.voice.id and previous is not None and previous.voiced_sections:
+        # Voiced takes are on disk and cannot be matched without the voice, so the run says why once. A
+        # project that never bought a take has nothing to match.
+        run.note(NO_VOICE_NOTE)
+    if any(take.outcome is TakeOutcome.VOICED and take.digest is None for take in plan.takes):
         # A purchase needs the voice named, so this raises the refusal that says where to name it.
         voice_id_of(inputs)
-    estimate = cost_of(plans, inputs, state=CostState.ESTIMATE)
+    missing = [
+        _take_missing(inputs, take.section, take.reason, takes_dir_gone=states[take.section.number].takes_dir_gone)
+        for take in plan.takes
+        if take.digest is not None and is_placeholder(take.digest)
+    ]
     provider: SpeechProvider | None = None
-    if any(plan.status is TakeStatus.VOICED for plan in plans):
+    sending = [take.section for take in plan.takes if take.outcome is TakeOutcome.VOICED]
+    if sending:
         # A run that sends nothing buys nothing, so the gate is asked and the voice is built only when
         # something would be bought, and a run that plays what is on disk reads no key at all.
-        refuse_dropped_pauses(inputs, [plan.section for plan in plans if plan.status is TakeStatus.VOICED], model=model)
-        run.approve(estimate)
+        refuse_dropped_pauses(inputs, sending, model=model)
+        run.approve(plan.cost)
         provider = speech_provider(run, inputs)
-    rows, made, unreached = _write_takes(inputs, run, plans, provider, model=model, free=free)
+    rows, made, unreached = _write_takes(inputs, run, plan.takes, provider, previous, model=model, free=free)
     index = _index(inputs, rows, model=model)
     run.wrote(index.write(inputs.workspace.takes_path))
     run.wrote(join_takes(inputs, index))
@@ -160,7 +153,7 @@ def narrate(
         NarrateResult,
         spend=run.spend,
         sections=tuple(made),
-        cost=_charged(estimate, made) if buying else estimate,
+        cost=_charged(plan.cost, made) if plan.voiced else plan.cost,
         takes=inputs.relative(inputs.workspace.takes_path),
     )
 
@@ -171,98 +164,16 @@ def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_voiced: 
     No run is opened and no voice is built, so a build prices its takes before it buys anything. A
     run told to replace its voiced takes is priced at every take it targets.
     """
-    plans, _why = voiced_plan(
-        inputs, _targets(inputs, only), model=voice_model(inputs), voice_id=named_voice(inputs), replace=replace_voiced
-    )
-    return cost_of(plans, inputs, state=CostState.ESTIMATE)
-
-
-def _without_buying(
-    inputs: Inputs, paid: list[TakePlan], *, why: str | None, force: bool, replace_voiced: bool
-) -> tuple[list[TakePlan], list[Finding]]:
-    """(what a run that buys nothing does with each section, one `TAKE_MISSING` per placeholder).
-
-    `paid` is what a run that buys would do, planned without `force`. A voiced take on disk for a
-    section's current text is played, and `force` remakes placeholders rather than discarding it,
-    unless `replace_voiced` says to. Every other section plays a placeholder, found by content like a
-    voiced take, and its finding says why its take could not be played.
-    """
-    found = {plan.section.number for plan in paid if plan.digest is not None and is_held(plan.digest, inputs.workspace)}
-    on_disk = {plan.section.number: plan for plan in paid if plan.section.number in found and not replace_voiced}
-    missing = [plan.section for plan in paid if plan.section.number not in on_disk]
-    stand_ins = (
-        {plan.section.number: plan for plan in placeholder_plan(inputs, missing, force=force)} if missing else {}
-    )
-    plans = [on_disk.get(plan.section.number) or stand_ins[plan.section.number] for plan in paid]
-    gone = _takes_gone(inputs)
-    reasons = _reasons(inputs, paid, why=why, replaced=found, gone=gone)
-    return plans, [
-        _take_missing(inputs, section, reasons[section.number], moved=bool(gone) and section.number not in found)
-        for section in missing
-    ]
-
-
-def _reasons(inputs: Inputs, paid: list[TakePlan], *, why: str | None, replaced: set[int], gone: int) -> dict[int, str]:
-    """Why each section's take did not play, as the clause its `TAKE_MISSING` finding says after "because".
-
-    A section this run was told to replace says so, and so does a takes directory holding none of the
-    `gone` takes the project played before, which is what a renamed or missing folder looks like. Voiced takes
-    that cannot be matched without a voice say to name it. Every other section says what its plan
-    found, and a section sharing another section's words says that section's reason, since nothing
-    voices either of them.
-    """
-    previous = inputs.takes()
-    unmatched = why is not None and previous is not None and bool(previous.voiced_sections)
-    first: dict[str, str] = {}
-    out: dict[int, str] = {}
-    for plan in paid:
-        number = plan.section.number
-        planned = plan.reason or NO_VOICED_TAKE
-        if plan.digest is not None:
-            # The first section planned for a digest is the one whose reason holds, and a later one only shares it.
-            planned = first.setdefault(plan.digest, planned)
-        if number in replaced:
-            out[number] = (
-                "this run was told to replace its voiced take, which stays on disk for a run without that flag"
-            )
-        elif gone:
-            takes = inputs.relative(inputs.workspace.takes).as_posix()
-            out[number] = (
-                f"the takes directory {takes} holds none of the {counted(gone, 'take')} this project played before, "
-                "which is what a renamed or missing folder looks like"
-            )
-        elif unmatched:
-            out[number] = (
-                f"no take on disk can be matched to it until [voice] id or {VOICE_ID_VARIABLE} names the voice"
-            )
-        else:
-            out[number] = planned
-    return out
-
-
-def _takes_gone(inputs: Inputs) -> int:
-    """How many takes the project last played, when its takes directory holds none of them, or 0.
-
-    The take index names every voiced take the project played, so a takes directory with not one of
-    them is a folder renamed, moved or never checked out, and not a script edited section by section.
-    """
-    previous = inputs.takes()
-    if previous is None:
-        return 0
-    played = {row.digest for row in previous.sections if row.voiced}
-    takes = inputs.workspace.takes
-    if any(inputs.workspace.held_at(takes, digest) for digest in played):
-        return 0
-    return len(played)
+    return take_states(inputs, _targets(inputs, only), replace_voiced=replace_voiced).plan(spend=True).cost
 
 
 def _take_missing(
-    inputs: Inputs, section: ScriptSection, why: str, *, unreached: bool = False, moved: bool = False
+    inputs: Inputs, section: ScriptSection, why: str, *, unreached: bool = False, takes_dir_gone: bool = False
 ) -> Finding:
     """The finding for one section that plays a placeholder, saying why its take did not play and what makes it.
 
     What makes the take is the voice's bill: a voice that bills is bought from with `--spend`, and a
-    free one that could not be reached is started. A takes directory that `moved` is pointed at first,
+    free one that could not be reached is started. A takes directory that is gone is pointed at first,
     because the takes in it are already made.
     """
     number = section.number
@@ -274,7 +185,7 @@ def _take_missing(
         action = f"Name the voice, then run decktalk narrate --section {number} to make its take for nothing."
     else:
         action = f"Run decktalk narrate --section {number} --spend to buy its take."
-    if moved:
+    if takes_dir_gone:
         action = f"Point [narration] takes_dir at the folder that holds them, or {action[0].lower()}{action[1:]}"
     return judge(
         Code.TAKE_MISSING,
@@ -312,8 +223,9 @@ def _targets(inputs: Inputs, only: Sequence[int] | None) -> list[ScriptSection]:
 def _write_takes(
     inputs: Inputs,
     run: Run,
-    plans: list[TakePlan],
+    plans: Sequence[TakePlan],
     provider: SpeechProvider | None,
+    previous: Takes | None,
     *,
     model: str,
     free: bool,
@@ -324,21 +236,27 @@ def _write_takes(
     for sharing another section's words reads the take that section is still making. A `free` voice
     that nothing answers is a voice that is not running, so each section it would have made plays a
     placeholder and is given back last, and no section after the first asks it again. A voice that
-    bills is not stood in for, because a take the author paid to buy is not optional.
+    bills is not stood in for, because a take the author paid to buy is not optional. `previous` is the
+    take index this run started from, whose rows it rewrites.
     """
     inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.takes_path.parent.mkdir(parents=True, exist_ok=True)
-    previous = inputs.takes()
+    chapters = inputs.chapters()
     progress = _Progress(rows={take.section: take for take in previous.sections} if previous is not None else {})
 
     def one(plan: TakePlan) -> None:
         number = plan.section.number
-        with run.section(Stage.NARRATE, number):
-            row, status = _one_take(inputs, run, plan, provider, progress.down if free else None, progress.checked)
+        chapter = chapters.get(number, plan.section.title)
+        with run.section(Stage.NARRATE, number) as ending:
+            down = progress.down if free else None
+            row, outcome = _one_take(inputs, run, plan, chapter, provider, down, progress.checked)
+            if outcome is TakeOutcome.KEPT:
+                # A take found on disk did not run, so its section ends as kept, as its row says.
+                ending.outcome = Outcome.KEPT
             made = SectionTake(
                 section=number,
                 key=plan.section.key,
-                status=status,
+                outcome=outcome,
                 characters=plan.characters_sent,
                 seconds=row.duration_seconds,
                 file=inputs.relative(inputs.workspace.take_path(row.digest)),
@@ -358,11 +276,11 @@ def _write_takes(
                     done=progress.done,
                     total=len(plans),
                     unit=Unit.TAKE,
-                    label=plan.chapter or plan.section.title,
+                    label=chapter,
                     section=number,
                 )
 
-    making = {plan.section.number: plan for plan in plans if not plan.held}
+    making = {plan.section.number: plan for plan in plans if plan.outcome is not TakeOutcome.KEPT}
     workers = min(inputs.settings.narration.concurrency, len(making))
     if making:
         log.debug(
@@ -384,14 +302,14 @@ def _write_takes(
         for number in making:
             pool.result(number)
     for plan in plans:
-        if plan.held:
+        if plan.outcome is TakeOutcome.KEPT:
             one(plan)
     made = [progress.made[plan.section.number] for plan in plans]
     unreached = [
         plan.section
         for plan in plans
-        if plan.status is not TakeStatus.PLACEHOLDER
-        and progress.made[plan.section.number].status is TakeStatus.PLACEHOLDER
+        if plan.outcome is not TakeOutcome.PLACEHOLDER
+        and progress.made[plan.section.number].outcome is TakeOutcome.PLACEHOLDER
     ]
     return _placed(inputs, progress.rows, set(progress.made)), made, unreached
 
@@ -414,10 +332,11 @@ def _one_take(
     inputs: Inputs,
     run: Run,
     plan: TakePlan,
+    chapter: str,
     provider: SpeechProvider | None,
     down: threading.Event | None,
     checked: set[str],
-) -> tuple[Take, TakeStatus]:
+) -> tuple[Take, TakeOutcome]:
     """One section's take, made or found, with what this run did about it.
 
     `down` is given for a free voice alone. Once it is set, or once this section's request finds
@@ -430,9 +349,10 @@ def _one_take(
             hint=f"Set [voice] id in decktalk.toml or export {VOICE_ID_VARIABLE}, or run with --no-spend.",
             location=at(inputs.workspace.takes_path, inputs.root),
         )
-    hit = plan.held and is_held(digest, inputs.workspace)
+    kept = plan.outcome is TakeOutcome.KEPT
+    hit = kept and inputs.workspace.holding(digest) is not None
     # The plan's reason is the sentence `status` prints, and the token is what a reader filters on.
-    why = "unchanged" if hit else "take-missing" if plan.held else "to-make"
+    why = "unchanged" if hit else "take-missing" if kept else "to-make"
     cache_decision(
         log, Unit.TAKE.value, hit=hit, why=why, key=digest, section=plan.section.number, reason=plan.reason or None
     )
@@ -440,27 +360,28 @@ def _one_take(
         for path in copy_from_store(inputs, run, plan.section.number, digest, checked):
             run.wrote(path)
         voiced = not is_placeholder(digest)
-        return take_row(inputs, plan.section, plan.chapter, digest, voiced=voiced), TakeStatus.KEPT
-    if down is not None and down.is_set() and plan.status is not TakeStatus.PLACEHOLDER:
+        return take_row(inputs, plan.section, chapter, digest, voiced=voiced), TakeOutcome.KEPT
+    if down is not None and down.is_set() and plan.outcome is not TakeOutcome.PLACEHOLDER:
         # A take the voice would make, or one another section was making, cannot come from a voice that is down.
-        return _stand_in(inputs, run, plan)
-    if plan.status is TakeStatus.VOICED:
-        return _buy(inputs, run, plan, digest, provider, down, checked)
-    row, files = write_placeholder_take(inputs, plan.section, plan.chapter, digest)
+        return _stand_in(inputs, run, plan, chapter)
+    if plan.outcome is TakeOutcome.VOICED:
+        return _buy(inputs, run, plan, chapter, digest, provider, down, checked)
+    row, files = write_placeholder_take(inputs, plan.section, chapter, digest)
     for path in files:
         run.wrote(path)
-    return row, TakeStatus.PLACEHOLDER
+    return row, TakeOutcome.PLACEHOLDER
 
 
 def _buy(
     inputs: Inputs,
     run: Run,
     plan: TakePlan,
+    chapter: str,
     digest: str,
     provider: SpeechProvider | None,
     down: threading.Event | None,
     checked: set[str],
-) -> tuple[Take, TakeStatus]:
+) -> tuple[Take, TakeOutcome]:
     """Buy one section's take while holding the store's lock on it, or play the copy another run bought meanwhile."""
     request = plan.request
     if provider is None or request is None:
@@ -474,24 +395,27 @@ def _buy(
             # Another project bought this take while this run waited, so it plays that copy.
             for path in copy_from_store(inputs, run, plan.section.number, digest, checked):
                 run.wrote(path)
-            return take_row(inputs, plan.section, plan.chapter, digest, voiced=True), TakeStatus.KEPT
+            return take_row(inputs, plan.section, chapter, digest, voiced=True), TakeOutcome.KEPT
         try:
-            row, files = write_voiced_take(inputs, run, provider, plan.section, plan.chapter, digest, request)
+            row, files = write_voiced_take(inputs, run, provider, plan.section, chapter, digest, request)
         except ProviderError as failure:
             if down is None or failure.reached:
                 raise
             down.set()
-            return _stand_in(inputs, run, plan)
+            return _stand_in(inputs, run, plan, chapter)
     for path in files:
         run.wrote(path)
-    return row, TakeStatus.VOICED
+    return row, TakeOutcome.VOICED
 
 
-def _stand_in(inputs: Inputs, run: Run, plan: TakePlan) -> tuple[Take, TakeStatus]:
+def _stand_in(inputs: Inputs, run: Run, plan: TakePlan, chapter: str) -> tuple[Take, TakeOutcome]:
     """The placeholder one section plays because its free voice did not answer, found on disk or made now."""
-    (stand_in,) = placeholder_plan(inputs, [plan.section])
-    row, _kept = _one_take(inputs, run, replace(stand_in, chapter=plan.chapter), None, None, set())
-    return row, TakeStatus.PLACEHOLDER
+    digest = placeholder_inputs(inputs, plan.section).digest
+    held = inputs.workspace.holding(digest) is not None
+    outcome = TakeOutcome.KEPT if held else TakeOutcome.PLACEHOLDER
+    stand_in = replace(plan, outcome=outcome, digest=digest, request=None)
+    row, _kept = _one_take(inputs, run, stand_in, chapter, None, None, set())
+    return row, TakeOutcome.PLACEHOLDER
 
 
 def _placed(inputs: Inputs, rows: dict[int, Take], touched: set[int]) -> dict[int, Take]:
@@ -527,21 +451,21 @@ def _note_what_is_missing(inputs: Inputs, run: Run, index: Takes) -> None:
 
 def _charged(estimate: Cost, made: list[SectionTake]) -> Cost:
     """The price the run really paid, which is the estimate once the requests have been sent."""
-    voiced = tuple(row.section for row in made if row.status is TakeStatus.VOICED)
+    voiced = tuple(row.section for row in made if row.outcome is TakeOutcome.VOICED)
     return estimate.model_copy(update={"state": CostState.CHARGED, "sections": voiced})
 
 
 __all__ = [
+    "NarratePlan",
+    "SectionTakeState",
     "TakePlan",
+    "TakeStates",
     "estimated_words",
-    "is_held",
     "narrate",
     "place",
-    "placeholder_plan",
-    "planned_words",
     "price",
     "script_refusals",
     "shown",
     "symbol_tokens",
-    "voiced_plan",
+    "take_states",
 ]

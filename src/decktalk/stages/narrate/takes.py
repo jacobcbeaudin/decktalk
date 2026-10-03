@@ -32,7 +32,6 @@ from decktalk.artifacts import (
     ProviderWords,
     Take,
     Takes,
-    Words,
     is_placeholder,
     words_file,
 )
@@ -47,7 +46,7 @@ from decktalk.page import SECOND_DIGITS
 from decktalk.results import Word
 from decktalk.speech import PUNCT, SpeechProvider, SpeechRequest, canonical_text, is_free
 from decktalk.stages import billed, dollars_for
-from decktalk.stages.narrate.plan import TakePlan, damaged_refusal, is_held
+from decktalk.stages.narrate.plan import damaged_refusal
 
 PLACEHOLDER_CLOSE_SECONDS = 0.1
 """Calibration: the silence a click track ends on, which is long enough that where its sound ends can be measured."""
@@ -348,35 +347,6 @@ def join_takes(inputs: Inputs, takes: Takes) -> Path:
     return narration
 
 
-def planned_words(inputs: Inputs, plan: TakePlan) -> tuple[tuple[Word, ...], float, bool]:
-    """(the words, the span, whether they are estimated) a section will have after a voiced run.
-
-    The words count from the section's start, which is after its lead, and the span is placed by the
-    one rule every take is placed by: the lead, the take to where its sound ends, and the tail. This
-    is what lets `check` resolve every cue against the words a section will have before anything is
-    voiced.
-    """
-    section = plan.section
-    number = section.number
-    lead, tail = inputs.lead_seconds(number), inputs.tail_seconds(number)
-    index = inputs.takes()
-    row = index.of(number) if index is not None else None
-    paid = row if row is not None and row.voiced else None
-    if plan.held and plan.digest is not None and is_held(plan.digest, inputs.workspace):
-        # The take of this exact text is on disk, so the cues land on the words it already carries.
-        words = inputs.section_words(number, plan.digest)
-        if paid is not None and paid.digest == plan.digest:
-            return words, place(inputs, number, paid).span_seconds, False
-        end = sound_end_of(inputs, inputs.workspace.take_path(plan.digest))
-        return words, round(lead + end + tail, SECOND_DIGITS), False
-    if plan.unchecked and paid is not None and paid.spoken == section.spoken:
-        # There is no voice to ask, and the take on disk was voiced from this exact text.
-        return inputs.section_words(number, paid.digest), place(inputs, number, paid).span_seconds, False
-    length = section.placeholder_seconds(inputs.settings.narration)
-    shifted = Words(words=tuple(estimated_words(section, length))).shifted(lead)
-    return shifted, round(lead + length + tail, SECOND_DIGITS), True
-
-
 __all__ = [
     "PLACEHOLDER_CLOSE_SECONDS",
     "estimated_words",
@@ -387,7 +357,6 @@ __all__ = [
     "copy_from_store",
     "keep_in_store",
     "place",
-    "planned_words",
     "sound_end_of",
     "take_row",
     "write_placeholder_take",

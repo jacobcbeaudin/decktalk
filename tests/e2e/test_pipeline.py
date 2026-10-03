@@ -42,7 +42,7 @@ from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart,
 from decktalk.findings import Code
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.pipeline import Artifact, Outcome, Stage
-from decktalk.results import CostState, Layer, SectionKind, Substitute, Word
+from decktalk.results import CostState, Layer, SectionKind, Substitute, TakeState, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing
 from support.commands import (
     HOSTILE_DIRECTORY,
@@ -654,7 +654,9 @@ def test_status_reports_what_is_written_what_is_built_and_what_is_stale(built: P
     assert sorted(rows) == list(EVERY_SECTION)
     assert [key for key, row in rows.items() if row["recorded"]] == list(SPOKEN)
     assert all(row["assembled"] for row in rows.values())
-    assert not any(row["voiced"] for row in rows.values()), "an unvoiced build owns no voiced take"
+    assert not any(row["take_state"] == TakeState.VOICED.value for row in rows.values()), (
+        "an unvoiced build owns no voiced take"
+    )
 
 
 def test_check_judges_the_inputs_and_prices_the_run_without_a_browser(built: Project) -> None:

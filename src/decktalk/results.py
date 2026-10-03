@@ -174,12 +174,22 @@ class ApiKeyState(Enum):
     NOT_NEEDED = "not_needed"
 
 
-class TakeStatus(Enum):
+class TakeOutcome(Enum):
     """What one run did about one section's take."""
 
     VOICED = "voiced"
     KEPT = "kept"
     PLACEHOLDER = "placeholder"
+
+
+class TakeState(Enum):
+    """What the disk holds for one spoken section, judged against its current text, voice, model and voice settings."""
+
+    VOICED = "voiced"  # a voiced take of the current inputs is held
+    UNCHECKED = "unchecked"  # a voiced take of this text is held and no voice is named to match it
+    STALE = "stale"  # the index's voiced take for this section, or for its text, is held under another digest
+    PLACEHOLDER = "placeholder"  # only a placeholder of the current text is held
+    MISSING = "missing"  # nothing this section could play is held
 
 
 class SoundKind(Enum):
@@ -190,7 +200,7 @@ class SoundKind(Enum):
     EFFECT = "effect"
 
 
-class SoundStatus(Enum):
+class SoundOutcome(Enum):
     """What one run did about one score item."""
 
     PLANNED = "planned"
@@ -436,13 +446,19 @@ class SectionStatus(Model):
     key: SectionKey
     kind: SectionKind = Field(description="Whether the section plays a recorded page or a supplied clip.")
     source: str = Field(description="The page or the file this section plays.")
-    voiced: bool = Field(description="True when a voice spoke a take of this section's current text.")
-    voiced_stale: bool = Field(
-        description="True when a voice spoke a take of this section's older text, which a voiced run would replace."
+    take_state: TakeState | None = Field(
+        description=(
+            "What the disk holds for this spoken section, or null for a clip or when the take states could not be read."
+        )
+    )
+    take_reason: str | None = Field(
+        description="The clause a TAKE_MISSING finding says after because, for a reader: dispatch on take_state."
     )
     recorded: bool = Field(description="True when a recording of this section is on disk.")
     assembled: bool = Field(description="True when this section has been assembled into the film.")
-    stale: bool = Field(description="True when what is on disk no longer matches what the project says.")
+    recording_stale: bool = Field(
+        description="True when the recording on disk no longer matches what the project says."
+    )
 
 
 class LiveRun(Model):
@@ -501,7 +517,7 @@ class SectionTake(Model):
 
     section: SectionNumber
     key: SectionKey
-    status: TakeStatus = Field(description="What this run did about this section's take.")
+    outcome: TakeOutcome = Field(description="What this run did about this section's take.")
     characters: int = Field(ge=0, description="How many characters of script this take speaks.")
     seconds: float | None = Field(None, ge=0, description="How long the take runs, or null before it exists.")
     file: ProjectPath | None = Field(None, description="The take's audio file, or null before it exists.")
@@ -542,7 +558,7 @@ class SoundItem(Model):
 
     name: str = Field(description="What the author calls this item in decktalk.toml.")
     kind: SoundKind = Field(description="Whether this item is music, ambience or an effect.")
-    status: SoundStatus = Field(description="What this run did about this item.")
+    outcome: SoundOutcome = Field(description="What this run did about this item.")
     prompt: str = Field(description="The words the author wrote to describe this item.")
     seconds: float | None = Field(None, ge=0, description="How long the item runs, or null before it exists.")
     file: ProjectPath | None = Field(None, description="The item's audio file, or null before it exists.")
@@ -1031,7 +1047,7 @@ __all__ = [
     "SkipReason",
     "SoundItem",
     "SoundKind",
-    "SoundStatus",
+    "SoundOutcome",
     "Source",
     "ScoreResult",
     "Cost",
@@ -1041,7 +1057,8 @@ __all__ = [
     "StatusResult",
     "StoryboardResult",
     "Substitute",
-    "TakeStatus",
+    "TakeState",
+    "TakeOutcome",
     "UnplayedTakes",
     "VerifyResult",
     "Word",

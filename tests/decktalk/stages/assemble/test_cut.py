@@ -142,7 +142,7 @@ def test_a_cut_the_run_did_not_name_is_kept_only_under_its_own_key(tmp_path, fak
     assert fake_ffmpeg.wrote(".mp4") == []
 
     planted = inputs.workspace.section_video("02")
-    for key in ("absent", "stale"):
+    for key in ("absent", "mismatched"):
         planted.write_bytes(b"a film this build never made")
         if key == "absent":
             planted.with_suffix(".json").unlink()

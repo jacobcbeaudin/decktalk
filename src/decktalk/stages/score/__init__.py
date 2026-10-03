@@ -67,7 +67,7 @@ from decktalk.results import (
     ScoreResult,
     SoundItem,
     SoundKind,
-    SoundStatus,
+    SoundOutcome,
 )
 from decktalk.settings import AmbienceConfig, EffectConfig, MusicConfig
 from decktalk.speech.sound import SOUND_DECLARED, SoundContext, SoundProvider, endpoint
@@ -468,12 +468,12 @@ def _join(run: Run, inputs: Inputs, item: Planned) -> None:
     run.wrote(item.out)
 
 
-def _row(inputs: Inputs, item: Planned, status: SoundStatus, seconds: float | None) -> SoundItem:
+def _row(inputs: Inputs, item: Planned, outcome: SoundOutcome, seconds: float | None) -> SoundItem:
     """One item as the result reports it, whose file is named only once it is really there."""
     return SoundItem(
         name=item.name,
         kind=item.kind,
-        status=status,
+        outcome=outcome,
         prompt=item.prompt,
         seconds=seconds,
         file=inputs.relative(item.out) if item.out.is_file() else None,
@@ -485,7 +485,7 @@ def _kept(run: Run, inputs: Inputs, item: Planned, ledger: Ledger) -> SoundItem:
     if unjoined(item):
         _join(run, inputs, item)
     entry = ledger.of(item.name)
-    return _row(inputs, item, SoundStatus.KEPT, entry.seconds if entry else None)
+    return _row(inputs, item, SoundOutcome.KEPT, entry.seconds if entry else None)
 
 
 def _named(item: Planned) -> str:
@@ -546,7 +546,7 @@ def score(
             rows.append(_kept(run, inputs, item, ledger))
             continue
         if client is None:
-            rows.append(_row(inputs, item, SoundStatus.PLANNED, None))
+            rows.append(_row(inputs, item, SoundOutcome.PLANNED, None))
             continue
         if item.kind is SoundKind.MUSIC:
             ledger, dollars = _buy_music(run, inputs, client, item, ledger, path, replace=replace)
@@ -555,12 +555,12 @@ def score(
         charged += dollars
         bought_any = True
         bought = ledger.of(item.name)
-        rows.append(_row(inputs, item, SoundStatus.GENERATED, bought.seconds if bought else None))
+        rows.append(_row(inputs, item, SoundOutcome.GENERATED, bought.seconds if bought else None))
     run.progress(Stage.SCORE, done=len(planned), total=len(planned), unit=Unit.ASSET, label="score")
     if not planned:
         run.note("The project declares no score for this run, so there is nothing to generate.", level=Level.INFO)
     for item, row in zip(planned, rows, strict=True):
-        if row.status is SoundStatus.PLANNED and not item.out.is_file():
+        if row.outcome is SoundOutcome.PLANNED and not item.out.is_file():
             run.found(
                 judge(
                     Code.SOUND_MISSING,

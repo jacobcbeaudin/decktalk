@@ -358,9 +358,11 @@ decktalk check --json
 - `price_layer` names the settings layer that set the rate, where `default` means nobody did.
 
 `dollars` and `ceiling_dollars` differ when a section's take cannot be matched. A take is named by
-its text and its voice, so with no `[voice] id` named no take on disk can be matched to the
-voice that made it: each unmatched section's characters go into the ceiling and none of them into
-the price. The key is not needed to price a run, because the price never asks the voice anything.
+its text and its voice, so with no `[voice] id` named a voiced take of a section's current text cannot
+be matched to the voice that made it: each such section's characters go into the ceiling and none of
+them into the price. A section whose text changed, or whose take is gone, needs a take whatever the
+voice is, so its characters go into the price. The key is not needed to price a run, because the price
+never asks the voice anything.
 
 Every surface that states a price states one sentence, which keeps the certain part and the ceiling
 apart.

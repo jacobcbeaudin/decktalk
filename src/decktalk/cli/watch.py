@@ -23,7 +23,7 @@ from decktalk.cli import session as sessions
 from decktalk.errors import Cancelled, DeckTalkError, ErrorInfo
 from decktalk.pipeline import Stage
 from decktalk.project import Project
-from decktalk.results import BillingBasis, BuildResult, Cost, CostState, Layer
+from decktalk.results import BillingBasis, BuildResult, Cost, CostState, Layer, TakeState
 
 POLL_SECONDS = 0.4
 """How long the loop sleeps between two readings of the tree, which is under an author's own pause."""
@@ -137,14 +137,15 @@ def _touched(project: Project, changed: Iterable[Path]) -> tuple[int, ...] | Non
 
 
 def _stale(session: sessions.Session, project: Project) -> None:
-    """Say which sections now hold a voiced take that no longer matches what the author wrote."""
+    """Say which sections hold a stale voiced take, with the clause that says what moved."""
     reported = project.status()
-    gone = [row.section for row in reported.sections if row.voiced_stale]
-    for section in gone:
-        session.say(
-            f"Section {section} has a voiced take that no longer matches the script. "
-            f"Run decktalk narrate --section {section} --spend to voice it again."
-        )
+    for row in reported.sections:
+        if row.take_state is TakeState.STALE:
+            number = row.section
+            session.say(
+                f"Section {number} has a stale voiced take, because {row.take_reason}. "
+                f"Run decktalk narrate --section {number} --spend to voice it again."
+            )
 
 
 def _stamps(project: Project) -> dict[Path, float]:

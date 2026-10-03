@@ -81,7 +81,7 @@ the closing band lands.
         {
           "name": "tick",
           "kind": "effect",
-          "status": "planned",
+          "outcome": "planned",
           "prompt": "one soft interface click, short, dry, no reverb",
           "seconds": null,
           "file": null
@@ -105,7 +105,7 @@ the closing band lands.
     }
     ```
 
-    `items[0].status` is `planned`, which is the word for an item this run would buy and did not.
+    `items[0].outcome` is `planned`, which is the word for an item this run would buy and did not.
     The price is zero, from the `default` layer, until `[score.effects] dollars_per_minute` states
     what your plan charges per minute of audio, and `--max-cost` refuses a run priced that way.
     The one judgement the stage makes is [`SOUND_MISSING`](/reference/findings/SOUND_MISSING), for an

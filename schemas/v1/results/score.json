@@ -591,8 +591,8 @@
           "$ref": "#/$defs/SoundKind",
           "description": "Whether this item is music, ambience or an effect."
         },
-        "status": {
-          "$ref": "#/$defs/SoundStatus",
+        "outcome": {
+          "$ref": "#/$defs/SoundOutcome",
           "description": "What this run did about this item."
         },
         "prompt": {
@@ -632,7 +632,7 @@
       "required": [
         "name",
         "kind",
-        "status",
+        "outcome",
         "prompt"
       ],
       "title": "SoundItem",
@@ -648,14 +648,14 @@
       "title": "SoundKind",
       "type": "string"
     },
-    "SoundStatus": {
+    "SoundOutcome": {
       "description": "What one run did about one score item.",
       "enum": [
         "planned",
         "kept",
         "generated"
       ],
-      "title": "SoundStatus",
+      "title": "SoundOutcome",
       "type": "string"
     },
     "Stage": {

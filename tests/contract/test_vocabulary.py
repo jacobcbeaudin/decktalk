@@ -2,8 +2,8 @@
 
     uv run python tests/contract/test_vocabulary.py --write   # lower a count the code has shrunk
 
-A stage, an outcome, a finding code, an error code, a layer, a scope, a take status, a
-sound status, a section kind, a skip reason, a substitute, a spend state, a setting's
+A stage, an outcome, a finding code, an error code, a layer, a scope, a take outcome, a take
+state, a sound outcome, a section kind, a skip reason, a substitute, a spend state, a setting's
 nature and a setting's source are each a member of a plain enum, and a plain enum never compares
 equal to a string. So a string literal that spells one of them is either
 dead, because it is compared with a member and is always unequal, or it is a second spelling of the
@@ -65,10 +65,11 @@ from decktalk.results import (
     SectionKind,
     SkipReason,
     SoundKind,
-    SoundStatus,
+    SoundOutcome,
     Source,
     Substitute,
-    TakeStatus,
+    TakeOutcome,
+    TakeState,
 )
 from support import ratchet
 from support.paths import REPO, SRC, TESTS
@@ -117,10 +118,11 @@ WORD_ENUMS: tuple[type[Enum], ...] = (
     SectionKind,
     SkipReason,
     SoundKind,
-    SoundStatus,
+    SoundOutcome,
     CostState,
     Substitute,
-    TakeStatus,
+    TakeOutcome,
+    TakeState,
     Nature,
     Source,
 )
@@ -143,6 +145,14 @@ SHARED = {
     "kept": "A take that was not re-voiced and a sound that was not regenerated are the same fact twice.",
     "project": "A layer is where a value was written and a scope is where it may be, and both are the project file.",
     "machine": "A layer is where a value was written and a scope is where it may be, and both are the machine file.",
+    "voiced": (
+        "A take state is the kind of take a section holds and a run's outcome for a take is the kind it made, "
+        "and both say a voiced take."
+    ),
+    "placeholder": (
+        "A take state is the kind of take a section holds and a run's outcome for a take is the kind it made, "
+        "and both say a placeholder."
+    ),
 }
 """Every word two families own, and the one sentence saying why one word names one thing in both."""
 
@@ -161,6 +171,7 @@ ALSO_NAMES = {
     "ambience": "It names the bed the `[mix]` table points a file at, which the `[score]` table does not list.",
     "derived": "It is the word a published number's sentence opens with, which `x-numbers` reads back.",
     "environment": "It names the layer and the kind of unknown key a refusal reports, which is the same fact.",
+    "missing": "It names a tool doctor cannot find and an API key that is not set, which is the same fact, absence.",
 }
 """Every word the one-word design gives a second job, and the sentence saying what that job is.
 
@@ -311,7 +322,7 @@ def test_the_baseline_only_shrinks():
 
 PLANTED = [
     ("prose", '"""skipped"""\nwhy = f"{row} is not skipped"\nif row == "skipped": pass', [Outcome.SKIPPED.value]),
-    ("export", '__all__ = ["voiced"]\nSTATES = ["voiced"]', [TakeStatus.VOICED.value]),
+    ("export", '__all__ = ["voiced"]\nSTATES = ["voiced"]', [TakeOutcome.VOICED.value]),
     (
         "subscript",
         'closed = row["outcome"] == "skipped"\ncount = tally["CUE_OFF"]',
@@ -331,12 +342,12 @@ PLANTED = [
     (
         "membership",
         'both = "voiced" in raw and "CUE_OFF" in tally\nmade = "generated" == item.status',
-        [Code.CUE_OFF.value, SoundStatus.GENERATED.value],
+        [Code.CUE_OFF.value, SoundOutcome.GENERATED.value],
     ),
     (
         "key tuple",
         'WHERE_KEYS = ("where", "page")\nCODE_KEYS = ("RECORD_BLACK",)\nSTATES = ("kept",)',
-        [Code.RECORD_BLACK.value, TakeStatus.KEPT.value],
+        [Code.RECORD_BLACK.value, TakeOutcome.KEPT.value],
     ),
 ]
 """Each exemption beside a literal it must still see: (the exemption, a source, the words it must find)."""

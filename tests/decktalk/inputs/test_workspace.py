@@ -107,6 +107,22 @@ def test_a_take_is_looked_for_in_the_project_then_the_machine_and_never_the_buil
     assert space.words_path(digest) == tmp_path / "voice" / words_file(digest)
 
 
+def test_a_take_is_held_only_when_its_audio_and_its_words_are_both_there_and_agree(tmp_path: Path) -> None:
+    space = Workspace(
+        root=tmp_path, build=tmp_path, name="demo", suffix=TAKE_SUFFIX, takes=tmp_path, score_dir=tmp_path
+    )
+    (tmp_path / take_file("abc", TAKE_SUFFIX)).write_bytes(b"take")
+    assert space.holding("abc") is None
+    (tmp_path / words_file("abc")).write_text("{}", encoding="utf-8")
+    assert space.holding("abc") is not None
+    ProviderWords(audio=AudioPrint.of(b"another take", suffix=TAKE_SUFFIX)).write(tmp_path / words_file("abc"))
+    assert space.holding("abc") is None, "the audio does not hold the bytes its words recorded"
+    ProviderWords(audio=AudioPrint.of(b"take", suffix=TAKE_SUFFIX)).write(tmp_path / words_file("abc"))
+    assert space.holding("abc") is not None
+    (tmp_path / take_file("abc", TAKE_SUFFIX)).write_bytes(b"")
+    assert space.holding("abc") is None, "an empty take is no take"
+
+
 def test_a_take_is_found_under_the_suffix_its_words_recorded_after_the_voice_changes_format(tmp_path: Path) -> None:
     """A take is played by the name it was written under, which the voice's format today may not give."""
     space = Workspace(
