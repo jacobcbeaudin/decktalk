@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
 from decktalk.cli import machine as commands
+from decktalk.findings import Threshold
 
 from .conftest import ANSWERS, Fake, finding
 
@@ -66,6 +69,15 @@ def test_doctor_measures_only_when_asked(run, machine, answers) -> None:
     made = machine(doctor=answers["doctor"])
     run("doctor", "--measure")
     assert made.called("doctor")["measure"] is True
+
+
+def test_doctor_is_judged_by_the_threshold_its_flags_name(run, machine) -> None:
+    """The machine is handed the session's threshold, so `ok` and the exit code agree on doctor too."""
+    made = machine(doctor=MISSING)
+    ran = run("doctor", "--json", "--fail-on", "never")
+    assert made.called("doctor")["threshold"] == Threshold(stop_on=None)
+    assert ran.exit_code == 0
+    assert json.loads(ran.out)["ok"] is True
 
 
 def test_doctor_applies_nothing_without_a_terminal_and_without_the_flag(run, machine) -> None:

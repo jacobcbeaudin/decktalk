@@ -29,8 +29,9 @@ ROOT: dict[str, tuple[str, ...]] = {
     "machine": ("Machine", "Toolchain", "init"),
     # The stage names every verb, every result and every event is told by.
     "pipeline": ("Stage",),
-    # The judgement every call returns and the code and severity a caller filters it by.
-    "findings": ("Finding", "Code", "Severity"),
+    # The judgement every call returns, the code and severity a caller filters it by, and the
+    # threshold a project is opened with, which says which of them fail a call.
+    "findings": ("Finding", "Code", "Severity", "Threshold"),
     # The result every call returns and the price every call that buys states.
     "results": ("Result", "Cost"),
     # The stream every run writes to, one line of it, and the file sink a caller subscribes.

@@ -52,8 +52,7 @@ from decktalk.cli.options import (
 )
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import Cancelled, DeckTalkError, ErrorCode, ErrorInfo, Exit
-from decktalk.findings import Code
-from decktalk.machine.run import Threshold
+from decktalk.findings import Code, Threshold
 from decktalk.results import Result
 
 PROGRAM = "decktalk"

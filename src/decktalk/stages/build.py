@@ -19,10 +19,11 @@ functions of files already on disk, so when nothing they read has moved since th
 them, the film on disk is the one they would make and the measurement is the one they would take.
 The stage is reported as kept, its findings are reported again, and `force` runs it anyway.
 
-A run that may spend draws the storyboard before it narrates, because the contact sheet is the
-checkpoint a person reads before any credit is bought, and a run that buys nothing has nothing to check.
-A run with a ceiling is then priced whole, every stage that buys added together, so a build whose
-takes and sounds together pass `--max-cost` is refused before it buys anything.
+A run that may spend and would open a page under the untrusted policy is refused before its first
+stage, so it buys nothing it then cannot use. A run with a ceiling is then priced whole, every stage
+that buys added together, so a build whose takes and sounds together pass `--max-cost` is refused
+before it buys anything. The storyboard a person reads before a credit is bought is the command
+line's checkpoint, drawn before the run opens, and a build draws none of its own.
 
 A stage whose findings reach the caller's threshold stops the run, and the run still returns its
 result. A finding is a judgement and not an error, so the stages that ran, the findings they made and
@@ -41,13 +42,14 @@ from pydantic import JsonValue, TypeAdapter
 
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level, StageDone
-from decktalk.findings import Code, Finding, Severity
+from decktalk.findings import Finding
 from decktalk.inputs import Inputs
 from decktalk.logs import cache_decision
-from decktalk.machine.run import Run, Threshold
+from decktalk.machine.run import Run
+from decktalk.media import browser
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
 from decktalk.results import DOLLAR_DIGITS, BillingBasis, BuildResult, Cost, CostState, Layer, Result, StageRun, counted
-from decktalk.stages import narrate, storyboard
+from decktalk.stages import narrate
 from decktalk.stages import score as score_stage
 from decktalk.stages.kept import (
     BUILT,
@@ -78,31 +80,29 @@ def build(
     replace_score: bool = False,
     loudness: bool = True,
     strict: bool = False,
-    allow: Collection[Code] = (),
-    stop_on: Severity | None = Severity.ERROR,
 ) -> BuildResult:
     """Run every stage of the pipeline, or the span of them `stages` names, in run order.
 
     Whether the run may spend is the run's own rather than a parameter, so one gate decides it for
-    the library, the command line and a service alike, and the storyboard is drawn first when it
-    may. A stage that judges something at the `stop_on` threshold stops the run, because a cue whose
-    phrase is never spoken leaves a slide that never appears and a page that threw recorded an empty
-    stage, and carrying on would deliver a film that is wrong in a way the run already knows about.
+    the library, the command line and a service alike. A stage that judges something the run's
+    threshold reaches stops the run, because a cue whose phrase is never spoken leaves a slide that
+    never appears and a page that threw recorded an empty stage, and carrying on would deliver a film
+    that is wrong in a way the run already knows about.
 
-    `allow` and `stop_on` are the caller's own threshold, which is what `--allow` and `--fail-on`
-    set on the command line. A code in `allow` never stops the run, `Severity.ERROR` stops on a
-    error, `Severity.WARNING` stops on any finding, and None lets every stage run so
-    that `verify` measures what the earlier stages made. The stages after a stop are reported as
-    skipped and the result names the stage in `stopped_at`. The result's `ok` is read from the same
-    threshold, so it is false on a run that stopped and on one whose verify judged something the
-    threshold fails on, and true on a run whose every finding was allowed or under the line.
+    The threshold is the caller's own, carried by the run from the project it was opened on, which
+    is what `--allow` and `--fail-on` set on the command line. An allowed code never stops the run,
+    `Severity.ERROR` stops on an error, `Severity.WARNING` stops on any finding, and a threshold that
+    fails on nothing lets every stage run so that `verify` measures what the earlier stages made. The
+    stages after a stop are reported as skipped and the result names the stage in `stopped_at`. The
+    result's `ok` is read from the same threshold, so it is false on a run that stopped and on one
+    whose verify judged something the threshold fails on, and true on a run whose every finding was
+    allowed or under the line.
 
     Whether the film carries the score is read from `skip`, because a run told to leave the
     stage out is a run that does not want its sound, and a second switch for the same decision would
     let a caller skip the stage and still be refused for the file it never asked for.
     """
     plan = _plan(stages, skip)
-    threshold = Threshold(stop_on=stop_on, allow=frozenset(allow))
     score = Stage.SCORE not in skip
     _require_what_the_plan_skips(inputs, plan, score=score)
     options: dict[str, object] = {
@@ -114,7 +114,7 @@ def build(
         "loudness": loudness,
         "strict": strict,
     }
-    board = _storyboard(inputs, run, only=only)
+    _refuse_a_key_beside_a_page(inputs, run, plan)
     _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
     kept = read_kept(inputs)
     fresh: dict[Stage, KeptStage] = {}
@@ -150,18 +150,16 @@ def build(
                 fresh[stage] = _remember(stage, inputs, digest, taken, findings)
             if stage is Stage.ASSEMBLE:
                 film = _film_of(answer)
-        if stage is not Stage.VERIFY and _stopped(stage, findings, run, plan, threshold):
+        if stage is not Stage.VERIFY and _stopped(stage, findings, run, plan):
             stopped_at = stage
     if fresh:
         run.wrote(_kept_after(kept, fresh).write(inputs.workspace.kept_path))
     return run.result(
         BuildResult,
-        threshold=threshold,
         stages=tuple(rows),
         spend=run.spend,
         cost=total(spends) if spends else narrate.cost_of([], inputs, state=CostState.ESTIMATE),
         film=film,
-        storyboard=board,
         stopped_at=stopped_at,
     )
 
@@ -293,12 +291,14 @@ def _where(inputs: Inputs, artifact: Artifact) -> Path:
     return inputs.workspace.film if artifact is Artifact.FINAL else inputs.workspace.of(artifact)
 
 
-def _storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None) -> Path | None:
-    """The contact sheet a run that may spend draws before it narrates, or None when it may not."""
-    if not run.spend:
-        return None
-    answer = storyboard.storyboard(inputs, run, only=only)
-    return None if answer.storyboard is None else Path(answer.storyboard)
+def _refuse_a_key_beside_a_page(inputs: Inputs, run: Run, plan: tuple[Stage, ...]) -> None:
+    """Refuse a run that may spend and would open an untrusted page, before its first stage buys anything.
+
+    A stage that opens a page refuses the same run when it launches, which is after narrate has
+    bought, so the build asks the launch's own rule first of any plan that reaches such a stage.
+    """
+    if any(stage.spec.opens_pages for stage in plan):
+        browser.admitted(inputs.settings.record.page_policy, spend=run.spend)
 
 
 def _skipped(run: Run, stage: Stage) -> StageRun:
@@ -367,10 +367,9 @@ def _stopped(
     findings: Sequence[Finding],
     run: Run,
     plan: tuple[Stage, ...],
-    threshold: Threshold,
 ) -> bool:
     """Whether the stage that just ran judged something that stops the run, said on the stream when it did."""
-    stopping = [found for found in findings if threshold.reaches(found)]
+    stopping = [found for found in findings if run.threshold.reaches(found)]
     if not stopping:
         return False
     later = plan[plan.index(stage) + 1 :]

@@ -89,8 +89,6 @@ def _once(
                 only=only,
                 spend=False,
                 force=force,
-                allow=session.threshold.allow,
-                stop_on=session.threshold.stop_on,
                 cancel=session.cancel,
             )
     except Cancelled:

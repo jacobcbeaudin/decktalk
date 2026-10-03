@@ -68,7 +68,6 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.build", "stages.table"): "how each stage is called",
     ("stages.build", "stages.narrate"): "the price of the takes, held to the run's ceiling before anything is bought",
     ("stages.build", "stages.score"): "the price of the score, held to the run's ceiling before anything is bought",
-    ("stages.build", "stages.storyboard"): "the checkpoint drawn before any credit is spent",
     ("stages.build", "stages.kept"): "an unchanged build keeps what the kept record says it already made",
     # check rehearses what the stages downstream of it would judge, without producing any of it.
     ("stages.check", "stages.narrate"): "by design",

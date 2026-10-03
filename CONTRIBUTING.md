@@ -171,7 +171,7 @@ src/decktalk/
       workspace.py       Every path under `build/`, named once.
     machine/             This computer and this process, as one value, and the run every call opens on it.
       fixes.py           The fix applier: every fix a finding offers, carried out or refused in one sentence.
-      run.py             One call in progress, and the threshold that decides whether what it found fails it.
+      run.py             One call in progress, and the threshold its caller judges what it found by.
     explain.py           One setting explained: what set it, what it feeds, and what a candidate value would do to this project.
     stages/              The pipeline, one package per stage and one module per call that reports or cuts.
       build.py           The whole pipeline in order, or the span of it one run asked for.

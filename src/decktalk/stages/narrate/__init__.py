@@ -542,7 +542,6 @@ __all__ = [
     "price",
     "script_refusals",
     "shown",
-    "spend_of",
     "symbol_tokens",
     "voiced_plan",
 ]

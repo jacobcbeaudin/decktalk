@@ -21,7 +21,7 @@ from typer.testing import CliRunner
 from decktalk.cli import catalog, main
 from decktalk.cli import session as sessions
 from decktalk.events import Event, Events
-from decktalk.findings import Applicability, Code, EditFix, Finding, Location
+from decktalk.findings import ERRORS_FAIL, Applicability, Code, EditFix, Finding, Location, Threshold
 from decktalk.project import Project
 from decktalk.results import (
     ApiKeyState,
@@ -72,11 +72,14 @@ class Fake:
     """A stand-in for `Project` or `Machine` that records every call and answers as it was told to.
 
     Every command is a thin client of one of those two objects, so a fake at that seam is the whole
-    of what a command-line test needs to say what the client did.
+    of what a command-line test needs to say what the client did. A result it answers with has its
+    `ok` judged the way the library judges it: by the threshold the project was opened with, or by
+    the one a machine call was handed.
     """
 
     def __init__(self, **answers: object) -> None:
         self.answers = dict(answers)
+        self.threshold: Threshold = ERRORS_FAIL
         self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
         self.events = Events()
         self.emits: dict[str, tuple[type[Event], dict[str, object]]] = {}
@@ -85,6 +88,11 @@ class Fake:
     def project(self) -> Project:
         """This fake as the project it stands in for, for a test that hands it to a function directly."""
         return cast("Project", self)
+
+    def opened(self, threshold: Threshold) -> Fake:
+        """This fake as the project a session opened, with the threshold it was opened with."""
+        self.threshold = threshold
+        return self
 
     def called(self, name: str) -> dict[str, object]:
         """The keywords one call was made with, which is what a client test asserts on."""
@@ -102,6 +110,10 @@ class Fake:
             answer = self.answers.get(name)
             if isinstance(answer, Exception):
                 raise answer
+            if isinstance(answer, Result) and answer.error is None:
+                threshold = cast("Threshold", keywords.get("threshold", self.threshold))
+                ok = not threshold.fails(answer.findings)
+                return answer if answer.ok is ok else answer.model_copy(update={"ok": ok})
             return answer
 
         return call
@@ -113,7 +125,7 @@ def project(monkeypatch: pytest.MonkeyPatch):
 
     def install(**answers: object) -> Fake:
         fake = Fake(**answers)
-        monkeypatch.setattr(sessions.Session, "project", lambda self: fake)
+        monkeypatch.setattr(sessions.Session, "project", lambda self: fake.opened(self.threshold))
         return fake
 
     return install

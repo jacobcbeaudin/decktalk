@@ -14,6 +14,7 @@ annotation is resolved, so a forward reference is checked as the class it names.
 
 from __future__ import annotations
 
+import ast
 import enum
 import importlib
 import inspect
@@ -27,6 +28,7 @@ from pydantic import BaseModel
 
 import decktalk
 from decktalk.results import RESULTS
+from support.paths import SRC
 
 PACKAGE = "decktalk"
 
@@ -53,6 +55,23 @@ def public() -> dict[str, object]:
 
 PUBLIC = public()
 PUBLIC_IDS = {id(obj) for obj in PUBLIC.values()}
+
+
+def declaring() -> list[str]:
+    """Every module of the package whose own source assigns `__all__` at the top level, by dotted name."""
+    found = []
+    for path in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        targets = [
+            target
+            for node in tree.body
+            if isinstance(node, ast.Assign | ast.AnnAssign)
+            for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+        ]
+        if any(isinstance(target, ast.Name) and target.id == "__all__" for target in targets):
+            parts = path.relative_to(SRC.parent).with_suffix("").parts
+            found.append(".".join(parts[:-1] if parts[-1] == "__init__" else parts))
+    return found
 
 
 def owned(obj: object) -> TypeGuard[type]:
@@ -156,6 +175,15 @@ def test_every_public_module_declares_its_surface(module_name: str):
     module = importlib.import_module(f"{PACKAGE}.{module_name}")
     assert getattr(module, "__all__", ()), module_name
     assert [name for name in module.__all__ if not hasattr(module, name)] == []
+
+
+def test_every_module_holds_every_name_its_all_lists():
+    """`from module import *` reads `__all__`, so a listed name the module does not hold fails that import."""
+    modules = [importlib.import_module(module_name) for module_name in declaring()]
+    missing = [
+        f"{module.__name__}.{name}" for module in modules for name in module.__all__ if not hasattr(module, name)
+    ]
+    assert missing == [], missing
 
 
 @pytest.mark.parametrize("name", sorted(PUBLIC))

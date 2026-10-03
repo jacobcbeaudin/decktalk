@@ -940,7 +940,6 @@ class BuildResult(Result):
     spend: bool = Field(description=SPEND)
     cost: Cost = Field(description="What this run cost, or would have cost.")
     film: ProjectPath | None = Field(None, description="The finished film, or null when the run made none.")
-    storyboard: ProjectPath | None = Field(None, description="The storyboard this run wrote, or null.")
     stopped_at: Stage | None = Field(
         None,
         description="The stage whose findings stopped the run, or null when it ran through.",

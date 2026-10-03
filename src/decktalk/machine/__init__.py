@@ -14,7 +14,7 @@ with. Such a machine reads no project's `.env`, so a tenant's upload cannot supp
 Every call on a machine opens a run, and a run is what a stage reports through.
 
     __init__.py   the machine, its toolchain, `install`, `doctor` and `init`
-    run.py        one call in progress, its spend gate and the threshold its findings are judged by
+    run.py        one call in progress, its spend gate and the threshold it carries
     fixes.py      the fix applier `apply` on a machine or a project carries a fix out with
 """
 
@@ -41,11 +41,13 @@ from decktalk.events import (
     RunStart,
 )
 from decktalk.findings import (
+    ERRORS_FAIL,
     Applicability,
     Code,
     CommandFix,
     Finding,
     Location,
+    Threshold,
     judge,
 )
 from decktalk.inputs.env import reading_dotenv
@@ -360,15 +362,25 @@ class Machine:
         events_dir: Path | None = None,
         keep_runs: int | None = None,
         max_bytes: int | None = None,
+        threshold: Threshold = ERRORS_FAIL,
     ) -> Iterator[Run]:
         """Open one run on the stream, write its lines beside the project, and close it however it ends.
 
         A run with no project streams and writes no file, because there is nowhere under a project
         to write it and a machine command must still reach a renderer. A caller that must know the
         id before the first line is written mints it itself and passes it, which is how a project
-        adds the run to its own view in time for a renderer to see the run open.
+        adds the run to its own view in time for a renderer to see the run open. `threshold` is the
+        caller's rule for which findings fail the run, which every result the run fills is judged by.
         """
-        run = Run(self, id=id or new_run(), cancel=cancel or Cancel(), spend=spend, max_cost=max_cost, root=root)
+        run = Run(
+            self,
+            id=id or new_run(),
+            cancel=cancel or Cancel(),
+            spend=spend,
+            max_cost=max_cost,
+            root=root,
+            threshold=threshold,
+        )
         events_path = events_dir / f"{run.id}{EVENTS_SUFFIX}" if events_dir is not None else None
         sink, written, pruned = None, None, ()
         if events_path is not None:
@@ -444,14 +456,17 @@ class Machine:
             tools = (browser, *_encoder_rows(self.toolchain.fetch(cancel=run.cancel), fetched=not held))
             return run.result(InstallResult, tools=tools, cache=self.cache_dir)
 
-    def doctor(self, *, measure: bool = False, cancel: Cancel | None = None) -> DoctorResult:
+    def doctor(
+        self, *, measure: bool = False, threshold: Threshold = ERRORS_FAIL, cancel: Cancel | None = None
+    ) -> DoctorResult:
         """Report what this machine holds and what a run on it would use, fetching nothing.
 
         The encoder row looks for executables already on disk, because asking for them would
         download the pinned build, and the browser row launches the one this machine already has.
-        No variable's value is reported, because a variable may hold a credential.
+        No variable's value is reported, because a variable may hold a credential. `threshold` is
+        which of its findings make `ok` false, as it is for a project's calls.
         """
-        with self._run(cancel=cancel) as run:
+        with self._run(cancel=cancel, threshold=threshold) as run:
             tools = (self._browser_row(), *_encoder_rows(self.toolchain), self._katex_row())
             findings = tuple(run.found(found) for found in _missing_findings(tools))
             return run.result(

@@ -124,11 +124,11 @@ def doctor(
     """
     session = sessions.of(ctx)
     with session.watching(session.machine.events):
-        reported = session.machine.doctor(measure=measure, cancel=session.cancel)
+        reported = session.machine.doctor(measure=measure, threshold=session.threshold, cancel=session.cancel)
     if reported.findings and session.approve(fix, "Fetch what is missing now?", default=True):
         with session.watching(session.machine.events):
             session.machine.apply(reported.findings)
-            return session.machine.doctor(measure=measure, cancel=session.cancel)
+            return session.machine.doctor(measure=measure, threshold=session.threshold, cancel=session.cancel)
     return reported
 
 

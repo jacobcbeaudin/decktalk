@@ -40,7 +40,7 @@ from filelock import FileLock, Timeout
 from decktalk.errors import Cancel, InputError, ProjectLocked
 from decktalk.events import Event, Events, Level, Subscription
 from decktalk.files import replace_all
-from decktalk.findings import Code, Finding, Severity
+from decktalk.findings import ERRORS_FAIL, Finding, Threshold
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.machine import Machine
@@ -89,6 +89,7 @@ def open(
     *,
     machine: Machine | None = None,
     overrides: Iterable[str] = (),
+    threshold: Threshold = ERRORS_FAIL,
 ) -> Project:
     """The project in `path`, in `DECKTALK_PROJECT`, or in the directory the process started in.
 
@@ -99,6 +100,9 @@ def open(
     every project. A project opened on it starts from those, and `overrides` come after them. They
     may set project-scoped keys only, as `Project` says. With no machine given, the machine is made
     from `overrides`, so every key reaches the layer it belongs to.
+
+    `threshold` is which findings fail a call on this project, and every result's `ok` is read from
+    it, as is the point a build stops at. The default fails on an error of any code.
     """
     pairs = tuple(overrides)
     here = machine or Machine.from_environment(overrides=pairs)
@@ -106,7 +110,7 @@ def open(
     root = here.cwd / Path(named).expanduser() if named else here.cwd
     if root.is_file():
         root = root.parent
-    return Project(here, root, overrides=pairs if machine is not None else ())
+    return Project(here, root, overrides=pairs if machine is not None else (), threshold=threshold)
 
 
 def section_numbers(selection: str) -> tuple[int, ...]:
@@ -190,12 +194,18 @@ class Project:
     """
 
     root: Path
+    threshold: Threshold
     _inputs: Inputs
     machine: Machine
     events: Events
 
-    def __init__(self, machine: Machine, root: Path, *, overrides: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self, machine: Machine, root: Path, *, overrides: tuple[str, ...] = (), threshold: Threshold = ERRORS_FAIL
+    ) -> None:
         """Open the project at `root` on `machine`, with the caller's `overrides` over the machine's own.
+
+        `threshold` is which findings fail a call on this project. Every run the project opens carries
+        it, so every result's `ok` and the point a build stops at are read from this one rule.
 
         A machine-scoped key in `overrides` is refused, because it names the browser DeckTalk launches
         and the trust it gives a page, and those belong to whoever built the machine. A host that
@@ -209,6 +219,7 @@ class Project:
         self.machine = machine
         self.root = root.resolve()
         self.overrides = overrides
+        self.threshold = threshold
         self._inputs = Inputs.load(
             self.root,
             environ=machine.environ,
@@ -240,7 +251,7 @@ class Project:
 
     def reload(self) -> Project:
         """This project read again from disk, which is what a watch loop calls when a file changed."""
-        return Project(self.machine, self.root, overrides=self.overrides)
+        return Project(self.machine, self.root, overrides=self.overrides, threshold=self.threshold)
 
     def sections_touching(self, path: Path) -> tuple[int, ...]:
         """Every section a change to this file would change, in section order."""
@@ -368,16 +379,14 @@ class Project:
         replace_score: bool = False,
         loudness: bool = True,
         strict: bool = False,
-        allow: Collection[Code] = (),
-        stop_on: Severity | None = Severity.ERROR,
         cancel: Cancel | None = None,
     ) -> BuildResult:
         """Run every stage in order, or the span of them `stages` names.
 
         `stages` is the span to run, in run order, and `skip` leaves stages out of it. A stage whose
-        findings reach `stop_on` stops the run, unless their code is in `allow`, and the result still
-        comes back with its findings, its spend and the stage it stopped after in `stopped_at`. None
-        as `stop_on` runs every stage whatever it finds. The film carries the score unless
+        findings reach the project's threshold stops the run, and the result still comes back with
+        its findings, its spend and the stage it stopped after in `stopped_at`. A threshold that fails
+        on nothing runs every stage whatever it finds. The film carries the score unless
         `skip` names that stage, which is the one switch for that decision. `spend` means what it means
         to `narrate` and `score`, and `max_cost` caps the takes and the sounds together, so a
         build whose two prices pass it is refused before it buys anything. `replace_voiced` means what it means to
@@ -396,8 +405,7 @@ class Project:
 
         return self._call(build, BuildResult, cancel=cancel, spend=spend, max_cost=max_cost, stages=stages, skip=skip,
                           only=only, force=force, replace_voiced=replace_voiced, replace_score=replace_score,
-                          loudness=loudness, strict=strict,
-                          allow=frozenset(allow), stop_on=stop_on)  # fmt: skip
+                          loudness=loudness, strict=strict)  # fmt: skip
 
     def price(
         self,
@@ -590,6 +598,7 @@ class Project:
             events_dir=self._inputs.workspace.events_dir,
             keep_runs=files.keep_runs,
             max_bytes=files.max_bytes,
+            threshold=self.threshold,
         ) as run:
             # What the load noticed, such as a misspelled key, is said on every run of the project,
             # because the project was loaded once and each run's events file is read on its own.

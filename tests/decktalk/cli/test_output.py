@@ -109,8 +109,7 @@ Loudness 20.2 LUFS against 23.2.
 Found 1 finding, 1 error.
 """,
         "BuildResult": """\
-     Stopped at assemble, $19.25, 1 finding
-        Next open build/storyboard27
+     Stopped at score, $19.25, 1 finding
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,

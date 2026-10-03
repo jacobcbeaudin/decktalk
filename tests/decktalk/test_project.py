@@ -27,7 +27,7 @@ import decktalk
 from decktalk.errors import ApprovalRequired, Cancel, ErrorCode, InputError, ProjectLocked
 from decktalk.events import Event, Level, RunLog
 from decktalk.files import replace_all
-from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
+from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location, Severity, Threshold
 from decktalk.inputs import Inputs
 from decktalk.inputs.workspace import LOCK_FILE, OWNER_FILE
 from decktalk.machine import Machine, Toolchain
@@ -44,13 +44,11 @@ from decktalk.results import (
     RecordResult,
     Result,
     StatusResult,
-    StoryboardResult,
 )
 from decktalk.results import Layer as SettingLayer
 from decktalk.settings import ToolsConfig
 from decktalk.speech import SpeechProviders
 from decktalk.speech.sound import SoundProviders
-from decktalk.stages import storyboard as storyboard_stage
 from decktalk.stages.table import CALLS
 from support.costs import a_cost
 from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice
@@ -336,25 +334,22 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
         sound_providers=SoundProviders(factories={"elevenlabs": lambda _context: bought}),
     )
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
-    monkeypatch.setattr(
-        storyboard_stage, "storyboard", lambda _inputs, run, **_options: run.result(StoryboardResult, panels=())
-    )
-    project = decktalk.open(tmp_path, machine=machine)
+    project = decktalk.open(tmp_path, machine=machine, threshold=Threshold(stop_on=None))
     project.narrate(spend=True)
     project.score(spend=True)
     assert bought.counts == (1, 1)
     project.narrate(spend=True, force=True)
     assert bought.counts == (1, 1), "a forced narrate bought a take again"
     besides = (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)
-    project.build(spend=True, force=True, skip=besides, stop_on=None)
+    project.build(spend=True, force=True, skip=besides)
     assert bought.counts == (1, 1), "a forced build bought a take or a sound again"
     project.narrate(spend=True, replace_voiced=True)
     assert bought.counts == (2, 1)
     project.score(spend=True, replace_score=True)
     assert bought.counts == (2, 2)
-    project.build(spend=False, replace_voiced=True, replace_score=True, skip=besides, stop_on=None)
+    project.build(spend=False, replace_voiced=True, replace_score=True, skip=besides)
     assert bought.counts == (2, 2), "a replace flag bought something without spend"
-    project.build(spend=True, replace_score=True, skip=besides, stop_on=None)
+    project.build(spend=True, replace_score=True, skip=besides)
     assert bought.counts == (2, 3)
     assert "force" not in inspect.signature(Project.score).parameters, "a force there could only buy again"
 
@@ -619,13 +614,36 @@ def test_spend_and_a_ceiling_reach_the_gate_rather_than_the_stage(
     assert "spend" not in options and "max_cost" not in options
 
 
-def test_the_callers_threshold_reaches_the_build(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
-    """`allow` and `stop_on` are how a caller says which findings may stop its run."""
-    project = a_project(tmp_path)
-    project.build(allow=[Code.RECORD_BLACK], stop_on=None)
-    _inputs, _run, options = fake_stages["build"][0]
-    assert options["allow"] == frozenset({Code.RECORD_BLACK})
-    assert options["stop_on"] is None
+def test_a_project_judges_every_call_by_the_threshold_it_was_opened_with(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ok` is read from the project's one threshold, so a call that is not a build honours it too."""
+    warning = Finding(code=Code.PAGE_SWAP_APART, message="y", location=Location(where="deck/index.html"))
+    assert warning.severity is Severity.WARNING
+
+    def check(_inputs: Inputs, run: Run, **_options: object) -> Result:
+        return run.result(CheckResult, findings=(warning,), **_filler("check"))
+
+    a_stage(monkeypatch, "check", check)
+    write_project(tmp_path, MINIMAL_TOML)
+    strict = decktalk.open(tmp_path, machine=a_machine(tmp_path), threshold=Threshold(stop_on=Severity.WARNING))
+    assert strict.check(pages=False).ok is False
+    assert strict.reload().check(pages=False).ok is False
+    assert decktalk.open(tmp_path, machine=a_machine(tmp_path)).check(pages=False).ok is True
+
+
+def test_every_run_a_project_opens_carries_its_threshold(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
+    """The build reads where a stage stops the run from the run, which the project gave its threshold."""
+    threshold = Threshold(stop_on=None, allow=frozenset({Code.RECORD_BLACK}))
+    write_project(tmp_path, MINIMAL_TOML)
+    project = decktalk.open(tmp_path, machine=a_machine(tmp_path), threshold=threshold)
+    project.build()
+    project.record()
+    assert [run.threshold for _inputs, run, _options in (*fake_stages["build"], *fake_stages["record"])] == [
+        threshold,
+        threshold,
+    ]
+    assert "stop_on" not in fake_stages["build"][0][2] and "allow" not in fake_stages["build"][0][2]
 
 
 # ---- applying a fix --------------------------------------------------------------------------------
@@ -695,7 +713,7 @@ def test_a_served_preview_reads_its_cue_times_from_the_alias_the_recorder_uses(t
 def test_a_voiced_build_under_the_untrusted_policy_is_refused_before_it_buys_anything(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The storyboard is the first page a voiced build opens, so the refusal lands before narrate is reached."""
+    """A voiced build that would open an untrusted page is refused before its first stage buys anything."""
     write_project(tmp_path, MINIMAL_TOML)
     machine = Machine(
         environ={},

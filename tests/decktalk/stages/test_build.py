@@ -17,13 +17,15 @@ from pathlib import Path
 import pytest
 
 from decktalk.cli import main
+from decktalk.cli.session import Session
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError, NotBuiltError
 from decktalk.events import CostPriced, RunLog, StageDone, StageStart
-from decktalk.findings import Code, Finding, Location, Severity
+from decktalk.findings import Code, Finding, Location, Severity, Threshold
 from decktalk.inputs import Inputs
-from decktalk.machine.run import Run, Threshold
+from decktalk.machine.run import Run
 from decktalk.media import audio
 from decktalk.pipeline import Outcome, Stage
+from decktalk.project import Project
 from decktalk.results import (
     AssembleResult,
     BillingBasis,
@@ -393,28 +395,44 @@ def test_a_run_that_does_not_skip_the_score_needs_it(inputs: Inputs, watched: Wa
     assert calls.names == []
 
 
-def test_a_run_that_may_spend_draws_the_storyboard_before_it_narrates(
-    inputs: Inputs, make_run: Callable[..., Watched], calls: Calls
+@pytest.mark.parametrize("spend", [True, False], ids=["may spend", "may not spend"])
+def test_the_library_build_never_draws_the_storyboard(
+    inputs: Inputs, make_run: Callable[..., Watched], calls: Calls, spend: bool
 ) -> None:
-    """The contact sheet is the checkpoint a person reads before a credit is bought."""
-    watched = make_run(inputs, spend=True)
-    result = build(inputs, watched.run)
-    assert calls.names[0] == "storyboard"
-    assert calls.names[1] == "narrate"
-    assert result.storyboard == Path("build/storyboard.html")
+    """The storyboard is the command line's checkpoint before it spends, so a build runs the six stages alone."""
+    build(inputs, make_run(inputs, spend=spend).run)
+    assert calls.names == [stage.value for stage in Stage]
 
 
-def test_a_run_that_may_not_spend_draws_no_storyboard(inputs: Inputs, watched: Watched, calls: Calls) -> None:
-    result = build(inputs, watched.run)
-    assert "storyboard" not in calls.names
-    assert result.storyboard is None
+@pytest.mark.parametrize(
+    ("stages", "refused"),
+    [(None, True), ((Stage.NARRATE, Stage.CUE), False)],
+    ids=["a plan that opens pages", "a plan that opens none"],
+)
+def test_a_run_that_may_spend_is_refused_an_untrusted_page_before_its_first_stage(
+    tmp_path: Path,
+    make_run: Callable[..., Watched],
+    calls: Calls,
+    stages: tuple[Stage, ...] | None,
+    refused: bool,
+) -> None:
+    """The launch's own rule is asked before narrate buys, of a plan that reaches a stage that opens a page."""
+    sealed = load_project(tmp_path / "sealed", TOML, script=SCRIPT, machine={"record": {"page_policy": "untrusted"}})
+    run = make_run(sealed, spend=True).run
+    if refused:
+        with pytest.raises(ApprovalRequired, match="untrusted page"):
+            build(sealed, run, stages=stages)
+        assert calls.names == []
+    else:
+        build(sealed, run, stages=stages)
+        assert calls.names == ["narrate", "cue"]
 
 
 def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """A stage handed a flag it does not read would accept a switch that changes nothing."""
-    build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False, allow=[Code.CUE_UNKNOWN])
+    build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False)
     assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False}
-    assert calls.options("cue") == {"only": [1]}, "the cue stage was told what the caller allows"
+    assert calls.options("cue") == {"only": [1]}
     assert calls.options("record") == {"only": [1], "force": True}
     assert calls.options("score") == {"only": [1], "replace_score": False}, "force reached the stage that buys sound"
     assert calls.options("assemble") == {"only": [1], "score": True, "loudness": False, "strict": True}
@@ -516,7 +534,8 @@ def test_a_build_that_may_not_spend_makes_the_film_with_silence_where_an_unbough
     assert result.stopped_at is None
     assert result.ok
     assert Code.SOUND_MISSING in {found.code for found in result.findings}
-    strict = build(paying, make_run(paying, spend=False).run, stop_on=Severity.WARNING, allow={Code.TAKE_MISSING})
+    any_finding = Threshold(stop_on=Severity.WARNING, allow=frozenset({Code.TAKE_MISSING}))
+    strict = build(paying, make_run(paying, spend=False, threshold=any_finding).run)
     assert strict.stopped_at is Stage.SCORE
     assert not strict.ok
     assert purchases.counts == (0, 0)
@@ -569,6 +588,21 @@ def test_a_ceiling_refuses_the_whole_build_before_it_buys_anything(
     assert money(TAKES + SOUND) in said and money(CAP) in said, said
     assert "kept" not in said, "a run refused before it bought anything has nothing to keep"
     assert paying.takes() is None
+
+
+@pytest.mark.parametrize("terminal", [True, False], ids=["approved on a terminal", "given --spend"])
+def test_the_command_line_draws_the_storyboard_once_before_a_build_that_spends(
+    tmp_path: Path, inputs: Inputs, calls: Calls, monkeypatch: pytest.MonkeyPatch, terminal: bool
+) -> None:
+    """The checkpoint draws the sheet a person looks at before money goes, and the build draws none of its own."""
+    for name, value in {**VOICED, MACHINE_FILE_VARIABLE: str(tmp_path / "machine.toml")}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(Session, "asks", property(lambda _self: terminal))
+    monkeypatch.setattr(Session, "confirm", lambda _self, _question, default=False: True)
+    monkeypatch.setattr(Project, "price", lambda _self, **_options: price(1.0))
+    code = main(["-p", str(inputs.root), "build", *([] if terminal else ["--spend"])])
+    assert code == 0
+    assert calls.names == ["storyboard", *(stage.value for stage in Stage)]
 
 
 @pytest.mark.usefixtures("fake_ffmpeg")
@@ -661,11 +695,11 @@ def test_a_warning_lets_the_run_carry_on(inputs: Inputs, watched: Watched, answe
 
 
 def test_a_threshold_of_any_finding_stops_on_a_warning(
-    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
 ) -> None:
     """`--fail-on warning` means the run stops where the command would fail, which is at any finding."""
     answers.record.append(judged(Code.PAGE_SWAP_APART, Stage.RECORD))
-    result = build(inputs, watched.run, stop_on=Severity.WARNING)
+    result = build(inputs, make_run(inputs, threshold=Threshold(stop_on=Severity.WARNING)).run)
     assert calls.names == ["narrate", "cue", "record"]
     assert result.stopped_at is Stage.RECORD
     assert result.ok is False
@@ -681,7 +715,7 @@ def test_a_threshold_of_any_finding_stops_on_a_warning(
 )
 def test_a_missing_take_builds_the_film_unless_the_threshold_says_any(
     inputs: Inputs,
-    watched: Watched,
+    make_run: Callable[..., Watched],
     answers: Answers,
     calls: Calls,
     stop_on: Severity,
@@ -690,7 +724,7 @@ def test_a_missing_take_builds_the_film_unless_the_threshold_says_any(
 ) -> None:
     """A placeholder where a take is missing is a draft, so the default threshold builds the film past it."""
     answers.narrate.append(judged(Code.TAKE_MISSING, Stage.NARRATE))
-    result = build(inputs, watched.run, stop_on=stop_on, allow=allow)
+    result = build(inputs, make_run(inputs, threshold=Threshold(stop_on=stop_on, allow=frozenset(allow))).run)
     assert result.stopped_at is stops_at
     assert (calls.names[-1] == Stage.VERIFY.value) is (stops_at is None)
     assert result.ok is (stops_at is None)
@@ -698,33 +732,33 @@ def test_a_missing_take_builds_the_film_unless_the_threshold_says_any(
 
 
 def test_no_threshold_runs_every_stage_whatever_it_finds(
-    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
 ) -> None:
     """`--fail-on never` lets a build run through to verify, which then measures what was made."""
     answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
-    result = build(inputs, watched.run, stop_on=None)
+    result = build(inputs, make_run(inputs, threshold=Threshold(stop_on=None)).run)
     assert calls.names[-1] == "verify"
     assert result.stopped_at is None
     assert result.ok is True
 
 
 def test_an_allowed_code_lets_a_cue_no_page_declares_through(
-    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
 ) -> None:
     """A deck under construction lists the cues of slides it has not drawn yet."""
     answers.cue.append(judged(Code.CUE_UNKNOWN, Stage.CUE))
-    build(inputs, watched.run, allow=[Code.CUE_UNKNOWN])
+    build(inputs, make_run(inputs, threshold=Threshold(allow=frozenset({Code.CUE_UNKNOWN}))).run)
     assert calls.names[-1] == "verify"
     assert "allow_unknown" not in calls.options("cue")
 
 
 def test_any_allowed_code_is_forgiven_the_same_way(
-    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls
 ) -> None:
     """`--allow` means what it means on every other command, not only for one code."""
     answers.record.append(judged(Code.RECORD_BLACK, Stage.RECORD))
     assert judged(Code.RECORD_BLACK, Stage.RECORD).severity is Severity.ERROR
-    result = build(inputs, watched.run, allow=[Code.RECORD_BLACK])
+    result = build(inputs, make_run(inputs, threshold=Threshold(allow=frozenset({Code.RECORD_BLACK}))).run)
     assert calls.names[-1] == "verify"
     assert result.stopped_at is None
     assert result.ok is True
@@ -762,13 +796,14 @@ def test_what_verify_found_ends_the_run_rather_than_stopping_it(
     ],
 )
 def test_verify_judging_on_the_threshold_fails_the_run_and_never_stops_it(
-    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls, stop_on: Severity, code: Code
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls, stop_on: Severity, code: Code
 ) -> None:
     """Verify is the last stage, so a finding there that would stop any other stage fails the run instead."""
     found = judged(code, Stage.VERIFY)
     assert Threshold(stop_on=stop_on).reaches(found)
     answers.verify.append(found)
-    result = build(inputs, watched.run, stop_on=stop_on)
+    watched = make_run(inputs, threshold=Threshold(stop_on=stop_on))
+    result = build(inputs, watched.run)
     assert calls.names[-1] == "verify"
     assert result.stopped_at is None
     assert result.ok is False

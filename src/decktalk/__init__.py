@@ -37,7 +37,7 @@ from .errors import (
 )
 from .events import Event, Events, JsonlSink
 from .explain import explain
-from .findings import Code, Finding, Severity
+from .findings import Code, Finding, Severity, Threshold
 from .machine import Machine, Toolchain, init
 from .pipeline import Stage
 from .project import Origin, Project, open, section_numbers
@@ -65,6 +65,7 @@ __all__ = [
     "Result",
     "Severity",
     "Stage",
+    "Threshold",
     "ToolError",
     "Toolchain",
     "__version__",

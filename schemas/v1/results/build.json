@@ -715,20 +715,6 @@
       "description": "The finished film, or null when the run made none.",
       "title": "Film"
     },
-    "storyboard": {
-      "anyOf": [
-        {
-          "format": "path",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "The storyboard this run wrote, or null.",
-      "title": "Storyboard"
-    },
     "stopped_at": {
       "anyOf": [
         {

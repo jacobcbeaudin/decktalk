@@ -29,9 +29,8 @@ from decktalk.cli.options import When, pairs
 from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorInfo, Exit
 from decktalk.events import Events
 from decktalk.files import json_text
-from decktalk.findings import Finding
+from decktalk.findings import ERRORS_FAIL, Finding, Threshold
 from decktalk.machine import Machine
-from decktalk.machine.run import ERRORS_FAIL, Threshold
 from decktalk.pipeline import Stage
 from decktalk.project import Project
 from decktalk.results import Cost, ErrorResult, Result, counted
@@ -87,9 +86,9 @@ class Session:
         spend: bool | None = None,
         max_cost: float | None = None,
     ) -> None:
-        """`threshold` is what `--fail-on` and `--allow` name, which the exit code and `ok` are both read
-        from. `spend` and `max_cost` are the two flags that decide what this run buys, where an unset
-        `--spend` means ask.
+        """`threshold` is what `--fail-on` and `--allow` name. The project is opened with it, so the
+        library reads `ok` from it, and the exit code is read from it here. `spend` and `max_cost`
+        are the two flags that decide what this run buys, where an unset `--spend` means ask.
         """
         self.flags = flags
         self.command = command
@@ -131,9 +130,10 @@ class Session:
 
         The machine is made from every `--set` pair, and a project opened on it starts from the
         machine's own overrides, so the project is given none of its own. A machine-scoped pair given
-        to the project a second time would be refused, because a project may not set one.
+        to the project a second time would be refused, because a project may not set one. The project
+        is opened with this run's threshold, so every `ok` it answers with agrees with the exit code.
         """
-        return projects.open(self.flags.project, machine=self.machine)
+        return projects.open(self.flags.project, machine=self.machine, threshold=self.threshold)
 
     def fixes_wanted(self, findings: Sequence[Finding], fix: bool | None) -> list[Finding]:
         """The findings whose fixes the caller wants applied, asked once on a terminal, or none.
@@ -244,8 +244,14 @@ class Session:
         answer, and the refusal carries the price so that one call prices the run. Its hint says what
         `--no-spend` plays in place of what these stages would buy. A run that could not be priced
         says why, on the question and in the refusal alike.
+
+        `storyboard` makes the storyboard this run's checkpoint. It is drawn here once, before any run
+        this answers yes for without asking and before the price on a terminal that asks, so a run
+        that will spend has a sheet to look at and the person asked looks before answering.
         """
         if self.spend is not None:
+            if self.spend:
+                self._checkpoint(project, storyboard=storyboard)
             return self.spend
         buying = [stage for stage in Stage.keyed_stages() if stage in stages]
         if not buying:
@@ -258,25 +264,27 @@ class Session:
         except DeckTalkError as refused:
             priced, unpriced = None, refused
         if priced is not None and priced.free:
+            self._checkpoint(project, storyboard=storyboard)
             return True
         if priced is not None and not priced.buys and not (replace_voiced or replace_score):
             return False
         if not self.asks:
             raise ApprovalRequired(_cost_sentence(priced, unpriced), hint=_spend_hint(self.command, buying))
-        if storyboard:
-            self.say(self.storyboard_line(project))
+        self._checkpoint(project, storyboard=storyboard)
         self.say(priced.sentence if priced is not None else _unpriced_sentence(unpriced))
         return self.confirm("Spend that now?")
 
-    def storyboard_line(self, project: Project) -> str:
-        """The storyboard this checkpoint points at, drawn now so that the path names a real page.
+    def _checkpoint(self, project: Project, *, storyboard: bool) -> None:
+        """Draw the storyboard this checkpoint points at, when it is one, and say where it is.
 
-        It prints the path and never opens a browser, because a side effect no flag asked for cannot
-        be honoured by a remote session.
+        It is drawn now so that the path names a real page. It prints the path and never opens a
+        browser, because a side effect no flag asked for cannot be honoured by a remote session.
         """
+        if not storyboard:
+            return
         written = project.storyboard()
         where = written.storyboard.as_posix() if written.storyboard else "nothing"
-        return f"Storyboard {where}, {counted(len(written.panels), 'panel')}."
+        self.say(f"Storyboard {where}, {counted(len(written.panels), 'panel')}.")
 
     # ---- how a command ends -------------------------------------------------------------------
 
@@ -291,13 +299,10 @@ class Session:
         if self._said:
             return code
         self._said = True
-        # The library judged the result against the threshold its caller passed, and most commands
-        # take none, so `ok` is read again from the exit code that `--fail-on` and `--allow` decide.
-        judged = result.model_copy(update={"ok": code == 0})
         if self.flags.json_out:
-            self._stdout(judged.model_dump_json(indent=2))
+            self._stdout(result.model_dump_json(indent=2))
         else:
-            output.render(judged, self.out)
+            output.render(result, self.out)
         return code
 
     def document(self, contract: object) -> int:

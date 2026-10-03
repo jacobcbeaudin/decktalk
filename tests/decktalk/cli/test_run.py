@@ -13,7 +13,7 @@ from decktalk.cli.options import FailOn
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import ErrorCode, InputError
 from decktalk.events import RunStart
-from decktalk.findings import Code, Severity
+from decktalk.findings import Code, Severity, Threshold
 from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
@@ -185,7 +185,7 @@ def test_an_unset_run_told_to_replace_what_it_bought_asks_even_with_everything_o
 def test_replace_score_reaches_the_library_with_spend_and_is_confirmed_on_a_terminal(
     run, project, command: str
 ) -> None:
-    made = project(**{command: MOVING[command]})
+    made = project(**{command: MOVING[command]}, storyboard=ANSWERS["storyboard"])
     run(command, "--spend")
     assert made.calls[-1][2]["replace_score"] is False
     run(command, "--spend", "--replace-score")
@@ -245,11 +245,13 @@ def test_an_unset_build_that_could_not_be_priced_is_asked_about(run, project) ->
 @pytest.mark.parametrize("tty", [True, False], ids=["terminal", "no-terminal"])
 def test_an_unset_run_priced_free_runs_without_asking_and_buys(run, project, command: str, tty: bool) -> None:
     free = a_cost(0.0, 0.0, sections=(1, 2), billing=BillingBasis.FREE)
-    made = project(**{command: MOVING[command]}, price=free)
+    made = project(**{command: MOVING[command]}, price=free, storyboard=ANSWERS["storyboard"])
     ran = run(command, tty=tty)
     assert ran.exit_code == 0, ran.err
     assert "Spend that now?" not in ran.err
     assert made.called(command)["spend"] is True
+    drawn = [name for name, _, _ in made.calls].count("storyboard")
+    assert drawn == (command == "build"), "a build that will spend draws its checkpoint once, and narrate none"
 
 
 @pytest.mark.parametrize("span", [("--from", "assemble"), ("--skip", "narrate", "--skip", "score")])
@@ -339,9 +341,9 @@ def test_build_stops_where_the_exit_code_would_fail_and_carries_on_past_what_is_
     """The threshold a build stops on is the one its exit code fails on, so the two cannot disagree."""
     made = project(build=answers["build"])
     run("build", "--no-spend", "--allow", Code.CUE_UNKNOWN.value)
+    assert made.threshold == Threshold(stop_on=Severity.ERROR, allow=frozenset({Code.CUE_UNKNOWN}))
     asked = made.called("build")
-    assert asked["allow"] == frozenset({Code.CUE_UNKNOWN})
-    assert asked["stop_on"] is Severity.ERROR
+    assert "allow" not in asked and "stop_on" not in asked
     assert "score" not in asked
 
 
@@ -349,7 +351,7 @@ def test_build_stops_where_the_exit_code_would_fail_and_carries_on_past_what_is_
 def test_fail_on_moves_where_a_build_stops(run, project, answers, flag: FailOn, stops: Severity | None) -> None:
     made = project(build=answers["build"])
     run("build", "--no-spend", "--fail-on", flag.value)
-    assert made.called("build")["stop_on"] is stops
+    assert made.threshold == Threshold(stop_on=stops)
 
 
 def test_a_build_that_stopped_on_a_finding_exits_1_and_says_where(run, project, answers) -> None:

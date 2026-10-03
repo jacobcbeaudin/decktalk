@@ -1,4 +1,4 @@
-"""One call in progress, and the threshold that decides whether what it found fails it.
+"""One call in progress, and the threshold its caller judges what it found by.
 
 A `Run` is one call in progress: its id, the stream it writes to, the token that stops it and the
 gate it passes before it spends anything. Every call on a machine and on a project opens one, which
@@ -17,7 +17,6 @@ import time
 import uuid
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -36,11 +35,7 @@ from decktalk.events import (
     ToolFetch,
     Unit,
 )
-from decktalk.findings import (
-    Code,
-    Finding,
-    Severity,
-)
+from decktalk.findings import ERRORS_FAIL, Finding, Threshold
 from decktalk.inputs.paths import relative
 from decktalk.logs import WHERE, level_of, source_of, within
 from decktalk.pipeline import Outcome, Stage
@@ -67,38 +62,8 @@ def new_run() -> str:
     return uuid.uuid4().hex[:RUN_DIGITS]
 
 
-@dataclass(frozen=True)
-class Threshold:
-    """Which findings fail a run: the least severe one that counts, and the codes that never count.
-
-    It is the one rule `ok`, the exit code and the point a build stops at are all read from, so a
-    caller that reads `ok` and one that reads the exit code agree about every run. The default fails
-    on an error of any code.
-    """
-
-    stop_on: Severity | None = Severity.ERROR
-    """The least severe finding that fails the run, or None when no finding does."""
-
-    allow: frozenset[Code] = frozenset()
-    """Codes that never fail the run, whatever their severity, though they are still reported."""
-
-    def reaches(self, finding: Finding) -> bool:
-        """Whether one finding fails the run."""
-        if self.stop_on is None or finding.code in self.allow:
-            return False
-        return self.stop_on is Severity.WARNING or finding.severity is Severity.ERROR
-
-    def fails(self, findings: Iterable[Finding]) -> bool:
-        """Whether any of these findings fails the run."""
-        return any(self.reaches(found) for found in findings)
-
-
-ERRORS_FAIL = Threshold()
-"""The threshold of a caller that names none, which fails on an error of any code."""
-
-
 class Run:
-    """One call in progress: its id, its stream, its cancel token and its spend gate.
+    """One call in progress: its id, its stream, its cancel token, its spend gate and its threshold.
 
     A stage is handed one of these and reports through it. It is the only thing a stage has that
     knows about the machine, so a stage can neither read the environment nor print. A stage builds
@@ -115,6 +80,7 @@ class Run:
         spend: bool = False,
         max_cost: float | None = None,
         root: Path | None = None,
+        threshold: Threshold = ERRORS_FAIL,
     ) -> None:
         self.id = id
         self.machine = machine
@@ -124,6 +90,8 @@ class Run:
         # The most everything this run approved under `max_cost` can cost, which the cap is held against.
         self.approved = 0.0
         self.root = root
+        # The caller's own rule for which findings fail it, which `ok` is judged by and a build stops on.
+        self.threshold = threshold
         self.written: list[Path] = []
         self.findings: list[Finding] = []
         self.opened = time.monotonic()
@@ -306,13 +274,12 @@ class Run:
         *,
         findings: Iterable[Finding] | None = None,
         written: Iterable[Path] | None = None,
-        threshold: Threshold = ERRORS_FAIL,
         **fields: object,
     ) -> R:
         """Fill one result: this run's id, the judgements it made, the files it wrote and how long it took.
 
-        `ok` is false when any judgement reaches `threshold`, which is the caller's own and is the
-        same rule its exit code is read from, so no stage decides for itself what counts as having
+        `ok` is false when any judgement reaches this run's threshold, which is the caller's own and is
+        the same rule its exit code is read from, so no stage decides for itself what counts as having
         found something. A stage that reported its judgements and its files through the run names
         neither here, and no stage times itself.
         """
@@ -325,7 +292,7 @@ class Run:
             fields.setdefault("written", tuple(dict.fromkeys(self._relative(path) for path in paths)))
         if "elapsed_seconds" in declared:
             fields.setdefault("elapsed_seconds", time.monotonic() - self.opened)
-        fields.setdefault("ok", not threshold.fails(judged))
+        fields.setdefault("ok", not self.threshold.fails(judged))
         return model(findings=judged, **cast("dict[str, Any]", fields))
 
     def _relative(self, path: Path) -> Path:

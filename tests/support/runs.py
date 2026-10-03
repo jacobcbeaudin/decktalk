@@ -9,6 +9,7 @@ from typing import Any
 
 from decktalk.errors import Cancel
 from decktalk.events import Event, RunLog
+from decktalk.findings import ERRORS_FAIL, Threshold
 from decktalk.machine import Machine, Toolchain
 from decktalk.machine.run import Run
 from decktalk.settings import ToolsConfig
@@ -36,13 +37,17 @@ def a_run(
     spend: bool = False,
     max_cost: float | None = None,
     lines: list[Event] | None = None,
+    threshold: Threshold = ERRORS_FAIL,
     **environ: str,
 ) -> Run:
-    """One run opened straight on a machine that read nothing, with every line it emits kept in `lines`."""
+    """One run opened straight on a machine that read nothing, with every line it emits kept in `lines`.
+
+    `threshold` is the one a project opened with it would hand the run, which its results are judged by.
+    """
     machine = Machine(environ=environ, tables={}, machine_file=root / "machine.toml", cwd=root, toolchain=Toolchain())
     if lines is not None:
         machine.events.subscribe(lines.append)
-    return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, max_cost=max_cost, root=root)
+    return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, max_cost=max_cost, root=root, threshold=threshold)
 
 
 def a_voiced_run(root: Path, speech_providers: Mapping[str, Any], *, spend: bool = False) -> Run:

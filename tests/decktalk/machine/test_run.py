@@ -14,8 +14,9 @@ from decktalk.findings import (
     Finding,
     Location,
     Severity,
+    Threshold,
 )
-from decktalk.machine.run import Threshold
+from decktalk.machine.run import Run
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import BillingBasis, Layer, StatusResult
 from support.costs import a_cost
@@ -205,20 +206,19 @@ WARNING = Finding(code=Code.PAGE_SWAP_APART, message="y", location=Location(wher
     ],
     ids=["warning", "error", "fail-on-warning", "off", "allowed", "allowed-but-warning"],
 )
-def test_a_result_is_ok_exactly_when_nothing_reaches_the_threshold_it_was_given(
+def test_a_result_is_ok_exactly_when_nothing_reaches_the_threshold_its_run_carries(
     tmp_path: Path, threshold: Threshold, found: tuple[Finding, ...], passes: bool
 ) -> None:
     assert ERROR.severity is Severity.ERROR and WARNING.severity is Severity.WARNING
-    with a_machine(tmp_path)._run() as run:
-        result = run.result(
-            StatusResult,
-            findings=found,
-            threshold=threshold,
-            name="t",
-            script=Path("s"),
-            cues_file=Path("c"),
-            sections=(),
-        )
+    run = Run(a_machine(tmp_path), id="r", cancel=Cancel(), threshold=threshold)
+    result = run.result(
+        StatusResult,
+        findings=found,
+        name="t",
+        script=Path("s"),
+        cues_file=Path("c"),
+        sections=(),
+    )
     assert result.ok is passes
     assert threshold.fails(found) is not passes
 

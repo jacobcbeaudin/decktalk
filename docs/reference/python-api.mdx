@@ -38,7 +38,7 @@ The root holds the entry points, the errors and the few types every caller names
 |---|---|
 | Open, make and explain a project | `open`, `init`, `explain`, `section_numbers`, `__version__` |
 | What a call runs on | `Project`, `Machine`, `Origin`, `Toolchain`, `Cancel` |
-| What a result is told by | `Stage`, `Code`, `Severity`, `ErrorCode` |
+| What a result is told by | `Stage`, `Code`, `Severity`, `Threshold`, `ErrorCode` |
 | What every call returns | `Result`, `Finding`, `Cost` |
 | What a call raises | `DeckTalkError`, `InputError`, `NotBuiltError`, `ProviderError`, `ToolError`, `ProjectLocked`, `ApprovalRequired`, `Cancelled` |
 | The stream every run writes to | `Events`, `Event`, `JsonlSink` |
@@ -67,7 +67,7 @@ Those lists are the one authority. Check a name against them before you write it
 ## Opening a project
 
 ```python
-decktalk.open(path=None, *, machine=None, overrides=()) -> Project
+decktalk.open(path=None, *, machine=None, overrides=(), threshold=Threshold()) -> Project
 ```
 
 | Parameter | Default | Meaning |
@@ -75,6 +75,7 @@ decktalk.open(path=None, *, machine=None, overrides=()) -> Project
 | `path` | `DECKTALK_PROJECT`, then the directory the process started in | The project directory, or the path of its `decktalk.toml`. |
 | `machine` | a machine made from the environment | The `Machine` to open this project on, which is how two projects share one toolchain and one event stream. |
 | `overrides` | `()` | `table.key=value` strings, which are the top settings layer for every call on this project. When `machine` is given they may set project-scoped keys only, and a machine-scoped key belongs in that machine's own overrides. |
+| `threshold` | `Threshold()`, which fails on an error of any code | Which findings fail a call on this project. Every result's `ok` is read from it, and so is the stage a build stops after. |
 
 A script that opens two projects should make one `Machine` itself and hand it to both, because the
 machine is what carries the shared toolchain and the shared stream.
@@ -94,6 +95,7 @@ print(lesson.settings.motion.reduce, demo.settings.motion.reduce)
 |---|---|---|
 | `root` | field | The project directory, resolved to an absolute path. |
 | `machine` | field | The machine this project was opened on. |
+| `threshold` | field | The `Threshold` this project was opened with, which every call's `ok` is judged by. |
 | `events` | field | This project's view of the machine's stream, filtered to the runs this project opens. |
 | `settings` | property | Every setting in force here, with every layer already applied. |
 | `layers` | property | What every layer said about every key, which is where a setting's provenance is read from. |
@@ -127,7 +129,7 @@ project.assemble(*, only=None, score=True, loudness=True, strict=False,
 project.verify(*, only=None, cancel=None) -> VerifyResult
 project.build(*, stages=None, skip=(), only=None, spend=False, max_cost=None,
               force=False, replace_voiced=False, replace_score=False, loudness=True,
-              strict=False, allow=(), stop_on=Severity.ERROR, cancel=None) -> BuildResult
+              strict=False, cancel=None) -> BuildResult
 project.status(*, cancel=None) -> StatusResult
 project.check(*paths, only=None, pages=True, frames=True, cancel=None) -> CheckResult
 project.words(*, only=None, cancel=None) -> WordsResult
@@ -171,8 +173,11 @@ Every call in the table also appends its own events file, `build/events/<run>.js
 | `score` | `assemble` | False leaves the score's audio out of the mix. |
 | `loudness` | `assemble`, `build` | False skips the loudness pass, so the soundtrack is encoded as it was mixed. A placeholder narration skips it in any case. |
 | `strict` | `assemble`, `build` | True raises `ToolError` when the mix misses the loudness it was mastered to, rather than reporting `MIX_LOUDNESS` and writing the film. |
-| `stop_on` | `build` | The least severe finding that stops the run: `Severity.ERROR`, the default, stops on an error, `Severity.WARNING` on any finding, and None never stops. |
-| `allow` | `build` | Codes that never stop the run, whatever their severity. They are still reported. |
+A project's `Threshold` has two fields. `stop_on` is the least severe finding that fails a call:
+`Severity.ERROR`, the default, fails on an error, `Severity.WARNING` on any finding, and None on
+nothing. `allow` is a set of codes that never fail a call, whatever their severity, and they are
+still reported. A call's `ok` is false when a finding reaches it, and a build stops after the first
+stage whose findings reach it, so `verify` measures a film only when every earlier stage passed.
 
 A build that stops is not an error. It returns its `BuildResult` with `ok` false, every finding the
 stages that ran made, the cost so far, the stages it did not reach as `skipped`, and `stopped_at`
@@ -181,8 +186,8 @@ naming the stage it stopped after. `stopped_at` is None on a build that ran thro
 ```python
 import decktalk
 
-project = decktalk.open("my-lesson")
-result = project.build(allow=[decktalk.Code.CUE_UNKNOWN])
+project = decktalk.open("my-lesson", threshold=decktalk.Threshold(allow=frozenset({decktalk.Code.CUE_UNKNOWN})))
+result = project.build()
 if result.stopped_at is not None:
     print(f"stopped after {result.stopped_at.value}, spent ${result.cost.dollars:.2f}")
     for finding in result.findings:
@@ -361,7 +366,7 @@ declares `run`, and one whose command writes files also declares `written`.
 | Key | Meaning |
 |---|---|
 | `schema` | The shape version of the object, which is always `2`. It is spelled `schema_` in Python and `schema` in JSON. |
-| `ok` | True when the call ran and judged nothing that reaches its threshold. An error reaches it by default, and `build` reads it from `stop_on` and `allow`. On the command line the threshold is the one `--fail-on` and `--allow` set, so `ok` is true exactly when the command exits 0. |
+| `ok` | True when the call ran and judged nothing that reaches its threshold. Its threshold is the one the project was opened with, which fails on an error by default. On the command line the threshold is the one `--fail-on` and `--allow` set, so `ok` is true exactly when the command exits 0. |
 | `findings` | Every judgement this call made, in the order it made them. |
 | `error` | An `ErrorInfo`, filled only when the command could not run at all. |
 | `run` | The id of the run this call opened, which names its events file. |
@@ -671,7 +676,7 @@ strings, spelled as `--set` spells them.
 | `sound_providers` | The sound providers it answers with, as `decktalk.speech.sound.SoundFactory` values, or None for the ones its voices imply. |
 | `dotenv` | Whether a project's `.env` is read. True from the environment, false from `Machine.of` unless the host says otherwise. |
 | `install(*, cancel=None)` | Fetch the browser and the encoder, before a build asks for them. |
-| `doctor(*, measure=False, cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. |
+| `doctor(*, measure=False, threshold=Threshold(), cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. `threshold` is which of its findings make `ok` false. |
 | `apply(findings, *, unsafe=False)` | Carry out the fixes a machine can make. |
 
 `doctor(measure=True)` drives a browser to measure this host's presentation bias and reports it as
@@ -770,7 +775,8 @@ is every other. No row both holds the key and `opens_pages`.
 
 A run that may spend refuses to open a page under `record.page_policy = "untrusted"`, with
 `APPROVAL`, before any browser starts. So a host that sets that policy on both machines cannot put
-the key beside a page: a `build(spend=True)` is refused at its storyboard before it buys anything. A
+the key beside a page: a `build(spend=True)` whose stages open a page is refused before its first stage
+buys anything. A
 render job may call `build()` once the voice job has bought every take, because a build that does not
 spend plays them and never builds the voice, so no key is read in the process that opens the pages.
 

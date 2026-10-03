@@ -122,7 +122,7 @@ def refuse(_context):
 
 browser.child_environment = watched
 PROVIDERS["elevenlabs"] = refuse
-built = decktalk.open(root).build(stop_on=None)
+built = decktalk.open(root, threshold=decktalk.Threshold(stop_on=None)).build()
 takes = Takes.read(root / "build" / "narrate" / "takes.json")
 out.write_text(
     json.dumps(

@@ -686,7 +686,10 @@ def test_words_prints_every_spoken_word_with_its_place_on_the_clock(built: Proje
 
 
 def test_the_storyboard_is_one_page_of_every_slide_at_every_cue(built: Project) -> None:
-    """The storyboard is the human checkpoint before any credit is spent, so `build` writes it too."""
+    """The storyboard is the human checkpoint before any credit is spent, which `decktalk storyboard` draws.
+
+    `build` draws it only at the command line's checkpoint before a run that spends, and this build spends nothing.
+    """
     run = built.cli("storyboard", "--json")
     doc = run.json
     assert doc["storyboard"] == "build/storyboard.html"

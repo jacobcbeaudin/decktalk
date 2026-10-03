@@ -13,8 +13,7 @@ from rich.console import Console
 from decktalk.cli.options import FailOn, When
 from decktalk.cli.session import Globals, Session, Terminal
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError
-from decktalk.findings import Code, Severity
-from decktalk.machine.run import ERRORS_FAIL, Threshold
+from decktalk.findings import ERRORS_FAIL, Code, Severity, Threshold
 from decktalk.pipeline import Stage
 from decktalk.results import BillingBasis, Layer, StatusResult
 from support.costs import a_cost
@@ -102,13 +101,11 @@ def test_the_exit_code_fails_on_what_the_threshold_names_and_nothing_it_allows(
 def test_ok_under_json_is_true_exactly_when_the_exit_code_is_0(run, project, argv: tuple[str, ...], found) -> None:
     """A workflow that reads `.ok` and one that reads the exit code agree about the same run.
 
-    The fake answers the way the library does for a caller that named no threshold, so `ok` on stdout
-    is the command line's own reading of `--fail-on` and `--allow`.
+    The fake judges `ok` by the threshold the project was opened with, as the library does, and the
+    command line writes it unchanged, so the agreement is the one threshold both are read from.
     """
     judged = tuple(finding(code) for code in found)
-    answer = ANSWERS[argv[0]].model_copy(
-        update={"findings": judged, "ok": not any(one.severity is Severity.ERROR for one in judged)}
-    )
+    answer = ANSWERS[argv[0]].model_copy(update={"findings": judged})
     project(**{argv[0]: answer})
     ran = run(*argv, "--json")
     assert json.loads(ran.out)["ok"] is (ran.exit_code == 0), (ran.exit_code, ran.out)
@@ -298,7 +295,36 @@ def test_the_fix_prompt_counts_one_fix_in_the_singular(monkeypatch: pytest.Monke
     assert asked == ["Apply 1 fix?"]
 
 
-def test_the_storyboard_line_counts_one_panel_in_the_singular() -> None:
+def test_the_storyboard_line_counts_one_panel_in_the_singular(capsys: pytest.CaptureFixture[str]) -> None:
     drawn = SimpleNamespace(storyboard=Path("build/storyboard.html"), panels=("one",))
-    line = session().storyboard_line(Fake(storyboard=drawn).project())
-    assert line == "Storyboard build/storyboard.html, 1 panel."
+    assert session(spend=True).spends(Fake(storyboard=drawn).project(), (Stage.NARRATE,), storyboard=True)
+    assert "Storyboard build/storyboard.html, 1 panel." in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("spend", "storyboard", "drawn"),
+    [(True, True, 1), (False, True, 0), (True, False, 0)],
+    ids=["spend-checkpoint", "no-spend", "spend-without-checkpoint"],
+)
+def test_a_spend_flag_draws_the_storyboard_once_and_only_when_the_run_will_spend(
+    spend: bool, storyboard: bool, drawn: int
+) -> None:
+    fake = Fake(storyboard=SimpleNamespace(storyboard=None, panels=()))
+    assert session(spend=spend).spends(fake.project(), (Stage.NARRATE,), storyboard=storyboard) is spend
+    assert [name for name, _, _ in fake.calls].count("storyboard") == drawn
+
+
+def test_a_terminal_names_the_storyboard_before_the_price_and_the_question(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The person asked looks at the sheet before answering, so the line comes first."""
+    asked: list[str] = []
+    monkeypatch.setattr(Session, "asks", property(lambda _: True))
+    made = session()
+    monkeypatch.setattr(made, "confirm", lambda question, **_: asked.append(capsys.readouterr().err) or True)
+    drawn = SimpleNamespace(storyboard=Path("build/storyboard.html"), panels=("one",))
+    fake = Fake(storyboard=drawn, price=a_cost(2.14, 2.14, sections=(1,)))
+    assert made.spends(fake.project(), (Stage.NARRATE,), storyboard=True)
+    said = " ".join(asked[0].split())
+    assert said.index("Storyboard build/storyboard.html") < said.index("$2.14")
+    assert [name for name, _, _ in fake.calls].count("storyboard") == 1

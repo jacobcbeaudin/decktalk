@@ -439,8 +439,6 @@ def _build(result: BuildResult) -> Iterable[RenderableType]:
     else:
         where = result.film.as_posix() if result.film else "nothing"
         yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {money(result.cost.dollars)}, {found}")
-    if result.storyboard is not None:
-        yield Text(f"{'Next'.rjust(STAGE_COLUMN)} open {result.storyboard.as_posix()}", style=QUIET_STYLE)
 
 
 def _clip(result: ClipResult) -> Iterable[RenderableType]:

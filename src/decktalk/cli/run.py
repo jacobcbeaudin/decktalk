@@ -283,8 +283,6 @@ def build(
             force=force,
             replace_voiced=_replacing(session, replace_voiced),
             replace_score=_replacing_score(session, replace_score, spend=spend),
-            allow=session.threshold.allow,
-            stop_on=session.threshold.stop_on,
             cancel=session.cancel,
         )
     return _offered(session, project, built, fix)

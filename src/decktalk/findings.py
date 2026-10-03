@@ -17,6 +17,8 @@ package and everything else that models anything sits above it.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal, Self
@@ -588,6 +590,36 @@ def judge(
     return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage, "fix": fix})
 
 
+@dataclass(frozen=True)
+class Threshold:
+    """Which findings fail a run: the least severe one that counts, and the codes that never count.
+
+    A project is opened with one, and it is the one rule `ok`, the exit code and the point a build
+    stops at are all read from, so a caller that reads `ok` and one that reads the exit code agree
+    about every run. The default fails on an error of any code.
+    """
+
+    stop_on: Severity | None = Severity.ERROR
+    """The least severe finding that fails the run, or None when no finding does."""
+
+    allow: frozenset[Code] = frozenset()
+    """Codes that never fail the run, whatever their severity, though they are still reported."""
+
+    def reaches(self, finding: Finding) -> bool:
+        """Whether one finding fails the run."""
+        if self.stop_on is None or finding.code in self.allow:
+            return False
+        return self.stop_on is Severity.WARNING or finding.severity is Severity.ERROR
+
+    def fails(self, findings: Iterable[Finding]) -> bool:
+        """Whether any of these findings fails the run."""
+        return any(self.reaches(found) for found in findings)
+
+
+ERRORS_FAIL = Threshold()
+"""The threshold of a caller that names none, which fails on an error of any code."""
+
+
 __all__ = [
     "Applicability",
     "Code",
@@ -599,4 +631,5 @@ __all__ = [
     "Location",
     "RaisedBy",
     "Severity",
+    "Threshold",
 ]

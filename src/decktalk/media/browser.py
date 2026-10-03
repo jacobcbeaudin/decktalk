@@ -97,6 +97,18 @@ def page_policy(value: str) -> PagePolicy:
     return choice_of("page_policy", value, PAGE_POLICIES)
 
 
+def admitted(policy: str, *, spend: bool) -> PagePolicy:
+    """The policy a page is opened under, refused when the run may spend and the page is untrusted.
+
+    It is the one check that keeps a key and a stranger's page out of one run, read by every launch
+    and by a build before its first stage, so a build that may spend is refused before it buys.
+    """
+    sealed = page_policy(policy)
+    if sealed == UNTRUSTED and spend:
+        raise ApprovalRequired(KEY_BESIDE_PAGE, hint=KEY_BESIDE_PAGE_HINT)
+    return sealed
+
+
 def launch_options(policy: PagePolicy) -> dict[str, Any]:
     """The keyword arguments a launch under `policy` passes to Playwright, beyond the executable.
 
@@ -169,9 +181,7 @@ def launch(pw: Playwright, executable: str = "", *, policy: str, spend: bool) ->
     may spend is refused before anything starts, which is the one check that keeps a key and a
     stranger's page out of one run.
     """
-    sealed = page_policy(policy)
-    if sealed == UNTRUSTED and spend:
-        raise ApprovalRequired(KEY_BESIDE_PAGE, hint=KEY_BESIDE_PAGE_HINT)
+    sealed = admitted(policy, spend=spend)
     options = launch_options(sealed)
     started = time.monotonic()
     try:

@@ -589,7 +589,6 @@ __all__ = [
     "sound_body",
     "score",
     "ready",
-    "spend_of",
     "stale",
     "unjoined",
     "wanted",
