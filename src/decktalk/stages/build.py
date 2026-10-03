@@ -48,9 +48,10 @@ from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.media import browser
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
-from decktalk.results import DOLLAR_DIGITS, BillingBasis, BuildResult, Cost, CostState, Layer, Result, StageRun, counted
+from decktalk.results import BuildResult, Cost, Result, StageRun, counted
 from decktalk.stages import narrate
 from decktalk.stages import score as score_stage
+from decktalk.stages.cost import cost_of, total
 from decktalk.stages.kept import (
     BUILT,
     Kept,
@@ -144,7 +145,7 @@ def build(
             with run.stage(stage, index=plan.index(stage) + 1, count=len(plan)):
                 answer = CALLS[stage].call(inputs, run, **taken)
             rows.append(StageRun(stage=stage, outcome=Outcome.RAN, elapsed_seconds=time.monotonic() - opened))
-            spends += _cost_of(answer)
+            spends += _reported(answer)
             findings = [found for found in answer.findings if found.stage is stage]
             if digest is not None:
                 fresh[stage] = _remember(stage, inputs, digest, taken, findings)
@@ -158,7 +159,7 @@ def build(
         BuildResult,
         stages=tuple(rows),
         spend=run.spend,
-        cost=total(spends) if spends else narrate.take_states(inputs, ()).plan(spend=True).cost,
+        cost=total(spends) if spends else cost_of(inputs),
         film=film,
         stopped_at=stopped_at,
     )
@@ -323,9 +324,7 @@ def _hold_to_ceiling(
     """
     if not run.spend or run.max_cost is None:
         return
-    whole = price(inputs, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
-    if whole is not None:
-        run.approve_whole(whole)
+    run.approve_whole(price(inputs, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score))
 
 
 def price(
@@ -335,8 +334,9 @@ def price(
     only: Sequence[int] | None = None,
     replace_voiced: bool = False,
     replace_score: bool = False,
-) -> Cost | None:
-    """What a run of these stages that may spend would buy, or None when none of them buys anything.
+) -> Cost:
+    """What a run of these stages that may spend would buy, or the price of nothing at the voice's rate when none
+    of them buys.
 
     Each stage that buys is priced from its plan the way it prices itself, sending nothing, and the
     prices are added by `total`. So the price a caller asks about before a run, the ceiling the run
@@ -347,10 +347,10 @@ def price(
         spends.append(narrate.price(inputs, only=only, replace_voiced=replace_voiced))
     if Stage.SCORE in stages:
         spends.append(score_stage.price(inputs, only=only, replace_score=replace_score))
-    return total(spends) if spends else None
+    return total(spends) if spends else cost_of(inputs)
 
 
-def _cost_of(answer: Result) -> list[Cost]:
+def _reported(answer: Result) -> list[Cost]:
     """The price one stage reported, or nothing at all from a stage that buys nothing."""
     spent = getattr(answer, "cost", None)
     return [spent] if isinstance(spent, Cost) else []
@@ -382,45 +382,4 @@ def _stopped(
     return True
 
 
-def total(spends: Sequence[Cost]) -> Cost:
-    """What the whole run costs, which is every stage that priced anything added together.
-
-    It is the one way a run's price is summed, so the price a build asks about before it buys and
-    the price its result reports after are the same sum of the same stages.
-
-    The total is billed the way the stages that buy something at a price bill, so a free voice beside
-    a paid score leaves the sound's bill and rate to the total. When those are one bill, its rate
-    is the total's. When a bill per character meets a bill per second the total is `mixed`: it carries
-    each rate and counts both the characters and the seconds, and the rate it names is the least
-    surely stated, so a sentence never prices sound at the speech rate or speech at the sound one. A
-    stage whose bill nobody declared makes the whole total undeclared, because no part of DeckTalk can
-    price it. A free voice beside a sound that buys nothing leaves the total free, so it is never asked
-    about, and a free voice beside a paid sound is billed as the sound and so is asked about. It sums
-    at least one price, because a run that priced nothing has no bill to name.
-    """
-    buying = [spend for spend in spends if spend.buys] or list(spends)
-    deciding = [spend for spend in buying if not spend.free] or buying
-    bills = list(dict.fromkeys(spend.billing for spend in deciding))
-    if BillingBasis.UNDECLARED in bills:
-        bills = [BillingBasis.UNDECLARED]
-    first = {bill: next(spend for spend in deciding if spend.billing is bill) for bill in bills}
-    unstated = [spend for spend in deciding if spend.price_layer is Layer.DEFAULT]
-    named = (unstated or deciding)[0]
-    per_character, per_second = first.get(BillingBasis.PER_CHARACTER), first.get(BillingBasis.PER_SECOND)
-    return Cost(
-        state=CostState.CHARGED if any(s.state is CostState.CHARGED for s in spends) else CostState.ESTIMATE,
-        sections=tuple(sorted({number for spend in spends for number in spend.sections})),
-        characters=sum(spend.characters for spend in spends),
-        seconds=sum(spend.seconds for spend in spends),
-        dollars=round(sum(spend.dollars for spend in spends), DOLLAR_DIGITS),
-        ceiling_dollars=round(sum(spend.ceiling_dollars for spend in spends), DOLLAR_DIGITS),
-        billing=bills[0] if len(bills) == 1 else BillingBasis.MIXED,
-        dollars_per_1000_characters=per_character.dollars_per_1000_characters if per_character else 0.0,
-        dollars_per_minute=per_second.dollars_per_minute if per_second else 0.0,
-        price_key=named.price_key,
-        averaged=any(spend.averaged for spend in deciding),
-        price_layer=named.price_layer,
-    )
-
-
-__all__ = ["build", "price", "total"]
+__all__ = ["build", "price"]

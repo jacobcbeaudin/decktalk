@@ -414,10 +414,12 @@ class Project:
         only: Sequence[int] | None = None,
         replace_voiced: bool = False,
         replace_score: bool = False,
-    ) -> Cost | None:
-        """What a run of these stages that may spend would buy, or None when none of them buys anything.
+    ) -> Cost:
+        """What a run of these stages that may spend would buy, or, when none of them buys, the price of nothing at
+        the voice's rate, so a reader always finds a rate.
 
-        `stages` defaults to the whole pipeline, and the options mean what they mean to `build`. It is
+        `stages` defaults to the whole pipeline, and an empty `stages` prices nothing. The options mean
+        what they mean to `build`. It is
         the sum `build` holds `max_cost` against and reports, worked out from each stage's plan alone:
         no run is opened, no lock is taken, no voice is built and nothing is sent, so a caller prices a
         run before it asks anybody to approve it. Raises `InputError` when a stage that buys cannot be
@@ -425,8 +427,8 @@ class Project:
         """
         from decktalk.stages import build  # noqa: PLC0415
 
-        return build.price(self._inputs, tuple(stages or Stage), only=only, replace_voiced=replace_voiced,
-                           replace_score=replace_score)  # fmt: skip
+        return build.price(self._inputs, tuple(stages if stages is not None else Stage), only=only,
+                           replace_voiced=replace_voiced, replace_score=replace_score)  # fmt: skip
 
     # ---- the six that report or cut ---------------------------------------------------------
 

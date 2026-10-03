@@ -18,9 +18,10 @@ from decktalk.artifacts import EstimatedWords, ProviderWords, Take, is_placehold
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import ScriptSection
-from decktalk.results import BillingBasis, Cost, CostState, Layer, TakeOutcome, TakeState, Word
-from decktalk.speech import DECLARED, FREE, PROVIDERS, Billing, canonical_text
-from decktalk.stages import rate_fields, voice_model
+from decktalk.results import TakeOutcome, TakeState, Word
+from decktalk.speech import DECLARED, FREE, PROVIDERS, canonical_text
+from decktalk.stages import voice_model
+from decktalk.stages.cost import cost_of
 from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE, placeholder_inputs, take_inputs
 from decktalk.stages.narrate.state import (
     CHANGED,
@@ -518,64 +519,6 @@ def test_a_take_bought_again_re_places_the_unselected_sections_that_play_it(make
 # ---- the price ----------------------------------------------------------------------------------
 
 
-def declare(monkeypatch: pytest.MonkeyPatch, bill: Billing) -> None:
-    """Have the shipped voice declare this bill, which is the one thing a price reads about how it bills."""
-    monkeypatch.setitem(DECLARED, "elevenlabs", replace(DECLARED["elevenlabs"], billing=bill))
-
-
-@pytest.mark.parametrize("bill", ["per-character", "per-second", "free", "host-registered"])
-def test_the_price_is_what_the_bill_declares(
-    make_inputs: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch, bill: str
-) -> None:
-    if bill == "per-second":
-        declare(monkeypatch, Billing(BillingBasis.PER_SECOND, rate="dollars_per_1000_characters"))
-    if bill == "free":
-        declare(monkeypatch, FREE)
-    toml = TOML.replace('provider = "elevenlabs"', 'provider = "house"') if bill == "host-registered" else TOML
-    project = make_inputs(toml=toml)
-    spend = take_states(project).plan(spend=True).cost
-    sections = list(project.spoken())
-    characters = sum(len(canonical_text(section.pieces)) for section in sections)
-    seconds = sum(section.estimated_seconds(project.settings.narration) for section in sections)
-    assert spend.state is CostState.ESTIMATE
-    assert spend.sections == (1, 2, 3)
-    assert spend.characters == characters
-    assert spend.ceiling_dollars == spend.dollars
-    if bill == "per-character":
-        assert spend.billing is BillingBasis.PER_CHARACTER
-        assert spend.dollars == pytest.approx(round(characters / 1000 * 0.30, 2))
-        assert spend.price_key == "elevenlabs.dollars_per_1000_characters"
-        assert spend.price_layer is Layer.PROJECT
-        assert "per 1,000 characters" in spend.sentence
-    elif bill == "per-second":
-        assert spend.billing is BillingBasis.PER_SECOND
-        assert spend.seconds == pytest.approx(seconds)
-        assert spend.dollars == pytest.approx(round(seconds * 0.30 / 60, 2))
-        assert spend.dollars_per_minute == 0.30 and spend.dollars_per_1000_characters == 0
-        assert "per minute of audio" in spend.sentence and "1,000 characters" not in spend.sentence
-    elif bill == "free":
-        assert spend.free and spend.billing is BillingBasis.FREE
-        assert spend.dollars == 0 and spend.price_key is None
-        assert spend.sentence.endswith("for nothing, because the voice is free.")
-    else:
-        assert spend.billing is BillingBasis.UNDECLARED
-        assert spend.dollars == 0 and spend.price_key is None and spend.price_layer is Layer.DEFAULT
-        assert not spend.free
-        assert "declares no bill" in spend.sentence
-
-
-def test_a_price_nobody_stated_is_reported_as_the_default(make_inputs: Callable[..., Inputs]) -> None:
-    """`--max-cost` refuses while the price is the default, so the layer has to travel with it."""
-    project = make_inputs(
-        toml="[project]\nname = 't'\n\n[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n",
-        script="## 1. Open\n\nA bowl.\n",
-        name="unpriced",
-    )
-    spend = take_states(project).plan(spend=False).cost
-    assert spend.price_layer is Layer.DEFAULT
-    assert spend.dollars_per_1000_characters == pytest.approx(0.0)
-
-
 def test_with_no_voice_named_a_held_take_of_this_text_is_priced_into_the_ceiling_alone(inputs: Inputs) -> None:
     bought(inputs, 1)
     spend = take_states(reload(inputs, NAMELESS)).plan(spend=True).cost
@@ -618,15 +561,7 @@ def test_an_empty_selection_reads_nothing_and_prices_nothing(make_inputs: Callab
     states = take_states(project, ())
     assert len(states) == 0
     assert states.settled is True
-    assert states.plan(spend=True).cost == Cost(
-        state=CostState.ESTIMATE,
-        sections=(),
-        characters=0,
-        seconds=0.0,
-        dollars=0.0,
-        ceiling_dollars=0.0,
-        **rate_fields(project),
-    )
+    assert states.plan(spend=True).cost == cost_of(project)
 
 
 # ---- the words ----------------------------------------------------------------------------------

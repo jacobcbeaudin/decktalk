@@ -177,6 +177,7 @@ src/decktalk/
     stages/              The pipeline, one package per stage and one module per call that reports or cuts.
       build.py           The whole pipeline in order, or the span of it one run asked for.
       clip.py            A span of one built section, cut into its own file with its own sound and its own words.
+      cost.py            What DeckTalk pays a provider for what a stage buys, priced once at the bill the provider declares.
       kept.py            What the last build made, and whether the film and its measurement on disk still stand.
       pool.py            The one pool every stage fans its sections out to, and the three ways it stops.
       status.py          What the project's files say, what is built from them, what has gone stale, and what to do next.

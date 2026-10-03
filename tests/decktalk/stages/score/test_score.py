@@ -19,14 +19,14 @@ from typing import Any
 
 import pytest
 
-from decktalk.errors import ApprovalRequired, Cancelled, InputError
-from decktalk.events import Event, SoundCharged, StageProgress, Unit
+from decktalk.errors import ApprovalRequired, Cancelled, InputError, ProviderError
+from decktalk.events import CostPriced, Event, SoundCharged, StageProgress, Unit
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
 from decktalk.inputs.workspace import LEDGER_FILE
 from decktalk.media import audio
 from decktalk.pipeline import Stage
-from decktalk.results import BillingBasis, CostState, Layer, SoundKind, SoundOutcome, rate_money
+from decktalk.results import BillingBasis, CostState, Layer, SoundKind, SoundOutcome, up_to_the_cent
 from decktalk.speech.sound import SoundContext
 from decktalk.stages import score as stage
 from decktalk.stages.score import ledger as ledger_module
@@ -209,41 +209,14 @@ duration_seconds = 10
 """One ten-second effect at twelve cents a minute, which is two cents."""
 
 
-def test_a_ten_second_effect_is_priced_per_second_at_the_rate_its_table_states(tmp_path: Path) -> None:
-    priced = stage.price(an_inputs(tmp_path, EFFECT))
-    assert priced.dollars == priced.ceiling_dollars == 0.02
-    assert (priced.billing, priced.seconds, priced.characters) == (BillingBasis.PER_SECOND, 10.0, 0)
-    assert priced.dollars_per_minute == 0.12
-    assert (priced.price_key, priced.price_layer, priced.averaged) == (
-        "score.effects.dollars_per_minute",
-        Layer.PROJECT,
-        False,
-    )
-    assert priced.sections == (1,)
-    assert priced.sentence == "This run costs $0.02 for about 10 seconds of audio at $0.12 per minute of audio."
-
-
-@pytest.mark.parametrize("typed", [0.12, 0.3, 0.07, 1.2, 0.005, 99.99])
-def test_the_rate_a_cost_prints_is_the_rate_the_author_typed(tmp_path: Path, typed: float) -> None:
-    """A rate is typed and printed in dollars per minute, so a reader can check one against the other."""
-    priced = stage.price(
-        an_inputs(tmp_path, EFFECT.replace("dollars_per_minute = 0.12", f"dollars_per_minute = {typed}"))
-    )
-    assert priced.dollars_per_minute == typed
-    assert priced.dollars == round(10 * typed / 60, 2)
-    assert priced.rate == f"{rate_money(typed)} per minute of audio"
-    assert f'"dollars_per_minute":{typed}' in priced.model_dump_json()
-
-
-def test_kinds_bought_at_different_rates_are_priced_exactly_and_said_to_average(tmp_path: Path) -> None:
-    """The sum is exact, and the one rate a price states is what that sum comes to per minute, said as an average."""
-    priced = score(an_inputs(tmp_path, RATED), a_run(tmp_path)).cost
-    assert priced.seconds == 55.5
-    assert priced.averaged
-    assert priced.dollars_per_minute * priced.seconds / 60 == pytest.approx(0.41)
-    assert priced.sentence == (
-        "This run costs $0.41 for about 56 seconds of audio at an average of $0.44 per minute of audio."
-    )
+def test_a_cap_of_nothing_refuses_a_sound_that_costs_under_a_cent(tmp_path: Path, service: FakeService) -> None:
+    """Two seconds at twelve cents a minute is $0.004, which rounds up to a cent, so a cap of nothing refuses it."""
+    inputs = an_inputs(tmp_path, EFFECT.replace("duration_seconds = 10", "duration_seconds = 2"))
+    priced = stage.price(inputs)
+    assert priced.dollars == priced.ceiling_dollars == 0.01
+    with pytest.raises(ApprovalRequired):
+        score(inputs, a_run(tmp_path, spend=True, max_cost=0.0))
+    assert service.sounds == []
 
 
 def test_a_cap_over_a_rate_nobody_stated_names_that_rates_key(tmp_path: Path) -> None:
@@ -281,40 +254,17 @@ def test_a_format_written_under_narration_is_pointed_at_a_table_that_reads_it(tm
     ), inputs.notes
 
 
-def test_the_price_is_every_requested_second_at_its_own_kinds_rate(tmp_path: Path) -> None:
-    """25 s of ambience at a cent, 0.5 s of effect at two cents and 30 s of music at half a cent."""
-    result = score(an_inputs(tmp_path, RATED), a_run(tmp_path))
-    assert result.cost.dollars == result.cost.ceiling_dollars == round(0.25 + 0.01 + 0.15, 2)
-    assert result.cost.state is CostState.ESTIMATE
-    assert result.cost.sections == (1, 2)
-
-
-def test_what_speech_costs_prices_no_sound(tmp_path: Path) -> None:
-    """Sound is billed by the second of audio, so the speech rate per character is never read for it."""
-    toml = TOML.replace("[score.ambience]", "[elevenlabs]\ndollars_per_1000_characters = 100.0\n\n[score.ambience]")
-    result = score(an_inputs(tmp_path, toml), a_run(tmp_path))
-    assert result.cost.dollars == 0
-    assert result.cost.price_layer is Layer.DEFAULT
-
-
-def test_a_rate_one_kind_leaves_unstated_is_a_price_nobody_stated(tmp_path: Path) -> None:
-    """A cap may not guard a run whose every rate is not stated, so one default rate makes the price a default."""
-    stated = RATED.replace("dollars_per_minute = 0.3\n", "")
-    assert score(an_inputs(tmp_path, stated), a_run(tmp_path)).cost.price_layer is Layer.DEFAULT
-    assert score(an_inputs(tmp_path, RATED), a_run(tmp_path)).cost.price_layer is Layer.PROJECT
-
-
-def test_a_price_no_layer_records_is_the_default_price_and_not_a_crash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The layer table may hold no row for the price, which narrate and build already read as the default."""
-    inputs = an_inputs(tmp_path)
-
-    def unstated(_layers: object, key: str) -> None:
-        raise KeyError(key)
-
-    monkeypatch.setattr(type(inputs.layers), "winner", unstated)
-    assert score(inputs, a_run(tmp_path)).cost.price_layer is Layer.DEFAULT
+def test_a_sound_provider_a_host_registered_declares_no_bill_and_a_cap_refuses_it(tmp_path: Path) -> None:
+    """DeckTalk knows no rate for a sound provider it does not ship, so a cap would guard a made-up price."""
+    toml = RATED.replace("[score.ambience]", '[score]\nprovider = "house"\n\n[score.ambience]')
+    inputs = an_inputs(tmp_path, toml)
+    priced = stage.price(inputs)
+    assert priced.billing is BillingBasis.UNDECLARED
+    assert priced.dollars == 0 and priced.price_key is None and priced.price_layer is Layer.DEFAULT
+    assert "declares no bill" in priced.sentence
+    with pytest.raises(ApprovalRequired) as refused:
+        score(inputs, a_run(tmp_path, spend=True, max_cost=5.0))
+    assert "the score's provider declares no bill" in str(refused.value)
 
 
 # ---- what the run buys ------------------------------------------------------------------------
@@ -353,11 +303,13 @@ def test_a_price_opens_no_run_and_builds_no_client(tmp_path: Path, monkeypatch: 
     assert not inputs.workspace.score_dir.exists()
 
 
+@pytest.mark.usefixtures("fake_ffmpeg", "joined", "service")
 def test_a_run_with_nothing_left_to_buy_covers_no_section(tmp_path: Path) -> None:
     """A price that covers no section is how a caller learns the run has nothing to ask about."""
     inputs = an_inputs(tmp_path)
     assert score(inputs, a_run(tmp_path)).cost.buys
-    assert not stage.cost_of(inputs, [], None).buys
+    score(inputs, a_run(tmp_path, spend=True))
+    assert not stage.price(inputs).buys
 
 
 @pytest.mark.usefixtures("fake_ffmpeg", "joined")
@@ -468,6 +420,121 @@ def test_a_music_part_that_was_already_bought_is_not_bought_again(
     score(inputs, a_run(tmp_path, spend=True))
     assert len(service.music_bodies) == sent
     assert len(joined) == 2
+
+
+LONG_MUSIC = RATED.replace("duration_seconds = 30", "duration_seconds = 600")
+"""The rated project with ten minutes of music, which is bought in two parts of 300 seconds at 30 cents a minute."""
+
+
+@dataclass
+class RefusesTheSecondPart(FakeService):
+    """A sound service that answers the first music part and refuses every one after it."""
+
+    def music(self, body: Mapping[str, Any], *, output_format: str) -> bytes:
+        if self.music_bodies:
+            raise ProviderError("the service refused the second part", reached=True)
+        return super().music(body, output_format=output_format)
+
+
+def half_bought(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Inputs:
+    """The long music project after a paid run that bought the first music part and was refused the second."""
+    inputs = an_inputs(tmp_path, LONG_MUSIC)
+    refusing = RefusesTheSecondPart()
+    monkeypatch.setattr(stage, "client_for", lambda _run, _inputs: refusing)
+    with pytest.raises(ProviderError):
+        score(inputs, a_run(tmp_path, spend=True))
+    return inputs
+
+
+def music_of(inputs: Inputs) -> stage.Planned:
+    """The music item the project plans, whose parts are where its bought audio is kept."""
+    return next(item for item in stage.plan_items(inputs) if item.kind is SoundKind.MUSIC)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined")
+def test_a_half_bought_piece_of_music_is_priced_and_charged_at_the_part_still_to_buy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The part bought before is kept, so a run is priced, warned and charged for the part it still lacks."""
+    inputs = half_bought(tmp_path, monkeypatch)
+    priced = stage.price(inputs)
+    assert (priced.seconds, priced.dollars, priced.ceiling_dollars) == (300.0, 1.5, 1.5)
+    unpaid = score(inputs, a_run(tmp_path))
+    [missing] = [found for found in unpaid.findings if found.location.where == "music"]
+    assert missing.code is Code.SOUND_MISSING
+    assert "asks for 300 seconds of audio" in missing.message
+    plain = FakeService()
+    monkeypatch.setattr(stage, "client_for", lambda _run, _inputs: plain)
+    paid = score(inputs, a_run(tmp_path, spend=True))
+    assert len(plain.music_bodies) == 1
+    assert (paid.cost.seconds, paid.cost.dollars, paid.cost.ceiling_dollars) == (300.0, 1.5, 1.5)
+
+
+def gone_once_priced(monkeypatch: pytest.MonkeyPatch, part: Path) -> FakeService:
+    """A service the stage builds once the run is approved, which is when this part goes missing from the disk."""
+    plain = FakeService()
+
+    def client(_run: object, _inputs: object) -> FakeService:
+        part.unlink()
+        return plain
+
+    monkeypatch.setattr(stage, "client_for", client)
+    return plain
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_music_part_gone_after_the_run_was_priced_is_never_bought_unpriced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, joined: list[tuple[list[Path], Path]]
+) -> None:
+    """The run was approved for the second part alone, so the first, kept when it was priced, waits for the next run."""
+    inputs = half_bought(tmp_path, monkeypatch)
+    first = music_of(inputs).parts[0]
+    plain = gone_once_priced(monkeypatch, first)
+    lines: list[Event] = []
+    result = score(inputs, a_run(tmp_path, spend=True, lines=lines))
+    assert len(plain.music_bodies) == 1
+    assert [line.seconds for line in lines if isinstance(line, SoundCharged)] == [300.0]
+    assert result.cost.dollars == 1.5
+    [music] = [item for item in result.items if item.kind is SoundKind.MUSIC]
+    assert music.outcome is SoundOutcome.PLANNED and music.file is None
+    assert joined == []
+    ledger = Ledger.read(inputs.workspace.ledger_path)
+    assert ledger is not None
+    row = ledger.of("music")
+    assert row is not None and row.digest == ledger_module.UNFINISHED_DIGEST
+    [missing] = [found for found in result.findings if found.code is Code.SOUND_MISSING]
+    assert missing.message == (
+        f"the music is not whole, because {first.name} was kept when this run was priced and is gone now, so this "
+        "run did not buy it unpriced. Buying it with `decktalk score --spend` asks for 300 seconds of audio."
+    )
+    again = FakeService()
+    monkeypatch.setattr(stage, "client_for", lambda _run, _inputs: again)
+    score(inputs, a_run(tmp_path, spend=True))
+    assert len(again.music_bodies) == 1
+    assert "part 1 of 2" in again.music_bodies[0]["prompt"]
+    assert len(joined) == 1
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined")
+def test_an_older_piece_is_removed_when_a_part_kept_at_pricing_is_gone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crossfade edit keeps every part and makes the joined piece stale, so the older piece never plays."""
+    inputs = an_inputs(tmp_path, LONG_MUSIC)
+    monkeypatch.setattr(stage, "client_for", lambda _run, _inputs: FakeService())
+    score(inputs, a_run(tmp_path, spend=True))
+    assert inputs.workspace.joined_music.is_file()
+    toml = LONG_MUSIC.replace("[score.music]\n", "[score.music]\ncrossfade_seconds = 4\n")
+    edited = an_inputs(tmp_path, toml)
+    plain = gone_once_priced(monkeypatch, music_of(edited).parts[0])
+    result = score(edited, a_run(tmp_path, spend=True))
+    assert plain.music_bodies == []
+    assert not edited.workspace.joined_music.exists()
+    [music] = [item for item in result.items if item.kind is SoundKind.MUSIC]
+    assert music.outcome is SoundOutcome.PLANNED and music.file is None
+    [missing] = [found for found in result.findings if found.code is Code.SOUND_MISSING]
+    assert "music-part1.mp3 was kept when this run was priced and is gone now" in missing.message
+    assert "asks for 300 seconds of audio" in missing.message
 
 
 # ---- where the score is kept --------------------------------------------------------------------
@@ -753,6 +820,19 @@ def test_each_music_part_is_charged_as_it_is_bought(
     parts = [line for line in lines if isinstance(line, SoundCharged) and line.kind is SoundKind.MUSIC]
     assert len(parts) == len(service.music_bodies) == len(joined[0][0]) == 2
     assert sum(line.seconds for line in parts) == 600
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined", "service")
+def test_a_paid_runs_charged_cost_adds_up_its_charge_lines_and_stays_under_its_ceiling(tmp_path: Path) -> None:
+    """The charged cost is the `sound.charged` lines added up, and never more than the run was approved at."""
+    lines: list[Event] = []
+    toml = RATED.replace("duration_seconds = 30", "duration_seconds = 600")
+    result = score(an_inputs(tmp_path, toml), a_run(tmp_path, spend=True, lines=lines))
+    charged = [line for line in lines if isinstance(line, SoundCharged)]
+    [priced] = [line for line in lines if isinstance(line, CostPriced)]
+    assert result.cost.dollars == up_to_the_cent(line.dollars for line in charged)
+    assert result.cost.seconds == sum(line.seconds for line in charged)
+    assert result.cost.dollars <= priced.cost.ceiling_dollars
 
 
 # ---- where each request's settings come from -------------------------------------------------

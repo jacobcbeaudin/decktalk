@@ -23,11 +23,11 @@ from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import ScriptSection
 from decktalk.inputs.take_places import TakeFiles
-from decktalk.page import SECOND_DIGITS
-from decktalk.results import DOLLAR_DIGITS, Cost, CostState, TakeOutcome, TakeState, counted
+from decktalk.results import Cost, CostState, SectionTake, TakeOutcome, TakeState, counted
 from decktalk.settings import PROJECT_FILE
-from decktalk.speech import SpeechRequest, canonical_text, is_free, output_of
-from decktalk.stages import billed, dollars_for, rate_fields, voice_model
+from decktalk.speech import SpeechRequest, canonical_text, output_of
+from decktalk.stages import voice_model
+from decktalk.stages.cost import Buy, cost_of, is_free
 from decktalk.stages.narrate.plan import (
     VOICE_ID_VARIABLE,
     named_voice,
@@ -97,6 +97,9 @@ class TakePlan:
     take under `replace_voiced`, else the take state's reason."""
     request: SpeechRequest | None
     """What a voiced run sends, carrying the selected sections either side for prosody, and None unless VOICED."""
+    buy: Buy | None = None
+    """What sending `request` buys, counted every way a voice could bill it, and None unless VOICED. It is not
+    certain for an UNCHECKED section, whose take may already be on disk."""
 
     @property
     def characters_sent(self) -> int:
@@ -318,7 +321,7 @@ class TakeStates(Mapping[int, SectionTakeState]):
         read from `spend` and the voice's bill: a free named voice always voices.
         """
         inputs = self._inputs
-        voiced = spend or (is_free(inputs.settings.voice.provider) and bool(self._reading.voice))
+        voiced = spend or (is_free(inputs) and bool(self._reading.voice))
         selected = [state.section for state in self._states.values()]
         requests = self._requests(selected) if voiced else {}
         plans: list[TakePlan] = []
@@ -335,7 +338,7 @@ class TakeStates(Mapping[int, SectionTakeState]):
             first[text] = made
             plans.append(made)
         plans += self._replaced(plans)
-        return NarratePlan(takes=tuple(plans), voiced=voiced, cost=self._priced(plans))
+        return NarratePlan(takes=tuple(plans), voiced=voiced, cost=cost_of(inputs, self._buys(plans)))
 
     def _replacing(self, state: SectionTakeState) -> bool:
         """Whether this run was told to replace this section's held voiced take."""
@@ -347,7 +350,13 @@ class TakeStates(Mapping[int, SectionTakeState]):
         if state.state is TakeState.VOICED and not self._replacing(state):
             return TakePlan(section, TakeOutcome.KEPT, state.digest, state.reason, None)
         reason = REPLACED if self._replacing(state) else state.reason
-        return TakePlan(section, TakeOutcome.VOICED, state.digest, reason, requests[section.number])
+        buy = Buy(
+            characters=len(canonical_text(section.pieces)),
+            seconds=section.estimated_seconds(self._inputs.settings.narration),
+            sections=(section.number,),
+            certain=state.state is not TakeState.UNCHECKED,
+        )
+        return TakePlan(section, TakeOutcome.VOICED, state.digest, reason, requests[section.number], buy)
 
     def _standing_in(self, state: SectionTakeState, *, force: bool) -> TakePlan:
         """One section's plan in a run that does not voice: its held voiced take, else a placeholder."""
@@ -395,38 +404,20 @@ class TakeStates(Mapping[int, SectionTakeState]):
             for at, section in enumerate(selected)
         }
 
-    def _priced(self, plans: Sequence[TakePlan]) -> Cost:
-        """What the voiced plans cost at the bill `[voice] provider` declares, with what they can cost beside it.
+    def charged(self, plan: NarratePlan, made: Sequence[SectionTake]) -> Cost:
+        """What a voiced run paid for: the takes it voiced, each counted as bought.
 
-        A per-character bill counts the characters each take sends, a per-second bill the seconds each
-        take is expected to run, and a free voice nothing. An UNCHECKED section may turn out to need a
-        take, so it is counted into the ceiling and never into the price, and the gate is given the
-        figure the run certainly spends and the figure it can reach.
+        A section the run kept, because another run voiced its take first, or one that played a
+        placeholder, because its free voice did not answer, was not paid for, so it is not counted.
         """
-        inputs = self._inputs
-        provider = inputs.settings.voice.provider
-        sending = [p for p in plans if p.outcome is TakeOutcome.VOICED and not self._unchecked(p)]
-        maybe = [p for p in plans if p.outcome is TakeOutcome.VOICED and self._unchecked(p)]
-        narration = inputs.settings.narration
-        characters = sum(p.characters_sent for p in sending)
-        seconds = sum(p.section.estimated_seconds(narration) for p in sending)
-        certain = billed(characters, seconds, provider)
-        reach = certain + sum(
-            billed(p.characters_sent, p.section.estimated_seconds(narration), provider) for p in maybe
-        )
-        return Cost(
-            state=CostState.ESTIMATE,
-            sections=tuple(p.section.number for p in sending + maybe),
-            characters=characters,
-            seconds=round(seconds, SECOND_DIGITS),
-            dollars=round(dollars_for(certain, inputs), DOLLAR_DIGITS),
-            ceiling_dollars=round(dollars_for(reach, inputs), DOLLAR_DIGITS),
-            **rate_fields(inputs),
-        )
+        voiced = {row.section for row in made if row.outcome is TakeOutcome.VOICED}
+        bought = [p for p in plan.takes if p.section.number in voiced]
+        return cost_of(self._inputs, self._buys(bought), state=CostState.CHARGED)
 
-    def _unchecked(self, plan: TakePlan) -> bool:
-        state = self._states.get(plan.section.number)
-        return state is not None and state.state is TakeState.UNCHECKED
+    @staticmethod
+    def _buys(plans: Sequence[TakePlan]) -> list[Buy]:
+        """What the voiced plans buy, in plan order, one take each, an UNCHECKED section's counted as possible."""
+        return [p.buy for p in plans if p.outcome is TakeOutcome.VOICED and p.buy is not None]
 
 
 def take_states(

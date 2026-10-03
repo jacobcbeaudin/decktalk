@@ -30,7 +30,7 @@ from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
 from decktalk.media import audio
 from decktalk.pipeline import Artifact, Outcome, Stage
-from decktalk.results import CostState, NarrateResult, TakeOutcome, Word
+from decktalk.results import CostState, NarrateResult, TakeOutcome, Word, up_to_the_cent
 from decktalk.settings import MACHINE_FILE_VARIABLE
 from decktalk.speech import DECLARED, FREE, PROVIDERS, Piece, SpeechContext, SpeechRequest
 from decktalk.speech.elevenlabs import ElevenLabs
@@ -218,6 +218,43 @@ def test_a_paid_run_sends_one_request_per_section_and_reports_what_it_charged(
     charged = watched.of(TakeCharged)
     assert sorted(line.section for line in charged) == [1, 2, 3]
     assert sum(line.characters for line in charged) == result.cost.characters
+
+
+def test_a_cap_of_nothing_refuses_a_take_that_costs_under_a_cent(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], counted: CountedVoice
+) -> None:
+    """A take of 7 characters costs $0.0021, which rounds up to a cent, so a cap of nothing refuses it."""
+    tiny = make_inputs(script="## 1. Open\n\nA bowl.\n", name="tiny")
+    cost = take_states(tiny).plan(spend=True).cost
+    assert cost.dollars == cost.ceiling_dollars == 0.01
+    assert cost.sentence == "This run costs $0.01 for 7 characters at $0.30 per 1,000 characters."
+    with pytest.raises(ApprovalRequired):
+        narrate(tiny, make_run(tiny, spend=True, max_cost=0.0).run)
+    assert counted.voice.requests == []
+
+
+@pytest.mark.usefixtures("fake_voice")
+def test_the_charge_lines_a_host_adds_come_to_the_charged_price(
+    inputs: Inputs, make_run: Callable[..., Watched]
+) -> None:
+    """A host that adds the `take.charged` lines as written and rounds up to the cent reads the charged price."""
+    watched = make_run(inputs, spend=True)
+    result = narrate(inputs, watched.run)
+    charged = watched.of(TakeCharged)
+    assert up_to_the_cent(line.dollars for line in charged) == result.cost.dollars == 0.03
+
+
+@pytest.mark.usefixtures("fake_voice")
+def test_a_paid_runs_charged_cost_adds_up_its_charge_lines_and_covers_only_the_sections_it_charged(
+    inputs: Inputs, make_run: Callable[..., Watched]
+) -> None:
+    """The charged cost is priced from the takes the run paid for, so its charge lines add up to it."""
+    watched = make_run(inputs, spend=True)
+    result = narrate(inputs, watched.run)
+    charged = watched.of(TakeCharged)
+    assert result.cost.dollars == up_to_the_cent(line.dollars for line in charged)
+    assert result.cost.characters == sum(line.characters for line in charged)
+    assert result.cost.sections == tuple(sorted(line.section for line in charged))
 
 
 @pytest.mark.usefixtures("fake_voice")
@@ -466,6 +503,19 @@ def test_a_free_voice_whose_server_is_down_plays_placeholders_and_says_to_start_
         for found in result.findings
     )
     assert 1 <= len(down.requests) <= inputs.settings.narration.concurrency, "the run kept asking a server that is down"
+
+
+@pytest.mark.usefixtures("free_voice")
+def test_a_free_voice_that_could_not_be_reached_is_reported_as_voicing_nothing(
+    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every section played a placeholder, so the run voiced nothing and its charged cost counts nothing."""
+    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: Unreachable())
+    result = narrate(inputs, make_run(inputs).run)
+    assert result.cost.state is CostState.CHARGED
+    assert result.cost.characters == 0
+    assert result.cost.sections == ()
+    assert result.cost.sentence == "This run bought nothing."
 
 
 @pytest.mark.usefixtures("free_voice")
@@ -1237,6 +1287,33 @@ def test_a_take_another_project_voiced_after_this_run_was_priced_is_played_and_n
     assert voice_b.requests == [], "b bought a take a had bought before b took the lock"
     assert (b.workspace.takes / take_file(digest, TAKE_SUFFIX)).read_bytes() == b"AUDIO-A"
     assert result.sections[0].outcome is TakeOutcome.KEPT
+
+
+def test_a_take_another_project_voiced_first_is_reported_as_bought_nothing(
+    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A take the store answered was never paid for by this run, so its charged cost is nothing, never the price."""
+    a = in_the_store(tmp_path, "a")
+    b = in_the_store(tmp_path, "b")
+    voice_a, voice_b = FakeVoice(audio=b"AUDIO-A"), FakeVoice(audio=b"AUDIO-B")
+    built: list[None] = []
+
+    def factory(_context: SpeechContext) -> FakeVoice:
+        built.append(None)
+        if len(built) == 1:
+            narrate(a, make_run(a, spend=True).run, only=[1])
+            return voice_b
+        return voice_a
+
+    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, factory)
+    watched = make_run(b, spend=True)
+    result = narrate(b, watched.run, only=[1])
+    assert watched.of(TakeCharged) == []
+    assert result.cost.state is CostState.CHARGED
+    assert result.cost.dollars == result.cost.ceiling_dollars == 0
+    assert result.cost.characters == 0
+    assert result.cost.sections == ()
+    assert result.cost.sentence == "This run bought nothing."
 
 
 def pair_of(place: Path, digest: str) -> tuple[bytes, bytes]:

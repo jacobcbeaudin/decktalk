@@ -26,7 +26,9 @@ rather than by a hand-written strip in every test.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from datetime import datetime
+from decimal import ROUND_CEILING, ROUND_HALF_EVEN, Decimal
 from enum import Enum
 from typing import Annotated, ClassVar, Literal
 
@@ -242,33 +244,34 @@ def counted(count: int, noun: str, plural: str | None = None) -> str:
     return f"{count:,} {noun if count == 1 else plural or noun + 's'}"
 
 
-class Cost(Model):
-    """What a run costs, priced once so a caller never works it out from a character count.
-
-    `--max-cost` caps the whole run, and is compared against the `ceiling_dollars` of everything the
-    run approved and never against `dollars`, because a provider charges one request at a time.
-    """
+class _Priced(Model):
+    """The fields every price carries, a stage's or a whole run's, and the sentence one stage's price is stated in."""
 
     state: CostState = Field(description="Whether this is what the run would cost or what it did cost.")
     sections: tuple[SectionNumber, ...] = Field(description="The sections this price covers, in script order.")
     characters: int = Field(ge=0, description="How many characters of script this price is for.")
     seconds: float = Field(
-        0.0, ge=0, description="How many seconds of audio this price is for, which a per-second bill is priced on."
+        ge=0, description="How many seconds of audio this price is for, which a per-second bill is priced on."
     )
-    dollars: float = Field(ge=0, description="The price at the stated rate, in US dollars.")
-    ceiling_dollars: float = Field(ge=0, description="The most this run can cost, in US dollars.")
+    dollars: float = Field(ge=0, description="The price at the stated rate, in US dollars, rounded up to the cent.")
+    ceiling_dollars: float = Field(
+        ge=0,
+        description=(
+            "The most this run can cost, in US dollars, rounded up to the cent for each stage, so it never sits "
+            "below what the run can pay and may sit up to a cent per stage above it."
+        ),
+    )
     billing: BillingBasis = Field(description="How the voice bills, which its adapter declares and the rate is per.")
     dollars_per_1000_characters: float = Field(
         ge=0, description="The rate a per-character bill was worked out at, in US dollars per 1,000 characters."
     )
     dollars_per_minute: float = Field(
-        0.0, ge=0, description="The rate a per-second bill was worked out at, in US dollars per minute of audio."
+        ge=0, description="The rate a per-second bill was worked out at, in US dollars per minute of audio."
     )
     price_key: str | None = Field(
-        None, description="The dotted key that states the rate, or null when the voice declares none to state."
+        description="The dotted key that states the rate, or null when the voice declares none to state."
     )
     averaged: bool = Field(
-        False,
         description=(
             "True when the price is several rates together, such as music and effects bought at their own, so "
             "the rate is what they average to and `price_key` names the one least surely stated."
@@ -364,6 +367,108 @@ class Cost(Model):
         )
 
 
+STAGE_OWNER = {Stage.NARRATE: "the narration's", Stage.SCORE: "the score's"}
+"""How a sentence names what each stage that buys pays for, before the amount it pays for."""
+
+
+class StageCost(_Priced):
+    """What one stage that buys costs, at its own provider's bill, in its own state: charged when the stage had leave
+    to buy."""
+
+    stage: Stage = Field(description="The stage this row is about.")
+
+    @property
+    def priced(self) -> bool:
+        """True when this row is stated as money: its provider bills, and it is not a ceiling alone."""
+        billed = not self.free and self.billing is not BillingBasis.UNDECLARED
+        return billed and (self.dollars > 0 or self.ceiling_dollars == 0)
+
+    @property
+    def clause(self) -> str:
+        """This row as one clause of the whole run's sentence, which names the stage it prices.
+
+        A row stated as money names its figure, what it pays for and its rate. A free row and a row
+        nobody can price say what the run does for nothing or cannot price. A row that is a ceiling
+        alone has no clause of its own, because the run's ceiling is said with `up_to`.
+        """
+        if self.priced:
+            preposition = "on" if self.state is CostState.CHARGED else "for"
+            return f"{money(self.dollars)} {preposition} {STAGE_OWNER[self.stage]} {self.amount} at {self.rate}"
+        if self.free:
+            return f"{self._made} {self.amount} for nothing, because the {self._maker} is free"
+        if self.billing is BillingBasis.UNDECLARED:
+            return f"{self._made} {self.amount} on a {self._maker} that declares no bill, so DeckTalk cannot price it"
+        return ""
+
+    def up_to(self, ceiling: float) -> str:
+        """The clause for this row's takes that could not be matched to a voice, naming the whole run's `ceiling`."""
+        return (
+            f"up to {money(ceiling)} if the takes on disk that could not be matched to a voice need making again, "
+            f"at {self.rate}"
+        )
+
+
+class Cost(_Priced):
+    """What a run costs, priced once so a caller never works it out from a character count.
+
+    `--max-cost` caps the whole run, and is compared against the `ceiling_dollars` of everything the
+    run approved and never against `dollars`, because a provider charges one request at a time.
+    """
+
+    stages: tuple[StageCost, ...] = Field(
+        description=(
+            "One row per stage that buys, in pipeline order, each in its own state. A charged cost counts only "
+            "its charged rows."
+        )
+    )
+
+    @property
+    def sentence(self) -> str:
+        """This price in one sentence, naming each stage's figure and rate when more than one stage row buys.
+
+        The rows said are the ones in this price's own state that buy. With one, or none, the price is
+        said as one stage's would be. With more, every row stated as money is named with its figure,
+        then each free row, each row nobody can price, and the run's ceiling when takes could not be
+        matched to a voice, in pipeline order.
+        """
+        rows = [row for row in self.stages if row.state is self.state and row.buys]
+        if len(rows) < 2:
+            return super().sentence
+        verb = "spent" if self.state is CostState.CHARGED else "costs"
+        priced = [row.clause for row in rows if row.priced]
+        others: list[str] = []
+        for row in rows:
+            if not row.priced and row.clause:
+                others.append(row.clause)
+            if row.state is CostState.ESTIMATE and row.ceiling_dollars > row.dollars:
+                others.append(row.up_to(self.ceiling_dollars))
+        if len(priced) > 1:
+            opening = f"This run {verb} {money(self.dollars)}: {', and '.join(priced)}"
+        elif priced:
+            opening = f"This run {verb} {priced[0]}"
+        else:
+            opening, others = f"This run {others[0]}", others[1:]
+        return "".join([opening, *(f", and {clause}" for clause in others), "."])
+
+
+UNPRICED: Cost = Cost(
+    state=CostState.ESTIMATE,
+    sections=(),
+    characters=0,
+    seconds=0.0,
+    dollars=0.0,
+    ceiling_dollars=0.0,
+    billing=BillingBasis.UNDECLARED,
+    dollars_per_1000_characters=0.0,
+    dollars_per_minute=0.0,
+    price_key=None,
+    averaged=False,
+    price_layer=Layer.DEFAULT,
+    stages=(),
+)
+"""The cost of a run that never opened: nothing bought, on a bill nobody declared, at a rate nobody stated."""
+
+
 def money(dollars: float) -> str:
     """An amount in US dollars as a price is written, to the cent."""
     return f"${dollars:.2f}"
@@ -377,6 +482,22 @@ DOLLAR_DIGITS = 2
 
 RATE_DIGITS = 4
 """Truth: the significant digits a rate under a cent is written to, so a cheap plan's rate never reads as free."""
+
+NANODOLLAR = Decimal("1e-9")
+"""Truth: below any amount a declared rate of at most 4 decimals bills over a millisecond count, which is about
+1.7e-9, so a sum of float charges settled here loses their float noise and never a real fraction of a cent."""
+
+
+def up_to_the_cent(amounts: Iterable[float]) -> float:
+    """These amounts in US dollars added exactly and rounded up to the cent, which is how every price is stated.
+
+    Each float is read as the decimal it prints as, the sum is settled to the nanodollar, then rounded
+    up to the cent, so a figure a host adds from the `*.charged` lines it received comes to the same
+    cent. Rounding up means a price is never below what a run can pay. A sum of nothing is 0, never -0.
+    """
+    exact = sum((Decimal(repr(amount)) for amount in amounts), Decimal(0))
+    settled = exact.quantize(NANODOLLAR, rounding=ROUND_HALF_EVEN)
+    return float(settled.quantize(Decimal(1).scaleb(-DOLLAR_DIGITS), rounding=ROUND_CEILING) + Decimal(0))
 
 
 def rate_money(dollars: float) -> str:
@@ -758,7 +879,10 @@ class CheckResult(Result):
     judged: tuple[ProjectPath, ...] = Field(description="Every file and page this call judged, project-relative.")
     pages_opened: bool = Field(description="True when the pages were opened in a browser rather than read as text.")
     frames_compared: bool = Field(description="True when slides were frozen and compared as pictures.")
-    cost: Cost = Field(description="What the narration of a voiced build would cost, leaving out any sound.")
+    cost: Cost = Field(
+        description="What the narration of a voiced build would cost, leaving out any sound. Its stages hold the "
+        "narration alone."
+    )
     storyboard: ProjectPath | None = Field(None, description="The storyboard this call wrote, or null.")
 
 
@@ -1049,6 +1173,7 @@ __all__ = [
     "SoundKind",
     "SoundOutcome",
     "Source",
+    "StageCost",
     "ScoreResult",
     "Cost",
     "CostState",
@@ -1059,6 +1184,7 @@ __all__ = [
     "Substitute",
     "TakeState",
     "TakeOutcome",
+    "UNPRICED",
     "UnplayedTakes",
     "VerifyResult",
     "Word",

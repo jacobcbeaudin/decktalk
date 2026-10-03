@@ -34,8 +34,8 @@ from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
 from decktalk.results import Word
-from decktalk.speech import PUNCT, SpeechRequest, canonical_text, is_free
-from decktalk.stages import billed, dollars_for
+from decktalk.speech import PUNCT, canonical_text
+from decktalk.stages.cost import Buy, charge_of
 
 PLACEHOLDER_CLOSE_SECONDS = 0.1
 """Calibration: the silence a click track ends on, which is long enough that where its sound ends can be measured."""
@@ -135,28 +135,21 @@ def write_placeholder_take(
     return take_row(inputs, section, chapter, digest, voiced=False), [out, written]
 
 
-def charge_take(inputs: Inputs, run: Run, section: ScriptSection, digest: str, request: SpeechRequest) -> None:
+def charge_take(inputs: Inputs, run: Run, section: ScriptSection, digest: str, buy: Buy) -> None:
     """Put the charge for one voiced take on the stream, once its voice has answered.
 
     A provider that bills is paid the moment it answers, so the charge goes on the stream before
     anything that could fail writes the take. A host that keeps its own ledger then records every
-    take it paid for, even one whose file never reached the disk. The charge is the bill the provider
-    declares, and a per-second bill is charged on the length the script gave the take, which is the
-    figure the run was approved at. A provider that declares it bills nothing is paid nothing, so its
-    take puts no charge on the stream, and every charge line is money paid, as `sound.charged` is.
+    take it paid for, even one whose file never reached the disk. The charge is `buy` at the bill the
+    provider declares, the same buy the run was priced and approved at, so a per-second bill is
+    charged on the length the script gave the take. A provider that declares it bills nothing is paid
+    nothing, so its take puts no charge on the stream, and every charge line is money paid, as
+    `sound.charged` is.
     """
-    voice = inputs.settings.voice.provider
-    if is_free(voice):
+    dollars = charge_of(inputs, buy)
+    if dollars is None:
         return
-    characters = len(canonical_text(request.pieces))
-    seconds = section.estimated_seconds(inputs.settings.narration)
-    run.emit(
-        TakeCharged,
-        section=section.number,
-        digest=digest,
-        characters=characters,
-        dollars=dollars_for(billed(characters, seconds, voice), inputs),
-    )
+    run.emit(TakeCharged, section=section.number, digest=digest, characters=buy.characters, dollars=dollars)
 
 
 def join_takes(inputs: Inputs, takes: Takes) -> Path:

@@ -95,6 +95,10 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     # Every stage that fans its sections out to workers shares one pool, so they all halt alike.
     ("stages.narrate", "stages.pool"): "the one pool every stage fans out to",
     ("stages.record", "stages.pool"): "the one pool every stage fans out to",
+    # Every stage that buys prices and charges through one cost rule, so no two of them disagree about a bill.
+    ("stages.narrate", "stages.cost"): "what the takes cost, priced and charged by the one cost rule",
+    ("stages.score", "stages.cost"): "what the sounds cost, priced and charged by the one cost rule",
+    ("stages.build", "stages.cost"): "the stages' costs added into the one total the run is capped and reported at",
 }
 """Every import that points sideways between stages, each with the reason it exists.
 

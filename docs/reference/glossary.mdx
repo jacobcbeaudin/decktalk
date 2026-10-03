@@ -105,7 +105,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 | Word | Meaning | Not | Explained in |
 |---|---|---|---|
 | spend | Whether a run may buy from a provider that bills: `--spend/--no-spend`, and `spend` in Python and in the JSON. A free provider needs no spend. | spending | [Requirements and costs](/requirements) |
-| cost | What a run costs or would cost, carried as `cost` with its state, its dollars, its ceiling and its rate in US dollars. It pairs with `--max-cost`. | credits | [Requirements and costs](/requirements) |
+| cost | What a run costs or would cost, carried as `cost` with its state, its dollars, its ceiling and its rate in US dollars. It pairs with `--max-cost`, and holds one row per stage that buys, in `cost.stages`. | credits | [Requirements and costs](/requirements) |
 | cost state | Whether a cost is an `estimate` or was `charged`. | | [Requirements and costs](/requirements) |
 | billing | How a provider charges: per character, per second, free, undeclared or mixed. | | [Requirements and costs](/requirements) |
 | buy | To pay a provider for a take or a sound. A `*.charged` event is written for each bill that is not free. | purchase | [The JSON contract](/agents/json) |

@@ -125,7 +125,7 @@ Without a terminal, a build with something to buy refuses unless `--spend` or `-
   "findings": [],
   "error": {
     "code": "APPROVAL",
-    "message": "This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.",
+    "message": "This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.",
     "hint": "Run decktalk build --spend to approve that spend, or decktalk build --no-spend to play a placeholder wherever a take is missing and silence where a sound is unbought.",
     "location": null,
     "docs": "https://docs.decktalk.ai/reference/errors/APPROVAL"

@@ -13,6 +13,7 @@ import shutil
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -37,6 +38,7 @@ from decktalk.results import (
     RecordResult,
     Result,
     ScoreResult,
+    StageCost,
     StoryboardResult,
     VerifyResult,
     money,
@@ -87,16 +89,26 @@ VOICED = {"DECKTALK_VOICE_ID": "voice-under-test"}
 """What a machine that names the voice hands a project, so a take on disk can be matched to it."""
 
 
-def price(dollars: float = 0.0, *, state: CostState = CostState.ESTIMATE) -> Cost:
+def priced(stage: Stage, **fields: Any) -> Cost:
+    """One stage's price from its fields, with the one row that stage reports."""
+    return Cost(**fields, stages=(StageCost(stage=stage, **fields),))
+
+
+def price(dollars: float = 0.0, *, state: CostState = CostState.ESTIMATE, stage: Stage = Stage.NARRATE) -> Cost:
     """One stage's price, stated the way every stage of the product states one."""
-    return Cost(
+    return priced(
+        stage,
         state=state,
         sections=(1,),
         characters=int(dollars * 1000),
+        seconds=0.0,
         dollars=dollars,
         ceiling_dollars=dollars,
         billing=BillingBasis.PER_CHARACTER,
         dollars_per_1000_characters=RATE,
+        dollars_per_minute=0.0,
+        price_key=None,
+        averaged=False,
         price_layer=Layer.PROJECT,
     )
 
@@ -108,7 +120,8 @@ SOUND_RATE = 0.12
 def sound_price(seconds: float) -> Cost:
     """The score's price, which is billed per second of audio rather than per character."""
     dollars = round(seconds * SOUND_RATE / 60, 2)
-    return Cost(
+    return priced(
+        Stage.SCORE,
         state=CostState.ESTIMATE,
         sections=(1,),
         characters=0,
@@ -119,6 +132,7 @@ def sound_price(seconds: float) -> Cost:
         dollars_per_1000_characters=0.0,
         dollars_per_minute=SOUND_RATE,
         price_key="score.music.dollars_per_minute",
+        averaged=False,
         price_layer=Layer.PROJECT,
     )
 
@@ -222,7 +236,7 @@ def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
             written=(),
             spend=False,
             items=(),
-            cost=answers.score_cost or price(answers.score_dollars),
+            cost=answers.score_cost or price(answers.score_dollars, stage=Stage.SCORE),
             elapsed_seconds=0.0,
         ),
         "assemble": lambda: AssembleResult(
@@ -632,7 +646,7 @@ def test_a_stage_that_asks_for_more_than_the_build_was_priced_at_is_refused_and_
         score_stage,
         "price",
         lambda *_a, **_k: real(paying).model_copy(
-            update={"seconds": 0.0, "sections": (), "dollars": 0.0, "ceiling_dollars": 0.0}
+            update={"seconds": 0.0, "sections": (), "dollars": 0.0, "ceiling_dollars": 0.0, "stages": ()}
         ),
     )
     watched = make_run(paying, spend=True, max_cost=CAP)
@@ -822,58 +836,33 @@ def test_the_spend_is_every_stage_that_priced_something_added_up(
     assert result.cost.dollars_per_1000_characters == RATE
 
 
-@pytest.mark.usefixtures("calls")
-def test_a_total_of_speech_and_sound_says_it_is_mixed_and_counts_both(
-    inputs: Inputs, watched: Watched, answers: Answers
-) -> None:
-    """Characters and seconds are two bills, so the total names neither one's rate as the whole run's."""
-    answers.narrate_dollars = 0.3
-    answers.score_cost = sound_price(120.0)
-    result = build(inputs, watched.run)
-    assert result.cost.billing is BillingBasis.MIXED
-    assert (result.cost.characters, result.cost.seconds) == (300, 120.0)
-    assert (result.cost.dollars_per_1000_characters, result.cost.dollars_per_minute) == (RATE, SOUND_RATE)
-    assert result.cost.sentence == (
-        "This run costs $0.54 for 300 characters and about 120 seconds of audio at the rates each stage states."
-    )
+FREE_AND_VOICED = priced(
+    Stage.NARRATE,
+    **price(0.0, state=CostState.CHARGED).model_dump(exclude={"stages"})
+    | {"billing": BillingBasis.FREE, "dollars_per_1000_characters": 0.0, "characters": 39},
+)
+"""A free voice's narration that voiced 39 characters, which a run that may not spend still voices."""
 
 
 @pytest.mark.usefixtures("calls")
-def test_a_total_that_buys_only_sound_is_billed_the_way_sound_is(
-    inputs: Inputs, watched: Watched, answers: Answers
+@pytest.mark.parametrize(
+    ("narrated", "dollars", "said"),
+    [
+        (FREE_AND_VOICED, 0.0, "This run voiced 39 characters for nothing, because the voice is free."),
+        (price(0.30, state=CostState.CHARGED), 0.30, "This run spent $0.30"),
+    ],
+    ids=["free-voice", "paid-voice"],
+)
+def test_a_charged_total_counts_only_the_stages_that_had_leave_to_buy(
+    inputs: Inputs, watched: Watched, answers: Answers, narrated: Cost, dollars: float, said: str
 ) -> None:
-    """A narration with every take on disk buys nothing, so the sound alone decides how the total bills."""
-    answers.narrate_cost = price(0.0).model_copy(update={"sections": ()})
+    """A score that only priced what it would buy is never reported as spent beside a narration that bought."""
+    answers.narrate_cost = narrated
     answers.score_cost = sound_price(60.0)
     result = build(inputs, watched.run)
-    assert result.cost.billing is BillingBasis.PER_SECOND
-    assert result.cost.dollars_per_minute == SOUND_RATE
-    assert result.cost.sentence.endswith("per minute of audio.")
-
-
-@pytest.mark.usefixtures("calls")
-def test_a_free_voice_beside_paid_sound_leaves_the_sound_to_bill_the_total(
-    inputs: Inputs, watched: Watched, answers: Answers
-) -> None:
-    """The free takes cost nothing and state no rate, so the total names the rate somebody stated."""
-    answers.narrate_cost = price(0.0).model_copy(
-        update={"billing": BillingBasis.FREE, "dollars_per_1000_characters": 0.0}
-    )
-    answers.score_cost = sound_price(60.0)
-    result = build(inputs, watched.run)
-    assert result.cost.billing is BillingBasis.PER_SECOND
-    assert (result.cost.price_key, result.cost.price_layer) == ("score.music.dollars_per_minute", Layer.PROJECT)
-
-
-@pytest.mark.usefixtures("calls")
-def test_a_voice_that_declares_no_bill_leaves_the_whole_total_undeclared(
-    inputs: Inputs, watched: Watched, answers: Answers
-) -> None:
-    answers.narrate_cost = price(0.3).model_copy(update={"billing": BillingBasis.UNDECLARED})
-    answers.score_cost = sound_price(60.0)
-    result = build(inputs, watched.run)
-    assert result.cost.billing is BillingBasis.UNDECLARED
-    assert "cannot price it" in result.cost.sentence
+    assert result.cost.state is CostState.CHARGED
+    assert result.cost.dollars == result.cost.ceiling_dollars == dollars
+    assert result.cost.sentence.startswith(said)
 
 
 def test_a_run_that_priced_nothing_still_reports_a_spend(inputs: Inputs, watched: Watched, calls: Calls) -> None:

@@ -70,6 +70,25 @@ class Ending:
     outcome: Outcome = Outcome.RAN
 
 
+_PROVIDER_OF = {Stage.NARRATE: "the voice", Stage.SCORE: "the score's provider"}
+"""Who is paid for what each stage that buys buys, as a refusal names it."""
+
+
+def _undeclared(cost: Cost) -> str:
+    """Who declares no bill in this price, with its verb: the provider of each buying row nobody can price.
+
+    A price with no such row names the voice when it counts characters, and the score's provider otherwise.
+    """
+    rows = [
+        _PROVIDER_OF[row.stage]
+        for row in cost.stages
+        if row.state is cost.state and row.buys and row.billing is BillingBasis.UNDECLARED
+    ]
+    if not rows:
+        return f"{'the voice' if cost.characters > 0 else _PROVIDER_OF[Stage.SCORE]} declares"
+    return f"{' and '.join(rows)} {'declares' if len(rows) == 1 else 'declare'}"
+
+
 class Run:
     """One call in progress: its id, its stream, its cancel token, its spend gate and its threshold.
 
@@ -241,9 +260,9 @@ class Run:
         """The most the run can cost with `cost` added to what it `already` approved, refused over `cap`."""
         if cost.billing is BillingBasis.UNDECLARED:
             raise ApprovalRequired(
-                "--max-cost was given and the voice declares no bill, so the cap would guard a made-up price.",
+                f"--max-cost was given and {_undeclared(cost)} no bill, so the cap would guard a made-up price.",
                 hint=(
-                    "A voice DeckTalk ships states how it bills, per character, per second or free, and a voice "
+                    "A provider DeckTalk ships states how it bills, per character, per second or free, and one "
                     "a host registered itself states nothing DeckTalk can price. Run without --max-cost to buy "
                     "from one that declares none."
                 ),

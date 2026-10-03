@@ -7,7 +7,7 @@ from pathlib import Path
 from decktalk.cli import watch
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import InputError
-from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, TakeState
+from decktalk.results import UNPRICED, BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, TakeState
 from decktalk.stages.narrate.state import CHANGED, HELD
 from support.costs import a_cost
 
@@ -50,6 +50,8 @@ def test_a_refused_rebuild_is_reported_and_the_loop_keeps_watching(monkeypatch, 
     built = watch.loop(session(), project.project())
     assert built.ok is False
     assert "error[INPUT]" in capsys.readouterr().err
+    assert built.cost == UNPRICED
+    assert all(name != "price" for name, _, _ in project.calls), "a refused rebuild was priced"
 
 
 def test_a_saved_file_names_the_sections_it_touches(tmp_path) -> None:

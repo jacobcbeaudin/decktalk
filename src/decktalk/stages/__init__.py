@@ -7,6 +7,7 @@
     assemble/    the recordings, the narration and the score become one film
     verify/      the finished film is measured against the clock it was promised
     build.py     the six stages in order, or the span of them a caller named
+    cost.py      what every stage that buys costs, priced at the bill its provider declares
     table.py     each stage's function, its result and the options it takes
     check.py     what a build would spend and show, judged before anything is spent
     status.py    what is written, what is built, what is stale and what to do next
@@ -30,14 +31,9 @@ than at the end.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any
 
 from decktalk.inputs import Inputs
-from decktalk.results import BillingBasis, Layer
-from decktalk.speech import DECLARED, SpeechContext, base_of, billing_of, table_of
-
-SECONDS_PER_PRICE = 60
-"""Truth: a bill per second states its rate per minute of audio, which is how a declared rate key reads."""
+from decktalk.speech import SpeechContext, base_of, table_of
 
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
@@ -51,68 +47,6 @@ def voice_model(inputs: Inputs) -> str:
     """
     table = table_of(inputs.settings, inputs.settings.voice.provider)
     return table.model if table is not None else ""
-
-
-def price_key(provider: str) -> str | None:
-    """The dotted key that states `provider`'s rate, or None for a provider whose bill has no rate to state."""
-    declared, rate = DECLARED.get(provider), billing_of(provider).rate
-    return f"{declared.table}.{rate}" if declared is not None and rate is not None else None
-
-
-def rate_of(inputs: Inputs, provider: str | None = None) -> float:
-    """What `provider` charges per unit it bills by, which is `[voice] provider`'s rate unless one is named.
-
-    The unit is the one its adapter declares: 1,000 characters for a per-character bill and a minute
-    of audio for a per-second one. A free voice, and a provider that declares no bill, charge nothing.
-    """
-    name = provider or inputs.settings.voice.provider
-    rate, table = billing_of(name).rate, table_of(inputs.settings, name)
-    return float(getattr(table, rate)) if rate is not None and table is not None else 0.0
-
-
-def dollars_for(amount: float, inputs: Inputs, provider: str | None = None) -> float:
-    """What this much of what the provider bills by costs at its stated rate, unrounded.
-
-    `amount` is counted in what its adapter declares it bills by: characters for a per-character
-    bill, seconds of audio for a per-second one. One take's charge is stated at full precision,
-    because a ledger that adds rounded cents per take drifts from the run's own total, which is
-    rounded once, after the sum.
-    """
-    name = provider or inputs.settings.voice.provider
-    per = 1000 if billing_of(name).by is BillingBasis.PER_CHARACTER else SECONDS_PER_PRICE
-    return amount / per * rate_of(inputs, name)
-
-
-def billed(characters: int, seconds: float, provider: str) -> float:
-    """Which of a take's characters and seconds `provider`'s bill counts, which is nothing for a voice with no rate."""
-    by = billing_of(provider).by
-    return characters if by is BillingBasis.PER_CHARACTER else seconds if by is BillingBasis.PER_SECOND else 0.0
-
-
-def price_layer(inputs: Inputs, provider: str | None = None) -> Layer:
-    """Which layer stated the rate, because a ceiling may not guard a price nobody has stated."""
-    key = price_key(provider or inputs.settings.voice.provider)
-    if key is None:
-        # silent: a provider whose bill has no rate to state has the default's rate of nothing.
-        return Layer.DEFAULT
-    try:
-        return inputs.layers.winner(key).layer
-    except KeyError:
-        # silent: a price no layer states is the default's.
-        return Layer.DEFAULT
-
-
-def rate_fields(inputs: Inputs, provider: str | None = None) -> dict[str, Any]:
-    """The fields of a `Cost` that say how `provider` bills, at what rate, and who stated it."""
-    name = provider or inputs.settings.voice.provider
-    by, rate = billing_of(name).by, rate_of(inputs, name)
-    return {
-        "billing": by,
-        "dollars_per_1000_characters": rate if by is BillingBasis.PER_CHARACTER else 0.0,
-        "dollars_per_minute": rate if by is BillingBasis.PER_SECOND else 0.0,
-        "price_key": price_key(name),
-        "price_layer": price_layer(inputs, name),
-    }
 
 
 def speech_context(inputs: Inputs, provider: str | None = None) -> SpeechContext:
@@ -137,14 +71,7 @@ def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
 
 
 __all__ = [
-    "SECONDS_PER_PRICE",
     "SECTION_START_SECONDS",
-    "billed",
-    "dollars_for",
-    "price_key",
-    "price_layer",
-    "rate_fields",
-    "rate_of",
     "selects",
     "speech_context",
     "voice_model",

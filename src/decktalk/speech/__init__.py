@@ -306,11 +306,6 @@ def billing_of(provider: str) -> Billing:
     return declared.billing if declared is not None else UNDECLARED
 
 
-def is_free(provider: str) -> bool:
-    """Whether `provider` declares that it bills nothing, which is what lets a run that may not spend call it."""
-    return billing_of(provider).by is BillingBasis.FREE
-
-
 def start_hint(provider: str) -> str:
     """What starts `provider` when nothing answered it, naming its server and the setting that says where it listens."""
     declared = DECLARED.get(provider)

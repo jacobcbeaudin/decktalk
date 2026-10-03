@@ -117,7 +117,7 @@ Found 1 finding, 1 error.
         "CheckResult": """\
 Checking build/judged12.
 This run spent $17.25 on 15 characters and about 16 seconds of audio at the rates each stage states.
-Storyboard build/storyboard24
+Storyboard build/storyboard36
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,

@@ -201,14 +201,19 @@ def test_a_changed_file_names_the_sections_a_watch_loop_must_rebuild(tmp_path: P
     assert project.sections_touching(tmp_path / "deck" / "index.html") == (1, 2)
 
 
-def test_a_price_covers_the_stages_that_buy_and_opens_no_run(tmp_path: Path) -> None:
-    """The takes of a written script are priced from the plan alone, and a span that buys nothing has no price."""
+def test_a_price_covers_the_stages_that_buy_and_a_span_that_buys_nothing_names_the_voices_rate(
+    tmp_path: Path,
+) -> None:
+    """The takes of a written script are priced from the plan alone, and a span that buys nothing still names a rate."""
     project = a_project(tmp_path)
     (tmp_path / "script.md").write_text("## 1. One\n\nHello there.\n\n## 2. Two\n\nAnd again.\n", encoding="utf-8")
     priced = project.price(stages=[Stage.NARRATE], only=[1])
-    assert priced is not None
     assert priced.sections == (1,)
-    assert project.price(stages=[Stage.RECORD, Stage.ASSEMBLE]) is None
+    nothing = project.price(stages=[Stage.RECORD, Stage.ASSEMBLE])
+    assert not nothing.buys
+    assert nothing.price_key == "elevenlabs.dollars_per_1000_characters"
+    assert nothing.price_layer is SettingLayer.DEFAULT
+    assert project.price(stages=()) == nothing
     assert not (tmp_path / "build" / "events").exists(), "pricing opened a run"
 
 

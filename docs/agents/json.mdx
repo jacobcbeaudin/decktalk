@@ -154,14 +154,31 @@ cost, so it is the one call an agent makes to learn the price of a run.
     "sections": [1, 2, 3],
     "characters": 476,
     "seconds": 39.9,
-    "dollars": 0.14,
-    "ceiling_dollars": 0.14,
+    "dollars": 0.15,
+    "ceiling_dollars": 0.15,
     "billing": "per_character",
     "dollars_per_1000_characters": 0.3,
     "dollars_per_minute": 0.0,
     "price_key": "elevenlabs.dollars_per_1000_characters",
     "averaged": false,
-    "price_layer": "project"
+    "price_layer": "project",
+    "stages": [
+      {
+        "state": "estimate",
+        "sections": [1, 2, 3],
+        "characters": 476,
+        "seconds": 39.9,
+        "dollars": 0.15,
+        "ceiling_dollars": 0.15,
+        "billing": "per_character",
+        "dollars_per_1000_characters": 0.3,
+        "dollars_per_minute": 0.0,
+        "price_key": "elevenlabs.dollars_per_1000_characters",
+        "averaged": false,
+        "price_layer": "project",
+        "stage": "narrate"
+      }
+    ]
   },
   "storyboard": null
 }
@@ -172,6 +189,10 @@ cost, so it is the one call an agent makes to learn the price of a run.
 every code it could not reach. `dollars` is the price at the rate the voice publishes, and
 `ceiling_dollars` is the most the run could cost. `--max-cost` is compared against `ceiling_dollars`
 and never against `dollars`, because a provider charges one request at a time.
+
+To add the `take.charged` and `sound.charged` lines yourself, add each `dollars` as the decimal it is
+written as, settle the sum to the nearest billionth of a dollar, then round up to the cent: that is the
+stage's charged `dollars`.
 
 ## A result that judged and failed
 
@@ -234,7 +255,24 @@ judgements about the project rather than a reason the command could not run.
     "dollars_per_minute": 0.0,
     "price_key": "elevenlabs.dollars_per_1000_characters",
     "averaged": false,
-    "price_layer": "project"
+    "price_layer": "project",
+    "stages": [
+      {
+        "state": "estimate",
+        "sections": [1, 2, 3],
+        "characters": 486,
+        "seconds": 40.3,
+        "dollars": 0.15,
+        "ceiling_dollars": 0.15,
+        "billing": "per_character",
+        "dollars_per_1000_characters": 0.3,
+        "dollars_per_minute": 0.0,
+        "price_key": "elevenlabs.dollars_per_1000_characters",
+        "averaged": false,
+        "price_layer": "project",
+        "stage": "narrate"
+      }
+    ]
   },
   "storyboard": null
 }

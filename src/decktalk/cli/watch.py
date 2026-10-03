@@ -23,7 +23,7 @@ from decktalk.cli import session as sessions
 from decktalk.errors import Cancelled, DeckTalkError, ErrorInfo
 from decktalk.pipeline import Stage
 from decktalk.project import Project
-from decktalk.results import BillingBasis, BuildResult, Cost, CostState, Layer, TakeState
+from decktalk.results import UNPRICED, BuildResult, TakeState
 
 POLL_SECONDS = 0.4
 """How long the loop sleeps between two readings of the tree, which is under an author's own pause."""
@@ -111,16 +111,7 @@ def _nothing(refusal: ErrorInfo) -> BuildResult:
         run="",
         stages=(),
         spend=False,
-        cost=Cost(
-            state=CostState.ESTIMATE,
-            sections=(),
-            characters=0,
-            dollars=0.0,
-            ceiling_dollars=0.0,
-            billing=BillingBasis.UNDECLARED,
-            dollars_per_1000_characters=0.0,
-            price_layer=Layer.DEFAULT,
-        ),
+        cost=UNPRICED,
         elapsed_seconds=0.0,
     )
 

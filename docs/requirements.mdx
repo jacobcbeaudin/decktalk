@@ -332,14 +332,31 @@ decktalk check --json
   "sections": [1, 2, 3],
   "characters": 476,
   "seconds": 39.9,
-  "dollars": 0.14,
-  "ceiling_dollars": 0.14,
+  "dollars": 0.15,
+  "ceiling_dollars": 0.15,
   "billing": "per_character",
   "dollars_per_1000_characters": 0.3,
   "dollars_per_minute": 0.0,
   "price_key": "elevenlabs.dollars_per_1000_characters",
   "averaged": false,
-  "price_layer": "project"
+  "price_layer": "project",
+  "stages": [
+    {
+      "state": "estimate",
+      "sections": [1, 2, 3],
+      "characters": 476,
+      "seconds": 39.9,
+      "dollars": 0.15,
+      "ceiling_dollars": 0.15,
+      "billing": "per_character",
+      "dollars_per_1000_characters": 0.3,
+      "dollars_per_minute": 0.0,
+      "price_key": "elevenlabs.dollars_per_1000_characters",
+      "averaged": false,
+      "price_layer": "project",
+      "stage": "narrate"
+    }
+  ]
 }
 ```
 
@@ -347,15 +364,19 @@ decktalk check --json
 - `sections` are the sections the price covers, in script order.
 - `characters` is what would be sent, and `seconds` is how long the takes are expected to run.
 - `billing` is how the voice declares it bills: `per_character`, `per_second`, `free`, or
-  `undeclared` for a voice a host registered itself. A build's total is `mixed` when it adds
-  characters of speech to seconds of sound, and then carries both rates.
-- `dollars` is the characters or the seconds the bill counts, at the stated rate.
-- `ceiling_dollars` is the most the run can reach.
+  `undeclared` for a voice or a sound provider a host registered itself. A build's total is `mixed`
+  when it adds characters of speech to seconds of sound, and then carries both rates.
+- `dollars` is the characters or the seconds the bill counts, at the stated rate, rounded up to the cent.
+- `ceiling_dollars` is the most the run can reach, rounded up to the cent for each stage.
 - `dollars_per_1000_characters` or `dollars_per_minute` is the rate in US dollars, whichever the bill is counted in.
 - `price_key` is the key that states the rate, or null for a voice with no rate to state.
 - `averaged` is true when the price is several rates together, such as a score's music and
   effects, so the rate is their average and `price_key` names the one least surely stated.
 - `price_layer` names the settings layer that set the rate, where `default` means nobody did.
+- `stages` holds one row per stage that buys, narration then score, each with the same fields, its own
+  `state` and the `stage` it prices. A stage is `charged` when the run had leave to buy from it, and a
+  charged cost counts only its charged rows, so a stage that only priced what it would buy is never
+  shown as spent. A total adds only the amounts each row is billed on.
 
 `dollars` and `ceiling_dollars` differ when a section's take cannot be matched. A take is named by
 its text and its voice, so with no `[voice] id` named a voiced take of a section's current text cannot
@@ -369,12 +390,19 @@ apart.
 
 | When | The sentence |
 |---|---|
-| Every section is priced for certain | `This run costs $0.14 for 476 characters at $0.30 per 1,000 characters.` |
+| Every section is priced for certain | `This run costs $0.15 for 476 characters at $0.30 per 1,000 characters.` |
 | Some sections could not be matched | `This run costs $X for the sections that certainly need a take, and up to $Y if the takes that could not be matched to a voice need one too, at $0.30 per 1,000 characters.` |
-| No section could be matched | `The takes on disk could not be matched to a voice, so this run costs up to $0.14 at $0.30 per 1,000 characters.` |
+| No section could be matched | `The takes on disk could not be matched to a voice, so this run costs up to $0.15 at $0.30 per 1,000 characters.` |
 | Nothing needs a take | `This run buys nothing.` |
 | The voice declares itself free | `This run voices 476 characters for nothing, because the voice is free.` |
-| After a voiced run | `This run spent $0.14 on 476 characters at $0.30 per 1,000 characters.` |
+| After a voiced run | `This run spent $0.15 on 476 characters at $0.30 per 1,000 characters.` |
+| After a voiced run that bought nothing | `This run bought nothing.` |
+| Two stages buy | `This run costs $0.14: $0.02 for the narration's 39 characters at $0.30 per 1,000 characters, and $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio.` |
+| A free voice and a paid score | `This run costs $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio, and voices 39 characters for nothing, because the voice is free.` |
+| Takes nobody could match and a score | `This run costs $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio, and up to $0.26 if the takes on disk that could not be matched to a voice need making again, at $0.30 per 1,000 characters.` |
+
+A run that is stopped or fails returns no cost. The `take.charged` and `sound.charged` lines it wrote
+are its record of what it paid.
 
 ### The ceiling
 
@@ -387,8 +415,8 @@ priced at is still refused, and the refusal says that what the run bought before
 
 {/* sample: decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voice] id set and no API key, which refuses before any request */}
 ```text
-error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.14, is over the $0.05 ceiling --max-cost set.
-  hint: Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
+error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.15, is over the $0.05 ceiling --max-cost set.
+  hint: Raise the ceiling to --max-cost 0.15, or narrow the run with --section.
   docs: https://docs.decktalk.ai/reference/errors/APPROVAL
 ```
 

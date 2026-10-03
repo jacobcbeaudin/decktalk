@@ -56,22 +56,12 @@ from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, MusicSpec, SoundSpec
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
-from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Stage
-from decktalk.results import (
-    DOLLAR_DIGITS,
-    BillingBasis,
-    Cost,
-    CostState,
-    Layer,
-    ScoreResult,
-    SoundItem,
-    SoundKind,
-    SoundOutcome,
-)
+from decktalk.results import Cost, CostState, ScoreResult, SoundItem, SoundKind, SoundOutcome
 from decktalk.settings import AmbienceConfig, EffectConfig, MusicConfig
 from decktalk.speech.sound import SOUND_DECLARED, SoundContext, SoundProvider, endpoint
 from decktalk.stages import selects
+from decktalk.stages.cost import Buy, charge_of, cost_of
 from decktalk.stages.score.ledger import (
     UNFINISHED_DIGEST,
     Ledger,
@@ -84,15 +74,6 @@ AMBIENCE_NAME = "ambience"
 
 MUSIC_NAME = "music"
 """What the music bed is called, which the `[score]` table does not name either."""
-
-SECONDS_PER_MINUTE = 60
-"""Truth: the seconds in a minute, which is what a rate stated per minute is divided by to price a second."""
-
-TABLES = {SoundKind.AMBIENCE: "ambience", SoundKind.EFFECT: "effects", SoundKind.MUSIC: "music"}
-"""The `[score]` table each kind is sized and priced by."""
-
-PRICE_KEY = "dollars_per_minute"
-"""The key each kind's table states its rate under, whose layer decides whether a ceiling may refuse a run."""
 
 
 def requested_seconds(kind: SoundKind, body: Mapping[str, Any]) -> float:
@@ -278,73 +259,44 @@ def ready(inputs: Inputs) -> bool:
     return held.is_dir() and any(held.iterdir()) and not any(unjoined(item) for item in plan_items(inputs))
 
 
-def price_key_of(kind: SoundKind) -> str:
-    """The dotted key that states this kind's rate per minute of audio."""
-    return f"score.{TABLES[kind]}.{PRICE_KEY}"
+def _held(ledger: Ledger, item: Planned, *, replace: bool) -> frozenset[int]:
+    """The music parts a run keeps rather than buys: bought before, under the same request, and still on disk.
 
-
-def rate_of(inputs: Inputs, kind: SoundKind) -> float:
-    """What this kind of sound costs in US dollars per minute of audio, exactly as its own table states it."""
-    table: AmbienceConfig | EffectConfig | MusicConfig = getattr(inputs.settings.score, TABLES[kind])
-    return table.dollars_per_minute
-
-
-def dollars_of(inputs: Inputs, kind: SoundKind, seconds: float) -> float:
-    """What this many seconds of this kind of sound cost at its stated rate per minute, unrounded."""
-    return seconds * rate_of(inputs, kind) / SECONDS_PER_MINUTE
-
-
-def layer_of(inputs: Inputs, kind: SoundKind) -> Layer:
-    """Which layer stated this kind's rate, because a ceiling may not guard a price nobody has stated."""
-    try:
-        return inputs.layers.winner(price_key_of(kind)).layer
-    except KeyError:
-        # silent: a price no layer states is the default's.
-        return Layer.DEFAULT
-
-
-def cost_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | None) -> Cost:
-    """What this run would cost, billed per second of audio, priced once so no caller works it out.
-
-    Each item is the seconds of audio it asks for at its own kind's rate per minute. One rate is
-    reported exactly as its table states it, so the rate a reader typed is the rate they read back.
-    When the kinds bought are priced at more than one rate, the price is still their exact sum, the
-    rate is what that sum comes to per minute, `averaged` says so, and `price_key` names the kind
-    whose rate is least surely stated. The price is stated by the weakest layer among the kinds
-    bought, so one rate nobody stated makes the whole price a default one that a ceiling refuses to
-    guard, and the refusal names that rate's key. A run with nothing to buy covers no section, so
-    its price says it buys nothing.
+    A run told to replace the score keeps no part, and a sound has no parts to keep.
     """
-    chosen = selects(only)
-    seconds = sum(item.seconds for item in items)
-    exact = sum(dollars_of(inputs, item.kind, item.seconds) for item in items)
-    dollars = round(exact, DOLLAR_DIGITS)
-    kinds = list(dict.fromkeys(item.kind for item in items))
-    order = list(Layer)
-    weakest = min(kinds, key=lambda kind: order.index(layer_of(inputs, kind)), default=None)
-    rates = {rate_of(inputs, kind) for kind in kinds}
-    covered = tuple(section.number for section in inputs.document.sections if chosen(section.number)) if items else ()
-    return Cost(
-        state=CostState.ESTIMATE,
-        sections=covered,
-        characters=0,
-        seconds=round(seconds, SECOND_DIGITS),
-        dollars=dollars,
-        ceiling_dollars=dollars,
-        billing=BillingBasis.PER_SECOND,
-        dollars_per_1000_characters=0.0,
-        dollars_per_minute=_per_minute(rates, exact, seconds),
-        price_key=price_key_of(weakest) if weakest is not None else None,
-        averaged=len(rates) > 1,
-        price_layer=layer_of(inputs, weakest) if weakest is not None else Layer.DEFAULT,
+    previous = None if replace else ledger.of(item.name)
+    known = previous.parts if previous is not None else ()
+    return frozenset(
+        index
+        for index, (body, part) in enumerate(zip(item.bodies, item.parts, strict=False))
+        if index < len(known) and known[index] == request_digest(item.endpoint, body) and part.is_file()
     )
 
 
-def _per_minute(rates: set[float], dollars: float, seconds: float) -> float:
-    """The rate a price was worked out at per minute of audio: the one rate as stated, or what several average to."""
-    if len(rates) == 1:
-        return next(iter(rates))
-    return dollars / seconds * SECONDS_PER_MINUTE if seconds else 0.0
+def _buys(items: Sequence[Planned], held: Mapping[str, frozenset[int]], *, covered: tuple[int, ...]) -> list[Buy]:
+    """What these items buy, one request at a time: every body but the music parts `held` names.
+
+    Every request is a sound of its item's kind, priced on the seconds of audio it asks for, and each
+    covers the sections the run selects, because the score plays under all of them.
+    """
+    return [
+        Buy(seconds=requested_seconds(item.kind, body), sections=covered, kind=item.kind)
+        for item in items
+        for index, body in enumerate(item.bodies)
+        if index not in held.get(item.name, frozenset())
+    ]
+
+
+def _covered(inputs: Inputs, only: Sequence[int] | None) -> tuple[int, ...]:
+    """The sections a run of the score selects, which every sound it buys plays under."""
+    chosen = selects(only)
+    return tuple(section.number for section in inputs.document.sections if chosen(section.number))
+
+
+def _to_buy(ledger: Ledger, item: Planned, *, replace: bool) -> float:
+    """How many seconds of audio this item still asks for, which is every request but the parts held."""
+    held = {item.name: _held(ledger, item, replace=replace)}
+    return sum(buy.seconds for buy in _buys([item], held, covered=()))
 
 
 def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_score: bool = False) -> Cost:
@@ -357,7 +309,9 @@ def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_score: b
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
     ledger = Ledger.read(inputs.workspace.ledger_path) or Ledger()
-    return cost_of(inputs, [item for item in planned if replace_score or stale(ledger, item)], only)
+    fresh = [item for item in planned if replace_score or stale(ledger, item)]
+    held = {item.name: _held(ledger, item, replace=replace_score) for item in fresh}
+    return cost_of(inputs, _buys(fresh, held, covered=_covered(inputs, only)))
 
 
 def sound_context(inputs: Inputs) -> SoundContext:
@@ -384,30 +338,30 @@ def _keep(ledger: Ledger, path: Path, entry: SoundEntry) -> Ledger:
     return grown
 
 
-def _charge(run: Run, inputs: Inputs, item: Planned, digest: str, body: Mapping[str, Any]) -> float:
-    """Put one paid request on the stream the moment the provider answered, and give back what it cost.
+def _charge(run: Run, inputs: Inputs, item: Planned, digest: str, buy: Buy) -> Buy:
+    """Put one paid request on the stream the moment the provider answered, and give back what it bought.
 
     The provider is paid when it answers, so the charge is written before anything that could fail
-    writes the audio, and a host that keeps its own ledger records every request it paid for.
+    writes the audio, and a host that keeps its own ledger records every request it paid for. The
+    charge is `buy` at the bill the cost module reads, the same buy the run was priced at.
     """
-    seconds = requested_seconds(item.kind, body)
-    dollars = dollars_of(inputs, item.kind, seconds)
-    run.emit(SoundCharged, name=item.name, kind=item.kind, digest=digest, seconds=seconds, dollars=dollars)
-    return dollars
+    dollars = charge_of(inputs, buy) or 0.0
+    run.emit(SoundCharged, name=item.name, kind=item.kind, digest=digest, seconds=buy.seconds, dollars=dollars)
+    return buy
 
 
 def _buy_sound(
-    run: Run, inputs: Inputs, client: SoundProvider, item: Planned, ledger: Ledger, path: Path
-) -> tuple[Ledger, float]:
+    run: Run, inputs: Inputs, client: SoundProvider, item: Planned, ledger: Ledger, path: Path, buy: Buy
+) -> tuple[Ledger, list[Buy]]:
     """Buy one ambience bed or one effect, write it, and record what it was bought with and what it cost."""
     body = item.bodies[0]
     audio_bytes = client.effect(body, output_format=inputs.settings.score.output_format)
-    dollars = _charge(run, inputs, item, item.digest, body)
+    bought = _charge(run, inputs, item, item.digest, buy)
     item.out.parent.mkdir(parents=True, exist_ok=True)
     item.out.write_bytes(audio_bytes)
     run.wrote(item.out)
     run.wrote(path)
-    return _keep(ledger, path, _entry(inputs, item, item.digest)), dollars
+    return _keep(ledger, path, _entry(inputs, item, item.digest)), [bought]
 
 
 def _entry(inputs: Inputs, item: Planned, digest: str, parts: Sequence[str] = ()) -> SoundEntry:
@@ -429,35 +383,87 @@ def _entry(inputs: Inputs, item: Planned, digest: str, parts: Sequence[str] = ()
 
 
 def _buy_music(
-    run: Run, inputs: Inputs, client: SoundProvider, item: Planned, ledger: Ledger, path: Path, *, replace: bool
-) -> tuple[Ledger, float]:
-    """Buy every part of the music, join them, and record each part as soon as it is paid for.
+    run: Run,
+    inputs: Inputs,
+    client: SoundProvider,
+    item: Planned,
+    ledger: Ledger,
+    path: Path,
+    *,
+    held: frozenset[int],
+    buys: Sequence[Buy],
+) -> tuple[Ledger, list[Buy], bool]:
+    """Buy every part of the music the run was priced for, join them, and record each part as it is paid for.
 
-    The ledger is written after every part, so a run that is stopped half way through a long piece
-    keeps what it has already bought and asks only for the rest. A run told to replace the score
-    keeps no part, because a part kept from the old piece would be joined into the new one. Only the
+    The parts a run keeps are decided when it is priced, as `held`, and this buys every other one, at
+    the `buys` it was priced at in part order, and never asks the disk again, so it buys nothing the
+    run was not approved for. The ledger is written after every part, so a run that is stopped half
+    way through a long piece keeps what it has already bought and asks only for the rest. Only the
     parts bought by this run are charged.
+
+    A held part that is gone since the run was priced is left for the next run, which prices and buys
+    it. Then the piece is not joined, its ledger row stays unfinished, an older piece joined before
+    is removed so the film never plays it, and a `SOUND_MISSING` finding names the part. The last of
+    the three values says whether that happened.
     """
-    previous = None if replace else ledger.of(item.name)
-    known = previous.parts if previous is not None else ()
     digests: list[str] = []
-    dollars = 0.0
+    paid: list[Buy] = []
+    gone: list[Path] = []
+    priced = iter(buys)
     for index, (body, part) in enumerate(zip(item.bodies, item.parts, strict=True)):
         run.check()
         part.parent.mkdir(parents=True, exist_ok=True)
         digest = request_digest(item.endpoint, body)
-        if index < len(known) and known[index] == digest and part.is_file():
+        if index in held and part.is_file():
             run.note(f"{part.name} was bought before and its request is unchanged, so this run keeps it.")
+        elif index in held:
+            gone.append(part)
         else:
             audio_bytes = client.music(body, output_format=inputs.settings.score.output_format)
-            dollars += _charge(run, inputs, item, digest, body)
+            paid.append(_charge(run, inputs, item, digest, next(priced)))
             part.write_bytes(audio_bytes)
             run.wrote(part)
         digests.append(digest)
         ledger = _keep(ledger, path, _entry(inputs, item, UNFINISHED_DIGEST, digests))
+    if gone:
+        item.out.unlink(missing_ok=True)
+        run.found(
+            judge(
+                Code.SOUND_MISSING,
+                f"{_named(item)} is not whole, because {gone[0].name} was kept when this run was priced and is gone "
+                "now, so this run did not buy it unpriced. Buying it with `decktalk score --spend` asks for "
+                f"{_to_buy(ledger, item, replace=False):g} seconds of audio.",
+                _missing(inputs, item),
+                stage=Stage.SCORE,
+            )
+        )
+        return ledger, paid, True
     _join(run, inputs, item)
     run.wrote(path)
-    return _keep(ledger, path, _entry(inputs, item, item.digest, digests)), dollars
+    return _keep(ledger, path, _entry(inputs, item, item.digest, digests)), paid, False
+
+
+def _bought(
+    run: Run,
+    inputs: Inputs,
+    client: SoundProvider,
+    item: Planned,
+    ledger: Ledger,
+    path: Path,
+    *,
+    held: frozenset[int],
+    covered: tuple[int, ...],
+) -> tuple[Ledger, list[Buy], SoundItem]:
+    """Buy one item the run was priced for, with what it paid for and its row, which is planned when not whole."""
+    buys = _buys([item], {item.name: held}, covered=covered)
+    if item.kind is not SoundKind.MUSIC:
+        ledger, paid = _buy_sound(run, inputs, client, item, ledger, path, buys[0])
+    else:
+        ledger, paid, broken = _buy_music(run, inputs, client, item, ledger, path, held=held, buys=buys)
+        if broken:
+            return ledger, paid, _row(inputs, item, SoundOutcome.PLANNED, None)
+    bought = ledger.of(item.name)
+    return ledger, paid, _row(inputs, item, SoundOutcome.GENERATED, bought.seconds if bought else None)
 
 
 def _join(run: Run, inputs: Inputs, item: Planned) -> None:
@@ -531,14 +537,15 @@ def score(
     ledger = Ledger.read(path) or Ledger()
     replace = run.spend and replace_score
     fresh = {item.name for item in planned if replace or stale(ledger, item)}
-    cost = cost_of(inputs, [item for item in planned if item.name in fresh], only)
+    held = {item.name: _held(ledger, item, replace=replace) for item in planned if item.name in fresh}
+    covered = _covered(inputs, only)
+    estimate = cost_of(inputs, _buys([item for item in planned if item.name in fresh], held, covered=covered))
     buying = bool(fresh) and run.spend
     if buying:
-        run.approve(cost)
+        run.approve(estimate)
     client = client_for(run, inputs) if buying else None
     rows: list[SoundItem] = []
-    charged = 0.0
-    bought_any = False
+    charged: list[Buy] = []
     for done, item in enumerate(planned):
         run.check()
         run.progress(Stage.SCORE, done=done, total=len(planned), unit=Unit.ASSET, label=item.name)
@@ -548,30 +555,26 @@ def score(
         if client is None:
             rows.append(_row(inputs, item, SoundOutcome.PLANNED, None))
             continue
-        if item.kind is SoundKind.MUSIC:
-            ledger, dollars = _buy_music(run, inputs, client, item, ledger, path, replace=replace)
-        else:
-            ledger, dollars = _buy_sound(run, inputs, client, item, ledger, path)
-        charged += dollars
-        bought_any = True
-        bought = ledger.of(item.name)
-        rows.append(_row(inputs, item, SoundOutcome.GENERATED, bought.seconds if bought else None))
+        ledger, paid, row = _bought(run, inputs, client, item, ledger, path, held=held[item.name], covered=covered)
+        charged += paid
+        rows.append(row)
     run.progress(Stage.SCORE, done=len(planned), total=len(planned), unit=Unit.ASSET, label="score")
     if not planned:
         run.note("The project declares no score for this run, so there is nothing to generate.", level=Level.INFO)
     for item, row in zip(planned, rows, strict=True):
-        if row.outcome is SoundOutcome.PLANNED and not item.out.is_file():
+        # A run that bought said why an item it could not finish is missing, so only an unbought item is said here.
+        if row.outcome is SoundOutcome.PLANNED and not item.out.is_file() and not buying:
             run.found(
                 judge(
                     Code.SOUND_MISSING,
                     f"{_named(item)} is not bought yet, so the film plays silence where it would be. Buying it "
-                    f"with `decktalk score --spend` asks for {item.seconds:g} seconds of audio.",
+                    f"with `decktalk score --spend` asks for {_to_buy(ledger, item, replace=replace):g} seconds of "
+                    "audio.",
                     _missing(inputs, item),
                     stage=Stage.SCORE,
                 )
             )
-    if bought_any:
-        cost = cost.model_copy(update={"state": CostState.CHARGED, "dollars": round(charged, DOLLAR_DIGITS)})
+    cost = cost_of(inputs, charged, state=CostState.CHARGED) if buying else estimate
     return run.result(ScoreResult, spend=run.spend, items=tuple(rows), cost=cost)
 
 

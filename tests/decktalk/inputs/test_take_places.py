@@ -585,7 +585,7 @@ def test_voice_refuses_after_the_wait_naming_store_wait_seconds_and_never_speaks
     voicing.result(timeout=MEET)
 
 
-@pytest.mark.parametrize("lock", ["held-by-another", "free"])
+@pytest.mark.parametrize("lock", ["held-by-another", "not-held"])
 def test_a_cancel_during_the_wait_or_once_the_lock_is_won_never_speaks(
     tmp_path: Path, pool: ThreadPoolExecutor, lock: str
 ) -> None:

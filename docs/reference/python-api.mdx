@@ -47,7 +47,7 @@ Every other public type lives in the module that defines its kind:
 
 | Module | What it holds |
 |---|---|
-| `decktalk.results` | Every result and every row a result carries, with `BillingBasis`, `Layer`, `Scope`, `Outcome` and `ErrorInfo`. |
+| `decktalk.results` | Every result and every row a result carries, with `BillingBasis`, `Layer`, `Scope`, `Outcome`, `ErrorInfo`, `StageCost` and `UNPRICED`, the cost of a run that never opened. |
 | `decktalk.events` | Every event line, `AnyEvent`, `Level`, `Unit` and `Subscription`. |
 | `decktalk.findings` | The fix and location types: `Location`, `Fix`, `EditFix`, `Edit`, `CommandFix`, `Applicability` and `RaisedBy`. |
 | `decktalk.settings` | `Settings`, one `*Config` class per table, `ProviderTable` and `Layers`. |
@@ -288,7 +288,7 @@ its takes and its `[voice] id` therefore builds its real film on a machine that 
 | When | What the message says |
 |---|---|
 | A request that buys reached the gate and nothing approved it. | How much the run would spend. |
-| `max_cost` is set and the voice declares no bill, which only a voice a host registered itself can do. | That the cap would guard a made-up price. |
+| `max_cost` is set and a provider declares no bill, which only a voice or a sound provider a host registered itself can do. | That the cap would guard a made-up price. |
 | `max_cost` is set and no layer above the default states the rate the run buys at. | That the cap would guard a price nobody stated. |
 | The run's ceiling is over `max_cost`. | The ceiling, the cap, and the value that would let it through. |
 
@@ -304,9 +304,9 @@ try:
     result = project.narrate(spend=True, max_cost=0.01)
 except decktalk.ApprovalRequired as refused:
     print(refused)
-    # This run costs $0.14 for 476 characters at $0.30 per 1,000 characters.
-    # The most it can cost, $0.14, is over the $0.01 ceiling --max-cost set.
-    print(refused.hint)     # Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
+    # This run costs $0.15 for 476 characters at $0.30 per 1,000 characters.
+    # The most it can cost, $0.15, is over the $0.01 ceiling --max-cost set.
+    print(refused.hint)     # Raise the ceiling to --max-cost 0.15, or narrow the run with --section.
     print(refused.code)     # ErrorCode.APPROVAL
 ```
 
@@ -318,14 +318,15 @@ except decktalk.ApprovalRequired as refused:
 | `sections` | The sections this price covers, in script order. |
 | `characters` | How many characters of script this price is for. |
 | `seconds` | How many seconds of audio this price is for, which a per-second bill is priced on. |
-| `dollars` | The price at the stated rate. |
-| `ceiling_dollars` | The most this run can cost, which is what `max_cost` is compared against. |
+| `dollars` | The price at the stated rate, rounded up to the cent. |
+| `ceiling_dollars` | The most this run can cost, rounded up to the cent for each stage, which is what `max_cost` is compared against. |
 | `billing` | How the voice declares it bills: `BillingBasis.PER_CHARACTER`, `PER_SECOND`, `FREE` or `UNDECLARED`. A build's total that adds characters to seconds is `MIXED` and carries both rates. |
 | `dollars_per_1000_characters` | The rate a per-character bill was worked out at, in US dollars per 1,000 characters. |
 | `dollars_per_minute` | The rate a per-second bill was worked out at, in US dollars per minute of audio, which is the unit a sound's `dollars_per_minute` setting is typed in. |
 | `price_key` | The dotted key that states the rate, or `None` when the voice has no rate to state. |
 | `averaged` | True when the price is several rates together, as a score that buys music and effects at their own rates is, so the rate is what they average to and `price_key` names the one least surely stated. |
 | `price_layer` | Which layer set that rate. `Layer.DEFAULT` means nobody stated it. |
+| `stages` | One `StageCost` per stage that buys, in pipeline order, each with the same fields, its own `state` and the `stage` it prices. A charged cost counts only its charged rows. |
 
 Set the rate under the key `price_key` names, `[elevenlabs] dollars_per_1000_characters` for
 ElevenLabs, so that a ceiling guards a real number. A voice that declares itself free is never asked

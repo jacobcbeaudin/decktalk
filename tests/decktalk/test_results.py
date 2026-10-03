@@ -144,6 +144,61 @@ def test_the_committed_schemas_and_api_are_what_their_generator_writes(generator
     assert done.returncode == 0, done.stdout + done.stderr
 
 
+@pytest.mark.parametrize(
+    ("amounts", "cents"),
+    [
+        ([0.0117], 0.02),
+        ([0.03], 0.03),
+        ([0.07], 0.07),
+        ([0.0021, 0.1029], 0.11),
+        ([0.0149, 0.0149], 0.03),
+        ([], 0.0),
+        ([0.010000000000000002], 0.01),
+        ([10 * 0.07 / 60] * 6, 0.07),
+        ([-0.0], 0.0),
+    ],
+)
+def test_a_price_is_its_amounts_added_exactly_and_rounded_up_to_the_cent(amounts: list[float], cents: float) -> None:
+    """Each amount is the decimal it prints as, the sum is settled to the nanodollar, then rounded up to the cent."""
+    stated = results.up_to_the_cent(amounts)
+    assert stated == cents
+    assert money_of(stated) == money_of(cents)
+
+
+def money_of(dollars: float) -> str:
+    """How a price is written, which tells $0.00 from $-0.00."""
+    return results.money(dollars)
+
+
+def test_the_cost_of_a_rebuild_that_was_never_priced_is_unpriced() -> None:
+    """A run that never opened bought nothing, on a bill nobody declared, at a rate nobody stated."""
+    assert results.UNPRICED.buys is False
+    assert results.UNPRICED.billing is results.BillingBasis.UNDECLARED
+    assert results.UNPRICED.price_layer is results.Layer.DEFAULT
+    assert results.UNPRICED.sentence == "This run buys nothing."
+
+
+def test_a_stage_cost_dumps_its_stage_after_the_shared_fields() -> None:
+    """A row reads as the price it is, with the stage it prices last, and a cost's rows come after its own fields."""
+    cost = a_cost(0.14, 0.14)
+    dumped = cost.model_dump(mode="json")
+    assert list(dumped)[-1] == "stages"
+    (row,) = dumped["stages"]
+    assert list(row)[-1] == "stage"
+    assert row["stage"] == "narrate"
+    assert {key: value for key, value in row.items() if key != "stage"} == {
+        key: value for key, value in dumped.items() if key != "stages"
+    }
+
+
+def test_every_cost_field_is_required() -> None:
+    """A reader meets every key of a price, so none of them is left out of the JSON when it is a default."""
+    assert set(results.Cost.model_json_schema()["required"]) == set(results.Cost.model_fields)
+    assert "stages" in results.Cost.model_fields
+    assert set(results.StageCost.model_json_schema()["required"]) == set(results.StageCost.model_fields)
+    assert "stage" in results.StageCost.model_fields
+
+
 def test_a_price_that_is_certain_is_stated_once() -> None:
     assert a_cost(0.14, 0.14).sentence == "This run costs $0.14 for 466 characters at $0.30 per 1,000 characters."
 

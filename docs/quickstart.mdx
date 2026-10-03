@@ -379,14 +379,31 @@ film.
       "sections": [1, 2, 3],
       "characters": 476,
       "seconds": 39.9,
-      "dollars": 0.14,
-      "ceiling_dollars": 0.14,
+      "dollars": 0.15,
+      "ceiling_dollars": 0.15,
       "billing": "per_character",
       "dollars_per_1000_characters": 0.3,
       "dollars_per_minute": 0.0,
       "price_key": "elevenlabs.dollars_per_1000_characters",
       "averaged": false,
-      "price_layer": "project"
+      "price_layer": "project",
+      "stages": [
+        {
+          "state": "estimate",
+          "sections": [1, 2, 3],
+          "characters": 476,
+          "seconds": 39.9,
+          "dollars": 0.15,
+          "ceiling_dollars": 0.15,
+          "billing": "per_character",
+          "dollars_per_1000_characters": 0.3,
+          "dollars_per_minute": 0.0,
+          "price_key": "elevenlabs.dollars_per_1000_characters",
+          "averaged": false,
+          "price_layer": "project",
+          "stage": "narrate"
+        }
+      ]
     }
     ```
 
@@ -427,8 +444,8 @@ film.
     {/* sample: decktalk build --spend --max-cost 0.05, on the starter with [voice] id set and no API key, which exits 2 before any request */}
     ```text
     run d93b083d90d5, events build/events/d93b083d90d5.jsonl
-    error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.14, is over the $0.05 ceiling --max-cost set.
-      hint: Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
+    error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.15, is over the $0.05 ceiling --max-cost set.
+      hint: Raise the ceiling to --max-cost 0.15, or narrow the run with --section.
       docs: https://docs.decktalk.ai/reference/errors/APPROVAL
     ```
 
@@ -438,7 +455,7 @@ film.
 
     {/* sample: decktalk build --no-input, on the starter with [voice] id set and no API key, which exits 2 */}
     ```text
-    error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
+    error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
       hint: Run decktalk build --spend to approve that spend, or decktalk build --no-spend to play a placeholder wherever a take is missing and silence where a sound is unbought.
       docs: https://docs.decktalk.ai/reference/errors/APPROVAL
     ```

@@ -58,6 +58,7 @@ from decktalk.errors import ErrorCode
 from decktalk.findings import Applicability, Code, RaisedBy
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
+    BillingBasis,
     CostState,
     Layer,
     Nature,
@@ -120,6 +121,7 @@ WORD_ENUMS: tuple[type[Enum], ...] = (
     SoundKind,
     SoundOutcome,
     CostState,
+    BillingBasis,
     Substitute,
     TakeOutcome,
     TakeState,

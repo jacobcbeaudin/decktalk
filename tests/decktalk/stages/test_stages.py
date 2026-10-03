@@ -14,11 +14,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from decktalk.artifacts import TakeInputs
-from decktalk.results import Layer
-from decktalk.stages import dollars_for, price_layer, rate_of, selects, voice_model
+from decktalk.stages import selects, voice_model
 from decktalk.stages.narrate.plan import take_identity
 from support.paths import DATA
 from support.projects import MINIMAL_TOML, load_project
@@ -78,16 +75,8 @@ def test_a_voice_with_no_table_is_sent_no_vendors_model_and_no_vendors_fields(tm
     project = load_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "house"\n', environ={})
     assert voice_model(project) == ""
     assert take_identity(project) == {"speed": 1.0}
-    assert rate_of(project) == 0.0
-    assert price_layer(project) is Layer.DEFAULT
 
 
 def test_the_model_is_the_one_the_providers_own_table_names(tmp_path: Path) -> None:
     project = load_project(tmp_path, MINIMAL_TOML + '\n[elevenlabs]\nmodel = "eleven_turbo_v2_5"\n', environ={})
     assert voice_model(project) == "eleven_turbo_v2_5"
-
-
-def test_the_rate_is_the_one_the_providers_own_table_states(tmp_path: Path) -> None:
-    project = load_project(tmp_path, MINIMAL_TOML + "\n[elevenlabs]\ndollars_per_1000_characters = 0.3\n", environ={})
-    assert dollars_for(2000, project) == pytest.approx(0.6)
-    assert price_layer(project) is Layer.PROJECT

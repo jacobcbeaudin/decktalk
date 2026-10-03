@@ -9,7 +9,8 @@ from decktalk.events import TakeCharged
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.media import audio
-from decktalk.speech import SpeechRequest, canonical_text
+from decktalk.speech import canonical_text
+from decktalk.stages.cost import Buy
 from decktalk.stages.narrate.plan import placeholder_inputs
 from decktalk.stages.narrate.takes import (
     PLACEHOLDER_CLOSE_SECONDS,
@@ -22,7 +23,7 @@ from decktalk.stages.narrate.takes import (
 from support.runs import Watched
 from support.takes import TAKE_SUFFIX
 
-from .conftest import VOICE_ID, a_paid_take
+from .conftest import a_paid_take
 
 
 def test_estimated_words_space_the_section_evenly_and_drop_its_punctuation() -> None:
@@ -86,8 +87,12 @@ def test_a_placeholder_take_closes_on_silence_so_its_sound_end_can_be_read(
 def test_a_voiced_take_is_charged_on_the_stream_once(inputs: Inputs, watched: Watched) -> None:
     """The line a host's ledger reads carries the section, the take, its characters and its price."""
     (section,) = [s for s in inputs.spoken() if s.number == 1]
-    request = SpeechRequest(pieces=section.pieces, voice_id=VOICE_ID, model="m")
-    charge_take(inputs, watched.run, section, "00000000000000af", request)
+    buy = Buy(
+        characters=len(canonical_text(section.pieces)),
+        seconds=section.estimated_seconds(inputs.settings.narration),
+        sections=(1,),
+    )
+    charge_take(inputs, watched.run, section, "00000000000000af", buy)
     (charged,) = watched.of(TakeCharged)
     assert charged.section == 1
     assert charged.digest == "00000000000000af"

@@ -148,20 +148,19 @@
           "type": "integer"
         },
         "seconds": {
-          "default": 0.0,
           "description": "How many seconds of audio this price is for, which a per-second bill is priced on.",
           "minimum": 0,
           "title": "Seconds",
           "type": "number"
         },
         "dollars": {
-          "description": "The price at the stated rate, in US dollars.",
+          "description": "The price at the stated rate, in US dollars, rounded up to the cent.",
           "minimum": 0,
           "title": "Dollars",
           "type": "number"
         },
         "ceiling_dollars": {
-          "description": "The most this run can cost, in US dollars.",
+          "description": "The most this run can cost, in US dollars, rounded up to the cent for each stage, so it never sits below what the run can pay and may sit up to a cent per stage above it.",
           "minimum": 0,
           "title": "Ceiling Dollars",
           "type": "number"
@@ -177,7 +176,6 @@
           "type": "number"
         },
         "dollars_per_minute": {
-          "default": 0.0,
           "description": "The rate a per-second bill was worked out at, in US dollars per minute of audio.",
           "minimum": 0,
           "title": "Dollars Per Minute",
@@ -192,12 +190,10 @@
               "type": "null"
             }
           ],
-          "default": null,
           "description": "The dotted key that states the rate, or null when the voice declares none to state.",
           "title": "Price Key"
         },
         "averaged": {
-          "default": false,
           "description": "True when the price is several rates together, such as music and effects bought at their own, so the rate is what they average to and `price_key` names the one least surely stated.",
           "title": "Averaged",
           "type": "boolean"
@@ -205,17 +201,30 @@
         "price_layer": {
           "$ref": "#/$defs/Layer",
           "description": "Which layer set that rate, where default means nobody stated it."
+        },
+        "stages": {
+          "description": "One row per stage that buys, in pipeline order, each in its own state. A charged cost counts only its charged rows.",
+          "items": {
+            "$ref": "#/$defs/StageCost"
+          },
+          "title": "Stages",
+          "type": "array"
         }
       },
       "required": [
         "state",
         "sections",
         "characters",
+        "seconds",
         "dollars",
         "ceiling_dollars",
         "billing",
         "dollars_per_1000_characters",
-        "price_layer"
+        "dollars_per_minute",
+        "price_key",
+        "averaged",
+        "price_layer",
+        "stages"
       ],
       "title": "Cost",
       "type": "object"
@@ -1143,6 +1152,108 @@
       ],
       "title": "Stage",
       "type": "string"
+    },
+    "StageCost": {
+      "additionalProperties": false,
+      "description": "What one stage that buys costs, at its own provider's bill, in its own state: charged when the stage had leave\nto buy.",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/CostState",
+          "description": "Whether this is what the run would cost or what it did cost."
+        },
+        "sections": {
+          "description": "The sections this price covers, in script order.",
+          "items": {
+            "description": "The section this row is about, as the author numbered it.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": "Sections",
+          "type": "array"
+        },
+        "characters": {
+          "description": "How many characters of script this price is for.",
+          "minimum": 0,
+          "title": "Characters",
+          "type": "integer"
+        },
+        "seconds": {
+          "description": "How many seconds of audio this price is for, which a per-second bill is priced on.",
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        },
+        "dollars": {
+          "description": "The price at the stated rate, in US dollars, rounded up to the cent.",
+          "minimum": 0,
+          "title": "Dollars",
+          "type": "number"
+        },
+        "ceiling_dollars": {
+          "description": "The most this run can cost, in US dollars, rounded up to the cent for each stage, so it never sits below what the run can pay and may sit up to a cent per stage above it.",
+          "minimum": 0,
+          "title": "Ceiling Dollars",
+          "type": "number"
+        },
+        "billing": {
+          "$ref": "#/$defs/BillingBasis",
+          "description": "How the voice bills, which its adapter declares and the rate is per."
+        },
+        "dollars_per_1000_characters": {
+          "description": "The rate a per-character bill was worked out at, in US dollars per 1,000 characters.",
+          "minimum": 0,
+          "title": "Dollars Per 1000 Characters",
+          "type": "number"
+        },
+        "dollars_per_minute": {
+          "description": "The rate a per-second bill was worked out at, in US dollars per minute of audio.",
+          "minimum": 0,
+          "title": "Dollars Per Minute",
+          "type": "number"
+        },
+        "price_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The dotted key that states the rate, or null when the voice declares none to state.",
+          "title": "Price Key"
+        },
+        "averaged": {
+          "description": "True when the price is several rates together, such as music and effects bought at their own, so the rate is what they average to and `price_key` names the one least surely stated.",
+          "title": "Averaged",
+          "type": "boolean"
+        },
+        "price_layer": {
+          "$ref": "#/$defs/Layer",
+          "description": "Which layer set that rate, where default means nobody stated it."
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage",
+          "description": "The stage this row is about."
+        }
+      },
+      "required": [
+        "state",
+        "sections",
+        "characters",
+        "seconds",
+        "dollars",
+        "ceiling_dollars",
+        "billing",
+        "dollars_per_1000_characters",
+        "dollars_per_minute",
+        "price_key",
+        "averaged",
+        "price_layer",
+        "stage"
+      ],
+      "title": "StageCost",
+      "type": "object"
     },
     "StageDone": {
       "additionalProperties": false,

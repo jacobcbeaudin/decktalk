@@ -51,9 +51,10 @@ from decktalk.inputs.script import ScriptSection
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Cost, CostState, NarrateResult, SectionTake, TakeOutcome, Word
-from decktalk.speech import SpeechProvider, is_free, output_of, start_hint
+from decktalk.results import Cost, NarrateResult, SectionTake, TakeOutcome, Word
+from decktalk.speech import SpeechProvider, output_of, start_hint
 from decktalk.stages import selects, voice_model
+from decktalk.stages.cost import is_free
 from decktalk.stages.narrate.plan import (
     NO_VOICE_NOTE,
     VOICE_ID_VARIABLE,
@@ -114,7 +115,7 @@ def narrate(
     """
     targets = _targets(inputs, only)
     model = voice_model(inputs)
-    free = is_free(inputs.settings.voice.provider)
+    free = is_free(inputs)
     # A take is made again only when the run was told to replace it. `force` never feeds this, because
     # it rebuilds what DeckTalk makes itself, and a voice's take is not.
     states = take_states(inputs, targets, replace_voiced=replace_voiced)
@@ -158,7 +159,7 @@ def narrate(
         NarrateResult,
         spend=run.spend,
         sections=tuple(made),
-        cost=_charged(plan.cost, made) if plan.voiced else plan.cost,
+        cost=states.charged(plan, made) if plan.voiced else plan.cost,
         takes=inputs.relative(inputs.workspace.takes_path),
     )
 
@@ -185,7 +186,7 @@ def _take_missing(
     provider = inputs.settings.voice.provider
     if unreached:
         action = f"{start_hint(provider)}, then run decktalk narrate --section {number}."
-    elif is_free(provider):
+    elif is_free(inputs):
         # A free voice is called whenever a voice is named, so a free section plays a placeholder only for want of one.
         action = f"Name the voice, then run decktalk narrate --section {number} to make its take for nothing."
     else:
@@ -383,8 +384,8 @@ def _buy(
     down: threading.Event | None,
 ) -> tuple[Take, TakeOutcome]:
     """Voice one section's take through the take places, or play the copy another run voiced meanwhile."""
-    request = plan.request
-    if provider is None or request is None:
+    request, buy = plan.request, plan.buy
+    if provider is None or request is None or buy is None:
         raise InputError(
             f"section {plan.section.number} would be voiced and this run has no request for it.",
             hint="Run `decktalk narrate` again, or run with --no-spend.",
@@ -396,7 +397,7 @@ def _buy(
         return voice.speak(ask)
 
     def charge() -> None:
-        charge_take(inputs, run, plan.section, digest, ask)
+        charge_take(inputs, run, plan.section, digest, buy)
 
     try:
         outcome = inputs.take_places.voice(
@@ -415,7 +416,7 @@ def _stand_in(inputs: Inputs, run: Run, plan: TakePlan, chapter: str) -> tuple[T
     digest = placeholder_inputs(inputs, plan.section).digest
     held = inputs.take_places.find(digest).held
     outcome = TakeOutcome.KEPT if held else TakeOutcome.PLACEHOLDER
-    stand_in = replace(plan, outcome=outcome, digest=digest, request=None)
+    stand_in = replace(plan, outcome=outcome, digest=digest, request=None, buy=None)
     row, _kept = _one_take(inputs, run, stand_in, chapter, None, None)
     return row, TakeOutcome.PLACEHOLDER
 
@@ -449,12 +450,6 @@ def _note_what_is_missing(inputs: Inputs, run: Run, index: Takes) -> None:
             f"Section(s) {missing} have no take yet, so the narration covers the rest alone.",
             level=Level.WARNING,
         )
-
-
-def _charged(estimate: Cost, made: list[SectionTake]) -> Cost:
-    """The price the run really paid, which is the estimate once the requests have been sent."""
-    voiced = tuple(row.section for row in made if row.outcome is TakeOutcome.VOICED)
-    return estimate.model_copy(update={"state": CostState.CHARGED, "sections": voiced})
 
 
 __all__ = [

@@ -19,6 +19,7 @@ from decktalk.findings import (
 from decktalk.machine.run import Run
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import BillingBasis, Layer, StatusResult
+from decktalk.stages.cost import total
 from support.costs import a_cost
 from support.runs import a_machine
 
@@ -266,13 +267,6 @@ def test_a_run_that_may_not_spend_refuses_a_price_of_zero_from_a_voice_that_bill
         run.approve(a_cost(0.0, 0.0))
 
 
-def test_free_is_what_the_voice_declares_and_never_a_rate_of_zero() -> None:
-    """A zero rate on a voice that bills is somebody's statement about their plan, stated or not."""
-    assert not a_cost(0.0, 0.0, layer=Layer.DEFAULT).model_copy(update={"dollars_per_1000_characters": 0.0}).free
-    assert not a_cost(0.0, 0.0).model_copy(update={"dollars_per_1000_characters": 0.0}).free
-    assert a_cost(0.0, 0.0, billing=BillingBasis.FREE, layer=Layer.DEFAULT).free
-
-
 def test_a_cap_lets_a_free_voice_through_with_no_rate_stated(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     free = a_cost(0.0, 0.0, billing=BillingBasis.FREE, layer=Layer.DEFAULT)
@@ -287,6 +281,16 @@ def test_a_cap_is_refused_for_a_voice_that_declares_no_bill_with_what_to_declare
         run.approve(undeclared)
     assert "declares no bill" in str(refused.value)
     assert "per character, per second or free" in (refused.value.hint or "")
+
+
+def test_a_cap_over_an_undeclared_sound_beside_a_paid_voice_names_the_scores_provider(tmp_path: Path) -> None:
+    """The refusal names the stage whose provider declares no bill, never the voice that declares one."""
+    here = a_machine(tmp_path)
+    undeclared = a_cost(0.0, 0.0, billing=BillingBasis.UNDECLARED, stage=Stage.SCORE)
+    whole = total([a_cost(0.12, 0.12), undeclared])
+    with here._run(spend=True, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
+        run.approve_whole(whole)
+    assert "the score's provider declares no bill" in str(refused.value)
 
 
 def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_path: Path) -> None:
