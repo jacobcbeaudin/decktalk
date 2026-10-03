@@ -6,9 +6,8 @@
 Every field's sentence, type, range and default come from the `Field` that declares it, so the
 published contract cannot drift from the code. Edit `src/decktalk/results.py`, then run this.
 
-The `v1` in the path is the version of the schemas layout rather than of a result, which carries its
-own `schema` number inside every payload. A result whose shape changes says so in that number, and
-the directory moves only when the whole published layout does.
+The `v1` in the path is the `schema` number every result carries, read from `SCHEMA`, so a reader
+that sees `schema: 1` in a payload opens `schemas/v1` and the two can never disagree.
 """
 
 from __future__ import annotations
@@ -19,11 +18,11 @@ from pathlib import Path
 from typing import Any
 
 import generated
-from decktalk.results import RESULTS
+from decktalk.results import RESULTS, SCHEMA
 
 ROOT = Path(__file__).resolve().parent.parent
 
-TARGET = ROOT / "schemas" / "v1" / "results"
+TARGET = ROOT / "schemas" / f"v{SCHEMA}" / "results"
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
 

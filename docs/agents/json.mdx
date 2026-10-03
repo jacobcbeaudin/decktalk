@@ -26,7 +26,7 @@ Every result carries all four.
 |---|---|---|
 | `schema` | integer | The shape version of the object, always `2`. It changes only when the shape changes, and it is not the product version. Check it before reading anything else. |
 | `ok` | boolean | True when the command ran and judged nothing that reaches the threshold `--fail-on` and `--allow` set, so it is true exactly when the command exits 0. |
-| `findings` | array | Every judgement this call made, certain first. Empty when it judged nothing. |
+| `findings` | array | Every judgement this call made, in the order it made them, which is the order the `finding` events streamed. Empty when it judged nothing. Read `certainty` to tell the ones that fail the run from the rest. |
 | `error` | object or null | Filled only when the command could not run at all, and null otherwise. |
 
 ## The two declared fields
@@ -50,7 +50,7 @@ refused before it reached its own implementation opened no run and wrote no file
 ## The one exemption
 
 `decktalk schema` prints the contract document itself with no reserved keys around it. A JSON Schema
-document inside a wrapper is not that document, and a key called `schema` set to `2` inside a
+document inside a wrapper is not that document, and a key called `schema` set to `1` inside a
 document about schemas is unreadable. Every other command under `--json` prints one flat object.
 
 ```console
@@ -68,7 +68,7 @@ decktalk schema project     # the shape of cues.json
 
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
@@ -127,7 +127,7 @@ cost, so it is the one call an agent makes to learn the price of a run.
 
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
@@ -170,7 +170,7 @@ judgements about the project rather than a reason the command could not run.
 
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": false,
   "findings": [
     {
@@ -237,7 +237,7 @@ the script does not speak, cut to the keys a build adds.
 
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": false,
   "error": null,
   "stages": [
@@ -271,7 +271,7 @@ command opened no run and wrote nothing.
 
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": false,
   "findings": [],
   "error": {
@@ -294,7 +294,7 @@ decktalk --json check --nope
 
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": false,
   "findings": [],
   "error": {

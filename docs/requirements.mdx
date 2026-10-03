@@ -304,7 +304,10 @@ plan charges per thousand characters. Its default is `0.0`, because DeckTalk doe
 and will not invent it. Each voice declares how it bills, per character, per second of audio, or
 free, and the key its rate is set under, and the price is worked out the way it declares.
 
-`decktalk check` prices a voiced run without calling anything, and its result carries a `Spend`.
+`decktalk check` prices the narration of a voiced run without calling anything, and its result
+carries a `Spend`. It leaves the soundscape out, which `decktalk soundscape --no-spend` prices. A
+build asks about both at once: the price it shows before it buys is its takes and its sounds added
+together, the same total its result reports.
 
 ```console
 decktalk check --json
@@ -362,7 +365,10 @@ apart.
 
 `--max-cost N` is compared against `ceiling_dollars` and never against `dollars`, because credits are
 consumed one request at a time and a cap that claimed to stop a run halfway would be a lie. It is
-checked before the first paid call, so a run it refuses has bought nothing.
+checked before the first paid call, against the whole run: a build adds its takes and its sounds
+together first, so a run it refuses has bought nothing. Each purchase is checked again as it is
+made, against what the run already approved, so a stage that asks for more than the build was
+priced at is still refused, and the refusal says that what the run bought before it is kept.
 
 ```text
 error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.14, is over the $0.05 ceiling --max-cost set.

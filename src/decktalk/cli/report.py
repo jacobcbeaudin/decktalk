@@ -77,7 +77,9 @@ def status(ctx: Context, set_: Overrides = None) -> StatusResult:
         return project.status(cancel=session.cancel)
 
 
-@command(group=Group.PROJECT, epilog="Judges the written files and the pages, and prices what a voiced build costs.")
+@command(
+    group=Group.PROJECT, epilog="Judges the written files and the pages, and prices the narration a voiced build buys."
+)
 def check(
     ctx: Context,
     paths: Annotated[

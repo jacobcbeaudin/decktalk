@@ -409,6 +409,13 @@ def test_the_app_is_the_surface_table_command_for_command_and_result_for_result(
     assert published == {row.command: row.result and catalog.NAMES[row.result] for row in SURFACE}
 
 
+def test_the_schema_number_is_the_folder_the_schemas_are_published_in():
+    """A reader that sees `schema: N` opens `schemas/vN`, so the number and the folder are one fact."""
+    folders = sorted(path.name for path in (REPO / "schemas").iterdir() if path.is_dir())
+    assert folders == [f"v{SCHEMA}"]
+    assert SCHEMAS.parent.name == f"v{SCHEMA}"
+
+
 # ---- what every result promises a reader -------------------------------------------------
 
 

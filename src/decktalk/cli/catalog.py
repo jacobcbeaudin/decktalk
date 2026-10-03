@@ -38,7 +38,7 @@ SETTINGS_KEYSPACE = "settings"
 """What the `--set` parameter points a reader at, which is the key space rather than a copy of it."""
 
 EXITS: tuple[tuple[int, str], ...] = (
-    (0, "The command ran and found nothing."),
+    (0, "The command ran and found nothing at or above the threshold --fail-on set."),
     (1, "The command ran and found something at or above the threshold --fail-on set."),
     (2, "The command line was refused, which is USAGE or APPROVAL."),
     (3, "The command could not run, which is every other error code."),

@@ -54,7 +54,7 @@ second as an array of objects.
 |---|---|
 | `decktalk doctor` | Whether this machine has Chromium, ffmpeg, ffprobe and KaTeX, and whether a voice key is set. |
 | `decktalk status` | What is written, what is built and what is stale in this project. |
-| `decktalk check` | Whether `script.md`, `cues.json` and the pages hold together, and what a voiced run would cost. |
+| `decktalk check` | Whether `script.md`, `cues.json` and the pages hold together, and what the narration of a voiced run would cost. |
 
 None of the three produces a film and none of them spends. `decktalk check --no-pages` goes further
 and opens no browser at all, which makes it the one to run on a machine with no Chromium and inside a
@@ -235,7 +235,7 @@ builds with no flag and no key.
 | No spending at all | `--no-spend`, which plays every take on disk and a placeholder with a real word clock wherever a take is missing |
 | Spend without being asked | `--spend` |
 | Spend up to a ceiling | `--max-cost N`, which refuses before the first call when the most the run could cost is over N US dollars |
-| Know the price first | `decktalk check`, which prices the run and buys nothing |
+| Know the price first | `decktalk check`, which prices the narration and buys nothing, and `decktalk soundscape --no-spend` for the sound |
 
 `--no-input` never prompts. It takes the safe default, or it refuses and names the flag that would
 have answered, which is what makes a non-interactive run deterministic.
@@ -483,7 +483,7 @@ must stay under half a second. `motion.scale` multiplies every declared length, 
 is what pushes a deck that was fine over the ceiling. `decktalk schema page` prints every attribute
 with its range.
 
-**`CUT_SPEECH` and `CUT_POP`** are about the seams rather than the reveals. A cut that slices a word
+**`CUT_SPEECH` and `CUT_POP`** are about the cuts rather than the reveals. A cut that slices a word
 means the section's narration did not have room to finish, and `[narration] tail_min_seconds` is the
 silence kept after the last word of a section so that a cut breathes.
 `verify.cut_max_dbfs` and `verify.cut_window_seconds` are how quiet, and for how long, a cut has to
@@ -647,7 +647,7 @@ pause. A `[beat]` is a dash the voice reads on any model, so a beat alone never 
 |---|---|---|
 | [TAKE_MISSING](/reference/findings/TAKE_MISSING) | uncertain | Run the command the message names, `decktalk narrate --section N --spend`, to buy the take. |
 
-A run without `--spend` plays every take on disk and puts a placeholder in each section whose take is
+A run with `--no-spend` plays every take on disk and puts a placeholder in each section whose take is
 missing, which is one `TAKE_MISSING` per section. It is uncertain because the film is still whole and
 only that section's timing is estimated, so a draft build exits 0. Pass `--fail-on any` to make a
 missing take fail a run.

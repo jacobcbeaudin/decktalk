@@ -488,6 +488,22 @@ def test_the_ceiling_is_compared_against_the_most_a_run_can_cost(tmp_path: Path)
     assert "0.90" in str(refused.value)
 
 
+def test_the_ceiling_caps_everything_one_run_approves_and_not_each_approval(tmp_path: Path) -> None:
+    """A build approves its takes and then its sounds, and `--max-cost` is the most the whole run may cost."""
+    here = a_machine(tmp_path)
+    sounds = a_spend(0.9, 0.9, billing=Billing.PER_SECOND)
+    with here._run(spend=True, max_cost=1.0) as run:
+        run.approve(a_spend(0.9, 0.9))
+        with pytest.raises(ApprovalRequired) as refused:
+            run.approve(sounds)
+    said = str(refused.value)
+    assert said.startswith(sounds.sentence)
+    assert "$1.80" in said and "$1.00" in said, said
+    assert "kept" in said, "a run refused partway says what it already bought stays"
+    with here._run(spend=True, max_cost=1.0) as again:
+        assert again.approve(sounds) == sounds, "the cap is per run, so the next run starts from nothing"
+
+
 def test_a_cap_is_refused_while_nobody_has_stated_the_price(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     with here._run(spend=True, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:

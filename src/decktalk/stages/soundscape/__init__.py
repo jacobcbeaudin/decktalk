@@ -52,6 +52,7 @@ from decktalk.media import audio, ffmpeg
 from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Stage
 from decktalk.results import (
+    DOLLAR_DIGITS,
     Billing,
     Layer,
     SoundItem,
@@ -63,7 +64,7 @@ from decktalk.results import (
 )
 from decktalk.settings import AmbienceConfig, EffectsConfig, MusicConfig
 from decktalk.speech.sound import SOUND_DECLARED, SoundContext, SoundProvider, endpoint
-from decktalk.stages import DOLLAR_DIGITS, selects
+from decktalk.stages import selects
 from decktalk.stages.soundscape.ledger import (
     LEDGER_FILE,
     UNFINISHED_DIGEST,

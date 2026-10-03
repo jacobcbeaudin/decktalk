@@ -338,7 +338,7 @@ class Session:
         self.out.file.flush()
 
     def exit_code(self, result: Result) -> int:
-        """0 found nothing, 1 found something at the threshold, and the code's own when it could not run."""
+        """0 found nothing at the threshold, 1 found something at it, and the code's own when it could not run."""
         if result.error is not None:
             return result.error.code.exit_code
         return FOUND_SOMETHING if self.threshold.fails(result.findings) else 0

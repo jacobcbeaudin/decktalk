@@ -69,8 +69,9 @@ EPILOG = """\
 Every command prints one JSON object with --json, carrying its own fields
 beside schema, ok, run, findings and error. Run decktalk schema for the whole
 contract in one call, and decktalk config explain KEY for a setting's
-sentence, range and default. Exit codes: 0 found nothing, 1 found something,
-2 refused the command line, 3 could not run, 130 interrupted.
+sentence, range and default. Exit codes: 0 found nothing at the --fail-on
+threshold, 1 found something at it, 2 refused the command line, 3 could not
+run, 130 interrupted.
 Docs: https://docs.decktalk.ai/reference/cli"""
 
 SHARED_LINE = "-p, --json, --events, --color, --no-input, -v and -q work on every command."

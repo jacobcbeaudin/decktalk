@@ -17,9 +17,9 @@ price before they start.
 - `soundscape` generates the music, the ambience bed and the effects the project describes, and is
   billed by the second of audio. It runs after `record`, so a run that stops at the recorder never
   reaches it.
-- `decktalk check` prices a voiced run before anything is bought, the way the voice declares it
-  bills. ElevenLabs bills per character, so the price uses `[elevenlabs] price_per_1000_characters`
-  from `decktalk.toml` as what your own plan charges.
+- `decktalk check` prices the narration of a voiced run before anything is bought, the way the voice
+  declares it bills. ElevenLabs bills per character, so the price uses
+  `[elevenlabs] price_per_1000_characters` from `decktalk.toml` as what your own plan charges.
 - No run spends without being told to. On the command line that is `--spend`, and `--max-cost N`
   refuses the run before the first call if the most it could cost is over N US dollars. In the
   library it is `spend=True`, and `ApprovalRequired` is raised rather than money

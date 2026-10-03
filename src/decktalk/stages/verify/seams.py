@@ -149,10 +149,10 @@ def want_seams(inputs: Inputs, seams: list[Seam], wanted: Wanted) -> None:
 
 
 def seam_checks(inputs: Inputs, run: Run, film: Path, seams: list[Seam], decoded: Decoded) -> tuple[SeamCheck, ...]:
-    """One row per seamless cut, with how far the picture has drifted from its own clock.
+    """One row per seamless cut, and `CUT_POP` for each one whose picture visibly changes across it.
 
     The drift is the distance from the cut to the first frame of the incoming section that still
-    shows what the outgoing one ended on.
+    shows what the outgoing one ended on, which is how late a section that slipped arrived.
     """
     verify = inputs.settings.verify
     fps = inputs.settings.video.output_fps

@@ -376,8 +376,9 @@ class Project:
         findings reach `stop_on` stops the run, unless their code is in `allow`, and the result still
         comes back with its findings, its spend and the stage it stopped after in `stopped_at`. None
         as `stop_on` runs every stage whatever it finds. The film carries the soundscape unless
-        `skip` names that stage, which is the one knob for that decision. `spend` and `max_cost` mean
-        what they mean to `narrate` and `soundscape`. `replace_voiced` means what it means to
+        `skip` names that stage, which is the one knob for that decision. `spend` means what it means
+        to `narrate` and `soundscape`, and `max_cost` caps the takes and the sounds together, so a
+        build whose two prices pass it is refused before it buys anything. `replace_voiced` means what it means to
         `narrate` and `replace_score` means what it means to `soundscape`, so each buys again only
         what its own stage bought. `force` means what it means to `narrate` and `record`, and it also
         cuts and measures a film that nothing changed again. It never buys, so every paid take and
@@ -408,7 +409,7 @@ class Project:
         frames: bool = True,
         cancel: Cancel | None = None,
     ) -> CheckResult:
-        """Judge the script, the cue file and the pages before a build, and price what a build costs.
+        """Judge the script, the cue file and the pages before a build, and price the narration it would buy.
 
         `pages` set to false judges the written files with no browser at all and says which
         judgements it could not reach, so a new deck gets its first cue rows without a download and

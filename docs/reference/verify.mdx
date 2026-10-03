@@ -3,9 +3,10 @@ title: Verify
 description: What decktalk verify measures on the finished film, every column it prints, every finding it can raise, and the setting that moves each one.
 ---
 
-`decktalk verify` is the last stage and the only read-only one. It opens the finished mp4 and
-measures it against the clock the earlier stages promised it would keep. It writes nothing, it
-changes nothing, and it is the page to read when a number it printed is not the number you expected.
+`decktalk verify` is the last stage and the only one that makes no artifact. It opens the finished
+mp4 and measures it against the clock the earlier stages promised it would keep. It changes nothing
+a later run reads: the only files it touches are its own events file and the build lock it holds
+while it measures. This is the page to read when a number it printed is not the number you expected.
 
 Four things are measured. Every section must open on a real picture past its dip to black. The
 narration must be quiet in the window before each cut, so no cut lands on a word. A section that
@@ -106,7 +107,9 @@ against it.
 A section that sets `seamless = true` in `decktalk.toml` claims it opens on the picture the section
 before it ended on. `verify` compares the outgoing section's last whole frame with the incoming
 section's first, both taken outside any dip so that a fade through black is never read as a jump.
-Over `verify.cut_change_max_percent` of the frame changing is a visible seam.
+Over `verify.cut_change_max_percent` of the frame changing is a visible seam, and `verify` raises
+`CUT_POP` against it. A seam is only ever a seamless cut, so a section that does not set `seamless`
+has no row here and its cut is never judged for the picture.
 
 When the two do not match, the next three frames are read as well, because a picture that arrives a
 frame or two late is a section whose clock has slipped rather than a section showing something else.
@@ -341,7 +344,7 @@ of its own.
 
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,

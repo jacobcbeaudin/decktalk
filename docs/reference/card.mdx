@@ -138,8 +138,8 @@ decktalk schema page
 |---|---|---|---|
 | `narrate` | the script | `build/narrate/takes.json`, the take files and their words files, `build/narrate/narration.mp3` | The script becomes spoken takes with a word clock. |
 | `cue` | `build/narrate/takes.json` | `build/cue-times.json` | Each cue phrase becomes a second on its section clock. |
-| `record` | `build/cue-times.json` | `build/recordings/` | The pages are recorded against those seconds. |
-| `soundscape` | `build/narrate/takes.json` | `build/soundscape/` | The music, the ambience bed and the effects are generated. |
+| `record` | `build/narrate/takes.json`, `build/cue-times.json` | `build/recordings/` | The pages are recorded against those seconds. |
+| `soundscape` | `[soundscape]` in `decktalk.toml` | `build/soundscape/` | The music, the ambience bed and the effects are generated. |
 | `assemble` | the takes, the recordings and the soundscape | `build/sections/`, then `build/final/` | The parts are cut, mixed and encoded into one film. |
 | `verify` | `build/cue-times.json` and `build/final/` | nothing | The finished film is measured against the clock the earlier stages promised. |
 
@@ -167,7 +167,7 @@ Every one of them takes `--json`. Run `decktalk <command> --help` for the whole 
 | Command | What it does | Flags that matter |
 |---|---|---|
 | `decktalk status` | Report what is written, what is built and what is stale. | |
-| `decktalk check [PATH]...` | Judge `script.md`, `cues.json` and the pages before a build, and price what a voiced build would cost. | `--no-pages`, `--no-frames`, `--fix`, `--no-fix`, `--section N` |
+| `decktalk check [PATH]...` | Judge `script.md`, `cues.json` and the pages before a build, and price the narration a voiced build would buy. | `--no-pages`, `--no-frames`, `--fix`, `--no-fix`, `--section N` |
 | `decktalk words` | Print every spoken word with its start and end. | `--section N` |
 | `decktalk storyboard` | Freeze every slide at every cue onto one page. | `--section N`, `--slide ID`, `--after CUE`, `--before CUE`, `--at SECONDS` |
 | `decktalk serve` | Serve the project on a local origin over http. | `--host HOST`, `--port PORT` |
@@ -272,9 +272,9 @@ Every command's `--json` is one flat object. There is no wrapper, no `command` k
 
 | Key | Meaning |
 |---|---|
-| `schema` | The shape version, always `2`. |
+| `schema` | The shape version, always `1`. |
 | `ok` | True when the command ran and judged nothing that reaches the threshold `--fail-on` and `--allow` set, so it is true exactly when the command exits 0. |
-| `findings` | Every judgement, certain first. |
+| `findings` | Every judgement, in the order it was made. |
 | `error` | Filled only when the command could not run, and null otherwise. |
 | `run` | The run id, on every result whose command opens a run. |
 | `written` | Every file written, project-relative, on every result that writes. |
@@ -284,7 +284,7 @@ around it, because a JSON Schema document inside a wrapper is not that document.
 
 A finding carries `code`, `message`, `certainty`, `location`, `stage`, `fix` and `url`. `certainty`
 is `certain` or `uncertain`. `location` carries a required `where` naming the object judged, plus
-`file`, `line`, `section` and `cue`. `fix` is one of `edit`, `setting`, `command` or `runtime`, each with a
+`file`, `line`, `section` and `cue`. `fix` is one of `edit`, `setting` or `command`, each with a
 `title` and an `applicability` of `safe`, `unsafe` or `display`. In the library
 `Project.apply(finding)` applies one.
 
@@ -301,7 +301,7 @@ Whole contract: [The JSON contract](/agents/json).
 
 | Exit | Meaning |
 |---|---|
-| 0 | The command ran and found nothing. |
+| 0 | The command ran and found nothing at or above the threshold. |
 | 1 | The command ran and found something at or above the threshold `--fail-on` set. |
 | 2 | The command line was refused, which is `USAGE` or `APPROVAL`. |
 | 3 | The command could not run, which is every other error code. |

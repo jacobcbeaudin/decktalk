@@ -36,8 +36,9 @@ from decktalk.events import (
 )
 from decktalk.findings import Code, Finding, Location
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Layer, SoundKind
+from decktalk.results import SCHEMA, Layer, SoundKind
 from decktalk.secret import Secret
+from support.paths import REPO
 from support.spends import a_spend
 
 NAMES = (
@@ -421,3 +422,14 @@ def test_a_line_that_fails_to_build_takes_no_number() -> None:
         stream.emit("r1", Log, level="loud", message="refused")
     stream.emit("r1", Log, level=Level.INFO, message="two")
     assert [line.seq for line in seen] == [0, 1]
+
+
+def test_the_events_file_schema_is_committed_under_the_schema_folder_and_names_every_event() -> None:
+    """The contract promises the events file, so its schema is published beside the result schemas."""
+    committed = json.loads((REPO / "schemas" / f"v{SCHEMA}" / "events.json").read_text(encoding="utf-8"))
+    assert committed["$id"] == "events.json"
+    assert set(committed["$defs"]) >= {kind.__name__ for kind in EVENTS.values()}
+    assert set(committed["discriminator"]["mapping"]) == set(EVENTS)
+    assert {key: value for key, value in committed.items() if not key.startswith("$")} == {
+        key: value for key, value in TypeAdapter(Line).json_schema().items() if not key.startswith("$")
+    }

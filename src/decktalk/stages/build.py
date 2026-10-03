@@ -20,6 +20,8 @@ The stage is reported as kept, its findings are reported again, and `force` runs
 
 A run that may spend draws the storyboard before it narrates, because the contact sheet is the
 checkpoint a person reads before any credit is bought, and a run that buys nothing has nothing to check.
+A run with a ceiling is then priced whole, every stage that buys added together, so a build whose
+takes and sounds together pass `--max-cost` is refused before it buys anything.
 
 A stage whose findings reach the caller's threshold stops the run, and the run still returns its
 result. A finding is a judgement and not an error, so the stages that ran, the findings they made and
@@ -45,8 +47,8 @@ from decktalk.inputs import Inputs
 from decktalk.logs import cache_decision
 from decktalk.machine import Run, Threshold
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
-from decktalk.results import Billing, BuildResult, Layer, Result, Spend, SpendState, StageRun, counted
-from decktalk.stages import DOLLAR_DIGITS, assemble, cue, narrate, record, storyboard, verify
+from decktalk.results import DOLLAR_DIGITS, Billing, BuildResult, Layer, Result, Spend, SpendState, StageRun, counted
+from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.status import (
     BUILT,
@@ -150,6 +152,7 @@ def build(
         "strict": strict,
     }
     board = _storyboard(inputs, run, only=only)
+    _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
     kept = read_kept(inputs)
     fresh: dict[Stage, KeptStage] = {}
     rows: list[StageRun] = []
@@ -193,7 +196,7 @@ def build(
         threshold=threshold,
         stages=tuple(rows),
         spending=run.spend,
-        spend=_total(spends, inputs),
+        spend=total(spends) if spends else narrate.spend_of([], inputs, state=SpendState.ESTIMATE),
         film=film,
         storyboard=board,
         stopped_at=stopped_at,
@@ -339,6 +342,32 @@ def _skipped(run: Run, stage: Stage) -> StageRun:
     return StageRun(stage=stage, outcome=Outcome.SKIPPED, seconds=NOTHING)
 
 
+def _hold_to_ceiling(
+    inputs: Inputs,
+    run: Run,
+    plan: tuple[Stage, ...],
+    *,
+    only: Sequence[int] | None,
+    replace_voiced: bool,
+    replace_score: bool,
+) -> None:
+    """Refuse a run whose every stage that buys, added together, is over its ceiling, before any of them runs.
+
+    Each stage is priced from the plan the way it prices itself, so the cap is held against the whole
+    run before the first purchase rather than stage by stage as the run goes. A run with no ceiling,
+    or one that may not spend, is never priced here.
+    """
+    if not run.spend or run.max_cost is None:
+        return
+    spends: list[Spend] = []
+    if Stage.NARRATE in plan:
+        spends.append(narrate.price(inputs, only=only, replace_voiced=replace_voiced))
+    if Stage.SOUNDSCAPE in plan:
+        spends.append(soundscape_stage.price(inputs, only=only, replace_score=replace_score))
+    if spends:
+        run.approve_whole(total(spends))
+
+
 def _call(stage: Stage, run: Run, inputs: Inputs, taken: Mapping[str, object]) -> Result:
     """Hand one stage its inputs, its run and the options it declares, and nothing else."""
     return getattr(MODULES[stage], stage.value)(inputs, run, **taken)
@@ -377,8 +406,11 @@ def _stopped(
     return True
 
 
-def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
-    """What the whole run cost, which is every stage that priced anything added together.
+def total(spends: Sequence[Spend]) -> Spend:
+    """What the whole run costs, which is every stage that priced anything added together.
+
+    It is the one way a run's price is summed, so the price a build asks about before it buys and
+    the price its result reports after are the same sum of the same stages.
 
     The total is billed the way the stages that buy something at a price bill, so a free voice beside
     a paid soundscape leaves the sound's bill and rate to the total. When those are one bill, its rate
@@ -386,10 +418,10 @@ def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
     each rate and counts both the characters and the seconds, and the rate it names is the least
     surely stated, so a sentence never prices sound at the speech rate or speech at the sound one. A
     stage whose bill nobody declared makes the whole total undeclared, because no part of DeckTalk can
-    price it.
+    price it. A free voice beside a sound that buys nothing leaves the total free, so it is never asked
+    about, and a free voice beside a paid sound is billed as the sound and so is asked about. It sums
+    at least one price, because a run that priced nothing has no bill to name.
     """
-    if not spends:
-        return narrate.spend_of([], inputs, state=SpendState.ESTIMATE)
     buying = [spend for spend in spends if spend.buys] or list(spends)
     deciding = [spend for spend in buying if not spend.free] or buying
     bills = list(dict.fromkeys(spend.billing for spend in deciding))
@@ -415,4 +447,4 @@ def _total(spends: Sequence[Spend], inputs: Inputs) -> Spend:
     )
 
 
-__all__ = ["build"]
+__all__ = ["build", "total"]

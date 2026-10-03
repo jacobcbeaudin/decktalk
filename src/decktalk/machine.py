@@ -77,6 +77,7 @@ from decktalk.media.environment import child_environment, children_see, spending
 from decktalk.media.ffmpeg import installed_paths, using_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
+    DOLLAR_DIGITS,
     ApplyResult,
     Billing,
     DoctorResult,
@@ -288,6 +289,8 @@ class Run:
         self.cancel = cancel
         self.spend = spend
         self.max_cost = max_cost
+        # The most everything this run approved under `max_cost` can cost, which the cap is held against.
+        self.approved = 0.0
         self.root = root
         self.voices: Voices = machine.voices
         self.sounds: Sounds = machine.sounds
@@ -396,8 +399,11 @@ class Run:
         Every call to a provider passes through here, so no stage can spend without its caller's
         approval and no ceiling can be passed halfway. Spend gates money and nothing else, so a price
         whose provider declares it bills nothing passes whatever the run may spend, and is never asked
-        about. `--max-cost` is compared against the most the run can cost and never against the
-        estimate, because credits are consumed one request at a time.
+        about. `--max-cost` caps the whole run. A build holds its whole price against it first, through
+        `approve_whole`, and each approval here then adds the most it can cost to what this run already
+        approved, so a stage that asks for more than the build was priced at is refused before anything
+        in it is bought. The ceiling is summed and never the estimate, because credits are consumed one
+        request at a time. What the run bought before such a refusal stays bought and kept.
         """
         self.emit(SpendLine, spend=spend)
         if spend.free:
@@ -409,6 +415,22 @@ class Run:
             )
         if self.max_cost is None:
             return spend
+        self.approved = self._capped(spend, self.max_cost, already=self.approved)
+        return spend
+
+    def approve_whole(self, spend: Spend) -> None:
+        """Hold the whole run's price against `max_cost` once, before any stage buys anything.
+
+        A run that buys from more than one stage is refused here when their sum is over the cap, so
+        it buys nothing rather than buying its takes and being refused at its sounds. Nothing is
+        recorded as approved, because each stage still passes `approve` with its own price, and the
+        running total there refuses a stage that asks for more than this price allowed for.
+        """
+        if self.spend and self.max_cost is not None and spend.buys and not spend.free:
+            self._capped(spend, self.max_cost, already=0.0)
+
+    def _capped(self, spend: Spend, cap: float, *, already: float) -> float:
+        """The most the run can cost with `spend` added to what it `already` approved, refused over `cap`."""
         if spend.billing is Billing.UNDECLARED:
             raise ApprovalRequired(
                 "--max-cost was given and the voice declares no bill, so the cap would guard a made-up price.",
@@ -427,13 +449,24 @@ class Run:
                     "then run it again."
                 ),
             )
-        if spend.ceiling_dollars > self.max_cost:
+        most = round(already + spend.ceiling_dollars, DOLLAR_DIGITS)
+        if most > cap:
             raise ApprovalRequired(
-                f"{spend.sentence} The most it can cost, {money(spend.ceiling_dollars)}, is over the "
-                f"{money(self.max_cost)} ceiling --max-cost set.",
-                hint=f"Raise the ceiling to --max-cost {spend.ceiling_dollars:.2f}, or narrow the run with --section.",
+                f"{spend.sentence} {self._over(most, cap, already)}",
+                hint=f"Raise the ceiling to --max-cost {most:.2f}, or narrow the run with --section.",
             )
-        return spend
+        return most
+
+    @staticmethod
+    def _over(most: float, cap: float, already: float) -> str:
+        """Why the cap refused: the whole run's most against the cap, with what was bought before it kept."""
+        if not already:
+            return f"The most it can cost, {money(most)}, is over the {money(cap)} ceiling --max-cost set."
+        return (
+            f"With the {money(already)} this run already approved, the most it can cost is {money(most)}, "
+            f"which is over the {money(cap)} ceiling --max-cost set. What it bought before this is kept, and nothing "
+            "more is bought."
+        )
 
     # ---- the result ---------------------------------------------------------------------
 

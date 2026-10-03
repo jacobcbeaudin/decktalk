@@ -2,7 +2,7 @@
 
     decktalk init my-lesson          write a project that already builds
     decktalk build --no-spend        run every stage, a placeholder for each missing take
-    decktalk check --json            judge the inputs and price a voiced run
+    decktalk check --json            judge the inputs and price the narration
     decktalk schema                  read the whole instruction set in one call
 
 The command line is the instruction set. An agent runs `decktalk --help` for the tree, `decktalk

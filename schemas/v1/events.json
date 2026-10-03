@@ -1,0 +1,1594 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "events.json",
+  "$defs": {
+    "Applicability": {
+      "description": "How much a fix may be trusted, which is what decides whether `--fix` applies it.\n\nA safe fix cannot lose the author's work, an unsafe fix can, and a display fix is a change only\na person can make, so it is printed and never applied.",
+      "enum": [
+        "safe",
+        "unsafe",
+        "display"
+      ],
+      "title": "Applicability",
+      "type": "string"
+    },
+    "Billing": {
+      "description": "How a voice bills what it makes, which its adapter declares and every price is worked out by.\n\nA provider DeckTalk does not ship declares nothing, so its bill is `undeclared`: its price is\nnothing anybody stated, and a spend cap refuses to guard it. A build's total that adds a bill per\ncharacter to a bill per second is `mixed`, and carries the rate of each.",
+      "enum": [
+        "per_character",
+        "per_second",
+        "free",
+        "undeclared",
+        "mixed"
+      ],
+      "title": "Billing",
+      "type": "string"
+    },
+    "Certainty": {
+      "description": "Whether a finding is wrong for sure or only probably wrong.\n\nThe threshold a run fails on is `--fail-on`, which names a threshold and never a field value, so\nthese two words are read and never compared against a flag.",
+      "enum": [
+        "certain",
+        "uncertain"
+      ],
+      "title": "Certainty",
+      "type": "string"
+    },
+    "Code": {
+      "description": "Every judgement DeckTalk can make, with its sentence, its certainty and who raises it.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
+      "enum": [
+        "PAGE_UNKNOWN_ATTR",
+        "PAGE_BAD_VALUE",
+        "PAGE_MOMENT_UNKNOWN",
+        "PAGE_MOMENT_ORDER",
+        "PAGE_CUE_UNKNOWN",
+        "PAGE_NO_OWNER",
+        "PAGE_SCENE_EMPTY",
+        "PAGE_SLIDE_NO_ID",
+        "PAGE_SLIDE_DOUBLED",
+        "PAGE_SLIDE_UNUSED",
+        "PAGE_TEMPLATE_IGNORED",
+        "PAGE_WORDS_NOT_FOUND",
+        "PAGE_KATEX_MISSING",
+        "PAGE_KATEX_ERROR",
+        "PAGE_FREEZE_CUE_UNKNOWN",
+        "PAGE_RENDER_THREW",
+        "PAGE_ENTER_THREW",
+        "PAGE_SLIDE_HANDLER_THREW",
+        "PAGE_HANDLER_THREW",
+        "PAGE_WAIT_REJECTED",
+        "PAGE_WAIT_UNSETTLED",
+        "PAGE_CLASS_UNDESCRIBED",
+        "PAGE_CLASS_NOT_REDUCED",
+        "PAGE_SWAP_AMBIGUOUS",
+        "PAGE_PREVIEW_AMBIGUOUS",
+        "PAGE_APPEAR_TOO_LONG",
+        "PAGE_STAGGER_EMPTY",
+        "PAGE_MOTION_OVERRUN",
+        "PAGE_STAGGER_OVERRUN",
+        "PAGE_THIN_DRAW",
+        "PAGE_NO_DESCRIPTION",
+        "PAGE_SWAP_APART",
+        "PAGE_STALLED",
+        "PAGE_BLACK",
+        "PAGE_TRUNCATED",
+        "PAGE_CDN_ASSET",
+        "CUE_MISSING",
+        "CUE_UNKNOWN",
+        "CUE_UNRESOLVED",
+        "CUE_STALE",
+        "CUE_OFF",
+        "CUE_NO_ONSET",
+        "CUE_NO_CHANGE",
+        "CUE_THIN_CHANGE",
+        "CUE_OVERLAP",
+        "TAKE_PLACEHOLDER",
+        "TAKE_SPOKEN_SYMBOL",
+        "TAKE_PAUSE_DROPPED",
+        "TAKE_MISSING",
+        "CUT_SPEECH",
+        "CUT_POP",
+        "MIX_LOUDNESS",
+        "SOUND_MISSING",
+        "FILE_MISSING"
+      ],
+      "title": "Code",
+      "type": "string"
+    },
+    "CommandFix": {
+      "additionalProperties": false,
+      "description": "A fix that runs one of DeckTalk's own commands, spelled as the argv a person would type.",
+      "properties": {
+        "kind": {
+          "const": "command",
+          "default": "command",
+          "description": "The kind of fix, which is how a reader dispatches on it.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "description": "One sentence saying what applying this fix does.",
+          "title": "Title",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/Applicability",
+          "description": "Whether this fix may be applied without asking."
+        },
+        "command": {
+          "description": "The command to run, one argument per element, and always one of DeckTalk's own calls.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Command",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "applicability",
+        "command"
+      ],
+      "title": "CommandFix",
+      "type": "object"
+    },
+    "Edit": {
+      "additionalProperties": false,
+      "description": "One change to one file, named by exactly one locator so an agent can apply it without guessing.\n\nA pointer addresses a place in a JSON file, a key addresses a place in a TOML file, and a line\naddresses a place in any other text file.",
+      "properties": {
+        "file": {
+          "description": "The file this edit changes, project-relative.",
+          "format": "path",
+          "title": "File",
+          "type": "string"
+        },
+        "pointer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A JSON pointer into that file, or null.",
+          "title": "Pointer"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A dotted TOML key in that file, or null.",
+          "title": "Key"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A line number in that file, or null.",
+          "title": "Line"
+        },
+        "old": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What is there now, or null when the edit only adds.",
+          "title": "Old"
+        },
+        "new": {
+          "description": "What goes there instead, which is the empty string when the edit removes.",
+          "title": "New",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "new"
+      ],
+      "title": "Edit",
+      "type": "object"
+    },
+    "EditFix": {
+      "additionalProperties": false,
+      "description": "A fix that changes files, which is what scaffolds a missing cue row or repairs a phrase.",
+      "properties": {
+        "kind": {
+          "const": "edit",
+          "default": "edit",
+          "description": "The kind of fix, which is how a reader dispatches on it.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "description": "One sentence saying what applying this fix does.",
+          "title": "Title",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/Applicability",
+          "description": "Whether this fix may be applied without asking."
+        },
+        "edits": {
+          "description": "Every change this fix makes, applied together or not at all.",
+          "items": {
+            "$ref": "#/$defs/Edit"
+          },
+          "title": "Edits",
+          "type": "array"
+        }
+      },
+      "required": [
+        "title",
+        "applicability",
+        "edits"
+      ],
+      "title": "EditFix",
+      "type": "object"
+    },
+    "ErrorCode": {
+      "description": "Why DeckTalk could not run, with the sentence a reader meets and the exit code it takes.\n\nThe value is the code as JSON writes it and as the docs URL spells it. Each is a noun naming\nwhat is missing or wrong, never an imperative naming what the tool wishes the caller would do.",
+      "enum": [
+        "INPUT",
+        "NOT_BUILT",
+        "PROVIDER",
+        "TOOL",
+        "LOCKED",
+        "APPROVAL",
+        "CANCELLED",
+        "USAGE",
+        "INTERNAL"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
+    },
+    "ErrorInfo": {
+      "additionalProperties": false,
+      "description": "The `error` of a result: why the command could not run, and what would let it.\n\nIt is filled only when the command could not run at all, so a reader that finds it null knows\nthe command ran and that every judgement is in `findings`.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode",
+          "description": "The code a caller dispatches on, such as NOT_BUILT."
+        },
+        "message": {
+          "description": "One sentence saying what is wrong, with the measured detail in it.",
+          "title": "Message",
+          "type": "string"
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The whole command that would clear this, or null.",
+          "title": "Hint"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The file and line to open, or null."
+        },
+        "docs": {
+          "description": "The docs page for this code.",
+          "title": "Docs",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "docs"
+      ],
+      "title": "ErrorInfo",
+      "type": "object"
+    },
+    "Fetch": {
+      "additionalProperties": false,
+      "description": "A tool is being downloaded, which is the one moment a run stops for the network.",
+      "properties": {
+        "event": {
+          "const": "fetch",
+          "default": "fetch",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "tool": {
+          "description": "What is being fetched, such as ffmpeg or chromium.",
+          "title": "Tool",
+          "type": "string"
+        },
+        "bytes": {
+          "description": "How many bytes have arrived.",
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "total_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How large the download is, or null when unstated.",
+          "title": "Total Bytes"
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "tool",
+        "bytes"
+      ],
+      "title": "Fetch",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "One judgement, in the shape every renderer, every schema and every agent receives.\n\n`certainty` and `url` are the code's own and are written into the object rather than left for a\nreader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them\nout and the code fills them, and a value that disagrees with the code is refused. Both therefore\ncarry a declared default, which says in the signature and in the schema that a raiser names the\ncode and nothing else. Neither default is ever the value in force, because the code fills both\nbefore this model is built and refuses any finding whose code it does not know.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/Code",
+          "description": "The stable code a caller dispatches on, such as CUE_OFF."
+        },
+        "message": {
+          "description": "One sentence, with every measured number and its limit written into it.",
+          "title": "Message",
+          "type": "string"
+        },
+        "certainty": {
+          "$ref": "#/$defs/Certainty",
+          "default": "certain",
+          "description": "Whether this is wrong for sure or only probably wrong."
+        },
+        "location": {
+          "$ref": "#/$defs/Location",
+          "description": "The object this judges, with its file, line, section and cue."
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The stage that raised it, or null when no stage did."
+        },
+        "fix": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "command": "#/$defs/CommandFix",
+                  "edit": "#/$defs/EditFix",
+                  "setting": "#/$defs/SettingFix"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/EditFix"
+                },
+                {
+                  "$ref": "#/$defs/SettingFix"
+                },
+                {
+                  "$ref": "#/$defs/CommandFix"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A change that resolves it, or null when none is known.",
+          "title": "Fix"
+        },
+        "url": {
+          "default": "",
+          "description": "The docs page for this code.",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "location"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "FindingEvent": {
+      "additionalProperties": false,
+      "description": "A judgement was made, carried as it was found rather than held back until the result.",
+      "properties": {
+        "event": {
+          "const": "finding",
+          "default": "finding",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "finding": {
+          "$ref": "#/$defs/Finding",
+          "description": "The judgement, in the same shape the result will carry."
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "finding"
+      ],
+      "title": "FindingEvent",
+      "type": "object"
+    },
+    "Layer": {
+      "description": "Which of the five layers set a settings value, lowest first.\n\nA key with no override is set by `default`, which is also what refuses `--max-cost` on a price\nnobody has stated: DeckTalk would be capping a spend against a number it made up.",
+      "enum": [
+        "default",
+        "machine",
+        "project",
+        "environment",
+        "override"
+      ],
+      "title": "Layer",
+      "type": "string"
+    },
+    "Level": {
+      "description": "How much a log line matters, which is what `-v` and `-q` choose between.",
+      "enum": [
+        "debug",
+        "info",
+        "warning",
+        "error"
+      ],
+      "title": "Level",
+      "type": "string"
+    },
+    "Location": {
+      "additionalProperties": false,
+      "description": "Where a finding is, as the five facts that travel together into a renderer and into a fix.\n\n`where` is never null, because the object a finding judges is what tells a reader which side of\nthe spend it came from, and the other four are filled by whoever knows them.",
+      "properties": {
+        "where": {
+          "description": "The object this finding judges, such as a cue id, a slide or a file.",
+          "title": "Where",
+          "type": "string"
+        },
+        "file": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The file to open, project-relative, or null.",
+          "title": "File"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The line in that file, counting from one, or null.",
+          "title": "Line"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The section number this is about, or null.",
+          "title": "Section"
+        },
+        "cue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The wire id of the cue this is about, or null.",
+          "title": "Cue"
+        }
+      },
+      "required": [
+        "where"
+      ],
+      "title": "Location",
+      "type": "object"
+    },
+    "Log": {
+      "additionalProperties": false,
+      "description": "One sentence the library would have printed, had the library printed anything.\n\nA stage says its sentence through its run, and a module below the stages writes a standard\nlogging record, which the bridge in `logs.py` turns into this line. Both carry where they were\nwritten, so a reader can tie a line from one of several parallel recorders to its section\nwithout parsing the sentence.",
+      "properties": {
+        "event": {
+          "const": "log",
+          "default": "log",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "level": {
+          "$ref": "#/$defs/Level",
+          "description": "How much this line matters."
+        },
+        "message": {
+          "description": "One sentence.",
+          "title": "Message",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The module that wrote this line, such as media.ffmpeg, or null for a stage's own sentence.",
+          "title": "Source"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Stage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The stage this line was written in, or null outside every stage."
+        },
+        "section": {
+          "anyOf": [
+            {
+              "description": "The section this row is about, as the author numbered it.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The section this line was written in, or null outside every section.",
+          "title": "Section"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The measured values behind the sentence by name, each a string, a number, a boolean or null.",
+          "title": "Data"
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "level",
+        "message"
+      ],
+      "title": "Log",
+      "type": "object"
+    },
+    "Outcome": {
+      "description": "How a stage or a section ended, which is the one field that replaces four event names.\n\nA caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`\nand `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the\nrun planned and did not repeat, because nothing it reads had changed since it last ran, and\n`skipped` is a stage the run did not plan at all. `stopped` is a run, a stage or a section the\ncaller cancelled or interrupted, which is kept apart from `failed` because nothing went wrong.",
+      "enum": [
+        "ok",
+        "kept",
+        "skipped",
+        "stopped",
+        "failed"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "Progress": {
+      "additionalProperties": false,
+      "description": "How far through its own work one stage is, counted in the thing it is working on.\n\nNarrate emits one per take, record one per section, soundscape one per asset, assemble one per\nencoding pass and verify one per probe, so every stage that takes time reports the same shape.",
+      "properties": {
+        "event": {
+          "const": "progress",
+          "default": "progress",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage",
+          "description": "The stage this line is about."
+        },
+        "section": {
+          "anyOf": [
+            {
+              "description": "The section this row is about, as the author numbered it.",
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The section being worked on, or null.",
+          "title": "Section"
+        },
+        "done": {
+          "description": "How many of the things are finished.",
+          "minimum": 0,
+          "title": "Done",
+          "type": "integer"
+        },
+        "total": {
+          "description": "How many things there are in all.",
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "unit": {
+          "$ref": "#/$defs/Unit",
+          "description": "What one of those things is."
+        },
+        "label": {
+          "description": "What a renderer prints beside the count.",
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "stage",
+        "done",
+        "total",
+        "unit",
+        "label"
+      ],
+      "title": "Progress",
+      "type": "object"
+    },
+    "RunDone": {
+      "additionalProperties": false,
+      "description": "A run closed, and this is how it ended.",
+      "properties": {
+        "event": {
+          "const": "run.done",
+          "default": "run.done",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome",
+          "description": "Whether the run finished, was stopped, or failed."
+        },
+        "seconds": {
+          "description": "How long this call took, in seconds.",
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number",
+          "volatile": true
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Why the run stopped or failed, in the shape a result's error takes, or null when it finished."
+        },
+        "dropped": {
+          "default": 0,
+          "description": "How many lines the events file left out once it reached output.events_max_bytes.",
+          "minimum": 0,
+          "title": "Dropped",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "outcome",
+        "seconds"
+      ],
+      "title": "RunDone",
+      "type": "object"
+    },
+    "RunStart": {
+      "additionalProperties": false,
+      "description": "A run opened, and this is where its lines are being written.",
+      "properties": {
+        "event": {
+          "const": "run.start",
+          "default": "run.start",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "events_path": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The file this run's lines are appended to, or null when no project holds one.",
+          "title": "Events Path"
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run"
+      ],
+      "title": "RunStart",
+      "type": "object"
+    },
+    "SectionDone": {
+      "additionalProperties": false,
+      "description": "One section of a stage ended, and this is how.",
+      "properties": {
+        "event": {
+          "const": "section.done",
+          "default": "section.done",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage",
+          "description": "The stage this line is about."
+        },
+        "section": {
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
+          "title": "Section",
+          "type": "integer"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome",
+          "description": "Whether the section ran, was skipped, kept what an earlier run made, or failed."
+        },
+        "seconds": {
+          "description": "How long this call took, in seconds.",
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number",
+          "volatile": true
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "stage",
+        "section",
+        "outcome",
+        "seconds"
+      ],
+      "title": "SectionDone",
+      "type": "object"
+    },
+    "SectionStart": {
+      "additionalProperties": false,
+      "description": "One section of a stage began.",
+      "properties": {
+        "event": {
+          "const": "section.start",
+          "default": "section.start",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage",
+          "description": "The stage this line is about."
+        },
+        "section": {
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
+          "title": "Section",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "stage",
+        "section"
+      ],
+      "title": "SectionStart",
+      "type": "object"
+    },
+    "SettingFix": {
+      "additionalProperties": false,
+      "description": "A fix that turns a knob, which is the same key space `config set` and `--set` take.",
+      "properties": {
+        "kind": {
+          "const": "setting",
+          "default": "setting",
+          "description": "The kind of fix, which is how a reader dispatches on it.",
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "description": "One sentence saying what applying this fix does.",
+          "title": "Title",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/Applicability",
+          "description": "Whether this fix may be applied without asking."
+        },
+        "key": {
+          "description": "The settings key to set, such as verify.cue_offset_max_ms.",
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "description": "The value to set it to, spelled as a command line would spell it.",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "applicability",
+        "key",
+        "value"
+      ],
+      "title": "SettingFix",
+      "type": "object"
+    },
+    "SoundCharged": {
+      "additionalProperties": false,
+      "description": "The sound provider was paid for one request, which is a soundscape item or one part of its music.\n\nIt is written the moment the provider answers, once per paid request, so a host that keeps its\nown ledger records every sound it paid for and can tell by the digest that a retried run did not\nbuy the same request twice.",
+      "properties": {
+        "event": {
+          "const": "sound.charged",
+          "default": "sound.charged",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "item": {
+          "description": "What the author calls the item in decktalk.toml.",
+          "title": "Item",
+          "type": "string"
+        },
+        "sound": {
+          "$ref": "#/$defs/SoundKind",
+          "description": "What kind of sound the item is: music, ambience or an effect."
+        },
+        "digest": {
+          "description": "The digest of the request that was paid for.",
+          "pattern": "^[0-9a-f]+$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "seconds": {
+          "description": "How many seconds of audio were asked for.",
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        },
+        "dollars": {
+          "description": "What this request cost at the rate in force, in US dollars.",
+          "minimum": 0,
+          "title": "Dollars",
+          "type": "number"
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "item",
+        "sound",
+        "digest",
+        "seconds",
+        "dollars"
+      ],
+      "title": "SoundCharged",
+      "type": "object"
+    },
+    "SoundKind": {
+      "description": "What one soundscape item is, which decides where it sits in the mix.",
+      "enum": [
+        "music",
+        "ambience",
+        "effect"
+      ],
+      "title": "SoundKind",
+      "type": "string"
+    },
+    "Spend": {
+      "additionalProperties": false,
+      "description": "What a run costs, priced once so a caller never works it out from a character count.\n\n`--max-cost` caps the whole run, and is compared against the `ceiling_dollars` of everything the\nrun approved and never against `dollars`, because credits are consumed one request at a time.",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/SpendState",
+          "description": "Whether this is what the run would cost or what it did cost."
+        },
+        "sections": {
+          "description": "The sections this price covers, in script order.",
+          "items": {
+            "description": "The section this row is about, as the author numbered it.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": "Sections",
+          "type": "array"
+        },
+        "characters": {
+          "description": "How many characters of script this price is for.",
+          "minimum": 0,
+          "title": "Characters",
+          "type": "integer"
+        },
+        "seconds": {
+          "default": 0.0,
+          "description": "How many seconds of audio this price is for, which a per-second bill is priced on.",
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        },
+        "dollars": {
+          "description": "The price at the stated rate, in US dollars.",
+          "minimum": 0,
+          "title": "Dollars",
+          "type": "number"
+        },
+        "ceiling_dollars": {
+          "description": "The most this run can cost, in US dollars.",
+          "minimum": 0,
+          "title": "Ceiling Dollars",
+          "type": "number"
+        },
+        "billing": {
+          "$ref": "#/$defs/Billing",
+          "description": "How the voice bills, which its adapter declares and the rate is per."
+        },
+        "price_per_1000_characters": {
+          "description": "The rate a per-character bill was worked out at, per 1,000 characters.",
+          "minimum": 0,
+          "title": "Price Per 1000 Characters",
+          "type": "number"
+        },
+        "price_per_second": {
+          "default": 0.0,
+          "description": "The rate a per-second bill was worked out at, per second of audio.",
+          "minimum": 0,
+          "title": "Price Per Second",
+          "type": "number"
+        },
+        "price_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The dotted key that states the rate, or null when the voice declares none to state.",
+          "title": "Price Key"
+        },
+        "averaged": {
+          "default": false,
+          "description": "True when the price is several rates together, such as music and effects bought at their own, so the rate is what they average to and `price_key` names the one least surely stated.",
+          "title": "Averaged",
+          "type": "boolean"
+        },
+        "price_layer": {
+          "$ref": "#/$defs/Layer",
+          "description": "Which layer set that rate, where default means nobody stated it."
+        }
+      },
+      "required": [
+        "state",
+        "sections",
+        "characters",
+        "dollars",
+        "ceiling_dollars",
+        "billing",
+        "price_per_1000_characters",
+        "price_layer"
+      ],
+      "title": "Spend",
+      "type": "object"
+    },
+    "SpendEvent": {
+      "additionalProperties": false,
+      "description": "A price was worked out, either before the run buys anything or after it did.",
+      "properties": {
+        "event": {
+          "const": "spend",
+          "default": "spend",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "spend": {
+          "$ref": "#/$defs/Spend",
+          "description": "The price, with its state saying whether it is an estimate."
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "spend"
+      ],
+      "title": "SpendEvent",
+      "type": "object"
+    },
+    "SpendState": {
+      "description": "Whether a price is what a run would cost or what it did cost.",
+      "enum": [
+        "estimate",
+        "charged"
+      ],
+      "title": "SpendState",
+      "type": "string"
+    },
+    "Stage": {
+      "description": "One stage of the pipeline, declared in run order. The value is the word that names it.",
+      "enum": [
+        "narrate",
+        "cue",
+        "record",
+        "soundscape",
+        "assemble",
+        "verify"
+      ],
+      "title": "Stage",
+      "type": "string"
+    },
+    "StageDone": {
+      "additionalProperties": false,
+      "description": "A stage ended, and this is how.",
+      "properties": {
+        "event": {
+          "const": "stage.done",
+          "default": "stage.done",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage",
+          "description": "The stage this line is about."
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome",
+          "description": "Whether the stage ran, was skipped, kept what an earlier run made, or failed."
+        },
+        "seconds": {
+          "description": "How long this call took, in seconds.",
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number",
+          "volatile": true
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "stage",
+        "outcome",
+        "seconds"
+      ],
+      "title": "StageDone",
+      "type": "object"
+    },
+    "StageStart": {
+      "additionalProperties": false,
+      "description": "A stage began, and this is its place in the run's plan.",
+      "properties": {
+        "event": {
+          "const": "stage.start",
+          "default": "stage.start",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "stage": {
+          "$ref": "#/$defs/Stage",
+          "description": "The stage this line is about."
+        },
+        "index": {
+          "description": "This stage's place in the run's plan, counting from one.",
+          "minimum": 1,
+          "title": "Index",
+          "type": "integer"
+        },
+        "count": {
+          "description": "How many stages the run planned.",
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "stage",
+        "index",
+        "count"
+      ],
+      "title": "StageStart",
+      "type": "object"
+    },
+    "TakeCharged": {
+      "additionalProperties": false,
+      "description": "The voice provider was paid for one take, which is the line a ledger of real spending reads.\n\nA spend event prices a whole run, before or after it. This one is written at the moment a take\nis bought, once per take, so a host that keeps its own ledger can record every charge as it\nhappens and can tell by the take's hash that a retried run did not buy the same take twice. A\nvoice that declares it bills nothing is paid nothing, so its takes write no line.",
+      "properties": {
+        "event": {
+          "const": "take.charged",
+          "default": "take.charged",
+          "description": "Which moment this line reports, which is what a reader dispatches on.",
+          "title": "Event",
+          "type": "string"
+        },
+        "time": {
+          "description": "When this happened, as an instant.",
+          "format": "date-time",
+          "title": "Time",
+          "type": "string",
+          "volatile": true
+        },
+        "seq": {
+          "description": "This line's place in its run, counting from zero.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "run": {
+          "description": "The id of the run this call opened, which names its events file.",
+          "title": "Run",
+          "type": "string",
+          "volatile": true
+        },
+        "section": {
+          "description": "The section this row is about, as the author numbered it.",
+          "minimum": 0,
+          "title": "Section",
+          "type": "integer"
+        },
+        "take": {
+          "description": "The take's content hash, which names its file in the cache.",
+          "pattern": "^[0-9a-f]+$",
+          "title": "Take",
+          "type": "string"
+        },
+        "characters": {
+          "description": "How many characters were sent for this take.",
+          "minimum": 0,
+          "title": "Characters",
+          "type": "integer"
+        },
+        "dollars": {
+          "description": "What this take cost at the price in force, in US dollars.",
+          "minimum": 0,
+          "title": "Dollars",
+          "type": "number"
+        }
+      },
+      "required": [
+        "time",
+        "seq",
+        "run",
+        "section",
+        "take",
+        "characters",
+        "dollars"
+      ],
+      "title": "TakeCharged",
+      "type": "object"
+    },
+    "Unit": {
+      "description": "What one step of a progress line counts, so a renderer can name the thing rather than a number.",
+      "enum": [
+        "take",
+        "section",
+        "asset",
+        "pass",
+        "probe"
+      ],
+      "title": "Unit",
+      "type": "string"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "fetch": "#/$defs/Fetch",
+      "finding": "#/$defs/FindingEvent",
+      "log": "#/$defs/Log",
+      "progress": "#/$defs/Progress",
+      "run.done": "#/$defs/RunDone",
+      "run.start": "#/$defs/RunStart",
+      "section.done": "#/$defs/SectionDone",
+      "section.start": "#/$defs/SectionStart",
+      "sound.charged": "#/$defs/SoundCharged",
+      "spend": "#/$defs/SpendEvent",
+      "stage.done": "#/$defs/StageDone",
+      "stage.start": "#/$defs/StageStart",
+      "take.charged": "#/$defs/TakeCharged"
+    },
+    "propertyName": "event"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/RunStart"
+    },
+    {
+      "$ref": "#/$defs/RunDone"
+    },
+    {
+      "$ref": "#/$defs/StageStart"
+    },
+    {
+      "$ref": "#/$defs/StageDone"
+    },
+    {
+      "$ref": "#/$defs/SectionStart"
+    },
+    {
+      "$ref": "#/$defs/SectionDone"
+    },
+    {
+      "$ref": "#/$defs/Progress"
+    },
+    {
+      "$ref": "#/$defs/FindingEvent"
+    },
+    {
+      "$ref": "#/$defs/SpendEvent"
+    },
+    {
+      "$ref": "#/$defs/TakeCharged"
+    },
+    {
+      "$ref": "#/$defs/SoundCharged"
+    },
+    {
+      "$ref": "#/$defs/Fetch"
+    },
+    {
+      "$ref": "#/$defs/Log"
+    }
+  ]
+}

@@ -19,15 +19,17 @@ object as a frozen model.
 
 | Key | What it promises |
 |---|---|
-| `schema` | The shape version of the object, which is `2`. A reader checks it before it reads anything else. |
+| `schema` | The shape version of the object, which is `1`. A reader checks it before it reads anything else. |
 | `ok` | True exactly when the command exits 0, under the threshold `--fail-on` and `--allow` set. |
-| `findings` | Every judgement the command made, certain first. |
+| `findings` | Every judgement the command made, in the order it made them. |
 | `error` | Filled only when the command could not run, with `code`, `message`, `hint` and `docs`. |
 | `run` | The id of the run the command opened, on every command that opens one. It names the events file. |
 | `written` | Every file the run wrote, project-relative, on every command that writes one. |
 
 `decktalk schema NAME` prints the JSON Schema of one command's result, and `decktalk schema` with no
 name prints every command with the result it answers with, the exit codes and the error codes.
+The same schemas are committed in the repository under `schemas/v1/results/`, one file per command,
+in the folder the `schema` number names.
 
 ```bash
 uv run decktalk build --json | python -c "import json,sys; r=json.load(sys.stdin); print(r['schema'], r['ok'], r['run'])"
@@ -41,7 +43,8 @@ is the `run` of the result. `--events` prints the same lines on stderr as they h
 Every line carries `event`, which names its kind, and `time`, `seq` and `run`. `seq` counts within
 the run, so a reader can tell a gap from a lost line. The last line of a run is `run.done`, with the
 run's `outcome` and, when it failed, the same `error` the result carries. `decktalk schema event`
-prints every kind and every field.
+prints every kind and every field, and the same schema is committed in the repository as
+`schemas/v1/events.json`.
 
 ## `build/final/`
 

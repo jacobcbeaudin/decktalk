@@ -74,8 +74,9 @@ an effect still moving half a second after its cue makes its own cue unmeasurabl
 
 `src/decktalk/page.py` is generated from `contract.ts`, so Python and the page cannot disagree about
 what an attribute means. It is vocabulary and arithmetic and nothing else: it opens no file, reads
-no settings and imports nothing from the rest of DeckTalk, so every layer above it can read the
-contract without a browser and without a project.
+no settings and imports only the finding codes from the rest of DeckTalk, because each attribute
+names the code that judges it. So every layer above it can read the contract without a browser and
+without a project.
 
 ```bash
 uv run decktalk schema page

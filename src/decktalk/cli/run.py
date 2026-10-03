@@ -318,26 +318,27 @@ def _build_price(
     *,
     replace_score: bool = False,
 ) -> Callable[[], Spend | None]:
-    """How a build is priced before it is asked about: the narration, else the soundscape it would buy.
+    """How a build is priced before it is asked about: every stage it performs that buys, added together.
 
-    The narration is the price a person approves, so it is the one shown whenever it buys anything
-    that costs money. A build whose every take is on disk, or whose voice is free, may still buy its
-    soundscape, so that is priced next, and a free voice never lets a paid sound through unasked. A
-    soundscape that could not be priced beside a free voice leaves the build unpriced, so it is asked
-    about rather than called free. A stage the build does not perform is never priced, so a build that
-    starts past `narrate` asks nothing about narration.
+    The price a person approves is the whole run's, so the takes and the soundscape are summed by the
+    same total the build's result reports, and a yes never lets through a stage the question left out.
+    That total keeps the free-voice rules: a free voice beside a sound that buys nothing is asked
+    nothing, and a free voice beside a paid sound is asked about the sound. A stage that could not be
+    priced leaves the build unpriced, so it is asked about rather than called cheaper than it is. A
+    stage the build does not perform is never priced, so a build that starts past `narrate` asks
+    nothing about narration.
     """
 
     def price() -> Spend | None:
-        voiced = session.price(project, only=only) if Stage.NARRATE in planned else None
-        if Stage.SOUNDSCAPE not in planned or (voiced is not None and voiced.buys and not voiced.free):
-            return voiced
-        sounds = session.sound_price(project, only=only, replace_score=replace_score)
-        if voiced is not None and voiced.free:
-            return sounds if sounds is None or sounds.buys else voiced
-        if sounds is not None and (sounds.buys or voiced is None):
-            return sounds
-        return voiced
+        from decktalk.stages.build import total  # noqa: PLC0415  (a stage is loaded by the call that needs it)
+
+        priced: list[Spend | None] = []
+        if Stage.NARRATE in planned:
+            priced.append(session.price(project, only=only))
+        if Stage.SOUNDSCAPE in planned:
+            priced.append(session.sound_price(project, only=only, replace_score=replace_score))
+        stated = [spend for spend in priced if spend is not None]
+        return total(stated) if stated and len(stated) == len(priced) else None
 
     return price
 

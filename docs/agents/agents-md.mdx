@@ -68,7 +68,8 @@ Read `AGENTS.md`, then run the four calls, then act. In practice that is one ord
    with what is voiced, recorded and cut, and the `next` field, which is the whole command to run
    next, or null when the film is built and measured.
 2. Run `decktalk check --json` before anything that spends. It judges the written files and the
-   pages, makes no film, and its `spend` object prices what a voiced build would cost.
+   pages, makes no film, and its `spend` object prices the narration a voiced build would buy. The
+   soundscape is not in it: `decktalk soundscape --no-spend --json` prices that.
 3. Dispatch on `findings[].code`, and read `location.file` and `location.line` to know what to open.
 4. Load a skill from `.agents/skills/` when the change needs craft rather than a flag.
 

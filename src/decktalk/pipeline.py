@@ -151,7 +151,7 @@ PIPELINE: tuple[StageSpec, ...] = (
     ),
     StageSpec(
         stage=Stage.RECORD,
-        reads=(Artifact.CUE_TIMES,),
+        reads=(Artifact.TAKES, Artifact.CUE_TIMES),
         writes=(Artifact.RECORDINGS,),
         holds_key=False,
         opens_pages=True,
@@ -159,7 +159,7 @@ PIPELINE: tuple[StageSpec, ...] = (
     ),
     StageSpec(
         stage=Stage.SOUNDSCAPE,
-        reads=(Artifact.TAKES,),
+        reads=(),
         writes=(Artifact.SOUNDSCAPE,),
         holds_key=True,
         opens_pages=False,
@@ -196,7 +196,7 @@ NEEDS: dict[Stage, frozenset[Stage]] = {
 """Each stage against the stages whose artifacts it reads, which is the table above read as a graph.
 
 The declared order is one the graph admits and not the only one, because `soundscape` reads nothing
-`cue` or `record` writes and runs after them only so the unpaid draft loop stops at `record`.
+another stage writes and runs after `record` only so the unpaid draft loop stops there.
 """
 
 

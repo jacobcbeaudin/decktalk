@@ -70,8 +70,8 @@ def test_the_graph_is_the_table_read_as_edges() -> None:
     assert NEEDS == {
         Stage.NARRATE: frozenset(),
         Stage.CUE: {Stage.NARRATE},
-        Stage.RECORD: {Stage.CUE},
-        Stage.SOUNDSCAPE: {Stage.NARRATE},
+        Stage.RECORD: {Stage.NARRATE, Stage.CUE},
+        Stage.SOUNDSCAPE: frozenset(),
         Stage.ASSEMBLE: {Stage.NARRATE, Stage.RECORD, Stage.SOUNDSCAPE},
         Stage.VERIFY: {Stage.CUE, Stage.ASSEMBLE},
     }
@@ -80,7 +80,7 @@ def test_the_graph_is_the_table_read_as_edges() -> None:
 @pytest.mark.parametrize(
     ("changed", "stale"),
     [
-        ((Stage.NARRATE,), (Stage.CUE, Stage.RECORD, Stage.SOUNDSCAPE, Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.NARRATE,), (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)),
         ((Stage.CUE,), (Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)),
         ((Stage.SOUNDSCAPE,), (Stage.ASSEMBLE, Stage.VERIFY)),
         ((Stage.ASSEMBLE,), (Stage.VERIFY,)),
@@ -106,6 +106,8 @@ def test_a_table_that_reads_in_a_circle_is_refused(monkeypatch: pytest.MonkeyPat
         (tuple(Stage), ()),
         ((Stage.ASSEMBLE,), (Artifact.TAKES, Artifact.RECORDINGS, Artifact.SOUNDSCAPE)),
         ((Stage.VERIFY,), (Artifact.CUE_TIMES, Artifact.FINAL)),
+        ((Stage.RECORD,), (Artifact.TAKES, Artifact.CUE_TIMES)),
+        ((Stage.SOUNDSCAPE,), ()),
         ((Stage.NARRATE, Stage.CUE), ()),
     ],
 )

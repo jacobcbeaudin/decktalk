@@ -38,8 +38,8 @@ carries and the next step `status` reports are four readings of those six rows.
 
 ## Why `soundscape` sits after `record`
 
-`soundscape` reads `build/narrate/takes.json` and nothing the recorder writes, so it could have run
-second. It runs fourth so that a run stopped at `record` is the unpaid draft loop.
+`soundscape` reads its plan from `decktalk.toml` and nothing another stage writes, so it could have
+run first. It runs fourth so that a run stopped at `record` is the unpaid draft loop.
 
 `narrate` and `soundscape` are the two stages that spend money. `narrate` stops spending with
 `--no-spend`, which plays every take on disk and a placeholder with a real word clock for each
@@ -67,16 +67,16 @@ mean anything for a step the pipeline had to run.
 
 `verify` stays a stage for the mirror reason: it is the last thing a `build` does, it reads the film
 `assemble` just wrote, and a run that produced a film nobody measured is not a finished run. It
-writes nothing, and that is allowed, because the pipeline row that names its reads is what puts it
-in the order.
+writes no artifact, only its events file and the build lock, and that is allowed, because the
+pipeline row that names its reads is what puts it in the order.
 
 ## What it rules out
 
 - There is no stage that measures a recording without recording it, and no command that rehearses
   the pipeline. `check` and `storyboard` answer the questions a rehearsal was for, and they answer
   them from frozen frames rather than from a recording.
-- `verify` never writes. A stage that wanted to repair what it measured would have to be a seventh
-  stage, and none has been needed.
+- `verify` never writes an artifact. A stage that wanted to repair what it measured would have to be
+  a seventh stage, and none has been needed.
 - A command that judges may not be reachable through `--from`, `--to` or `--skip`, because those
   three flags take a member of `Stage` and nothing else.
 

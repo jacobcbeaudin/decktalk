@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -48,6 +49,9 @@ MOVING = {
     "build": ANSWERS["build"],
 }
 """The answer each moving command's fake gives."""
+
+STYLING = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+"""The escapes a terminal's highlighting puts between the digits of a price, which a test reads past."""
 
 
 @pytest.mark.parametrize(
@@ -217,6 +221,22 @@ def test_an_unset_build_whose_takes_are_bought_asks_about_the_sounds_it_would_bu
     made = project(build=ANSWERS["build"], check=_priced(a_spend(0.0, 0.0, sections=())))
     assert run("build").exit_code == ErrorCode.APPROVAL.exit_code
     assert [name for name, _, _ in made.calls if name == "build"] == []
+
+
+def test_an_unset_build_on_a_terminal_asks_about_its_takes_and_its_sounds_together(run, project, monkeypatch) -> None:
+    """The price a person approves is the whole run's, so a build that buys takes and sounds shows both."""
+    takes = a_spend(0.14, 0.14, sections=(1, 2))
+    sounds = a_spend(2.0, 2.0, sections=(1,), billing=Billing.PER_SECOND).model_copy(
+        update={"characters": 0, "seconds": 120.0, "price_per_second": 2.0 / 120.0}
+    )
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: sounds)
+    made = project(build=ANSWERS["build"], check=_priced(takes), storyboard=ANSWERS["storyboard"])
+    declined = run("build", tty=True, stdin="n\n")
+    said = STYLING.sub("", declined.err)
+    assert "This run costs $2.14 for" in said, said
+    assert takes.sentence not in said, "the narration alone was shown as the build's price"
+    assert "Spend that now?" in said
+    assert made.called("build")["spend"] is False
 
 
 def test_an_unset_build_on_a_free_voice_still_asks_about_the_sounds_it_would_buy(run, project, monkeypatch) -> None:
@@ -392,7 +412,8 @@ def test_every_stderr_line_under_events_is_one_json_object(run, project, answers
     assert not any(line.startswith("run r, events") for line in lines)
 
 
-def test_a_refusal_under_events_is_one_json_object_on_stderr(run, project, answers) -> None:
+def test_a_refusal_under_events_is_one_json_object_on_stderr(run, project, answers, monkeypatch) -> None:
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
     project(build=answers["build"], check=answers["check"])
     ran = run("build", "--events")
     assert ran.exit_code == 2
@@ -400,7 +421,8 @@ def test_a_refusal_under_events_is_one_json_object_on_stderr(run, project, answe
     assert json.loads(line)["error"]["code"] == ErrorCode.APPROVAL.value
 
 
-def test_build_without_a_terminal_and_without_a_flag_refuses_the_spend(run, project, answers) -> None:
+def test_build_without_a_terminal_and_without_a_flag_refuses_the_spend(run, project, answers, monkeypatch) -> None:
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
     project(build=answers["build"], check=answers["check"])
     ran = run("build")
     assert ran.exit_code == 2
@@ -408,7 +430,8 @@ def test_build_without_a_terminal_and_without_a_flag_refuses_the_spend(run, proj
     assert "--spend" in ran.err
 
 
-def test_the_approval_refusal_is_one_object_under_json(run, project, answers) -> None:
+def test_the_approval_refusal_is_one_object_under_json(run, project, answers, monkeypatch) -> None:
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
     project(build=answers["build"], check=answers["check"])
     ran = run("build", "--json")
     assert ran.exit_code == 2

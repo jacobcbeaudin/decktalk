@@ -158,6 +158,18 @@ def narrate(
     )
 
 
+def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_voiced: bool = False) -> Spend:
+    """What a run of this stage that may spend would buy, planned the way `narrate` plans it and sending nothing.
+
+    No run is opened and no voice is built, so a build prices its takes before it buys anything. A
+    run told to replace its voiced takes is priced at every take it targets.
+    """
+    plans, _why = voiced_plan(
+        inputs, _targets(inputs, only), model=voice_model(inputs), voice_id=named_voice(inputs), replace=replace_voiced
+    )
+    return spend_of(plans, inputs, state=SpendState.ESTIMATE)
+
+
 def _without_buying(
     inputs: Inputs, paid: list[TakePlan], *, why: str | None, force: bool, replace_voiced: bool
 ) -> tuple[list[TakePlan], list[Finding]]:
@@ -442,6 +454,7 @@ __all__ = [
     "place",
     "placeholder_plan",
     "planned_words",
+    "price",
     "script_refusals",
     "shown",
     "spend_of",

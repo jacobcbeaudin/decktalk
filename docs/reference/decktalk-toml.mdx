@@ -161,7 +161,7 @@ file does not matter. A section is a **page section**, which records one scene o
 | `lead_seconds` | number | `[narration] lead_seconds` | Silence before the section's first word. |
 | `tail_seconds` | number | `[narration] tail_min_seconds` | Silence after the section's last word. |
 | `ambience` | boolean | `false` | Play the ambience bed under this section. |
-| `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `slide`, `cues`, `words`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads, and any other key is refused by name. Every value reaches the page as a string. |
+| `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `slide`, `cues`, `words`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads. Loading the project accepts any key, and a command that opens the page or works out whether its recording is current refuses any other key by name, as `INPUT`: `check` with pages, `storyboard`, `status`, `record` and `build`. `narrate`, `cue` and `check --no-pages` never read it. Every value reaches the page as a string. |
 
 `lead_seconds` and `tail_seconds` are placed when the takes are joined and are never sent to the
 voice, so changing either voices nothing. The section starts where its silence starts, so

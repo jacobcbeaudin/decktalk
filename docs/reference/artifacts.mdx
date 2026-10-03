@@ -88,6 +88,7 @@ my-lesson/build/
     <run>.jsonl                 one JSON line per event of one run
   kept.json                     what the last assemble and verify read, wrote and found
   .lock                         locked by the one run that is writing, and left in place
+  .lock.owner                   the process and the run holding the lock, removed when it ends
 ```
 
 `<name>` is `[project] name`, which is what the film is named after. `NN` is a section's key, which
@@ -556,14 +557,16 @@ panel captioned with its section, its slide, its moment and its second.
 
 A run that writes holds an operating system lock on this file for its whole length, which is `flock`
 on Linux and macOS and a byte-range lock on Windows. The system releases it the moment the holder
-ends, however it ends, and two writers that race for it cannot both win. While it is held the file
-names the process id and the run id, so a second writer is refused with a sentence that names whose
-run is in the way.
+ends, however it ends, and two writers that race for it cannot both win. While it is held,
+`build/.lock.owner` beside it names the process id and the run id, so a second writer is refused
+with a sentence that names whose run is in the way. The owner is a note of its own because Windows
+refuses a read of a locked file.
 
-The file itself stays on disk after the run, empty. A file removed while another writer waits on it
+`.lock` itself stays on disk after the run, empty. A file removed while another writer waits on it
 would let a third lock a new file beside the old one, so deleting it is never needed and never
-helps. A run that finds an owner written in a file nobody holds takes the lock and says so, because
-a caller cannot clear a note it was never told about.
+helps. The holder removes `.lock.owner` when it ends, and a holder that crashed leaves it behind. A
+run that finds `.lock.owner` while nobody holds the lock takes the lock and says so, because a caller
+cannot clear a note it was never told about.
 
 ## Related
 

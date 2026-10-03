@@ -25,7 +25,7 @@ id = ""   # the voice that reads the script, a published name rather than a secr
 speed = 1.0
 
 [elevenlabs]
-price_per_1000_characters = 0.30   # what your plan charges, which is what `decktalk check` prices a run at
+price_per_1000_characters = 0.30   # what your plan charges, which is what `decktalk check` prices the narration at
 stability = 0.55
 similarity_boost = 0.75
 

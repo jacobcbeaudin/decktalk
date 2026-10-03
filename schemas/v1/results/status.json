@@ -620,8 +620,8 @@
   "description": "What is written, what is built, what is stale, and what to do next.",
   "properties": {
     "schema": {
-      "const": 2,
-      "default": 2,
+      "const": 1,
+      "default": 1,
       "description": "The shape version of this object.",
       "title": "Schema",
       "type": "integer"
@@ -633,7 +633,7 @@
     },
     "findings": {
       "default": [],
-      "description": "Every judgement this call made, certain first.",
+      "description": "Every judgement this call made, in the order it made them.",
       "items": {
         "$ref": "#/$defs/Finding"
       },

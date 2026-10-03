@@ -71,7 +71,7 @@ On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECK
 
 The first build downloads Chromium and ffmpeg, one time per machine, and says so as it goes. Recording runs in real time, several sections at once, so on a machine with a few cores to spare the build takes less time than the film it makes. [What is measured](#what-is-measured) has the times.
 
-To hear your own voice, copy `.env.example` to `.env`, fill in your ElevenLabs API key, set `[voice] id` in `decktalk.toml` to your voice id, and run `decktalk build --spend --max-cost 1`. `decktalk check` prices the run before anything is bought, and `decktalk storyboard` puts every slide at every cue on one page for a look first. The [quickstart](https://docs.decktalk.ai/quickstart) walks each step with its output.
+To hear your own voice, copy `.env.example` to `.env`, fill in your ElevenLabs API key, set `[voice] id` in `decktalk.toml` to your voice id, and run `decktalk build --spend --max-cost 1`. `decktalk check` prices the narration before anything is bought, and `decktalk storyboard` puts every slide at every cue on one page for a look first. The [quickstart](https://docs.decktalk.ai/quickstart) walks each step with its output.
 
 ## A short tour
 
@@ -112,13 +112,13 @@ Rehearse with decktalk build --no-spend, show me the storyboard,
 and ask me before any run that spends money.
 ```
 
-The agent reads `decktalk --help` for the commands, `decktalk schema build` for one command's flags and result, and `decktalk config explain KEY` for one setting. Every command prints one JSON object under `--json`, and `--events` streams progress as JSON lines. Exit 0 means nothing was found, 1 a finding, 2 a refused command line and 3 that DeckTalk could not run. The [reference card](https://docs.decktalk.ai/reference/card) puts the whole contract on one page.
+The agent reads `decktalk --help` for the commands, `decktalk schema build` for one command's flags and result, and `decktalk config explain KEY` for one setting. Every command prints one JSON object under `--json`, and `--events` streams progress as JSON lines. Exit 0 means nothing was found at or above the `--fail-on` threshold, 1 a finding at it, 2 a refused command line and 3 that DeckTalk could not run. The [reference card](https://docs.decktalk.ai/reference/card) puts the whole contract on one page.
 
 Without a terminal, a build with something to buy refuses unless `--spend` or `--no-spend` is passed, so an agent left alone cannot buy speech by accident. A build whose takes are all on disk buys nothing and needs neither flag nor key. This is the whole answer from `decktalk --json build` in the starter with a voice named, which exits 2.
 
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": false,
   "findings": [],
   "error": {

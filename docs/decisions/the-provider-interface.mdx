@@ -5,22 +5,22 @@ description: The closed set of voices, what each one declares, and where word ti
 
 ## Decision
 
-The voices DeckTalk can call are a closed set of adapters inside the engine. Each section of narration ends as audio plus a
-start and an end time for every word, and the words come either from the voice itself or from an
-aligner run over the audio. Everything a vendor is particular about, its settings, its key, its
-hosts, its pause markup, its bill and its file format, is declared by its adapter and read from
-there, so nothing above `speech/` names a vendor.
+The voices DeckTalk can call are a closed set of adapters inside the engine. Each section of
+narration ends as audio plus a start and an end time for every word. The words come from the voice
+itself, and once alignment is built they may come from an aligner run over the audio instead.
+Everything a vendor is particular about, its settings, its key, its hosts, its pause markup, its
+bill and its file format, is declared by its adapter and read from there, so nothing above `speech/`
+names a vendor.
 
 ### The closed set
 
-The engine ships three speech adapters and names each one in `PROVIDERS` in
+The engine ships two speech adapters and names each one in `PROVIDERS` in
 `src/decktalk/speech/__init__.py`:
 
 - `elevenlabs`, the cloud voice, over https.
 - `dtsp`, one HTTP client that talks to `decktalk-voice`, a separate local server that is not part
   of this repository and runs the local speech and alignment models. It needs no key and speaks
   to a loopback address.
-- `recorded`, which reads the author's own recording of each section and buys nothing.
 
 There are no entry points and no plugin loading. A project file names an adapter by its key in
 `PROVIDERS` and can never name code. A host that embeds the library may hand `Machine.of` its own
@@ -28,9 +28,8 @@ table, which is how a test runs the real `narrate` against a voice that spends n
 table is code the host wrote and imported itself.
 
 The Python protocol types are public, in the `decktalk.speech` module: the provider protocol, the
-request it receives and the speech it returns, the factory, and the request and response types of
-`decktalk-voice`'s `/v1/align`. A host and a contributor therefore have a type to build against,
-and a new adapter still arrives as a change to this tree.
+request it receives and the speech it returns, and the factory. A host and a contributor therefore
+have a type to build against, and a new adapter still arrives as a change to this tree.
 
 ### What an adapter declares
 
@@ -128,21 +127,22 @@ moving to another host of the same service or to a local mock buys nothing again
 
 ### Alignment
 
+Alignment is planned and not built yet. Every voice DeckTalk ships today returns its own word times,
+so nothing below runs in a build. What is decided is its shape.
+
 Alignment is a seam inside `narrate`, not a seventh stage. Words a voice returns with its audio are
 used as they come, and are kept beside the take. A voice that returns no word times is paired with
 an aligner, which reads the take's audio and the script's words and returns a time for every word.
 An aligner's words are kept in a words cache of their own, keyed by the digest of the audio plus the
 aligner's id and revision, so a better aligner re-aligns every take and buys none of them again.
 
-A voice without timestamps is therefore a usable voice. The `recorded` adapter is the plainest case:
-it reads the author's own audio for each section, always goes through the aligner, and is free.
+A voice without timestamps will therefore be a usable voice.
 
-DeckTalk owns the client side of `/v1/align`: the request and response types it sends to
-`decktalk-voice` and reads back, in `decktalk.speech`. The aligner contract itself, meaning those
-payloads, how a project chooses between a voice's own times and an aligner's, and what `recorded`
-reads from the project, is reviewed separately before it is built. This record states only the shape
-decided so far: the seam sits in `narrate`, the words have their own key, and the server is out of
-process.
+DeckTalk will own the client side of `/v1/align`: the request and response types it sends to
+`decktalk-voice` and reads back, in `decktalk.speech`, with a fake server that proves the whole path
+in CI. No adapter that reads an author's own recording is planned with it. This record states only
+the shape decided so far: the seam sits in `narrate`, the words have their own key, and the server is
+out of process.
 
 ## Why
 

@@ -37,8 +37,11 @@ from decktalk.findings import Code, Finding, Model, ProjectPath
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Outcome, Stage
 
-SCHEMA = 2
-"""The shape version every result carries, which a reader checks before it reads anything else."""
+SCHEMA = 1
+"""The shape version every result carries, which a reader checks before it reads anything else.
+
+It is also the folder the schemas are published in, `schemas/v1`, so the two are one number.
+"""
 
 VOLATILE: dict[str, JsonValue] = {"volatile": True}
 """What marks a field whose value differs between two otherwise identical runs."""
@@ -224,8 +227,8 @@ def counted(count: int, noun: str, plural: str | None = None) -> str:
 class Spend(Model):
     """What a run costs, priced once so a caller never works it out from a character count.
 
-    `--max-cost` is compared against `ceiling_dollars` and never against `dollars`, because credits
-    are consumed one request at a time and a cap that claimed to stop a run halfway would be a lie.
+    `--max-cost` caps the whole run, and is compared against the `ceiling_dollars` of everything the
+    run approved and never against `dollars`, because credits are consumed one request at a time.
     """
 
     state: SpendState = Field(description="Whether this is what the run would cost or what it did cost.")
@@ -344,6 +347,9 @@ def money(dollars: float) -> str:
 CENT = 0.01
 """Truth: a cent in US dollars, which is the smallest amount anybody is charged."""
 
+DOLLAR_DIGITS = 2
+"""Truth: a price in dollars is read to the cent, which is the smallest unit anybody is charged."""
+
 RATE_DIGITS = 4
 """Truth: the significant digits a rate under a cent is written to, which a second of sound is priced at."""
 
@@ -380,14 +386,14 @@ class Result(Model):
     spends: ClassVar[bool] = False
     """True when the command answering with this can buy something, so it takes `--spend` and `--max-cost`."""
 
-    schema_: Literal[2] = Field(SCHEMA, alias="schema", description="The shape version of this object.")
+    schema_: Literal[1] = Field(SCHEMA, alias="schema", description="The shape version of this object.")
     ok: bool = Field(
         description=(
             "True when the command ran and judged nothing its threshold fails on, which is the one "
             "--fail-on and --allow set, so it is true exactly when the command exits 0."
         )
     )
-    findings: tuple[Finding, ...] = Field((), description="Every judgement this call made, certain first.")
+    findings: tuple[Finding, ...] = Field((), description="Every judgement this call made, in the order it made them.")
     error: ErrorInfo | None = Field(None, description="Filled only when the command could not run.")
 
 
@@ -511,7 +517,7 @@ class StartCheck(Model):
 
 
 class CutCheck(Model):
-    """What one seam between two sections sounds like."""
+    """What one cut between two sections sounds like."""
 
     section: SectionNumber
     at: float = Field(ge=0, description="When the cut sits in the film, in seconds.")
@@ -520,11 +526,13 @@ class CutCheck(Model):
 
 
 class SeamCheck(Model):
-    """How far one section's picture has drifted from its own clock by the time it ends."""
+    """One seamless cut: whether the incoming section opens on the picture the outgoing one ended on."""
 
     section: SectionNumber
     at: float = Field(ge=0, description="When the seam sits in the film, in seconds.")
-    drift: float = Field(description="How far the picture is from where the clock says it should be, in seconds.")
+    drift: float = Field(
+        description="How far past the cut the outgoing picture was found, in seconds, or 0 when it matched at once."
+    )
 
 
 class CueCheck(Model):
@@ -657,7 +665,7 @@ class StatusResult(Result):
 
 
 class CheckResult(Result):
-    """What a judgement before a build found, and what the build would cost."""
+    """What a judgement before a build found, and what its narration would cost."""
 
     reports_findings: ClassVar[bool] = True
 
@@ -666,7 +674,7 @@ class CheckResult(Result):
     judged: tuple[ProjectPath, ...] = Field(description="Every file and page this call judged, project-relative.")
     pages: bool = Field(description="True when the pages were opened in a browser rather than read as text.")
     frames: bool = Field(description="True when slides were frozen and compared as pictures.")
-    spend: Spend = Field(description="What a voiced build of this project would cost.")
+    spend: Spend = Field(description="What the narration of a voiced build would cost, leaving out any sound.")
     storyboard: ProjectPath | None = Field(None, description="The storyboard this call wrote, or null.")
 
 
@@ -845,8 +853,8 @@ class VerifyResult(Result):
     film: ProjectPath = Field(description="The film this call measured, project-relative.")
     film_seconds: float = Field(ge=0, description="How long that film runs.")
     starts: tuple[StartCheck, ...] = Field((), description="The first frame of every section, in film order.")
-    cuts: tuple[CutCheck, ...] = Field((), description="Every seam between two sections, in film order.")
-    seams: tuple[SeamCheck, ...] = Field((), description="Every section's drift from its own clock, in film order.")
+    cuts: tuple[CutCheck, ...] = Field((), description="Every cut between two sections, in film order.")
+    seams: tuple[SeamCheck, ...] = Field((), description="Every seamless cut, in film order.")
     cues: tuple[CueCheck, ...] = Field((), description="Every cue measured against its word, in film order.")
     seconds: Elapsed
 
@@ -866,7 +874,7 @@ class BuildResult(Result):
     storyboard: ProjectPath | None = Field(None, description="The storyboard this run wrote, or null.")
     stopped_at: Stage | None = Field(
         None,
-        description="The stage whose certain findings stopped the run before the film, or null when it ran through.",
+        description="The stage whose findings stopped the run, or null when it ran through.",
     )
     seconds: Elapsed
 

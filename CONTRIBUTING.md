@@ -82,7 +82,7 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `media-platforms` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml --timing=report` | ffmpeg | macOS, Windows | main |
 | `e2e-platforms` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report` | chromium, ffmpeg | macOS, Windows | main |
 | `platform` | `uv run pytest -q -rs -m platform`, and 1 more | chromium, ffmpeg | Linux, macOS, Windows | pr, main |
-| `generated` | `uv run python scripts/build_runtime.py --check`, and 13 more | npm | Linux | pr, main |
+| `generated` | `uv run python scripts/build_runtime.py --check`, and 14 more | npm | Linux | pr, main |
 | `rehearsal` | `uv run python scripts/rehearse_release.py` | npm, history | Linux | pr, main |
 | `coverage` | `uv run coverage combine --keep`, and 2 more | nothing beyond uv | Linux | pr, main |
 | `wheel` | `uv build`, and 2 more | nothing beyond uv | Linux, macOS, Windows | pr, main |
@@ -264,7 +264,7 @@ src/decktalk/
         loudness.py      EBU R128 loudness: measure, apply one gain, limit the true peaks, and measure again.
         mix.py           The whole soundtrack as one ffmpeg filter graph, one `MixInput` per layer.
         publish.py       Everything a viewer receives beside the picture: captions, chapters, the transcript and the poster.
-      check/             Judge without producing, and price what a build would cost, before a single second is bought.
+      check/             Judge without producing, and price the narration a build would buy, before a single second is bought.
         freeze.py        Which two frozen states each cue is measured between, worked out with no browser and no file.
         scan.py          Freezing the states a check compares, and reading what the difference between two of them means.
         script.py        What the script would sound like, judged before a single second of it is bought.
@@ -404,7 +404,8 @@ stale, and fails with the same sentence naming the file, why it is stale and the
 |---|---|---|
 | `src/decktalk/runtime/*.js` and `contract.json` | `src/decktalk/runtime/src/**` | `uv run scripts/build_runtime.py --write` |
 | `schemas/v1/results/*.json` | The result models in `src/decktalk/results.py` | `uv run scripts/build_result_schemas.py --write` |
-| `schemas/v1/*.json` | The key table in `src/decktalk/settings.py` | `uv run scripts/build_settings_schema.py --write` |
+| `schemas/v1/events.json` | The event models in `src/decktalk/events.py` | `uv run scripts/build_event_schema.py --write` |
+| `schemas/v1/decktalk.json` and `machine.json` | The key table in `src/decktalk/settings.py` | `uv run scripts/build_settings_schema.py --write` |
 | `docs/reference/configuration.mdx` | The published settings schema | `uv run scripts/build_settings_reference.py --write` |
 | `docs/reference/cli.mdx` | The Typer app in `src/decktalk/cli/` | `uv run scripts/build_cli_reference.py --write` |
 | `src/decktalk/__init__.py` | The root names `scripts/build_api.py` lists | `uv run scripts/build_api.py --write` |

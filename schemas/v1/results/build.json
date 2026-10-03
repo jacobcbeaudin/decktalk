@@ -529,7 +529,7 @@
     },
     "Spend": {
       "additionalProperties": false,
-      "description": "What a run costs, priced once so a caller never works it out from a character count.\n\n`--max-cost` is compared against `ceiling_dollars` and never against `dollars`, because credits\nare consumed one request at a time and a cap that claimed to stop a run halfway would be a lie.",
+      "description": "What a run costs, priced once so a caller never works it out from a character count.\n\n`--max-cost` caps the whole run, and is compared against the `ceiling_dollars` of everything the\nrun approved and never against `dollars`, because credits are consumed one request at a time.",
       "properties": {
         "state": {
           "$ref": "#/$defs/SpendState",
@@ -679,8 +679,8 @@
   "description": "A whole run: which stages ran, how each ended, what it cost and what it left behind.",
   "properties": {
     "schema": {
-      "const": 2,
-      "default": 2,
+      "const": 1,
+      "default": 1,
       "description": "The shape version of this object.",
       "title": "Schema",
       "type": "integer"
@@ -692,7 +692,7 @@
     },
     "findings": {
       "default": [],
-      "description": "Every judgement this call made, certain first.",
+      "description": "Every judgement this call made, in the order it made them.",
       "items": {
         "$ref": "#/$defs/Finding"
       },
@@ -782,7 +782,7 @@
         }
       ],
       "default": null,
-      "description": "The stage whose certain findings stopped the run before the film, or null when it ran through."
+      "description": "The stage whose findings stopped the run, or null when it ran through."
     },
     "seconds": {
       "description": "How long this call took, in seconds.",

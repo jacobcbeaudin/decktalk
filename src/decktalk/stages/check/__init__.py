@@ -1,19 +1,20 @@
-"""Judge without producing, and price what a build would cost, before a single second is bought.
+"""Judge without producing, and price the narration a build would buy, before a single second is bought.
 
     script.py   what the voice would read out or swallow, and what it may misread
     freeze.py   which two frozen states each cue is measured between
     scan.py     drawing those states and reading what the difference between two of them means
 
-`check` is the one command that says what a voiced build would spend and show while it can still be
-changed for nothing. It plans the takes the way `narrate` would, prices them, resolves every cue
-against the words those takes will carry, reads the catalog each page publishes, and freezes the
-frames either side of every cue so a reveal that would not be measured is met here rather than after
-the credits are gone.
+`check` is the one command that says what a voiced build's narration would spend and what the build
+would show while both can still be changed for nothing. It plans the takes the way `narrate` would,
+prices them, resolves every cue against the words those takes will carry, reads the catalog each
+page publishes, and freezes the frames either side of every cue so a reveal that would not be
+measured is met here rather than after the credits are gone. The soundscape is priced by its own
+stage, so a sound is never in this price.
 
 It has two scope flags and no others, because neither names a stage a run could skip nor a knob a
 project could turn. Without pages it judges the script, the cue phrases and the take plan with no
 browser at all and says which judgements it could not reach, so a hook that has no browser still
-prices a run and reads its script. Every judgement that scaffolds a `cues.json` row reads the
+prices the narration and reads its script. Every judgement that scaffolds a `cues.json` row reads the
 catalog a page publishes, so a new deck gets those rows from a run with pages. Without frames it keeps the
 browser and the catalog and drops the freeze comparison.
 
@@ -98,7 +99,7 @@ def check(
     pages: bool = True,
     frames: bool = True,
 ) -> CheckResult:
-    """Judge the script, the cue file and the pages, and price what a voiced build would cost.
+    """Judge the script, the cue file and the pages, and price the narration a voiced build would buy.
 
     A voice whose base URL names a host its adapter does not allow is refused first, so the place a
     script would be sent is judged before anything is planned, priced or bought.

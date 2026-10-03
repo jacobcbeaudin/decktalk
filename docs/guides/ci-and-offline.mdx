@@ -122,7 +122,9 @@ fix the project and run again. A non-null `error` is an error, and the job stops
 
 A build that stops on a finding follows the same rule. It exits 1 with `error` null, and its result
 carries `stopped_at`, the stage it stopped after, beside its findings and the spend so far. A job
-reads `stopped_at` to learn that the build stopped short, in which case `film` is null.
+reads `stopped_at` to learn that the build stopped short. `film` is null when it stopped before
+`assemble`, and names the film when `assemble` itself stopped it, because that film was made and then
+never measured.
 
 ### Choose what fails the pipeline
 
@@ -150,8 +152,8 @@ threshold covers it.
 decktalk check --no-pages
 ```
 
-`check` judges `script.md`, `cues.json` and the pages, produces nothing, and prices what a voiced
-build would cost. `--no-pages` drops the browser entirely and says which judgements it could not
+`check` judges `script.md`, `cues.json` and the pages, produces nothing, and prices the narration a
+voiced build would buy. `--no-pages` drops the browser entirely and says which judgements it could not
 reach, so a docs-only job, a pre-commit hook and a container with no Chromium can all still run it.
 
 {/* sample: the output of decktalk check --no-pages on a starter with no ElevenLabs key and no voice id */}
@@ -167,7 +169,8 @@ The run is never quiet about what it skipped, so a hook that runs `--no-pages` c
 the full check. `--no-frames` is the middle setting: it keeps the browser and the page's own catalog
 and drops the freeze comparison alone.
 
-`check --json` carries `spend`, so one call is also how an agent prices a run before approving it.
+`check --json` carries `spend`, so one call is also how an agent prices the narration before
+approving it. The soundscape is priced apart, by `decktalk soundscape --no-spend --json`.
 
 ## Say where the project is
 
@@ -282,7 +285,7 @@ The voice id is a published name rather than a secret, so it is committed beside
 job is handed nothing at all. A project that keeps the id out of the file hands the job
 `DECKTALK_VOICE_ID` instead, and still leaves the key out.
 
-A run without `--spend` plays every take on disk and never builds a voice that bills, so it reads no
+A run with `--no-spend` plays every take on disk and never builds a voice that bills, so it reads no
 key. Each section whose take is missing plays a placeholder and is reported as
 [`TAKE_MISSING`](/reference/findings/TAKE_MISSING), once per section, with the command that buys its
 take. A free voice is the exception: it makes the missing takes, and when its server is not running

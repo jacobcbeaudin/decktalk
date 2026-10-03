@@ -517,7 +517,7 @@
     },
     "Spend": {
       "additionalProperties": false,
-      "description": "What a run costs, priced once so a caller never works it out from a character count.\n\n`--max-cost` is compared against `ceiling_dollars` and never against `dollars`, because credits\nare consumed one request at a time and a cap that claimed to stop a run halfway would be a lie.",
+      "description": "What a run costs, priced once so a caller never works it out from a character count.\n\n`--max-cost` caps the whole run, and is compared against the `ceiling_dollars` of everything the\nrun approved and never against `dollars`, because credits are consumed one request at a time.",
       "properties": {
         "state": {
           "$ref": "#/$defs/SpendState",
@@ -636,11 +636,11 @@
     }
   },
   "additionalProperties": false,
-  "description": "What a judgement before a build found, and what the build would cost.",
+  "description": "What a judgement before a build found, and what its narration would cost.",
   "properties": {
     "schema": {
-      "const": 2,
-      "default": 2,
+      "const": 1,
+      "default": 1,
       "description": "The shape version of this object.",
       "title": "Schema",
       "type": "integer"
@@ -652,7 +652,7 @@
     },
     "findings": {
       "default": [],
-      "description": "Every judgement this call made, certain first.",
+      "description": "Every judgement this call made, in the order it made them.",
       "items": {
         "$ref": "#/$defs/Finding"
       },
@@ -708,7 +708,7 @@
     },
     "spend": {
       "$ref": "#/$defs/Spend",
-      "description": "What a voiced build of this project would cost."
+      "description": "What the narration of a voiced build would cost, leaving out any sound."
     },
     "storyboard": {
       "anyOf": [

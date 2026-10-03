@@ -8,14 +8,16 @@ the product uses.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
-from decktalk.errors import InputError, NotBuiltError
-from decktalk.events import Log, StageDone, StageStart
+from decktalk.cli import main
+from decktalk.errors import ApprovalRequired, ErrorCode, InputError, NotBuiltError
+from decktalk.events import Log, SpendEvent, StageDone, StageStart
 from decktalk.findings import Certainty, Code, Finding, Location
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
@@ -34,7 +36,9 @@ from decktalk.results import (
     SpendState,
     StoryboardResult,
     VerifyResult,
+    money,
 )
+from decktalk.settings import CONFIG_VARIABLE
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import build as build_module
 from decktalk.stages import soundscape as soundscape_stage
@@ -317,6 +321,12 @@ def test_a_run_that_starts_past_a_missing_artifact_names_the_file_and_the_stage(
     assert calls.names == []
 
 
+def test_a_run_of_the_soundscape_alone_needs_no_take_index(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    """The sound is planned from the project file alone, so no narration has to exist before it is bought."""
+    build(inputs, watched.run, stages=[Stage.SOUNDSCAPE])
+    assert calls.names == ["soundscape"]
+
+
 def test_a_project_with_no_soundscape_may_still_assemble_without_one(
     inputs: Inputs, watched: Watched, calls: Calls
 ) -> None:
@@ -507,6 +517,75 @@ def test_neither_replace_flag_buys_anything_without_spend(
     build(paying, make_run(paying, spend=True).run)
     build(paying, make_run(paying, spend=False).run, replace_voiced=True, replace_score=True)
     assert purchases.counts == (2, 1)
+
+
+PRICED_TOML = PAYING_TOML.replace("price_per_1000_characters = 0.30", "price_per_1000_characters = 60.0").replace(
+    'text = "a quiet room"', 'text = "a quiet room"\nprice_per_minute = 2.16'
+)
+"""The paying project at rates where its takes and its sound each cost under a dollar and together more."""
+
+CAP = 1.0
+"""A ceiling each of the priced project's stages fits under and the two of them together do not."""
+
+
+TAKES, SOUND = 0.84, 0.90
+"""The most the priced project's two takes and its one sound can each cost, both under `CAP` and together over it."""
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_ceiling_refuses_the_whole_build_before_it_buys_anything(
+    tmp_path: Path, make_run: Callable[..., Watched], purchases: Purchases
+) -> None:
+    """Takes under the cap and a sound under the cap still make a run over it, so nothing at all is bought."""
+    paying = load_project(tmp_path / "paying", PRICED_TOML, script=SCRIPT, environ=VOICED)
+    with pytest.raises(ApprovalRequired) as refused:
+        build(paying, make_run(paying, spend=True, max_cost=CAP).run)
+    assert purchases.counts == (0, 0)
+    said = str(refused.value)
+    assert money(TAKES + SOUND) in said and money(CAP) in said, said
+    assert "kept" not in said, "a run refused before it bought anything has nothing to keep"
+    assert paying.takes() is None
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_the_command_line_refuses_the_whole_build_with_its_json_refusal(
+    tmp_path: Path, purchases: Purchases, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`build --spend --max-cost` and `Project.build(spend=True, max_cost=...)` open one run, so one cap holds."""
+    paying = load_project(tmp_path / "paying", PRICED_TOML, script=SCRIPT, environ=VOICED)
+    for name, value in {**VOICED, CONFIG_VARIABLE: str(tmp_path / "machine.toml")}.items():
+        monkeypatch.setenv(name, value)
+    code = main(["-p", str(paying.root), "--json", "build", "--spend", "--max-cost", str(CAP)])
+    assert purchases.counts == (0, 0)
+    refused = json.loads(capsys.readouterr().out)
+    assert code == ErrorCode.APPROVAL.exit_code
+    assert refused["error"]["code"] == ErrorCode.APPROVAL.value
+    assert money(TAKES + SOUND) in refused["error"]["message"] and money(CAP) in refused["error"]["message"]
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_stage_that_asks_for_more_than_the_build_was_priced_at_is_refused_and_keeps_what_was_bought(
+    tmp_path: Path, make_run: Callable[..., Watched], purchases: Purchases, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate keeps the run's own total, so a sound priced low up front cannot carry the run over the cap."""
+    paying = load_project(tmp_path / "paying", PRICED_TOML, script=SCRIPT, environ=VOICED)
+    real = soundscape_stage.price
+    monkeypatch.setattr(
+        soundscape_stage,
+        "price",
+        lambda *_a, **_k: real(paying).model_copy(
+            update={"seconds": 0.0, "sections": (), "dollars": 0.0, "ceiling_dollars": 0.0}
+        ),
+    )
+    watched = make_run(paying, spend=True, max_cost=CAP)
+    with pytest.raises(ApprovalRequired) as refused:
+        build(paying, watched.run)
+    assert purchases.counts == (2, 0)
+    assert [line.spend.ceiling_dollars for line in watched.of(SpendEvent)] == [TAKES, SOUND]
+    said = str(refused.value)
+    assert money(TAKES + SOUND) in said and money(CAP) in said and "kept" in said, said
+    kept = paying.takes()
+    assert kept is not None and len(kept.voiced) == 2, "the takes it bought are kept"
 
 
 def test_a_certain_finding_stops_the_run_where_it_was_found(

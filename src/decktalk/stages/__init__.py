@@ -41,9 +41,6 @@ CHARACTERS_PER_PRICE = 1000
 SECONDS_PER_PRICE = 1
 """Truth: a per-second rate is stated per second of audio, which is how a declared rate key reads."""
 
-DOLLAR_DIGITS = 2
-"""Truth: a price in dollars is read to the cent, which is the smallest unit anybody is charged."""
-
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
 
@@ -144,7 +141,6 @@ def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
 
 __all__ = [
     "CHARACTERS_PER_PRICE",
-    "DOLLAR_DIGITS",
     "SECONDS_PER_PRICE",
     "SECTION_START_SECONDS",
     "billed",

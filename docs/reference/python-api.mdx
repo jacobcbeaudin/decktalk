@@ -146,13 +146,15 @@ stages are members of, in run order: `NARRATE`, `CUE`, `RECORD`, `SOUNDSCAPE`, `
 | `record` | Records each page section in headless Chromium, against the seconds the cues named. | `build/recordings/` |
 | `soundscape` | Generates the music, the ambience bed and the effects the project describes. | `build/soundscape/` |
 | `assemble` | Cuts, mixes and encodes the sections into one film. | `build/final/` |
-| `verify` | Measures the finished film: every start, every cut, every seam and every landing. | nothing |
+| `verify` | Measures the finished film: every start, every cut, every seam and every landing. | only its events file, under the build lock |
 | `build` | Runs every stage in order, or the span `stages` names, less whatever `skip` names. | whatever the stages it ran write |
-| `status` | Reports what is written, what is built, what is stale and what to do next. | nothing |
-| `check` | Judges the script, the cue file and the pages before a build, and prices what a build costs. | `build/frames/` and `build/storyboard.html` when it opens pages |
-| `words` | Every spoken word with its start and its end, which is how a cue phrase is written. | nothing |
+| `status` | Reports what is written, what is built, what is stale and what to do next. | only its events file |
+| `check` | Judges the script, the cue file and the pages before a build, and prices the narration it would buy. | `build/frames/` and `build/storyboard.html` when it opens pages |
+| `words` | Every spoken word with its start and its end, which is how a cue phrase is written. | only its events file |
 | `storyboard` | Freezes every slide at every cue onto one page. | `build/storyboard/` and `build/storyboard.html` |
 | `clip` | Cuts a span of one built section into its own file. | the file `out` names, and its words file |
+
+Every call in the table also appends its own events file, `build/events/<run>.jsonl`.
 
 ### The parameters that spend or change what a call does
 
@@ -190,7 +192,7 @@ if result.stopped_at is not None:
 
 | Exception | Raised by |
 |---|---|
-| `ApprovalRequired` | `narrate`, `soundscape` and `build`, when `max_cost` refuses a run that spends. |
+| `ApprovalRequired` | `narrate`, `soundscape` and `build`, when a purchase was not approved or `max_cost` refuses it, and every call that opens a page under `record.page_policy = "untrusted"` while it may spend. |
 | `ProjectLocked` | Every call that writes, when another writer holds the build directory. |
 | `NotBuiltError` | A call that needs an artifact no earlier run made, such as `cue`, `words` or `verify` before any `narrate`. |
 | `ProviderError` | `narrate`, `soundscape` and `build` on a paid run, when the voice service fails. |
@@ -272,18 +274,26 @@ each section whose take is missing plays a click track with a word clock and is 
 builds the film past it. `soundscape` reports its plan without buying it. A repository that commits
 its takes and its `[voice] id` therefore builds its real film on a machine that holds no key.
 
-`max_cost` is a ceiling in US dollars, checked before the first paid request rather than counted
-down as the credits go. It is compared against `spend.ceiling_dollars`, which is the most the run
-can cost, and never against `spend.dollars`, because credits are consumed one request at a time and
-a cap that claimed to stop a run halfway would be a lie.
+`max_cost` is a ceiling in US dollars on the whole run, checked before the first paid request
+rather than counted down as the credits go. It is compared against `spend.ceiling_dollars`, which is
+the most the run can cost, and never against `spend.dollars`, because credits are consumed one
+request at a time and a cap that claimed to stop a run halfway would be a lie. A `build` adds its
+takes and its sounds together before it buys either. Each purchase is checked again as it is made,
+so a stage that asks for more than the build was priced at still raises, and the message says that
+what the run bought before it is kept.
 
-`ApprovalRequired` is raised rather than spending, in three cases.
+`ApprovalRequired` is raised at the spend gate rather than spending, in four cases.
 
 | When | What the message says |
 |---|---|
-| A purchase reached the gate and nothing approved it. | How much the run would spend on speech. |
+| A purchase reached the gate and nothing approved it. | How much the run would spend. |
+| `max_cost` is set and the voice declares no bill, which only a voice a host registered itself can do. | That the cap would guard a made-up price. |
 | `max_cost` is set and no layer above the default states the rate the run buys at. | That the cap would guard a price nobody stated. |
 | The run's ceiling is over `max_cost`. | The ceiling, the cap, and the value that would let it through. |
+
+It is also raised before any browser starts when a run that may spend opens a page under
+`record.page_policy = "untrusted"`, as
+[Voice and render in separate processes](#voice-and-render-in-separate-processes) explains.
 
 ```python
 import decktalk
@@ -354,7 +364,7 @@ declares `run`, and one whose command writes files also declares `written`.
 |---|---|
 | `schema` | The shape version of the object, which is always `2`. It is spelled `schema_` in Python and `schema` in JSON. |
 | `ok` | True when the call ran and judged nothing that reaches its threshold. A certain finding reaches it by default, and `build` reads it from `stop_on` and `allow`. On the command line the threshold is the one `--fail-on` and `--allow` set, so `ok` is true exactly when the command exits 0. |
-| `findings` | Every judgement this call made, certain first. |
+| `findings` | Every judgement this call made, in the order it made them. |
 | `error` | An `ErrorInfo`, filled only when the command could not run at all. |
 | `run` | The id of the run this call opened, which names its events file. |
 | `written` | Every file this run wrote, project-relative, in the order it wrote them. |

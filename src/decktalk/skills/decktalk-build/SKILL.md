@@ -26,8 +26,10 @@ craft of a build is knowing which half you are in.
 3. **Never replace a paid take.** A build that does not spend keeps and plays every paid take, and
    only the flag that discards a take throws one away. Never pass it without an answer from the author.
 4. **Judge before you spend.** `decktalk check` measures the project without producing anything and
-   prices what a voiced run would cost. Stop on anything certain. Read the rows it could not measure
-   as well as the rows it failed, because a skipped row proves nothing and still leaves a run green.
+   prices the narration a voiced run would buy. The sound is not in that price: `decktalk soundscape`
+   told not to spend prices a soundscape. Stop on anything certain. Read the rows it could not
+   measure as well as the rows it failed, because a skipped row proves nothing and still leaves a
+   run green.
 5. **Show the storyboard.** It is the frames of every slide at every cue, and it is the human
    checkpoint before credits are spent. Look at it yourself, and put its path in front of the author.
 6. **Put the price in front of the author and wait.** Name every section that would be voiced and
@@ -64,7 +66,9 @@ craft of a build is knowing which half you are in.
 - A film built without a voice has no spoken landmark, so some cue measurements cannot be taken until
   it is voiced.
 - A build that stops on a finding exits 1 and still returns its findings, what it spent and the stage
-  it stopped at. No film came out of it, so hand the findings off rather than building again.
+  it stopped at. A stop before `assemble` leaves `film` null. A stop at `assemble` names a film that
+  was made and never measured, so never show it as done. Either way, hand the findings off rather
+  than building again.
 
 ## Hand off
 

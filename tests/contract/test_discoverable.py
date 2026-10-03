@@ -35,7 +35,7 @@ from decktalk.settings import KEYS, NUMBERS
 DOCS = "https://docs.decktalk.ai"
 """Where every published address resolves, which is the one host a printed URL may name."""
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 1
 """The shape version every result publishes, which is the founder's decided contract."""
 
 

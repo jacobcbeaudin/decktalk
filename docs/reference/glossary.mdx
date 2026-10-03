@@ -18,7 +18,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 | record | The stage that records each page section in headless Chromium against those seconds. It writes `build/recordings/`. | [How it works](/concepts/how-it-works) |
 | soundscape | The stage that generates the music, the ambience bed and the effects. It writes `build/soundscape/`. | [Sound](/concepts/sound) |
 | assemble | The stage that cuts, mixes and encodes the sections into one film. It writes `build/final/`. | [How it works](/concepts/how-it-works) |
-| verify | The stage that measures the finished film against the clock the earlier stages promised. It writes nothing. | [Verify](/reference/verify) |
+| verify | The stage that measures the finished film against the clock the earlier stages promised. It writes no artifact, only its events file and the build lock. | [Verify](/reference/verify) |
 
 ## The page
 

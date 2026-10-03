@@ -76,7 +76,8 @@ decktalk soundscape --replace-score --spend   # buy every bought sound again
 
 A run with `--no-spend` reports what it would ask for and buys nothing, which is the plan an author
 reads before approving a spend. With neither flag, a run that would buy something prices it and asks
-on a terminal, and a run with nothing left to buy asks nothing. `--max-cost N` refuses before the
+on a terminal, and a run with nothing left to buy asks nothing. A build asks once about its takes
+and its sounds added together. `--max-cost N` refuses before the
 first call when the most the run can cost is over N dollars. `--replace-score` is the one way to buy
 again a sound the ledger holds. It acts only with `--spend`, is confirmed once on a terminal, and
 never buys a take, while `--force` never buys a sound.
@@ -128,7 +129,7 @@ caption = "soft click"
 
 [soundscape.music]
 prompt = "calm, minimal instrumental for a lesson: soft piano and warm pads, slow, no drums, unobtrusive under a narrator"
-seconds = 120
+duration_seconds = 120
 
 [soundscape.ambience]
 text = "quiet lecture hall room tone, distant HVAC, no voices, steady"

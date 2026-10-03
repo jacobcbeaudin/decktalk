@@ -31,10 +31,10 @@ from decktalk.inputs.script import Segment
 from decktalk.inputs.workspace import Workspace
 from decktalk.machine import Run
 from decktalk.page import SECOND_DIGITS
-from decktalk.results import Spend, SpendState, TakeStatus
+from decktalk.results import DOLLAR_DIGITS, Spend, SpendState, TakeStatus
 from decktalk.settings import BY_ID, PROJECT_FILE
 from decktalk.speech import DECLARED, SpeechProvider, SpeechRequest, canonical_text, output_of, renders_pauses, table_of
-from decktalk.stages import DOLLAR_DIGITS, billed, dollars_for, rate_fields, voice_context
+from decktalk.stages import billed, dollars_for, rate_fields, voice_context
 
 WITHOUT_A_VOICE = "no voice is named, so the cache cannot be checked"
 """Why a section's take is unknown, which is the one state a plan cannot resolve on its own."""
