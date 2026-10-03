@@ -45,7 +45,7 @@
           "x-environment": "DECKTALK_VIDEO_HEIGHT"
         },
         "output_fps": {
-          "description": "Frame rate of the final mp4. The recorder's own rate is measured and is not a knob.",
+          "description": "Frame rate of the final mp4. The recorder's own rate is measured and is not a setting.",
           "type": "integer",
           "default": 25,
           "enum": [
@@ -152,7 +152,7 @@
           "x-environment": "DECKTALK_NARRATION_RETRIES"
         },
         "mp3_bitrate": {
-          "description": "Bitrate of the mp3 files that DeckTalk writes, which are the click tracks and the joined narration.",
+          "description": "Bitrate of the mp3 files that DeckTalk writes, which are the placeholders and the joined narration.",
           "type": "string",
           "default": "128k",
           "enum": [
@@ -182,8 +182,8 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_NARRATION_WORDS_PER_MINUTE"
         },
-        "silent_words_per_minute": {
-          "description": "Pacing of the click track in a build without voice.",
+        "placeholder_words_per_minute": {
+          "description": "Pacing of a placeholder, the click audio a section plays until its take is voiced.",
           "type": "integer",
           "default": 150,
           "minimum": 60,
@@ -193,7 +193,7 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_NARRATION_SILENT_WORDS_PER_MINUTE"
+          "x-environment": "DECKTALK_NARRATION_PLACEHOLDER_WORDS_PER_MINUTE"
         },
         "lead_seconds": {
           "description": "Silence before the first word of every spoken section, so the picture changes before the voice speaks. A section's own `lead_seconds` replaces it.",
@@ -208,8 +208,8 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_NARRATION_LEAD_SECONDS"
         },
-        "silent_beat_seconds": {
-          "description": "Seconds each beat adds to a section's length in a build without voice.",
+        "placeholder_beat_seconds": {
+          "description": "Seconds each beat adds to the length of a placeholder take.",
           "type": "number",
           "default": 0.7,
           "minimum": 0,
@@ -219,9 +219,9 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_NARRATION_SILENT_BEAT_SECONDS"
+          "x-environment": "DECKTALK_NARRATION_PLACEHOLDER_BEAT_SECONDS"
         },
-        "tail_min_seconds": {
+        "tail_seconds": {
           "description": "Silence after the last word of every spoken section, so a cut never falls on speech. The take is placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it.",
           "type": "number",
           "default": 0.7,
@@ -235,7 +235,7 @@
           "x-decides": [
             "CUT_SPEECH"
           ],
-          "x-environment": "DECKTALK_NARRATION_TAIL_MIN_SECONDS"
+          "x-environment": "DECKTALK_NARRATION_TAIL_SECONDS"
         },
         "takes_dir": {
           "description": "Directory inside the project that holds every take the film plays and the words its voice sent with each, which you commit so a fresh clone builds the film with no key. The take index stays under the build, because it is a cache built again from the takes. A take is looked for here first and in the machine's take store, `store_dir`, second, and a take this project buys or finds there is written here.",
@@ -247,14 +247,14 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-hazard": "An empty value, a directory outside the project, an absolute path, the project directory itself, a directory inside the build directory or one that holds it is refused when the project loads, because a bought take must land in a folder the project keeps, and a project someone else wrote would otherwise choose where this machine reads and writes its takes.",
+          "x-hazard": "An empty value, a directory outside the project, an absolute path, the project directory itself, a directory inside the build directory or one that holds it is refused when the project loads, because a voiced take must land in a folder the project keeps, and a project someone else wrote would otherwise choose where this machine reads and writes its takes.",
           "x-see-also": [
             "narration.store_dir"
           ],
           "x-environment": "DECKTALK_NARRATION_TAKES_DIR"
         },
         "store_dir": {
-          "description": "The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its content hash. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a purchase nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS.",
+          "description": "The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its input digest. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a take nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS.",
           "type": "string",
           "default": "",
           "x-range": "takes any value of its type",
@@ -546,7 +546,7 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-decides": [
-            "PAGE_TRUNCATED"
+            "RECORD_TRUNCATED"
           ],
           "x-environment": "DECKTALK_RECORD_TRUNCATED_SLACK_SECONDS"
         },
@@ -568,7 +568,7 @@
             "record.retries"
           ],
           "x-decides": [
-            "PAGE_STALLED"
+            "RECORD_STALLED"
           ],
           "x-environment": "DECKTALK_RECORD_FRAME_GAP_MAX_MS"
         }
@@ -693,7 +693,7 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-decides": [
-            "PAGE_BLACK"
+            "RECORD_BLACK"
           ],
           "x-environment": "DECKTALK_VERIFY_AFTER_DIP_SECONDS"
         },
@@ -809,7 +809,7 @@
           "x-environment": "DECKTALK_VERIFY_MARGIN_MIN_POINTS"
         },
         "thin_change_factor": {
-          "description": "A passing cue whose changed share or margin is under this many times its floor is uncertain rather than clean. A value of 1 turns that second opinion off.",
+          "description": "A passing cue whose changed share or margin is under this many times its floor is a warning rather than clean. A value of 1 turns that second opinion off.",
           "type": "number",
           "default": 3.0,
           "minimum": 1,
@@ -960,7 +960,7 @@
             "record.painted_peak_luma_min"
           ],
           "x-decides": [
-            "PAGE_BLACK"
+            "RECORD_BLACK"
           ],
           "x-environment": "DECKTALK_VERIFY_BLACK_MAX_LUMA"
         },
@@ -1021,7 +1021,7 @@
     },
     "voice": {
       "type": "object",
-      "description": "These keys are the four every voice has: which provider reads the script, in which voice, model and pace. Everything a provider is particular about, its own fields, its default model and its rate, is in that provider's own table, so changing `provider` never sends one vendor's fields to another.",
+      "description": "These keys are the three every voice has: which provider reads the script, in which voice and at what pace. Everything a provider is particular about, its own fields, its model and its rate, is in that provider's own table, so changing `provider` never sends one vendor's fields or model to another.",
       "x-kind": "tuning",
       "properties": {
         "provider": {
@@ -1045,20 +1045,6 @@
           "x-source": "chosen",
           "x-hazard": "The id is placed in the path of every speech request, so a value that could hold a slash, a dot or a query would let a project somebody else wrote send the key to another endpoint of the service.",
           "x-environment": "DECKTALK_VOICE_ID"
-        },
-        "model": {
-          "description": "The provider's model that reads the script. It is empty for the model the provider's own table names, such as `[elevenlabs] model` or `[dtsp] model`.",
-          "type": "string",
-          "default": "",
-          "x-range": "takes any value of its type",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-see-also": [
-            "elevenlabs.model",
-            "dtsp.model"
-          ],
-          "x-environment": "DECKTALK_VOICE_MODEL"
         },
         "speed": {
           "description": "How fast the voice speaks, as a multiple of its natural pace.",
@@ -1196,20 +1182,17 @@
     },
     "elevenlabs": {
       "type": "object",
-      "description": "These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on elevenlabs.io unless the machine allows any. The score stage buys from the same API with the same key.",
+      "description": "These keys are ElevenLabs's own: its speech fields, its model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `base_url` is the machine's to set. The score stage buys from the same API with the same key.",
       "x-kind": "tuning",
       "properties": {
         "model": {
-          "description": "The ElevenLabs model that reads the script when `[voice] model` is empty.",
+          "description": "The ElevenLabs model that reads the script when `[voice] provider` is `elevenlabs`.",
           "type": "string",
           "default": "eleven_multilingual_v2",
           "x-range": "takes any value of its type",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-see-also": [
-            "voice.model"
-          ],
           "x-environment": "DECKTALK_ELEVENLABS_MODEL"
         },
         "stability": {
@@ -1259,20 +1242,20 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_ELEVENLABS_SPEAKER_BOOST"
         },
-        "price_per_1000_characters": {
-          "description": "What this project's ElevenLabs plan charges per thousand characters of speech.",
+        "dollars_per_1000_characters": {
+          "description": "What this project's ElevenLabs plan charges in US dollars per thousand characters of speech.",
           "type": "number",
           "default": 0.0,
           "minimum": 0,
           "maximum": 100,
           "x-range": "must be between 0 and 100",
-          "x-unit": "currency per 1000 characters",
+          "x-unit": "US dollars per 1000 characters",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "stated",
           "x-evidence": "the plan page of the account whose key this project uses",
           "x-hazard": "It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. ElevenLabs bills per character, so a zero somebody stated still asks before it buys.",
-          "x-environment": "DECKTALK_ELEVENLABS_PRICE_PER_1000_CHARACTERS"
+          "x-environment": "DECKTALK_ELEVENLABS_DOLLARS_PER_1000_CHARACTERS"
         },
         "output_format": {
           "description": "Audio format ElevenLabs returns each take in, as its own codec_rate_bitrate token. It is part of every take's digest, and its codec names the take's file.",
@@ -1293,46 +1276,44 @@
           "x-hazard": "Every take already bought was bought in the format named here, so another one buys every take again.",
           "x-environment": "DECKTALK_ELEVENLABS_OUTPUT_FORMAT"
         },
-        "api_base": {
-          "description": "Base URL of the ElevenLabs API.",
+        "base_url": {
+          "description": "Base URL of the ElevenLabs API, which the voice and the score both send their requests and the key to.",
           "type": "string",
           "default": "https://api.elevenlabs.io/v1",
           "x-range": "takes any value of its type",
-          "x-scope": "project",
-          "x-nature": "taste",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_ELEVENLABS_API_BASE"
+          "x-hazard": "The script, and for a paid voice the key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
+          "x-environment": "DECKTALK_ELEVENLABS_BASE_URL"
         }
       },
       "additionalProperties": false
     },
     "dtsp": {
       "type": "object",
-      "description": "These keys are the `dtsp` voice's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `url` may name only a loopback address over http unless the machine allows any host.",
+      "description": "These keys are the `dtsp` voice's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.",
       "x-kind": "tuning",
       "properties": {
-        "url": {
-          "description": "Base URL of the local speech server, which must be http on 127.0.0.1, localhost or [::1].",
+        "base_url": {
+          "description": "Base URL of the local speech server, which the script is sent to.",
           "type": "string",
           "default": "http://127.0.0.1:8765",
           "x-range": "takes any value of its type",
-          "x-scope": "project",
-          "x-nature": "taste",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-hazard": "The script travels to whatever host this names, so a project file can name only this machine.",
-          "x-environment": "DECKTALK_DTSP_URL"
+          "x-hazard": "The script, and for a paid voice the key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
+          "x-environment": "DECKTALK_DTSP_BASE_URL"
         },
         "model": {
-          "description": "The model the local server reads the script with when `[voice] model` is empty, as the server names it.",
+          "description": "The model the local server reads the script with when `[voice] provider` is `dtsp`, as the server names it.",
           "type": "string",
           "default": "kokoro-82m",
           "x-range": "takes any value of its type",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-see-also": [
-            "voice.model"
-          ],
           "x-environment": "DECKTALK_DTSP_MODEL"
         }
       },
@@ -1360,7 +1341,7 @@
           "x-environment": "DECKTALK_SCORE_DIR"
         },
         "provider": {
-          "description": "The sound provider the music, the ambience and the effects are bought from, which is a name the machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys with the key and `api_base` of `[elevenlabs]`.",
+          "description": "The sound provider the music, the ambience and the effects are bought from, which is a name the machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys with the key and `base_url` of `[elevenlabs]`.",
           "type": "string",
           "default": "elevenlabs",
           "x-range": "takes any value of its type",
@@ -1368,7 +1349,7 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-see-also": [
-            "elevenlabs.api_base"
+            "elevenlabs.base_url"
           ],
           "x-environment": "DECKTALK_SCORE_PROVIDER"
         },
@@ -1438,14 +1419,14 @@
               "x-source": "chosen",
               "x-environment": "DECKTALK_SCORE_AMBIENCE_PROMPT_INFLUENCE"
             },
-            "price_per_minute": {
-              "description": "What this project's sound plan charges per minute of ambience audio, which is priced by the second of audio asked for.",
+            "dollars_per_minute": {
+              "description": "What this project's sound plan charges in US dollars per minute of ambience audio, which is priced by the second of audio asked for.",
               "type": "number",
               "default": 0.0,
               "minimum": 0,
               "maximum": 100,
               "x-range": "must be between 0 and 100",
-              "x-unit": "currency per minute of audio",
+              "x-unit": "US dollars per minute of audio",
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "stated",
@@ -1454,7 +1435,7 @@
               "x-see-also": [
                 "score.provider"
               ],
-              "x-environment": "DECKTALK_SCORE_AMBIENCE_PRICE_PER_MINUTE"
+              "x-environment": "DECKTALK_SCORE_AMBIENCE_DOLLARS_PER_MINUTE"
             }
           },
           "additionalProperties": true
@@ -1499,14 +1480,14 @@
               "x-source": "chosen",
               "x-environment": "DECKTALK_SCORE_EFFECTS_PROMPT_INFLUENCE"
             },
-            "price_per_minute": {
-              "description": "What this project's sound plan charges per minute of effect audio, which is priced by the second of audio asked for.",
+            "dollars_per_minute": {
+              "description": "What this project's sound plan charges in US dollars per minute of effect audio, which is priced by the second of audio asked for.",
               "type": "number",
               "default": 0.0,
               "minimum": 0,
               "maximum": 100,
               "x-range": "must be between 0 and 100",
-              "x-unit": "currency per minute of audio",
+              "x-unit": "US dollars per minute of audio",
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "stated",
@@ -1515,7 +1496,7 @@
               "x-see-also": [
                 "score.provider"
               ],
-              "x-environment": "DECKTALK_SCORE_EFFECTS_PRICE_PER_MINUTE"
+              "x-environment": "DECKTALK_SCORE_EFFECTS_DOLLARS_PER_MINUTE"
             }
           },
           "additionalProperties": true
@@ -1592,14 +1573,14 @@
               "x-source": "chosen",
               "x-environment": "DECKTALK_SCORE_MUSIC_CROSSFADE_SECONDS"
             },
-            "price_per_minute": {
-              "description": "What this project's sound plan charges per minute of music audio, which is priced by the second of audio asked for.",
+            "dollars_per_minute": {
+              "description": "What this project's sound plan charges in US dollars per minute of music audio, which is priced by the second of audio asked for.",
               "type": "number",
               "default": 0.0,
               "minimum": 0,
               "maximum": 100,
               "x-range": "must be between 0 and 100",
-              "x-unit": "currency per minute of audio",
+              "x-unit": "US dollars per minute of audio",
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "stated",
@@ -1608,7 +1589,7 @@
               "x-see-also": [
                 "score.provider"
               ],
-              "x-environment": "DECKTALK_SCORE_MUSIC_PRICE_PER_MINUTE"
+              "x-environment": "DECKTALK_SCORE_MUSIC_DOLLARS_PER_MINUTE"
             }
           },
           "additionalProperties": true
@@ -1645,7 +1626,7 @@
           "x-environment": "DECKTALK_OUTPUT_EVENTS_KEEP_RUNS"
         },
         "events_max_bytes": {
-          "description": "Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its spending are always kept.",
+          "description": "Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its costs are always kept.",
           "type": "integer",
           "default": 8388608,
           "minimum": 65536,

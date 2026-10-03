@@ -26,16 +26,16 @@ def write_cues(root: Path, rows: list[dict[str, object]]) -> Path:
 
 
 def test_a_cue_row_names_its_id_under_one_key_and_no_other(tmp_path: Path) -> None:
-    path = write_cues(tmp_path, [{"cue": "1.1:a", "on": "$start"}, {"cue": "1.1:b", "on": "hello"}])
+    path = write_cues(tmp_path, [{"id": "1.1:a", "phrase": "$start"}, {"id": "1.1:b", "phrase": "hello"}])
     (section,) = load_cues(path, tmp_path, {1})
-    assert [c.cue for c in section.cues] == ["1.1:a", "1.1:b"]
-    assert [c.on for c in section.cues] == ["$start", "hello"]
+    assert [c.id for c in section.cues] == ["1.1:a", "1.1:b"]
+    assert [c.phrase for c in section.cues] == ["$start", "hello"]
     # A cue row that names the id under any other key is refused, naming the key and the row.
-    write_cues(tmp_path, [{"id": "1.1:a", "on": "$start"}])
-    with pytest.raises(InputError, match="'id' is not a key of a cue"):
+    write_cues(tmp_path, [{"cue": "1.1:a", "phrase": "$start"}])
+    with pytest.raises(InputError, match="'cue' is not a key of a cue"):
         load_cues(path, tmp_path, {1})
     # A key one letter away from a real one moves a cue in silence unless it is refused too.
-    write_cues(tmp_path, [{"cue": "1.1:a", "on": "hello", "occurence": 2}])
+    write_cues(tmp_path, [{"id": "1.1:a", "phrase": "hello", "occurence": 2}])
     with pytest.raises(InputError) as info:
         load_cues(path, tmp_path, {1})
     assert "'occurence' is not a key of a cue" in str(info.value)
@@ -45,18 +45,18 @@ def test_a_cue_row_names_its_id_under_one_key_and_no_other(tmp_path: Path) -> No
 
 
 def test_a_row_a_fix_scaffolded_loads_with_its_phrase_still_to_be_written(tmp_path: Path) -> None:
-    """`check --fix` writes the rows a page declares and leaves each `on` empty, because the phrase a
+    """`check --fix` writes the rows a page declares and leaves each `phrase` empty, because the phrase a
     cue lands on is the author's own line. Refusing the file here made the fix write a project that
     the next command could not read at all."""
-    path = write_cues(tmp_path, [{"cue": "1.1:open", "on": ""}])
+    path = write_cues(tmp_path, [{"id": "1.1:open", "phrase": ""}])
     (section,) = load_cues(path, tmp_path, {1})
-    assert section.cues[0].cue == "1.1:open"
-    assert section.cues[0].on == ""
+    assert section.cues[0].id == "1.1:open"
+    assert section.cues[0].phrase == ""
 
 
 def test_a_row_with_no_id_is_still_refused(tmp_path: Path) -> None:
-    path = write_cues(tmp_path, [{"cue": "", "on": "the words"}])
-    with pytest.raises(InputError, match="'cue' must not be empty"):
+    path = write_cues(tmp_path, [{"id": "", "phrase": "the words"}])
+    with pytest.raises(InputError, match="'id' must not be empty"):
         load_cues(path, tmp_path, {1})
 
 
@@ -132,15 +132,15 @@ def test_the_words_are_normalised_once_when_they_are_read(monkeypatch: pytest.Mo
 def test_each_row_knows_the_line_its_phrase_is_written_on(tmp_path: Path) -> None:
     text = (
         '{"sections": {\n'
-        '  "1": {"cues": [{"cue": "1.1:a", "on": "Hello"},\n'
-        '                 {"cue": "1.1:b",\n'
-        '                  "on": "say \\"there\\""}]},\n'
-        '  "2": {"cues": [{"cue": "2.1:a", "on": "again", "_comment": "\\"on\\": \\"decoy\\""}]}\n'
+        '  "1": {"cues": [{"id": "1.1:a", "phrase": "Hello"},\n'
+        '                 {"id": "1.1:b",\n'
+        '                  "phrase": "say \\"there\\""}]},\n'
+        '  "2": {"cues": [{"id": "2.1:a", "phrase": "again", "_comment": "\\"phrase\\": \\"decoy\\""}]}\n'
         "}}\n"
     )
     (tmp_path / "cues.json").write_text(text, encoding="utf-8")
     loaded = load_cues(tmp_path / "cues.json", tmp_path, {1, 2})
-    assert [(cue.on, cue.line) for block in loaded for cue in block.cues] == [
+    assert [(cue.phrase, cue.line) for block in loaded for cue in block.cues] == [
         ("Hello", 2),
         ('say "there"', 4),
         ("again", 5),

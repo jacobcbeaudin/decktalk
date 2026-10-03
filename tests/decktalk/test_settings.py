@@ -1,4 +1,4 @@
-"""The knob surface: how the five layers stack, what each refuses, and what every key publishes.
+"""The settings: how the five layers stack, what each refuses, and what every key publishes.
 
 The test that earns its keep is the boundary sweep. It builds the same value five ways at each edge
 of every key and asserts that the loader and a JSON Schema validator reach the same verdict, which
@@ -262,12 +262,12 @@ class TestTheFiveLayers:
     @pytest.mark.parametrize(
         ("platform", "environ", "expected"),
         [
-            ("darwin", {}, "home/Library/Application Support/decktalk/decktalk.toml"),
-            ("linux", {}, "home/.config/decktalk/decktalk.toml"),
-            ("linux", {"XDG_CONFIG_HOME": "/xdg"}, "/xdg/decktalk/decktalk.toml"),
-            ("win32", {"APPDATA": "/roaming"}, "/roaming/decktalk/decktalk.toml"),
-            ("win32", {}, "home/AppData/Roaming/decktalk/decktalk.toml"),
-            ("linux", {"DECKTALK_CONFIG": "/named.toml"}, "/named.toml"),
+            ("darwin", {}, "home/Library/Application Support/decktalk/machine.toml"),
+            ("linux", {}, "home/.config/decktalk/machine.toml"),
+            ("linux", {"XDG_CONFIG_HOME": "/xdg"}, "/xdg/decktalk/machine.toml"),
+            ("win32", {"APPDATA": "/roaming"}, "/roaming/decktalk/machine.toml"),
+            ("win32", {}, "home/AppData/Roaming/decktalk/machine.toml"),
+            ("linux", {"DECKTALK_MACHINE_FILE": "/named.toml"}, "/named.toml"),
         ],
     )
     def test_the_per_machine_file_has_a_place_on_every_platform_from_the_environment_passed_in(
@@ -279,7 +279,7 @@ class TestTheFiveLayers:
         """The process's own file is the machine's to read, and a loader handed none reads none."""
         planted = tmp_path / "planted.toml"
         planted.write_text("[tools]\ntimeout_seconds = 30\n", encoding="utf-8")
-        monkeypatch.setenv("DECKTALK_CONFIG", str(planted))
+        monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(planted))
         monkeypatch.setenv("DECKTALK_TOOLS_TIMEOUT_SECONDS", "31")
         here = load(project={}, environ={})
         assert here.layers.winner("tools.timeout_seconds").layer is Layer.DEFAULT
@@ -296,7 +296,7 @@ class TestScope:
         assert caught.value.location is not None
         assert caught.value.location.line == 2
         assert caught.value.hint is not None
-        assert "--where project" in caught.value.hint
+        assert "--scope project" in caught.value.hint
 
     def test_a_machine_key_in_the_machine_file_is_read(self, tmp_path: Path) -> None:
         path = tmp_path / "machine.toml"
@@ -318,7 +318,19 @@ class TestScope:
         with pytest.raises(InputError, match="machine-scoped") as caught:
             load(project=project, machine={}, environ={})
         assert caught.value.hint is not None
-        assert "--where machine" in caught.value.hint
+        assert "--scope machine" in caught.value.hint
+
+    @pytest.mark.parametrize("key", ["elevenlabs.base_url", "dtsp.base_url"])
+    def test_a_base_url_in_a_project_is_refused(self, key: str) -> None:
+        """A request carries the key or the script to the host a base URL names, so only the machine names one."""
+        table, name = key.split(".")
+        with pytest.raises(InputError, match=f"'{key}' is machine-scoped"):
+            load(project={table: {name: "http://127.0.0.1:9/v1"}}, machine={}, environ={})
+
+    def test_a_base_url_the_machine_names_is_read_with_no_switch(self) -> None:
+        machine = {"elevenlabs": {"base_url": "http://127.0.0.1:9/v1"}, "dtsp": {"base_url": "http://10.0.0.2:9"}}
+        loaded = load(project={}, machine=machine, environ={}).settings
+        assert (loaded.elevenlabs.base_url, loaded.dtsp.base_url) == ("http://127.0.0.1:9/v1", "http://10.0.0.2:9")
 
     def test_the_browser_path_in_a_project_file_is_refused_at_its_line(self, tmp_path: Path) -> None:
         (tmp_path / "decktalk.toml").write_text(
@@ -429,8 +441,8 @@ class TestCrossTableRelations:
         assert BY_ID["video.output_fps"].requires == "video.output_fps >= CAPTURE_FPS"
 
 
-class TestTheNumbersThatAreNotKnobs:
-    """Every derived expression and every constant is published, so a missing knob is explained."""
+class TestTheNumbersThatAreNotSettings:
+    """Every derived expression and every constant is published, so a missing setting is explained."""
 
     def test_no_published_number_is_also_a_key(self) -> None:
         assert not set(NUMBERS_BY_ID) & set(BY_ID)
@@ -500,7 +512,7 @@ class TestTheWriter:
         with pytest.raises(InputError, match="machine-scoped") as caught:
             write(tmp_path / "decktalk.toml", "tools.ffmpeg", "/opt/ffmpeg", scope=Scope.PROJECT, environ={})
         assert caught.value.hint is not None
-        assert "--where machine" in caught.value.hint
+        assert "--scope machine" in caught.value.hint
 
     def test_a_write_a_higher_layer_shadows_says_so(self, tmp_path: Path) -> None:
         environ = {"DECKTALK_VIDEO_PRESET": "slow"}
@@ -614,7 +626,7 @@ class TestTheRemover:
         with pytest.raises(InputError, match="machine-scoped") as caught:
             unset(tmp_path / "decktalk.toml", "tools.ffmpeg", scope=Scope.PROJECT, environ={})
         assert caught.value.hint is not None
-        assert "--where machine" in caught.value.hint
+        assert "--scope machine" in caught.value.hint
 
 
 class TestTheTables:
@@ -647,8 +659,8 @@ MOVED: list[tuple[str, str, Any]] = [
     ("voice.similarity_boost", "elevenlabs.similarity_boost", 0.6),
     ("voice.style", "elevenlabs.style", 0.2),
     ("voice.speaker_boost", "elevenlabs.speaker_boost", False),
-    ("voice.price_per_1000_characters", "elevenlabs.price_per_1000_characters", 0.3),
-    ("narration.model", "voice.model", "eleven_flash_v2_5"),
+    ("voice.dollars_per_1000_characters", "elevenlabs.dollars_per_1000_characters", 0.3),
+    ("narration.model", "elevenlabs.model", "eleven_flash_v2_5"),
     ("audio.duck_ramp_seconds", "mix.duck_ramp_seconds", 0.25),
     ("audio.ambience_ramp_seconds", "mix.ambience_ramp_seconds", 2.0),
     ("audio.ambience_pad_seconds", "mix.ambience_pad_seconds", 1.0),
@@ -678,8 +690,8 @@ GUESSED = {"elevenlabs.ambience_seconds", "elevenlabs.timeout_seconds", "narrati
 
 There is no table of old names, because a key is read under its own name alone, so a warning finds
 the key it offers from the words of the one it was given. `ambience_seconds` names the bed's length
-and the mix's ambience ramps alike, `timeout_seconds` names three timeouts, and `model` names the
-voice's model and each adapter's default model, so for these the warning is held to offering a key
+and the mix's ambience ramps alike, `timeout_seconds` names three timeouts, and `model` names each
+adapter's model and each sound's, so for these the warning is held to offering a key
 rather than to offering the one that moved.
 """
 
@@ -697,7 +709,7 @@ def tables_of(dotted: str, value: object) -> dict[str, Any]:
 
 
 class TestTheRegroup:
-    """Each provider owns its table, `[voice]` keeps four keys, and a moved key has no alias."""
+    """Each provider owns its table, `[voice]` keeps three keys, and a moved key has no alias."""
 
     @pytest.mark.parametrize(("old", "new", "value"), MOVED, ids=[new for _old, new, _value in MOVED])
     def test_a_moved_key_is_read_from_its_new_table(self, old: str, new: str, value: object) -> None:
@@ -746,11 +758,18 @@ class TestTheRegroup:
         assert said == f"environment: ignoring unknown key '{variable}' (did you mean '{meant}'?)."
 
     def test_the_old_speech_model_variable_offers_a_speech_model_and_never_the_musics(self) -> None:
-        """`model` names the voice's model and each adapter's default, so any of them is a fair offer."""
+        """`model` names each speech adapter's model, so either of them is a fair offer."""
         (said,) = env_warnings({"DECKTALK_NARRATION_MODEL": "x"})
         offered = said.split("did you mean '", 1)[1].split("'", 1)[0]
-        assert offered in {BY_ID[key].environment for key in ("voice.model", "elevenlabs.model", "dtsp.model")}
+        assert offered in {BY_ID[key].environment for key in ("elevenlabs.model", "dtsp.model")}
 
-    def test_voice_holds_the_four_keys_every_voice_has(self) -> None:
+    def test_a_voice_model_is_no_key_and_is_warned_about_as_unknown(self, tmp_path: Path) -> None:
+        """A model is set in its provider's table alone, so one value is never stated under two keys."""
+        project = load_project(tmp_path, MINIMAL_TOML + '\n[voice]\nmodel = "eleven_v3"\n', environ={})
+        assert project.settings.elevenlabs.model == Settings().elevenlabs.model
+        (said,) = [note for note in project.notes if "'model'" in note]
+        assert said.startswith("decktalk.toml: [voice]: ignoring unknown key 'model'")
+
+    def test_voice_holds_the_three_keys_every_voice_has(self) -> None:
         voice = sorted(key.name for key in KEYS if key.table == "voice")
-        assert voice == ["id", "model", "provider", "speed"]
+        assert voice == ["id", "provider", "speed"]

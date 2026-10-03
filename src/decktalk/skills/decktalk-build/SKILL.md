@@ -1,6 +1,6 @@
 ---
 name: decktalk-build
-description: Decide when a DeckTalk film is ready to be rendered, and never spend the author's money without an answer from them. Use when someone asks to build, render, export, preview or check a narrated video, an explainer, a tutorial or a lesson, or after any edit to the script, the cues, the project file or a deck page. It covers rehearsing without a voice, the storyboard as the checkpoint before credits are spent, what to put in front of the author before buying, what a build without a voice proves and what it does not, and when to stop trying. Do not use it to repair a finding, which belongs to decktalk-fix.
+description: Decide when a DeckTalk film is ready to be rendered, and never spend the author's money without an answer from them. Use when someone asks to build, render, export, preview or check a narrated video, an explainer, a tutorial or a lesson, or after any edit to the script, the cues, the project file or a deck page. It covers rehearsing without a voice, the storyboard as the checkpoint before anything is bought, what to put in front of the author before buying, what a build without a voice proves and what it does not, and when to stop trying. Do not use it to repair a finding, which belongs to decktalk-fix.
 compatibility: This is judgement rather than a command list. Run `decktalk --help` for the commands, `decktalk schema` for every flag and result, and `decktalk status` for where the project stands.
 metadata:
   ends_with: A verified film, and an author who saw the price and the frames before either was spent.
@@ -15,23 +15,23 @@ craft of a build is knowing which half you are in.
 ## The order to work in
 
 1. **Read the project before you change it.** `decktalk status` says which sections exist, which
-   recordings no longer match the project and why, whether the takes are placeholders or paid, and
+   recordings no longer match the project and why, whether the takes are placeholders or voiced, and
    whether a run is already going. Follow a run that is already going rather than starting a second.
-2. **Rehearse without spending.** A build told not to spend costs nothing: it plays every take on
+2. **Rehearse without buying.** A build told not to spend costs nothing: it plays every take on
    disk, a free voice such as `dtsp` still makes each missing take, and a voice that bills leaves a
    placeholder for each section whose take is missing. Each placeholder is reported as
    `TAKE_MISSING`, which names what makes the take: `--spend` for a paid voice, or starting the
    local server for a free one that is not running. A film with placeholders has estimated timing.
    Say so whenever you show it.
-3. **Never replace a paid take.** A build that does not spend keeps and plays every paid take, and
+3. **Never replace a voiced take.** A build that does not spend keeps and plays every voiced take, and
    only the flag that discards a take throws one away. Never pass it without an answer from the author.
 4. **Judge before you spend.** `decktalk check` measures the project without producing anything and
    prices the narration a voiced run would buy. The sound is not in that price: `decktalk score`
-   told not to spend prices a score. Stop on anything certain. Read the rows it could not
+   told not to spend prices a score. Stop on any error. Read the rows it could not
    measure as well as the rows it failed, because a skipped row proves nothing and still leaves a
    run green.
 5. **Show the storyboard.** It is the frames of every slide at every cue, and it is the human
-   checkpoint before credits are spent. Look at it yourself, and put its path in front of the author.
+   checkpoint before anything is bought. Look at it yourself, and put its path in front of the author.
 6. **Put the price in front of the author and wait.** Name every section that would be voiced and
    why, the total, and the price the estimate is based on. **Then wait for an answer. Run nothing
    that spends until the author has given one.** When nobody can answer, run only what spends
@@ -48,22 +48,23 @@ craft of a build is knowing which half you are in.
 
 ## Rules
 
-- Never pass a flag that hides a finding, forces a run past a refusal, or discards a paid take.
+- Never pass a flag that hides a finding, forces a run past a refusal, or discards a voiced take.
 - Never change the voice, the model or a voice setting without an answer, because each re-voices
   everything.
 - Never buy sound effects or music without a separate answer. It spends too.
 - Try a fix at most three times, then stop and report the finding and what you think the cause is.
-- Never report a film as done while a certain finding stands.
+- Never report a film as done while an error stands.
 
 ## Gotchas
 
-- A fresh clone has no take cache, so every section looks like it needs voicing even though nothing
-  changed. Work in the checkout that holds the build, or say what a full re-voice would cost.
-- When every section plans as new in a project that was voiced before, the cache is missing rather
-  than the script changed. Stop and find out which.
+- A clone whose takes directory was never committed holds no takes, so every section looks like it
+  needs a voice even though nothing changed. Commit the takes directory, or say what a full re-voice
+  would cost.
+- When every section plans as new in a project that was voiced before, the takes directory is missing
+  rather than the script changed. Stop and find out which.
 - Limiting a build to some sections limits what is voiced as well as what is recorded, so the price
   of a limited run covers those sections alone.
-- A film built without a voice has no spoken landmark, so some cue measurements cannot be taken until
+- A film built on placeholders alone has no spoken landmark, so some cue measurements cannot be taken until
   it is voiced.
 - A build that stops on a finding exits 1 and still returns its findings, what it spent and the stage
   it stopped at. A stop before `assemble` leaves `film` null. A stop at `assemble` names a film that

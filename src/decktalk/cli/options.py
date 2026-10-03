@@ -13,7 +13,7 @@ is no list here to keep in step with the models.
 Each family is one flag over a vocabulary the product already publishes, rather than a flag per
 value. `--allow` takes finding codes, `--skip` takes stages, `--set` takes settings keys, and
 `--section` takes section numbers, so an agent that has read `decktalk schema` can already write
-every one of them and a new code, stage or knob costs no help row at all.
+every one of them and a new code, stage or setting costs no help row at all.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from typing import Annotated, Any, get_args
 import typer
 
 from decktalk.errors import InputError
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Code, Severity
 from decktalk.pipeline import Stage
 from decktalk.project import section_numbers
 from decktalk.results import Result
@@ -41,8 +41,8 @@ class Group(Enum):
     """The five headings the command tree is read under, in the order a reader meets them."""
 
     MACHINE = "Set up this machine"
-    PROJECT = "Read the project, spending nothing"
-    CONTRACTS = "Read the knobs and the contracts"
+    PROJECT = "Read the project, buying nothing"
+    CONTRACTS = "Read the settings and the schemas"
     STAGE = "Run one stage, in this order"
     WHOLE = "Run them all, or cut one piece out"
 
@@ -50,8 +50,8 @@ class Group(Enum):
 class Panel(Enum):
     """The headings one command's own options are read under, in the order a reader meets them."""
 
-    SPENDING = "Spending"
-    SCOPE = "Scope"
+    SPEND = "Spend"
+    SELECTION = "Selection"
     FINDINGS = "Findings"
     REDOING = "Redoing work"
     THIS_RUN = "This run only"
@@ -59,25 +59,25 @@ class Panel(Enum):
 
 
 class FailOn(Enum):
-    """The threshold a run fails on, which names a threshold and never the value of a field.
+    """The threshold a run fails on, which is the least severe finding that fails it, or never.
 
-    The lowest threshold is spelled from the certainty it is the threshold for, because a second
-    spelling of that word would be a second vocabulary for one idea.
+    Each threshold is spelled from the severity it is the threshold for, because a second spelling of
+    those words would be a second vocabulary for one idea.
     """
 
-    CERTAIN = Certainty.CERTAIN.value
-    ANY = "any"
+    ERROR = Severity.ERROR.value
+    WARNING = Severity.WARNING.value
     NEVER = "never"
 
     @property
-    def stops_on(self) -> Certainty | None:
-        """The least certain finding that stops a build, which is the same line the exit code draws.
+    def stops_on(self) -> Severity | None:
+        """The least severe finding that stops a build, which is the same line the exit code draws.
 
         A build that carried on past a finding its exit code fails on would spend on a film the
         caller has already said is wrong, and one that stopped short of it would refuse a film the
         caller said is fine, so the threshold is one decision read in two places.
         """
-        return {FailOn.CERTAIN: Certainty.CERTAIN, FailOn.ANY: Certainty.UNCERTAIN, FailOn.NEVER: None}[self]
+        return {FailOn.ERROR: Severity.ERROR, FailOn.WARNING: Severity.WARNING, FailOn.NEVER: None}[self]
 
 
 class When(Enum):
@@ -90,7 +90,7 @@ class When(Enum):
 
 # The shared families, each written once and derived onto the commands that carry it. A hidden
 # global is on every command so that it works after the command name as well as before it, and the
-# command's own help closes by naming them in one line instead of spending eight rows on them.
+# command's own help closes by naming them in one line instead of eight rows of their own.
 Project = Annotated[
     Path | None,
     typer.Option(
@@ -138,7 +138,7 @@ Sections = Annotated[
     typer.Option(
         "--section",
         metavar="N",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Only these sections: 3, 3,5 or 7-9. Repeats.",
     ),
 ]
@@ -157,7 +157,7 @@ Fail = Annotated[
         "--fail-on",
         metavar="WHEN",
         rich_help_panel=Panel.FINDINGS.value,
-        help="certain fails on a certain finding, any fails on any finding, never fails on none. Default certain.",
+        help="error fails on an error, warning fails on any finding, never fails on none. Default error.",
     ),
 ]
 Fix = Annotated[
@@ -172,9 +172,9 @@ Spend = Annotated[
     bool | None,
     typer.Option(
         "--spend/--no-spend",
-        rich_help_panel=Panel.SPENDING.value,
+        rich_help_panel=Panel.SPEND.value,
         help=(
-            "Buy what is missing without asking, or buy nothing and play a placeholder where a paid take is missing. "
+            "Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. "
             "A free voice such as dtsp makes its takes either way. Unset, a terminal is asked and a run without one "
             "is refused."
         ),
@@ -185,7 +185,7 @@ MaxCost = Annotated[
     typer.Option(
         "--max-cost",
         metavar="N",
-        rich_help_panel=Panel.SPENDING.value,
+        rich_help_panel=Panel.SPEND.value,
         help="Refuse before the first call if the most this run can cost is over N US dollars.",
     ),
 ]
@@ -203,7 +203,7 @@ Skip = Annotated[
     typer.Option(
         "--skip",
         metavar="STAGE",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Run every stage but this one. Repeats.",
     ),
 ]
@@ -245,7 +245,7 @@ GLOBALS: tuple[tuple[str, Any, Any], ...] = (
 """Every flag that works on every command, before or after the command name, with its default."""
 
 FINDING_FAMILY: tuple[tuple[str, Any, Any], ...] = (
-    ("fail_on", Fail, FailOn.CERTAIN),
+    ("fail_on", Fail, FailOn.ERROR),
     ("allow", Allow, None),
 )
 """The two flags a command that reports judgements carries, derived from its result model."""

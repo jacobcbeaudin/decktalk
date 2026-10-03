@@ -29,7 +29,7 @@ class PageWarningRow(Model):
     code: Code = Field(description="The page code this warning raises, which is what a check dispatches on.")
     message: str = Field(description="The sentence the page printed, which is written for a person to read.")
     slide: str | None = Field(None, description="The slide this is about, or null.")
-    cue: str | None = Field(None, description="The wire id of the cue this is about, or null.")
+    cue: str | None = Field(None, description="The cue id of the cue this is about, or null.")
     attr: str | None = Field(None, description="The attribute this is about, or null.")
 
     @field_validator("code")
@@ -48,7 +48,7 @@ class PageWarningRow(Model):
 class CueRow(Model):
     """One cue as the page ran it, in seconds on the narration clock."""
 
-    id: str = Field(description="The wire id of the cue that fired.")
+    id: str = Field(description="The cue id of the cue that fired.")
     due: float = Field(description="The second the cue was due.")
     ran: float = Field(description="The second the cue actually ran.")
     frame: float | None = Field(None, description="The second the frame that ran it began, or null before t=0.")
@@ -96,14 +96,14 @@ class ElementRow(Model):
     """One measured element of a slide, which is every element a slide draws whether or not it is cued."""
 
     attrs: dict[str, str] = Field(default_factory=dict, description="Every contract attribute the element carries.")
-    moments: dict[str, str] = Field(default_factory=dict, description="Each moment attribute against its wire id.")
+    moments: dict[str, str] = Field(default_factory=dict, description="Each moment attribute against its cue id.")
     text: str = Field("", description="The element's text, collapsed and cut to the contract's length.")
     children: int = Field(0, ge=0, description="How many children a staggered element reveals one after another.")
     box: Box
 
     @property
     def cue(self) -> str | None:
-        """The wire id of this element's entrance, which is the moment every span is measured from."""
+        """The cue id of this element's entrance, which is the moment every span is measured from."""
         return self.moments.get(Attr.IN.value)
 
     @property
@@ -127,9 +127,9 @@ class ElementRow(Model):
         The scale is applied without the clamp the runtime puts on it, because this is the
         judgement that tells an author the scale they chose has made their own cues unmeasurable.
         A staggered container's span is its step times the children after the first plus one
-        entrance, which is exact arithmetic rather than an estimate, so its judgement is certain.
-        The number of children is what the probe counted on the page, because `data-steps` is a flag
-        that says the children step, and a flag carries no count.
+        entrance, which is exact arithmetic rather than an estimate, so its judgement is an error.
+        The number of children is what the probe counted on the page, because `data-spotlight` is a flag
+        that says the children come forward in turn, and a flag carries no count.
         """
         entrance = self.entrance * scale
         step = self.attrs.get(Attr.STAGGER.value)
@@ -156,7 +156,7 @@ class MeasuredScene(Model):
     )
     slides: tuple[str, ...] = Field((), description="The slides of this scene, in the order the page declares them.")
     cues: dict[str, tuple[str, ...]] = Field(
-        default_factory=dict, description="The wire ids of the cues each slide declares, keyed by the slide id."
+        default_factory=dict, description="The cue ids of the cues each slide declares, keyed by the slide id."
     )
 
 

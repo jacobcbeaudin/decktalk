@@ -25,7 +25,7 @@ from decktalk.results import counted
 INLINE_DIRECTION_RE = re.compile(r"^(?:beat|pause\s+\d+(?:\.\d+)?)$", re.IGNORECASE)
 """The two directions a paragraph may hold, which the parser turns into a pause the author asked for.
 
-A bracket that is a whole line is a stage direction. Inside a paragraph only a beat and a timed
+A bracket that is a whole line is a direction. Inside a paragraph only a beat and a timed
 pause are, and a placeholder is refused by its own rule under its own flag.
 """
 
@@ -94,10 +94,7 @@ def check_script(where: str, markdown: str) -> None:
     rows = "\n  ".join(f"line {number}: {what}" for number, what in refusals)
     raise InputError(
         f"{where} has {counted(len(refusals), 'thing')} the voice must not receive:\n  {rows}",
-        hint=(
-            "A stage direction goes on a line of its own. Inside a paragraph, write [beat] or "
-            "[pause N] and nothing else."
-        ),
+        hint=("A direction goes on a line of its own. Inside a paragraph, write [beat] or [pause N] and nothing else."),
     )
 
 

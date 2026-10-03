@@ -13,7 +13,7 @@ what a take of each section is named today, and no change to how pauses are carr
 
 It no longer skips. The voice id is one of the take inputs and it is a published name rather than a
 secret, so it sits in the data file beside the digests it produced, and the digests that protect
-every paid take are proved on every machine and in CI rather than on the founder's laptop alone.
+every voiced take are proved on every machine and in CI rather than on the founder's laptop alone.
 Nothing here needs audio, a network or a credential, because a digest is arithmetic over text, and
 the one request the ElevenLabs adapter is asked to send goes to a stand-in for the socket.
 
@@ -34,7 +34,7 @@ import pytest
 from decktalk.artifacts.takes import TakeInputs
 from decktalk.inputs.script import parse_script
 from decktalk.secret import Secret
-from decktalk.speech import SpeechRequest, VoiceContext, canonical_text
+from decktalk.speech import SpeechContext, SpeechRequest, canonical_text
 from decktalk.speech import http as speech_http
 from decktalk.speech.elevenlabs import ElevenLabs
 from support.paths import DATA
@@ -87,9 +87,9 @@ def sent_by_elevenlabs(markdown: str, monkeypatch: pytest.MonkeyPatch) -> str:
         return Reply(json.dumps({"audio_base64": base64.b64encode(b"mp3").decode(), "alignment": {}}).encode())
 
     monkeypatch.setattr(speech_http, "urlopen", urlopen)
-    context = VoiceContext(
+    context = SpeechContext(
         secrets=NoSecrets(),
-        api_base="https://api.elevenlabs.io/v1",
+        base_url="https://api.elevenlabs.io/v1",
         context_chars=0,
         speech_timeout_seconds=1,
     )

@@ -49,7 +49,7 @@ one is also a command of its own with the same name.
 - `record` records each page section in headless Chromium, playing the page against those seconds.
 - `score` generates the music, the ambience bed and the effects the project describes.
 - `assemble` cuts each section to its span, joins them, mixes the whole soundtrack and encodes one
-  film, with captions, chapters, a cut list, a transcript page and a poster beside it.
+  film, with captions, chapters, the placements, a transcript page and a poster beside it.
 - `verify` measures the finished film: every section start, every cut, every seam and every landing.
 
 [The CLI reference](/reference/cli) lists every command with its options and its result.
@@ -59,7 +59,7 @@ one is also a command of its own with the same name.
 The order is not a preference. Each stage needs something the stage before it wrote, and the two
 stages that can spend money sit as late as they can.
 
-- `narrate` is first because the word clock is what every later measurement is made against. A
+- `narrate` is first because the words are what every later measurement is made against. A
   second means nothing until the voice has said the words it counts from.
 - `cue` is second because a phrase becomes a second only once there are words with times on them.
 - `record` is third because the recorder plays the page to those seconds, so the picture lands on
@@ -90,7 +90,7 @@ judges the written files with no browser at all and says which judgements it cou
 safe fix, and an unsafe fix is printed either way and never applied.
 
 `decktalk storyboard` freezes every slide at every cue onto one page, `build/storyboard.html`. It is
-the human checkpoint before voice credits are spent, because it draws what the film will show in the
+the human checkpoint before anything is bought, because it draws what the film will show in the
 order it will show it. Five selectors narrow the sheet: `--section`, `--slide`, `--after`, `--before`
 and `--at`.
 
@@ -118,17 +118,17 @@ is 4 seconds by default. Nothing here depends on wall-clock time.
 
 ## The build that does not spend
 
-`--no-spend` plays every take already on disk, paid or placeholder, and gives each section whose take
+`--no-spend` plays every take already on disk, voiced or placeholder, and gives each section whose take
 is missing a placeholder instead of a spoken one, so the run needs no API key and buys nothing. Spend
 gates money and nothing else, so a free local voice such as `dtsp` still makes each missing take. The
 voice is built only when a take must be made, so a project that commits its takes and its
 `[voice] id` builds its real film on a machine that holds no key and no environment at all. Each section that plays a placeholder is
 reported once as [`TAKE_MISSING`](/reference/findings/TAKE_MISSING), with the command that buys its
-take. It is uncertain, so the default threshold still builds the film.
+take. It is a warning, so the default threshold still builds the film.
 
-- The placeholder is a click track with a soft click at the start of every estimated word and one
+- The placeholder is click audio with a soft click at the start of every estimated word and one
   where the last word ends, at -24 dBFS.
-- `narrate` spaces the estimated words at `narration.silent_words_per_minute`, which is 150 by
+- `narrate` spaces the estimated words at `narration.placeholder_words_per_minute`, which is 150 by
   default, and adds each declared pause, beat, lead and tail.
 - Every other stage runs as usual, so a build that does not spend exercises the cues, the pages, the
   recording, the cut and the checks.
@@ -136,9 +136,9 @@ take. It is uncertain, so the default threshold still builds the film.
 - The clicks are what lets `verify` compare the picture with the sound, so `CUE_OFF` still reports a
   reveal that misses its word.
 - A sound the score describes and has not bought plays as silence, reported once as
-  [`SOUND_MISSING`](/reference/findings/SOUND_MISSING). It is uncertain too, so the film is still
+  [`SOUND_MISSING`](/reference/findings/SOUND_MISSING). It is a warning too, so the film is still
   made.
-- `assemble` skips the loudness pass, because a click track has no programme loudness worth matching
+- `assemble` skips the loudness pass, because a placeholder has no programme loudness worth matching
   and normalising it would move the clicks the check listens for.
 
 A run that buys is the same command with `--spend`. With neither flag, a run that has something to
@@ -152,8 +152,8 @@ first call when the most the run can cost is over N dollars.
 
 A stage whose inputs have not changed is skipped, so an edit to one sentence rebuilds one section.
 
-`narrate` names each take by a hash of the content that produced it, which is the section's words
-and every `[voice]` key that changes how it is read. A section whose hash has not moved plays the
+`narrate` names each take by a digest of the content that produced it, which is the section's words
+and every `[voice]` key that changes how it is read. A section whose digest has not moved plays the
 take it already has. Every take a voice spoke lives in the takes directory, `takes/` inside the
 project, which you commit, so a fresh clone finds them. `narration.store_dir` is the take store, a
 second copy of every take this machine bought, which every project looks in second.

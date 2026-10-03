@@ -4,12 +4,12 @@ A take is the voice's own bytes and nothing else, and no stage ever rewrites it.
 is placement, and placement is a pure function of the take and its own section's settings: its lead
 is the section's `lead_seconds` or `[narration] lead_seconds`, the take plays to where its sound
 ends, measured from its own bytes, and its tail is the section's `tail_seconds` or
-`[narration] tail_min_seconds` after that. The join puts the lead before the take, cuts the take at
+`[narration] tail_seconds` after that. The join puts the lead before the take, cuts the take at
 its sound end and puts the tail after it, so whatever the take holds past its sound end, such as a
 breath after its last word, never plays, and the silence across every cut is one tail plus one lead.
 Nothing about a neighbour, and nothing about whether this run voiced the take or found it cached,
 reaches those numbers, which is what lets a change to one sentence rebuild one section and no other.
-None of them is part of the content hash either, so changing a lead or a tail voices nothing.
+None of them is part of the input digest either, so changing a lead or a tail voices nothing.
 
 A run without voice writes a click track of the length the words and the declared pauses come to,
 with evenly spaced estimated words, so cues resolve to plausible times and the whole pipeline runs
@@ -68,11 +68,11 @@ def place(inputs: Inputs, number: int, row: Take) -> Take:
 
     It reads the take's own bytes and the section's own settings and nothing else, so the same take
     under the same settings lands the same way on every run, whichever path wrote the row. The sound
-    end is measured once, and a row that carries it already keeps it, because the file its hash
+    end is measured once, and a row that carries it already keeps it, because the file its digest
     names holds the same bytes it was measured on.
     """
     end = row.sound_end_seconds
-    path = inputs.workspace.take_path(row.hash)
+    path = inputs.workspace.take_path(row.digest)
     if end is None and path.exists():
         end = sound_end_of(inputs, path)
     return row.model_copy(
@@ -108,7 +108,7 @@ def take_row(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voi
         section=segment.index,
         key=segment.key,
         chapter=chapter,
-        hash=digest,
+        digest=digest,
         voiced=voiced,
         word_count=segment.word_count,
         characters=len(canonical_text(segment.pieces)),
@@ -168,7 +168,7 @@ def write_voiced_take(
         run.emit(
             TakeCharged,
             section=segment.index,
-            take=digest,
+            digest=digest,
             characters=characters,
             dollars=dollars_for(billed(characters, seconds, voice), inputs),
         )
@@ -210,7 +210,7 @@ def keep_in_store(inputs: Inputs, run: Run, digest: str, pair: dict[str, str | b
 
 
 UNREADABLE_SUFFIX = ".unreadable"
-"""What a damaged copy of a paid take is renamed to end in, which moves it aside and never deletes it."""
+"""What a damaged copy of a voiced take is renamed to end in, which moves it aside and never deletes it."""
 
 
 def keep_at_home(inputs: Inputs, run: Run, number: int, digest: str, checked: set[str]) -> list[Path]:
@@ -277,7 +277,7 @@ def join_takes(inputs: Inputs, takes: Takes) -> Path:
     audio.concat_audio(
         [
             audio.Placement(
-                inputs.workspace.take_path(row.hash),
+                inputs.workspace.take_path(row.digest),
                 lead=row.lead_seconds,
                 play=row.sound_seconds,
                 tail=row.tail_seconds,
@@ -308,13 +308,13 @@ def planned_words(inputs: Inputs, plan: TakePlan) -> tuple[tuple[Word, ...], flo
     if plan.cached and plan.digest is not None and is_cached(plan.digest, inputs.workspace):
         # The take of this exact text is on disk, so the cues land on the words it already carries.
         words = inputs.words(number, plan.digest)
-        if paid is not None and paid.hash == plan.digest:
+        if paid is not None and paid.digest == plan.digest:
             return words, place(inputs, number, paid).span_seconds, False
         end = sound_end_of(inputs, inputs.workspace.take_path(plan.digest))
         return words, round(lead + end + tail, SECOND_DIGITS), False
     if plan.unchecked and paid is not None and paid.spoken == segment.spoken:
         # There is no voice to ask, and the take on disk was voiced from this exact text.
-        return inputs.words(number, paid.hash), place(inputs, number, paid).span_seconds, False
+        return inputs.words(number, paid.digest), place(inputs, number, paid).span_seconds, False
     length = segment.silent_seconds(inputs.settings.narration)
     shifted = Words(words=tuple(estimated_words(segment, length))).shifted(lead)
     return shifted, round(lead + length + tail, SECOND_DIGITS), True

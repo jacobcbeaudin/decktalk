@@ -19,7 +19,7 @@ def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: o
         "section": section,
         "key": f"{section:02d}",
         "chapter": f"Section {section}",
-        "hash": f"{section:016x}",
+        "digest": f"{section:016x}",
         "voiced": True,
         "word_count": len(spoken.split()),
         "characters": len(spoken),

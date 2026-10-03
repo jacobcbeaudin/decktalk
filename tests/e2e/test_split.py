@@ -29,7 +29,7 @@ import pytest
 from decktalk.findings import Code
 from decktalk.machine import Machine, init
 from decktalk.pipeline import Outcome, Stage
-from decktalk.settings import CONFIG_VARIABLE
+from decktalk.settings import MACHINE_FILE_VARIABLE
 
 pytestmark = pytest.mark.e2e
 
@@ -89,7 +89,7 @@ here = Machine.of(
     config_path=out.parent / "voice-machine.toml",
     cwd=root,
     cache_dir=cache,
-    providers={"elevenlabs": Tone},
+    speech_providers={"elevenlabs": Tone},
 )
 result = decktalk.open(root, machine=here).narrate(spend=True)
 voiced = [take.section for take in result.sections if take.status is TakeStatus.VOICED]
@@ -159,7 +159,7 @@ def carried(**extra: str) -> dict[str, str]:
     return {**{name: value for name, value in os.environ.items() if name.upper() in CARRIED}, **extra}
 
 
-def test_the_voice_key_never_reaches_the_render_job_or_a_page(tmp_path: Path) -> None:
+def test_the_api_key_never_reaches_the_render_job_or_a_page(tmp_path: Path) -> None:
     here = Machine.from_environment()
     voice_root = tmp_path / "voice" / "starter"
     voice_root.parent.mkdir()
@@ -177,15 +177,15 @@ def test_the_voice_key_never_reaches_the_render_job_or_a_page(tmp_path: Path) ->
     rendered = tmp_path / "render" / "result.json"
     # The voice is a published name and travels with the project, so the render job is handed it and no key.
     render_env = carried(
-        **{CONFIG_VARIABLE: str(tmp_path / "render" / "machine.toml"), "DECKTALK_VOICE_ID": "house-voice"}
+        **{MACHINE_FILE_VARIABLE: str(tmp_path / "render" / "machine.toml"), "DECKTALK_VOICE_ID": "house-voice"}
     )
     assert KEY not in render_env
     job(RENDER_JOB, [str(render_root), str(rendered)], render_env, render_root)
     seen = json.loads(rendered.read_text(encoding="utf-8"))
 
-    # The whole build runs without spending, so it plays every take the voice job bought and builds no voice.
-    assert seen["stages"][Stage.NARRATE.value] == Outcome.OK.value
-    assert seen["voiced"] and all(seen["voiced"]), "the render job replaced a paid take"
+    # The whole build runs without buying, so it plays every take the voice job bought and builds no voice.
+    assert seen["stages"][Stage.NARRATE.value] == Outcome.RAN.value
+    assert seen["voiced"] and all(seen["voiced"]), "the render job replaced a voiced take"
     assert Code.TAKE_MISSING.value not in seen["codes"]
     assert seen["film"]
     assert seen["launched"], "the render job never launched a browser, so it proved nothing about one"

@@ -93,7 +93,7 @@ def test_a_dash_the_author_wrote_is_spoken_text_and_counts_as_a_beat_in_a_placeh
     plain = parse_script("## 1. A\n\nOne thought another.")[0]
     assert dashed.pieces == (Piece("One thought — another."),)
     assert dashed.spoken == plain.spoken
-    assert dashed.silent_seconds(cfg) - plain.silent_seconds(cfg) == pytest.approx(cfg.silent_beat_seconds)
+    assert dashed.silent_seconds(cfg) - plain.silent_seconds(cfg) == pytest.approx(cfg.placeholder_beat_seconds)
 
 
 def test_a_break_tag_refused_while_reading_the_file_names_the_file(tmp_path):

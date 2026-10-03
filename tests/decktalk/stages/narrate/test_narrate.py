@@ -1,4 +1,4 @@
-"""Stage one: the script becomes one take per section, indexed by content hash."""
+"""Stage one: the script becomes one take per section, indexed by input digest."""
 
 from __future__ import annotations
 
@@ -16,13 +16,13 @@ from decktalk.artifacts import ProviderWords, Takes, file_digest, is_placeholder
 from decktalk.artifacts import words as words_module
 from decktalk.cli import main
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError, ProviderError
-from decktalk.events import Log, Progress, SectionStart, SpendEvent, TakeCharged, Unit
-from decktalk.findings import Certainty, Code
+from decktalk.events import CostPriced, RunLog, SectionStart, StageProgress, TakeCharged, Unit
+from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
 from decktalk.pipeline import Artifact, Stage
-from decktalk.results import NarrateResult, SpendState, TakeStatus, Word
-from decktalk.settings import CONFIG_VARIABLE
-from decktalk.speech import DECLARED, FREE, PROVIDERS, Piece, SpeechRequest, VoiceContext
+from decktalk.results import CostState, NarrateResult, TakeStatus, Word
+from decktalk.settings import MACHINE_FILE_VARIABLE
+from decktalk.speech import DECLARED, FREE, PROVIDERS, Piece, SpeechContext, SpeechRequest
 from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import narrate as narrate_stage
 from decktalk.stages.narrate import narrate
@@ -39,7 +39,7 @@ from support.takes import TAKE_SUFFIX
 from .conftest import ENVIRON, SCRIPT, TOML, VOICE_ID
 
 KEY = "ELEVENLABS_API_KEY"
-"""The credential a paid take is bought with, which a run that buys nothing never reads."""
+"""The credential a voiced take is bought with, which a run that buys nothing never reads."""
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 """Every narrate test writes audio, and none of them may run ffmpeg to do it."""
@@ -52,7 +52,7 @@ def placeholder(inputs: Inputs, watched: Watched, **options: Any) -> NarrateResu
 def test_a_run_without_voice_writes_a_take_for_every_spoken_section(inputs: Inputs, watched: Watched) -> None:
     result = placeholder(inputs, watched)
     assert isinstance(result, NarrateResult)
-    assert result.spending is False
+    assert result.spend is False
     assert [row.section for row in result.sections] == [1, 2, 3]
     assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
     assert result.ok is True
@@ -69,8 +69,8 @@ def test_every_file_the_run_wrote_is_reported(inputs: Inputs, watched: Watched) 
     index = Takes.read(inputs.workspace.takes_path)
     assert index is not None
     for row in index.sections:
-        assert take_file(row.hash, TAKE_SUFFIX) in {path.name for path in result.written}
-        assert words_file(row.hash) in {path.name for path in result.written}
+        assert take_file(row.digest, TAKE_SUFFIX) in {path.name for path in result.written}
+        assert words_file(row.digest) in {path.name for path in result.written}
 
 
 def test_the_index_is_written_in_section_order(inputs: Inputs, watched: Watched) -> None:
@@ -161,7 +161,7 @@ def test_the_run_reports_one_take_at_a_time(
     project = one_at_a_time(make_inputs)
     watched = make_run(project)
     placeholder(project, watched)
-    lines = watched.of(Progress)
+    lines = watched.of(StageProgress)
     assert [line.done for line in lines] == [1, 2, 3]
     assert {line.total for line in lines} == {3}
     assert {line.unit for line in lines} == {Unit.TAKE}
@@ -176,12 +176,12 @@ def test_a_paid_run_sends_one_request_per_section_and_reports_what_it_charged(
     result = narrate(inputs, watched.run)
     assert len(fake_voice.requests) == 3
     assert {row.status for row in result.sections} == {TakeStatus.VOICED}
-    assert result.spend.state is SpendState.CHARGED
-    assert result.spend.sections == (1, 2, 3)
-    assert result.spend.dollars > 0
+    assert result.cost.state is CostState.CHARGED
+    assert result.cost.sections == (1, 2, 3)
+    assert result.cost.dollars > 0
     charged = watched.of(TakeCharged)
     assert sorted(line.section for line in charged) == [1, 2, 3]
-    assert sum(line.characters for line in charged) == result.spend.characters
+    assert sum(line.characters for line in charged) == result.cost.characters
 
 
 @pytest.mark.usefixtures("fake_voice")
@@ -210,9 +210,9 @@ def test_the_price_is_approved_before_anything_is_sent(
 ) -> None:
     watched = make_run(inputs, spend=True)
     narrate(inputs, watched.run)
-    priced = watched.of(SpendEvent)
+    priced = watched.of(CostPriced)
     assert priced
-    assert priced[0].spend.state is SpendState.ESTIMATE
+    assert priced[0].cost.state is CostState.ESTIMATE
     assert fake_voice.requests
 
 
@@ -251,7 +251,7 @@ class CountedVoice:
     voice: FakeVoice = field(default_factory=FakeVoice)
     built: int = 0
 
-    def __call__(self, context: VoiceContext) -> FakeVoice:
+    def __call__(self, context: SpeechContext) -> FakeVoice:
         self.built += 1
         context.secrets.require(KEY)
         return self.voice
@@ -286,7 +286,7 @@ def test_a_run_that_does_not_spend_plays_every_paid_take_with_no_key_and_no_voic
     result = narrate(elsewhere, make_run(elsewhere).run)
     assert {row.status for row in result.sections} == {TakeStatus.KEPT}
     assert result.findings == ()
-    assert result.spend.dollars == 0
+    assert result.cost.dollars == 0
     assert counted.built == 1, "a run with every take on disk built a voice"
     assert KEY not in environ.read
     assert len(counted.voice.requests) == 3
@@ -301,7 +301,7 @@ def test_a_missing_take_without_spend_is_a_placeholder_and_one_finding(
     assert [row.status for row in result.sections] == [TakeStatus.KEPT, TakeStatus.PLACEHOLDER, TakeStatus.PLACEHOLDER]
     assert missing_sections(result) == [2, 3]
     assert [found.code for found in result.findings] == [Code.TAKE_MISSING, Code.TAKE_MISSING]
-    assert all(found.certainty is Certainty.UNCERTAIN for found in result.findings)
+    assert all(found.severity is Severity.WARNING for found in result.findings)
     assert "decktalk narrate --section 2 --spend" in result.findings[0].message
     assert result.ok is True
     assert counted.built == 1
@@ -312,16 +312,16 @@ def test_a_missing_take_without_spend_is_a_placeholder_and_one_finding(
 def test_paid_takes_that_cannot_be_matched_say_why_and_a_fresh_project_says_nothing(
     inputs: Inputs, make_run: Callable[..., Watched]
 ) -> None:
-    """Without the voice id no paid take can be matched, which is worth a line only where one exists."""
+    """Without the voice id no voiced take can be matched, which is worth a line only where one exists."""
     fresh = Inputs.load(inputs.root, environ={})
     first = make_run(fresh)
     narrate(fresh, first.run)
-    assert not [line for line in first.of(Log) if VOICE_ID_VARIABLE in line.message]
+    assert not [line for line in first.of(RunLog) if VOICE_ID_VARIABLE in line.message]
     narrate(inputs, make_run(inputs, spend=True).run, force=True)
     nameless = Inputs.load(inputs.root, environ={})
     again = make_run(nameless)
     result = narrate(nameless, again.run)
-    assert [line for line in again.of(Log) if VOICE_ID_VARIABLE in line.message]
+    assert [line for line in again.of(RunLog) if VOICE_ID_VARIABLE in line.message]
     assert missing_sections(result) == [1, 2, 3]
     assert VOICE_ID_VARIABLE in result.findings[0].message
 
@@ -333,7 +333,7 @@ def test_a_run_that_may_spend_with_every_take_on_disk_builds_no_voice(
     elsewhere, environ = without_the_key(inputs)
     result = narrate(elsewhere, make_run(elsewhere, spend=True).run)
     assert {row.status for row in result.sections} == {TakeStatus.KEPT}
-    assert result.spending is True
+    assert result.spend is True
     assert counted.built == 1
     assert KEY not in environ.read
 
@@ -346,7 +346,7 @@ def test_a_run_that_may_spend_buys_the_one_missing_take(
     result = narrate(inputs, make_run(inputs, spend=True).run)
     assert [row.status for row in result.sections] == [TakeStatus.KEPT, TakeStatus.VOICED, TakeStatus.KEPT]
     assert len(counted.voice.requests) == sent + 1
-    assert result.spend.sections == (2,)
+    assert result.cost.sections == (2,)
     assert result.findings == ()
 
 
@@ -379,7 +379,7 @@ def test_a_run_that_may_not_spend_voices_every_missing_take_from_a_voice_that_bi
     assert len(counted.voice.requests) == 3
     assert {row.status for row in result.sections} == {TakeStatus.VOICED}
     assert missing_sections(result) == []
-    assert result.spend.free and result.spend.dollars == 0
+    assert result.cost.free and result.cost.dollars == 0
 
 
 @pytest.mark.usefixtures("free_voice", "counted")
@@ -416,7 +416,7 @@ def test_a_free_voice_whose_server_is_down_plays_placeholders_and_says_to_start_
     assert result.ok is True
     assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
     assert missing_sections(result) == [1, 2, 3]
-    assert all(found.certainty is Certainty.UNCERTAIN for found in result.findings)
+    assert all(found.severity is Severity.WARNING for found in result.findings)
     assert all("could not be reached" in found.message for found in result.findings)
     assert all("--spend" not in found.message for found in result.findings)
     assert all(
@@ -436,7 +436,7 @@ def test_a_section_sharing_words_with_a_take_a_down_voice_never_made_plays_a_pla
     result = narrate(doubled, make_run(doubled).run)
     assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
     assert missing_sections(result) == [1, 2, 3]
-    assert all(is_placeholder(row.hash) for row in result.sections)
+    assert all(is_placeholder(row.digest) for row in result.sections)
 
 
 @pytest.mark.usefixtures("free_voice")
@@ -454,13 +454,13 @@ def test_a_free_voice_with_no_voice_named_plays_placeholders_that_say_to_name_it
 def test_a_paid_voice_that_cannot_be_reached_still_fails_the_run(
     inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A placeholder stands in for a free voice only, because a paid take the author asked to buy is not optional."""
+    """A placeholder stands in for a free voice only, because a voiced take the author asked to buy is not optional."""
     monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: Unreachable())
     with pytest.raises(ProviderError):
         narrate(inputs, make_run(inputs, spend=True).run)
 
 
-def test_a_run_told_to_make_takes_again_while_spending_buys_no_take(
+def test_a_run_told_to_make_takes_again_while_it_may_spend_buys_no_take(
     inputs: Inputs, make_run: Callable[..., Watched], counted: CountedVoice
 ) -> None:
     """`force` rebuilds what is free, and a take is never free, so only `replace_voiced` buys one again."""
@@ -469,12 +469,12 @@ def test_a_run_told_to_make_takes_again_while_spending_buys_no_take(
     result = narrate(inputs, make_run(inputs, spend=True).run, force=True)
     assert {row.status for row in result.sections} == {TakeStatus.KEPT}
     assert len(counted.voice.requests) == bought, "a forced run bought a take it already held"
-    assert result.spend.sections == ()
+    assert result.cost.sections == ()
     assert counted.built == 1
 
 
 @pytest.mark.usefixtures("counted")
-def test_a_run_told_to_replace_paid_takes_while_spending_buys_them_again(
+def test_a_run_told_to_replace_paid_takes_while_it_may_spend_buys_them_again(
     inputs: Inputs, make_run: Callable[..., Watched], counted: CountedVoice
 ) -> None:
     narrate(inputs, make_run(inputs, spend=True).run)
@@ -490,7 +490,7 @@ def test_two_sections_with_the_same_words_and_no_take_are_two_findings_and_one_p
     result = narrate(doubled, make_run(doubled).run)
     assert missing_sections(result) == [1, 2, 3]
     assert [row.status for row in result.sections] == [TakeStatus.PLACEHOLDER, TakeStatus.PLACEHOLDER, TakeStatus.KEPT]
-    assert result.sections[1].hash == result.sections[2].hash
+    assert result.sections[1].digest == result.sections[2].digest
 
 
 def test_a_section_sharing_a_missing_take_says_why_the_take_is_missing(
@@ -540,7 +540,7 @@ def test_one_take_gone_from_a_takes_directory_that_holds_the_rest_says_that_take
     inputs: Inputs, make_run: Callable[..., Watched]
 ) -> None:
     bought = narrate(inputs, make_run(inputs, spend=True).run)
-    (inputs.workspace.takes / words_file(bought.sections[1].hash)).unlink()
+    (inputs.workspace.takes / words_file(bought.sections[1].digest)).unlink()
     result = narrate(inputs, make_run(inputs).run)
     [found] = result.findings
     assert "because the take or its words file is missing." in found.message
@@ -550,7 +550,7 @@ def test_one_take_gone_from_a_takes_directory_that_holds_the_rest_says_that_take
 def test_the_command_line_with_spend_still_refuses_a_plan_over_its_ceiling(
     inputs: Inputs, counted: CountedVoice, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    for name, value in {**ENVIRON, CONFIG_VARIABLE: str(inputs.root / "machine.toml")}.items():
+    for name, value in {**ENVIRON, MACHINE_FILE_VARIABLE: str(inputs.root / "machine.toml")}.items():
         monkeypatch.setenv(name, value)
     code = main(["-p", str(inputs.root), "--json", "narrate", "--spend", "--max-cost", "0.001"])
     refused = json.loads(capsys.readouterr().out)
@@ -577,9 +577,9 @@ def test_a_run_told_to_replace_a_paid_take_does(inputs: Inputs, make_run: Callab
     result = narrate(inputs, make_run(inputs).run, replace_voiced=True)
     assert {row.status for row in result.sections} == {TakeStatus.PLACEHOLDER}
     assert missing_sections(result) == [1, 2, 3]
-    assert "told to replace its paid take" in result.findings[0].message
+    assert "told to replace its voiced take" in result.findings[0].message
     again = narrate(inputs, make_run(inputs).run)
-    assert {row.status for row in again.sections} == {TakeStatus.KEPT}, "the paid takes stayed on disk"
+    assert {row.status for row in again.sections} == {TakeStatus.KEPT}, "the voiced takes stayed on disk"
 
 
 @pytest.mark.usefixtures("fake_voice")
@@ -676,7 +676,7 @@ def test_sections_are_voiced_concurrently_and_reported_in_script_order(
     index = Takes.read(inputs.workspace.takes_path)
     assert index is not None
     assert [row.section for row in index.sections] == [1, 2, 3]
-    assert [line.done for line in watched.of(Progress)] == [1, 2, 3]
+    assert [line.done for line in watched.of(StageProgress)] == [1, 2, 3]
 
 
 def test_a_concurrency_of_one_voices_one_section_at_a_time(
@@ -827,13 +827,13 @@ def test_a_clone_of_a_project_that_commits_its_takes_plays_them_with_no_key(
 def test_a_paid_run_writes_its_takes_and_their_words_into_the_projects_takes_dir(
     make_run: Callable[..., Watched], tmp_path: Path
 ) -> None:
-    """A project's own directory is where a bought take lands, and the machine's store keeps a second copy."""
+    """A project's own directory is where a voiced take lands, and the machine's store keeps a second copy."""
     shared = tmp_path / "machine-takes"
     machine = {"narration": {"store_dir": str(shared)}}
     project = load_project(tmp_path / "proj", IN_THE_PROJECT, script=SCRIPT, environ=ENVIRON, machine=machine)
     result = narrate(project, make_run(project, spend=True).run)
     voice = project.root / "voice"
-    hashes = {row.hash for row in result.sections}
+    hashes = {row.digest for row in result.sections}
     assert take_files(voice) == {take_file(h, TAKE_SUFFIX) for h in hashes} | {words_file(h) for h in hashes}
     assert not (voice / "takes.json").exists(), "the index is a cache under the build, never committed"
     assert result.takes == Path("build/narrate/takes.json")
@@ -896,9 +896,9 @@ def test_a_run_that_does_not_spend_leaves_a_checkout_that_commits_its_takes_clea
 def test_a_bought_take_is_written_into_the_takes_directory_by_default_and_never_under_the_build(
     inputs: Inputs, make_run: Callable[..., Watched], counted: CountedVoice
 ) -> None:
-    """`rm -rf build` is free, so a take somebody paid for never lands there, with no setting to remember."""
+    """`rm -rf build` is free, so a voiced take never lands there, with no setting to remember."""
     result = narrate(inputs, make_run(inputs, spend=True).run)
-    hashes = {row.hash for row in result.sections}
+    hashes = {row.digest for row in result.sections}
     assert inputs.settings.narration.takes_dir == "takes"
     assert take_files(inputs.root / "takes") == {take_file(h, TAKE_SUFFIX) for h in hashes} | {
         words_file(h) for h in hashes
@@ -909,7 +909,7 @@ def test_a_bought_take_is_written_into_the_takes_directory_by_default_and_never_
 
 
 def test_an_empty_takes_dir_is_refused_at_load(tmp_path: Path) -> None:
-    """An empty value would leave a bought take no folder a person keeps, so it is refused rather than read."""
+    """An empty value would leave a voiced take no folder a person keeps, so it is refused rather than read."""
     toml = TOML.replace("[narration]\n", '[narration]\ntakes_dir = ""\n')
     with pytest.raises(InputError, match=r"narration\.takes_dir"):
         load_project(tmp_path / "proj", toml, script=SCRIPT, environ=ENVIRON)
@@ -921,8 +921,8 @@ def test_a_bought_take_records_the_size_and_blake3_of_its_audio_in_its_words_fil
     """The take's name says what was asked for, so only a fingerprint of the bytes can tell a damaged copy."""
     result = narrate(inputs, make_run(inputs, spend=True).run)
     for row in result.sections:
-        audio_file = inputs.workspace.takes / take_file(row.hash, TAKE_SUFFIX)
-        words = ProviderWords.read(inputs.workspace.takes / words_file(row.hash))
+        audio_file = inputs.workspace.takes / take_file(row.digest, TAKE_SUFFIX)
+        words = ProviderWords.read(inputs.workspace.takes / words_file(row.digest))
         assert words is not None and words.audio is not None
         assert words.audio.bytes == audio_file.stat().st_size
         assert words.audio.blake3 == file_digest(audio_file)
@@ -976,12 +976,12 @@ def on_a_machine_with_a_store(
     store.mkdir(exist_ok=True)
     for kept in project.workspace.takes.iterdir():
         shutil.copyfile(kept, store / kept.name)
-    return project, store, [row.hash for row in result.sections]
+    return project, store, [row.digest for row in result.sections]
 
 
 def said(watched: Watched) -> str:
     """Every sentence the run put on the stream, one per line, which is where a note about a damaged copy goes."""
-    return "\n".join(line.message for line in watched.of(Log))
+    return "\n".join(line.message for line in watched.of(RunLog))
 
 
 def unreadable(directory: Path) -> set[str]:
@@ -1077,7 +1077,9 @@ def test_a_take_is_hashed_whole_once_per_run_however_many_sections_play_it(
     monkeypatch.setattr(words_module, "file_digest", lambda path: hashed.append(path) or real(path))
     result = narrate(project, make_run(project).run)
     assert {row.status for row in result.sections} == {TakeStatus.KEPT}
-    assert sorted(path.name for path in hashed) == sorted({take_file(row.hash, TAKE_SUFFIX) for row in result.sections})
+    assert sorted(path.name for path in hashed) == sorted(
+        {take_file(row.digest, TAKE_SUFFIX) for row in result.sections}
+    )
 
 
 @pytest.mark.usefixtures("counted")
@@ -1121,7 +1123,7 @@ def test_a_bought_take_is_written_through_to_the_store_as_a_verified_pair(
     store = tmp_path / STORED
     assert take_files(store) == take_files(project.workspace.takes)
     for row in result.sections:
-        assert project.workspace.fault_at(store, row.hash, whole=True) is None
+        assert project.workspace.fault_at(store, row.digest, whole=True) is None
     assert not any(STORED in path.parts for path in result.written), "the store is not one of the project's files"
 
 
@@ -1145,7 +1147,7 @@ def test_a_re_buy_writes_the_takes_directory_and_the_store_keeps_its_first_pair(
     b = in_the_store(tmp_path, "b")
     a_voice_saying(monkeypatch, b"SECOND")
     narrate(b, make_run(b, spend=True).run, replace_voiced=True)
-    digest = Takes.require(a.workspace.takes_path, Artifact.TAKES).sections[0].hash
+    digest = Takes.require(a.workspace.takes_path, Artifact.TAKES).sections[0].digest
     name = take_file(digest, TAKE_SUFFIX)
     assert (b.workspace.takes / name).read_bytes() == b"SECOND"
     assert (tmp_path / STORED / name).read_bytes() == b"FIRST", "the store is written once per take"
@@ -1175,7 +1177,7 @@ def test_two_projects_buying_one_take_leave_one_whole_pair_in_the_store(
     monkeypatch.setattr(takes_module, "replace_all", between)
     narrate(a, make_run(a, spend=True).run, only=[1])
     assert interleaved
-    digest = Takes.require(a.workspace.takes_path, Artifact.TAKES).sections[0].hash
+    digest = Takes.require(a.workspace.takes_path, Artifact.TAKES).sections[0].digest
     store = tmp_path / STORED
     assert a.workspace.fault_at(store, digest, whole=True) is None, (
         "the store pairs one run's audio with another's words"
@@ -1193,7 +1195,7 @@ def the_shipped_voice_is_never_built(monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse(*_args: object) -> None:
         raise AssertionError("the shipped ElevenLabs voice was built")
 
-    monkeypatch.setattr(ElevenLabs, "__post_init__", refuse)
+    monkeypatch.setattr(ElevenLabs, "__init__", refuse)
 
 
 def test_a_paid_run_buys_through_the_voices_its_machine_holds_and_never_the_shipped_one(
@@ -1227,7 +1229,7 @@ Every picture waited for its word.
 
 def on_elevenlabs(make_inputs: Callable[..., Inputs], model: str) -> Inputs:
     """The project read by the shipped provider's name on `model`, which the test then stands a fake voice in for."""
-    toml = TOML.replace('provider = "elevenlabs"', f'provider = "elevenlabs"\nmodel = "{model}"')
+    toml = TOML.replace("[elevenlabs]", f'[elevenlabs]\nmodel = "{model}"')
     return make_inputs(toml=toml, script=PAUSED, name=model)
 
 
@@ -1329,7 +1331,7 @@ def test_elevenlabs_voice_id_alone_no_longer_names_the_voice(
 def test_a_clone_that_commits_its_voice_id_and_its_takes_plays_them_with_no_environment(
     make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], counted: CountedVoice, tmp_path: Path
 ) -> None:
-    """With `[voice] id` committed beside `takes_dir`, a fresh clone matches every paid take and misses none."""
+    """With `[voice] id` committed beside `takes_dir`, a fresh clone matches every voiced take and misses none."""
     bought = make_inputs(toml=NAMED.replace("[narration]\n", '[narration]\ntakes_dir = "voice"\n'))
     narrate(bought, make_run(bought, spend=True).run)
     clone = tracked_copy(bought.root, tmp_path / "clone")
@@ -1367,9 +1369,32 @@ def test_a_take_index_that_does_not_read_after_a_voiced_run_is_rebuilt_and_buys_
     result = narrate(project, make_run(project, spend=spend).run)
     assert {row.status for row in result.sections} == {TakeStatus.KEPT}
     assert result.findings == ()
-    assert result.spend.dollars == 0
+    assert result.cost.dollars == 0
     assert len(counted.voice.requests) == sent, "a take index that did not read bought a take again"
     assert Takes.read(project.workspace.takes_path) == bought, "the rebuilt index differs from the one it replaced"
+
+
+@pytest.mark.parametrize("spend", [False, True], ids=["no-spend", "spend"])
+def test_a_take_index_whose_rows_name_the_take_hash_is_rebuilt_with_its_digest(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], counted: CountedVoice, spend: bool
+) -> None:
+    """An older index names each take `hash`, and a cache in an older shape is rebuilt, never refused."""
+    project = make_inputs(toml=IN_THE_PROJECT)
+    narrate(project, make_run(project, spend=True).run)
+    bought = Takes.read(project.workspace.takes_path)
+    sent = len(counted.voice.requests)
+    rows = json.loads(project.workspace.takes_path.read_text(encoding="utf-8"))
+    rows["sections"] = [
+        {("hash" if name == "digest" else name): value for name, value in row.items()} for row in rows["sections"]
+    ]
+    project.workspace.takes_path.write_text(json.dumps(rows), encoding="utf-8")
+    result = narrate(project, make_run(project, spend=spend).run)
+    assert {row.status for row in result.sections} == {TakeStatus.KEPT}
+    assert result.findings == ()
+    assert len(counted.voice.requests) == sent, "an index in an older shape bought a take again"
+    written = json.loads(project.workspace.takes_path.read_text(encoding="utf-8"))
+    assert all("digest" in row and "hash" not in row for row in written["sections"])
+    assert Takes.read(project.workspace.takes_path) == bought
 
 
 def test_a_take_index_that_does_not_read_with_no_voice_named_buys_nothing(
@@ -1388,14 +1413,14 @@ def test_a_take_index_that_does_not_read_with_no_voice_named_buys_nothing(
     assert missing_sections(result) == [1, 2, 3]
     assert len(counted.voice.requests) == sent
     named = narrate(inputs, make_run(inputs).run)
-    assert {row.status for row in named.sections} == {TakeStatus.KEPT}, "the paid takes stayed on disk"
+    assert {row.status for row in named.sections} == {TakeStatus.KEPT}, "the voiced takes stayed on disk"
 
 
 @pytest.mark.parametrize("written", list(UNREADABLE.values()), ids=list(UNREADABLE))
 def test_a_placeholder_only_take_index_that_does_not_read_is_rebuilt_not_refused(
     inputs: Inputs, make_run: Callable[..., Watched], written: str
 ) -> None:
-    """Nobody paid for a placeholder, and the index over them is a cache like the placeholders themselves."""
+    """A placeholder costs nothing, and the index over them is a cache like the placeholders themselves."""
     narrate(inputs, make_run(inputs).run)
     before = Takes.read(inputs.workspace.takes_path)
     inputs.workspace.takes_path.write_text(written, encoding="utf-8")

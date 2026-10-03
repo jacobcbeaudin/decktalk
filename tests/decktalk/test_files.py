@@ -3,7 +3,7 @@
 The second half holds every JSON text a digest or a content key is taken over to the standard
 library's bytes. `json_text` puts no space between items, sorts no keys, escapes no non-ASCII
 character and writes a small float as `1e-7`, so a key taken over it would move, and a moved key
-re-records a section, rebuilds a cut or buys a paid take again. Each serialisation that names a take,
+re-records a section, rebuilds a cut or buys a voiced take again. Each serialisation that names a take,
 a recording, a cut, a still, a sound or a kept stage is fed the one value on which the two spellings
 part, and its bytes are held to what `json.dumps` wrote before the helper existed.
 """
@@ -121,7 +121,7 @@ def test_a_kept_artifact_keeps_its_bytes(tmp_path: Path) -> None:
         section=1,
         key="01",
         chapter="Café",
-        hash="0123456789abcdef",
+        digest="0123456789abcdef",
         voiced=True,
         word_count=2,
         characters=10,
@@ -141,8 +141,8 @@ def test_the_assemble_and_verify_keys_keep_their_bytes(monkeypatch: pytest.Monke
     monkeypatch.setattr(status, "_assemble_reads", lambda _inputs: ())
     (tmp_path / "film.mp4").write_bytes(b"film")
     inputs = SimpleNamespace(settings=Settings(), workspace=SimpleNamespace(film=tmp_path / "film.mp4"))
-    status.assemble_key(inputs, PARTING)  # ty: ignore[invalid-argument-type]
-    status.verify_key(inputs, "made", PARTING)  # ty: ignore[invalid-argument-type]
+    status.assemble_digest(inputs, PARTING)  # ty: ignore[invalid-argument-type]
+    status.verify_digest(inputs, "made", PARTING)  # ty: ignore[invalid-argument-type]
     (settings, options), (_made, _film, measured) = taken
     assert settings == json.dumps(dataclasses.asdict(Settings()), sort_keys=True, default=str)
     assert options == measured == json.dumps(PARTING, sort_keys=True)

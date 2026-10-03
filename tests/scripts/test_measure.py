@@ -14,7 +14,14 @@ import measure
 
 def cue(name: str, offset: float, *, skipped: str | None = None) -> dict[str, object]:
     """One row of `decktalk --json verify`'s cues, with only the fields the landing reads."""
-    return {"section": 1, "cue": name, "spoken": 1.0, "shown": 1.0 + offset, "offset": offset, "skipped": skipped}
+    return {
+        "section": 1,
+        "cue": name,
+        "spoken": 1.0,
+        "shown": 1.0 + offset,
+        "offset_seconds": offset,
+        "skipped": skipped,
+    }
 
 
 def test_landing_is_the_distance_from_the_word_early_or_late_over_every_run() -> None:

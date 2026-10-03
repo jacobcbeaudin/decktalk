@@ -12,11 +12,11 @@ number and a source of secrets.
 
 The sound adapters DeckTalk ships are a closed set, declared once in `SOUND_DECLARED`, and `SOUNDS`
 is their factories, which a machine a host built by hand replaces with its own table.
-Every run carries its machine's `Sounds`, and the score stage asks the run's `sounds.provider` for its
+Every run carries its machine's `SoundProviders`, and the score stage asks the run's `sounds.provider` for its
 provider, so a host that handed its machine a fake table is never billed through the shipped one.
 
 What an adapter declares before it is built is in `SOUND_DECLARED`: the variable its key is read
-from, the table its `api_base` is read from, the endpoint each kind of sound is bought from as the
+from, the table its `base_url` is read from, the endpoint each kind of sound is bought from as the
 service publishes it, and how it is built. That endpoint, with the request body, is what a sound's ledger digest is
 taken over, so a project that moves to another host of the same service buys nothing again.
 """
@@ -37,12 +37,10 @@ class SoundContext:
     """Everything a sound provider needs from a project, with no project in it."""
 
     secrets: Secrets
-    api_base: str  # the base its own table names, such as [elevenlabs] api_base
+    base_url: str  # its own table's base_url, such as [elevenlabs] base_url, which the machine alone sets
     timeout_seconds: int  # [score] timeout_seconds
     retries: int = 0
     """How many more times a busy or failed request is sent, which the machine alone decides."""
-    allow_any_api_base: bool = False
-    """Whether `api_base` may name a host the adapter does not allow, which the machine alone decides."""
 
 
 class SoundProvider(Protocol):
@@ -69,7 +67,7 @@ class SoundDeclared:
     key_variable: str | None
     """The variable its credential is read from, or None."""
     table: str
-    """The settings table its `api_base` is read from."""
+    """The settings table its `base_url` is read from."""
     endpoint: Callable[[SoundKind], str]
     """The endpoint each kind is bought from as the service publishes it, which a ledger digest names."""
     factory: SoundFactory
@@ -111,18 +109,17 @@ SOUNDS: dict[str, SoundFactory] = {name: declared.factory for name, declared in 
 
 
 @dataclass(frozen=True)
-class Sounds:
-    """The sound providers one machine answers with, and the machine's own decisions about every request."""
+class SoundProviders:
+    """The sound providers one machine answers with, and how often each asks again."""
 
     factories: Mapping[str, SoundFactory]
-    allow_any_api_base: bool = False
     retries: int = 0
 
     def provider(self, name: str, context: SoundContext) -> SoundProvider:
         """The provider this table registers under `name`, built for this context.
 
-        The machine's decisions about where a key may go and how often a busy request is sent again
-        replace whatever the context says, so a stage can widen neither.
+        The machine's decision about how often a busy request is sent again replaces whatever the
+        context says, so a stage cannot widen it.
         """
         factory = self.factories.get(name)
         if factory is None:
@@ -131,7 +128,7 @@ class Sounds:
                 f"[score] provider = {name!r} is not a sound provider this machine answers for.",
                 hint=f"The sound providers it knows are {known}.",
             )
-        return factory(replace(context, allow_any_api_base=self.allow_any_api_base, retries=self.retries))
+        return factory(replace(context, retries=self.retries))
 
 
-__all__ = ["SoundContext", "SoundFactory", "SoundProvider", "Sounds"]
+__all__ = ["SoundContext", "SoundFactory", "SoundProvider", "SoundProviders"]

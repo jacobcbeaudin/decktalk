@@ -15,7 +15,7 @@ from typing import Any
 from decktalk.findings import Code
 from decktalk.project import PROJECT_VARIABLE
 from decktalk.results import SCHEMA
-from decktalk.settings import CONFIG_VARIABLE
+from decktalk.settings import MACHINE_FILE_VARIABLE
 from decktalk.speech import DECLARED
 from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE
 
@@ -57,5 +57,5 @@ def clean_environ(config_dir: Path) -> dict[str, str]:
     keys = [declared.key_variable for declared in DECLARED.values() if declared.key_variable]
     for name in (PROJECT_VARIABLE, *keys, VOICE_ID_VARIABLE):
         env.pop(name, None)
-    env[CONFIG_VARIABLE] = str(config_dir / "no-machine-config.toml")
+    env[MACHINE_FILE_VARIABLE] = str(config_dir / "no-machine-config.toml")
     return env

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import InputError, NotBuiltError, ToolError
-from decktalk.events import Progress
+from decktalk.events import StageProgress
 from decktalk.media import audio, browser
 from decktalk.results import AssembleResult, Substitute, Word
 from decktalk.stages.assemble import assemble
@@ -73,7 +73,7 @@ def test_the_stage_answers_with_the_result_named_after_it(tmp_path, monkeypatch)
     assert [row.section for row in result.sections] == [1, 2, 3]
     assert result.loudness is not None
     assert result.loudness.target_lufs == inputs.settings.audio.target_lufs
-    assert result.seconds >= 0
+    assert result.elapsed_seconds >= 0
 
 
 def test_every_file_the_run_wrote_is_in_the_result_and_written_once(tmp_path, monkeypatch):  # fmt: skip
@@ -84,7 +84,7 @@ def test_every_file_the_run_wrote_is_in_the_result_and_written_once(tmp_path, mo
     result = assemble(inputs, opened.run)
     written = [path.as_posix() for path in result.written]
     assert len(written) == len(set(written))
-    for name in ("build/final/t.srt", "build/final/t.vtt", "build/final/cuts.json", "build/final/t.mp4"):
+    for name in ("build/final/t.srt", "build/final/t.vtt", "build/final/placements.json", "build/final/t.mp4"):
         assert name in written
     assert "build/sections/01.mp4" in written
 
@@ -99,7 +99,7 @@ def test_a_run_says_how_far_through_its_own_passes_it_is(tmp_path, monkeypatch):
     labels = opened.progress()
     assert labels[:3] == ["cut section 1", "cut section 2", "cut section 3"]
     assert labels[-1] == "publish the film"
-    lines = opened.of(Progress)
+    lines = opened.of(StageProgress)
     assert {line.total for line in lines} == {len(labels)}
     assert [line.done for line in lines] == list(range(1, len(labels) + 1))
 
@@ -118,7 +118,7 @@ def test_a_placeholder_narration_is_never_normalized(tmp_path, monkeypatch):  # 
 
 
 def test_a_film_that_stood_a_frame_in_for_a_missing_file_is_not_ok(tmp_path, monkeypatch):  # fmt: skip
-    """`ok` is false when any judgement is certain, and a missing file is certain."""
+    """`ok` is false when any judgement is an error, and a missing file is an error."""
     inputs = write_project(tmp_path, TITLED_TOML)
     opened = open_run(tmp_path)
     monkeypatch.setattr(browser, "render_slate", draw_slate)

@@ -13,7 +13,7 @@ import pytest
 
 from decktalk.artifacts import CueTimes, Take, Takes, Words
 from decktalk.errors import Cancel
-from decktalk.events import FindingEvent, Log, Progress
+from decktalk.events import FindingRaised, RunLog, StageProgress
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.media import ffmpeg
@@ -127,15 +127,15 @@ class Opened(Watched):
 
     def notes(self) -> list[str]:
         """Every sentence the run said, which is what a stage says instead of printing."""
-        return [line.message for line in self.of(Log)]
+        return [line.message for line in self.of(RunLog)]
 
     def codes(self) -> list[str]:
         """The code of every judgement the run made, in the order it made them."""
-        return [line.finding.code.name for line in self.of(FindingEvent)]
+        return [line.finding.code.name for line in self.of(FindingRaised)]
 
     def progress(self) -> list[str]:
         """The label of every progress line, which is how far through its own work the stage said it was."""
-        return [line.label for line in self.of(Progress)]
+        return [line.label for line in self.of(StageProgress)]
 
 
 def open_run(root: Path) -> Opened:

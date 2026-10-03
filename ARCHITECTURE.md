@@ -16,7 +16,7 @@ That is the whole design. Each decision below follows from it.
 
 ## The thesis this release is shaped by
 
-The command line is the instruction set. The settings and the page attributes are the knobs, each
+The command line is the instruction set. The settings and the page attributes are what an agent changes, each
 one named, documented, ranged and defaulted. The agent is the implementer. A surface an agent cannot
 discover, read and act on from the command line and the schemas alone is a surface that fails the
 thesis, so every published name has exactly one home in the code and every rendering of it is
@@ -26,7 +26,7 @@ Three commands make the whole instruction set readable without running a stage. 
 gives the tree, the global flags and the exit codes. `decktalk schema` gives every command, every
 flag with its type and default, the exit codes, every error code, every finding code and the stages
 as one JSON object, and `decktalk schema event` and `decktalk schema page` give every event line and
-every page attribute. `decktalk schema settings` gives every knob with its default, its safe range,
+every page attribute. `decktalk schema settings` gives every setting with its default, its safe range,
 its unit and its hazard, and `decktalk config explain KEY` gives one of them whole.
 
 ## The four files an author writes
@@ -66,9 +66,9 @@ Six more calls report on a project, cut a piece out of it or serve it: `status`,
 `storyboard`, `serve` and `clip`. `check` judges without producing anything and prices what a build
 would cost, so an author sees the findings and the money before a single second is bought.
 `storyboard` freezes every slide at every cue onto one page, which is the checkpoint a person looks
-at before credits are spent.
+at before anything is bought.
 
-A take is named by a hash of its text, its voice, its model and its settings, so an edit voices only
+A take is named by a digest of its text, its voice, its model and its settings, so an edit voices only
 the sections whose words changed. A recording is kept when its page, its words, its cues and every
 local file it loads are unchanged, and when the motion settings that shaped it have not moved. Paid
 takes are the only expensive thing in the tree, and caching them by content is what makes the tenth
@@ -106,7 +106,7 @@ what keeps that one edge honest.
 `scripts/build_contributing.py` writes the module tree in `CONTRIBUTING.md` from the same table, so
 the documentation of the shape and the enforcement of it come from one source.
 
-The rule buys two things. A speech provider is built from a `VoiceContext` and never from a project,
+The rule buys two things. A speech provider is built from a `SpeechContext` and never from a project,
 so the speech boundary sits in the leaves, and its closed set of adapters, the ElevenLabs voice and
 the local `dtsp` one, touches nothing above it: a layer test refuses a vendor name above `speech/`. And
 the command line renders from the result objects alone, so it imports no stage and knows no result's
@@ -123,14 +123,14 @@ learning a second contract. `tests/contract/test_results.py` holds one table of 
 result and driver, and the test is total in both directions.
 
 A finding is a diagnostic in the shape a linter made familiar: a code a caller dispatches on, one
-sentence with the measured number written into it, a certainty of `certain` or `uncertain`, a
+sentence with the measured number written into it, a severity of `error` or `warning`, a
 location whose `where` names the object judged, the stage that raised it, a docs URL, and often a
-fix. A fix is an edit, a setting, a command or a runtime copy, each with an applicability that says whether it may be
-applied without asking, and `Project.apply(finding)` applies it. No code spells its own certainty,
+fix. A fix is an edit or a command, each with an applicability that says whether it may be
+applied without asking, and `Project.apply(finding)` applies it. No code spells its own severity,
 because a closed enum publishes each value with its own sentence where an adjective in a code name
 publishes nothing.
 
-`--fail-on certain|any|never` names a threshold rather than a field value, and `--allow CODE` carries
+`--fail-on error|warning|never` names the least severe finding that fails a run, and `--allow CODE` carries
 on past one code. `build` reads the same threshold to decide when to stop: a stage whose findings
 reach it ends the run before the next stage, and the result still comes back with its findings, its
 spend and `stopped_at`, because a finding is a judgement the caller reads and never an error.
@@ -156,9 +156,9 @@ one field read will do.
 Nothing in the library prints. The command line subscribes and renders, `--events` puts the same
 lines on stderr as they happen, and every run appends `build/events/<run>.jsonl`.
 
-## The knobs
+## The settings
 
-`settings.py` publishes every knob with its default, its safe range, its unit, its scope, its nature,
+`settings.py` publishes every setting with its default, its safe range, its unit, its scope, its nature,
 the judgements it moves and its environment name. The published range is the safe range and the
 loader refuses a value outside it, naming the file and the line that wrote it, because a published
 bound you can cross into nonsense is worse than no bound at all. Five layers can set a key and each
@@ -169,14 +169,14 @@ No flag duplicates a settings key. `--set table.key=value` is the fifth layer, i
 writes nothing, it is validated by the same loader with the same refusal, and the loader routes each
 pair to its own scope, so the command line never has to know which layer a key belongs to.
 
-A number that is deliberately not a knob is published too, with the formula that derives it, so
+A number that is deliberately not a setting is published too, with the formula that derives it, so
 `no magic numbers` is a rule with three doors rather than a habit. `tests/contract/test_numbers.py`
 holds it against a per-file baseline that only ever shrinks.
 
-## The page is the second knob surface
+## The page attributes are the second surface
 
 An element has four moments and every moment names a cue local to its slide, which the runtime
-qualifies into a wire id. `src/decktalk/runtime/src/contract.ts` is the one home of every attribute,
+qualifies into a cue id. `src/decktalk/runtime/src/contract.ts` is the one home of every attribute,
 its values, its range, its default, its warning code and its motion span, and `src/decktalk/page.py`
 is generated from it, so Python and the page cannot disagree about a name or a bound.
 
@@ -203,8 +203,8 @@ keep such a deck from reaching what the service holds.
 
 - **The host builds the machine.** `Machine.from_environment()` is the only reading of the process
   environment, and `Machine.of` reads nothing, so a job sees exactly the variables, the settings
-  file, the cache and the voices its host chose. Such a machine reads no project's `.env`, and a voice
-  sends its key and its script only to the hosts its adapter allows unless the host says otherwise.
+  file, the cache and the voices its host chose. Such a machine reads no project's `.env`, and every base URL is
+  machine-scoped, so a voice sends its key and its script only to the hosts the host named.
 - **An untrusted page is sealed.** Under `record.page_policy = "untrusted"` Chromium runs with its
   sandbox on or not at all, every request off the project's origin is refused through every channel
   a page can open, and under both policies the browser is handed a scrubbed environment rather than
@@ -215,7 +215,7 @@ keep such a deck from reaching what the service holds.
   `check` and `storyboard` in a render process that holds none. The build directory is the only thing
   that moves between them. A run that may spend refuses to open an untrusted page, at the one place
   a browser starts, so a voiced `build` on a host is refused before it buys anything rather than
-  trusted not to happen. Each paid take is a `take.charged` line and each paid sound request a
+  trusted not to happen. Each take bought is a `take.charged` line and each paid sound request a
   `sound.charged` line on the stream the moment it is bought, which is what a host's own ledger reads.
 
 [The Python API](https://docs.decktalk.ai/reference/python-api#running-decktalk-inside-a-service)

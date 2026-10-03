@@ -52,7 +52,7 @@ draws it again. It is drawn on the colour
 [`[video] slate_color`](/reference/configuration#video) names, and `[mix] slate` points at an image of
 your own to use in its place.
 
-Nothing about a slate is silent about itself: `decktalk status` reports the missing file as a certain
+Nothing about a slate is silent about itself: `decktalk status` reports the missing file as an error,
 [`FILE_MISSING`](/reference/findings/FILE_MISSING), naming the section and the path. A section marked
 `optional` is the one exception, because it has said the slate is allowed.
 
@@ -65,7 +65,7 @@ A section's number is its place in the film, so adding a clip in the middle renu
 2. In `script.md`, renumber the same headings. The clip section needs no heading of its own, and a
    heading there is never voiced, because the voice reads every section that does not play a clip.
 3. In `cues.json`, rename each later section key, from the last one upward. The cue ids do not move.
-   A cue id is the slide id, a colon and the local name the page writes, and the slides of the page
+   A cue id is the slide id, a colon and the cue name the page writes, and the slides of the page
    are untouched by a renumbering of the film.
 4. Run `decktalk build`.
 
@@ -124,7 +124,7 @@ name the file on the section with `words`, and run `decktalk assemble`.
 - The transcript page carries the same words as one paragraph, so a reader is not left with a silent
   gap where the clip is.
 
-A take's own `<hash>.words.json` in `takes/` has this shape, and so does the file
+A take's own `<digest>.words.json` in `takes/` has this shape, and so does the file
 `decktalk clip` writes beside every clip it cuts.
 
 ## Cut a clip out of the film
@@ -207,7 +207,7 @@ The JSON is one flat object, so a caller reads what was written without parsing 
   "run": "aad1d3514574",
   "written": ["media/open-line.mp4", "media/open-line.words.json"],
   "section": 1,
-  "film": "media/open-line.mp4",
+  "file": "media/open-line.mp4",
   "words": "media/open-line.words.json",
   "start": 0.48,
   "end": 1.92,

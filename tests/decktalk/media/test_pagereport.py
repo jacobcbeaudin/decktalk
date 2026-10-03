@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decktalk.findings import Code, RaisedBy
+from decktalk.findings import CONTRACT_SUBJECTS, Code, RaisedBy
 from decktalk.media import pagereport
 from decktalk.page import REPORT
 
@@ -115,7 +115,7 @@ def test_the_report_names_every_field_the_contract_names():
 
 def test_a_code_decktalk_measures_itself_is_refused_when_a_page_reports_it():
     """Half the page codes are measured from the frames, and a page reporting one decides its own verdict."""
-    measured = next(c for c in Code if c.name.startswith("PAGE_") and c.raised_by is not RaisedBy.RUNTIME)
+    measured = next(c for c in Code if c.subject in CONTRACT_SUBJECTS and c.raised_by is not RaisedBy.RUNTIME)
     report = pagereport.read({**REPORTED, "warnings": [{"code": measured.name, "message": "not mine to say"}]})
     assert report.warnings == ()
     assert report.unreadable and "warnings[0]" in report.unreadable[0]

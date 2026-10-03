@@ -36,7 +36,7 @@ HASH_DIGITS = 16
 """How much of the sha256 keys a recording, which is far more than enough within one project."""
 
 
-def input_hash(parts: Sequence[str], files: Mapping[str, Path]) -> str:
+def input_digest(parts: Sequence[str], files: Mapping[str, Path]) -> str:
     """The digest of what a section is recorded from: these strings, the content of these files, and the engine.
 
     `files` maps each project-relative name to the file on disk, so a page that swaps one picture for
@@ -83,7 +83,7 @@ class RecordingLog(Stored):
     label: ClassVar[str] = "the log of one section's recording"
 
     section: int = Field(ge=1, description="The section this recording plays.")
-    input_hash: str = Field(description="The digest of what this section was recorded from, which keys a skip.")
+    digest: str = Field(description="The digest of what this section was recorded from, which keys a skip.")
     recording: Recording = Field(description="What the recorder knew: the page, its files, its timings and its report.")
     start: Start | None = Field(None, description="Where narration t=0 sits in the webm, or null before it was found.")
     findings: tuple[Finding, ...] = Field((), description="Every judgement the page and the frames made.")
@@ -100,5 +100,5 @@ __all__ = [
     "RecordingChecks",
     "RecordingLog",
     "Start",
-    "input_hash",
+    "input_digest",
 ]

@@ -1,5 +1,5 @@
 ---
-title: The contract
+title: The stability promise
 description: What DeckTalk promises a script, a GitHub Action or a service that builds on it, and what it keeps as a private cache.
 ---
 
@@ -58,7 +58,7 @@ The deliverables, named after `[project] name`, which is `<name>` below.
 | `<name>.chapters.txt` | The chapter markers, as ffmetadata. |
 | `<name>-transcript.html` | The whole film as one page, which is the media alternative. |
 | `<name>-poster.png` | The opening slide, as a lossless PNG. |
-| `cuts.json` | Where every section sits in the finished film. |
+| `placements.json` | Where every section sits in the finished film. |
 
 ## Exit codes
 
@@ -77,8 +77,8 @@ and is never deleted by DeckTalk.
 
 | Kind | File | Folder |
 |---|---|---|
-| Take audio | `<hash>.mp3`, one per voiced take, named by the digest of what was sent | The takes directory, `takes/` unless `[narration] takes_dir` names another, with a second copy in the take store, `[narration] store_dir` |
-| Provider words | `<hash>.words.json`, the words the speech provider sent back with its take | Beside its take, in the takes directory, `takes/`, and the take store, `[narration] store_dir` |
+| Take audio | `<digest>.mp3`, one per voiced take, named by the digest of what was sent | The takes directory, `takes/` unless `[narration] takes_dir` names another, with a second copy in the take store, `[narration] store_dir` |
+| Provider words | `<digest>.words.json`, the words the speech provider sent back with its take | Beside its take, in the takes directory, `takes/`, and the take store, `[narration] store_dir` |
 | Score audio | `<name>.mp3` for the ambience bed and each effect, and `music-part<n>.mp3` for each part of the music, named by the item the score stage bought | The score directory, `score/` unless `[score] dir` names another, or the path a sound's own `out` names |
 | Ledger | `ledger.json`, what the score stage has bought, keyed by the request that made it | Beside the score audio, in the score directory, `score/` |
 

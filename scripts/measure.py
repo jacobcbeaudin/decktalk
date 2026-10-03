@@ -97,7 +97,7 @@ def landing(verifies: list[dict[str, Any]], *, limit_ms: float) -> dict[str, Any
             if row["skipped"] is not None:
                 skipped += 1
                 continue
-            offsets.setdefault(row["cue"], []).append(round(row["offset"] * MS_PER_SECOND, MS_DECIMALS))
+            offsets.setdefault(row["cue"], []).append(round(row["offset_seconds"] * MS_PER_SECOND, MS_DECIMALS))
     distances = [abs(value) for values in offsets.values() for value in values]
     if not distances:
         raise SystemExit("verify measured no reveal in any run, so there is no landing error to publish.")

@@ -24,17 +24,8 @@
       "title": "Billing",
       "type": "string"
     },
-    "Certainty": {
-      "description": "Whether a finding is wrong for sure or only probably wrong.\n\nThe threshold a run fails on is `--fail-on`, which names a threshold and never a field value, so\nthese two words are read and never compared against a flag.",
-      "enum": [
-        "certain",
-        "uncertain"
-      ],
-      "title": "Certainty",
-      "type": "string"
-    },
     "Code": {
-      "description": "Every judgement DeckTalk can make, with its sentence, its certainty and who raises it.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
+      "description": "Every judgement DeckTalk can make, with its sentence, its severity and who raises it.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
       "enum": [
         "PAGE_UNKNOWN_ATTR",
         "PAGE_BAD_VALUE",
@@ -63,15 +54,16 @@
         "PAGE_PREVIEW_AMBIGUOUS",
         "PAGE_APPEAR_TOO_LONG",
         "PAGE_STAGGER_EMPTY",
+        "PAGE_SPOTLIGHT_EMPTY",
         "PAGE_MOTION_OVERRUN",
         "PAGE_STAGGER_OVERRUN",
         "PAGE_THIN_DRAW",
         "PAGE_NO_DESCRIPTION",
         "PAGE_SWAP_APART",
-        "PAGE_STALLED",
-        "PAGE_BLACK",
-        "PAGE_TRUNCATED",
         "PAGE_CDN_ASSET",
+        "RECORD_STALLED",
+        "RECORD_BLACK",
+        "RECORD_TRUNCATED",
         "CUE_MISSING",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
@@ -81,9 +73,9 @@
         "CUE_NO_CHANGE",
         "CUE_THIN_CHANGE",
         "CUE_OVERLAP",
-        "TAKE_PLACEHOLDER",
-        "TAKE_SPOKEN_SYMBOL",
-        "TAKE_PAUSE_DROPPED",
+        "SCRIPT_UNFINISHED",
+        "SCRIPT_SPOKEN_SYMBOL",
+        "SCRIPT_PAUSE_DROPPED",
         "TAKE_MISSING",
         "CUT_SPEECH",
         "CUT_POP",
@@ -130,6 +122,112 @@
       ],
       "title": "CommandFix",
       "type": "object"
+    },
+    "Cost": {
+      "additionalProperties": false,
+      "description": "What a run costs, priced once so a caller never works it out from a character count.\n\n`--max-cost` caps the whole run, and is compared against the `ceiling_dollars` of everything the\nrun approved and never against `dollars`, because a provider charges one request at a time.",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/CostState",
+          "description": "Whether this is what the run would cost or what it did cost."
+        },
+        "sections": {
+          "description": "The sections this price covers, in script order.",
+          "items": {
+            "description": "The section this row is about, as the author numbered it.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": "Sections",
+          "type": "array"
+        },
+        "characters": {
+          "description": "How many characters of script this price is for.",
+          "minimum": 0,
+          "title": "Characters",
+          "type": "integer"
+        },
+        "seconds": {
+          "default": 0.0,
+          "description": "How many seconds of audio this price is for, which a per-second bill is priced on.",
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        },
+        "dollars": {
+          "description": "The price at the stated rate, in US dollars.",
+          "minimum": 0,
+          "title": "Dollars",
+          "type": "number"
+        },
+        "ceiling_dollars": {
+          "description": "The most this run can cost, in US dollars.",
+          "minimum": 0,
+          "title": "Ceiling Dollars",
+          "type": "number"
+        },
+        "billing": {
+          "$ref": "#/$defs/Billing",
+          "description": "How the voice bills, which its adapter declares and the rate is per."
+        },
+        "dollars_per_1000_characters": {
+          "description": "The rate a per-character bill was worked out at, in US dollars per 1,000 characters.",
+          "minimum": 0,
+          "title": "Dollars Per 1000 Characters",
+          "type": "number"
+        },
+        "dollars_per_minute": {
+          "default": 0.0,
+          "description": "The rate a per-second bill was worked out at, in US dollars per minute of audio.",
+          "minimum": 0,
+          "title": "Dollars Per Minute",
+          "type": "number"
+        },
+        "price_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The dotted key that states the rate, or null when the voice declares none to state.",
+          "title": "Price Key"
+        },
+        "averaged": {
+          "default": false,
+          "description": "True when the price is several rates together, such as music and effects bought at their own, so the rate is what they average to and `price_key` names the one least surely stated.",
+          "title": "Averaged",
+          "type": "boolean"
+        },
+        "price_layer": {
+          "$ref": "#/$defs/Layer",
+          "description": "Which layer set that rate, where default means nobody stated it."
+        }
+      },
+      "required": [
+        "state",
+        "sections",
+        "characters",
+        "dollars",
+        "ceiling_dollars",
+        "billing",
+        "dollars_per_1000_characters",
+        "price_layer"
+      ],
+      "title": "Cost",
+      "type": "object"
+    },
+    "CostState": {
+      "description": "Whether a cost is what a run would cost or what it did cost.",
+      "enum": [
+        "estimate",
+        "charged"
+      ],
+      "title": "CostState",
+      "type": "string"
     },
     "Edit": {
       "additionalProperties": false,
@@ -314,7 +412,7 @@
     },
     "Finding": {
       "additionalProperties": false,
-      "description": "One judgement, in the shape every renderer, every schema and every agent receives.\n\n`certainty` and `url` are the code's own and are written into the object rather than left for a\nreader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them\nout and the code fills them, and a value that disagrees with the code is refused. Both therefore\ncarry a declared default, which says in the signature and in the schema that a raiser names the\ncode and nothing else. Neither default is ever the value in force, because the code fills both\nbefore this model is built and refuses any finding whose code it does not know.",
+      "description": "One judgement, in the shape every renderer, every schema and every agent receives.\n\n`severity` and `docs` are the code's own and are written into the object rather than left for a\nreader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them\nout and the code fills them, and a value that disagrees with the code is refused. Both therefore\ncarry a declared default, which says in the signature and in the schema that a raiser names the\ncode and nothing else. Neither default is ever the value in force, because the code fills both\nbefore this model is built and refuses any finding whose code it does not know.",
       "properties": {
         "code": {
           "$ref": "#/$defs/Code",
@@ -325,10 +423,10 @@
           "title": "Message",
           "type": "string"
         },
-        "certainty": {
-          "$ref": "#/$defs/Certainty",
-          "default": "certain",
-          "description": "Whether this is wrong for sure or only probably wrong."
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "default": "error",
+          "description": "Whether this fails the default run (error) or is reported and passes (warning)."
         },
         "location": {
           "$ref": "#/$defs/Location",
@@ -352,17 +450,13 @@
               "discriminator": {
                 "mapping": {
                   "command": "#/$defs/CommandFix",
-                  "edit": "#/$defs/EditFix",
-                  "setting": "#/$defs/SettingFix"
+                  "edit": "#/$defs/EditFix"
                 },
                 "propertyName": "kind"
               },
               "oneOf": [
                 {
                   "$ref": "#/$defs/EditFix"
-                },
-                {
-                  "$ref": "#/$defs/SettingFix"
                 },
                 {
                   "$ref": "#/$defs/CommandFix"
@@ -377,10 +471,10 @@
           "description": "A change that resolves it, or null when none is known.",
           "title": "Fix"
         },
-        "url": {
+        "docs": {
           "default": "",
           "description": "The docs page for this code.",
-          "title": "Url",
+          "title": "Docs",
           "type": "string"
         }
       },
@@ -465,7 +559,7 @@
             }
           ],
           "default": null,
-          "description": "The wire id of the cue this is about, or null.",
+          "description": "The cue id of the cue this is about, or null.",
           "title": "Cue"
         }
       },
@@ -475,150 +569,13 @@
       "title": "Location",
       "type": "object"
     },
-    "SettingFix": {
-      "additionalProperties": false,
-      "description": "A fix that turns a knob, which is the same key space `config set` and `--set` take.",
-      "properties": {
-        "kind": {
-          "const": "setting",
-          "default": "setting",
-          "description": "The kind of fix, which is how a reader dispatches on it.",
-          "title": "Kind",
-          "type": "string"
-        },
-        "title": {
-          "description": "One sentence saying what applying this fix does.",
-          "title": "Title",
-          "type": "string"
-        },
-        "applicability": {
-          "$ref": "#/$defs/Applicability",
-          "description": "Whether this fix may be applied without asking."
-        },
-        "key": {
-          "description": "The settings key to set, such as verify.cue_offset_max_ms.",
-          "title": "Key",
-          "type": "string"
-        },
-        "value": {
-          "description": "The value to set it to, spelled as a command line would spell it.",
-          "title": "Value",
-          "type": "string"
-        }
-      },
-      "required": [
-        "title",
-        "applicability",
-        "key",
-        "value"
-      ],
-      "title": "SettingFix",
-      "type": "object"
-    },
-    "Spend": {
-      "additionalProperties": false,
-      "description": "What a run costs, priced once so a caller never works it out from a character count.\n\n`--max-cost` caps the whole run, and is compared against the `ceiling_dollars` of everything the\nrun approved and never against `dollars`, because credits are consumed one request at a time.",
-      "properties": {
-        "state": {
-          "$ref": "#/$defs/SpendState",
-          "description": "Whether this is what the run would cost or what it did cost."
-        },
-        "sections": {
-          "description": "The sections this price covers, in script order.",
-          "items": {
-            "description": "The section this row is about, as the author numbered it.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "title": "Sections",
-          "type": "array"
-        },
-        "characters": {
-          "description": "How many characters of script this price is for.",
-          "minimum": 0,
-          "title": "Characters",
-          "type": "integer"
-        },
-        "seconds": {
-          "default": 0.0,
-          "description": "How many seconds of audio this price is for, which a per-second bill is priced on.",
-          "minimum": 0,
-          "title": "Seconds",
-          "type": "number"
-        },
-        "dollars": {
-          "description": "The price at the stated rate, in US dollars.",
-          "minimum": 0,
-          "title": "Dollars",
-          "type": "number"
-        },
-        "ceiling_dollars": {
-          "description": "The most this run can cost, in US dollars.",
-          "minimum": 0,
-          "title": "Ceiling Dollars",
-          "type": "number"
-        },
-        "billing": {
-          "$ref": "#/$defs/Billing",
-          "description": "How the voice bills, which its adapter declares and the rate is per."
-        },
-        "price_per_1000_characters": {
-          "description": "The rate a per-character bill was worked out at, per 1,000 characters.",
-          "minimum": 0,
-          "title": "Price Per 1000 Characters",
-          "type": "number"
-        },
-        "price_per_second": {
-          "default": 0.0,
-          "description": "The rate a per-second bill was worked out at, per second of audio.",
-          "minimum": 0,
-          "title": "Price Per Second",
-          "type": "number"
-        },
-        "price_key": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The dotted key that states the rate, or null when the voice declares none to state.",
-          "title": "Price Key"
-        },
-        "averaged": {
-          "default": false,
-          "description": "True when the price is several rates together, such as music and effects bought at their own, so the rate is what they average to and `price_key` names the one least surely stated.",
-          "title": "Averaged",
-          "type": "boolean"
-        },
-        "price_layer": {
-          "$ref": "#/$defs/Layer",
-          "description": "Which layer set that rate, where default means nobody stated it."
-        }
-      },
-      "required": [
-        "state",
-        "sections",
-        "characters",
-        "dollars",
-        "ceiling_dollars",
-        "billing",
-        "price_per_1000_characters",
-        "price_layer"
-      ],
-      "title": "Spend",
-      "type": "object"
-    },
-    "SpendState": {
-      "description": "Whether a price is what a run would cost or what it did cost.",
+    "Severity": {
+      "description": "Whether a finding fails the default run or is reported and passes.\n\n`--fail-on` names the least severe finding that fails a run, so its values are these two words\nplus `never`, and a reader meets one vocabulary on the flag and on the field.",
       "enum": [
-        "estimate",
-        "charged"
+        "error",
+        "warning"
       ],
-      "title": "SpendState",
+      "title": "Severity",
       "type": "string"
     },
     "Stage": {
@@ -706,8 +663,8 @@
       "title": "Frames",
       "type": "boolean"
     },
-    "spend": {
-      "$ref": "#/$defs/Spend",
+    "cost": {
+      "$ref": "#/$defs/Cost",
       "description": "What the narration of a voiced build would cost, leaving out any sound."
     },
     "storyboard": {
@@ -731,7 +688,7 @@
     "judged",
     "pages",
     "frames",
-    "spend"
+    "cost"
   ],
   "title": "CheckResult",
   "type": "object"

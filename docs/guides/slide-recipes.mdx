@@ -24,7 +24,7 @@ one to a project:
    `## 4. …` section to `script.md` that speaks each phrase.
 
 A moment inside `<template data-slide="4.1">` is qualified with that slide id, so `data-in="title"`
-is the wire id `4.1:title` and that is what `cues.json` carries. The recipes use the starter's own
+is the cue id `4.1:title` and that is what `cues.json` carries. The recipes use the starter's own
 custom properties, such as `--ink` and `--accent`, and its `.eyebrow` class.
 
 ## A title that arrives on its word
@@ -50,7 +50,7 @@ The heading and the bar under it are one element with one cue, so the whole bloc
 
 ```json cues.json
 "4": { "cues": [
-  { "cue": "4.1:title", "on": "This is DeckTalk", "occurrence": 1 }
+  { "id": "4.1:title", "phrase": "This is DeckTalk", "occurrence": 1 }
 ] }
 ```
 
@@ -82,14 +82,14 @@ One cue, and the container's children arrive one step apart.
 
 ```json cues.json
 "4": { "cues": [
-  { "cue": "4.2:examples", "on": "Here are four of them", "occurrence": 1 }
+  { "id": "4.2:examples", "phrase": "Here are four of them", "occurrence": 1 }
 ] }
 ```
 
 **What it costs to measure.** The whole spread is the step times the children after the first, plus
 the entrance, so this one is 0.04 × 3 + 0.24, which is 0.36 seconds. Anything at or above 0.5 seconds
 is [`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN), and the arithmetic that says
-so is exact, so the finding is certain.
+so is exact, so the finding is an error.
 
 ## A figure that swaps for another
 
@@ -109,14 +109,14 @@ place until its replacement has arrived, so the two read as one thing changing.
 <template data-slide="4.3" data-hold="14" data-describe="the slow way, replaced by the fast one">
   <p class="eyebrow">The direction</p>
   <div class="r-card grey" data-in="one" data-out="instead" data-out-style="fall"
-       data-describe="turning one knob at a time, and the billions of tries it would take"
+       data-describe="turning one dial at a time, and the billions of tries it would take"
        data-describe-out="the slow way falls away">
-    <div class="r-k">one knob at a time</div>
+    <div class="r-k">one dial at a time</div>
     billions of tries for every step
   </div>
   <div class="r-card" data-in="instead" data-swaps
-       data-describe="one round of maths, giving every knob a direction at once">
-    <div class="r-k">every knob at once</div>
+       data-describe="one round of maths, giving every dial a direction at once">
+    <div class="r-k">every dial at once</div>
     one round of maths, one direction each
   </div>
 </template>
@@ -124,15 +124,15 @@ place until its replacement has arrived, so the two read as one thing changing.
 
 ```json cues.json
 "4": { "cues": [
-  { "cue": "4.3:one", "on": "one knob at a time", "occurrence": 1 },
-  { "cue": "4.3:instead", "on": "Instead", "occurrence": 1 }
+  { "id": "4.3:one", "phrase": "one dial at a time", "occurrence": 1 },
+  { "id": "4.3:instead", "phrase": "Instead", "occurrence": 1 }
 ] }
 ```
 
 **What it costs to measure.** A swap is between one thing and one other thing. Zero elements leaving
 on the arrival cue, or two, is [`PAGE_SWAP_AMBIGUOUS`](/reference/findings/PAGE_SWAP_AMBIGUOUS) and
-certain, and two halves landing far enough apart to read as unrelated is
-[`PAGE_SWAP_APART`](/reference/findings/PAGE_SWAP_APART) and uncertain, which is why both cards here
+an error, and two halves landing far enough apart to read as unrelated is
+[`PAGE_SWAP_APART`](/reference/findings/PAGE_SWAP_APART) and a warning, which is why both cards here
 share a box.
 
 ## An element that steps back while a second comes to the front
@@ -162,9 +162,9 @@ def average(xs):
 
 ```json cues.json
 "4": { "cues": [
-  { "cue": "4.4:formula", "on": "the formula", "occurrence": 1 },
-  { "cue": "4.4:code", "on": "in code", "occurrence": 1 },
-  { "cue": "4.4:waited", "on": "waited", "occurrence": 1 }
+  { "id": "4.4:formula", "phrase": "the formula", "occurrence": 1 },
+  { "id": "4.4:code", "phrase": "in code", "occurrence": 1 },
+  { "id": "4.4:waited", "phrase": "waited", "occurrence": 1 }
 ] }
 ```
 
@@ -196,7 +196,7 @@ word at a time, each word whole by the second the voice reaches it.
 
 ```json cues.json
 "4": { "cues": [
-  { "cue": "4.5:word", "on": "its own word", "occurrence": 1 }
+  { "id": "4.5:word", "phrase": "its own word", "occurrence": 1 }
 ] }
 ```
 
@@ -232,7 +232,7 @@ together.
 
 ```json cues.json
 "4": { "cues": [
-  { "cue": "4.6:files", "on": "Four files", "occurrence": 1 }
+  { "id": "4.6:files", "phrase": "Four files", "occurrence": 1 }
 ] }
 ```
 
@@ -267,7 +267,7 @@ makes it a display equation on its own line.
 
 ```json cues.json
 "4": { "cues": [
-  { "cue": "4.7:formula", "on": "the formula", "occurrence": 1 }
+  { "id": "4.7:formula", "phrase": "the formula", "occurrence": 1 }
 ] }
 ```
 
@@ -281,7 +281,7 @@ back to that text, and a page with no KaTeX at all is
 
 ## A class change the page's own stylesheet animates
 
-`data-class` adds a class at a moment, written as `moment:name` pairs. It is how a page makes a change
+`data-class` adds a class at a cue, written as `cue:class` pairs. It is how a page makes a change
 the contract has no word for.
 
 ```html deck/index.html
@@ -299,22 +299,22 @@ the contract has no word for.
   <p class="eyebrow">The loop</p>
   <p class="r-guess" data-in="guess"
      data-class="nudge:stale|right:live"
-     data-describe-class="nudge:the answer is set aside while the knobs turn|right:the answer turns green, because it now matches the example"
+     data-describe-class="nudge:the answer is set aside while the dials turn|right:the answer turns green, because it now matches the example"
      data-describe="the model's answer for this example">cat</p>
 </template>
 ```
 
 ```json cues.json
 "4": { "cues": [
-  { "cue": "4.8:guess", "on": "and it guesses", "occurrence": 1 },
-  { "cue": "4.8:nudge", "on": "nudges the knobs", "occurrence": 1 },
-  { "cue": "4.8:right", "on": "it is right", "occurrence": 1 }
+  { "id": "4.8:guess", "phrase": "and it guesses", "occurrence": 1 },
+  { "id": "4.8:nudge", "phrase": "nudges the dials", "occurrence": 1 },
+  { "id": "4.8:right", "phrase": "it is right", "occurrence": 1 }
 ] }
 ```
 
 **What it costs to measure.** This is the one span the contract cannot bound in advance, so DeckTalk
 lays the slide out, adds each class and reads the longest transition the stylesheet gives it. Keep it
-under half a second. Each class needs its phrase in `data-describe-class` or the change earns
+under half a second. Each class needs its description in `data-describe-class` or the change earns
 [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED), and the stylesheet must drop
 the motion under `.dt-reduced` or a reduced build earns
 [`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED).
@@ -340,7 +340,7 @@ cue it draws with script of its own.
 </template>
 
 <script>
-// A handler takes the wire id, because a handler may be registered anywhere in the deck.
+// A handler takes the cue id, because a handler may be registered anywhere in the deck.
 const step = (left) => (slide) => {
   const thumb = slide.querySelector(".r-thumb");
   if (thumb) thumb.style.left = left;
@@ -351,8 +351,8 @@ DeckTalk.on("4.9:long", step("1500px")).on("4.9:short", step("90px"));
 
 ```json cues.json
 "4": { "cues": [
-  { "cue": "4.9:long", "on": "Too long", "occurrence": 1 },
-  { "cue": "4.9:short", "on": "Too short", "occurrence": 1 }
+  { "id": "4.9:long", "phrase": "Too long", "occurrence": 1 },
+  { "id": "4.9:short", "phrase": "Too short", "occurrence": 1 }
 ] }
 ```
 

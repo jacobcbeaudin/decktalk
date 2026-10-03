@@ -1,15 +1,15 @@
 """`cues.json` parsed, and the phrase matching that resolves a cue against a section's words.
 
     {"sections": {"3": {"min_seconds": 25,
-                        "cues": [{"cue": "3.2:expand", "on": "On a typical"},
-                                 {"cue": "3.2:zero", "on": "Zero", "occurrence": 2},
-                                 {"cue": "3.4:end", "on": "$end", "offset": 0.3}]}}}
+                        "cues": [{"id": "3.2:expand", "phrase": "On a typical"},
+                                 {"id": "3.2:zero", "phrase": "Zero", "occurrence": 2},
+                                 {"id": "3.4:end", "phrase": "$end", "offset_seconds": 0.3}]}}}
 
-`cue` is the wire id of a moment the page declares, which is its slide and the local name the slide
-wrote. `on` is a word or a short phrase from that section's narration, matched on its first
+`id` is the cue id of a moment the page declares, which is its slide and the local name the slide
+wrote. `phrase` is a word or a short phrase from that section's narration, matched on its first
 occurrence, without case and with punctuation ignored, and `$start` and `$end` name the section's
 own two ends. A time counts from the section start, so a section's lead moves every word cue later
-and `$start` stays at zero. `occurrence`, `case_sensitive` and `offset` refine one match, and
+and `$start` stays at zero. `occurrence`, `case_sensitive` and `offset_seconds` refine one match, and
 `verify` set to false leaves the cue out of the measurement, for a reveal too small or too slow for
 a frame difference to see.
 
@@ -46,11 +46,11 @@ SECTION_END = "$end"
 class Cue:
     """One row of `cues.json`: which spoken phrase a visual lands on."""
 
-    cue: str
-    on: str
+    id: str
+    phrase: str
     occurrence: int = 1
     case_sensitive: bool = False
-    offset: float = 0.0
+    offset_seconds: float = 0.0
     verify: bool = True  # False leaves the cue out of a plain `decktalk verify`.
     occurrence_set: bool = False  # cues.json names the occurrence, so a repeated phrase is not ambiguous.
     line: int | None = None  # The line of cues.json the row's phrase is written on, when it could be found.
@@ -63,7 +63,7 @@ READ_HERE = frozenset({"occurrence_set", "line"})
 # `_comment`, the one key a row may carry that DeckTalk reads nothing from.
 CUE_KEYS = {f.name for f in fields(Cue) if f.name not in READ_HERE} | {"_comment"}
 
-PHRASE_KEY = re.compile(r'"on"\s*:\s*("(?:[^"\\]|\\.)*")')
+PHRASE_KEY = re.compile(r'"phrase"\s*:\s*("(?:[^"\\]|\\.)*")')
 """Where a row writes its phrase in the file's own text, which is how the line of each row is found.
 
 A quote inside a JSON string is escaped, so this spelling can only be the key of a row and never a
@@ -160,7 +160,7 @@ def phrase_lines(text: str) -> list[tuple[str, int]]:
 
 def _placed(cue: Cue, written: tuple[str, int] | None) -> Cue:
     """The row with the line its phrase is written on, when the text agrees with what was parsed."""
-    if written is None or written[0] != cue.on:
+    if written is None or written[0] != cue.phrase:
         return cue
     return replace(cue, line=written[1])
 
@@ -168,7 +168,7 @@ def _placed(cue: Cue, written: tuple[str, int] | None) -> Cue:
 def parse_cue(raw: dict[str, object], where: str, location: Location | None = None) -> Cue:
     """One cue row, refusing a key this file does not read so that a typo cannot move a cue in silence.
 
-    An `on` that is there and empty is a row a fix scaffolded and nobody has written the phrase into
+    A `phrase` that is there and empty is a row a fix scaffolded and nobody has written the phrase into
     yet, so it loads and `CUE_UNRESOLVED` judges it. A refusal here would mean the file a fix just
     wrote could not be read by the command run straight after it.
     """
@@ -180,8 +180,8 @@ def parse_cue(raw: dict[str, object], where: str, location: Location | None = No
             location=location,
         )
     cue = fill(Table(raw, where), Cue, occurrence_set="occurrence" in raw)
-    if not cue.cue:
-        raise InputError(f"{where}: 'cue' must not be empty", location=location)
+    if not cue.id:
+        raise InputError(f"{where}: 'id' must not be empty", location=location)
     return cue
 
 

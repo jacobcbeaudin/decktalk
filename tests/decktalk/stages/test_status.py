@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts import Take, file_digest, take_file, words_file
-from decktalk.events import Level, Log
+from decktalk.events import Level, RunLog
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.page import Q
@@ -56,7 +56,7 @@ def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: 
     take = a_take(1, seconds=2.0, voiced=voiced, spoken=spoken)
     write_takes(inputs, take)
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.take_path(take.hash).write_bytes(b"")
+    inputs.workspace.take_path(take.digest).write_bytes(b"")
     return take
 
 
@@ -85,7 +85,7 @@ def built_up_to(inputs: Inputs, steps: int) -> None:
 @pytest.mark.parametrize(
     ("steps", "command"),
     [
-        # The first move a project is told to make never costs credits.
+        # The first move a project is told to make never costs money.
         pytest.param(0, "decktalk narrate --no-spend", id="nothing built rehearses the voice"),
         pytest.param(1, f"decktalk {Stage.CUE.value}", id="takes resolve their cues"),
         pytest.param(2, f"decktalk {Stage.RECORD.value}", id="cue times record"),
@@ -104,11 +104,11 @@ def test_a_project_is_told_the_next_stage_its_artifacts_leave(tmp_path: Path, st
 def measured(inputs: Inputs) -> None:
     """The record a build leaves after it assembled this film and verified it."""
     options = {"only": None}
-    made = stage.assemble_key(inputs, options)
+    made = stage.assemble_digest(inputs, options)
     film = inputs.relative(inputs.workspace.film).as_posix()
     stage.Kept(
-        assemble=stage.KeptStage(key=made, options=options, outputs={film: file_digest(inputs.workspace.film)}),
-        verify=stage.KeptStage(key=stage.verify_key(inputs, made, options), options=options),
+        assemble=stage.KeptStage(digest=made, options=options, outputs={film: file_digest(inputs.workspace.film)}),
+        verify=stage.KeptStage(digest=stage.verify_digest(inputs, made, options), options=options),
     ).write(stage.kept_path(inputs))
 
 
@@ -194,7 +194,7 @@ def test_a_recorded_section_says_so_and_a_cut_one_says_so(tmp_path: Path) -> Non
     inputs.workspace.section_video("02").write_bytes(b"")
     result = status(inputs, a_run(tmp_path))
     assert [row.recorded for row in result.sections] == [True, False]
-    assert [row.cut for row in result.sections] == [False, True]
+    assert [row.assembled for row in result.sections] == [False, True]
 
 
 def test_whether_a_recording_still_stands_is_asked_of_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -204,8 +204,8 @@ def test_whether_a_recording_still_stands_is_asked_of_record(tmp_path: Path, mon
     inputs.workspace.recording("01").write_bytes(b"")
     monkeypatch.setattr(stage, "stale_recording", lambda _inputs, _section: "section 1: its page changed")
     run = a_run(tmp_path)
-    said: list[Log] = []
-    run.machine.events.subscribe(lambda event: said.append(event) if isinstance(event, Log) else None)
+    said: list[RunLog] = []
+    run.machine.events.subscribe(lambda event: said.append(event) if isinstance(event, RunLog) else None)
     result = status(inputs, run)
     assert result.sections[0].stale is True
     # A reading a reader may act on is a warning, because it is not what the author asked for.
@@ -294,7 +294,7 @@ def test_a_run_that_has_closed_is_not_listed(tmp_path: Path) -> None:
         [
             opened("done"),
             {"event": "run.done", "time": "2026-09-24T01:00:02Z", "seq": 1, "run": "done",
-             "outcome": "ok", "seconds": 1.0},
+             "outcome": "ran", "elapsed_seconds": 1.0},
         ],
     )  # fmt: skip
     assert status(inputs, a_run(tmp_path)).runs == ()
@@ -405,9 +405,9 @@ def test_takes_no_section_plays_are_counted_with_their_size_and_none_is_deleted(
 def test_a_take_the_index_still_plays_is_not_listed_after_the_script_moves_on(tmp_path: Path) -> None:
     """The index names what the film plays until narrate runs again, so its takes are never offered for removal."""
     inputs = a_project(tmp_path, toml=VOICED, script=SCRIPT.replace("Hello there again.", "Hello once more."))
-    played = a_take(1, hash="00000000000000ef", spoken="Hello there again.")
+    played = a_take(1, digest="00000000000000ef", spoken="Hello there again.")
     write_takes(inputs, played)
-    a_take_pair(inputs, played.hash)
+    a_take_pair(inputs, played.digest)
     unplayed = status(inputs, a_run(tmp_path)).unplayed
     assert unplayed is not None
     assert (unplayed.takes, unplayed.files) == (0, ())

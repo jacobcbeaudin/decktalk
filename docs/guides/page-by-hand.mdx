@@ -8,8 +8,8 @@ to a second one. This guide is for the other case: a page written from an empty 
 deck belongs to a design that neither packaged example fits.
 
 Everything here is the same contract the starter obeys. A `[data-scene]` wrapper is one scene, each
-`<template data-slide>` inside it is one slide, an element has four moments and each moment is the
-local name of a cue. No attribute ever writes a second, because `cues.json` owns seconds.
+`<template data-slide>` inside it is one slide, an element has four moments and each moment is a
+cue name. No attribute ever writes a second, because `cues.json` owns seconds.
 
 ## The skeleton
 
@@ -95,7 +95,7 @@ A slide is a `<template>` the runtime clones when the slide mounts. Four attribu
 | `data-slide` | any id | required | Declares the slide. Its id qualifies every moment written inside it. |
 | `data-hold` | 1 to 60 seconds | 8 | How long a preview rests on this slide. No recording reads it. |
 | `data-enter` | `crossfade`, `cut` | `crossfade` | How this slide replaces the one before it. A crossfade is 0.24 s and a cut is instant. |
-| `data-owns` | local names, space separated | none | The cues only a handler serves, which no moment attribute mentions. |
+| `data-owns` | cue names, space separated | none | The cues only a handler serves, which no moment attribute mentions. |
 
 ```html deck/mine.html
 <template data-slide="1.4" data-hold="20" data-enter="cut" data-owns="long short"
@@ -132,7 +132,7 @@ only in markup calls none of it.
 | `DeckTalk.on(cue, fn)` | Runs `fn` at one cue, wherever in the deck that cue belongs. Returns `DeckTalk`. |
 | `DeckTalk.waitFor(promise)` | Holds the page's readiness until a promise of your own has settled. |
 | `DeckTalk.start()` | Reads the page and starts it, which a page that loads the runtime late may have to call itself. |
-| `DeckTalk.startClock()` | Starts the narration clock. The recorder sends this once its cover has come off, and a page has no reason to call it. |
+| `DeckTalk.startClock()` | Starts the section clock. The recorder sends this once its cover has come off, and a page has no reason to call it. |
 | `DeckTalk.scenes` | Every scene the page declared, as a Map keyed by scene id. |
 | `DeckTalk.params` | The page's own query, as `URLSearchParams`. |
 | `DeckTalk.findSlide(id)` | The scene and slide one slide id names, or null. |
@@ -152,13 +152,13 @@ const step = (left) => (slide) => {
 DeckTalk.on("1.5:long", step("1500px")).on("1.5:short", step("90px"));
 ```
 
-<Note>`DeckTalk.on` takes a wire id, which is the slide id, a colon and the local name, because a
+<Note>`DeckTalk.on` takes a cue id, which is the slide id, a colon and the cue name, because a
 handler may be registered anywhere in the deck and nothing around the call says which slide it means.
-A slide's own `owns` and `on` keys are local names, because the slide they belong to already says
+A slide's own `owns` and `on` keys are cue names, because the slide they belong to already says
 which slide that is.</Note>
 
 A handler receives the mounted slide element, or null when no slide is mounted, and a context of
-`id`, the wire id of the cue, `at`, the second on the page clock, `frozen`, whether the page is a
+`id`, the cue id of the cue, `at`, the second on the page clock, `frozen`, whether the page is a
 still, and `slideId`. A handler that throws earns
 [`PAGE_HANDLER_THREW`](/reference/findings/PAGE_HANDLER_THREW), and the moment does nothing rather
 than the page failing.
@@ -186,7 +186,7 @@ DeckTalk.scene("2", {
       owns: ["sweep"],
       render: ({ frozen }) => `<h1 data-in="heading" data-describe="the heading">The average</h1>`,
       entered: (el, ctx) => { /* the slide has just mounted */ },
-      on: { sweep: (el, ctx) => { /* the local name, not the wire id */ } },
+      on: { sweep: (el, ctx) => { /* the cue name, not the cue id */ } },
     },
   ],
 });
@@ -219,7 +219,7 @@ a missing file never hangs a build.
 ## The query keys the runtime reads
 
 One URL decides which of four things the page is doing: it lists its scenes, it previews one, it
-plays one against the narration clock, or it freezes one slide.
+plays one against the section clock, or it freezes one slide.
 
 | Key | What it asks the page for |
 |---|---|

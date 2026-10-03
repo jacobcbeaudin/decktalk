@@ -1,10 +1,10 @@
 ---
 title: The page contract
-description: Learn the four moments an element declares, the wire id that joins a page to cues.json, and every attribute a deck page may write.
+description: Learn the four moments an element declares, the cue id that joins a page to cues.json, and every attribute a deck page may write.
 ---
 
 The page contract is the whole vocabulary a deck page may write. An element on a slide has four
-moments, and each of them is the local name of a cue. Everything else is either how a moment looks,
+moments, and each of them is a cue name. Everything else is either how a moment looks,
 which is a closed word the contract owns, or what a moment means, which is a sentence for the
 transcript. Seconds are never written on the page, because `cues.json` owns them.
 
@@ -19,7 +19,7 @@ transcript. Seconds are never written on the page, because `cues.json` owns them
 
 ## The four moments
 
-An element declares up to four moments, and each attribute's value is the local name of a cue rather
+An element declares up to four moments, and each attribute's value is a cue name rather
 than a number.
 
 | Moment | What happens | How long it plays |
@@ -36,10 +36,10 @@ off the cues the slide declares rather than guessed.
 `data-back` and `data-front` are attention rather than reveal. Use them when one thing on the slide
 has to recede while another is read, so the page never has to remove something and bring it back.
 
-## The wire id
+## The cue id
 
-The runtime qualifies a local name into a wire id, which is the slide id, a colon and the local
-name. So `data-in="expand"` inside `<template data-slide="4.1">` is the wire id `4.1:expand`, and
+The runtime qualifies a cue name into a cue id, which is the slide id, a colon and the cue
+name. So `data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`, and
 `4.1:expand` is what `cues.json` carries.
 
 ```html deck/index.html
@@ -62,7 +62,7 @@ admits.
 | Subject | What it is |
 |---|---|
 | element | Anything inside a slide that declares a moment, a description or an effect. |
-| container | An element whose children are the thing that arrives, which is what `data-stagger` and `data-steps` are written on. |
+| container | An element whose children are the thing that arrives, which is what `data-stagger` and `data-spotlight` are written on. |
 | scene | The `[data-scene]` wrapper a section names, which holds the slides. |
 | slide | One `<template data-slide>` of a scene, which is what mounts. |
 
@@ -78,7 +78,7 @@ that never moves a pixel and `from the page` is a span read off the page or off 
 | Attribute | Subject | Value | Default | Range | Span | Code | Meaning |
 |---|---|---|---|---|---|---|---|
 | `data-in` | element, container | a local cue name |  |  | from the page | [`PAGE_MOMENT_UNKNOWN`](/reference/findings/PAGE_MOMENT_UNKNOWN) | The element arrives at this cue. |
-| `data-describe` | element, slide | a phrase |  |  | 0 | none | The subject of the reveal, which the runtime gives a verb per moment. An empty phrase means decorative. |
+| `data-describe` | element, slide | a description |  |  | 0 | none | The subject of the reveal, which the runtime gives a verb per moment. An empty description means decorative. |
 | `data-tex` | element | TeX source |  |  | 0 | [`PAGE_KATEX_ERROR`](/reference/findings/PAGE_KATEX_ERROR) | Typeset with KaTeX, with the element's own text as the readable fallback. |
 | `data-tex-display` | element | written bare |  |  | 0 | [`PAGE_KATEX_ERROR`](/reference/findings/PAGE_KATEX_ERROR) | Typeset the TeX as a display equation on its own line rather than inline. |
 | `data-in-style` | element, container | `rise`, `settle`, `fade`, `pop`, `draw`, `cut` | `rise` |  | from the page | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How the element arrives. Each word declares its own span. |
@@ -87,19 +87,19 @@ that never moves a pixel and `from the page` is a span read off the page or off 
 | `data-out` | element, container | a local cue name |  |  | from the page | [`PAGE_MOMENT_ORDER`](/reference/findings/PAGE_MOMENT_ORDER) | The element leaves at this cue. |
 | `data-words` | element | `highlight`, `appear` | `highlight` |  | 0.12 | [`PAGE_WORDS_NOT_FOUND`](/reference/findings/PAGE_WORDS_NOT_FOUND) | The line is shown word by word on the voice, matched against the section's spoken words. |
 | `data-count` | element | `last`, `first` |  |  | 0.44 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | A number in the text counts up from zero when the element arrives. |
-| `data-class` | element, container | moment:value pairs |  |  | from the page | [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED) | Adds a class at a moment, written as moment:name pairs, for the page's own stylesheet. |
-| `data-describe-class` | element, container | moment:value pairs |  |  | 0 | none | What each class change means, as moment:phrase pairs separated by a vertical bar. |
+| `data-class` | element, container | cue:class pairs |  |  | from the page | [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED) | Adds a class at a cue, written as cue:class pairs, for the page's own stylesheet. |
+| `data-describe-class` | element, container | cue:description pairs |  |  | 0 | none | What each class change means, as cue:description pairs separated by a vertical bar. |
 | `data-stagger` | container | seconds |  | 0.04 to 0.2 in steps of 0.04 | from the page | [`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN) | The container's children arrive this far apart from one cue. |
-| `data-steps` | container | written bare |  |  | from the page | [`PAGE_STAGGER_EMPTY`](/reference/findings/PAGE_STAGGER_EMPTY) | Each cued child comes to the front as it arrives and the ones before it step back. |
+| `data-spotlight` | container | written bare |  |  | from the page | [`PAGE_SPOTLIGHT_EMPTY`](/reference/findings/PAGE_SPOTLIGHT_EMPTY) | Each cued child comes to the front as it arrives and the ones before it step back. |
 | `data-in-seconds` | element, container | seconds |  | 0.12 to 0.44 in steps of 0.04 | from the page | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How long the entrance plays, which governs the entrance alone and never the onset. |
 | `data-out-style` | element, container | `fade`, `fall` | `fade` |  | 0.2 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How the element leaves. |
 | `data-swaps` | element | written bare |  |  | from the page | [`PAGE_SWAP_AMBIGUOUS`](/reference/findings/PAGE_SWAP_AMBIGUOUS) | The element takes the place of whatever leaves on its own arrival cue, in a held swap. |
-| `data-describe-out` | element | a phrase |  |  | 0 | none | Overrides the departure sentence when leaving means something of its own. |
+| `data-describe-out` | element | a description |  |  | 0 | none | Overrides the departure sentence when leaving means something of its own. |
 | `data-scene` | scene | an id |  |  | 0 | [`PAGE_SCENE_EMPTY`](/reference/findings/PAGE_SCENE_EMPTY) | Declares the scene a section names, on the wrapper that holds its slides. |
-| `data-name` | scene | a phrase |  |  | 0 | none | The scene's name in the index and in the catalog. |
+| `data-name` | scene | a description |  |  | 0 | none | The scene's name in the index and in the catalog. |
 | `data-slide` | slide | an id |  |  | 0 | [`PAGE_SLIDE_NO_ID`](/reference/findings/PAGE_SLIDE_NO_ID) | Declares a slide on a template. Its id qualifies every moment written inside it. |
 | `data-hold` | slide | seconds | `8` | 1 to 60 in steps of 1 | 0 | none | How long the preview rests on this slide. No recording reads it. |
-| `data-owns` | slide | local names |  |  | 0 | [`PAGE_CUE_UNKNOWN`](/reference/findings/PAGE_CUE_UNKNOWN) | Local names of cues only a handler serves, which no moment attribute mentions. |
+| `data-owns` | slide | cue names |  |  | 0 | [`PAGE_CUE_UNKNOWN`](/reference/findings/PAGE_CUE_UNKNOWN) | Cue names only a handler serves, which no moment attribute mentions. |
 | `data-enter` | slide | `crossfade`, `cut` | `crossfade` |  | 0.24 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How this slide replaces the one before it. |
 
 A `data-` attribute that is not in this table is
@@ -119,13 +119,13 @@ decktalk schema page
 ## The five rows that earn no code
 
 An attribute lives in the contract only when its value can change a judgement or be named by a
-finding. Five rows can do neither, because each of them carries a phrase a person wrote or a preview
+finding. Five rows can do neither, because each of them carries text a person wrote or a preview
 length nothing records, and each publishes the sentence that says why.
 
 | Attribute | Why no value of it can change a judgement |
 |---|---|
-| `data-describe` | Any phrase clears the finding that asks for one, so the phrase itself is never measured. |
-| `data-describe-class` | The transcript prints the phrase exactly as it was written. |
+| `data-describe` | Any description clears the finding that asks for one, so the description itself is never measured. |
+| `data-describe-class` | The transcript prints the description exactly as it was written. |
 | `data-describe-out` | It replaces one transcript sentence with another, and neither is measured. |
 | `data-hold` | The preview alone reads it, and a preview is never recorded. |
 | `data-name` | It names a scene in the index, which no check and no finding reads. |
@@ -152,7 +152,7 @@ from, so it marks its own cue unmeasurable. No span a page can declare may reach
 frames a second the recorder captures at. `data-stagger` runs from 0.04 to 0.2 in the same steps,
 which is one to five frames.
 
-A staggered container's total is exact arithmetic, and that is why its overrun is a certain finding.
+A staggered container's total is exact arithmetic, and that is why its overrun is an error.
 The last child starts one step per earlier child after the cue, and then plays its own entrance.
 
 ```text
@@ -164,11 +164,12 @@ A container with six children at `data-stagger="0.08"` and the default `rise` en
 [`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN). Four children at the same step
 total 0.56 seconds and still overrun. Four children at `0.04` with a `pop` entrance total 0.32
 seconds and are fine. A container that staggers no children at all earns
-[`PAGE_STAGGER_EMPTY`](/reference/findings/PAGE_STAGGER_EMPTY).
+[`PAGE_STAGGER_EMPTY`](/reference/findings/PAGE_STAGGER_EMPTY), and a `data-spotlight` container with no
+child that declares `data-in` earns [`PAGE_SPOTLIGHT_EMPTY`](/reference/findings/PAGE_SPOTLIGHT_EMPTY).
 
 `motion.scale` multiplies every declared span and every duration in the deck. A scale above 1 slows
 motion down, and each scaled span is clamped one frame under the ceiling rather than obeyed, so a
-project cannot turn a knob until its own cues stop being measurable. A motion still playing at the
+project cannot change a setting until its own cues stop being measurable. A motion still playing at the
 frame the next cue is read from is
 [`PAGE_MOTION_OVERRUN`](/reference/findings/PAGE_MOTION_OVERRUN). A `data-class` change is the one
 span the contract cannot bound in advance, because its length belongs to your own stylesheet, so the
@@ -187,10 +188,10 @@ rule:
 
 1. Every moment attribute written on an element inside its template, qualified with the slide's id.
 2. Every moment named on the left of a `data-class` pair, qualified the same way.
-3. Every local name in the slide's `data-owns`, which is for a cue that only a handler serves.
+3. Every cue name in the slide's `data-owns`, which is for a cue that only a handler serves.
 4. Every key of a slide's own `on` object, for a slide a script declares.
 
-There is no prefix rule and no guessing, so a wire id may carry any characters an author likes. Two
+There is no prefix rule and no guessing, so a cue id may carry any characters an author likes. Two
 templates claiming one slide id would give every moment inside either of them two owners, which is
 [`PAGE_SLIDE_DOUBLED`](/reference/findings/PAGE_SLIDE_DOUBLED).
 
@@ -214,8 +215,8 @@ When a cue fires, the runtime adds it to `window.__decktalk.fired` and then does
 this order.
 
 1. Every moment on the mounted slide that names the cue plays.
-2. The mounted slide's own `on` handler for that local name runs, if it has one.
-3. Every handler that `DeckTalk.on(id, fn)` registered for the wire id runs, in the order they were
+2. The mounted slide's own `on` handler for that cue name runs, if it has one.
+3. Every handler that `DeckTalk.on(id, fn)` registered for the cue id runs, in the order they were
    registered.
 
 Each handler is given the slide element and a context object of `id`, `at`, `frozen` and `slideId`,
@@ -324,7 +325,7 @@ The probe reads the whole page back in one call, and the recording log keeps wha
 | `longFrames` | Every animation frame that took longer than a captured frame, with when it was presented. |
 
 The catalog is what every static judgement is read from, rather than a scan of the markup, because
-`data-steps`, `data-class` and `data-owns` all declare moments no text scan can see. A page that
+`data-spotlight`, `data-class` and `data-owns` all declare moments no text scan can see. A page that
 publishes no catalog is a page whose runtime never registered a scene, and `record` counts that as a
 page error of its own.
 

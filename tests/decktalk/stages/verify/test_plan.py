@@ -227,7 +227,7 @@ def test_a_cue_the_author_opted_out_of_is_never_measured(tmp_path: Path) -> None
     )
     (tmp_path / "cues.json").write_text(
         json.dumps(
-            {"sections": {"1": {"cues": [{"cue": "1:a", "on": "x", "verify": False}, {"cue": "1:b", "on": "y"}]}}}
+            {"sections": {"1": {"cues": [{"id": "1:a", "phrase": "x", "verify": False}, {"id": "1:b", "phrase": "y"}]}}}
         ),
         encoding="utf-8",
     )

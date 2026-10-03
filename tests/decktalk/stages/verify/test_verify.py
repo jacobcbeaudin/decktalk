@@ -8,7 +8,7 @@ import pytest
 
 from decktalk.artifacts import CueTimes
 from decktalk.errors import Cancelled, NotBuiltError
-from decktalk.events import Event, Progress, Unit
+from decktalk.events import Event, StageProgress, Unit
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.pipeline import Stage
@@ -41,9 +41,9 @@ def test_a_film_that_was_never_assembled_is_refused_with_the_stage_that_makes_it
     assert "decktalk assemble" in (refused.value.hint or "")
 
 
-def test_a_project_with_no_cut_list_and_no_section_files_is_refused(assembled: Callable[..., Inputs]) -> None:
+def test_a_project_with_no_placements_and_no_section_files_is_refused(assembled: Callable[..., Inputs]) -> None:
     inputs = assembled(CUES)
-    inputs.workspace.cuts_path.unlink()
+    inputs.workspace.placements_path.unlink()
     for section in inputs.document.sections:
         inputs.workspace.section_video(section.key).unlink()
     with pytest.raises(NotBuiltError):
@@ -53,10 +53,10 @@ def test_a_project_with_no_cut_list_and_no_section_files_is_refused(assembled: C
 def test_the_refusal_names_the_build_directory_the_project_chose(assembled: Callable[..., Inputs]) -> None:
     """The message spelled `build/final` whatever `[project] build` said."""
     inputs = assembled(CUES, toml=PAGES_TOML.replace('name = "t"', 'name = "t"\nbuild = "out"'))
-    inputs.workspace.cuts_path.unlink()
+    inputs.workspace.placements_path.unlink()
     for section in inputs.document.sections:
         inputs.workspace.section_video(section.key).unlink()
-    with pytest.raises(NotBuiltError, match="^out/final holds no cut list"):
+    with pytest.raises(NotBuiltError, match="^out/final holds no placements file"):
         measure(inputs)
 
 
@@ -68,7 +68,7 @@ def test_the_result_carries_the_film_it_measured_and_how_long_it_runs(assembled:
     result = measure(inputs)
     assert result.film.as_posix() == "build/final/t.mp4"
     assert result.film_seconds == pytest.approx(2 * SECTION_SECONDS)
-    assert result.seconds >= 0
+    assert result.elapsed_seconds >= 0
 
 
 def test_every_section_gets_a_start_a_cut_and_a_cue_row(assembled: Callable[..., Inputs]) -> None:
@@ -146,8 +146,10 @@ def codes(inputs: Inputs) -> list[tuple[Code, str | None]]:
     ]
 
 
-def test_a_cue_that_never_resolved_is_a_certain_finding_against_the_film(assembled: Callable[..., Inputs]) -> None:
-    inputs = assembled(CUES, cues={"1": {"cues": [{"cue": "1.1:a", "on": "hello"}, {"cue": "1.1:z", "on": "nowhere"}]}})
+def test_a_cue_that_never_resolved_is_an_error_against_the_film(assembled: Callable[..., Inputs]) -> None:
+    inputs = assembled(
+        CUES, cues={"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}, {"id": "1.1:z", "phrase": "nowhere"}]}}
+    )
     placed(inputs, {"1.1:a": ("hello", 2.0), "1.1:z": ("nowhere", None)})
     found = [row for row in measure(inputs).findings if row.code is Code.CUE_UNRESOLVED]
     assert len(found) == 1
@@ -157,7 +159,7 @@ def test_a_cue_that_never_resolved_is_a_certain_finding_against_the_film(assembl
 
 
 def test_a_cue_the_run_resolved_is_never_reported_as_unresolved(assembled: Callable[..., Inputs]) -> None:
-    inputs = assembled(CUES, cues={"1": {"cues": [{"cue": "1.1:a", "on": "hello"}]}})
+    inputs = assembled(CUES, cues={"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}]}})
     assert codes(inputs) == []
 
 
@@ -165,7 +167,7 @@ def test_cue_times_placed_from_an_older_cue_file_are_stale_and_never_blamed_on_t
     assembled: Callable[..., Inputs],
 ) -> None:
     """A build stopped at the cue stage, and the cue file put back, left verify blaming the script."""
-    inputs = assembled(CUES, cues={"1": {"cues": [{"cue": "1.1:a", "on": "in code"}]}})
+    inputs = assembled(CUES, cues={"1": {"cues": [{"id": "1.1:a", "phrase": "in code"}]}})
     placed(inputs, {"1.1:a": ("in cod", None)})
     assert codes(inputs) == [(Code.CUE_STALE, "1.1:a")]
     stale = next(row for row in measure(inputs).findings if row.code is Code.CUE_STALE)
@@ -175,7 +177,9 @@ def test_cue_times_placed_from_an_older_cue_file_are_stale_and_never_blamed_on_t
 def test_a_cue_the_times_never_placed_and_a_second_for_a_cue_now_gone_are_both_stale(
     assembled: Callable[..., Inputs],
 ) -> None:
-    inputs = assembled(CUES, cues={"1": {"cues": [{"cue": "1.1:a", "on": "hello"}, {"cue": "1.1:new", "on": "there"}]}})
+    inputs = assembled(
+        CUES, cues={"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}, {"id": "1.1:new", "phrase": "there"}]}}
+    )
     placed(inputs, {"1.1:a": ("hello", 2.0), "1.1:old": ("there", 3.0)})
     assert codes(inputs) == [(Code.CUE_STALE, "1.1:new"), (Code.CUE_STALE, "1.1:old")]
 
@@ -189,7 +193,7 @@ def test_one_progress_line_is_emitted_for_every_probe(assembled: Callable[..., I
     with opened(inputs.root) as run:
         with run.machine.events.subscribe(lines.append):
             verify(inputs, run)
-    probes = [line for line in lines if isinstance(line, Progress)]
+    probes = [line for line in lines if isinstance(line, StageProgress)]
     assert [(line.done, line.total, line.unit) for line in probes] == [(1, 2, Unit.PROBE), (2, 2, Unit.PROBE)]
     assert all(line.stage is Stage.VERIFY for line in probes)
 
@@ -201,21 +205,21 @@ def test_a_cancelled_run_stops_inside_the_cue_loop(assembled: Callable[..., Inpu
         verify(inputs, run)
 
 
-def test_a_film_with_no_cut_list_says_where_its_shape_came_from(assembled: Callable[..., Inputs]) -> None:
+def test_a_film_with_no_placements_says_where_its_shape_came_from(assembled: Callable[..., Inputs]) -> None:
     inputs = assembled(CUES)
-    inputs.workspace.cuts_path.unlink()
+    inputs.workspace.placements_path.unlink()
     lines: list[Event] = []
     with opened(inputs.root) as run:
         with run.machine.events.subscribe(lines.append):
             verify(inputs, run)
     said = [getattr(line, "message", "") for line in lines]
-    assert any("cut list" in message for message in said)
+    assert any("placements file" in message for message in said)
 
 
 def test_every_finding_names_the_film_it_judged(assembled: Callable[..., Inputs], measured: Measurements) -> None:
     """A reader dispatching on a finding is told which file to open without knowing a path."""
     inputs = assembled(CUES)
     measured.luma = 1.0
-    black = [row for row in measure(inputs).findings if row.code is Code.PAGE_BLACK]
+    black = [row for row in measure(inputs).findings if row.code is Code.RECORD_BLACK]
     assert black and all(row.location.file is not None for row in black)
     assert isinstance(black[0], Finding)

@@ -67,7 +67,7 @@ class PageSection:
     into it should not show. verify compares the two frames.
 
     `lead_seconds` replaces `[narration] lead_seconds`, the silence in the narration before the
-    section's first word, and `tail_seconds` replaces `[narration] tail_min_seconds`, the silence
+    section's first word, and `tail_seconds` replaces `[narration] tail_seconds`, the silence
     after its last. Both are placed when the takes are joined, not sent to the voice, so a cached
     take stays cached. `hold_seconds` holds the section's
     last frame after its narration, and the narration pauses for it.
@@ -83,7 +83,7 @@ class PageSection:
     params: dict[str, str] = field(default_factory=dict)
     seamless: bool = False
     lead_seconds: float | None = None  # None uses [narration] lead_seconds.
-    tail_seconds: float | None = None  # None uses [narration] tail_min_seconds.
+    tail_seconds: float | None = None  # None uses [narration] tail_seconds.
 
     @property
     def key(self) -> str:
@@ -121,7 +121,7 @@ class MixEffect:
     section: int
     cue: str
     db: float = -16.0
-    offset: float = 0.0
+    offset_seconds: float = 0.0
     caption: str = ""
 
 
@@ -148,7 +148,7 @@ class SoundSpec:
     its own table is where those settings live.
     """
 
-    text: str
+    prompt: str
     out: str | None = None
     duration_seconds: float | None = None
     prompt_influence: float | None = None
@@ -420,7 +420,7 @@ def parse_score(doc: dict[str, Any], notes: list[str]) -> Score:
     if amb_raw is not None:
         a = Table(amb_raw, f"{PROJECT_FILE}: [score.ambience]", table="score.ambience")
         settings = tuning_keys("score.ambience")
-        notes += a.note_unknown({"text", "out"} | settings, anywhere=BY_ID)
+        notes += a.note_unknown({"prompt", "out"} | settings, anywhere=BY_ID)
         # The bed's own settings are read by the settings layer, so the ones an effect may set for
         # itself are left empty here and the rest, such as its rate, are no field of an item at all.
         ambience = fill(a, SoundSpec, **dict.fromkeys(settings & set(SoundSpec.__dataclass_fields__)))

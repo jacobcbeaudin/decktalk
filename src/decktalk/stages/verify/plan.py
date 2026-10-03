@@ -199,7 +199,7 @@ def opted_out(inputs: Inputs) -> set[tuple[int, str]]:
     A reveal too small or too slow for a frame difference to see is the author's own call, so the
     row is skipped rather than measured and failed.
     """
-    return {(block.number, cue.cue) for block in inputs.cues() for cue in block.cues if not cue.verify}
+    return {(block.number, cue.id) for block in inputs.cues() for cue in block.cues if not cue.verify}
 
 
 def default_checks(cue_times: CueTimes | None, only: Sequence[int] | None = None) -> list[tuple[int, str]]:

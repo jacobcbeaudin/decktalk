@@ -7,7 +7,7 @@ One schema describes the whole project file, its document tables and its tuning 
 because an editor binds one schema to one file and `#:schema` is a single directive. Every property
 carries the key's whole published record, so an agent that has the schema and nothing else has the
 safe range, the unit, the hazard, the scope and the findings the key decides. The numbers that are
-deliberately not knobs sit in `x-numbers` outside `properties`, so a reader who goes looking for one
+deliberately not settings sit in `x-numbers` outside `properties`, so a reader who goes looking for one
 finds the formula rather than nothing.
 
 The per-machine schema is a filter of the same document by `x-scope`, so the two can never disagree
@@ -153,7 +153,7 @@ def document_table(name: str) -> dict[str, Any]:
 
 
 def numbers() -> list[dict[str, Any]]:
-    """Every number that is deliberately not a knob, with its formula and its value at the defaults."""
+    """Every number that is deliberately not a setting, with its formula and its value at the defaults."""
     at_defaults = Settings()
     return [
         {

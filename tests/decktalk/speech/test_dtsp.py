@@ -1,4 +1,4 @@
-"""The `dtsp` voice: a free, keyless voice on a local server, reached on a loopback address and nowhere else.
+"""The `dtsp` voice: a free, keyless voice on a local server, reached at the address the machine names.
 
 The server is a local fake on a socket of its own, which answers `/v1/speech/timed` the way the
 DeckTalk speech protocol says, so the request the adapter sends and the reply it reads are the real
@@ -19,22 +19,19 @@ import pytest
 from typer.testing import CliRunner
 from werkzeug import Request, Response
 
-import decktalk
 from decktalk.artifacts.takes import TakeInputs
 from decktalk.cli import main
-from decktalk.errors import InputError, ProviderError
+from decktalk.errors import ProviderError
 from decktalk.findings import Code
-from decktalk.machine import Machine
 from decktalk.media import audio
-from decktalk.results import Billing, TakeStatus, Word
-from decktalk.settings import ALLOW_ANY_API_BASE, CONFIG_VARIABLE, DtspConfig, Settings
+from decktalk.results import Billing, TakeStatus
+from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, DtspConfig, Settings
 from decktalk.speech import (
     DECLARED,
     PROVIDERS,
     Piece,
+    SpeechContext,
     SpeechRequest,
-    VoiceContext,
-    Voices,
     billing_of,
     key_variable,
     output_of,
@@ -50,16 +47,16 @@ VOICE = "af_heart"
 MODEL = DtspConfig().model
 
 
-def context(base: str, **over: Any) -> VoiceContext:
+def context(base: str, **over: Any) -> SpeechContext:
     """What a run hands the adapter: the base its table names, a timeout and no secret it may read."""
     fields: dict[str, Any] = {
         "secrets": NoSecrets(),
-        "api_base": base,
+        "base_url": base,
         "context_chars": 0,
         "speech_timeout_seconds": 5,
         **over,
     }
-    return VoiceContext(**fields)
+    return SpeechContext(**fields)
 
 
 def spoken(pieces: list[dict[str, Any]]) -> dict[str, Any]:
@@ -119,50 +116,6 @@ def test_its_takes_never_share_a_name_with_an_elevenlabs_take_of_the_same_words(
     same = {"voice": VOICE, "model": MODEL, "output_format": "mp3_44100_128", "settings": {"speed": 1.0}, "text": "Hi"}
     assert TakeInputs.of(provider="dtsp", **same).digest != TakeInputs.of(provider="elevenlabs", **same).digest
     assert DECLARED["dtsp"].identity(DtspConfig(), 1.1) == {"speed": 1.1}
-
-
-# ---- where it may send a script --------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "base",
-    ["http://127.0.0.1:8765", "http://localhost:9000/", "http://[::1]:8765", "http://LOCALHOST", "http://127.0.0.1"],
-)
-def test_a_loopback_url_over_http_is_allowed(base: str):
-    assert Dtsp(context(base)).checked_base == base.rstrip("/")
-
-
-@pytest.mark.parametrize(
-    "base",
-    [
-        "http://example.com:8765",  # another machine
-        "https://127.0.0.1:8765",  # loopback, but not the scheme it declares
-        "http://10.0.0.5:8765",  # a private address is still another machine
-        "http://127.0.0.1.evil.test",  # the loopback name as a prefix of another host
-        "http://localhost@evil.test",  # userinfo that reads like the right host
-        "http://evil.test/127.0.0.1",  # the address in the path
-        "http://evil.test\\@127.0.0.1:8765",  # a backslash urllib reads as part of another host
-        "http://user@127.0.0.1:8765",  # userinfo, which the right host does not need
-        "http://[::1",  # a host this parser cannot read
-        "127.0.0.1:8765",  # no scheme
-        "",
-    ],
-)
-def test_any_other_url_is_refused_with_a_sentence_that_names_the_key_and_the_switch(base: str):
-    with pytest.raises(InputError) as refused:
-        Dtsp(context(base))
-    said = f"{refused.value} {refused.value.hint}"
-    assert str(refused.value) == "[dtsp] url must be an http URL on 127.0.0.1, [::1] or localhost."
-    assert ALLOW_ANY_API_BASE in said
-    assert "evil.test" not in said and "example.com" not in said
-
-
-def test_the_machines_switch_and_only_the_machines_switch_allows_another_host(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv(ALLOW_ANY_API_BASE, "1")
-    with pytest.raises(InputError):
-        Dtsp(context("http://example.com:8765"))
-    built = Voices(factories=PROVIDERS, allow_any_api_base=True).provider("dtsp", context("http://example.com:8765"))
-    assert isinstance(built, Dtsp) and built.checked_base == "http://example.com:8765"
 
 
 # ---- the request and the reply -----------------------------------------------------------------
@@ -234,9 +187,6 @@ name = "local"
 provider = "dtsp"
 id = "{voice}"
 
-[dtsp]
-url = "{url}"
-
 [[section]]
 number = 1
 page = "deck/index.html"
@@ -253,11 +203,13 @@ LESSON_SCRIPT = (
 )
 
 
-def lesson(root: Path, url: str) -> Path:
+def lesson(root: Path, url: str, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A two-section lesson read by the local voice, whose server this machine names at `url`."""
     (root / "deck").mkdir(parents=True)
     (root / "deck" / "index.html").write_text("<p>deck</p>", encoding="utf-8")
-    (root / "decktalk.toml").write_text(LESSON_TOML.format(voice=VOICE, url=url), encoding="utf-8")
+    (root / "decktalk.toml").write_text(LESSON_TOML.format(voice=VOICE), encoding="utf-8")
     (root / "script.md").write_text(LESSON_SCRIPT, encoding="utf-8")
+    monkeypatch.setenv(BY_ID["dtsp.base_url"].environment, url)
     return root
 
 
@@ -275,9 +227,9 @@ def machine_without_a_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     """A process with no voice key and no machine file, so nothing but the project decides the voice."""
     for name in [declared.key_variable for declared in DECLARED.values() if declared.key_variable]:
         monkeypatch.delenv(name, raising=False)
-    for name in ("DECKTALK_VOICE_ID", "DECKTALK_PROJECT", ALLOW_ANY_API_BASE):
+    for name in ("DECKTALK_VOICE_ID", "DECKTALK_PROJECT"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv(CONFIG_VARIABLE, str(tmp_path / "no-machine.toml"))
+    monkeypatch.setenv(MACHINE_FILE_VARIABLE, str(tmp_path / "no-machine.toml"))
     monkeypatch.setenv("TTY_COMPATIBLE", "0")
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
 
@@ -287,13 +239,13 @@ def test_narrate_voices_a_lesson_through_the_local_server_with_no_key_and_no_spe
     tmp_path: Path, service: Service, server: LocalServer, monkeypatch: pytest.MonkeyPatch
 ):
     """The free rule end to end: no `--spend`, no terminal, no key, and every section is voiced."""
-    monkeypatch.chdir(lesson(tmp_path / "local", service.url_for("")))
+    monkeypatch.chdir(lesson(tmp_path / "local", service.url_for(""), monkeypatch))
     code, out, err = command("narrate", "--json")
     assert code == 0, err
     result = json.loads(out)
     assert [row["status"] for row in result["sections"]] == [TakeStatus.VOICED.value] * 2
-    assert result["spending"] is True
-    assert result["spend"]["billing"] == Billing.FREE.value and result["spend"]["dollars"] == 0
+    assert result["spend"] is True
+    assert result["cost"]["billing"] == Billing.FREE.value and result["cost"]["dollars"] == 0
     assert len(server.requests) == 2
     # The two sections are voiced at once, so the opening one is found by its words.
     opening = next(body for body, _ in server.requests if body["pieces"][0]["text"] == "A bowl and a ball.")
@@ -306,11 +258,11 @@ def test_a_run_with_no_spend_still_voices_every_missing_take_through_the_local_s
     tmp_path: Path, service: Service, server: LocalServer, monkeypatch: pytest.MonkeyPatch
 ):
     """`--no-spend` gates money, which a free voice never asks for, so the Action and `--watch` voice with it."""
-    monkeypatch.chdir(lesson(tmp_path / "local", service.url_for("")))
+    monkeypatch.chdir(lesson(tmp_path / "local", service.url_for(""), monkeypatch))
     code, out, err = command("narrate", "--no-spend", "--json")
     assert code == 0, err
     result = json.loads(out)
-    assert result["spending"] is False
+    assert result["spend"] is False
     assert [row["status"] for row in result["sections"]] == [TakeStatus.VOICED.value] * 2
     assert [found["code"] for found in result["findings"]] == []
     assert len(server.requests) == 2
@@ -325,54 +277,18 @@ def closed_port() -> str:
 
 
 @pytest.mark.usefixtures("fake_ffmpeg", "machine_without_a_key", "waits")
-@pytest.mark.parametrize("spending", ["--no-spend", "--spend"])
+@pytest.mark.parametrize("flag", ["--no-spend", "--spend"])
 def test_a_local_server_that_is_not_running_plays_placeholders_and_says_to_start_it(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spending: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flag: str
 ):
     """A free voice that is down never fails the run: each section plays a placeholder whose hint starts the server."""
-    monkeypatch.chdir(lesson(tmp_path / "down", closed_port()))
-    code, out, err = command("narrate", spending, "--json")
+    monkeypatch.chdir(lesson(tmp_path / "down", closed_port(), monkeypatch))
+    code, out, err = command("narrate", flag, "--json")
     assert code == 0, err
     result = json.loads(out)
     assert [row["status"] for row in result["sections"]] == [TakeStatus.PLACEHOLDER.value] * 2
     assert [found["code"] for found in result["findings"]] == [Code.TAKE_MISSING.value] * 2
     for found in result["findings"]:
         assert "Start decktalk-voice" in found["message"]
-        assert "[dtsp] url" in found["message"]
+        assert "[dtsp] base_url" in found["message"]
         assert "--spend" not in found["message"]
-
-
-@pytest.mark.usefixtures("machine_without_a_key")
-def test_check_refuses_a_url_that_is_not_this_machine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """`check` judges where the script would go before it plans or prices anything."""
-    monkeypatch.chdir(lesson(tmp_path / "remote", "http://speech.example.com:8765"))
-    code, out, _ = command("check", "--no-pages", "--json")
-    refused = json.loads(out)
-    assert code != 0 and refused["ok"] is False
-    assert refused["error"]["message"] == "[dtsp] url must be an http URL on 127.0.0.1, [::1] or localhost."
-    assert "example.com" not in out
-
-
-@pytest.mark.usefixtures("machine_without_a_key")
-def test_check_leaves_a_voice_the_host_registered_under_a_shipped_name_alone(tmp_path: Path):
-    """A host's own voice builds its own requests, so the shipped adapter's hosts do not judge it."""
-    root = lesson(tmp_path / "hosted", "http://speech.example.com:8765")
-    here = Machine.of(
-        environ={}, config_path=tmp_path / "m.toml", cwd=root, cache_dir=tmp_path / "c", providers={"dtsp": Silent}
-    )
-    assert decktalk.open(root, machine=here).check(pages=False, frames=False).ok
-    shipped = Machine.of(environ={}, config_path=tmp_path / "m.toml", cwd=root, cache_dir=tmp_path / "c")
-    with pytest.raises(InputError, match=r"\[dtsp\] url"):
-        decktalk.open(root, machine=shipped).check(pages=False, frames=False)
-
-
-class Silent:
-    """A host's voice, which this test never asks to speak."""
-
-    name = "dtsp"
-
-    def __init__(self, _context: VoiceContext) -> None:
-        pass
-
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
-        raise AssertionError(f"check spoke {request.pieces}")

@@ -33,11 +33,11 @@ name = "t"
 provider = "elevenlabs"
 
 [elevenlabs]
-price_per_1000_characters = 0.30
+dollars_per_1000_characters = 0.30
 
 [narration]
 lead_seconds = 0.5
-tail_min_seconds = 0.7
+tail_seconds = 0.7
 
 [[section]]
 number = 1
@@ -110,7 +110,7 @@ def a_paid_take(section: int = 1, *, digest: str = "0000000000000abc", seconds: 
         section,
         seconds=seconds,
         chapter="Open",
-        hash=digest,
+        digest=digest,
         characters=8,
         estimated_seconds=1.0,
         speech_end_seconds=None,

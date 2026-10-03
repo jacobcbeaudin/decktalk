@@ -73,7 +73,7 @@ class Outcome(Enum):
     caller cancelled or interrupted, which is kept apart from `failed` because nothing went wrong.
     """
 
-    OK = "ok"
+    RAN = "ran"
     KEPT = "kept"
     SKIPPED = "skipped"
     STOPPED = "stopped"
@@ -139,7 +139,7 @@ PIPELINE: tuple[StageSpec, ...] = (
         writes=(Artifact.TAKES,),
         holds_key=True,
         opens_pages=False,
-        why="The script becomes spoken takes with a word clock, which every later stage measures against.",
+        why="The script becomes spoken takes with their words, which every later stage measures against.",
     ),
     StageSpec(
         stage=Stage.CUE,

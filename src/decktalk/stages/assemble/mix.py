@@ -213,7 +213,7 @@ def resolve_marker_time(marker: Marker, starts: Mapping[int, float], takes: Take
     take = takes.of(marker.section)
     if take is None:
         return None
-    words = inputs.words(marker.section, take.hash)
+    words = inputs.words(marker.section, take.digest)
     if marker.on == SECTION_END:
         return starts[marker.section] + words[-1].end + marker.offset if words else None
     found = Spoken.of(words).find(marker.on, marker.occurrence, marker.case_sensitive)
@@ -350,7 +350,7 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
 def effect_second(effect: MixEffect, cue_times: CueTimes | None, starts: Mapping[int, float]) -> float | None:
     """The film second one effect plays at, or None while its cue or its section has no place in the film."""
     at = None if cue_times is None else cue_times.at(effect.section, effect.cue)
-    return None if effect.section not in starts or at is None else starts[effect.section] + at + effect.offset
+    return None if effect.section not in starts or at is None else starts[effect.section] + at + effect.offset_seconds
 
 
 def _effects(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float]) -> None:
@@ -375,8 +375,8 @@ def _missing_sound(inputs: Inputs, run: Run, named: str, what: str, *, section: 
     """One judgement for a sound file the project names and has not got, which plays as silence.
 
     A file the score stage writes is only unbought, which is the author's choice not to spend yet, so
-    it is an uncertain `SOUND_MISSING` and the film is still made. A file nothing writes is the
-    author's own and is gone, which is a certain `FILE_MISSING`.
+    it is a `SOUND_MISSING` warning and the film is still made. A file nothing writes is the
+    author's own and is gone, which is a `FILE_MISSING` error.
     """
     path = inputs.path(named)
     unbought = path in score_stage.score_files(inputs)

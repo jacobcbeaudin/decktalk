@@ -10,7 +10,7 @@ import pytest
 
 from decktalk.errors import InputError
 from decktalk.results import SoundKind
-from decktalk.speech.sound import SOUND_DECLARED, SOUNDS, SoundContext, SoundProvider, Sounds, endpoint
+from decktalk.speech.sound import SOUND_DECLARED, SOUNDS, SoundContext, SoundProvider, SoundProviders, endpoint
 from support.speech import NoSecrets
 
 
@@ -28,33 +28,31 @@ class Quiet:
 
 
 def a_context(**over: Any) -> SoundContext:
-    fields: dict[str, Any] = {"secrets": NoSecrets(), "api_base": "", "timeout_seconds": 1}
+    fields: dict[str, Any] = {"secrets": NoSecrets(), "base_url": "", "timeout_seconds": 1}
     return SoundContext(**{**fields, **over})
 
 
-def test_the_machine_decides_where_the_key_may_go_and_how_often_a_request_is_sent_again() -> None:
+def test_the_machine_decides_how_often_a_request_is_sent_again() -> None:
     made: list[SoundContext] = []
 
     def house(context: SoundContext) -> SoundProvider:
         made.append(context)
         return Quiet()
 
-    Sounds(factories={"house": house}, allow_any_api_base=True, retries=3).provider(
-        "house", a_context(allow_any_api_base=False)
-    )
-    assert (made[0].allow_any_api_base, made[0].retries) == (True, 3)
+    SoundProviders(factories={"house": house}, retries=3).provider("house", a_context(retries=0))
+    assert made[0].retries == 3
 
 
 def test_a_sound_provider_name_the_table_does_not_hold_is_refused_with_the_ones_it_does() -> None:
     with pytest.raises(InputError) as caught:
-        Sounds(factories=SOUNDS).provider("a-local-sound", a_context())
+        SoundProviders(factories=SOUNDS).provider("a-local-sound", a_context())
     assert "not a sound provider this machine answers for" in str(caught.value)
     assert "elevenlabs" in (caught.value.hint or "")
 
 
 def test_an_empty_table_answers_for_no_sound_provider() -> None:
     with pytest.raises(InputError) as caught:
-        Sounds(factories={}).provider("elevenlabs", a_context())
+        SoundProviders(factories={}).provider("elevenlabs", a_context())
     assert "none" in (caught.value.hint or "")
 
 

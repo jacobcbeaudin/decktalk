@@ -56,7 +56,7 @@ def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settin
     if checks.luma.peak_at_half <= black:
         found.append(
             judge(
-                Code.PAGE_BLACK,
+                Code.RECORD_BLACK,
                 f"the frame half way through has a brightest luma of {checks.luma.peak_at_half:.{LUMA_DIGITS}f}, "
                 f"which is at or under the {black:.{LUMA_DIGITS}f} a black frame is.",
                 Location(where=where.as_posix(), file=where, section=section),
@@ -67,7 +67,7 @@ def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settin
     if checks.wanted_seconds and short > slack:
         found.append(
             judge(
-                Code.PAGE_TRUNCATED,
+                Code.RECORD_TRUNCATED,
                 f"the recording runs {checks.duration_seconds:.{SECOND_DIGITS}f}s of the "
                 f"{checks.wanted_seconds:.{SECOND_DIGITS}f}s it asked for, which is "
                 f"{short:.{SECOND_DIGITS}f}s short against the {slack:.{SECOND_DIGITS}f}s allowed.",
@@ -84,7 +84,7 @@ def stall_finding(gap_ms: int, *, where: Path, section: int, settings: Settings)
     if gap_ms <= limit:
         return None
     return judge(
-        Code.PAGE_STALLED,
+        Code.RECORD_STALLED,
         f"the picture held still for {gap_ms} ms after narration t=0, which is over the {limit} ms "
         "a recorded section may ever stall for.",
         Location(where=where.as_posix(), file=where, section=section),

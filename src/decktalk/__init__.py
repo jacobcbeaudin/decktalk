@@ -2,7 +2,7 @@
 
 A project is a directory. `decktalk.open(path)` returns a project, six verbs move it forward, and a
 handful of calls report on it, cut a piece out of it or serve it. Every call returns a frozen result
-whose findings are diagnostics with a code, a location, a certainty and often a fix a caller can
+whose findings are diagnostics with a code, a location, a severity and often a fix a caller can
 apply. Every call opens a run and writes to one event stream, which any renderer subscribes to.
 Nothing in this package prints, nothing reads the environment except `Machine.from_environment`, and
 a path a result carries is always relative to the project root.
@@ -37,18 +37,18 @@ from .errors import (
 )
 from .events import Event, Events, JsonlSink
 from .explain import explain
-from .findings import Certainty, Code, Finding
+from .findings import Code, Finding, Severity
 from .machine import Machine, Toolchain, init
 from .pipeline import Stage
 from .project import Origin, Project, open, section_numbers
-from .results import Result, Spend
+from .results import Cost, Result
 
 __all__ = [
     "ApprovalRequired",
     "Cancel",
     "Cancelled",
-    "Certainty",
     "Code",
+    "Cost",
     "DeckTalkError",
     "ErrorCode",
     "Event",
@@ -63,7 +63,7 @@ __all__ = [
     "ProjectLocked",
     "ProviderError",
     "Result",
-    "Spend",
+    "Severity",
     "Stage",
     "ToolError",
     "Toolchain",

@@ -19,7 +19,7 @@ price before they start.
   reaches it.
 - `decktalk check` prices the narration of a voiced run before anything is bought, the way the voice
   declares it bills. ElevenLabs bills per character, so the price uses
-  `[elevenlabs] price_per_1000_characters` from `decktalk.toml` as what your own plan charges.
+  `[elevenlabs] dollars_per_1000_characters` from `decktalk.toml` as what your own plan charges.
 - No run spends without being told to. On the command line that is `--spend`, and `--max-cost N`
   refuses the run before the first call if the most it could cost is over N US dollars. In the
   library it is `spend=True`, and `ApprovalRequired` is raised rather than money
@@ -30,7 +30,7 @@ price before they start.
 ## Do I need an account to try it?
 
 No. `decktalk init my-deck` and then `decktalk build --no-spend` writes a complete film with
-placeholder narration that carries a real word clock, so the pacing, the cues and the cuts are all
+placeholder narration that carries real word times, so the pacing, the cues and the cuts are all
 real. Nothing contacts a paid speech service, and no key is read. `--no-spend` gates money only, so a
 project whose voice is the free local `dtsp` is still voiced by it.
 
@@ -43,10 +43,10 @@ own account's key, so the id is committed with the project.
 
 Yes, a local one. DeckTalk ships two voices: `elevenlabs`, the cloud voice, and `dtsp`, which speaks
 the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this
-repository. Set `provider = "dtsp"` under `[voice]` and the server's address as `[dtsp] url`. It
-needs no key and costs nothing, so it makes its takes with or without `--spend`, `--no-spend`
-included, and its address must be `127.0.0.1`, `localhost` or `[::1]` over http, so the script never
-leaves the machine. When the server is not running, each missing take plays a placeholder with a
+repository. Set `provider = "dtsp"` under `[voice]`. It needs no key and costs nothing, so it makes
+its takes with or without `--spend`, `--no-spend` included. The server's address is
+`[dtsp] base_url`, `http://127.0.0.1:8765` by default, and only this machine sets it, so a project
+someone else wrote cannot send its script anywhere else. When the server is not running, each missing take plays a placeholder with a
 `TAKE_MISSING` finding that says to start it, and the build still exits 0.
 
 The set is closed. There is no plugin path and nothing is read from entry points, so the voices a
@@ -142,7 +142,7 @@ Yes. DeckTalk runs on Linux, macOS and Windows.
   Chromium is fetched by the first command that needs it, or up front by `decktalk install`. If a
   proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents, or point
   `[record] browser_path` at a browser the machine already has, with
-  `decktalk config set record.browser_path PATH --where machine`.
+  `decktalk config set record.browser_path PATH --scope machine`.
 - The groups that drive a real browser or a real ffmpeg run on macOS and Windows when a change
   merges and when a release is cut. Those legs report cue timing rather than fail on it, because a
   hosted runner presents frames late, and the Linux legs hold every reveal to its word.
@@ -166,7 +166,7 @@ uses "error" because the everyday word already says that lower is better.
 - **One guess.** A loss function scores one guess. For a category guess, such as seal or otter, the
   usual loss is cross-entropy. It is large when the model gives the right answer a low probability.
 - **The height of the bowl.** Training lowers the average loss over many examples. Gradient descent
-  moves the knobs down the slope of that average.
+  moves the dials down the slope of that average.
 - **Not the error rate.** The error rate is the share of wrong guesses. It changes in jumps, so it
   has no useful slope to follow.
 

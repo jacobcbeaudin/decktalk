@@ -11,12 +11,12 @@
  */
 
 import { now, schedule } from "./clock.ts";
-import { ATTENTION, type Attr, type Count, EXITS, wireId } from "./contract.ts";
+import { ATTENTION, type Attr, type Count, cueId, EXITS } from "./contract.ts";
 import { fallback } from "./katex.ts";
 import {
   ATTR,
-  classMomentsOf,
-  classPhraseOf,
+  classChangesOf,
+  classDescriptionOf,
   countOf,
   entranceOf,
   entranceSeconds,
@@ -100,15 +100,16 @@ export function prepare(el: HTMLElement, slide: Slide, playing: Playing): Mounte
       const action = actionFor(element, moment.attr, moment.cue, slide, playing, held, onLeave);
       push(actions, moment.cue, action);
     }
-    for (const change of classMomentsOf(element, slide.id)) {
+    for (const change of classChangesOf(element, slide.id)) {
       push(actions, change.cue, {
         attr: ATTR.class,
         run: () => element.classList.add(change.name),
-        line: classPhraseOf(element, change.local) || null,
+        line: classDescriptionOf(element, change.local) || null,
       });
     }
   }
-  for (const container of el.querySelectorAll(`[${ATTR.steps}]`)) steps(container as HTMLElement, slide, actions);
+  for (const container of el.querySelectorAll(`[${ATTR.spotlight}]`))
+    spotlight(container as HTMLElement, slide, actions);
   if (playing.frozen) {
     for (const [cue, list] of actions) {
       if (playing.held?.has(cue)) continue;
@@ -256,15 +257,15 @@ function show(el: HTMLElement, style: string, seconds: number): void {
 }
 
 /**
- * A stepped container's children come forward as they arrive and the ones before them step back.
+ * A spotlit container's children come forward as they arrive and the ones before them step back.
  *
  * The moments are generated at the cues the children already declare, so they land in the catalog as
  * though the author had written them and no check downstream can tell the two spellings apart.
  */
-function steps(container: HTMLElement, slide: Slide, actions: Map<string, Action[]>): void {
+function spotlight(container: HTMLElement, slide: Slide, actions: Map<string, Action[]>): void {
   const cued = [...container.children].filter((child) => written(child, ATTR.in));
   cued.forEach((child, at) => {
-    const cue = wireId(slide.id, written(child, ATTR.in) as string);
+    const cue = cueId(slide.id, written(child, ATTR.in) as string);
     push(actions, cue, {
       attr: ATTR.front,
       run: () => {

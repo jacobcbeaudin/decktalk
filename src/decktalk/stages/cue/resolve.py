@@ -41,11 +41,11 @@ WIDTH_SLACK = 1
 def anchor_time(cue: Cue, spoken: Spoken) -> float | None:
     """The moment this cue is anchored to, before its own nudge, or None when its phrase is not spoken."""
     words = spoken.words
-    if cue.on == SECTION_START:
+    if cue.phrase == SECTION_START:
         return SECTION_START_SECONDS
-    if cue.on == SECTION_END:
+    if cue.phrase == SECTION_END:
         return words[-1].end if words else None
-    found = spoken.find(cue.on, cue.occurrence, cue.case_sensitive)
+    found = spoken.find(cue.phrase, cue.occurrence, cue.case_sensitive)
     return None if found is None else words[found].start
 
 
@@ -58,7 +58,7 @@ def resolve_cue(cue: Cue, spoken: Spoken) -> float | None:
     anchor = anchor_time(cue, spoken)
     if anchor is None:
         return None
-    return max(SECTION_START_SECONDS, round(anchor + cue.offset, SECOND_DIGITS))
+    return max(SECTION_START_SECONDS, round(anchor + cue.offset_seconds, SECOND_DIGITS))
 
 
 def ambiguity(cue: Cue, spoken: Spoken) -> str | None:
@@ -68,14 +68,14 @@ def ambiguity(cue: Cue, spoken: Spoken) -> str | None:
     which is what the author most often meant, and the frozen code list holds no code for a choice
     that was made for them.
     """
-    if cue.occurrence_set or cue.on in (SECTION_START, SECTION_END):
+    if cue.occurrence_set or cue.phrase in (SECTION_START, SECTION_END):
         return None
-    matches = spoken.matches(cue.on, cue.case_sensitive)
+    matches = spoken.matches(cue.phrase, cue.case_sensitive)
     if len(matches) < REPEATS_MIN:
         return None
     times = ", ".join(f"{spoken.words[found].start:.2f}s" for found in matches)
     return (
-        f"{cue.on!r} occurs {len(matches)} times in section {cue.cue.split(':', 1)[0]}, at {times}, and the cue "
+        f"{cue.phrase!r} occurs {len(matches)} times in section {cue.id.split(':', 1)[0]}, at {times}, and the cue "
         'takes the first. Set "occurrence" on the cue to choose another.'
     )
 
@@ -104,7 +104,7 @@ def nearest_phrase(cue: Cue, spoken: Spoken) -> str | None:
     replaced it sit in the section and read almost the same. The phrase offered is written the way
     the matcher reads it back, and it is offered only when the cue would resolve on it.
     """
-    wanted = [token for token in (norm(one) for one in cue.on.split()) if token]
+    wanted = [token for token in (norm(one) for one in cue.phrase.split()) if token]
     if not wanted or not spoken.words:
         return None
     target, best, found = " ".join(wanted), NEAREST_MIN_RATIO, None
@@ -128,12 +128,12 @@ def phrase_fix(cue: Cue, phrase: str, cues_file: Path | None, lines: Sequence[st
     if cues_file is None or cue.line is None or not 1 <= cue.line <= len(lines):
         return None
     written = lines[cue.line - 1]
-    old, new = f'"on": {json_text(cue.on)}', f'"on": {json_text(phrase)}'
+    old, new = f'"phrase": {json_text(cue.phrase)}', f'"phrase": {json_text(phrase)}'
     if written.count(old) != 1:
         return None
     return EditFix(
         title=(
-            f"Change the phrase of {cue.cue} to {phrase!r} in {cues_file.as_posix()}, which is the nearest "
+            f"Change the phrase of {cue.id} to {phrase!r} in {cues_file.as_posix()}, which is the nearest "
             "phrase its section speaks."
         ),
         applicability=Applicability.UNSAFE,
@@ -168,9 +168,9 @@ def resolve_sections(
         spoken = None if words is None else Spoken.of(words)
         rows: list[CueTime] = []
         for cue in block.cues:
-            place = Location(where=cue.cue, file=cues_file, line=cue.line, section=block.number, cue=cue.cue)
+            place = Location(where=cue.id, file=cues_file, line=cue.line, section=block.number, cue=cue.id)
             seconds = None if spoken is None else resolve_cue(cue, spoken)
-            rows.append(CueTime(cue=cue.cue, phrase=cue.on, seconds=seconds, offset=cue.offset))
+            rows.append(CueTime(cue=cue.id, phrase=cue.phrase, seconds=seconds, nudge_seconds=cue.offset_seconds))
             if seconds is None:
                 found += _unresolved(cue, block, spoken, place, clips=clips, stage=stage, lines=lines)
                 continue
@@ -178,9 +178,9 @@ def resolve_sections(
                 found.append(
                     judge(
                         Code.CUE_NO_ONSET,
-                        f"the cue {cue.cue} resolves to {seconds:.2f}s, which is where section {block.number} "
+                        f"the cue {cue.id} resolves to {seconds:.2f}s, which is where section {block.number} "
                         f"itself starts rather than where a word does, so nothing measures its onset "
-                        f"against {cue.on!r}.",
+                        f"against {cue.phrase!r}.",
                         place,
                         stage=stage,
                     )
@@ -215,19 +215,19 @@ def _unresolved(
     if block.number in clips:
         return []
     fix = None
-    if not cue.on:
+    if not cue.phrase:
         message = (
-            f"the cue {cue.cue} has no phrase yet, so write the words it lands on into its 'on' and "
+            f"the cue {cue.id} has no phrase yet, so write the words it lands on into its 'phrase' and "
             "it will have a second."
         )
     elif spoken is None:
         message = (
-            f"the cue {cue.cue} waits for {cue.on!r} and section {block.number} has no take, so there are no "
+            f"the cue {cue.id} waits for {cue.phrase!r} and section {block.number} has no take, so there are no "
             "words to place it against."
         )
     else:
         message = (
-            f"the cue {cue.cue} waits for {cue.on!r} and section {block.number} speaks {len(spoken.words)} words, "
+            f"the cue {cue.id} waits for {cue.phrase!r} and section {block.number} speaks {len(spoken.words)} words, "
             "none of which is that phrase."
         )
         nearest = nearest_phrase(cue, spoken)

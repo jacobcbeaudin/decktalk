@@ -57,7 +57,7 @@ from decktalk.stages.pool import Halt, Pool
 from decktalk.stages.record.capture import (
     Job,
     plan_job,
-    section_hash,
+    section_digest,
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
 from decktalk.stages.record.pool import automatic
@@ -107,7 +107,7 @@ class LogSink:
         """
         return RecordingLog(
             section=self.section.number,
-            input_hash=section_hash(self.inputs, self.section, self.url, self.seconds, list(recording.assets)),
+            digest=section_digest(self.inputs, self.section, self.url, self.seconds, list(recording.assets)),
             recording=recording,
             start=start,
             findings=findings,
@@ -131,7 +131,7 @@ def stale_recording(inputs: Inputs, section: PageSection) -> str | None:
         return None
     if not job.out.exists():
         return f"section {section.number} has no recording"
-    if job.previous is None or not job.previous.input_hash:
+    if job.previous is None or not job.previous.digest:
         return f"section {section.number} was recorded before this project could tell what it was recorded from"
     return (
         f"section {section.number}: its scene, the page around it, its assets, its words, its cues or "
@@ -318,7 +318,11 @@ def kept_row(inputs: Inputs, run: Run, job: Job) -> SectionRecording:
     previous = job.previous
     seconds = previous.checks.duration_seconds if previous is not None and previous.checks is not None else 0.0
     run.emit(
-        SectionDone, stage=Stage.RECORD, section=number, outcome=Outcome.SKIPPED, seconds=time.monotonic() - started
+        SectionDone,
+        stage=Stage.RECORD,
+        section=number,
+        outcome=Outcome.SKIPPED,
+        elapsed_seconds=time.monotonic() - started,
     )
     return row(inputs, job, seconds, kept=True)
 

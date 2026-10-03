@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 from decktalk.errors import Cancelled
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
 from decktalk.machine import apply_fix
-from decktalk.results import CheckResult, Scope, SpendState
+from decktalk.results import CheckResult, CostState, Scope
 from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
 from support.pages import TOML, a_project, catalog
@@ -19,8 +19,8 @@ from support.runs import a_run, notes
 from .conftest import Drawn
 
 CUES = {
-    "1": {"cues": [{"cue": "1.1:a", "on": "there"}, {"cue": "1.1:b", "on": "again"}]},
-    "2": {"cues": [{"cue": "2.1:a", "on": "speaks"}]},
+    "1": {"cues": [{"id": "1.1:a", "phrase": "there"}, {"id": "1.1:b", "phrase": "again"}]},
+    "2": {"cues": [{"id": "2.1:a", "phrase": "speaks"}]},
 }
 """A cue file whose phrases every section of the demo script really speaks."""
 
@@ -53,8 +53,8 @@ def test_a_run_with_no_pages_says_which_judgements_it_could_not_reach(tmp_path: 
 def test_a_run_prices_what_a_voiced_build_would_cost(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, cues=CUES)
     result = check(inputs, a_run(tmp_path), pages=False)
-    assert result.spend.state is SpendState.ESTIMATE
-    assert result.spend.ceiling_dollars >= result.spend.dollars
+    assert result.cost.state is CostState.ESTIMATE
+    assert result.cost.ceiling_dollars >= result.cost.dollars
 
 
 def test_a_project_with_no_credential_is_priced_rather_than_refused(tmp_path: Path) -> None:
@@ -63,14 +63,14 @@ def test_a_project_with_no_credential_is_priced_rather_than_refused(tmp_path: Pa
     run = a_run(tmp_path)
     said = notes(run)
     result = check(inputs, run, pages=False)
-    assert result.spend.state is SpendState.ESTIMATE
+    assert result.cost.state is CostState.ESTIMATE
     # The plan says which credential was missing, and says it once.
     assert len([one for one in said if "is not set" in one]) == 1
     assert not any("priced as new" in one for one in said)
 
 
 def test_a_cue_phrase_nothing_speaks_is_judged_before_anything_is_voiced(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path, cues={"1": {"cues": [{"cue": "1.1:a", "on": "nowhere"}]}})
+    inputs = a_project(tmp_path, cues={"1": {"cues": [{"id": "1.1:a", "phrase": "nowhere"}]}})
     result = check(inputs, a_run(tmp_path), pages=False)
     assert Code.CUE_UNRESOLVED in {one.code for one in result.findings}
     assert result.ok is False
@@ -103,7 +103,7 @@ def test_a_moment_the_cue_file_does_not_list_is_judged_from_the_catalog(tmp_path
 
 
 def test_a_row_no_page_declares_is_named_rather_than_deleted(tmp_path: Path, drawn: Drawn) -> None:
-    inputs = a_project(tmp_path, cues={"1": {"cues": [{"cue": "1.1:gone", "on": "there"}]}})
+    inputs = a_project(tmp_path, cues={"1": {"cues": [{"id": "1.1:gone", "phrase": "there"}]}})
     drawn.report("deck/index.html", *SCENES)
     result = check(inputs, a_run(tmp_path), frames=False)
     unknown = [one for one in result.findings if one.code is Code.CUE_UNKNOWN]
@@ -182,7 +182,7 @@ def test_a_cancelled_run_stops_inside_the_section_it_was_in(tmp_path: Path, draw
 
 def test_a_phrase_an_edit_moved_is_repaired_by_the_fix_its_finding_carries(tmp_path: Path) -> None:
     """The script was edited from "there again" to "there once again", and the cue kept the old phrase."""
-    edited = {"1": {"cues": [{"cue": "1.1:a", "on": "there agian"}]}}
+    edited = {"1": {"cues": [{"id": "1.1:a", "phrase": "there agian"}]}}
     inputs = a_project(tmp_path, cues=edited)
     run = a_run(tmp_path)
     result = check(inputs, run, pages=False)
@@ -219,15 +219,15 @@ Second section [beat] speaks as well.
 
 def on_model(model: str) -> str:
     """The demo project read on `model`."""
-    return f'{TOML}\n[voice]\nmodel = "{model}"\n'
+    return f'{TOML}\n[elevenlabs]\nmodel = "{model}"\n'
 
 
-def test_a_timed_pause_on_a_model_that_reads_no_break_tag_is_a_certain_finding(tmp_path: Path) -> None:
+def test_a_timed_pause_on_a_model_that_reads_no_break_tag_is_an_error(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, toml=on_model("eleven_v3"), script=PAUSED_SCRIPT)
     result = check(inputs, a_run(tmp_path), pages=False)
-    dropped = [one for one in result.findings if one.code is Code.TAKE_PAUSE_DROPPED]
+    dropped = [one for one in result.findings if one.code is Code.SCRIPT_PAUSE_DROPPED]
     assert [one.location.section for one in dropped] == [1]
-    assert dropped[0].certainty is Certainty.CERTAIN
+    assert dropped[0].severity is Severity.ERROR
     assert "eleven_v3" in dropped[0].message
     assert result.ok is False
 
@@ -235,4 +235,4 @@ def test_a_timed_pause_on_a_model_that_reads_no_break_tag_is_a_certain_finding(t
 def test_a_model_that_reads_a_break_tag_earns_no_pause_finding(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, toml=on_model("eleven_multilingual_v2"), script=PAUSED_SCRIPT)
     result = check(inputs, a_run(tmp_path), pages=False)
-    assert not [one for one in result.findings if one.code is Code.TAKE_PAUSE_DROPPED]
+    assert not [one for one in result.findings if one.code is Code.SCRIPT_PAUSE_DROPPED]

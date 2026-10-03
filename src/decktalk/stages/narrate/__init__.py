@@ -1,8 +1,8 @@
-"""Stage one: `script.md` becomes one take per section, indexed by content hash.
+"""Stage one: `script.md` becomes one take per section, indexed by input digest.
 
-    takes/<hash>.<suffix>            one take, named by the content that produced it, under the
+    takes/<digest>.<suffix>            one take, named by the content that produced it, under the
                                      suffix its voice declares for what it holds, such as .mp3
-    takes/<hash>.words.json          a start and an end for every word in it
+    takes/<digest>.words.json          a start and an end for every word in it
     build/narrate/takes.json         which section plays which take, what it cost, and where each
                                      section lands once the takes are joined
     build/narrate/narration.mp3      every take joined, with each section's silence around it
@@ -20,7 +20,7 @@ Every take on disk is played, paid or placeholder, and the voice is built only w
 made, so a run that makes nothing reads no key. Spend gates money and nothing else. A voice that
 declares it bills nothing makes every missing take whether or not the run may spend, and a run that
 may not spend never calls a voice that bills. Such a run plays a placeholder for each section whose
-take is missing: a click track sized at `silent_words_per_minute` plus the declared pauses, with
+take is missing: a click track sized at `placeholder_words_per_minute` plus the declared pauses, with
 evenly spaced estimated words, so the whole pipeline runs offline. Each such section is one
 `TAKE_MISSING` finding, which says why its take did not play in the words the plan found, and names
 the command that buys it. A takes directory holding none of the takes the project played before is
@@ -51,19 +51,19 @@ from decktalk.inputs.script import Segment
 from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.pipeline import Stage
-from decktalk.results import NarrateResult, SectionTake, Spend, SpendState, TakeStatus, counted
+from decktalk.results import Cost, CostState, NarrateResult, SectionTake, TakeStatus, counted
 from decktalk.speech import SpeechProvider, is_free, output_of, start_hint
 from decktalk.stages import selects, voice_model
 from decktalk.stages.narrate.plan import (
     NO_TAKE_YET,
     VOICE_ID_VARIABLE,
     TakePlan,
+    cost_of,
     is_cached,
     named_voice,
     placeholder_plan,
     refuse_dropped_pauses,
     speech_provider,
-    spend_of,
     voice_id_of,
     voiced_plan,
 )
@@ -126,14 +126,14 @@ def narrate(
     if not buying:
         previous = inputs.takes()
         if why and previous is not None and previous.voiced:
-            # Paid takes are on disk and cannot be matched without the voice, so the run says why each
+            # Voiced takes are on disk and cannot be matched without the voice, so the run says why each
             # of them plays a placeholder. A project that never bought a take has nothing to match.
             run.note(why)
         plans, missing = _without_buying(inputs, plans, why=why, force=force, replace_voiced=replace_voiced)
     elif why:
         # A purchase needs the voice named, so this raises the refusal that says where to name it.
         voice_id_of(inputs)
-    estimate = spend_of(plans, inputs, state=SpendState.ESTIMATE)
+    estimate = cost_of(plans, inputs, state=CostState.ESTIMATE)
     provider: SpeechProvider | None = None
     if any(plan.status is TakeStatus.VOICED for plan in plans):
         # A run that sends nothing buys nothing, so the gate is asked and the voice is built only when
@@ -157,14 +157,14 @@ def narrate(
         run.found(found)
     return run.result(
         NarrateResult,
-        spending=run.spend,
+        spend=run.spend,
         sections=tuple(made),
-        spend=_charged(estimate, made) if buying else estimate,
+        cost=_charged(estimate, made) if buying else estimate,
         takes=inputs.relative(inputs.workspace.takes_path),
     )
 
 
-def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_voiced: bool = False) -> Spend:
+def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_voiced: bool = False) -> Cost:
     """What a run of this stage that may spend would buy, planned the way `narrate` plans it and sending nothing.
 
     No run is opened and no voice is built, so a build prices its takes before it buys anything. A
@@ -173,7 +173,7 @@ def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_voiced: 
     plans, _why = voiced_plan(
         inputs, _targets(inputs, only), model=voice_model(inputs), voice_id=named_voice(inputs), replace=replace_voiced
     )
-    return spend_of(plans, inputs, state=SpendState.ESTIMATE)
+    return cost_of(plans, inputs, state=CostState.ESTIMATE)
 
 
 def _without_buying(
@@ -181,10 +181,10 @@ def _without_buying(
 ) -> tuple[list[TakePlan], list[Finding]]:
     """(what a run that buys nothing does with each section, one `TAKE_MISSING` per placeholder).
 
-    `paid` is what a run that buys would do, planned without `force`. A paid take on disk for a
+    `paid` is what a run that buys would do, planned without `force`. A voiced take on disk for a
     section's current text is played, and `force` remakes placeholders rather than discarding it,
     unless `replace_voiced` says to. Every other section plays a placeholder, cached by content like a
-    paid take, and its finding says why its take could not be played.
+    voiced take, and its finding says why its take could not be played.
     """
     held = inputs.workspace
     found = {plan.segment.index for plan in paid if plan.digest is not None and is_cached(plan.digest, held)}
@@ -204,7 +204,7 @@ def _reasons(inputs: Inputs, paid: list[TakePlan], *, why: str | None, replaced:
     """Why each section's take did not play, as the clause its `TAKE_MISSING` finding says after "because".
 
     A section this run was told to replace says so, and so does a takes directory holding none of the
-    `gone` takes the project played before, which is what a renamed or missing folder looks like. Paid takes
+    `gone` takes the project played before, which is what a renamed or missing folder looks like. Voiced takes
     that cannot be matched without a voice say to name it. Every other section says what its plan
     found, and a section sharing another section's words says that section's reason, since nothing
     voices either of them.
@@ -220,7 +220,9 @@ def _reasons(inputs: Inputs, paid: list[TakePlan], *, why: str | None, replaced:
             # The first section planned for a digest is the one whose reason holds, and a later one only shares it.
             planned = first.setdefault(plan.digest, planned)
         if number in replaced:
-            out[number] = "this run was told to replace its paid take, which stays on disk for a run without that flag"
+            out[number] = (
+                "this run was told to replace its voiced take, which stays on disk for a run without that flag"
+            )
         elif gone:
             takes = inputs.relative(inputs.workspace.takes).as_posix()
             out[number] = (
@@ -245,7 +247,7 @@ def _takes_gone(inputs: Inputs) -> int:
     previous = inputs.takes()
     if previous is None:
         return 0
-    played = {row.hash for row in previous.sections if row.voiced}
+    played = {row.digest for row in previous.sections if row.voiced}
     takes = inputs.workspace.takes
     if any(inputs.workspace.held_at(takes, digest) for digest in played):
         return 0
@@ -259,7 +261,7 @@ def _take_missing(
 
     What makes the take is the voice's bill: a voice that bills is bought from with `--spend`, and a
     free one that could not be reached is started. A takes directory that `moved` is pointed at first,
-    because the takes in it are already paid for.
+    because the takes in it are already made.
     """
     number = segment.index
     provider = inputs.settings.voice.provider
@@ -337,8 +339,8 @@ def _write_takes(
                 status=status,
                 characters=plan.characters_sent,
                 seconds=row.duration_seconds,
-                file=inputs.relative(inputs.workspace.take_path(row.hash)),
-                hash=row.hash,
+                file=inputs.relative(inputs.workspace.take_path(row.digest)),
+                digest=row.digest,
             )
             # The count is reported under the lock that raised it, so a reader of the stream sees one,
             # two, three in that order however the pool's workers finish.
@@ -501,10 +503,10 @@ def _note_what_is_missing(inputs: Inputs, run: Run, index: Takes) -> None:
         )
 
 
-def _charged(estimate: Spend, made: list[SectionTake]) -> Spend:
+def _charged(estimate: Cost, made: list[SectionTake]) -> Cost:
     """The price the run really paid, which is the estimate once the requests have been sent."""
     voiced = tuple(row.section for row in made if row.status is TakeStatus.VOICED)
-    return estimate.model_copy(update={"state": SpendState.CHARGED, "sections": voiced})
+    return estimate.model_copy(update={"state": CostState.CHARGED, "sections": voiced})
 
 
 __all__ = [

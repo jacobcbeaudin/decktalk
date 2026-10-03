@@ -20,14 +20,13 @@ from pydantic import TypeAdapter
 from typer import Context
 from typer.main import get_command
 
-from decktalk import page
-from decktalk import settings as knobs
+from decktalk import page, settings
 from decktalk.cli.app import PROGRAM, Command, Parameter, app
 from decktalk.errors import ErrorCode
 from decktalk.events import Line
 from decktalk.findings import Code, Finding
 from decktalk.pipeline import PIPELINE
-from decktalk.results import RESULTS, Result
+from decktalk.results import RESULTS, Result, Scope
 from decktalk.settings import json_value
 from decktalk.tomlmap import PUBLISHED, Key
 
@@ -68,7 +67,7 @@ def finding_codes() -> list[dict[str, Any]]:
         {
             "code": code.value,
             "sentence": code.sentence,
-            "certainty": code.certainty.value,
+            "severity": code.severity.value,
             "raised_by": code.raised_by.value,
             "docs": code.url,
         }
@@ -168,9 +167,9 @@ def deciding(code: Code) -> tuple[str, ...]:
 
     A key names the codes it decides beside its range, and that is the one declaration of the
     relation, so the finding page, `decktalk schema` and `config explain` cannot give an agent two
-    different answers about which knob to read.
+    different answers about which setting to read.
     """
-    return tuple(key.id for key in knobs.KEYS if code in key.decides)
+    return tuple(key.id for key in settings.KEYS if code in key.decides)
 
 
 def findings() -> list[dict[str, Any]]:
@@ -190,13 +189,14 @@ def document() -> dict[str, Any]:
     }
 
 
-def settings_schema(*, machine: bool = False) -> dict[str, Any]:
-    """Every knob with its type, default, safe range, unit, hazard and the findings it decides.
+def settings_schema(*, scope: Scope | None = None) -> dict[str, Any]:
+    """Every setting with its type, default, safe range, unit, hazard and the findings it decides.
 
     It is rendered from the key records rather than read from a committed file, because the file is
     a repository artifact and a wheel carries the records. A test holds the two to the same key set.
+    A scope keeps the keys of one file alone, which for the machine is what its file may hold.
     """
-    wanted = [key for key in knobs.KEYS if not machine or key.scope.value == "machine"]
+    wanted = [key for key in settings.KEYS if scope is None or key.scope is scope]
     return {
         "keys": [{name: json_value(_published(key, name)) for name in PUBLISHED} for key in wanted],
         "numbers": [
@@ -209,7 +209,7 @@ def settings_schema(*, machine: bool = False) -> dict[str, Any]:
                 "sentence": number.sentence,
                 "decides": [code.value for code in number.decides],
             }
-            for number in knobs.NUMBERS
+            for number in settings.NUMBERS
         ],
     }
 
@@ -239,7 +239,7 @@ def page_schema() -> dict[str, Any]:
     }
 
 
-def project_schema() -> dict[str, Any]:
+def cues_schema() -> dict[str, Any]:
     """The shape of `cues.json`, read off the row the loader parses it into."""
     # The cue row is an input rather than a result, so its schema comes from the declaration the
     # loader reads it with, which is the one place its keys and their defaults are written.
@@ -259,17 +259,17 @@ def project_schema() -> dict[str, Any]:
 
 CONTRACTS: dict[str, Callable[..., dict[str, Any]]] = {
     **SCHEMAS,
+    "cues": cues_schema,
     "page": page_schema,
-    "project": project_schema,
     "settings": settings_schema,
 }
 """Every document `decktalk schema NAME` prints, by name, in the order a refusal lists them back."""
 
 
-def named(name: str, *, machine: bool = False) -> dict[str, Any]:
+def named(name: str, *, scope: Scope | None = None) -> dict[str, Any]:
     """The one contract document `decktalk schema NAME` prints, whichever name was asked for."""
     if name == "settings":
-        return settings_schema(machine=machine)
+        return settings_schema(scope=scope)
     return CONTRACTS[name]()
 
 
@@ -290,7 +290,7 @@ __all__ = [
     "named",
     "names",
     "page_schema",
-    "project_schema",
+    "cues_schema",
     "settings_schema",
     "stages",
     "walk",

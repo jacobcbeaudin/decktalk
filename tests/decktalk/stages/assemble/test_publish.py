@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from decktalk.artifacts import Cut, Cuts, Words
+from decktalk.artifacts import Placement, Placements, Words
 from decktalk.captions import CaptionCue
 from decktalk.errors import ErrorCode, InputError, ToolError
 from decktalk.inputs import Inputs
@@ -19,7 +19,7 @@ from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
 from decktalk.settings import BY_ID
 from decktalk.stages import storyboard
-from decktalk.stages.assemble.cut import cut_list
+from decktalk.stages.assemble.cut import placements_of
 from decktalk.stages.assemble.publish import (
     SOUND_CAPTION_SECONDS,
     build_captions,
@@ -27,9 +27,9 @@ from decktalk.stages.assemble.publish import (
     caption_texts,
     clip_captions,
     clip_speech,
-    cut_note,
     described_cues,
     one_at_a_time,
+    placement_note,
     poster_query,
     publish,
     render_poster,
@@ -78,18 +78,20 @@ def test_a_section_that_was_never_recorded_describes_nothing(tmp_path):
 
 
 def test_a_note_says_what_plays_where_nothing_was_said():
-    clip = Cut(section=2, key="02", kind=SectionKind.CLIP, start=0.0, end=1.0, source=Path("media/b.mp4"), chapter="c")
-    page = Cut(section=1, key="01", kind=SectionKind.PAGE, start=0.0, end=1.0, source=Path("a.webm"), chapter="c")
+    clip = Placement(
+        section=2, key="02", kind=SectionKind.CLIP, start=0.0, end=1.0, source=Path("media/b.mp4"), chapter="c"
+    )
+    page = Placement(section=1, key="01", kind=SectionKind.PAGE, start=0.0, end=1.0, source=Path("a.webm"), chapter="c")
     slated = clip.model_copy(update={"substitute": Substitute.SLATE})
-    assert cut_note(clip) == "A clip plays here: media/b.mp4."
-    assert cut_note(page) == ""
-    assert cut_note(slated) == "A placeholder slate frame plays here."
+    assert placement_note(clip) == "A clip plays here: media/b.mp4."
+    assert placement_note(page) == ""
+    assert placement_note(slated) == "A placeholder slate frame plays here."
 
 
 def test_sections_that_share_a_chapter_share_one_transcript_entry(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
-    entries = transcript_sections(inputs, cut_list(inputs, rows), {1: "hello", 3: "again"})
+    entries = transcript_sections(inputs, placements_of(inputs, rows), {1: "hello", 3: "again"})
     assert [entry.chapter for entry in entries] == ["Open", "The edit", "Close"]
     # The clip and the page that share "The edit" are one heading with two paragraphs under it.
     assert len(entries[1].said) == 2
@@ -349,11 +351,11 @@ def test_a_render_that_produced_nothing_is_never_published(tmp_path, monkeypatch
     assert not inputs.workspace.film.exists()
 
 
-def test_the_cut_list_a_transcript_reads_carries_every_section(tmp_path):
+def test_the_placements_a_transcript_reads_carry_every_section(tmp_path):
     inputs = write_project(tmp_path, MID_CLIP_TOML)
-    cuts: Cuts = cut_list(inputs, rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}))
-    assert len(cuts.sections) == 4
-    assert [cut.section for cut in cuts.sections if cut.start <= 2.5 < cut.end] == [2]
+    placements: Placements = placements_of(inputs, rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}))
+    assert len(placements.sections) == 4
+    assert [row.section for row in placements.sections if row.start <= 2.5 < row.end] == [2]
 
 
 def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, monkeypatch):

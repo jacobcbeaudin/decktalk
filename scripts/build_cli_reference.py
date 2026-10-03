@@ -58,7 +58,7 @@ entirely, which is a judgement about a film that did get made.
 FINDINGS = """
 ## Finding codes
 
-A finding carries its code, its sentence, its certainty and often a fix an agent can apply.
+A finding carries its code, its sentence, its severity and often a fix an agent can apply.
 `--allow CODE` carries on past one, and `--fail-on` decides which of them fails a run.
 """
 
@@ -134,16 +134,16 @@ def _errors() -> str:
 
 
 def _findings() -> str:
-    """Every finding code with its certainty and its sentence."""
-    rows = ["\n| Code | Certainty | Meaning |", "|---|---|---|"]
-    rows += [f"| `{row['code']}` | {row['certainty']} | {row['sentence']} |" for row in catalog.document()["findings"]]
+    """Every finding code with its severity and its sentence."""
+    rows = ["\n| Code | Severity | Meaning |", "|---|---|---|"]
+    rows += [f"| `{row['code']}` | {row['severity']} | {row['sentence']} |" for row in catalog.document()["findings"]]
     return "\n".join(rows) + "\n"
 
 
 def _schema_names() -> str:
     """Every name `decktalk schema NAME` answers to, which is the whole contract in one list."""
     names = ", ".join(f"`{name}`" for name in catalog.names())
-    return f"\n## The contract\n\n`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes {names}.\n"
+    return f"\n## The schemas\n\n`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes {names}.\n"
 
 
 def documents() -> dict[Path, str]:

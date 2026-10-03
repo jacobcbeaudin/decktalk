@@ -51,19 +51,20 @@ has to be argued for in review. Raising this number is the edit a reviewer refus
 
 ALLOW = {
     "contract/test_api.py": "`decktalk.__all__`, which is the whole supported Python API.",
-    "contract/test_discoverable.py": (
-        "The founder's thesis: every command, key, code and attribute reachable from --help and the schemas."
-    ),
+    "contract/test_discoverable.py": ("Every command, key, code and attribute, reachable from --help and the schemas."),
     "contract/test_docs_claims.py": "The claims in `docs/` that a reader can act on.",
     "contract/test_env_ignore.py": "`.gitignore` and the wheel's exclude list, judged with git itself.",
     "contract/test_imports.py": "The layer rank of every module in `src/decktalk`.",
     "contract/test_installer.py": "`install.sh`, the one-line installer.",
     "contract/test_layout.py": "This mirror rule, which belongs to the suite rather than to a module.",
     "contract/test_numbers.py": "`tests/contract/numbers-baseline.json`, every number written outside settings.py.",
-    "contract/test_promise.py": "`docs/reference/contract.mdx`, what DeckTalk promises a caller.",
+    "contract/test_promise.py": "`docs/reference/stability.mdx`, what DeckTalk promises a caller.",
     "contract/test_probe.py": "`src/decktalk/runtime/decktalk-probe.js`, read as the compiled bundle.",
     "contract/test_prose.py": "Every tracked text file, judged by the two prose rules that are mechanical.",
     "contract/test_release_versions.py": "Every version release-please writes, and the config it reads.",
+    "contract/test_retired_words.py": (
+        "The **Not** column of `docs/reference/glossary.mdx`, held against the help, the docs and the skills."
+    ),
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
     "contract/test_selection.py": "The collection hook in `tests/conftest.py`.",

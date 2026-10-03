@@ -1,4 +1,4 @@
-"""The three things about a knob that have to be computed rather than looked up."""
+"""The three things about a setting that have to be computed rather than looked up."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ class TestTheKeyItself:
         with pytest.raises(InputError, match="Did you mean 'verify.cue_offset_max_ms'"):
             explain("verify.cue_offset_maks_ms")
 
-    def test_a_knob_is_explainable_before_a_project_exists(self) -> None:
+    def test_a_setting_is_explainable_before_a_project_exists(self) -> None:
         found = explain("video.output_fps")
         assert found.value == BY_ID["video.output_fps"].default
         assert found.layer is Layer.DEFAULT
@@ -129,7 +129,7 @@ class TestTheLayerView:
 
 
 class TestTheNumbersTheKeyFeeds:
-    """A knob is only understood once the arithmetic above it is visible."""
+    """A setting is only understood once the arithmetic above it is visible."""
 
     def test_each_derived_number_is_shown_with_its_inputs_at_their_effective_values(self, project: Path) -> None:
         found = explain("verify.cue_offset_max_ms", project=project)
@@ -188,7 +188,7 @@ class TestWhereTheExplainerReads:
         CUES.write(project / "build" / "cue-times.json")
         assert explain("verify.cue_offset_max_ms", project=project).measured is False
 
-    def test_a_project_whose_sections_are_not_written_yet_still_explains_its_knobs(self, tmp_path: Path) -> None:
+    def test_a_project_whose_sections_are_not_written_yet_still_explains_its_settings(self, tmp_path: Path) -> None:
         (tmp_path / "decktalk.toml").write_text("[verify]\ncue_offset_max_ms = 100\n", encoding="utf-8")
         found = explain("verify.cue_offset_max_ms", project=tmp_path)
         assert found.layer is Layer.PROJECT and found.measured is False

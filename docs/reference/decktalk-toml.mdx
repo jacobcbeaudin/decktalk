@@ -11,7 +11,7 @@ clip, which voice reads it, what the sound is made of and how the cuts behave. E
 changes from presentation to presentation, it has no default worth publishing, and this page is its
 reference.
 
-The **settings** are the knobs. Every settings key publishes its default, its safe range, its unit,
+The **settings** are what a project changes. Every settings key publishes its default, its safe range, its unit,
 its scope and what a value at the edge risks, all from one declaration in the code, so
 `decktalk schema settings`, the JSON Schema, `decktalk config explain` and
 [Configuration](/reference/configuration) are four renderings of one row. This page names the tables
@@ -50,7 +50,7 @@ layer that sets the key.
 `decktalk config set KEY VALUE` is how you write one into a file. It reads the value under the same
 range the loader enforces, edits the document in place rather than rewriting it, so the comments you
 wrote around the key survive, and loads the would-be file whole before a byte lands, so a file no run
-could use never reaches the disk. `--where project` writes `decktalk.toml` and `--where machine`
+could use never reaches the disk. `--scope project` writes `decktalk.toml` and `--scope machine`
 writes the per-machine file. `--dry-run` reports the change and writes nothing.
 `decktalk config unset KEY` takes a key out again so the layer below it wins.
 
@@ -159,7 +159,7 @@ file does not matter. A section is a **page section**, which records one scene o
 | `record_margin_seconds` | number | `0.3` | How long the recording runs past the section's span. |
 | `hold_seconds` | number | `0` | How long the section's last frame holds after its narration. The narration waits for the hold, and the next section starts after it. |
 | `lead_seconds` | number | `[narration] lead_seconds` | Silence before the section's first word. |
-| `tail_seconds` | number | `[narration] tail_min_seconds` | Silence after the section's last word. |
+| `tail_seconds` | number | `[narration] tail_seconds` | Silence after the section's last word. |
 | `ambience` | boolean | `false` | Play the ambience bed under this section. |
 | `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `slide`, `cues`, `words`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads. Loading the project accepts any key, and a command that opens the page or works out whether its recording is current refuses any other key by name, as `INPUT`: `check` with pages, `storyboard`, `status`, `record` and `build`. `narrate`, `cue` and `check --no-pages` never read it. Every value reaches the page as a string. |
 
@@ -214,7 +214,7 @@ hosts the project never named.
 
 ## `[voice]`
 
-`[voice]` is a settings table of the four keys every voice has. Everything a provider is particular
+`[voice]` is a settings table of the three keys every voice has. Everything a provider is particular
 about is in that provider's own table, `[elevenlabs]` for ElevenLabs and `[dtsp]` for the local
 voice, so changing `provider` never sends one vendor's fields or model to another.
 
@@ -222,25 +222,25 @@ voice, so changing `provider` never sends one vendor's fields or model to anothe
 |---|---|---|---|
 | `provider` | string | `elevenlabs` | The speech provider this project is read by. It is a name the machine's own map answers, and an unregistered name fails when `narrate` runs rather than at load. DeckTalk ships `elevenlabs` and `dtsp`. |
 | `id` | string | empty | The voice that reads the script. It is a published name rather than a credential, so it is committed with the project, and `DECKTALK_VOICE_ID` in the environment overrides it for anyone who keeps it out of the file. |
-| `model` | string | empty | The provider model this project is read by. Empty is the provider's own default, such as `[elevenlabs] model` or `[dtsp] model`. |
 | `speed` | number | `1.0` | How fast the voice speaks, as a multiple of its natural pace. |
 
 The ElevenLabs API key is the one secret, so it lives in `.env` as `ELEVENLABS_API_KEY`, or in the
 environment. The local voice needs none.
 
 `[elevenlabs]` holds `model`, `stability`, `similarity_boost`, `style`, `speaker_boost`,
-`price_per_1000_characters`, `output_format` and `api_base`. ElevenLabs bills per character, so its
-rate is stated per thousand characters. The score stage buys from the same API with the same key and
-`api_base`, and its own request settings and its rates per minute of audio are in `[score]`.
+`dollars_per_1000_characters`, `output_format` and `base_url`. ElevenLabs bills per character, so its
+rate is stated per thousand characters. `model` is the model that reads the script, and it is set
+here alone, never under `[voice]`. The score stage buys from the same API with the same key and
+`base_url`, and its own request settings and its rates per minute of audio are in `[score]`.
 [Configuration](/reference/configuration#elevenlabs) has each one with its range. The voice id, the
-model, `speed`, the four voice fields and `output_format` are part of a take's content hash, so
-changing one makes the next voiced build voice every section again. The price and the API base are
-not.
+model, `speed`, the four voice fields and `output_format` are part of a take's input digest, so
+changing one makes the next voiced build voice every section again. The price and the base URL are
+not. `base_url` is machine-scoped, so it is set in this machine's file and a `decktalk.toml` that
+sets it is refused.
 
-`[dtsp]` holds `url` and `model` for the local voice, which speaks the DeckTalk speech protocol to
-`decktalk-voice`, a separate local server that is not part of this repository. `url` must be http on
-`127.0.0.1`, `localhost` or `[::1]`, and `decktalk check` refuses any other host unless the machine
-sets `DECKTALK_ALLOW_ANY_API_BASE`. The local voice bills nothing, so buying its takes asks for no
+`[dtsp]` holds `base_url` and `model` for the local voice, which speaks the DeckTalk speech protocol
+to `decktalk-voice`, a separate local server that is not part of this repository. `base_url` is
+machine-scoped like ElevenLabs's, so only this machine names where the script is sent. The local voice bills nothing, so buying its takes asks for no
 `--spend`, and a build still asks about a score it would buy. Its takes are named by `dtsp`, the voice id, the model and `speed`, so they never share a
 name with an ElevenLabs take of the same words. [Configuration](/reference/configuration#dtsp) has
 both keys.
@@ -258,10 +258,10 @@ has every setting with its range, and `[score] timeout_seconds` is how long one 
 
 ```toml decktalk.toml
 [score.ambience]
-text = "a quiet room, distant traffic, no music"
+prompt = "a quiet room, distant traffic, no music"
 
 [score.effects.chime]
-text = "one soft glass chime"
+prompt = "one soft glass chime"
 
 [score.music]
 prompt = "calm piano under a lesson, unhurried"
@@ -272,7 +272,7 @@ duration_seconds = 360
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `text` | string | required | The prompt. |
+| `prompt` | string | required | The prompt. |
 | `out` | path | `[mix] ambience`, else `score/ambience.mp3` | Where to write it. |
 | `duration_seconds` | number | `25` | A setting: how long a bed to ask for. The bed loops under every section that sets `ambience = true`. |
 | `prompt_influence` | number | `0.3` | A setting: how closely the sound follows the prompt. |
@@ -282,7 +282,7 @@ duration_seconds = 360
 
 `[score.effects]` holds three settings for every effect: `duration_seconds`, which is `0.5`,
 `prompt_influence`, which is `0.5`, and `model`. One `[score.effects.<name>]` table per effect
-names it, and `<name>` is the name the file is written under. It takes `text`, which is required, and
+names it, and `<name>` is the name the file is written under. It takes `prompt`, which is required, and
 `out`, which is `score/<name>.mp3` by default, and it may set any of the three settings for
 itself. A `[[mix.effects]]` row is what places the finished sound in the film.
 
@@ -334,9 +334,9 @@ One table per sound effect, each of which plays at a cue.
 |---|---|---|---|
 | `file` | path | required | The audio file to play. |
 | `section` | integer | required | The section whose cue places it. The section must exist. |
-| `cue` | string | required | The wire id of the cue in that section, such as `3.2:expand`. |
+| `cue` | string | required | The cue id of the cue in that section, such as `3.2:expand`. |
 | `db` | number | `-16` | The level. |
-| `offset` | number | `0` | Seconds added to the cue time. This offset belongs to the sound and not to the cue. |
+| `offset_seconds` | number | `0` | Seconds added to the cue time. This offset belongs to the sound and not to the cue. |
 | `caption` | string | none | The line a viewer reads when the sound plays, such as `ball bounces`. `assemble` gives it a line of its own in the captions. |
 
 A missing file or a cue that never resolved does not fail the build. `assemble` skips that effect and
@@ -388,8 +388,8 @@ unit, its scope and its hazard by `decktalk schema settings` and documented in f
 
 | Table | What it sets |
 |---|---|
-| [`[narration]`](/reference/configuration#narration) | The pacing, the lead and the tail, the take cache and where a take's sound ends. |
-| [`[voice]`](/reference/configuration#voice) | The four keys every voice has: its provider, its id, its model and its speed. |
+| [`[narration]`](/reference/configuration#narration) | The pacing, the lead and the tail, the take folders and where a take's sound ends. |
+| [`[voice]`](/reference/configuration#voice) | The three keys every voice has: its provider, its id and its speed. |
 | [`[elevenlabs]`](/reference/configuration#elevenlabs) | ElevenLabs's own keys: the fields its speech takes, its default model, what your plan charges and its API. |
 | [`[record]`](/reference/configuration#record) | How the recorder drives Chromium, finds narration t=0 and judges a stalled or short recording. |
 | [`[video]`](/reference/configuration#video) | The frame size, the frame rate and the video encoding of every recording and of the final mp4. |
@@ -409,5 +409,5 @@ running it believes. `decktalk config list` prints every key with the layer that
 
 - **Write the script:** [script.md](/reference/script-md)
 - **Land a reveal on a phrase:** [cues.json](/reference/cues-json)
-- **Turn a knob:** [Configuration](/reference/configuration)
+- **Change a setting:** [Configuration](/reference/configuration)
 - **See how the sound fits together:** [Sound](/concepts/sound)

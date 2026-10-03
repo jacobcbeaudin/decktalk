@@ -12,7 +12,7 @@ environment. A run binds the machine's own mapping through `children_see`, and a
 outside any run is handed the temporary directory and nothing else, which is enough for Chromium to
 start and for ffmpeg to work.
 
-A run that may buy has the key in reach, so it also binds that fact through `spending`, and the one
+A run that may buy has the key in reach, so it also binds that fact through `allowing_spend`, and the one
 place a browser starts reads it with `may_spend` before it opens a page it does not trust.
 """
 
@@ -83,23 +83,23 @@ def children_see(environ: Mapping[str, str]) -> Iterator[None]:
         MACHINE.reset(token)
 
 
-SPENDING: ContextVar[bool] = ContextVar("decktalk_spending", default=False)
-"""Whether the run this context belongs to may buy, which `spending` binds for the run."""
+SPEND: ContextVar[bool] = ContextVar("decktalk_spend", default=False)
+"""Whether the run this context belongs to may buy, which `allowing_spend` binds for the run."""
 
 
 @contextmanager
-def spending(spend: bool) -> Iterator[None]:
+def allowing_spend(spend: bool) -> Iterator[None]:
     """Say whether the run may buy while this is open, which the machine opens for a run."""
-    token = SPENDING.set(spend)
+    token = SPEND.set(spend)
     try:
         yield
     finally:
-        SPENDING.reset(token)
+        SPEND.reset(token)
 
 
 def may_spend() -> bool:
     """Whether the run this context belongs to may buy, which is false outside every run."""
-    return SPENDING.get()
+    return SPEND.get()
 
 
 def child_environment() -> dict[str, str]:
@@ -118,4 +118,4 @@ def child_environment() -> dict[str, str]:
     return kept
 
 
-__all__ = ["CHILD_KEYS", "child_environment", "children_see", "may_spend", "spending"]
+__all__ = ["CHILD_KEYS", "child_environment", "children_see", "allowing_spend", "may_spend"]

@@ -21,7 +21,7 @@ import pytest
 
 import build_runtime
 from decktalk import page
-from decktalk.findings import Certainty, Code
+from decktalk.findings import CONTRACT_SUBJECTS, Code, Severity
 from decktalk.page import ATTRS, CAPTURE_FPS, EXEMPT, FRAME_STEP_MS, Attr, Subject
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -78,7 +78,7 @@ def test_the_frame_step_is_the_capture_rate_written_the_other_way_round():
 
 
 def test_a_staggers_whole_span_is_its_step_per_earlier_child_plus_one_entrance():
-    """The arithmetic is exact, which is why the overrun it can cause is a certain finding."""
+    """The arithmetic is exact, which is why the overrun it can cause is an error."""
     assert page.stagger_span(0.08, 4, 0.32) == pytest.approx(0.56)
     assert page.stagger_span(0.08, 0, 0.32) == 0
     assert not page.measurable(page.stagger_span(0.08, 4, 0.32))
@@ -95,18 +95,18 @@ def test_the_table_holds_the_rows_the_design_froze():
         rows = [name for name, row in ATTRS.items() if set(subjects) & set(row.on)]
         assert len(rows) == count, f"{subjects} has {len(rows)} rows and the design froze {count}"
     only_containers = {name for name, row in ATTRS.items() if row.on == (Subject.CONTAINER,)}
-    assert only_containers == {Attr.STAGGER, Attr.STEPS}
+    assert only_containers == {Attr.STAGGER, Attr.SPOTLIGHT}
 
 
-def test_no_code_spells_its_own_certainty_and_every_one_is_a_sentence():
-    """A reader dispatches on the code and reads the certainty beside it, never out of the word."""
+def test_no_code_spells_its_own_severity_and_every_one_is_a_sentence():
+    """A reader dispatches on the code and reads the severity beside it, never out of the word."""
     for name, row in contract_codes().items():
         assert row["message"].endswith("."), f"{name} does not print a whole sentence"
         assert "?" not in row["message"]
-        assert "certain" not in name.lower()
-    assert Code.PAGE_STAGGER_OVERRUN.certainty is Certainty.CERTAIN, "the stagger arithmetic is exact"
-    assert Code.PAGE_SWAP_APART.certainty is Certainty.UNCERTAIN
-    assert Code.PAGE_THIN_DRAW.certainty is Certainty.UNCERTAIN
+        assert "warning" not in name.lower() and "certain" not in name.lower()
+    assert Code.PAGE_STAGGER_OVERRUN.severity is Severity.ERROR, "the stagger arithmetic is exact"
+    assert Code.PAGE_SWAP_APART.severity is Severity.WARNING
+    assert Code.PAGE_THIN_DRAW.severity is Severity.WARNING
 
 
 def test_an_attribute_publishes_the_name_of_the_code_that_judges_it():
@@ -138,21 +138,21 @@ def test_the_committed_contract_is_what_the_typescript_says():
 
 
 def contract_codes() -> dict[str, dict[str, str]]:
-    """Every page code the TypeScript contract publishes, with its sentence, certainty and side."""
+    """Every page code the TypeScript contract publishes, with its sentence, severity and side."""
     return json.loads(CONTRACT_JSON.read_text(encoding="utf-8"))["codes"]
 
 
 def test_the_page_codes_are_the_same_list_the_finding_codes_carry():
     """One `Code` enum is written by hand, and this is the check that keeps its page half honest."""
-    written = {name for name in Code.__members__ if name.startswith("PAGE_")}
+    written = {code.name for code in Code if code.subject in CONTRACT_SUBJECTS}
     assert written == set(contract_codes())
 
 
-def test_the_page_codes_carry_the_certainty_and_the_side_the_finding_codes_carry():
+def test_the_page_codes_carry_the_severity_and_the_side_the_finding_codes_carry():
     """A result serialises what `findings.py` holds and the console prints what the page holds, so a
     reader who saw both would otherwise be told two different things about the same code."""
     for name, row in contract_codes().items():
-        assert row["certainty"] == Code[name].certainty.value, f"{name} is certain in one registry only"
+        assert row["severity"] == Code[name].severity.value, f"{name} has a different severity in each registry"
         assert row["raisedBy"] == Code[name].raised_by.value, f"{name} is raised by two sides"
 
 

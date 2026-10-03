@@ -21,8 +21,8 @@ DeckTalk built the film [Halfway](https://decktalk.ai/films/halfway) from text f
 
 DeckTalk is a pipeline of six stages: `narrate`, `cue`, `record`, `score`, `assemble` and `verify`. Each stage is one command and one package, and reads only what the stages before it wrote. `decktalk build` runs them in order, or any span of them.
 
-- **The word clock.** The voice returns a start and an end for every word, and every other time in the film is derived from those. A cue in `cues.json` names a spoken phrase rather than a second, so a rewritten sentence moves every picture after it with no timeline to edit.
-- **A content-addressed build over takes.** A take is named by a hash of its text, its voice, its model and its settings. A recording, a section cut and a frozen frame are each kept under a digest of everything they read. Edit one sentence and only its section is voiced and recorded again, so a fix costs a few cents of speech and not the whole film.
+- **The words.** The voice returns a start and an end for every word, and every other time in the film is derived from those. A cue in `cues.json` names a spoken phrase rather than a second, so a rewritten sentence moves every picture after it with no timeline to edit.
+- **A content-addressed build over takes.** A take is named by a digest of its text, its voice, its model and its settings. A recording, a section cut and a frozen frame are each kept under a digest of everything they read. Edit one sentence and only its section is voiced and recorded again, so a fix costs a few cents of speech and not the whole film.
 - **Recording.** Headless Chromium records each page section against its word times, several sections at once, and ffmpeg cuts one mp4 with captions and chapters beside it.
 - **Verify.** `decktalk verify` decodes the finished film and measures it: every section opens on a real picture, no cut lands on a word, a seamless section opens on the picture before it, and every reveal changes the picture within a set limit of its word.
 - **One contract.** The command line is the first client of a Python library, every command prints one JSON object under `--json`, and a test enforces the import graph from the vocabulary layer up to the command line.
@@ -84,7 +84,7 @@ To hear your own voice, copy `.env.example` to `.env`, fill in your ElevenLabs A
 | `cues.json` | The spoken phrase each moment on the page waits for. |
 | A page in `deck/` | The slides, as plain HTML with no JavaScript of your own. |
 
-One wire id ties them together. In the starter, the slide `1.1` declares a moment called `title`, and `cues.json` says that moment waits for the words "This is DeckTalk".
+One cue id ties them together. In the starter, the slide `1.1` declares a moment called `title`, and `cues.json` says that moment waits for the words "This is DeckTalk".
 
 ```html
 <template data-slide="1.1" data-hold="10" data-describe="the opening title and the count of files">
@@ -93,14 +93,14 @@ One wire id ties them together. In the starter, the slide `1.1` declares a momen
 ```
 
 ```json
-{ "cue": "1.1:title", "on": "This is DeckTalk" }
+{ "id": "1.1:title", "phrase": "This is DeckTalk" }
 ```
 
 `data-describe` names the picture for the transcript. No attribute on the page writes a second. [Your first deck](https://docs.decktalk.ai/guides/first-deck) writes one section across all four files, and [the page contract](https://docs.decktalk.ai/concepts/page-contract) lists every attribute.
 
 ### Using DeckTalk with an agent
 
-The command line is the instruction set, settings and page attributes are the knobs, and the agent is the implementer.
+The command line is the instruction set, settings and page attributes are what it changes, and the agent is the implementer.
 
 `decktalk init` writes an `AGENTS.md` and six skills into the project. The skills live in `.agents/skills/`, which Codex, Cursor, Gemini CLI and most other agents read, and `.claude/skills` links to that folder for Claude Code. [Install the skills](https://docs.decktalk.ai/agents/install) lists every agent and the folders it reads.
 
@@ -159,18 +159,18 @@ my-lesson.srt, .vtt        captions
 my-lesson.chapters.txt     one chapter per section
 my-lesson-transcript.html  a transcript page
 my-lesson-poster.png       a poster frame
-cuts.json                  where every section sits in the film
+placements.json                  where every section sits in the film
 ```
 
-The takes are kept under `build/narrate/`, named by their content hash, and every run's events are kept under `build/events/`. [Build artifacts](https://docs.decktalk.ai/reference/artifacts) lists every path.
+The takes are kept under `build/narrate/`, named by their input digest, and every run's events are kept under `build/events/`. [Build artifacts](https://docs.decktalk.ai/reference/artifacts) lists every path.
 
 ## Requirements and costs
 
 - **Software.** The one-line installer runs on Linux and macOS and brings its own Python. On Windows, install with uv or pipx, which needs Python 3.12 or later. The first build downloads Chromium and ffmpeg, and `decktalk install` fetches them up front for a Docker layer, a CI cache or an offline machine.
-- **Accounts.** A build without voice needs no account. A voiced build needs an ElevenLabs API key and a voice id, and DeckTalk never prints the key.
+- **Accounts.** A build that does not spend needs no account. A voiced build needs an ElevenLabs API key and a voice id, and DeckTalk never prints the key.
 - **Cost.** Only a voiced build spends money, at your own ElevenLabs rate per character. A section whose text and voice have not changed is not voiced again.
 
-[Requirements and costs](https://docs.decktalk.ai/requirements) lists every download and every command that spends credits.
+[Requirements and costs](https://docs.decktalk.ai/requirements) lists every download and every command that costs money.
 
 ## Learn more
 

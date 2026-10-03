@@ -103,7 +103,7 @@ def clip(
     return run.result(
         ClipResult,
         section=section,
-        film=inputs.relative(film),
+        file=inputs.relative(film),
         words=inputs.relative(words_file),
         start=span.first_seconds,
         end=span.last_seconds,
@@ -182,7 +182,7 @@ def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
             hint=Artifact.TAKES.next_step,
             location=at(inputs.workspace.takes_path, inputs.root, section=number),
         )
-    source = inputs.workspace.take_path(take.hash)
+    source = inputs.workspace.take_path(take.digest)
     if not source.is_file():
         raise NotBuiltError(
             f"section {number} names the take {source.name}, which is not on disk.",

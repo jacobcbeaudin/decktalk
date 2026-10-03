@@ -10,7 +10,7 @@ text each section was really narrated from, so the script's own spelling and cas
 rather than in the caller. A caller that wants to write a cue phrase reads what it will see in the
 script, and a build made with placeholder narration says so on every row it reports.
 
-This command writes nothing. `clip` reads one section through it, so the two can never disagree
+This command writes only its run's events file. `clip` reads one section through it, so the two can never disagree
 about where a word sits.
 """
 
@@ -31,7 +31,7 @@ from decktalk.stages import selects
 
 def row_of(inputs: Inputs, take: Take) -> SectionWords:
     """One section's words, on its own clock, carrying the script's own spelling."""
-    spoken = inputs.words(take.section, take.hash)
+    spoken = inputs.words(take.section, take.digest)
     shown = display_words(list(spoken), take.spoken) if take.spoken else list(spoken)
     return SectionWords(
         section=take.section,

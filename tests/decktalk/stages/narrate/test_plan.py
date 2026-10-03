@@ -13,14 +13,14 @@ from decktalk.artifacts import AudioPrint, ProviderWords, TakeInputs, Takes, tak
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.inputs.workspace import Workspace
-from decktalk.results import Billing, Layer, SpendState, TakeStatus
+from decktalk.results import Billing, CostState, Layer, TakeStatus
 from decktalk.speech import DECLARED, FREE, PROVIDERS, Bill, canonical_text
 from decktalk.stages.narrate.plan import (
+    cost_of,
     is_cached,
     placeholder_inputs,
     placeholder_plan,
     seconds_of,
-    spend_of,
     take_inputs,
     voiced_plan,
 )
@@ -85,7 +85,7 @@ def test_a_take_is_cached_only_when_its_audio_and_its_words_are_both_there_and_a
 def test_a_placeholder_digest_moves_with_the_pace_it_was_sized_at(
     make_inputs: Callable[..., Inputs],
 ) -> None:
-    faster = make_inputs(toml=TOML.replace("lead_seconds = 0.5", "silent_words_per_minute = 200"), name="faster")
+    faster = make_inputs(toml=TOML.replace("lead_seconds = 0.5", "placeholder_words_per_minute = 200"), name="faster")
     plain = make_inputs()
     (segment,) = [s for s in plain.spoken() if s.index == 1]
     assert placeholder_inputs(plain, segment).digest != placeholder_inputs(faster, segment).digest
@@ -143,7 +143,7 @@ def test_a_keyless_plan_finds_the_take_a_voice_already_made(make_inputs: Callabl
     (project.workspace.takes / words_file(first.digest)).write_text('{"words": []}', encoding="utf-8")
     plans, _why = voiced_plan(project, targets, model="m", voice_id=VOICE_ID)
     assert [plan.status for plan in plans] == [TakeStatus.KEPT, TakeStatus.VOICED, TakeStatus.VOICED]
-    spend = spend_of(plans, project, state=SpendState.ESTIMATE)
+    spend = cost_of(plans, project, state=CostState.ESTIMATE)
     assert spend.sections == (2, 3)
     assert spend.dollars == spend.ceiling_dollars
 
@@ -161,12 +161,12 @@ def test_a_voiced_plan_with_no_voice_named_cannot_check_the_cache(make_inputs: C
 def test_a_voiced_plan_prices_what_it_will_send_and_what_it_can_cost(inputs: Inputs) -> None:
     plans, why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
     assert why is None
-    spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
+    spend = cost_of(plans, inputs, state=CostState.ESTIMATE)
     characters = sum(len(canonical_text(plan.segment.pieces)) for plan in plans)
     assert spend.characters == characters
     assert spend.dollars == pytest.approx(round(characters / 1000 * 0.30, 2))
     assert spend.ceiling_dollars == spend.dollars
-    assert spend.price_per_1000_characters == pytest.approx(0.30)
+    assert spend.dollars_per_1000_characters == pytest.approx(0.30)
     assert spend.price_layer is Layer.PROJECT
     assert spend.sections == (1, 2, 3)
 
@@ -174,14 +174,14 @@ def test_a_voiced_plan_prices_what_it_will_send_and_what_it_can_cost(inputs: Inp
 def test_a_paid_take_the_cache_could_not_be_checked_for_is_priced_into_the_ceiling_alone(
     make_inputs: Callable[..., Inputs], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Only a paid take could turn out to be the one this run asks for, so only a paid take is in doubt."""
+    """Only a voiced take could turn out to be the one this run asks for, so only a voiced take is in doubt."""
     project = unvoiceable(make_inputs)
     first, *rest = project.spoken()
     held = Takes(script="script.md", model="m", output_format="mp3", sections=(a_paid_take(first.index),))
     monkeypatch.setattr(Inputs, "takes", lambda _self: held)
     plans, _why = voiced_plan(project, [first, *rest], model="m", voice_id=None)
     assert [plan.unchecked for plan in plans] == [True] + [False] * len(rest)
-    spend = spend_of(plans, project, state=SpendState.ESTIMATE)
+    spend = cost_of(plans, project, state=CostState.ESTIMATE)
     assert spend.characters == sum(plan.characters_sent for plan in plans[1:])
     assert spend.sections == (*(plan.segment.index for plan in plans[1:]), first.index)
 
@@ -193,7 +193,7 @@ def test_a_section_with_no_paid_take_is_priced_as_certain_when_no_voice_is_named
     project = unvoiceable(make_inputs)
     plans, _why = voiced_plan(project, list(project.spoken()), model="m", voice_id=None)
     assert not any(plan.unchecked for plan in plans)
-    spend = spend_of(plans, project, state=SpendState.ESTIMATE)
+    spend = cost_of(plans, project, state=CostState.ESTIMATE)
     assert spend.dollars == spend.ceiling_dollars > 0
 
 
@@ -204,9 +204,9 @@ def test_a_price_nobody_stated_is_reported_as_the_default(make_inputs: Callable[
         script="## 1. Open\n\nA bowl.\n",
         name="unpriced",
     )
-    spend = spend_of(placeholder_plan(project, list(project.spoken())), project, state=SpendState.ESTIMATE)
+    spend = cost_of(placeholder_plan(project, list(project.spoken())), project, state=CostState.ESTIMATE)
     assert spend.price_layer is Layer.DEFAULT
-    assert spend.price_per_1000_characters == pytest.approx(0.0)
+    assert spend.dollars_per_1000_characters == pytest.approx(0.0)
 
 
 def declare(monkeypatch: pytest.MonkeyPatch, bill: Bill) -> None:
@@ -221,7 +221,7 @@ def test_a_voice_that_declares_itself_free_prices_at_nothing_whatever_its_table_
     """Free comes from the declaration, so the 0.30 this project states is never charged."""
     declare(monkeypatch, FREE)
     plans, _why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
-    spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
+    spend = cost_of(plans, inputs, state=CostState.ESTIMATE)
     assert spend.free and spend.billing is Billing.FREE
     assert spend.dollars == spend.ceiling_dollars == 0
     assert spend.characters > 0 and spend.sections == (1, 2, 3)
@@ -233,26 +233,26 @@ def test_a_voice_that_declares_itself_free_prices_at_nothing_whatever_its_table_
 def test_a_voice_that_bills_per_second_is_priced_on_the_seconds_its_takes_will_run(
     inputs: Inputs, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The rate is read under the key the declaration names, and counted per second rather than per character."""
-    declare(monkeypatch, Bill(Billing.PER_SECOND, rate="price_per_1000_characters"))
+    """The rate is read under the key the declaration names, per minute of audio rather than per character."""
+    declare(monkeypatch, Bill(Billing.PER_SECOND, rate="dollars_per_1000_characters"))
     plans, _why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
-    spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
+    spend = cost_of(plans, inputs, state=CostState.ESTIMATE)
     seconds = sum(seconds_of(inputs, plan) for plan in plans)
     assert spend.billing is Billing.PER_SECOND
     assert spend.seconds == pytest.approx(seconds)
-    assert spend.dollars == pytest.approx(round(seconds * 0.30, 2))
-    assert spend.price_per_second == pytest.approx(0.30) and spend.price_per_1000_characters == 0
-    assert spend.price_key == "elevenlabs.price_per_1000_characters"
+    assert spend.dollars == pytest.approx(round(seconds * 0.30 / 60, 2))
+    assert spend.dollars_per_minute == 0.30 and spend.dollars_per_1000_characters == 0
+    assert spend.price_key == "elevenlabs.dollars_per_1000_characters"
     assert spend.price_layer is Layer.PROJECT
-    assert "per second of audio" in spend.sentence and "1,000 characters" not in spend.sentence
+    assert "per minute of audio" in spend.sentence and "1,000 characters" not in spend.sentence
 
 
 @pytest.mark.usefixtures("fake_voice")
 def test_a_voice_that_bills_per_character_states_the_key_its_rate_is_set_under(inputs: Inputs) -> None:
     plans, _why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
-    spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
+    spend = cost_of(plans, inputs, state=CostState.ESTIMATE)
     assert spend.billing is Billing.PER_CHARACTER
-    assert spend.price_key == "elevenlabs.price_per_1000_characters"
+    assert spend.price_key == "elevenlabs.dollars_per_1000_characters"
     assert "per 1,000 characters" in spend.sentence
 
 
@@ -261,7 +261,7 @@ def test_a_voice_a_host_registered_declares_no_bill_and_prices_at_nothing_anybod
 ) -> None:
     project = make_inputs(toml=TOML.replace('provider = "elevenlabs"', 'provider = "house"'), name="house")
     plans, _why = voiced_plan(project, list(project.spoken()), model="m", voice_id=VOICE_ID)
-    spend = spend_of(plans, project, state=SpendState.ESTIMATE)
+    spend = cost_of(plans, project, state=CostState.ESTIMATE)
     assert spend.billing is Billing.UNDECLARED
     assert spend.dollars == 0 and spend.price_key is None and spend.price_layer is Layer.DEFAULT
     assert not spend.free
@@ -301,7 +301,5 @@ def test_a_voice_a_host_registered_keeps_the_digest_its_takes_were_named_by(
         ).digest
     )
     assert project.workspace.take_file(made.digest) == f"{made.digest}.mp3"
-    spend = spend_of(
-        voiced_plan(project, [segment], model="m", voice_id=VOICE_ID)[0], project, state=SpendState.ESTIMATE
-    )
+    spend = cost_of(voiced_plan(project, [segment], model="m", voice_id=VOICE_ID)[0], project, state=CostState.ESTIMATE)
     assert "declares no bill" in spend.sentence

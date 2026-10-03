@@ -1,4 +1,4 @@
-"""No magic numbers: every number that decides something is a knob, an expression, or a named fact.
+"""No magic numbers: every number that decides something is a setting, an expression, or a named fact.
 
     uv run python tests/contract/test_numbers.py --write   # lower a count the code has shrunk
 
@@ -104,7 +104,7 @@ def _repeated_defaults(tree: ast.Module, name: str) -> list[Bare]:
     """Every default argument that repeats a settings default, which fails through every door.
 
     A key's default written a second time in a signature is a value that stops moving when the key
-    moves, and no door admits it, because the number is already a knob and the signature is a copy
+    moves, and no door admits it, because the number is already a setting and the signature is a copy
     of it rather than a home for it.
     """
     out: list[Bare] = []

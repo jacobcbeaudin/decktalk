@@ -37,8 +37,8 @@ The root holds the entry points, the errors and the few types every caller names
 |---|---|
 | Open, make and explain a project | `open`, `init`, `explain`, `section_numbers`, `__version__` |
 | What a call runs on | `Project`, `Machine`, `Origin`, `Toolchain`, `Cancel` |
-| What a result is told by | `Stage`, `Code`, `Certainty`, `ErrorCode` |
-| What every call returns | `Result`, `Finding`, `Spend` |
+| What a result is told by | `Stage`, `Code`, `Severity`, `ErrorCode` |
+| What every call returns | `Result`, `Finding`, `Cost` |
 | What a call raises | `DeckTalkError`, `InputError`, `NotBuiltError`, `ProviderError`, `ToolError`, `ProjectLocked`, `ApprovalRequired`, `Cancelled` |
 | The stream every run writes to | `Events`, `Event`, `JsonlSink` |
 
@@ -48,10 +48,10 @@ Every other public type lives in the module that defines its kind:
 |---|---|
 | `decktalk.results` | Every result and every row a result carries, with `Billing`, `Layer`, `Scope`, `Outcome` and `ErrorInfo`. |
 | `decktalk.events` | Every event line, `Line`, `Level`, `Unit` and `Subscription`. |
-| `decktalk.findings` | The fix and location types: `Location`, `Fix`, `EditFix`, `Edit`, `SettingFix`, `CommandFix`, `Applicability` and `RaisedBy`. |
+| `decktalk.findings` | The fix and location types: `Location`, `Fix`, `EditFix`, `Edit`, `CommandFix`, `Applicability` and `RaisedBy`. |
 | `decktalk.settings` | `Settings`, one `*Config` class per table, `ProviderTable` and `Layers`. |
-| `decktalk.speech` | The voice protocol: `SpeechProvider`, `SpeechRequest`, `Piece`, `ProviderFactory`, `VoiceContext`, `Secrets`, `Secret`, `Voices`, `Bill`, `Output`, `Hosts` and `BEAT`. |
-| `decktalk.speech.sound` | The sound protocol: `SoundProvider`, `SoundContext`, `SoundFactory` and `Sounds`. |
+| `decktalk.speech` | The voice protocol: `SpeechProvider`, `SpeechRequest`, `Piece`, `SpeechFactory`, `SpeechContext`, `Secrets`, `Secret`, `SpeechProviders`, `Bill`, `Output` and `BEAT`. |
+| `decktalk.speech.sound` | The sound protocol: `SoundProvider`, `SoundContext`, `SoundFactory` and `SoundProviders`. |
 
 A type any public field, parameter or return value names is importable from one of them, which
 `tests/contract/test_api.py` holds by walking every public signature.
@@ -94,8 +94,8 @@ print(lesson.settings.motion.reduce, demo.settings.motion.reduce)
 | `root` | field | The project directory, resolved to an absolute path. |
 | `machine` | field | The machine this project was opened on. |
 | `events` | field | This project's view of the machine's stream, filtered to the runs this project opens. |
-| `settings` | property | Every knob in force here, with all five layers already applied. |
-| `layers` | property | What every layer said about every key, which is where a knob's provenance is read from. |
+| `settings` | property | Every setting in force here, with all five layers already applied. |
+| `layers` | property | What every layer said about every key, which is where a setting's provenance is read from. |
 
 To write a project rather than open one:
 
@@ -126,7 +126,7 @@ project.assemble(*, only=None, score=True, loudness=True, strict=False,
 project.verify(*, only=None, cancel=None) -> VerifyResult
 project.build(*, stages=None, skip=(), only=None, spend=False, max_cost=None,
               force=False, replace_voiced=False, replace_score=False, loudness=True,
-              strict=False, allow=(), stop_on=Certainty.CERTAIN, cancel=None) -> BuildResult
+              strict=False, allow=(), stop_on=Severity.ERROR, cancel=None) -> BuildResult
 project.status(*, cancel=None) -> StatusResult
 project.check(*paths, only=None, pages=True, frames=True, cancel=None) -> CheckResult
 project.words(*, only=None, cancel=None) -> WordsResult
@@ -160,21 +160,21 @@ Every call in the table also appends its own events file, `build/events/<run>.js
 
 | Parameter | Calls | What it does |
 |---|---|---|
-| `spend` | `narrate`, `score`, `build` | True buys what is missing. False, the default, buys nothing: `narrate` plays every take on disk and a click track with a word clock for each missing one, reported as `TAKE_MISSING`, and `score` reports its plan with each unbought item as `SOUND_MISSING`, which the film plays as silence. The library buys nothing without `spend=True`, whatever the price. |
+| `spend` | `narrate`, `score`, `build` | True buys what is missing. False, the default, buys nothing: `narrate` plays every take on disk and a placeholder with estimated words for each missing one, reported as `TAKE_MISSING`, and `score` reports its plan with each unbought item as `SOUND_MISSING`, which the film plays as silence. The library buys nothing without `spend=True`, whatever the price. |
 | `max_cost` | `narrate`, `score`, `build` | A ceiling in US dollars on the most the run can cost, checked before the first paid request. A run over it raises `ApprovalRequired`. |
 | `only` | every call but `status` and `clip` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. |
-| `force` | `narrate`, `record`, `build` | Does the free work again where what is on disk still matches, and never spends. `narrate` makes each placeholder again and keeps every paid take, and `build` keeps every paid take and every item of the score. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
+| `force` | `narrate`, `record`, `build` | Does the free work again where what is on disk still matches, and never spends. `narrate` makes each placeholder again and keeps every voiced take, and `build` keeps every voiced take and every item of the score. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
 | `replace_voiced` | `narrate`, `build` | Sets aside the voiced take a section holds. A run that spends voices the section again and plays the new take. One that does not plays a placeholder in its place for that run, and the voiced take stays on disk. Without it, a run that does not spend plays every voiced take on disk. It never buys a sound. |
 | `replace_score` | `score`, `build` | Buys every bought sound the run selects again, each music part included. A run that does not spend ignores it and keeps every bought sound on disk. It never buys a take. |
 | `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it, and a build whose `skip` names `Stage.SCORE` also leaves the score's audio out of the mix. |
 | `score` | `assemble` | False leaves the score's audio out of the mix. |
 | `loudness` | `assemble`, `build` | False skips the loudness pass, so the soundtrack is encoded as it was mixed. A placeholder narration skips it in any case. |
 | `strict` | `assemble`, `build` | True raises `ToolError` when the mix misses the loudness it was mastered to, rather than reporting `MIX_LOUDNESS` and writing the film. |
-| `stop_on` | `build` | The least certain finding that stops the run: `Certainty.CERTAIN`, the default, stops on a certain one, `Certainty.UNCERTAIN` on any, and None never stops. |
-| `allow` | `build` | Codes that never stop the run, whatever their certainty. They are still reported. |
+| `stop_on` | `build` | The least severe finding that stops the run: `Severity.ERROR`, the default, stops on an error, `Severity.WARNING` on any finding, and None never stops. |
+| `allow` | `build` | Codes that never stop the run, whatever their severity. They are still reported. |
 
 A build that stops is not an error. It returns its `BuildResult` with `ok` false, every finding the
-stages that ran made, the spend so far, the stages it did not reach as `skipped`, and `stopped_at`
+stages that ran made, the cost so far, the stages it did not reach as `skipped`, and `stopped_at`
 naming the stage it stopped after. `stopped_at` is None on a build that ran through.
 
 ```python
@@ -183,7 +183,7 @@ import decktalk
 project = decktalk.open("my-lesson")
 result = project.build(allow=[decktalk.Code.CUE_UNKNOWN])
 if result.stopped_at is not None:
-    print(f"stopped after {result.stopped_at.value}, spent ${result.spend.dollars:.2f}")
+    print(f"stopped after {result.stopped_at.value}, spent ${result.cost.dollars:.2f}")
     for finding in result.findings:
         print(finding.code.name, finding.message)
 ```
@@ -192,7 +192,7 @@ if result.stopped_at is not None:
 
 | Exception | Raised by |
 |---|---|
-| `ApprovalRequired` | `narrate`, `score` and `build`, when a purchase was not approved or `max_cost` refuses it, and every call that opens a page under `record.page_policy = "untrusted"` while it may spend. |
+| `ApprovalRequired` | `narrate`, `score` and `build`, when buying was not approved or `max_cost` refuses it, and every call that opens a page under `record.page_policy = "untrusted"` while it may spend. |
 | `ProjectLocked` | Every call that writes, when another writer holds the build directory. |
 | `NotBuiltError` | A call that needs an artifact no earlier run made, such as `cue`, `words` or `verify` before any `narrate`. |
 | `ProviderError` | `narrate`, `score` and `build` on a paid run, when the voice service fails. |
@@ -230,7 +230,7 @@ import decktalk
 
 project = decktalk.open("my-lesson")
 result = project.check(pages=False)
-print(result.ok, result.judged, result.spend.ceiling_dollars)
+print(result.ok, result.judged, result.cost.ceiling_dollars)
 ```
 
 ### `storyboard` selectors
@@ -268,25 +268,25 @@ there is nothing two flags could contradict. The command line adds one rule of i
 without asking, and a build still asks about any score it would buy beside it.
 The voice is built only when a take must be bought, so a call that buys nothing reads no key.
 
-A call with `spend=False`, the default, plays every take on disk, paid or placeholder. For `narrate`
-each section whose take is missing plays a click track with a word clock and is reported as
-[`TAKE_MISSING`](/reference/findings/TAKE_MISSING), which is uncertain, so the default threshold
+A call with `spend=False`, the default, plays every take on disk, voiced or placeholder. For `narrate`
+each section whose take is missing plays a placeholder with estimated words and is reported as
+[`TAKE_MISSING`](/reference/findings/TAKE_MISSING), which is a warning, so the default threshold
 builds the film past it. `score` reports its plan without buying it. A repository that commits
 its takes and its `[voice] id` therefore builds its real film on a machine that holds no key.
 
 `max_cost` is a ceiling in US dollars on the whole run, checked before the first paid request
-rather than counted down as the credits go. It is compared against `spend.ceiling_dollars`, which is
-the most the run can cost, and never against `spend.dollars`, because credits are consumed one
+rather than counted down as the money goes. It is compared against `cost.ceiling_dollars`, which is
+the most the run can cost, and never against `cost.dollars`, because a provider charges one
 request at a time and a cap that claimed to stop a run halfway would be a lie. A `build` adds its
-takes and its sounds together before it buys either. Each purchase is checked again as it is made,
+takes and its sounds together before it buys either. Each request that buys is checked again as it is made,
 so a stage that asks for more than the build was priced at still raises, and the message says that
 what the run bought before it is kept.
 
-`ApprovalRequired` is raised at the spend gate rather than spending, in four cases.
+`ApprovalRequired` is raised at the spend gate rather than buying, in four cases.
 
 | When | What the message says |
 |---|---|
-| A purchase reached the gate and nothing approved it. | How much the run would spend. |
+| A request that buys reached the gate and nothing approved it. | How much the run would spend. |
 | `max_cost` is set and the voice declares no bill, which only a voice a host registered itself can do. | That the cap would guard a made-up price. |
 | `max_cost` is set and no layer above the default states the rate the run buys at. | That the cap would guard a price nobody stated. |
 | The run's ceiling is over `max_cost`. | The ceiling, the cap, and the value that would let it through. |
@@ -300,31 +300,33 @@ import decktalk
 
 project = decktalk.open("my-lesson")
 try:
-    result = project.narrate(spend=True, max_cost=0.01, force=True)
+    result = project.narrate(spend=True, max_cost=0.01)
 except decktalk.ApprovalRequired as refused:
-    print(refused)          # this run can cost up to $0.14, which is over the $0.01 ceiling ...
+    print(refused)
+    # This run costs $0.14 for 476 characters at $0.30 per 1,000 characters.
+    # The most it can cost, $0.14, is over the $0.01 ceiling --max-cost set.
     print(refused.hint)     # Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
     print(refused.code)     # ErrorCode.APPROVAL
 ```
 
-`Spend` is the priced object every spending result carries and every `spend` event line reports.
+`Cost` is the priced object every result that can buy carries in `cost`, and every `cost.priced` event line reports.
 
 | Field | Meaning |
 |---|---|
-| `state` | `SpendState.ESTIMATE` for what the run would cost, `SpendState.CHARGED` for what it did. |
+| `state` | `CostState.ESTIMATE` for what the run would cost, `CostState.CHARGED` for what it did. |
 | `sections` | The sections this price covers, in script order. |
 | `characters` | How many characters of script this price is for. |
 | `seconds` | How many seconds of audio this price is for, which a per-second bill is priced on. |
 | `dollars` | The price at the stated rate. |
 | `ceiling_dollars` | The most this run can cost, which is what `max_cost` is compared against. |
 | `billing` | How the voice declares it bills: `Billing.PER_CHARACTER`, `PER_SECOND`, `FREE` or `UNDECLARED`. A build's total that adds characters to seconds is `MIXED` and carries both rates. |
-| `price_per_1000_characters` | The rate a per-character bill was worked out at. |
-| `price_per_second` | The rate a per-second bill was worked out at. |
+| `dollars_per_1000_characters` | The rate a per-character bill was worked out at, in US dollars per 1,000 characters. |
+| `dollars_per_minute` | The rate a per-second bill was worked out at, in US dollars per minute of audio, which is the unit a sound's `dollars_per_minute` setting is typed in. |
 | `price_key` | The dotted key that states the rate, or `None` when the voice has no rate to state. |
 | `averaged` | True when the price is several rates together, as a score that buys music and effects at their own rates is, so the rate is what they average to and `price_key` names the one least surely stated. |
 | `price_layer` | Which layer set that rate. `Layer.DEFAULT` means nobody stated it. |
 
-Set the rate under the key `price_key` names, `[elevenlabs] price_per_1000_characters` for
+Set the rate under the key `price_key` names, `[elevenlabs] dollars_per_1000_characters` for
 ElevenLabs, so that a ceiling guards a real number. A voice that declares itself free is never asked
 about and passes any ceiling.
 
@@ -336,7 +338,7 @@ thread, is never the thread doing the work. A stage checks the token between sec
 cancelled run leaves whole artifacts behind rather than half of one, and raises `Cancelled`.
 
 Nothing in the CLI sets the token. A Ctrl-C reaches the run as `KeyboardInterrupt`: the first starts
-no new section and waits for the ones in flight, keeping every take already paid for, and a second
+no new section and waits for the ones in flight, keeping every take already made, and a second
 leaves at once.
 
 ```python
@@ -363,7 +365,7 @@ declares `run`, and one whose command writes files also declares `written`.
 | Key | Meaning |
 |---|---|
 | `schema` | The shape version of the object, which is always `2`. It is spelled `schema_` in Python and `schema` in JSON. |
-| `ok` | True when the call ran and judged nothing that reaches its threshold. A certain finding reaches it by default, and `build` reads it from `stop_on` and `allow`. On the command line the threshold is the one `--fail-on` and `--allow` set, so `ok` is true exactly when the command exits 0. |
+| `ok` | True when the call ran and judged nothing that reaches its threshold. An error reaches it by default, and `build` reads it from `stop_on` and `allow`. On the command line the threshold is the one `--fail-on` and `--allow` set, so `ok` is true exactly when the command exits 0. |
 | `findings` | Every judgement this call made, in the order it made them. |
 | `error` | An `ErrorInfo`, filled only when the command could not run at all. |
 | `run` | The id of the run this call opened, which names its events file. |
@@ -399,17 +401,17 @@ because an error means DeckTalk could not run at all.
 |---|---|
 | `code` | A member of `Code`, which is the closed list of every judgement DeckTalk can make. |
 | `message` | One sentence, with every measured number and its limit written into it. |
-| `certainty` | `Certainty.CERTAIN` or `Certainty.UNCERTAIN`, which the code owns. |
+| `severity` | `Severity.ERROR` or `Severity.WARNING`, which the code owns. |
 | `location` | A `Location`, whose `where` names the object judged. |
 | `stage` | The `Stage` that raised it, or `None` when no stage did. |
 | `fix` | A change that resolves it, or `None` when none is known. |
-| `url` | The docs page for this code, which the code owns. |
+| `docs` | The docs page for this code, which the code owns. |
 
 `Location` carries a required `where` plus `file`, `line`, `section` and `cue`, each of which is
 `None` when nothing knows it.
 
 A `Code` member carries more than its name. `code.sentence` is what the condition is,
-`code.certainty` is how sure it is, `code.raised_by` is `RaisedBy.RUNTIME` when the page reports it
+`code.severity` is how sure it is, `code.raised_by` is `RaisedBy.RUNTIME` when the page reports it
 from the browser and `RaisedBy.PYTHON` when DeckTalk measures it, and `code.url` is its page. The
 settings keys that move a code are declared on the keys themselves, and `decktalk.explain(KEY)`
 lists the codes one key decides.
@@ -420,18 +422,17 @@ import decktalk
 project = decktalk.open("my-lesson")
 for finding in project.check(pages=False).findings:
     code = finding.code
-    print(code.name, finding.certainty.value, finding.location.where)
+    print(code.name, finding.severity.value, finding.location.where)
     print("  ", finding.message)
     print("  read more:", code.url)
 ```
 
-A fix is one of three shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
+A fix is one of two shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
 saying what applying it does, and an `applicability`.
 
 | `kind` | Class | What it changes |
 |---|---|---|
-| `edit` | `EditFix` | `edits`, a run of `Edit` objects applied together or not at all. Each names exactly one of `pointer`, `key` or `line`. |
-| `setting` | `SettingFix` | `key` and `value`, in the same key space `config set` takes. |
+| `edit` | `EditFix` | `edits`, a run of `Edit` objects applied together or not at all. Each names exactly one of `pointer`, `key` or `line`, and a `key` is a settings key in the key space `config set` takes. |
 | `command` | `CommandFix` | `command`, the whole argv a caller may hand to a subprocess. |
 
 `Applicability.SAFE` cannot lose the author's work. `Applicability.UNSAFE` can, so it is applied only
@@ -455,7 +456,7 @@ for row in outcome.fixes:
 `apply` takes one finding or any iterable of them, and takes the fix from its finding rather than on
 its own, because what a fix resolves is the finding's own code. Each `FixOutcome` carries `code`,
 `title`, `applied`, `why` for one that was left alone, and `files` for the ones it changed.
-`Machine.apply` is the same call for a fix that turns a machine knob or runs a command.
+`Machine.apply` is the same call for a fix that changes a machine setting or runs a command.
 
 ## Events
 
@@ -471,21 +472,21 @@ events.subscribe(listener, *, runs=None) -> Subscription
 A project's view reads its run set when a line is delivered rather than when a renderer attaches, so
 a caller may subscribe before it makes the call it wants to watch. A `Subscription` detaches by
 `close()` or by leaving its `with`. A renderer that raises never stops a run: the failure becomes a
-`log` line at `Level.ERROR`.
+`run.log` line at `Level.ERROR`.
 
 ```python
 import decktalk
-from decktalk.events import Progress, SectionDone, SpendEvent
+from decktalk.events import CostPriced, SectionDone, StageProgress
 
 project = decktalk.open("my-lesson")
 
 def render(event):
-    if isinstance(event, Progress):
+    if isinstance(event, StageProgress):
         print(f"{event.stage.value}: {event.done}/{event.total} {event.unit.value} {event.label}")
     elif isinstance(event, SectionDone):
-        print(f"section {event.section} {event.outcome.value} in {event.seconds:.2f}s")
-    elif isinstance(event, SpendEvent):
-        print(f"{event.spend.state.value} ${event.spend.dollars:.2f}")
+        print(f"section {event.section} {event.outcome.value} in {event.elapsed_seconds:.2f}s")
+    elif isinstance(event, CostPriced):
+        print(f"{event.cost.state.value} ${event.cost.dollars:.2f}")
 
 with project.events.subscribe(render):
     project.build()
@@ -506,20 +507,20 @@ There are thirteen names and thirteen models. Skip and fail are not names, becau
 | `event` | Class | What it carries beyond the four |
 |---|---|---|
 | `run.start` | `RunStart` | `events_path`, the file this run's lines are appended to, or null when no project holds one. |
-| `run.done` | `RunDone` | `outcome`, `seconds`, and `error` in the shape a result's error takes when the run stopped or failed. |
+| `run.done` | `RunDone` | `outcome`, `elapsed_seconds`, and `error` in the shape a result's error takes when the run stopped or failed. |
 | `stage.start` | `StageStart` | `stage`, `index` counting from one, `count` of stages the run planned. |
-| `stage.done` | `StageDone` | `stage`, `outcome`, `seconds`. |
+| `stage.done` | `StageDone` | `stage`, `outcome`, `elapsed_seconds`. |
 | `section.start` | `SectionStart` | `stage`, `section`. |
-| `section.done` | `SectionDone` | `stage`, `section`, `outcome`, `seconds`. |
-| `progress` | `Progress` | `stage`, `section` or null, `done`, `total`, `unit`, `label`. |
-| `finding` | `FindingEvent` | `finding`, in the same shape the result will carry. |
-| `spend` | `SpendEvent` | `spend`, with its state saying whether it is an estimate. |
-| `take.charged` | `TakeCharged` | `section`, `take`, `characters` and `dollars` for one take the provider was paid for. |
-| `sound.charged` | `SoundCharged` | `item`, `sound`, `digest`, `seconds` and `dollars` for one sound request the sound provider was paid for. |
-| `fetch` | `Fetch` | `tool`, `bytes`, `total_bytes` or null. |
-| `log` | `Log` | `level`, `message`, and `source`, `stage`, `section` and a flat `data` map, each null when unknown. |
+| `section.done` | `SectionDone` | `stage`, `section`, `outcome`, `elapsed_seconds`. |
+| `stage.progress` | `StageProgress` | `stage`, `section` or null, `done`, `total`, `unit`, `label`. |
+| `finding.raised` | `FindingRaised` | `finding`, in the same shape the result will carry. |
+| `cost.priced` | `CostPriced` | `cost`, with its state saying whether it is an estimate. |
+| `take.charged` | `TakeCharged` | `section`, `digest`, `characters` and `dollars` for one take the provider was paid for. |
+| `sound.charged` | `SoundCharged` | `name`, `kind`, `digest`, `seconds` and `dollars` for one sound request the sound provider was paid for. |
+| `tool.fetch` | `ToolFetch` | `tool`, `bytes`, `total_bytes` or null. |
+| `run.log` | `RunLog` | `level`, `message`, and `source`, `stage`, `section` and a flat `data` map, each null when unknown. |
 
-`Outcome` is `OK`, `KEPT`, `SKIPPED`, `STOPPED` or `FAILED`. `KEPT` is a stage a build planned and
+`Outcome` is `RAN`, `KEPT`, `SKIPPED`, `STOPPED` or `FAILED`. `KEPT` is a stage a build planned and
 did not repeat, because nothing it reads had changed since the last build ran it, and `STOPPED` is
 a run, a stage or a section its caller cancelled or interrupted. `Unit` is `TAKE`,
 `SECTION`, `ASSET`, `PASS` or `PROBE`, so a renderer names the thing rather than a bare number:
@@ -530,7 +531,7 @@ passes and verify counts probes. `Level` is `DEBUG`, `INFO`, `WARNING` or `ERROR
 gets one, at `build/events/<run>.jsonl`, and `output.events_keep_runs` prunes the oldest. A sink given
 `max_bytes`, as every project run's is from `output.events_max_bytes`, leaves progress, fetch, debug
 and info lines out once the file reaches it, keeps every line about the run's shape, its findings
-and its spending, and reports how many it left out as `dropped` on `run.done`.
+and its costs, and reports how many it left out as `dropped` on `run.done`.
 
 ```python
 import decktalk
@@ -681,11 +682,10 @@ strings, spelled as `--set` spells them.
 | `toolchain` | A `Toolchain`, with `tools`, `ffmpeg`, `ffprobe`, `cache_dir`, `complete`, `paths()` and `fetched()`. |
 | `events` | The stream every run on this machine writes to. |
 | `cache_dir` | Where this machine keeps the browser and the encoder it fetches. |
-| `voice_key` | True when the credential a paid run would use is set. It is asked and never revealed. |
-| `providers` | The voices this machine answers with by name, as `decktalk.speech.ProviderFactory` values, or None for the closed set DeckTalk ships. A host's table replaces the shipped one rather than sitting over it. |
+| `api_key_state` | `ApiKeyState.SET`, `MISSING` or `NOT_NEEDED`: whether the API key a voiced run would use is set, which is asked and never revealed. `doctor` reports it as `api_key`. |
+| `speech_providers` | The voices this machine answers with by name, as `decktalk.speech.SpeechFactory` values, or None for the closed set DeckTalk ships. A host's table replaces the shipped one rather than sitting over it. |
 | `sound_providers` | The sound providers it answers with, as `decktalk.speech.sound.SoundFactory` values, or None for the ones its voices imply. |
 | `dotenv` | Whether a project's `.env` is read. True from the environment, false from `Machine.of` unless the host says otherwise. |
-| `allow_any_api_base` | Whether a voice's base URL may name a host its adapter does not allow. |
 | `install(*, cancel=None)` | Fetch the browser and the encoder, before a build asks for them. |
 | `doctor(*, measure=False, cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. |
 | `apply(fix, *, unsafe=False)` | Carry out the fixes a machine can make. |
@@ -700,20 +700,20 @@ machine = decktalk.Machine.from_environment()
 report = machine.doctor()
 for tool in report.tools:
     print(tool.tool, tool.version, tool.path)
-print(report.python, report.platform, report.cache, report.voice_key)
+print(report.python, report.platform, report.cache, report.api_key_state)
 ```
 
 ## Running DeckTalk inside a service
 
 A service that renders other people's projects holds three things apart that an author's own machine
-holds together: the voice key, the pages, and the processes that touch each. This section is the
+holds together: the API key, the pages, and the processes that touch each. This section is the
 contract a host builds on.
 
 ### A machine the host builds
 
 ```python
-decktalk.Machine.of(*, environ, config_path, cwd, cache_dir, store_dir=None, providers=None,
-                    sound_providers=None, overrides=(), dotenv=False, allow_any_api_base=False) -> Machine
+decktalk.Machine.of(*, environ, config_path, cwd, cache_dir, store_dir=None, speech_providers=None,
+                    sound_providers=None, overrides=(), dotenv=False) -> Machine
 ```
 
 `Machine.from_environment()` reads the process. `Machine.of` reads nothing, so every value a job may
@@ -725,15 +725,16 @@ see is one the host chose.
 | `config_path` | The per-machine settings file, read when it is there and where a machine fix lands. The host writes the machine-scoped keys it sets, such as `[record] concurrency`, here. |
 | `cwd` | The directory a relative project path is read from. |
 | `cache_dir` | Where the fetched Chromium and ffmpeg live. |
-| `store_dir` | The take store a project on this machine keeps a second copy of every bought take in, when `[narration] store_dir` names none. The default is none, so a host that runs other people's projects shares no takes across them unless it passes one. |
-| `providers` | The voices this machine answers with by name. It replaces the shipped table, so a machine built with a fake voice reaches no real one by a name the host left out. [Voices](#voices) shows one. |
-| `sound_providers` | The sound providers it answers with by name. A machine given `providers` and no sound table answers with none. |
+| `store_dir` | The take store a project on this machine keeps a second copy of every voiced take in, when `[narration] store_dir` names none. The default is none, so a host that runs other people's projects shares no takes across them unless it passes one. |
+| `speech_providers` | The voices this machine answers with by name. It replaces the shipped table, so a machine built with a fake voice reaches no real one by a name the host left out. [Speech providers](#speech-providers) shows one. |
+| `sound_providers` | The sound providers it answers with by name. A machine given `speech_providers` and no sound table answers with none. |
 | `overrides` | `key=value` strings, spelled as `--set` spells them, that override settings on this machine. A project opened on it starts from them, and the overrides `decktalk.open` is given come after them. |
 | `dotenv` | False by default, so a project's `.env` is never read and a tenant's upload cannot supply a credential. |
-| `allow_any_api_base` | False by default, so each voice sends its key and its script only to the hosts its adapter allows. |
 
-The page policy is machine-scoped, so the host sets it on the render machine, in the file at
-`config_path` or in `overrides`, and a project file that names it is refused.
+The page policy and every base URL are machine-scoped, so the host sets them on its machine, in the
+file at `config_path` or in `overrides`, and a project file that names one is refused. A voice
+therefore sends its key and its script only to the `[elevenlabs] base_url` or `[dtsp] base_url` the
+host named.
 
 ```python
 render = decktalk.Machine.of(environ={}, config_path=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
@@ -757,7 +758,7 @@ runs longer than it allows.
 A run's account reaches a host three ways, and all three carry the same sentences. A subscriber to
 `Machine.events` receives every line as it is minted. The run's file under `build/events/` holds the
 same lines. And a module below the stages writes standard `logging` records under the `decktalk.*`
-loggers, which one handler DeckTalk puts on the `decktalk` logger turns into `log` lines of the run
+loggers, which one handler DeckTalk puts on the `decktalk` logger turns into `run.log` lines of the run
 bound to the current thread, and which then propagate to whatever logging the host configured,
 stamped with `decktalk_run`, `decktalk_stage` and `decktalk_section` for its formatter. Nothing is
 printed, a record written while no run is bound reaches the host's logging alone, and every value of
@@ -767,7 +768,7 @@ host that set one keeps it.
 
 ### Voice and render in separate processes
 
-The voice key must never share a process with a page, because a page is someone else's script and
+The API key must never share a process with a page, because a page is someone else's script and
 runs in a Chromium the process started. So a host runs the stages in two kinds of process, and the
 build directory is the only thing that moves between them.
 
@@ -819,7 +820,7 @@ result = project.verify()
 
 ### A ledger of what was bought
 
-A `spend` line prices a whole run, before or after it. A `take.charged` line is written the moment
+A `cost.priced` line prices a whole run, before or after it. A `take.charged` line is written the moment
 the provider is paid for one take, once per take, after the provider answered and before anything
 that could fail writes the take. So a host that keeps its own ledger records every take it paid for,
 including one whose file never reached the disk, and a run that fails on its fourth take still leaves
@@ -829,17 +830,17 @@ write no `take.charged` line.
 | Field | Meaning |
 |---|---|
 | `section` | The section the take voices. |
-| `take` | The take's content hash, which names its file in the cache. |
+| `digest` | The take's input digest, which names its files. |
 | `characters` | How many characters of that section's text were sent. |
 | `dollars` | What the take cost at the price in force. |
 
-The hash is what makes a retry safe to meter. A take already on disk is read from the cache and never
-bought again, so it earns no line, and a ledger keyed on `take` sees at once when two runs bought
+The digest is what makes a retry safe to meter. A take already on disk is read from the cache and never
+bought again, so it earns no line, and a ledger keyed on `digest` sees at once when two runs bought
 the same words.
 
 `score` writes a `sound.charged` line the same way, once for each request the sound provider is
-paid for: one per ambience bed or effect, and one per part of the music. `item` is the name the item
-has in `decktalk.toml`, `sound` is `music`, `ambience` or `effect`, `digest` is the request's digest
+paid for: one per ambience bed or effect, and one per part of the music. `name` is the name the item
+has in `decktalk.toml`, `kind` is `music`, `ambience` or `effect`, `digest` is the request's digest
 in the sound ledger, `seconds` is how much audio was asked for, and `dollars` is those seconds at the
 rate per minute its kind's table states.
 
@@ -848,15 +849,15 @@ import decktalk
 
 def meter(event):
     if isinstance(event, decktalk.events.TakeCharged):
-        ledger.record(job=job_id, section=event.section, take=event.take, dollars=event.dollars)
+        ledger.record(job=job_id, section=event.section, digest=event.digest, dollars=event.dollars)
     elif isinstance(event, decktalk.events.SoundCharged):
-        ledger.record(job=job_id, item=event.item, digest=event.digest, dollars=event.dollars)
+        ledger.record(job=job_id, name=event.name, digest=event.digest, dollars=event.dollars)
 
 with project.events.subscribe(meter):
     project.narrate(spend=True, max_cost=ceiling)
 ```
 
-## Voices
+## Speech providers
 
 The voices a project can name in `[voice] provider` are a closed set of adapters in the engine:
 `elevenlabs`, the cloud voice, and `dtsp`, which speaks the DeckTalk speech protocol to
@@ -873,7 +874,7 @@ from pathlib import Path
 
 import decktalk
 from decktalk.results import Word
-from decktalk.speech import SpeechRequest, VoiceContext
+from decktalk.speech import SpeechRequest, SpeechContext
 
 
 class Silent:
@@ -886,12 +887,12 @@ class Silent:
         return b"ID3", [Word(word=w, start=i * 0.5, end=i * 0.5 + 0.4) for i, w in enumerate(words)]
 
 
-def silent(context: VoiceContext) -> Silent:
+def silent(context: SpeechContext) -> Silent:
     return Silent()
 
 
 machine = decktalk.Machine.of(environ={}, config_path=Path("machine.toml"), cwd=Path.cwd(),
-                              cache_dir=Path("cache"), providers={"silent": silent})
+                              cache_dir=Path("cache"), speech_providers={"silent": silent})
 ```
 
 A project opened on that machine with `provider = "silent"` voices through it, and can name no voice
@@ -907,7 +908,7 @@ nothing anybody stated, and `max_cost` refuses to guard it.
 decktalk.explain(key, *, project=None, value=None) -> ConfigExplainResult
 ```
 
-`explain` reads one knob whole: its type, its unit, its safe range, the value in force, every layer
+`explain` reads one setting whole: its type, its unit, its safe range, the value in force, every layer
 that stated it, the variable that sets it, the findings it decides, the published numbers it feeds,
 and what a candidate value would clamp in this project. It is the result `config explain` prints. Without
 `project` the answer is about the defaults and the machine alone, which is what an agent reading the

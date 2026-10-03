@@ -1,6 +1,6 @@
 """The take index, and the frozen inputs a take's name is taken over.
 
-The golden digests of the founder's paid takes live once, in `tests/data/take_hash.json`, and
+The golden digests of the founder's voiced takes live once, in `tests/data/take_hash.json`, and
 `tests/contract/test_take_hash.py` holds every one of them against the markdown it was voiced from,
 which proves the text this file would hold them against and the digest together. What stays here is
 the shape of the inputs, which is what a change to `TakeInputs` or its order would move.
@@ -138,7 +138,7 @@ def test_a_take_index_that_names_a_file_by_anything_but_a_digest_is_refused(tmp_
 
     One index file is written over again for every example, which is why the shared directory is safe.
     """
-    row = a_take(1, seconds=1.0).model_dump(mode="json") | {"hash": hostile}
+    row = a_take(1, seconds=1.0).model_dump(mode="json") | {"digest": hostile}
     index = INDEX.model_dump(mode="json") | {"sections": [row]}
     path = tmp_path / "takes.json"
     path.write_text(json.dumps(index), encoding="utf-8")
@@ -150,7 +150,7 @@ def test_a_take_index_that_names_a_file_by_anything_but_a_digest_is_refused(tmp_
 def test_both_kinds_of_digest_name_a_take() -> None:
     placeholder = PlaceholderInputs(words_per_minute=150.0, beat_seconds=0.35, text="hello").digest
     for digest in (inputs_for("hello").digest, placeholder):
-        assert Take.model_validate(a_take(1, seconds=1.0).model_dump() | {"hash": digest}).hash == digest
+        assert Take.model_validate(a_take(1, seconds=1.0).model_dump() | {"digest": digest}).digest == digest
 
 
 def test_a_section_runs_for_its_lead_its_sound_and_its_tail() -> None:

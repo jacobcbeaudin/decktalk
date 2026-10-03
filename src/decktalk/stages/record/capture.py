@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
-from decktalk.artifacts import CueTimes, RecordingLog, content_digest, input_hash
+from decktalk.artifacts import CueTimes, RecordingLog, content_digest, input_digest
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
@@ -88,7 +88,7 @@ def spoken_words(inputs: Inputs, section: int) -> tuple[Word, ...]:
     """One section's words in seconds after it starts, or nothing when it has no take yet."""
     takes = inputs.takes()
     take = takes.of(section) if takes is not None else None
-    return () if take is None else inputs.words(section, take.hash)
+    return () if take is None else inputs.words(section, take.digest)
 
 
 def words_query(inputs: Inputs, section: PageSection) -> str | None:
@@ -228,7 +228,7 @@ def page_source(path: Path) -> str:
         return ""
 
 
-def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float, assets: Sequence[str | Path]) -> str:
+def section_digest(inputs: Inputs, section: PageSection, url: str, seconds: float, assets: Sequence[str | Path]) -> str:
     """The digest of everything that decides what this section's recording looks like.
 
     The page joins the key in two pieces rather than as one file, so an edit to one scene moves the
@@ -256,7 +256,7 @@ def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float,
     ]
     named = [Path(rel).as_posix() for rel in assets]
     files = {rel: found for rel in named if (found := inputs.path(rel)) != page}
-    return input_hash(lines, files)
+    return input_digest(lines, files)
 
 
 @dataclass(frozen=True)
@@ -268,7 +268,7 @@ class Job:
     seconds: float
     out: Path
     log_path: Path
-    input_hash: str
+    digest: str
     previous: RecordingLog | None
     """The log of the recording already on disk, when there is one."""
 
@@ -282,8 +282,8 @@ class Job:
         """
         return (
             self.previous is not None
-            and bool(self.previous.input_hash)
-            and self.previous.input_hash == self.input_hash
+            and bool(self.previous.digest)
+            and self.previous.digest == self.digest
             and self.previous.start is not None
             and self.out.exists()
         )
@@ -300,7 +300,7 @@ def plan_job(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, s
         seconds=seconds,
         out=workspace.recording(section.key),
         log_path=workspace.recording_log(section.key),
-        input_hash=section_hash(inputs, section, url, seconds, previous.recording.assets if previous else ()),
+        digest=section_digest(inputs, section, url, seconds, previous.recording.assets if previous else ()),
         previous=previous,
     )
 
@@ -315,7 +315,7 @@ __all__ = [
     "plan_job",
     "scene_params",
     "scene_url",
-    "section_hash",
+    "section_digest",
     "spoken_words",
     "words_param",
     "words_query",

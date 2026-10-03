@@ -32,8 +32,8 @@ runtime alone.
 </div>
 ```
 
-The slide qualifies every local name written inside it, so `data-in="title"` in slide `3.1` is the
-cue `3.1:title`. `data-owns` is for a local name no attribute mentions, because a handler serves it.
+The slide qualifies every cue name written inside it, so `data-in="title"` in slide `3.1` is the
+cue `3.1:title`. `data-owns` is for a cue name no attribute mentions, because a handler serves it.
 
 ## The four moments
 
@@ -88,10 +88,10 @@ the typesetter does not load, so it carries its own brackets and is correct math
 ## A list that walks
 
 ```html
-<ul data-steps>
+<ul data-spotlight>
   <li data-in="first" data-describe="step one">Guess</li>
   <li data-in="second" data-describe="step two">Measure the error</li>
-  <li data-in="third" data-describe="step three">Nudge the knobs</li>
+  <li data-in="third" data-describe="step three">Nudge the dials</li>
 </ul>
 ```
 

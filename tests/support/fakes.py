@@ -99,7 +99,7 @@ class FakePage:
         self.scripts.append(script)
 
     def wait_for_timeout(self, _ms: float) -> None:
-        """A recorder waits in real time and a test does not, so this passes the time by not spending it."""
+        """A recorder waits in real time and a test does not, so this passes the time by skipping it."""
 
     def screenshot(self, *, path: str | Path, **_kwargs: object) -> None:
         Path(path).write_bytes(b"")

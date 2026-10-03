@@ -12,7 +12,7 @@ decktalk build --no-spend
 ```
 
 The third line spends nothing and needs no account, because `--no-spend` buys no take and plays a
-click track wherever a take is missing. Part 3 of this page adds your own voice, which is
+placeholder wherever a take is missing. Part 3 of this page adds your own voice, which is
 the one thing in DeckTalk that costs money.
 
 ## Part 1: install
@@ -85,10 +85,10 @@ the one thing in DeckTalk that costs money.
 
     Python    3.13.1 (~/.local/share/uv/tools/decktalk/bin/python)
     Platform  macOS-26.6.2-arm64-arm-64bit-Mach-O (darwin)
-    Voice key no
+    API key   missing
     ```
 
-    `Voice key no` means `ELEVENLABS_API_KEY` is unset, which is the right state for everything up to
+    `API key   missing` means `ELEVENLABS_API_KEY` is unset, which is the right state for everything up to
     part 3. KaTeX is not a download: the pinned release ships inside the wheel, and `decktalk init`
     copies it into the project.
 
@@ -98,7 +98,7 @@ the one thing in DeckTalk that costs money.
     ```text
     chromium: FILE_MISSING chromium is not on this machine, so a build that needs it cannot run.
       fix (safe): Fetch chromium into the cache.
-    Found 1 finding, 1 certain. 1 fixable with --fix.
+    Found 1 finding, 1 error. 1 fixable with --fix.
     ```
 
     The fix is the command `decktalk install`, so `decktalk doctor --fix` fetches what is absent. You
@@ -111,7 +111,7 @@ the one thing in DeckTalk that costs money.
 DeckTalk drives headless Chromium to record the slides and ffmpeg to cut and encode them. It fetches
 both itself, one time per machine, the first time a command needs one. The run announces each
 download as it starts and reports the bytes as they arrive, so a long first build says what it is
-waiting on. Under `--events` the same thing is one `fetch` line per step on stderr.
+waiting on. Under `--events` the same thing is one `tool.fetch` line per step on stderr.
 
 ```text
 {"event":"fetch","time":"2026-09-24T10:36:18.527286Z","seq":1,"run":"85725c3fff31","tool":"chromium","bytes":0,"total_bytes":null}
@@ -163,7 +163,7 @@ sizes and the cache paths.
     The starter is three sections on one page, and none of it is a demo to delete first.
   </Step>
 
-  <Step title="Build it without spending">
+  <Step title="Build it without buying">
     ```console
     decktalk build --no-spend
     ```
@@ -182,20 +182,20 @@ sizes and the cache paths.
     script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no take yet. Run decktalk narrate --section 1 --spend to buy its take.
     script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take yet. Run decktalk narrate --section 2 --spend to buy its take.
     script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no take yet. Run decktalk narrate --section 3 --spend to buy its take.
-    Found 3 findings, 0 certain.
+    Found 3 findings, 0 errors.
     ```
 
     One line per stage, in run order, with the seconds it took. `Built` is the line to read: the
     film, what the run spent, and what the run found. Here that is one
     [`TAKE_MISSING`](/reference/findings/TAKE_MISSING) per section, because no section has a voiced
-    take yet and each plays a placeholder. Each is uncertain, so the build still exits 0, and each
+    take yet and each plays a placeholder. Each is a warning, so the build still exits 0, and each
     names the command that buys its take. That run took about 27
     seconds in all on a MacBook Pro with an Apple M5 Pro and 64 GB of memory, on a machine that
     already had Chromium and ffmpeg. Recording is the long part. It runs in real time, with several
     sections recording at once as the machine's CPU allows, so a longer film takes longer.
 
     The two middle lines are the run explaining itself. The starter declares no score, so that
-    stage has nothing to do. The loudness pass is skipped because normalising a click track to a
+    stage has nothing to do. The loudness pass is skipped because normalising a placeholder to a
     broadcast target would teach you nothing about the mix your voice will make.
 
     Run the same command again and it takes under a second. Nothing changed, so every stage keeps what
@@ -212,13 +212,13 @@ sizes and the cache paths.
     ```
 
     ```text
-    cuts.json             my-lesson-transcript.html  my-lesson.mp4  my-lesson.vtt
+    placements.json             my-lesson-transcript.html  my-lesson.mp4  my-lesson.vtt
     my-lesson-poster.png  my-lesson.chapters.txt     my-lesson.srt
     ```
 
     `my-lesson.mp4` is the film. The name comes from `[project] name` in `decktalk.toml`. The
     captions, the chapter marks, the transcript page and the poster frame are written from the same
-    word clock the film was cut against, so they cannot drift from it.
+    words the film was cut against, so they cannot drift from it.
 
     <Tabs>
       <Tab title="macOS">
@@ -245,11 +245,11 @@ sizes and the cache paths.
     ```
 
     ```text
-     Section   Key   Plays                     Voiced   Recorded   Cut   Stale
-     ─────────────────────────────────────────────────────────────────────────
-     1         01    deck/index.html?scene=1   no       yes        yes   no
-     2         02    deck/index.html?scene=2   no       yes        yes   no
-     3         03    deck/index.html?scene=3   no       yes        yes   no
+     Section   Key   Plays                     Voiced   Recorded   Assembled   Stale
+     ───────────────────────────────────────────────────────────────────────────────
+     1         01    deck/index.html?scene=1   no       yes        yes         no
+     2         02    deck/index.html?scene=2   no       yes        yes         no
+     3         03    deck/index.html?scene=3   no       yes        yes         no
 
     Film   build/final/my-lesson.mp4, 0:50 long
     Next   decktalk verify
@@ -257,10 +257,10 @@ sizes and the cache paths.
 
     One row per section, with the scene of the page it plays. `Voiced` is true when a voice spoke a
     take of that section's current text. A build that does not spend writes a placeholder take instead, so
-    it reads `no` here while `Recorded` and `Cut` read `yes`. `Stale` is the column that matters
+    it reads `no` here while `Recorded` and `Assembled` read `yes`. `Stale` is the column that matters
     after an edit: it marks a section whose inputs have moved since the film was cut. `status` is a
     reading of the project rather than a third opinion beside `check` and `verify`, and the one thing
-    it judges is a file the project names and has not got, which is a certain `FILE_MISSING`.
+    it judges is a file the project names and has not got, which is a `FILE_MISSING` error.
 
     Before the first build the same table reads `no` in every column, and `Next` reads
     `decktalk narrate --no-spend`.
@@ -281,8 +281,8 @@ Three sections on one page, one scene each, every slide written as markup inside
 Open `deck/index.html` in a browser for the scene index, which lists every scene and every slide
 with the cues it declares.
 
-<Frame caption="The starter's scene index, with every slide and the wire ids it declares.">
-  <img src="/images/quickstart-index.png" alt="The starter page in index mode, headed My Lesson. Under it are Scene 1 Open, Scene 2 How it works and Scene 3 Close, each with a play link, and under each one its slides with the seconds each slide holds for and the wire ids of its cues, such as 1.1:title and 1.1:files." />
+<Frame caption="The starter's scene index, with every slide and the cue ids it declares.">
+  <img src="/images/quickstart-index.png" alt="The starter page in index mode, headed My Lesson. Under it are Scene 1 Open, Scene 2 How it works and Scene 3 Close, each with a play link, and under each one its slides with the seconds each slide holds for and the cue ids of its cues, such as 1.1:title and 1.1:files." />
 </Frame>
 
 ```console
@@ -358,8 +358,8 @@ film.
     decktalk check --json
     ```
 
-    The result is one flat object carrying `run`, `written`, `judged`, `pages`, `frames`, `spend` and
-    `storyboard` beside the four keys every result reserves. Its `spend` is the price:
+    The result is one flat object carrying `run`, `written`, `judged`, `pages`, `frames`, `cost` and
+    `storyboard` beside the four keys every result reserves. Its `cost` is the price:
 
     ```json
     {
@@ -370,9 +370,9 @@ film.
       "dollars": 0.14,
       "ceiling_dollars": 0.14,
       "billing": "per_character",
-      "price_per_1000_characters": 0.3,
-      "price_per_second": 0.0,
-      "price_key": "elevenlabs.price_per_1000_characters",
+      "dollars_per_1000_characters": 0.3,
+      "dollars_per_minute": 0.0,
+      "price_key": "elevenlabs.dollars_per_1000_characters",
       "averaged": false,
       "price_layer": "project"
     }
@@ -381,7 +381,7 @@ film.
     `state` is `estimate` for what a run would cost and `charged` for what one did cost.
     `characters` is what would be sent, `dollars` is that at the stated rate, and `ceiling_dollars`
     is the most the run can reach. ElevenLabs declares that it bills per character, so the rate is
-    the key `price_key` names, `[elevenlabs] price_per_1000_characters` in your own
+    the key `price_key` names, `[elevenlabs] dollars_per_1000_characters` in your own
     `decktalk.toml`, and `price_layer` names which of the five settings layers set it, so the figure
     is your plan's and not an invention. [Requirements and costs](/requirements#how-the-price-is-worked-out)
     explains why the two dollar figures can differ.
@@ -396,14 +396,14 @@ film.
     Wrote build/storyboard.html, 16 panels.
     ```
 
-    A storyboard freezes every slide at every cue onto one page. It is the checkpoint before credits
-    are spent: open `build/storyboard.html` and read the film as stills, because a slide you fix here
+    A storyboard freezes every slide at every cue onto one page. It is the checkpoint before anything
+    is bought: open `build/storyboard.html` and read the film as stills, because a slide you fix here
     costs nothing and a slide you fix after a voiced build costs that section again. `--section`,
     `--slide`, `--after`, `--before` and `--at` narrow the sheet.
   </Step>
 
   <Step title="Build with your voice">
-    <Warning>This command spends ElevenLabs credits.</Warning>
+    <Warning>This command buys from ElevenLabs, at your plan's rate.</Warning>
 
     ```console
     decktalk build --spend --max-cost 1
@@ -429,7 +429,7 @@ film.
       docs: https://docs.decktalk.ai/reference/errors/APPROVAL
     ```
 
-    A take is named by the hash of its text and its voice settings, so the next build voices only the
+    A take is named by the digest of its text and its voice settings, so the next build voices only the
     sections whose words or voice changed and reads the rest from the cache.
   </Step>
 </Steps>

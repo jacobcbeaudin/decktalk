@@ -12,12 +12,12 @@ from decktalk.cli.session import Globals, Session
 from decktalk.errors import InputError
 from decktalk.inputs.workspace import Workspace
 from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult
-from support.spends import a_spend
+from support.costs import a_cost
 from support.takes import TAKE_SUFFIX
 
 from .conftest import Fake
 
-BUILT = BuildResult(ok=True, run="r", stages=(), spending=False, spend=a_spend(), seconds=1.0)
+BUILT = BuildResult(ok=True, run="r", stages=(), spend=False, cost=a_cost(), elapsed_seconds=1.0)
 
 
 class Origin:
@@ -136,7 +136,7 @@ def _status(*, stale: bool = False) -> StatusResult:
                 source="deck/index.html",
                 voiced=True,
                 recorded=True,
-                cut=True,
+                assembled=True,
                 stale=stale,
             ),
         ),

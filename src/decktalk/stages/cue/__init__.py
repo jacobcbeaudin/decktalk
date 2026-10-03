@@ -50,7 +50,7 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> CueRe
     wanted = selects(only)
     takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
     cued = [block for block in inputs.cues() if wanted(block.number)]
-    words = {take.section: inputs.words(take.section, take.hash) for take in takes.sections}
+    words = {take.section: inputs.words(take.section, take.digest) for take in takes.sections}
     estimated = {take.section for take in takes.sections if not take.voiced}
 
     sections, judged = resolve_sections(

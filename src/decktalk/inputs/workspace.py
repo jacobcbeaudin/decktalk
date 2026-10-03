@@ -11,7 +11,7 @@
     build/stills/       every frozen frame kept by what drew it, which check, storyboard
                         and the poster all read before they draw one
     build/storyboard/   one still per panel, under the page that lays them out
-    build/final/        the deliverables: the film, its captions, chapters, cut list,
+    build/final/        the deliverables: the film, its captions, chapters, placements,
                         transcript page and poster
     build/events/       one JSON lines file per run, which is what a run says it is doing
 
@@ -46,7 +46,7 @@ class Workspace:
     build: Path
     name: str
     suffix: str
-    """What a bought take is written under, which the voice's adapter declares for the format it asks for."""
+    """What a voiced take is written under, which the voice's adapter declares for the format it asks for."""
     takes: Path
     """The project's takes directory, which `[narration] takes_dir` names inside the project."""
     score_dir: Path
@@ -191,8 +191,8 @@ class Workspace:
         return self.final_dir / f"{self.name}.mp4"
 
     @property
-    def cuts_path(self) -> Path:
-        return self.final_dir / "cuts.json"
+    def placements_path(self) -> Path:
+        return self.final_dir / "placements.json"
 
     def deliverables(self) -> dict[str, Path]:
         """Every file `assemble` writes into the final directory, keyed by what it is."""
@@ -201,7 +201,7 @@ class Workspace:
             "srt": self.final_dir / f"{self.name}.srt",
             "vtt": self.final_dir / f"{self.name}.vtt",
             "chapters": self.final_dir / f"{self.name}.chapters.txt",
-            "cuts": self.cuts_path,
+            "placements": self.placements_path,
             "transcript": self.final_dir / f"{self.name}-transcript.html",
             "poster": self.final_dir / f"{self.name}-poster.png",
         }

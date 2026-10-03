@@ -125,7 +125,7 @@ class Key:
     The record answers the four questions an agent asks in order: what does this change, what may
     I write, what happens if I go to the edge, and which failure does it move. Nothing about a key
     is stated anywhere else, so the schema, the reference page, `config explain` and a finding that
-    names a knob are four renderings of this one row.
+    names a setting are four renderings of this one row.
     """
 
     id: str
@@ -215,7 +215,7 @@ def tune[T](
 
     The record lives beside the default because every other spelling of a key is generated from it:
     the loader reads `bounds`, the schema reads all of it, the reference page renders it and a
-    finding that names a knob quotes `decides` in reverse. A key declared here and nowhere else
+    finding that names a setting quotes `decides` in reverse. A key declared here and nowhere else
     cannot drift from the value the code actually reads. The metadata is named after `Key`'s own
     fields, so `registry` builds each key from it whole.
     """

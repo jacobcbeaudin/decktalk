@@ -6,10 +6,10 @@ and reports every one of them at once, with the line each sits on, rather than s
 first. The rules themselves live in `stages/narrate/script_rules.py` and are read from there, so
 the scan has one home and the judgement has one raiser.
 
-Three codes cover it. `TAKE_PLACEHOLDER` is certain and names everything a voiced run would read out
-or silently swallow, which is the one condition `narrate` refuses on. `TAKE_SPOKEN_SYMBOL` is
-uncertain and names a word holding a digit or a symbol, because "41" may be exactly what the author
-wants the voice to try. `TAKE_PAUSE_DROPPED` is certain and names a section whose timed pause the
+Three codes cover it. `SCRIPT_UNFINISHED` is an error and names everything a voiced run would read out
+or silently swallow, which is the one condition `narrate` refuses on. `SCRIPT_SPOKEN_SYMBOL` is a
+warning and names a word holding a digit or a symbol, because "41" may be exactly what the author
+wants the voice to try. `SCRIPT_PAUSE_DROPPED` is an error and names a section whose timed pause the
 voice's model does not render, which `narrate` refuses to build the voice for.
 """
 
@@ -48,7 +48,7 @@ def placeholder_rows(markdown: str) -> list[tuple[int, str]]:
 
 
 def placeholder_findings(markdown: str, *, script: Path) -> list[Finding]:
-    """One certain judgement per thing in the spoken text that a voiced run must not receive.
+    """One error per thing in the spoken text that a voiced run must not receive.
 
     The open placeholders and the refusals are one condition under one code, because they are the
     one rule `narrate` refuses on: the script still holds something the voice would read out or turn
@@ -61,7 +61,7 @@ def placeholder_findings(markdown: str, *, script: Path) -> list[Finding]:
     rows += [(line, f"line {line} holds {what}") for line, what in script_refusals(markdown)]
     return [
         judge(
-            Code.TAKE_PLACEHOLDER,
+            Code.SCRIPT_UNFINISHED,
             f"{where} line {line} holds something a voiced run would read out or swallow, which is that {what}.",
             Location(where=where, file=script, line=line, section=inside.get(line)),
         )
@@ -70,7 +70,7 @@ def placeholder_findings(markdown: str, *, script: Path) -> list[Finding]:
 
 
 def symbol_findings(segments: Iterable[Segment], *, script: Path) -> list[Finding]:
-    """One uncertain judgement per section whose spoken words hold a digit or a symbol.
+    """One warning per section whose spoken words hold a digit or a symbol.
 
     A reader turns each of those into a word of its own and a voice may say something else, so the
     finding names the first few of them and leaves the decision with the author.
@@ -83,7 +83,7 @@ def symbol_findings(segments: Iterable[Segment], *, script: Path) -> list[Findin
             continue
         found.append(
             judge(
-                Code.TAKE_SPOKEN_SYMBOL,
+                Code.SCRIPT_SPOKEN_SYMBOL,
                 f"section {segment.index} speaks {len(tokens)} word(s) holding a digit or a symbol, which are "
                 f"{shown(tokens)}. Write them the way the voice should say them.",
                 Location(where=where, file=script, section=segment.index),
@@ -93,7 +93,7 @@ def symbol_findings(segments: Iterable[Segment], *, script: Path) -> list[Findin
 
 
 def pause_findings(dropped: Iterable[Segment], *, provider: str, model: str, script: Path) -> list[Finding]:
-    """One certain judgement per section whose timed pauses the voice's model would drop.
+    """One error per section whose timed pauses the voice's model would drop.
 
     `narrate` refuses to build the voice for such a script, so the finding names each section here,
     before anything is bought, with the two ways out.
@@ -101,7 +101,7 @@ def pause_findings(dropped: Iterable[Segment], *, provider: str, model: str, scr
     where = script.as_posix()
     return [
         judge(
-            Code.TAKE_PAUSE_DROPPED,
+            Code.SCRIPT_PAUSE_DROPPED,
             f"section {segment.index} asks for a timed pause, and [voice] provider {provider!r} renders none on "
             f"model {model!r}, so a voiced run would drop it. {DROPPED_PAUSE_HINT}",
             Location(where=where, file=script, section=segment.index),

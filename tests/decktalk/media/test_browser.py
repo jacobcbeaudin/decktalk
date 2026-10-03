@@ -97,7 +97,7 @@ class FakePage:
         self.html = html
 
     def wait_for_timeout(self, _ms: float, /) -> None:
-        """A recorder waits in real time and a test does not, so this passes the time by not spending it."""
+        """A recorder waits in real time and a test does not, so this passes the time by skipping it."""
 
     def screenshot(self, *, path: str) -> None:
         Path(path).write_bytes(b"png")
@@ -217,7 +217,7 @@ def test_page_error_text_keeps_the_message_and_the_file_and_line():
 
 
 def test_the_log_is_cleared_before_anything_is_captured_and_written_once_the_webm_is_in_place(tmp_path):
-    """A webm replaced under an older log keeps its hash and moves t=0, which is what this order prevents."""
+    """A webm replaced under an older log keeps its digest and moves t=0, which is what this order prevents."""
     out = tmp_path / "build" / "recordings" / "01.webm"
     out.parent.mkdir(parents=True)
     out.write_bytes(b"the recording from yesterday")

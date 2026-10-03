@@ -19,9 +19,9 @@ the closing band lands.
 
 - Resolve the cues once, with any build or with `decktalk narrate --no-spend` and then
   `decktalk cue`. An effect plays at the second its cue resolved to, so a cue that has never been
-  resolved has no second to sit on, and `cue` needs the word clock `narrate` writes.
-- Put `ELEVENLABS_API_KEY` in `.env` to generate the sound. Generating one spends credits for every
-  second of audio asked for, at the rate per minute `[score.effects] price_per_minute` states.
+  resolved has no second to sit on, and `cue` needs the words `narrate` writes.
+- Put `ELEVENLABS_API_KEY` in `.env` to generate the sound. Generating one costs money for every
+  second of audio asked for, at the US dollars per minute `[score.effects] dollars_per_minute` states.
 - Bring your own audio file instead if you have one. Any file ffmpeg can read works, it needs no key,
   and only the fourth step below applies to it.
 
@@ -31,7 +31,7 @@ the closing band lands.
 
     ```toml decktalk.toml
     [score.effects.tick]
-    text = "one soft interface click, short, dry, no reverb"
+    prompt = "one soft interface click, short, dry, no reverb"
     ```
 
     `decktalk score` writes it to `score/tick.mp3`, in the score directory you commit, so
@@ -60,7 +60,7 @@ the closing band lands.
         {
           "code": "SOUND_MISSING",
           "message": "the effect tick is not bought yet, so the film plays silence where it would be. Buying it with `decktalk score --spend` asks for 0.5 seconds of audio.",
-          "certainty": "uncertain",
+          "severity": "warning",
           "location": {
             "where": "tick",
             "file": "score/tick.mp3",
@@ -70,12 +70,13 @@ the closing band lands.
           },
           "stage": "score",
           "fix": null,
-          "url": "https://docs.decktalk.ai/reference/findings/SOUND_MISSING"
+          "docs": "https://docs.decktalk.ai/reference/findings/SOUND_MISSING"
         }
       ],
       "error": null,
       "run": "85f631ca16b2",
       "written": [],
+      "spend": false,
       "items": [
         {
           "name": "tick",
@@ -86,7 +87,7 @@ the closing band lands.
           "file": null
         }
       ],
-      "spend": {
+      "cost": {
         "state": "estimate",
         "sections": [1, 2, 3],
         "characters": 0,
@@ -94,22 +95,22 @@ the closing band lands.
         "dollars": 0.0,
         "ceiling_dollars": 0.0,
         "billing": "per_second",
-        "price_per_1000_characters": 0.0,
-        "price_per_second": 0.0,
-        "price_key": "score.effects.price_per_minute",
+        "dollars_per_1000_characters": 0.0,
+        "dollars_per_minute": 0.0,
+        "price_key": "score.effects.dollars_per_minute",
         "averaged": false,
         "price_layer": "default"
       },
-      "seconds": 0.004
+      "elapsed_seconds": 0.004
     }
     ```
 
     `items[0].status` is `planned`, which is the word for an item this run would buy and did not.
-    The price is zero, from the `default` layer, until `[score.effects] price_per_minute` states
+    The price is zero, from the `default` layer, until `[score.effects] dollars_per_minute` states
     what your plan charges per minute of audio, and `--max-cost` refuses a run priced that way.
     The one judgement the stage makes is [`SOUND_MISSING`](/reference/findings/SOUND_MISSING), for an
-    item nobody has bought yet. It is uncertain, so the run exits 0 and a build still makes the film,
-    with silence where the sound would play. `--fail-on any` makes it fail instead.
+    item nobody has bought yet. It is a warning, so the run exits 0 and a build still makes the film,
+    with silence where the sound would play. `--fail-on warning` makes it fail instead.
   </Step>
 
   <Step title="Generate it">
@@ -125,8 +126,8 @@ the closing band lands.
   </Step>
 
   <Step title="Cue the sound">
-    A `[[mix.effects]]` row names the file, the section and the cue. The cue is a wire id, which is
-    the slide id, a colon and the local name the page writes.
+    A `[[mix.effects]]` row names the file, the section and the cue. The cue is a cue id, which is
+    the slide id, a colon and the cue name the page writes.
 
     ```toml decktalk.toml
     [[mix.effects]]
@@ -134,7 +135,7 @@ the closing band lands.
     section = 1
     cue = "1.2:word"
     db = -16
-    offset = 0.0
+    offset_seconds = 0.0
     caption = "soft click"
     ```
 
@@ -142,16 +143,16 @@ the closing band lands.
     |---|---|---|
     | `file` | required | The audio file, relative to the project. It is the path the `[score.effects.<name>]` table writes, or a file of your own. |
     | `section` | required | The section whose clock the cue is read on. A number no `[[section]]` declares is refused at load. |
-    | `cue` | required | The wire id of the moment the sound lands on. |
+    | `cue` | required | The cue id of the moment the sound lands on. |
     | `db` | `-16` | The level the sound plays at. |
-    | `offset` | `0.0` | Seconds added to the cue time, which is how a sound sits a beat after the word. |
+    | `offset_seconds` | `0.0` | Seconds added to the cue time, which is how a sound sits a beat after the word. |
     | `caption` | `""` | The line a viewer reading captions sees. |
 
     The sound plays at the section's start in the film, plus the second the cue resolved to, plus
-    `offset`. The cue time is on the section's own clock, so moving a section elsewhere in the film
+    `offset_seconds`. The cue time is on the section's own clock, so moving a section elsewhere in the film
     moves its sounds with it and costs no edit here.
 
-    A row may reuse a file another row already names, so one purchase can click on six different
+    A row may reuse a file another row already names, so one bought sound can click on six different
     cues.
   </Step>
 
@@ -163,8 +164,8 @@ the closing band lands.
     `assemble` mixes the soundtrack again and records nothing, so a level or a cue you changed here
     costs one stage rather than a build.
 
-    A file the row names that the score stage has not bought yet is an uncertain `SOUND_MISSING`, and
-    one that nothing generates and the project has not got is a certain `FILE_MISSING`. Either way
+    A file the row names that the score stage has not bought yet is a `SOUND_MISSING` warning, and
+    one that nothing generates and the project has not got is a `FILE_MISSING` error. Either way
     that layer plays as silence. A cue that did not resolve is one sentence on the stream, and the sound does
     not play. The film is still written either way.
   </Step>
@@ -198,7 +199,7 @@ own length.
 A sound effect is neither of those. It does not duck the music, and the music does not duck it, so
 the only thing that decides whether a click is heard over the bed is the `db` on its own row. That is
 why the level sits on the effect rather than on the table that generated it: the same file mixed at
-`-16` under a quiet passage and at `-8` under a loud one is one purchase used twice.
+`-16` under a quiet passage and at `-8` under a loud one is one bought sound used twice.
 
 [Sound](/concepts/sound) is the whole mix, layer by layer.
 

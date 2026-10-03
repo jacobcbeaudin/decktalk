@@ -25,7 +25,7 @@ from filelock import FileLock, Timeout
 
 import decktalk
 from decktalk.errors import ApprovalRequired, Cancel, ErrorCode, InputError, ProjectLocked
-from decktalk.events import Event, Level, Log
+from decktalk.events import Event, Level, RunLog
 from decktalk.files import replace_all
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs import Inputs
@@ -48,11 +48,11 @@ from decktalk.results import Layer as SettingLayer
 from decktalk.settings import ToolsConfig
 from decktalk.stages import narrate as narrate_stage
 from decktalk.stages import storyboard as storyboard_stage
+from support.costs import a_cost
 from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice
 from support.links import link
 from support.projects import MINIMAL_TOML, load_project, write_project
 from support.runs import a_machine
-from support.spends import a_spend
 
 
 def a_project(tmp_path: Path, toml: str = MINIMAL_TOML, **environ: str) -> Project:
@@ -102,14 +102,14 @@ def a_stage(monkeypatch: pytest.MonkeyPatch, name: str, call: object) -> None:
 
 def _filler(name: str) -> dict[str, Any]:
     """The fields each faked result needs beyond the ones the run fills, and nothing more."""
-    priced = a_spend(0.0, 0.0, layer=SettingLayer.DEFAULT)
+    priced = a_cost(0.0, 0.0, layer=SettingLayer.DEFAULT)
     return {
-        "narrate": {"spending": False, "sections": (), "spend": priced, "seconds": 0.0},
-        "cue": {"sections": (), "seconds": 0.0},
-        "record": {"sections": (), "seconds": 0.0},
-        "build": {"stages": (), "spending": False, "spend": priced, "seconds": 0.0},
+        "narrate": {"spend": False, "sections": (), "cost": priced, "elapsed_seconds": 0.0},
+        "cue": {"sections": (), "elapsed_seconds": 0.0},
+        "record": {"sections": (), "elapsed_seconds": 0.0},
+        "build": {"stages": (), "spend": False, "cost": priced, "elapsed_seconds": 0.0},
         "status": {"name": "t", "script": Path("script.md"), "cues": Path("cues.json"), "sections": ()},
-        "check": {"judged": (), "pages": True, "frames": True, "spend": priced},
+        "check": {"judged": (), "pages": True, "frames": True, "cost": priced},
     }[name]
 
 
@@ -180,7 +180,7 @@ def test_an_override_given_to_open_without_a_machine_reaches_the_machine_it_make
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With no machine given, the caller is the one who owns the machine it makes, so every key is theirs."""
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "machine.toml"))
+    monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(tmp_path / "machine.toml"))
     write_project(tmp_path)
     project = decktalk.open(tmp_path, overrides=("record.concurrency=2", "video.crf=20"))
     assert (project.settings.record.concurrency, project.settings.video.crf) == (2, 20)
@@ -253,7 +253,7 @@ scene = "1"
 ambience = true
 
 [score.ambience]
-text = "a quiet room"
+prompt = "a quiet room"
 """
 """One spoken page section with an ambience bed, so the project holds one take and one bought sound."""
 
@@ -297,7 +297,7 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
         config_path=tmp_path / "config.toml",
         cwd=tmp_path,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
-        providers={FAKE_VOICE_NAME: lambda _context: bought.voice},
+        speech_providers={FAKE_VOICE_NAME: lambda _context: bought.voice},
         sound_providers={"elevenlabs": lambda _context: bought},
     )
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
@@ -345,7 +345,7 @@ def test_a_call_opens_a_run_on_the_project_view_of_the_stream(tmp_path: Path) ->
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    assert [line.event for line in seen if line.event != "log"] == ["run.start", "run.done"]
+    assert [line.event for line in seen if line.event != "run.log"] == ["run.start", "run.done"]
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -355,7 +355,7 @@ def test_a_writing_run_says_it_holds_the_build_directory(tmp_path: Path) -> None
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    [held] = [line for line in seen if isinstance(line, Log) and line.source == "project"]
+    [held] = [line for line in seen if isinstance(line, RunLog) and line.source == "project"]
     assert held.data == {"pid": os.getpid(), "lock": ".lock"}
 
 
@@ -368,7 +368,7 @@ def test_what_the_load_noticed_is_a_warning_on_every_run(tmp_path: Path, caplog:
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    warned = [line.message for line in seen if isinstance(line, Log) and line.level is Level.WARNING]
+    warned = [line.message for line in seen if isinstance(line, RunLog) and line.level is Level.WARNING]
     assert tuple(warned) == project._inputs.notes
     assert any("presett" in note for note in warned)
     assert not [record for record in caplog.records if "presett" in record.getMessage()], "said once, on the run"
@@ -515,7 +515,7 @@ def test_a_note_nobody_holds_is_taken_and_reported(tmp_path: Path) -> None:
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    assert any(isinstance(line, Log) and line.level is Level.WARNING for line in seen)
+    assert any(isinstance(line, RunLog) and line.level is Level.WARNING for line in seen)
     assert not note.exists()
 
 
@@ -568,7 +568,7 @@ def test_the_system_frees_the_lock_of_a_writer_that_was_killed(tmp_path: Path) -
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    assert any(isinstance(line, Log) and OWNER_FILE in line.message for line in seen)
+    assert any(isinstance(line, RunLog) and OWNER_FILE in line.message for line in seen)
 
 
 def test_a_cancel_token_reaches_the_stage_that_checks_it(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
@@ -592,9 +592,9 @@ def test_spend_and_a_ceiling_reach_the_gate_rather_than_the_stage(
 def test_the_callers_threshold_reaches_the_build(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
     """`allow` and `stop_on` are how a caller says which findings may stop its run."""
     project = a_project(tmp_path)
-    project.build(allow=[Code.PAGE_BLACK], stop_on=None)
+    project.build(allow=[Code.RECORD_BLACK], stop_on=None)
     _inputs, _run, options = fake_stages["build"][0]
-    assert options["allow"] == frozenset({Code.PAGE_BLACK})
+    assert options["allow"] == frozenset({Code.RECORD_BLACK})
     assert options["stop_on"] is None
 
 

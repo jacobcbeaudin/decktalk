@@ -8,7 +8,7 @@ import pytest
 
 from decktalk.artifacts import Takes
 from decktalk.errors import InputError, NotBuiltError, ToolError
-from decktalk.events import FindingEvent
+from decktalk.events import FindingRaised
 from decktalk.inputs import Inputs
 from decktalk.media import browser, ffmpeg
 from decktalk.media.encode import Encoder
@@ -17,8 +17,8 @@ from decktalk.settings import BY_ID
 from decktalk.stages.assemble.cut import (
     _judge_missing,
     concat,
-    cut_list,
     page_target,
+    placements_of,
     remove_stray_cuts,
     render_clip,
     render_sections,
@@ -65,7 +65,7 @@ def test_section_targets_are_frame_exact(tmp_path):
     assert abs(targets[1] + targets[2] - takes.total_seconds) < 1 / 30
 
 
-def test_a_page_section_with_no_recording_plays_black_and_is_a_certain_finding(tmp_path):
+def test_a_page_section_with_no_recording_plays_black_and_is_an_error(tmp_path):
     """A film that quietly played black where a recording should be would publish a lie about itself."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
@@ -73,7 +73,7 @@ def test_a_page_section_with_no_recording_plays_black_and_is_a_certain_finding(t
     rows = render_sections(inputs, opened.run, takes, only=None, strict=False)
     assert [row.substitute for row in rows] == [Substitute.BLACK] * 3
     assert opened.codes() == ["FILE_MISSING"] * 3
-    said = next(line.finding.message for line in opened.of(FindingEvent))
+    said = next(line.finding.message for line in opened.of(FindingRaised))
     assert "build/recordings/01.webm" in said
     assert "a black frame plays" in said
 
@@ -90,7 +90,7 @@ def test_strict_refuses_a_missing_recording_and_names_the_stage_that_writes_one(
 def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, monkeypatch):
     """A section that declares `optional` says the slate is what it wants when the clip is not there.
 
-    A certain `FILE_MISSING` stopped the build on that very slate, so a project could declare the
+    A `FILE_MISSING` error stopped the build on that very slate, so a project could declare the
     slot and never build, which made `optional` mean nothing to anybody running a command.
     """
     toml = (
@@ -233,16 +233,16 @@ def test_every_cut_kept_or_encoded_says_why(tmp_path, fake_ffmpeg, caplog):
         assert said == {("01.mp4", False, "no-key"), ("02.mp4", False, "key-changed"), ("03.mp4", True, "unchanged")}
 
 
-def test_the_cut_list_records_where_each_section_plays_and_what_stood_in(tmp_path):
+def test_the_placements_record_where_each_section_plays_and_what_stood_in(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
-    cuts = cut_list(inputs, rows)
-    assert [cut.section for cut in cuts.sections] == [1, 2, 3, 4]
-    assert [cut.start for cut in cuts.sections] == [0.0, 2.0, 5.0, 7.5]
-    assert cuts.total_seconds == 9.0
-    assert [cut.kind for cut in cuts.sections[:2]] == [SectionKind.PAGE, SectionKind.CLIP]
-    assert cuts.sections[2].chapter == "The edit"
-    assert cuts.fps == inputs.settings.video.output_fps
+    placements = placements_of(inputs, rows)
+    assert [row.section for row in placements.sections] == [1, 2, 3, 4]
+    assert [row.start for row in placements.sections] == [0.0, 2.0, 5.0, 7.5]
+    assert placements.total_seconds == 9.0
+    assert [row.kind for row in placements.sections[:2]] == [SectionKind.PAGE, SectionKind.CLIP]
+    assert placements.sections[2].chapter == "The edit"
+    assert placements.fps == inputs.settings.video.output_fps
 
 
 def test_rendered_starts_add_up_in_the_order_the_film_plays(tmp_path):

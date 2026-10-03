@@ -18,7 +18,7 @@ SEAMLESS_TOML = PAGES_TOML + "seamless = true\n"
 """The same project, with its second section declaring that it carries the first one's picture."""
 
 STARTS = {1: 0.0, 2: SECTION_SECONDS}
-"""Where the two sections of the test film sit, which the cut list also says."""
+"""Where the two sections of the test film sit, which the placements also say."""
 
 
 def seams_of(inputs: Inputs, run: Run) -> tuple:
@@ -47,14 +47,12 @@ def test_every_section_start_reports_the_brightest_luma_of_its_own_frame(
     assert rows[0].at == pytest.approx(inputs.settings.verify.after_dip_seconds)
 
 
-def test_a_section_that_opens_on_black_is_a_certain_finding(
-    assembled: Callable[..., Inputs], measured: Measurements
-) -> None:
+def test_a_section_that_opens_on_black_is_an_error(assembled: Callable[..., Inputs], measured: Measurements) -> None:
     inputs = assembled()
     measured.luma = 10.0
     with opened(inputs.root) as run:
         start_checks(inputs, run, inputs.workspace.film, STARTS)
-        found = [row for row in run.findings if row.code is Code.PAGE_BLACK]
+        found = [row for row in run.findings if row.code is Code.RECORD_BLACK]
     assert len(found) == 2
     assert "10.0" in found[0].message
     assert f"{inputs.settings.verify.black_max_luma:.0f}" in found[0].message
@@ -73,9 +71,7 @@ def test_a_section_that_opens_on_a_picture_says_nothing(
 # ---- the cuts -----------------------------------------------------------------------------------
 
 
-def test_a_cut_that_lands_on_speech_is_a_certain_finding(
-    assembled: Callable[..., Inputs], measured: Measurements
-) -> None:
+def test_a_cut_that_lands_on_speech_is_an_error(assembled: Callable[..., Inputs], measured: Measurements) -> None:
     inputs = assembled()
     measured.rms_dbfs = -10.0
     with opened(inputs.root) as run:

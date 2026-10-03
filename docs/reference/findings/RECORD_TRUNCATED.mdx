@@ -1,5 +1,5 @@
 ---
-title: PAGE_TRUNCATED
+title: RECORD_TRUNCATED
 description: A recording stopped before its section's clock ran out, so the film is short of picture.
 ---
 
@@ -7,7 +7,7 @@ description: A recording stopped before its section's clock ran out, so the film
 
 A recording stopped before its section's clock ran out, so the film is short of picture.
 
-This finding is certain, and DeckTalk measures it from what the run produced.
-Pass `--allow PAGE_TRUNCATED` to carry on past it, and `--fail-on` to choose which certainty fails a run.
+This finding is an error, and DeckTalk measures it from what the run produced.
+Pass `--allow RECORD_TRUNCATED` to carry on past it, and `--fail-on` to choose which severity fails a run.
 
 The settings that move this verdict are `record.truncated_slack_seconds`.

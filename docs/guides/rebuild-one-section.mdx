@@ -48,7 +48,7 @@ What the flag does depends on the stage, and the difference is the point of the 
 
 A section you leave out of `record` whose recording no longer matches the project is reported by
 name, with the reason, so a run never leaves an out-of-date picture in the film silently. A section
-with no recording at all is a certain [`FILE_MISSING`](/reference/findings/FILE_MISSING).
+with no recording at all is a [`FILE_MISSING`](/reference/findings/FILE_MISSING) error.
 
 ## What makes a take stale
 
@@ -74,7 +74,7 @@ Nothing else is in it, and each absence is a decision you can rely on.
 - The heading is not in it, so retitling a section voices nothing. The title is the chapter marker,
   which `assemble` writes fresh on every run.
 - The neighbours' text is not in it, so an edit to section 2 never voices section 3.
-- The lead and the tail are not in it. `[narration] lead_seconds`, `[narration] tail_min_seconds` and
+- The lead and the tail are not in it. `[narration] lead_seconds`, `[narration] tail_seconds` and
   a section's own `lead_seconds` and `tail_seconds` are placed when the takes are joined, so changing
   one moves the section on the clock and buys nothing.
 - Two sections with the same words come to one digest, so the second is kept rather than bought
@@ -91,7 +91,7 @@ and agree. It looks in two places, in this order:
    copied there, so the directory always holds the whole film.
 2. The take store, [`narration.store_dir`](/reference/configuration#narration), a folder outside every
    project where this machine keeps a second copy of every take it buys. It is on by default, in the
-   per-user data folder, and `decktalk config set narration.store_dir DIR --where machine` moves it.
+   per-user data folder, and `decktalk config set narration.store_dir DIR --scope machine` moves it.
    It is written once per take, so a re-buy with `--replace-voiced` changes this project's takes
    directory and never the take another project plays. It holds the spoken words of every script
    voiced on this machine, so keep it out of a synced or shared folder.
@@ -110,7 +110,7 @@ sentence, so `decktalk check` is the call that prices an edit before you run it.
 ## What makes a recording stale
 
 A recording is one page section captured in Chromium, and its key is written into its log beside the
-webm as `input_hash`. It holds everything that decides what those pixels look like:
+webm as `digest`. It holds everything that decides what those pixels look like:
 
 - the page URL the recorder opens, which already carries the scene, every cue resolved to its second
   and every spoken word with its start
@@ -158,9 +158,9 @@ disagree, and neither of them compares file times.
 
 ## Read it before you run it
 
-`decktalk status` reads the project and writes nothing. It is the one call that says what is on disk
+`decktalk status` reads the project and writes only its run's events file. It is the one call that says what is on disk
 and whether that is still true. The one thing it judges is a file the project names and has not got,
-which is a certain [`FILE_MISSING`](/reference/findings/FILE_MISSING) and the only way it exits 1.
+which is a [`FILE_MISSING`](/reference/findings/FILE_MISSING) error and the only way it exits 1.
 
 ```console
 decktalk status
@@ -168,11 +168,11 @@ decktalk status
 
 {/* sample: decktalk status on a fresh starter */}
 ```text
- Section   Key   Plays                     Voiced   Recorded   Cut   Stale
- ─────────────────────────────────────────────────────────────────────────
- 1         01    deck/index.html?scene=1   no       no         no    no
- 2         02    deck/index.html?scene=2   no       no         no    no
- 3         03    deck/index.html?scene=3   no       no         no    no
+ Section   Key   Plays                     Voiced   Recorded   Assembled   Stale
+ ───────────────────────────────────────────────────────────────────────────────
+ 1         01    deck/index.html?scene=1   no       no         no          no
+ 2         02    deck/index.html?scene=2   no       no         no          no
+ 3         03    deck/index.html?scene=3   no       no         no          no
 
 Next   decktalk narrate --no-spend
 ```
@@ -199,7 +199,7 @@ loop dispatches on.
       "source": "deck/index.html?scene=1",
       "voiced": false,
       "recorded": false,
-      "cut": false,
+      "assembled": false,
       "stale": false
     }
   ],
@@ -291,7 +291,7 @@ what a run is allowed to buy.
 ## Write with the build running
 
 `decktalk build --watch` is the draft loop. It serves the project itself, prints the URL, builds once
-without spending, and then rebuilds on every save until you stop it.
+without buying, and then rebuilds on every save until you stop it.
 
 ```console
 decktalk build --watch
@@ -300,7 +300,7 @@ decktalk build --watch
 {/* sample: the two lines decktalk build --watch prints before its first build */}
 ```text
 Serving http://127.0.0.1:53017
-Watching for saves. Nothing here spends: a free voice reads each change, and a paid take goes stale rather than being bought again.
+Watching for saves. Nothing here spends: a free voice reads each change, and a take a voice bills for goes stale rather than being bought again.
 ```
 
 The origin listens on this machine alone and takes whichever port was free, so the number changes
@@ -315,7 +315,7 @@ Four things are worth knowing about it.
   clip to the section that plays it, and `script.md`, `cues.json` and `decktalk.toml` each belong to
   every section at once. A file that belongs to no section, such as a stylesheet, rebuilds all of
   them, because nothing can say which sections it reached.
-- After each rebuild it names every section that now holds a paid take that no longer matches the
+- After each rebuild it names every section that now holds a voiced take that no longer matches the
   script, and gives the whole command that would voice it again.
 - A save that breaks a file is printed as one error block and the loop keeps watching, so you fix the
   file and save again rather than restarting the loop.

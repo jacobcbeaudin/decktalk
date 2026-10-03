@@ -47,7 +47,7 @@ class Segment:
 
     index: int
     title: str
-    slug: str  # The heading as a file-name-safe word, which the tables print. A take is named by its hash.
+    slug: str  # The heading as a file-name-safe word, which the tables print. A take is named by its digest.
     pieces: tuple[Piece, ...]  # the paragraphs the voice reads, each with the pause after it
     start: str | None = None
     end: str | None = None
@@ -78,13 +78,15 @@ class Segment:
     def silent_seconds(self, cfg: NarrationConfig) -> float:
         """How long a placeholder take of this section runs, which is speech and pauses and no silence around them.
 
-        A beat, and a dash the author wrote after a word, each run `silent_beat_seconds`. The lead
+        A beat, and a dash the author wrote after a word, each run `placeholder_beat_seconds`. The lead
         before the first word and the tail after the last belong to the section rather than to the
         take, so they are placed when the takes are joined and are not counted here.
         """
         timed = sum(piece.pause for piece in self.pieces if piece.pause is not None and piece.timed)
         beats = sum(piece.pause == BEAT for piece in self.pieces) + sum(piece.text.count(" —") for piece in self.pieces)
-        return round(self.word_count / cfg.silent_words_per_minute * 60 + timed + beats * cfg.silent_beat_seconds, 3)
+        return round(
+            self.word_count / cfg.placeholder_words_per_minute * 60 + timed + beats * cfg.placeholder_beat_seconds, 3
+        )
 
 
 def _mmss(value: str) -> int:

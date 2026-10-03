@@ -25,6 +25,7 @@ from decktalk.events import Event, Events
 from decktalk.findings import Applicability, Code, EditFix, Finding, Location
 from decktalk.project import Project
 from decktalk.results import (
+    ApiKeyState,
     BuildResult,
     CheckResult,
     DoctorResult,
@@ -36,7 +37,7 @@ from decktalk.results import (
     StoryboardResult,
     WordsResult,
 )
-from support.spends import a_spend
+from support.costs import a_cost
 
 TTY = "TTY_COMPATIBLE"
 """The variable Rich reads to be told there is a terminal here, which is how both paths are run."""
@@ -144,7 +145,7 @@ def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
         EditFix(
             title='Change the phrase to "the same thing in code".',
             applicability=Applicability.SAFE,
-            edits=({"file": "cues.json", "line": 14, "new": '"on": "the same thing in code"'},),
+            edits=({"file": "cues.json", "line": 14, "new": '"phrase": "the same thing in code"'},),
         )
         if fix
         else None
@@ -163,16 +164,22 @@ ANSWERS: dict[str, Result] = {
     "init": InitResult(ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills=True),
     "install": InstallResult(ok=True, run="r", tools=(), cache=Path("cache")),
     "doctor": DoctorResult(
-        ok=True, run="r", tools=(), cache=Path("cache"), python="3.12", platform="test", voice_key=False
+        ok=True,
+        run="r",
+        tools=(),
+        cache=Path("cache"),
+        python="3.12",
+        platform="test",
+        api_key_state=ApiKeyState.MISSING,
     ),
     "status": StatusResult(
         ok=True, run="r", name="demo", script=Path("script.md"), cues=Path("cues.json"), sections=()
     ),
-    "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=a_spend()),
+    "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, cost=a_cost()),
     "words": WordsResult(ok=True, run="r", sections=()),
     "storyboard": StoryboardResult(ok=True, run="r", storyboard=Path("build/storyboard.html"), panels=()),
     "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000),
-    "build": BuildResult(ok=True, run="r", stages=(), spending=False, spend=a_spend(), seconds=1.0),
+    "build": BuildResult(ok=True, run="r", stages=(), spend=False, cost=a_cost(), elapsed_seconds=1.0),
 }
 """One prepared answer per command, so a client test says what it asked for rather than what it got."""
 

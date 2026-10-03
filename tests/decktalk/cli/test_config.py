@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from decktalk import settings as knobs
+from decktalk import settings
 from decktalk.cli import config as commands
 from decktalk.results import ConfigGetResult, ConfigListResult, Layer
 from support.links import link
@@ -16,7 +16,7 @@ from support.projects import write_project
 @pytest.fixture
 def project_dir(tmp_path, monkeypatch):
     """A project directory the config verbs act on, which is where a write lands."""
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "machine.toml"))
+    monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(tmp_path / "machine.toml"))
     return write_project(tmp_path)
 
 
@@ -116,7 +116,7 @@ def test_unset_prints_the_value_that_now_applies_and_the_layer_it_comes_from(run
     run("-p", str(project_dir), "config", "set", "video.crf", "20")
     written = json.loads(run("-p", str(project_dir), "config", "unset", "video.crf", "--json").out)
     assert written["previous"] == 20
-    assert written["effective"] == knobs.BY_ID["video.crf"].default
+    assert written["effective"] == settings.BY_ID["video.crf"].default
     assert written["layer"] == Layer.DEFAULT.value
 
 
@@ -140,7 +140,7 @@ def test_unset_of_a_whole_table_with_all_takes_every_key_it_set(run, project_dir
     assert json.loads(ran.out)["keys"] == ["video.crf"]
 
 
-def test_explain_reads_one_knob_whole(run, project_dir) -> None:
+def test_explain_reads_one_setting_whole(run, project_dir) -> None:
     ran = run("-p", str(project_dir), "config", "explain", "video.crf", "--json")
     assert ran.exit_code == 0
     written = json.loads(ran.out)

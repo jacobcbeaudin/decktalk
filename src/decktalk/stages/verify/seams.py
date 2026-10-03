@@ -52,7 +52,7 @@ def start_checks(inputs: Inputs, run: Run, film: Path, starts: dict[int, float])
         if brightest <= verify.black_max_luma:
             run.found(
                 judge(
-                    Code.PAGE_BLACK,
+                    Code.RECORD_BLACK,
                     f"section {number} opens at {at:.3f}s and the frame read at {probe:.3f}s is black, "
                     f"with a brightest luma of {brightest:.1f} against the {verify.black_max_luma:.0f} "
                     "a frame must pass to count as a picture.",

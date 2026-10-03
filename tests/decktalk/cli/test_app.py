@@ -32,14 +32,14 @@ TOP_LINES = (
 
 BUILD_SENTENCES = (
     "Run every stage in order, or a span of them with --from and --to.",
-    "Buy what is missing without asking, or buy nothing and play a placeholder where a paid take is missing.",
+    "Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing.",
     "A free voice such as dtsp makes its takes either way.",
     "Unset, a terminal is asked and a run without one is refused.",
     "Start at this stage: narrate, cue, record, score, assemble or verify.",
     "Stop after this stage, inclusive.",
     "Run every stage but this one. Repeats.",
     "Only these sections: 3, 3,5 or 7-9. Repeats.",
-    "certain fails on a certain finding, any fails on any finding, never fails on none. Default",
+    "error fails on an error, warning fails on any finding, never fails on none. Default",
     "Carry on past this finding code. Repeats.",
     "Build again from nothing, keeping every voiced take and every bought sound, and measure the film again.",
     "Override one setting here. Repeats. See config explain.",
@@ -83,7 +83,7 @@ def test_the_finding_flags_are_exactly_on_the_commands_that_judge(name: str) -> 
 
 
 @pytest.mark.parametrize("name", sorted(commands()))
-def test_the_spending_flags_are_exactly_on_the_commands_that_buy(name: str) -> None:
+def test_the_spend_flags_are_exactly_on_the_commands_that_buy(name: str) -> None:
     row = commands()[name]
     flags = {opt for param in row["params"] for opt in param["opts"]}
     model = _model(row)
@@ -102,8 +102,9 @@ def _model(row: dict[str, object]) -> type[Result] | None:
 def test_every_command_help_names_every_field_its_result_carries_and_its_docs(run, name: str) -> None:
     said = flat(run(*name.split(), "--help").out)
     model = _model(commands()[name])
-    for field in model.model_fields.keys() - Result.model_fields.keys() if model else ():
-        assert field in said, f"{name} --help leaves out {field}"
+    for field, info in model.model_fields.items() if model else ():
+        published = info.alias or field
+        assert field in Result.model_fields or published in said, f"{name} --help leaves out {published}"
     assert f"#decktalk-{name.replace(' ', '-')}" in said
 
 
@@ -115,7 +116,7 @@ RATIONALE = {
     "verify": "the product's whole claim written as a measurement",
     "clip": "so the command that makes one is called what the file is called",
     "storyboard": "One panel of a storyboard is still a storyboard",
-    "config list": "An agent cannot turn a knob it cannot enumerate",
+    "config list": "An agent cannot change a setting it cannot enumerate",
     "config unset": "editing a validated file is library work",
     "config explain": "the whole instruction set rests on",
 }

@@ -61,13 +61,13 @@ from decktalk.pipeline import Stage
 from decktalk.results import (
     DOLLAR_DIGITS,
     Billing,
+    Cost,
+    CostState,
     Layer,
     ScoreResult,
     SoundItem,
     SoundKind,
     SoundStatus,
-    Spend,
-    SpendState,
 )
 from decktalk.settings import AmbienceConfig, EffectsConfig, MusicConfig
 from decktalk.speech.sound import SOUND_DECLARED, SoundContext, SoundProvider, endpoint
@@ -95,7 +95,7 @@ SECOND_DIGITS = 3
 TABLES = {SoundKind.AMBIENCE: "ambience", SoundKind.EFFECT: "effects", SoundKind.MUSIC: "music"}
 """The `[score]` table each kind is sized and priced by."""
 
-PRICE_KEY = "price_per_minute"
+PRICE_KEY = "dollars_per_minute"
 """The key each kind's table states its rate under, whose layer decides whether a ceiling may refuse a run."""
 
 
@@ -143,7 +143,7 @@ class Planned:
 def sound_body(spec: SoundSpec, cfg: AmbienceConfig | EffectsConfig, *, loop: bool) -> dict[str, Any]:
     """The request one ambience bed or one effect sends, with its table's settings filling what the item left out."""
     body: dict[str, Any] = {
-        "text": spec.text,
+        "text": spec.prompt,
         "duration_seconds": spec.duration_seconds if spec.duration_seconds is not None else cfg.duration_seconds,
         "prompt_influence": spec.prompt_influence if spec.prompt_influence is not None else cfg.prompt_influence,
         "model_id": spec.model or cfg.model,
@@ -188,7 +188,7 @@ def plan_items(inputs: Inputs) -> list[Planned]:
 
     Nothing here reads the disk or the network, so what a run would ask for can be read without
     asking for it, which is what prices a run before it spends. Each request is named in its digest
-    by the endpoint its provider declares, which leaves out `api_base`, so a project that moves to
+    by the endpoint its provider declares, which leaves out `base_url`, so a project that moves to
     another host of the same service keeps every sound it bought.
     """
     spec = inputs.document.score
@@ -203,7 +203,7 @@ def plan_items(inputs: Inputs) -> list[Planned]:
             Planned(
                 name=AMBIENCE_NAME,
                 kind=SoundKind.AMBIENCE,
-                prompt=spec.ambience.text,
+                prompt=spec.ambience.prompt,
                 out=_out(inputs, spec.ambience.out or mix.ambience, kept / f"{AMBIENCE_NAME}.mp3"),
                 endpoint=sound,
                 bodies=(body,),
@@ -216,7 +216,7 @@ def plan_items(inputs: Inputs) -> list[Planned]:
             Planned(
                 name=name,
                 kind=SoundKind.EFFECT,
-                prompt=effect.text,
+                prompt=effect.prompt,
                 out=_out(inputs, effect.out, kept / f"{name}.mp3"),
                 endpoint=sound,
                 bodies=(body,),
@@ -288,14 +288,14 @@ def price_key_of(kind: SoundKind) -> str:
 
 
 def rate_of(inputs: Inputs, kind: SoundKind) -> float:
-    """What this kind of sound costs per second of audio, from the rate per minute its own table states."""
+    """What this kind of sound costs in US dollars per minute of audio, exactly as its own table states it."""
     table: AmbienceConfig | EffectsConfig | MusicConfig = getattr(inputs.settings.score, TABLES[kind])
-    return table.price_per_minute / SECONDS_PER_MINUTE
+    return table.dollars_per_minute
 
 
 def dollars_of(inputs: Inputs, kind: SoundKind, seconds: float) -> float:
-    """What this many seconds of this kind of sound cost at its stated rate, unrounded."""
-    return seconds * rate_of(inputs, kind)
+    """What this many seconds of this kind of sound cost at its stated rate per minute, unrounded."""
+    return seconds * rate_of(inputs, kind) / SECONDS_PER_MINUTE
 
 
 def layer_of(inputs: Inputs, kind: SoundKind) -> Layer:
@@ -307,15 +307,17 @@ def layer_of(inputs: Inputs, kind: SoundKind) -> Layer:
         return Layer.DEFAULT
 
 
-def spend_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | None) -> Spend:
+def cost_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | None) -> Cost:
     """What this run would cost, billed per second of audio, priced once so no caller works it out.
 
-    Each item is the seconds of audio it asks for at its own kind's rate. When the kinds bought are
-    priced at more than one rate, the price is still their exact sum, the rate is what that sum comes
-    to per second, `averaged` says so, and `price_key` names the kind whose rate is least surely
-    stated. The price is stated by the weakest layer among the kinds bought, so one rate nobody stated
-    makes the whole price a default one that a ceiling refuses to guard, and the refusal names that
-    rate's key. A run with nothing to buy covers no section, so its price says it buys nothing.
+    Each item is the seconds of audio it asks for at its own kind's rate per minute. One rate is
+    reported exactly as its table states it, so the rate a reader typed is the rate they read back.
+    When the kinds bought are priced at more than one rate, the price is still their exact sum, the
+    rate is what that sum comes to per minute, `averaged` says so, and `price_key` names the kind
+    whose rate is least surely stated. The price is stated by the weakest layer among the kinds
+    bought, so one rate nobody stated makes the whole price a default one that a ceiling refuses to
+    guard, and the refusal names that rate's key. A run with nothing to buy covers no section, so
+    its price says it buys nothing.
     """
     chosen = selects(only)
     seconds = sum(item.seconds for item in items)
@@ -326,23 +328,30 @@ def spend_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | Non
     weakest = min(kinds, key=lambda kind: order.index(layer_of(inputs, kind)), default=None)
     rates = {rate_of(inputs, kind) for kind in kinds}
     covered = tuple(section.number for section in inputs.document.sections if chosen(section.number)) if items else ()
-    return Spend(
-        state=SpendState.ESTIMATE,
+    return Cost(
+        state=CostState.ESTIMATE,
         sections=covered,
         characters=0,
         seconds=round(seconds, SECOND_DIGITS),
         dollars=dollars,
         ceiling_dollars=dollars,
         billing=Billing.PER_SECOND,
-        price_per_1000_characters=0.0,
-        price_per_second=exact / seconds if seconds else 0.0,
+        dollars_per_1000_characters=0.0,
+        dollars_per_minute=_per_minute(rates, exact, seconds),
         price_key=price_key_of(weakest) if weakest is not None else None,
         averaged=len(rates) > 1,
         price_layer=layer_of(inputs, weakest) if weakest is not None else Layer.DEFAULT,
     )
 
 
-def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_score: bool = False) -> Spend:
+def _per_minute(rates: set[float], dollars: float, seconds: float) -> float:
+    """The rate a price was worked out at per minute of audio: the one rate as stated, or what several average to."""
+    if len(rates) == 1:
+        return next(iter(rates))
+    return dollars / seconds * SECONDS_PER_MINUTE if seconds else 0.0
+
+
+def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_score: bool = False) -> Cost:
     """What a run of this stage with these options would buy, read from the plan and the ledger alone.
 
     It opens no run and builds no client, so a caller prices a score without touching the
@@ -352,15 +361,15 @@ def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_score: b
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
     ledger = Ledger.read(inputs.workspace.score_dir / LEDGER_FILE) or Ledger()
-    return spend_of(inputs, [item for item in planned if replace_score or stale(ledger, item)], only)
+    return cost_of(inputs, [item for item in planned if replace_score or stale(ledger, item)], only)
 
 
 def sound_context(inputs: Inputs) -> SoundContext:
     """What a sound provider is built from: its own table's base, this project's timeout and its own `.env`."""
     settings = inputs.settings
     declared = SOUND_DECLARED.get(settings.score.provider)
-    api_base = str(getattr(settings, declared.table).api_base) if declared is not None else ""
-    return SoundContext(secrets=inputs.env, api_base=api_base, timeout_seconds=settings.score.timeout_seconds)
+    base_url = str(getattr(settings, declared.table).base_url).rstrip("/") if declared is not None else ""
+    return SoundContext(secrets=inputs.env, base_url=base_url, timeout_seconds=settings.score.timeout_seconds)
 
 
 def client_for(run: Run, inputs: Inputs) -> SoundProvider:
@@ -387,7 +396,7 @@ def _charge(run: Run, inputs: Inputs, item: Planned, digest: str, body: Mapping[
     """
     seconds = requested_seconds(item.kind, body)
     dollars = dollars_of(inputs, item.kind, seconds)
-    run.emit(SoundCharged, item=item.name, sound=item.kind, digest=digest, seconds=seconds, dollars=dollars)
+    run.emit(SoundCharged, name=item.name, kind=item.kind, digest=digest, seconds=seconds, dollars=dollars)
     return dollars
 
 
@@ -492,7 +501,7 @@ def score_files(inputs: Inputs) -> frozenset[Path]:
     """Every file this stage would write, which is what a mix that finds one absent knows it has not bought yet.
 
     A file the project names and this stage never writes is the author's own, so its absence is a
-    certain `FILE_MISSING`, while one of these is only unbought and plays silence under `SOUND_MISSING`.
+    `FILE_MISSING` error, while one of these is only unbought and plays silence under `SOUND_MISSING`.
     """
     return frozenset(item.out for item in plan_items(inputs))
 
@@ -526,10 +535,10 @@ def score(
     ledger = Ledger.read(path) or Ledger()
     replace = run.spend and replace_score
     fresh = {item.name for item in planned if replace or stale(ledger, item)}
-    spend = spend_of(inputs, [item for item in planned if item.name in fresh], only)
+    cost = cost_of(inputs, [item for item in planned if item.name in fresh], only)
     buying = bool(fresh) and run.spend
     if buying:
-        run.approve(spend)
+        run.approve(cost)
     client = client_for(run, inputs) if buying else None
     rows: list[SoundItem] = []
     charged = 0.0
@@ -566,8 +575,8 @@ def score(
                 )
             )
     if bought_any:
-        spend = spend.model_copy(update={"state": SpendState.CHARGED, "dollars": round(charged, DOLLAR_DIGITS)})
-    return run.result(ScoreResult, items=tuple(rows), spend=spend)
+        cost = cost.model_copy(update={"state": CostState.CHARGED, "dollars": round(charged, DOLLAR_DIGITS)})
+    return run.result(ScoreResult, spend=run.spend, items=tuple(rows), cost=cost)
 
 
 __all__ = [

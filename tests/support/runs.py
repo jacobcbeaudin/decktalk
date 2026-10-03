@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from decktalk.errors import Cancel
-from decktalk.events import Event, Log
+from decktalk.events import Event, RunLog
 from decktalk.machine import Machine, Run, Toolchain
 from decktalk.settings import ToolsConfig
 
@@ -42,7 +42,7 @@ def a_run(
     return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, max_cost=max_cost, root=root)
 
 
-def a_voiced_run(root: Path, providers: Mapping[str, Any], *, spend: bool = False) -> Run:
+def a_voiced_run(root: Path, speech_providers: Mapping[str, Any], *, spend: bool = False) -> Run:
     """One run opened straight on a machine whose host handed it this voice table, as `Machine.of` takes it."""
     machine = Machine(
         environ={},
@@ -50,7 +50,7 @@ def a_voiced_run(root: Path, providers: Mapping[str, Any], *, spend: bool = Fals
         config_path=root / "machine.toml",
         cwd=root,
         toolchain=Toolchain(),
-        providers=providers,
+        speech_providers=speech_providers,
     )
     return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, root=root)
 
@@ -87,5 +87,5 @@ class Watched:
 def notes(run: Run) -> list[str]:
     """Every sentence the run puts on the stream from now on, which is where a reading that is not a code goes."""
     said: list[str] = []
-    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
+    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, RunLog) else None)
     return said

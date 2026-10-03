@@ -10,7 +10,7 @@ The command line is the instruction set, and it documents itself. Four calls tel
 - `decktalk --help` for the tree, the global flags and the exit codes.
 - `decktalk schema` for every command, every flag with its type and default, every error code and
   every finding code, as one JSON object.
-- `decktalk schema settings` for every knob with its default, its safe range, its unit and its
+- `decktalk schema settings` for every setting with its default, its safe range, its unit and its
   hazard, and `decktalk config explain KEY` for one of them whole.
 - `decktalk status --json` for a project and `decktalk doctor --json` for this machine.
 
@@ -21,14 +21,14 @@ Set up this machine:
   install         Fetch Chromium and ffmpeg before a build needs them.
   doctor          Report what is installed and what a run would use.
 
-Read the project, spending nothing:
+Read the project, buying nothing:
   status          Report what is written, what is built and what is stale.
   check           Judge script.md, cues.json and the pages before a build.
   words           Print every spoken word with its start and end.
   storyboard      Freeze every slide at every cue onto one page.
   serve           Serve the project on a local origin over http.
 
-Read the knobs and the contracts:
+Read the settings and the schemas:
   schema          Print the JSON Schema of a command, a setting or an event.
   config list     Print every key, its value and the layer that set it.
   config get      Print one key's value and the layer that set it.

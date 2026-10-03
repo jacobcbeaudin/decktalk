@@ -37,11 +37,11 @@ from decktalk.results import (
     AssembleResult,
     BuildResult,
     ClipResult,
+    Cost,
     CueResult,
     NarrateResult,
     RecordResult,
     ScoreResult,
-    Spend,
     VerifyResult,
     counted,
 )
@@ -54,13 +54,15 @@ FromStage = Annotated[
     typer.Option(
         "--from",
         metavar="STAGE",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Start at this stage: narrate, cue, record, score, assemble or verify.",
     ),
 ]
 ToStage = Annotated[
     Stage | None,
-    typer.Option("--to", metavar="STAGE", rich_help_panel=Panel.SCOPE.value, help="Stop after this stage, inclusive."),
+    typer.Option(
+        "--to", metavar="STAGE", rich_help_panel=Panel.SELECTION.value, help="Stop after this stage, inclusive."
+    ),
 ]
 # The flags below share a name with a family in `options.py` and mean something narrower on the one
 # command that declares them, so each says what it does there rather than what the family does.
@@ -69,7 +71,7 @@ SkipScore = Annotated[
     typer.Option(
         "--skip",
         metavar="STAGE",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Mix without this stage's audio. score is the one stage assemble can leave out.",
     ),
 ]
@@ -78,14 +80,14 @@ OneSection = Annotated[
     typer.Option(
         "--section",
         metavar="N",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="The one section to cut the clip from, such as 3.",
     ),
 ]
-SCORE_SPENDING = {
+SCORE_SPEND = {
     "spend": "Buy what needs it without asking first, or buy nothing: report the plan and write nothing.",
 }
-"""The spending flags as `score` means them, where the thing bought is sound rather than a voice."""
+"""The spend flags as `score` means them, where the thing bought is sound rather than a voice."""
 
 RECORD_AGAIN = {"force": "Record every section again, even one whose recording still matches its page."}
 """What `--force` redoes on `record`, which is the capture rather than the whole build."""
@@ -115,7 +117,7 @@ def narrate(
 ) -> NarrateResult:
     """Voice each section of script.md and time every word.
 
-    It owns the take index and the word clock every later stage measures against.
+    It owns the take index and the words every later stage measures against.
     \f
     It names the transformation, which is text to a spoken take.
     """
@@ -167,7 +169,7 @@ def record(ctx: Context, section: Sections = None, force: Force = False, set_: O
 
 @command(
     group=Group.STAGE,
-    helps=SCORE_SPENDING,
+    helps=SCORE_SPEND,
 )
 def score(
     ctx: Context, section: Sections = None, replace_score: ReplaceScore = False, set_: Overrides = None
@@ -185,6 +187,7 @@ def score(
         project,
         price=lambda: session.sound_price(project, only=only, replace_score=replace_score),
         replacing=replace_score,
+        plays=sessions.SOUNDS_PLAY,
     )
     with session.watching(project.events):
         return project.score(
@@ -275,6 +278,7 @@ def build(
             price=_build_price(session, project, planned, only, replace_score=replace_score),
             replacing=replace_voiced or replace_score,
             storyboard=True,
+            plays=_plays(planned),
         )
         if planned & {Stage.NARRATE, Stage.SCORE}
         else bool(session.spend)
@@ -308,6 +312,12 @@ def _planned(stages: Sequence[Stage] | None, skip: Sequence[Stage] | None) -> se
     return set(stages or Stage) - set(skip or ())
 
 
+def _plays(planned: set[Stage]) -> str:
+    """What a build that does not spend plays in place of what its planned stages would buy."""
+    bought = {Stage.NARRATE: sessions.TAKES_PLAY, Stage.SCORE: sessions.SOUNDS_PLAY}
+    return " and ".join(plays for stage, plays in bought.items() if stage in planned)
+
+
 def _build_price(
     session: sessions.Session,
     project: Project,
@@ -315,7 +325,7 @@ def _build_price(
     only: Sequence[int] | None,
     *,
     replace_score: bool = False,
-) -> Callable[[], Spend | None]:
+) -> Callable[[], Cost | None]:
     """How a build is priced before it is asked about: every stage it performs that buys, added together.
 
     The price a person approves is the whole run's, so the takes and the score are summed by the
@@ -327,10 +337,10 @@ def _build_price(
     nothing about narration.
     """
 
-    def price() -> Spend | None:
+    def price() -> Cost | None:
         from decktalk.stages.build import total  # noqa: PLC0415  (a stage is loaded by the call that needs it)
 
-        priced: list[Spend | None] = []
+        priced: list[Cost | None] = []
         if Stage.NARRATE in planned:
             priced.append(session.price(project, only=only))
         if Stage.SCORE in planned:
@@ -345,7 +355,7 @@ def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, 
     """Apply the safe fixes a finished run offered, and say that the run has to be made again.
 
     A fix changes an input, so the film beside it is the film the old input made. The run is not
-    repeated here, because repeating a paid run without being asked is how credits are spent twice.
+    repeated here, because repeating a paid run without being asked is how the same take is bought twice.
     """
     offered = sessions_.fixes_wanted(built.findings, fix)
     if not offered:

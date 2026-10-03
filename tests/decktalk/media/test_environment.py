@@ -15,7 +15,7 @@ def test_a_browser_sees_the_machines_paths_and_locale_and_nothing_else():
         "TMPDIR": "/scratch",
         "ELEVENLABS_API_KEY": "sk-secret",
         "AWS_SECRET_ACCESS_KEY": "also-secret",
-        "DECKTALK_ALLOW_ANY_API_BASE": "1",
+        "DECKTALK_ELEVENLABS_BASE_URL": "http://127.0.0.1:9/v1",
     }
     with children_see(machine):
         seen = child_environment()

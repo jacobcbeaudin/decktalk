@@ -1,6 +1,6 @@
 """The words of one take, which is the time base every other artifact is measured against.
 
-    takes/<hash>.words.json   one row per spoken word, in seconds after the take starts
+    takes/<digest>.words.json   one row per spoken word, in seconds after the take starts
 
 Every cut DeckTalk makes is made on a word, so this is the smallest artifact and the one every
 other reads: a cue resolves against it, the captions are built from it, and the clicks of a
@@ -23,7 +23,7 @@ record. A clip's
 words file is the author's own input once a `[[section]] words` key names it, so `Inputs.clip_words`
 refuses one that does not read as `INPUT`, naming that key, and never asks for it to be deleted. Words
 DeckTalk can time again for nothing, such as an aligner reading a take's audio, are a cache of their
-own kind, kept under a key of their own and never at a take's `<hash>.words.json`.
+own kind, kept under a key of their own and never at a take's `<digest>.words.json`.
 """
 
 from __future__ import annotations

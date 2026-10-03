@@ -97,7 +97,7 @@ def element_cues(entry: MeasuredScene) -> set[str]:
     it plays in the film. Such a cue is unmeasurable from a still rather than a reveal that failed,
     and `verify` measures it on the finished film where the handler does run.
     """
-    return {wire for row in measured_rows(entry) for wire in row.moments.values() if wire}
+    return {cue_id for row in measured_rows(entry) for cue_id in row.moments.values() if cue_id}
 
 
 def landing_findings(
@@ -167,9 +167,9 @@ def opening_panels(sheet: Sheet, section: PageSection, slides: Slides, times: Ma
     A check freezes the frames either side of every cue, and the frame in front of the first cue of a
     slide is the picture that slide opens on, so the sheet is complete without drawing anything twice.
     """
-    for slide, wires in slides.items():
-        opening = min((times[wire] for wire in wires if wire in times), default=SECTION_START_SECONDS)
-        sheet.panel(section, Freeze.state(slide, (), wires), None, opening)
+    for slide, cue_ids in slides.items():
+        opening = min((times[cue_id] for cue_id in cue_ids if cue_id in times), default=SECTION_START_SECONDS)
+        sheet.panel(section, Freeze.state(slide, (), cue_ids), None, opening)
 
 
 def seam_findings(

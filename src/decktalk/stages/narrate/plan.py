@@ -1,8 +1,8 @@
 """The take plan: what a run would voice, what it already holds, and what that would cost.
 
-A take is identified by its content hash and by nothing else, so two sections with the same words
+A take is identified by its input digest and by nothing else, so two sections with the same words
 share one take and renumbering or retitling a section moves no file and voices nothing. `TakeInputs`
-is the whole of what that hash is taken over, so this module fills that model and never spells a
+is the whole of what that digest is taken over, so this module fills that model and never spells a
 digest of its own.
 
 The plan is also the approval stop. Nothing is bought until `Run.approve` has seen the price, and a
@@ -32,7 +32,7 @@ from decktalk.inputs.script import Segment
 from decktalk.inputs.workspace import Workspace
 from decktalk.machine import Run
 from decktalk.page import SECOND_DIGITS
-from decktalk.results import DOLLAR_DIGITS, Spend, SpendState, TakeStatus
+from decktalk.results import DOLLAR_DIGITS, Cost, CostState, TakeStatus
 from decktalk.settings import BY_ID, PROJECT_FILE
 from decktalk.speech import DECLARED, SpeechProvider, SpeechRequest, canonical_text, output_of, renders_pauses, table_of
 from decktalk.stages import billed, dollars_for, rate_fields, voice_context
@@ -65,7 +65,7 @@ def take_identity(inputs: Inputs) -> dict[str, Any]:
 
 
 def take_inputs(inputs: Inputs, segment: Segment, *, provider: str, voice_id: str, model: str) -> TakeInputs:
-    """Everything that decides what one paid take sounds like, which is everything its name is over."""
+    """Everything that decides what one voiced take sounds like, which is everything its name is over."""
     return TakeInputs.of(
         provider=provider,
         voice=voice_id,
@@ -80,8 +80,8 @@ def placeholder_inputs(inputs: Inputs, segment: Segment) -> PlaceholderInputs:
     """Everything that decides what one placeholder take sounds like, which is its pace and its beats."""
     cfg = inputs.settings.narration
     return PlaceholderInputs(
-        words_per_minute=cfg.silent_words_per_minute,
-        beat_seconds=cfg.silent_beat_seconds,
+        words_per_minute=cfg.placeholder_words_per_minute,
+        beat_seconds=cfg.placeholder_beat_seconds,
         text=canonical_text(segment.pieces),
     )
 
@@ -184,7 +184,7 @@ def voice_id_of(inputs: Inputs) -> str:
 def named_voice(inputs: Inputs) -> str:
     """The voice this project is read in, or nothing when the project has not named one yet.
 
-    A run that buys nothing and a price both plan without a voice, with every paid take unchecked,
+    A run that buys nothing and a price both plan without a voice, with every voiced take unchecked,
     so neither is refused for a name only a purchase needs.
     """
     return inputs.settings.voice.id
@@ -248,7 +248,7 @@ def miss_reason(previous: Takes | None, segment: Segment, digest: str, *, voiced
     section says nothing about the section that took its number.
     """
     rows = previous.sections if previous is not None else ()
-    if any(row.hash == digest for row in rows):
+    if any(row.digest == digest for row in rows):
         return "the take or its words file is missing"
     same_words = [row for row in rows if row.spoken == segment.spoken]
     if same_words:
@@ -307,8 +307,8 @@ def plan_takes(
 def _unchecked_plan(previous: Takes | None, segment: Segment, chapter: str, request: SpeechRequest | None) -> TakePlan:
     """The plan for one section when there is no voice to ask what its digest would be.
 
-    Only a paid take is in doubt, because only a paid take could turn out to be the one this run
-    would ask for. A section with no take, or with a take without voice, needs a paid take whatever
+    Only a voiced take is in doubt, because only a voiced take could turn out to be the one this run
+    would ask for. A section with no take, or with a take without voice, needs a voiced take whatever
     the voice is, so it is priced as certain rather than counted into the ceiling alone.
     """
     row = previous.of(segment.index) if previous is not None else None
@@ -321,7 +321,7 @@ def _unchecked_plan(previous: Takes | None, segment: Segment, chapter: str, requ
 def voiced_plan(
     inputs: Inputs, targets: list[Segment], *, model: str, voice_id: str | None, replace: bool = False
 ) -> tuple[list[TakePlan], str | None]:
-    """(what a voiced run would do, why the cache could not be checked), spending nothing.
+    """(what a voiced run would do, why the cache could not be checked), buying nothing.
 
     The provider is named by `[voice] provider` and is never built here, because building one needs
     the credential and a price does not. The one input a plan cannot do without is the voice id, and
@@ -354,7 +354,7 @@ def seconds_of(inputs: Inputs, plan: TakePlan) -> float:
     return plan.segment.estimated_seconds(inputs.settings.narration)
 
 
-def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spend:
+def cost_of(plans: list[TakePlan], inputs: Inputs, *, state: CostState) -> Cost:
     """What these plans cost at the bill `[voice] provider` declares, with what they can cost priced beside it.
 
     A per-character bill counts the characters each take sends, a per-second bill counts the seconds
@@ -369,7 +369,7 @@ def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spe
     seconds = sum(seconds_of(inputs, plan) for plan in sending)
     certain = billed(characters, seconds, provider)
     reach = certain + sum(billed(p.characters_sent, seconds_of(inputs, p), provider) for p in maybe)
-    return Spend(
+    return Cost(
         state=state,
         sections=tuple(plan.segment.index for plan in sending + maybe),
         characters=characters,
@@ -401,7 +401,7 @@ __all__ = [
     "requests_for",
     "seconds_of",
     "speech_provider",
-    "spend_of",
+    "cost_of",
     "take_inputs",
     "voice_id_of",
     "take_identity",

@@ -36,7 +36,7 @@
           "x-environment": "DECKTALK_NARRATION_RETRIES"
         },
         "store_dir": {
-          "description": "The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its content hash. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a purchase nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS.",
+          "description": "The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its input digest. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a take nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS.",
           "type": "string",
           "default": "",
           "x-range": "takes any value of its type",
@@ -101,13 +101,51 @@
       },
       "additionalProperties": false
     },
+    "elevenlabs": {
+      "type": "object",
+      "description": "These keys are ElevenLabs's own: its speech fields, its model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `base_url` is the machine's to set. The score stage buys from the same API with the same key.",
+      "x-kind": "tuning",
+      "properties": {
+        "base_url": {
+          "description": "Base URL of the ElevenLabs API, which the voice and the score both send their requests and the key to.",
+          "type": "string",
+          "default": "https://api.elevenlabs.io/v1",
+          "x-range": "takes any value of its type",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "The script, and for a paid voice the key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
+          "x-environment": "DECKTALK_ELEVENLABS_BASE_URL"
+        }
+      },
+      "additionalProperties": false
+    },
+    "dtsp": {
+      "type": "object",
+      "description": "These keys are the `dtsp` voice's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.",
+      "x-kind": "tuning",
+      "properties": {
+        "base_url": {
+          "description": "Base URL of the local speech server, which the script is sent to.",
+          "type": "string",
+          "default": "http://127.0.0.1:8765",
+          "x-range": "takes any value of its type",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "The script, and for a paid voice the key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
+          "x-environment": "DECKTALK_DTSP_BASE_URL"
+        }
+      },
+      "additionalProperties": false
+    },
     "output": {
       "type": "object",
       "description": "These keys switch the files a build writes beside the final mp4 and how long they are kept.",
       "x-kind": "tuning",
       "properties": {
         "events_max_bytes": {
-          "description": "Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its spending are always kept.",
+          "description": "Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its costs are always kept.",
           "type": "integer",
           "default": 8388608,
           "minimum": 65536,

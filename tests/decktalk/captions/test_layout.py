@@ -84,15 +84,15 @@ def test_caption_cues_edge_cases():
 
     # A sentence too long for two lines splits at the clause mark, then away from function words.
     cues = caption_cues(
-        _spoken("In a big model, testing knobs one at a time would take billions of tries for every step.")
+        _spoken("In a big model, testing dials one at a time would take billions of tries for every step.")
     )
     assert [c.lines for c in cues] == [
-        ("In a big model,", "testing knobs one at a time"),
+        ("In a big model,", "testing dials one at a time"),
         ("would take billions", "of tries for every step."),
     ]
 
     # Words with no punctuation at all still wrap into lines that fit, with no one-word line or cue.
-    cues = caption_cues(_spoken(" ".join(["knob"] * 40)))
+    cues = caption_cues(_spoken(" ".join(["dial"] * 40)))
     assert all(len(line) <= CAPTION_MAX_CHARS and " " in line for c in cues for line in c.lines)
     assert sum(len(line.split()) for c in cues for line in c.lines) == 40
 

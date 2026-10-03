@@ -59,184 +59,191 @@
   var CODES = {
     PAGE_UNKNOWN_ATTR: {
       message: "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_BAD_VALUE: {
       message: "{attr}={value} is not one of {allowed}, so write one of those instead.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_MOMENT_UNKNOWN: {
       message: "{attr}={value} names a cue slide {slide} does not own, so declare it on the slide or correct the name.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_MOMENT_ORDER: {
       message: "The exit {value} is at or before the entrance on the same element, so give the exit a later cue.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_CUE_UNKNOWN: {
       message: "The cue {cue} is not one this deck declares, so remove it or name it in a moment attribute.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_NO_OWNER: {
       message: "No slide owns the cue {cue}, so name it in a moment attribute or list it in data-owns.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_SCENE_EMPTY: {
       message: "The scene {slide} declares no slide, so add a template to it or remove the scene.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_SLIDE_NO_ID: {
       message: "A template carries no data-slide, so give it the id a section names.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_SLIDE_DOUBLED: {
       message: "Two templates claim the slide id {slide}, so every moment local to it has two owners.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_SLIDE_UNUSED: {
       message: "Slide {slide} is never shown, so nothing it declares reaches a recording.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_TEMPLATE_IGNORED: {
       message: "A template inside slide {slide} declares no slide of its own, so nothing ever mounts it.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_WORDS_NOT_FOUND: {
       message: "The line {value} is not among the spoken words, so it cannot be shown word by word.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_KATEX_MISSING: {
       message: "KaTeX is not loaded, so {attr} is left as the author wrote it.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_KATEX_ERROR: {
       message: "KaTeX refused {value}, so the element shows its readable fallback text.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_FREEZE_CUE_UNKNOWN: {
       message: "The cue {cue} is not one of slide {slide}'s cues, so the freeze stopped at nothing.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_RENDER_THREW: {
       message: "The render handler for slide {slide} threw {value}, so the slide is drawn as its markup stands.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_ENTER_THREW: {
       message: "The enter handler for slide {slide} threw {value}, so the slide arrived without it.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_SLIDE_HANDLER_THREW: {
       message: "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_HANDLER_THREW: {
       message: "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_WAIT_REJECTED: {
       message: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_WAIT_UNSETTLED: {
       message: "A promise the page waited for never settled, so the page was drawn without it.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_CLASS_UNDESCRIBED: {
-      message: "data-class names {value} with no phrase for it in data-describe-class, so the transcript loses it.",
-      certainty: "certain",
+      message:
+        "data-class names {value} with no description for it in data-describe-class, so the transcript loses it.",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_CLASS_NOT_REDUCED: {
       message: "The class {value} still animates under reduced motion, so the page's own stylesheet must honour it.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_SWAP_AMBIGUOUS: {
       message: "data-swaps at cue {cue} found {value} elements leaving, so name the one it replaces with a shared cue.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_PREVIEW_AMBIGUOUS: {
       message: "Two sections name the scene {slide}, so a preview cannot tell which one's cue times to play.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_APPEAR_TOO_LONG: {
       message: "data-words=appear is on a line of {value} words, so shorten it or use highlight instead.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_STAGGER_EMPTY: {
       message: "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
-      certainty: "certain",
+      severity: "error",
+      raisedBy: "runtime",
+    },
+    PAGE_SPOTLIGHT_EMPTY: {
+      message:
+        "The spotlight on slide {slide} has no child with data-in, so give its children cues or remove the attribute.",
+      severity: "error",
       raisedBy: "runtime",
     },
     PAGE_MOTION_OVERRUN: {
       message: "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "python",
     },
     PAGE_STAGGER_OVERRUN: {
       message: "The stagger at cue {cue} runs {value} s in all, which passes the half second a cue may still move.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "python",
     },
     PAGE_THIN_DRAW: {
       message: "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
-      certainty: "uncertain",
+      severity: "warning",
       raisedBy: "python",
     },
     PAGE_NO_DESCRIPTION: {
       message: "The element at cue {cue} has no text and no data-tex, so give it data-describe or an empty one.",
-      certainty: "certain",
+      severity: "error",
       raisedBy: "python",
     },
     PAGE_SWAP_APART: {
       message:
         "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
-      certainty: "uncertain",
-      raisedBy: "python",
-    },
-    PAGE_STALLED: {
-      message:
-        "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
-    PAGE_BLACK: {
-      message: "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
-    PAGE_TRUNCATED: {
-      message: "The recording ends {value} s before the narration does, so the last cues are not in it.",
-      certainty: "certain",
+      severity: "warning",
       raisedBy: "python",
     },
     PAGE_CDN_ASSET: {
       message: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
-      certainty: "certain",
+      severity: "error",
+      raisedBy: "python",
+    },
+    RECORD_STALLED: {
+      message:
+        "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
+      severity: "error",
+      raisedBy: "python",
+    },
+    RECORD_BLACK: {
+      message: "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
+      severity: "error",
+      raisedBy: "python",
+    },
+    RECORD_TRUNCATED: {
+      message: "The recording ends {value} s before the narration does, so the last cues are not in it.",
+      severity: "error",
       raisedBy: "python",
     },
   };
@@ -260,7 +267,7 @@
     "data-describe": {
       name: "data-describe",
       on: ["element", "slide"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -268,7 +275,7 @@
       span: 0,
       affects: ["transcript", "catalog"],
       summary:
-        "The subject of the reveal, which the runtime gives a verb per moment. An empty phrase means decorative.",
+        "The subject of the reveal, which the runtime gives a verb per moment. An empty description means decorative.",
     },
     "data-tex": {
       name: "data-tex",
@@ -376,7 +383,7 @@
       code: "PAGE_CLASS_UNDESCRIBED",
       span: READ_FROM_THE_PAGE,
       affects: ["cue-order", "motion", "transcript", "style"],
-      summary: "Adds a class at a moment, written as moment:name pairs, for the page's own stylesheet.",
+      summary: "Adds a class at a cue, written as cue:class pairs, for the page's own stylesheet.",
     },
     "data-describe-class": {
       name: "data-describe-class",
@@ -388,7 +395,7 @@
       code: null,
       span: 0,
       affects: ["transcript"],
-      summary: "What each class change means, as moment:phrase pairs separated by a vertical bar.",
+      summary: "What each class change means, as cue:description pairs separated by a vertical bar.",
     },
     "data-stagger": {
       name: "data-stagger",
@@ -402,14 +409,14 @@
       affects: ["motion"],
       summary: "The container's children arrive this far apart from one cue.",
     },
-    "data-steps": {
-      name: "data-steps",
+    "data-spotlight": {
+      name: "data-spotlight",
       on: ["container"],
       kind: "flag",
       values: [],
       default: null,
       range: null,
-      code: "PAGE_STAGGER_EMPTY",
+      code: "PAGE_SPOTLIGHT_EMPTY",
       span: READ_FROM_THE_PAGE,
       affects: ["cue-order", "motion", "transcript", "catalog"],
       summary: "Each cued child comes to the front as it arrives and the ones before it step back.",
@@ -453,7 +460,7 @@
     "data-describe-out": {
       name: "data-describe-out",
       on: ["element"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -477,7 +484,7 @@
     "data-name": {
       name: "data-name",
       on: ["scene"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -520,7 +527,7 @@
       code: "PAGE_CUE_UNKNOWN",
       span: 0,
       affects: ["cue-order", "catalog"],
-      summary: "Local names of cues only a handler serves, which no moment attribute mentions.",
+      summary: "Cue names only a handler serves, which no moment attribute mentions.",
     },
     "data-enter": {
       name: "data-enter",
@@ -539,24 +546,24 @@
   var MOMENT_SELECTOR = MOMENTS.map((name) => `[${name}]`).join(",");
   var PAIR_SEPARATOR = "|";
   var PAIR_MARK = ":";
-  var WIRE_MARK = ":";
+  var CUE_MARK = ":";
   var TIME_MARK = "@";
   var LIST_SEPARATOR = ",";
   var ENGINE_PATH = "/__decktalk/";
   var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
   var MOTION_SCALE_PROPERTY = "--dt-motion-scale";
-  function wireId(slide, local) {
-    return `${slide}${WIRE_MARK}${local}`;
+  function cueId(slide, local) {
+    return `${slide}${CUE_MARK}${local}`;
   }
   function pairs(value) {
     const out = [];
     for (const part of value.split(PAIR_SEPARATOR)) {
       const at = part.indexOf(PAIR_MARK);
       if (at < 0) continue;
-      const moment = part.slice(0, at).trim();
+      const cue = part.slice(0, at).trim();
       const rest = part.slice(at + 1).trim();
-      if (!moment || !rest) continue;
-      out.push({ moment, value: rest });
+      if (!cue || !rest) continue;
+      out.push({ cue, value: rest });
     }
     return out;
   }
@@ -681,7 +688,7 @@
    * names are derived from the registry rather than spelled here, an unknown `data-` word and a value
    * outside its published set are reported before a single pixel is drawn, and a moment is qualified
    * with the id of the template it was written in, so the author writes `expand` inside the slide
-   * `pitch.listing` and the wire carries `pitch.listing:expand`.
+   * `pitch.listing` and its cue id is `pitch.listing:expand`.
    *
    * Ownership is declared and never inferred. A slide owns exactly the cues its moment attributes
    * name plus the local names it lists, which is what lets a cue id carry any characters an author
@@ -706,7 +713,7 @@
     inStyle: named("in-style"),
     inSeconds: named("in-seconds"),
     outStyle: named("out-style"),
-    steps: named("steps"),
+    spotlight: named("spotlight"),
     stagger: named("stagger"),
     swaps: named("swaps"),
     words: named("words"),
@@ -785,19 +792,19 @@
     const out = [];
     for (const attr of MOMENTS) {
       const local = written(el, attr);
-      if (local) out.push({ attr, local, cue: wireId(slideId, local) });
+      if (local) out.push({ attr, local, cue: cueId(slideId, local) });
     }
     return out;
   }
-  function classMomentsOf(el, slideId) {
+  function classChangesOf(el, slideId) {
     const value = written(el, ATTR.class);
     if (!value) return [];
-    return pairs(value).map((pair) => ({ cue: wireId(slideId, pair.moment), local: pair.moment, name: pair.value }));
+    return pairs(value).map((pair) => ({ cue: cueId(slideId, pair.cue), local: pair.cue, name: pair.value }));
   }
-  function classPhraseOf(el, local) {
+  function classDescriptionOf(el, local) {
     const value = written(el, ATTR.describeClass);
     if (value === null) return null;
-    const found = pairs(value).find((pair) => pair.moment === local);
+    const found = pairs(value).find((pair) => pair.cue === local);
     return found ? found.value : null;
   }
   function momentElements(root) {
@@ -813,11 +820,11 @@
     if (slide.markup) {
       for (const el of momentElements(slide.markup.content)) {
         for (const moment of momentsOf(el, slide.id)) add(moment.cue);
-        for (const change of classMomentsOf(el, slide.id)) add(change.cue);
+        for (const change of classChangesOf(el, slide.id)) add(change.cue);
       }
     }
-    for (const local of Object.keys(slide.on)) add(wireId(slide.id, local));
-    for (const local of slide.owns) add(wireId(slide.id, local));
+    for (const local of Object.keys(slide.on)) add(cueId(slide.id, local));
+    for (const local of slide.owns) add(cueId(slide.id, local));
     return order2;
   }
   function ownerOf(cue, within = null) {
@@ -843,7 +850,7 @@
     if (!slide.markup) return spans;
     for (const el of momentElements(slide.markup.content)) {
       for (const moment of momentsOf(el, slide.id)) widen(moment.cue, spanOf(el, moment.attr));
-      for (const change of classMomentsOf(el, slide.id)) widen(change.cue, 0);
+      for (const change of classChangesOf(el, slide.id)) widen(change.cue, 0);
     }
     return spans;
   }
@@ -866,7 +873,7 @@
   }
   function measureClassSpans(slideEl, slide, into, reduced2) {
     for (const el of momentElements(slideEl)) {
-      for (const change of classMomentsOf(el, slide.id)) {
+      for (const change of classChangesOf(el, slide.id)) {
         el.classList.add(change.name);
         const span2 = longestMotion(el);
         el.classList.remove(change.name);
@@ -989,12 +996,13 @@
       }
       describedClasses(el, place);
       staggered(el, place);
+      spotlit(el, place);
       swapped(el, root, place);
     }
   }
   function describedClasses(el, slideId) {
-    for (const change of classMomentsOf(el, slideId)) {
-      if (classPhraseOf(el, change.local) === null) {
+    for (const change of classChangesOf(el, slideId)) {
+      if (classDescriptionOf(el, change.local) === null) {
         warn("PAGE_CLASS_UNDESCRIBED", slideId, change.cue, { value: change.name, attr: ATTR.class });
       }
     }
@@ -1004,13 +1012,18 @@
     const moment = momentsOf(el, slideId).find((one) => one.attr === ATTR.in);
     warn("PAGE_STAGGER_EMPTY", slideId, moment ? moment.cue : null, { attr: ATTR.stagger });
   }
+  function spotlit(el, slideId) {
+    if (!flagged(el, ATTR.spotlight)) return;
+    if ([...el.children].some((child) => written(child, ATTR.in))) return;
+    warn("PAGE_SPOTLIGHT_EMPTY", slideId, null, { attr: ATTR.spotlight });
+  }
   function swapped(el, root, slideId) {
     if (!flagged(el, ATTR.swaps)) return;
     const local = written(el, ATTR.in);
     if (!local) return;
     const leaving = [...root.querySelectorAll(`[${ATTR.out}]`)].filter((other) => written(other, ATTR.out) === local);
     if (leaving.length === 1) return;
-    warn("PAGE_SWAP_AMBIGUOUS", slideId, wireId(slideId, local), { value: leaving.length, attr: ATTR.swaps });
+    warn("PAGE_SWAP_AMBIGUOUS", slideId, cueId(slideId, local), { value: leaving.length, attr: ATTR.swaps });
   }
   function order(slide) {
     if (!slide.markup) return;
@@ -1493,15 +1506,15 @@
         const action = actionFor(element, moment.attr, moment.cue, slide, playing, held, onLeave);
         push(actions, moment.cue, action);
       }
-      for (const change of classMomentsOf(element, slide.id)) {
+      for (const change of classChangesOf(element, slide.id)) {
         push(actions, change.cue, {
           attr: ATTR.class,
           run: () => element.classList.add(change.name),
-          line: classPhraseOf(element, change.local) || null,
+          line: classDescriptionOf(element, change.local) || null,
         });
       }
     }
-    for (const container of el.querySelectorAll(`[${ATTR.steps}]`)) steps(container, slide, actions);
+    for (const container of el.querySelectorAll(`[${ATTR.spotlight}]`)) spotlight(container, slide, actions);
     if (playing.frozen) {
       for (const [cue, list] of actions) {
         if (playing.held?.has(cue)) continue;
@@ -1608,10 +1621,10 @@
       if (event.target === el) el.classList.remove(entrance);
     });
   }
-  function steps(container, slide, actions) {
+  function spotlight(container, slide, actions) {
     const cued = [...container.children].filter((child) => written(child, ATTR.in));
     cued.forEach((child, at) => {
-      const cue = wireId(slide.id, written(child, ATTR.in));
+      const cue = cueId(slide.id, written(child, ATTR.in));
       push(actions, cue, {
         attr: ATTR.front,
         run: () => {
@@ -1758,7 +1771,7 @@
     const slide = state.slide;
     const slideEl = state.mounted?.el ?? null;
     const ctx = context(cue, slide ? slide.id : "", now());
-    const local = slide ? cue.slice(wireId(slide.id, "").length) : cue;
+    const local = slide ? cue.slice(cueId(slide.id, "").length) : cue;
     const own = slide?.on[local];
     if (own) {
       try {

@@ -77,7 +77,7 @@ def standard_data_dir(environ: Mapping[str, str], home: Path, platform: str = sy
     """The per-user data directory this platform's conventions name, which is kept and backed up.
 
     The take store lives here rather than in the cache, because a cleaner empties a cache and macOS
-    leaves `~/Library/Caches` out of a backup, while the store holds takes somebody paid for. Windows
+    leaves `~/Library/Caches` out of a backup, while the store holds voiced takes. Windows
     uses the local root rather than the roaming one, so a roaming profile does not carry audio at
     every sign-in.
     """

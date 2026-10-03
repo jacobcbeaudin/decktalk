@@ -1,10 +1,10 @@
 """One terminal that serves the deck and rebuilds the section a save changed.
 
 The loop is the draft loop. It starts the local origin itself and prints the URL, builds once
-without spending, playing every take on disk, making each missing one with a voice that bills
+without buying, playing every take on disk, making each missing one with a voice that bills
 nothing, and playing a placeholder for each one a voice that bills would sell, and on every save
 rebuilds only the sections the changed file touches. It never spends, whatever the settings say,
-and it says so when a save leaves a paid take behind. The explicit spend is a different command,
+and it says so when a save leaves a voiced take behind. The explicit spend is a different command,
 `decktalk narrate --section 3 --spend`, because the safe default is the rule and the named escape
 is a separate act.
 
@@ -24,7 +24,7 @@ from decktalk.cli import session as sessions
 from decktalk.errors import Cancelled, DeckTalkError, ErrorInfo
 from decktalk.pipeline import Stage
 from decktalk.project import Project
-from decktalk.results import Billing, BuildResult, Layer, Spend, SpendState
+from decktalk.results import Billing, BuildResult, Cost, CostState, Layer
 
 POLL_SECONDS = 0.4
 """How long the loop sleeps between two readings of the tree, which is under an author's own pause."""
@@ -49,8 +49,8 @@ def loop(
     origin = project.serve()
     session.say(f"Serving {origin.result.url}")
     session.say(
-        "Watching for saves. Nothing here spends: a free voice reads each change, and a paid take goes stale "
-        "rather than being bought again."
+        "Watching for saves. Nothing here spends: a free voice reads each change, and a take a voice bills for goes "
+        "stale rather than being bought again."
     )
     built = _once(session, project, skip=skip, only=only, force=force)
     seen = _stamps(project)
@@ -116,18 +116,18 @@ def _nothing(refusal: ErrorInfo) -> BuildResult:
         error=refusal,
         run="",
         stages=(),
-        spending=False,
-        spend=Spend(
-            state=SpendState.ESTIMATE,
+        spend=False,
+        cost=Cost(
+            state=CostState.ESTIMATE,
             sections=(),
             characters=0,
             dollars=0.0,
             ceiling_dollars=0.0,
             billing=Billing.UNDECLARED,
-            price_per_1000_characters=0.0,
+            dollars_per_1000_characters=0.0,
             price_layer=Layer.DEFAULT,
         ),
-        seconds=0.0,
+        elapsed_seconds=0.0,
     )
 
 
@@ -143,7 +143,7 @@ def _touched(project: Project, changed: Iterable[Path]) -> tuple[int, ...] | Non
 
 
 def _stale(session: sessions.Session, project: Project) -> None:
-    """Say which sections now hold a paid take that no longer matches what the author wrote."""
+    """Say which sections now hold a voiced take that no longer matches what the author wrote."""
     reported = project.status()
     gone = [row.section for row in reported.sections if row.voiced and row.stale]
     for section in gone:

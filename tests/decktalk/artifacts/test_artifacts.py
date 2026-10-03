@@ -9,7 +9,7 @@ import pytest
 from decktalk import artifacts
 from decktalk.artifacts.stored import Stored
 
-STORED = (artifacts.CueTimes, artifacts.Cuts, artifacts.RecordingLog, artifacts.Takes, artifacts.Words)
+STORED = (artifacts.CueTimes, artifacts.Placements, artifacts.RecordingLog, artifacts.Takes, artifacts.Words)
 """Every file under `build/` that a stage writes and a later reader opens."""
 
 

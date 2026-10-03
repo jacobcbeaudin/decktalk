@@ -20,7 +20,7 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 
-from decktalk.artifacts import Cut, Cuts, Takes, Words
+from decktalk.artifacts import Placement, Placements, Takes, Words
 from decktalk.captions import (
     CaptionCue,
     Chapter,
@@ -78,7 +78,7 @@ def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], t
     cues: list[CaptionCue] = []
     for take in takes.sections:
         shift = offsets.get(take.section, 0.0) + (takes.start(take.section) or 0.0)
-        words = list(Words(words=inputs.words(take.section, take.hash)).shifted(shift))
+        words = list(Words(words=inputs.words(take.section, take.digest)).shifted(shift))
         text = texts.get(take.section)
         cues += caption_cues(display_words(words, text) if text else words)
     return cues
@@ -281,32 +281,32 @@ def clip_speech(inputs: Inputs, section: int) -> str:
     return "" if words is None else " ".join(word.word for word in words.words)
 
 
-def cut_note(cut: Cut) -> str:
+def placement_note(placement: Placement) -> str:
     """What plays in a section that spoke nothing, in one sentence, or nothing when it spoke."""
-    if cut.substitute is not None:
-        return f"A placeholder {cut.substitute.value} frame plays here."
-    return f"A clip plays here: {cut.source.as_posix()}." if cut.kind is SectionKind.CLIP else ""
+    if placement.substitute is not None:
+        return f"A placeholder {placement.substitute.value} frame plays here."
+    return f"A clip plays here: {placement.source.as_posix()}." if placement.kind is SectionKind.CLIP else ""
 
 
-def transcript_sections(inputs: Inputs, cuts: Cuts, texts: Mapping[int, str]) -> list[TranscriptSection]:
+def transcript_sections(inputs: Inputs, placements: Placements, texts: Mapping[int, str]) -> list[TranscriptSection]:
     """One transcript entry per chapter, in the order they play, as the chapter markers group them.
 
     Consecutive sections that share a chapter share one heading, which is how the film's own markers
     group them, and each section's speech stays its own paragraph inside it.
     """
     out: list[TranscriptSection] = []
-    for chapter, grouped in itertools.groupby(cuts.sections, key=lambda cut: cut.chapter):
+    for chapter, grouped in itertools.groupby(placements.sections, key=lambda placement: placement.chapter):
         run = list(grouped)
-        said = tuple(one for cut in run for one in _said(inputs, cut, texts))
-        shown = tuple(one for cut in run for one in described_cues(inputs, cut.section, cut.start))
+        said = tuple(one for placement in run for one in _said(inputs, placement, texts))
+        shown = tuple(one for placement in run for one in described_cues(inputs, placement.section, placement.start))
         out.append(TranscriptSection(chapter=chapter, start=run[0].start, end=run[-1].end, said=said, describes=shown))
     return out
 
 
-def _said(inputs: Inputs, cut: Cut, texts: Mapping[int, str]) -> tuple[Said, ...]:
+def _said(inputs: Inputs, placement: Placement, texts: Mapping[int, str]) -> tuple[Said, ...]:
     """What one section contributes to its chapter's text: its speech, then the note on what plays."""
-    spoken = texts.get(cut.section, "") or clip_speech(inputs, cut.section)
-    note = cut_note(cut)
+    spoken = texts.get(placement.section, "") or clip_speech(inputs, placement.section)
+    note = placement_note(placement)
     return ((Said(text=spoken, note=False),) if spoken else ()) + ((Said(text=note, note=True),) if note else ())
 
 
@@ -386,9 +386,9 @@ def publish(inputs: Inputs, work: Path, paths: Mapping[str, Path]) -> Path | Non
     return stamped
 
 
-def write_transcript_page(inputs: Inputs, path: Path, cuts: Cuts, texts: Mapping[int, str]) -> None:
+def write_transcript_page(inputs: Inputs, path: Path, placements: Placements, texts: Mapping[int, str]) -> None:
     """The media alternative: one page with a heading per chapter, the speech and every reveal."""
-    sections = transcript_sections(inputs, cuts, texts)
+    sections = transcript_sections(inputs, placements, texts)
     replace_all({path: transcript_html(inputs.workspace.name, sections, language=inputs.document.language)})
 
 
@@ -400,7 +400,7 @@ __all__ = [
     "caption_texts",
     "clip_captions",
     "clip_speech",
-    "cut_note",
+    "placement_note",
     "described_cues",
     "mux_chapters",
     "one_at_a_time",

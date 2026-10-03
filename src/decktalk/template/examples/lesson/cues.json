@@ -1,8 +1,8 @@
 {
   "_comment": [
-    "Which spoken phrase each moment on the page lands on. `cue` is a wire id: the slide id, a colon,",
-    "then the local name the page writes, so data-in=\"guess\" inside <template data-slide=\"1.2\"> is",
-    "1.2:guess. `on` is a word or short phrase from that section of script.md, matched ignoring case",
+    "Which spoken phrase each moment on the page lands on. `id` is a cue id: the slide id, a colon,",
+    "then the cue name the page writes, so data-in=\"guess\" inside <template data-slide=\"1.2\"> is",
+    "1.2:guess. `phrase` is a word or short phrase from that section of script.md, matched ignoring case",
     "and punctuation. `occurrence` picks which match, counting from 1, and every row here names it, so",
     "a phrase the script repeats later never moves a picture by accident.",
     "`1.5:long` and `1.5:short` are the two cues the slide lists in data-owns and a handler serves."
@@ -10,28 +10,28 @@
   "sections": {
     "1": {
       "cues": [
-        { "cue": "1.1:question", "on": "How does a model learn", "occurrence": 1 },
-        { "cue": "1.1:examples", "on": "Here are four of them", "occurrence": 1 },
-        { "cue": "1.1:rules", "on": "rules a person writes", "occurrence": 1 },
-        { "cue": "1.1:name", "on": "machine learning", "occurrence": 1 },
-        { "cue": "1.2:box", "on": "a box of knobs", "occurrence": 1 },
-        { "cue": "1.2:guess", "on": "and it guesses", "occurrence": 1 },
-        { "cue": "1.2:error", "on": "shows the error", "occurrence": 1 },
-        { "cue": "1.2:nudge", "on": "nudges the knobs", "occurrence": 1 },
-        { "cue": "1.2:right", "on": "it is right", "occurrence": 1 },
-        { "cue": "1.3:which", "on": "which way", "occurrence": 1 },
-        { "cue": "1.3:one", "on": "one knob at a time", "occurrence": 1 },
-        { "cue": "1.3:instead", "on": "Instead", "occurrence": 1 },
-        { "cue": "1.4:hill", "on": "the error as a hill", "occurrence": 1 },
-        { "cue": "1.4:stands", "on": "stands somewhere", "occurrence": 1 },
-        { "cue": "1.4:downhill", "on": "steps downhill", "occurrence": 1 },
-        { "cue": "1.4:gradient", "on": "gradient descent", "occurrence": 1 },
-        { "cue": "1.5:setting", "on": "One setting", "occurrence": 1 },
-        { "cue": "1.5:long", "on": "Too long", "occurrence": 1 },
-        { "cue": "1.5:short", "on": "Too short", "occurrence": 1 },
-        { "cue": "1.6:inside", "on": "grids of numbers", "occurrence": 1 },
-        { "cue": "1.6:billion", "on": "four hundred billion", "occurrence": 1 },
-        { "cue": "1.6:chips", "on": "multiply whole grids", "occurrence": 1 }
+        { "id": "1.1:question", "phrase": "How does a model learn", "occurrence": 1 },
+        { "id": "1.1:examples", "phrase": "Here are four of them", "occurrence": 1 },
+        { "id": "1.1:rules", "phrase": "rules a person writes", "occurrence": 1 },
+        { "id": "1.1:name", "phrase": "machine learning", "occurrence": 1 },
+        { "id": "1.2:box", "phrase": "a box of dials", "occurrence": 1 },
+        { "id": "1.2:guess", "phrase": "and it guesses", "occurrence": 1 },
+        { "id": "1.2:error", "phrase": "shows the error", "occurrence": 1 },
+        { "id": "1.2:nudge", "phrase": "nudges the dials", "occurrence": 1 },
+        { "id": "1.2:right", "phrase": "it is right", "occurrence": 1 },
+        { "id": "1.3:which", "phrase": "which way", "occurrence": 1 },
+        { "id": "1.3:one", "phrase": "one dial at a time", "occurrence": 1 },
+        { "id": "1.3:instead", "phrase": "Instead", "occurrence": 1 },
+        { "id": "1.4:hill", "phrase": "the error as a hill", "occurrence": 1 },
+        { "id": "1.4:stands", "phrase": "stands somewhere", "occurrence": 1 },
+        { "id": "1.4:downhill", "phrase": "steps downhill", "occurrence": 1 },
+        { "id": "1.4:gradient", "phrase": "gradient descent", "occurrence": 1 },
+        { "id": "1.5:setting", "phrase": "One setting", "occurrence": 1 },
+        { "id": "1.5:long", "phrase": "Too long", "occurrence": 1 },
+        { "id": "1.5:short", "phrase": "Too short", "occurrence": 1 },
+        { "id": "1.6:inside", "phrase": "grids of numbers", "occurrence": 1 },
+        { "id": "1.6:billion", "phrase": "four hundred billion", "occurrence": 1 },
+        { "id": "1.6:chips", "phrase": "multiply whole grids", "occurrence": 1 }
       ]
     }
   }

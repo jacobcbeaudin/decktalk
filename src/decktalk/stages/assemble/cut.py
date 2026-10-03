@@ -1,4 +1,4 @@
-"""Every section becomes one silent mp4, and the cut list records where each one plays.
+"""Every section becomes one silent mp4, and the placements record where each one plays.
 
 A page section is cut to its exact span in the narration, rounded on cumulative frame boundaries so
 the picture never drifts, with the recorder's lead-in trimmed off the head and the last frame cloned
@@ -6,7 +6,7 @@ to fill. A clip section plays its own file, or a titled slate when that file is 
 section with no recording plays black. No intermediate carries audio, so the concatenation cannot
 reintroduce AAC priming and the picture starts at pts 0 as the sound does.
 
-`cuts.json` is written from the same rows, so where a section plays, what it was made from and
+`placements.json` is written from the same rows, so where a section plays, what it was made from and
 whether a slate or a black frame stands in for it are all recorded once.
 
 Every cut is encoded through `encode`, which keeps the cut on disk when its key says the same
@@ -23,8 +23,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import Cut, Cuts, RecordingLog, Takes
-from decktalk.artifacts.cuts import CutKey
+from decktalk.artifacts import Placement, Placements, RecordingLog, Takes
+from decktalk.artifacts.placements import CutKey
 from decktalk.artifacts.stills import still_key
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Level, Unit
@@ -281,7 +281,7 @@ def _judge_missing(run: Run, rows: list[Rendered]) -> None:
     """One judgement per section whose own file the project names and has not got.
 
     A clip section that declares `optional` says the slate is what it wants when the clip is not
-    there, so judging it certain would stop the build on the very thing the project asked for.
+    there, so judging it an error would stop the build on the very thing the project asked for.
     """
     for row in rows:
         if row.substitute is None:
@@ -300,15 +300,15 @@ def _judge_missing(run: Run, rows: list[Rendered]) -> None:
         )
 
 
-def cut_list(inputs: Inputs, rows: list[Rendered]) -> Cuts:
-    """The cut list: where each section plays, what it was cut from, and what stands in for it."""
+def placements_of(inputs: Inputs, rows: list[Rendered]) -> Placements:
+    """The placements: where each section plays, what it was cut from, and what stands in for it."""
     starts = rendered_starts(rows)
     flags = inputs.document.fade_flags
     chapters = inputs.chapters()
-    return Cuts(
+    return Placements(
         fps=inputs.settings.video.output_fps,
         sections=tuple(
-            Cut(
+            Placement(
                 section=row.number,
                 key=row.key,
                 kind=SectionKind.CLIP if row.section.is_clip else SectionKind.PAGE,
@@ -380,7 +380,7 @@ __all__ = [
     "BLACK",
     "Rendered",
     "concat",
-    "cut_list",
+    "placements_of",
     "encode",
     "page_target",
     "render_clip",

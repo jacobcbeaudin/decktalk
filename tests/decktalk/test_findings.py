@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from decktalk.findings import (
     Applicability,
-    Certainty,
     Code,
     CommandFix,
     Edit,
@@ -15,7 +14,7 @@ from decktalk.findings import (
     Finding,
     Location,
     RaisedBy,
-    SettingFix,
+    Severity,
     judge,
 )
 from decktalk.pipeline import Stage
@@ -49,17 +48,18 @@ RUNTIME_CODES = (
     "PAGE_PREVIEW_AMBIGUOUS",
     "PAGE_APPEAR_TOO_LONG",
     "PAGE_STAGGER_EMPTY",
+    "PAGE_SPOTLIGHT_EMPTY",
 )
-PYTHON_PAGE_CODES = (
+PYTHON_CONTRACT_CODES = (
     "PAGE_MOTION_OVERRUN",
     "PAGE_STAGGER_OVERRUN",
     "PAGE_THIN_DRAW",
     "PAGE_NO_DESCRIPTION",
     "PAGE_SWAP_APART",
-    "PAGE_STALLED",
-    "PAGE_BLACK",
-    "PAGE_TRUNCATED",
     "PAGE_CDN_ASSET",
+    "RECORD_STALLED",
+    "RECORD_BLACK",
+    "RECORD_TRUNCATED",
 )
 PYTHON_OTHER_CODES = (
     "CUE_MISSING",
@@ -71,9 +71,9 @@ PYTHON_OTHER_CODES = (
     "CUE_NO_CHANGE",
     "CUE_THIN_CHANGE",
     "CUE_OVERLAP",
-    "TAKE_PLACEHOLDER",
-    "TAKE_SPOKEN_SYMBOL",
-    "TAKE_PAUSE_DROPPED",
+    "SCRIPT_UNFINISHED",
+    "SCRIPT_SPOKEN_SYMBOL",
+    "SCRIPT_PAUSE_DROPPED",
     "TAKE_MISSING",
     "CUT_SPEECH",
     "CUT_POP",
@@ -81,10 +81,10 @@ PYTHON_OTHER_CODES = (
     "SOUND_MISSING",
     "FILE_MISSING",
 )
-FROZEN_CODES = RUNTIME_CODES + PYTHON_PAGE_CODES + PYTHON_OTHER_CODES
+FROZEN_CODES = RUNTIME_CODES + PYTHON_CONTRACT_CODES + PYTHON_OTHER_CODES
 
-# The words a code name may not carry, because a code never spells its own certainty.
-CERTAINTY_WORDS = ("UNSURE", "MAYBE", "PROBABLY", "CERTAIN", "UNCERTAIN")
+# The words a code name may not carry, because a code never spells its own severity.
+HEDGE_WORDS = ("UNSURE", "MAYBE", "PROBABLY", "CERTAIN", "UNCERTAIN", "WARNING")
 
 
 def test_the_code_list_is_the_one_the_design_froze() -> None:
@@ -108,29 +108,33 @@ def test_every_code_publishes_one_sentence() -> None:
         assert "\u2014" not in code.sentence, code.name
 
 
-def test_no_code_name_carries_a_certainty_word() -> None:
+def test_no_code_name_carries_a_severity_word() -> None:
     for code in Code:
-        for word in CERTAINTY_WORDS:
+        for word in HEDGE_WORDS:
             assert word not in code.name, code.name
 
 
-def test_every_code_carries_one_of_the_two_certainties() -> None:
+def test_the_severities_are_the_two_words_fail_on_names() -> None:
+    assert [severity.value for severity in Severity] == ["error", "warning"]
+
+
+def test_every_code_carries_one_of_the_two_severities() -> None:
     for code in Code:
-        assert isinstance(code.certainty, Certainty)
+        assert isinstance(code.severity, Severity)
 
 
-def test_the_stagger_overrun_is_certain_because_its_arithmetic_is_exact() -> None:
-    assert Code.PAGE_STAGGER_OVERRUN.certainty is Certainty.CERTAIN
+def test_the_stagger_overrun_is_an_error_because_its_arithmetic_is_exact() -> None:
+    assert Code.PAGE_STAGGER_OVERRUN.severity is Severity.ERROR
 
 
-def test_a_null_offset_is_uncertain_rather_than_a_passing_row() -> None:
-    assert Code.CUE_NO_ONSET.certainty is Certainty.UNCERTAIN
+def test_a_null_offset_is_a_warning_rather_than_a_passing_row() -> None:
+    assert Code.CUE_NO_ONSET.severity is Severity.WARNING
 
 
-def test_a_finding_takes_its_certainty_and_its_page_from_its_code() -> None:
+def test_a_finding_takes_its_severity_and_its_page_from_its_code() -> None:
     finding = Finding(code=Code.CUE_THIN_CHANGE, message="x", location=Location(where="2.1:chart"))
-    assert finding.certainty is Certainty.UNCERTAIN
-    assert finding.url == Code.CUE_THIN_CHANGE.url
+    assert finding.severity is Severity.WARNING
+    assert finding.docs == Code.CUE_THIN_CHANGE.url
 
 
 def test_a_finding_that_disagrees_with_its_code_is_refused() -> None:
@@ -139,7 +143,7 @@ def test_a_finding_that_disagrees_with_its_code_is_refused() -> None:
             code=Code.CUE_OFF,
             message="x",
             location=Location(where="2.1:formula"),
-            certainty=Certainty.UNCERTAIN,
+            severity=Severity.WARNING,
         )
 
 
@@ -170,13 +174,12 @@ def test_an_edit_names_exactly_one_place() -> None:
         Edit(file="cues.json", pointer="/a", line=3, new="x")
 
 
-def test_the_three_fixes_are_told_apart_by_their_kind() -> None:
+def test_the_two_fixes_are_told_apart_by_their_kind() -> None:
     kinds = {
         EditFix(title="t", applicability=Applicability.SAFE, edits=(Edit(file="a.json", pointer="/a", new="x"),)).kind,
-        SettingFix(title="t", applicability=Applicability.SAFE, key="verify.cue_offset_max_ms", value="250").kind,
         CommandFix(title="t", applicability=Applicability.UNSAFE, command=("decktalk", "install")).kind,
     }
-    assert kinds == {"edit", "setting", "command"}
+    assert kinds == {"edit", "command"}
 
 
 def test_a_display_fix_is_never_applied_and_says_so_in_its_own_word() -> None:
@@ -200,11 +203,11 @@ def test_a_command_fix_that_names_anything_else_is_refused(command: tuple[str, .
         CommandFix(title="Run it.", applicability=Applicability.SAFE, command=command)
 
 
-def test_a_judgement_takes_its_certainty_and_its_page_from_its_code() -> None:
+def test_a_judgement_takes_its_severity_and_its_page_from_its_code() -> None:
     """A raiser names the code and the code owns the rest, so no stage spells one fact twice."""
     found = judge(Code.CUE_OFF, "the reveal lands 0.42s after its word, past the 0.08s limit.", Location(where="3:a"))
-    assert found.certainty is Certainty.CERTAIN
-    assert found.url == Code.CUE_OFF.url
+    assert found.severity is Severity.ERROR
+    assert found.docs == Code.CUE_OFF.url
 
 
 def test_a_judgement_carries_the_stage_that_raised_it() -> None:
@@ -217,7 +220,7 @@ def test_a_judgement_carries_the_fix_it_was_given() -> None:
     fix = EditFix(
         title="Add the missing cue row.",
         applicability=Applicability.SAFE,
-        edits=(Edit(file="cues.json", line=2, new='{"cue": "3.1:a", "on": ""}'),),
+        edits=(Edit(file="cues.json", line=2, new='{"id": "3.1:a", "phrase": ""}'),),
     )
     found = judge(Code.CUE_MISSING, "the page declares 3.1:a and cues.json lists 0 rows for it.",
                   Location(where="3.1:a"), fix=fix)  # fmt: skip

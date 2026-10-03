@@ -1,7 +1,7 @@
 """`dtsp`, the DeckTalk speech protocol: a voice served by a separate local server, with a time for every word.
 
 `decktalk-voice` is a separate local server that is not part of this repository. It loads the local
-speech models in a process of its own and answers one request per section on a loopback address, so
+speech models in a process of its own and answers one request per section, by default on a loopback address, so
 no model, no GPU runtime and no model weights ever load inside DeckTalk, and a model that crashes
 ends the server rather than the build. This module is the one client of it the engine has.
 
@@ -26,7 +26,7 @@ from __future__ import annotations
 import base64
 import binascii
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ValidationError
@@ -34,7 +34,7 @@ from pydantic import ValidationError
 from ..errors import ProviderError
 from ..results import Word
 from ..settings import DtspConfig
-from . import DECLARED, PUNCT, Output, SpeechRequest, VoiceContext, checked_base
+from . import PUNCT, Output, SpeechContext, SpeechRequest
 from .http import post_json
 
 NAME = "dtsp"
@@ -57,29 +57,18 @@ def identity(_table: DtspConfig, speed: float) -> dict[str, Any]:
 
 @dataclass
 class Dtsp:
-    """A voice on the local server, built from a `VoiceContext` and from no key.
+    """A voice on the local server, built from a `SpeechContext` and from no key.
 
-    The base URL is checked once, when the provider is built, against the loopback hosts this adapter
-    declares, so a project file can send its script to no other machine.
+    The base URL is `[dtsp] base_url`, which only the machine sets, so a project file can send its
+    script to no machine the machine did not name.
     """
 
-    context: VoiceContext
+    context: SpeechContext
     """The base URL, the timeout and the retries, as the machine stamped them on."""
     name: str = NAME
-    checked_base: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        # Every URL is built from the base that passed the check, and never from the setting again.
-        declared = DECLARED[NAME]
-        self.checked_base = checked_base(
-            self.context.api_base,
-            declared.hosts,
-            setting=f"[{declared.table}] {declared.base}",
-            allow_any=self.context.allow_any_api_base,
-        )
 
     @classmethod
-    def for_context(cls, context: VoiceContext) -> Dtsp:
+    def for_context(cls, context: SpeechContext) -> Dtsp:
         """The provider one project asks for, which reads no secret because the server takes none."""
         return cls(context)
 
@@ -93,7 +82,7 @@ class Dtsp:
             "format": request.output_format,
         }
         reply = post_json(
-            f"{self.checked_base}{SPEECH_PATH}",
+            f"{self.context.base_url.rstrip('/')}{SPEECH_PATH}",
             payload,
             {"Content-Type": "application/json", "Accept": "application/json"},
             secrets=(),

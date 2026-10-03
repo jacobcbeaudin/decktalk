@@ -1,7 +1,7 @@
 """A project is a directory, one object opens it, and every call on it opens a run.
 
     my-lesson/
-      decktalk.toml      what this presentation is, and every knob turned for it
+      decktalk.toml      what this presentation is, and every setting changed for it
       script.md          the narration, in "## N. Title" sections
       cues.json          which spoken phrase each moment lands on
       deck/index.html    the slides, which the runtime gives its query contract
@@ -12,7 +12,7 @@
 `decktalk.open(path)` returns a `Project`. Six verbs move it forward, six more calls report on it or
 cut a piece out of it, `serve` puts it on a local origin and `apply` carries out a fix. Every one of
 them opens a run on the machine's event stream, takes a cancel token, and returns a frozen result
-whose findings carry a code, a place, a certainty and often a fix.
+whose findings carry a code, a place, a severity and often a fix.
 
 This module is the facade and nothing below it may import it. It is also the only module that
 reaches down into the stages, and it does so by name when a call is made rather than by an import at
@@ -39,7 +39,7 @@ from filelock import FileLock, Timeout
 from decktalk.errors import Cancel, InputError, ProjectLocked
 from decktalk.events import Event, Events, Level, Subscription
 from decktalk.files import replace_all
-from decktalk.findings import Certainty, Code, Finding
+from decktalk.findings import Code, Finding, Severity
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.machine import Machine, Run, apply_fixes, new_run
@@ -241,12 +241,12 @@ class Project:
 
     @property
     def settings(self) -> Settings:
-        """Every knob in force for this project on this machine, with each layer already applied."""
+        """Every setting in force for this project on this machine, with each layer already applied."""
         return self._inputs.settings
 
     @property
     def layers(self) -> Layers:
-        """What every layer said about every key, which is what a knob's provenance is read from.
+        """What every layer said about every key, which is what a setting's provenance is read from.
 
         It is resolved at `open()` and again at `reload()`, so a watch loop that sees an edited
         project file sees the layer that set each key move with it.
@@ -282,7 +282,7 @@ class Project:
         finding. A voice that declares it bills nothing, such as `dtsp`, makes every missing take
         either way, and one that cannot be reached plays a placeholder with a `TAKE_MISSING` finding
         that says to start it. `max_cost` is a ceiling in US dollars, checked before the first paid
-        request. `force` makes each placeholder again and never buys: every paid take on disk is kept.
+        request. `force` makes each placeholder again and never buys: every voiced take on disk is kept.
         `replace_voiced` is the one way a voiced take is made again. A run that may call the voice
         makes each targeted take again, and one that may not plays a placeholder in its place and
         keeps the voiced take on disk.
@@ -368,7 +368,7 @@ class Project:
         loudness: bool = True,
         strict: bool = False,
         allow: Collection[Code] = (),
-        stop_on: Certainty | None = Certainty.CERTAIN,
+        stop_on: Severity | None = Severity.ERROR,
         cancel: Cancel | None = None,
     ) -> BuildResult:
         """Run every stage in order, or the span of them `stages` names.
@@ -377,12 +377,12 @@ class Project:
         findings reach `stop_on` stops the run, unless their code is in `allow`, and the result still
         comes back with its findings, its spend and the stage it stopped after in `stopped_at`. None
         as `stop_on` runs every stage whatever it finds. The film carries the score unless
-        `skip` names that stage, which is the one knob for that decision. `spend` means what it means
+        `skip` names that stage, which is the one switch for that decision. `spend` means what it means
         to `narrate` and `score`, and `max_cost` caps the takes and the sounds together, so a
         build whose two prices pass it is refused before it buys anything. `replace_voiced` means what it means to
         `narrate` and `replace_score` means what it means to `score`, so each buys again only
         what its own stage bought. `force` means what it means to `narrate` and `record`, and it also
-        cuts and measures a film that nothing changed again. It never buys, so every paid take and
+        cuts and measures a film that nothing changed again. It never buys, so every voiced take and
         every item of the score is kept. `loudness` and `strict` mean what they mean to
         `assemble`.
 
@@ -438,7 +438,7 @@ class Project:
         at: Sequence[float] | None = None,
         cancel: Cancel | None = None,
     ) -> StoryboardResult:
-        """Freeze every slide at every cue onto one page, which is the checkpoint before credits are spent.
+        """Freeze every slide at every cue onto one page, which is the checkpoint before anything is bought.
 
         The four selectors beside `only` narrow which moments are drawn. `slide` names the slides,
         `after` and `before` name the state just after and just before one cue, which are the pair

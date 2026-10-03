@@ -2,21 +2,21 @@
   "sections": {
     "1": {
       "cues": [
-        { "cue": "1.1:first", "on": "first" },
-        { "cue": "1.1:second", "on": "second" },
-        { "cue": "1.1:third", "on": "third" }
+        { "id": "1.1:first", "phrase": "first" },
+        { "id": "1.1:second", "phrase": "second" },
+        { "id": "1.1:third", "phrase": "third" }
       ]
     },
     "2": {
       "cues": [
-        { "cue": "2.1:fourth", "on": "fourth" },
-        { "cue": "2.1:fifth", "on": "fifth" }
+        { "id": "2.1:fourth", "phrase": "fourth" },
+        { "id": "2.1:fifth", "phrase": "fifth" }
       ]
     },
     "4": {
       "cues": [
-        { "cue": "3.1:eq", "on": "equation" },
-        { "cue": "3.1:bar", "on": "bar" }
+        { "id": "3.1:eq", "phrase": "equation" },
+        { "id": "3.1:bar", "phrase": "bar" }
       ]
     }
   }

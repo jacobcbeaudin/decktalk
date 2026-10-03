@@ -26,14 +26,14 @@ decktalk verify --json
 ```
 
 `--section N` narrows every measurement to those sections, taking `3`, `3,5` or `7-9` and repeating.
-`--fail-on certain|any|never` chooses which certainty fails the run, and `--allow CODE` carries on
+`--fail-on error|warning|never` chooses which severity fails the run, and `--allow CODE` carries on
 past one code and repeats. `decktalk verify --help` prints them all.
 
 The stage inside `decktalk build` is the same call, so a build measures everything a bare `verify`
 would.
 
 Two refusals come before any measurement. A film that is not there is `NOT_BUILT`, and so is a film
-that carries no cut list and has no section files to read a shape from. Both say to run
+that carries no placements file and has no section files to read a shape from. Both say to run
 `decktalk assemble` first.
 
 ## What it prints
@@ -58,19 +58,19 @@ and what is wrong about any of them is a finding.
 | Column | JSON field | Meaning |
 |---|---|---|
 | `Section` | `section` | The section number, which is the number in `decktalk.toml` and not the scene number. |
-| `Cue` | `cue` | The wire id, which is the slide id, a colon and the local name the page wrote. |
-| `Spoken` | `spoken` | When the cue's word is spoken in the film, in seconds. After a build without voice this is where the click for that word actually sounds. After a voiced build it is the cue's own second in the film. |
+| `Cue` | `cue` | The cue id, which is the slide id, a colon and the cue name the page wrote. |
+| `Spoken` | `spoken` | When the cue's word is spoken in the film, in seconds. After a build on placeholders this is where the click for that word actually sounds. After a voiced build it is the cue's own second in the film. |
 | `Shown` | `shown` | When the picture changed, in seconds, which is the onset. |
-| `Offset` | `offset` | `Shown` less `Spoken`, in seconds. A negative value means the picture moved early. |
+| `Offset` | `offset_seconds` | `Shown` less `Spoken`, in seconds. A negative value means the picture moved early. |
 
 `change_percent` is in the JSON and not in the table: it is how much of the picture the reported
 probe found changed.
 
 ## The frame of reference
 
-Every second on this page is a second in the finished film. `verify` reads the film's own cut list,
-`build/final/cuts.json`, for where each section starts and how long the whole film runs, because that
-file is the film's own record of its shape. With no cut list it adds up the section files instead and
+Every second on this page is a second in the finished film. `verify` reads the film's own placements,
+`build/final/placements.json`, for where each section starts and how long the whole film runs, because that
+file is the film's own record of its shape. With no placements file it adds up the section files instead and
 says on its stream that it did.
 
 Shares are measured on a quarter-size copy of the frame, which is `verify.probe_width` by
@@ -193,7 +193,7 @@ to the same delay count once. `verify` says on its stream which cue was fitted a
 detail line that `-v` prints, because a fitted probe is how a close pair is measured and not a
 problem.
 
-{/* sample: decktalk -v verify, build without voice of a fresh starter */}
+{/* sample: decktalk -v verify, a --no-spend build of a fresh starter */}
 
 ```text
 Cue 1.1:title in section 1 sits close to another cue, so verify compared the picture 0.7 s and 1.281 s after its word instead of at the usual delays. This is how a close pair is measured, not a problem.
@@ -212,7 +212,7 @@ thin when      changed share <  verify.thin_change_factor * verify.changed_share
 
 Both shares are measured at `verify.probe_diff_luma`. A cue that fails the test raises
 `CUE_NO_CHANGE` and nothing further is measured for it. A cue that passes by less than the factor
-raises `CUE_THIN_CHANGE`, which is uncertain: the cue did pass, and a slightly smaller reveal or a
+raises `CUE_THIN_CHANGE`, which is a warning: the cue did pass, and a slightly smaller reveal or a
 little more motion around it would not have been measured at all. Setting
 `verify.thin_change_factor` to 1 turns that second opinion off.
 
@@ -222,7 +222,7 @@ measured, because the reported probe is chosen on margin.
 ### `PAGE_THIN_DRAW`
 
 `decktalk check` runs the same arithmetic over two frozen frames rather than over the film, and it
-has one code of its own for the case a stroke makes. `PAGE_THIN_DRAW` is uncertain, and it says that
+has one code of its own for the case a stroke makes. `PAGE_THIN_DRAW` is a warning, and it says that
 an entrance drawn as a stroke sweeps less of the frame than a change has to cross to be seen. A
 stroke that thin is a stroke nobody will see rather than a reveal that never happened, which is why it
 is not `CUE_NO_CHANGE`.
@@ -271,7 +271,7 @@ measured at `verify.onset_diff_luma`, which is a much lower luma difference than
 
 ### The word the onset is measured against
 
-After a build without voice, the narration is a click track with a click at every word start and one
+After a build on placeholders, the narration is click audio with a click at every word start and one
 where the last word ends, so the film's own audio can be measured against its own picture. `verify`
 searches `verify.click_search_seconds` on each side of the cue's second, inside that cue's section
 alone, and takes the loudest sample. A sample under `verify.click_floor_dbfs` is not a click, and
@@ -300,20 +300,20 @@ A whole run that lands a frame or two late is usually a slow machine rather than
 
 ## Every finding `verify` can raise
 
-| Code | Certainty | What it means | Keys that move it |
+| Code | Severity | What it means | Keys that move it |
 |---|---|---|---|
-| `PAGE_BLACK` | certain | A section opens on a frame with nothing visible in it. | `verify.after_dip_seconds`, `verify.black_max_luma` |
-| `CUT_SPEECH` | certain | Speech is still sounding at a section cut, so the film slices a word in two. | `verify.cut_window_seconds`, `verify.cut_max_dbfs`, `narration.tail_min_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds` |
-| `CUT_POP` | certain | A seamless section's cut shows, because too much of the picture changes across it. | `verify.cut_change_max_percent` |
-| `CUE_NO_CHANGE` | certain | Nothing measurable happened at the cue's second. | `verify.changed_share_min_percent`, `verify.margin_min_points`, `verify.probe_delays_seconds`, `verify.probe_diff_luma`, `video.crf` |
-| `CUE_THIN_CHANGE` | uncertain | The cue passed the change test by less than the thin factor. | `verify.thin_change_factor`, `verify.changed_share_min_percent`, `verify.margin_min_points`, `verify.probe_diff_luma`, `video.crf` |
-| `CUE_NO_ONSET` | uncertain | The reveal changed the picture and no frame of it steps, so there is no second to compare with the word. | `verify.onset_rise_points`, `verify.onset_diff_luma` |
-| `CUE_OFF` | certain | The change lands further from its word than the offset limit allows, or the click does. | `verify.cue_offset_max_ms`, `verify.av_offset_max_ms`, `verify.onset_rise_points`, `verify.onset_diff_luma`, `verify.click_search_seconds`, `verify.click_floor_dbfs`, `verify.reference_lead_extra_ms` |
-| `CUE_UNRESOLVED` | certain | `cues.json` lists a cue that no run could give a second to, so the film never plays it. | none |
-| `CUE_STALE` | certain | The cue times on disk were placed from a different `cues.json` than the project's, so the film was cut to moments nobody asks for now. Run `decktalk build`. | none |
+| `RECORD_BLACK` | error | A section opens on a frame with nothing visible in it. | `verify.after_dip_seconds`, `verify.black_max_luma` |
+| `CUT_SPEECH` | error | Speech is still sounding at a section cut, so the film slices a word in two. | `verify.cut_window_seconds`, `verify.cut_max_dbfs`, `narration.tail_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds` |
+| `CUT_POP` | error | A seamless section's cut shows, because too much of the picture changes across it. | `verify.cut_change_max_percent` |
+| `CUE_NO_CHANGE` | error | Nothing measurable happened at the cue's second. | `verify.changed_share_min_percent`, `verify.margin_min_points`, `verify.probe_delays_seconds`, `verify.probe_diff_luma`, `video.crf` |
+| `CUE_THIN_CHANGE` | warning | The cue passed the change test by less than the thin factor. | `verify.thin_change_factor`, `verify.changed_share_min_percent`, `verify.margin_min_points`, `verify.probe_diff_luma`, `video.crf` |
+| `CUE_NO_ONSET` | warning | The reveal changed the picture and no frame of it steps, so there is no second to compare with the word. | `verify.onset_rise_points`, `verify.onset_diff_luma` |
+| `CUE_OFF` | error | The change lands further from its word than the offset limit allows, or the click does. | `verify.cue_offset_max_ms`, `verify.av_offset_max_ms`, `verify.onset_rise_points`, `verify.onset_diff_luma`, `verify.click_search_seconds`, `verify.click_floor_dbfs`, `verify.reference_lead_extra_ms` |
+| `CUE_UNRESOLVED` | error | `cues.json` lists a cue that no run could give a second to, so the film never plays it. | none |
+| `CUE_STALE` | error | The cue times on disk were placed from a different `cues.json` than the project's, so the film was cut to moments nobody asks for now. Run `decktalk build`. | none |
 
-`verify` also raises again every finding the recording logs hold, such as `PAGE_STALLED`,
-`PAGE_TRUNCATED`, `PAGE_KATEX_ERROR` and every warning the runtime reported while it recorded. Those
+`verify` also raises again every finding the recording logs hold, such as `RECORD_STALLED`,
+`RECORD_TRUNCATED`, `PAGE_KATEX_ERROR` and every warning the runtime reported while it recorded. Those
 are read from the log rather than measured, which is why recording that section again is the only
 thing that clears one.
 
@@ -323,7 +323,7 @@ Each finding has a page of its own under `/reference/findings/`, and
 
 ## Skipped cues
 
-A skipped cue has no `shown`, no `offset` and no `change_percent`, and its `skipped` field says why
+A skipped cue has no `shown`, no `offset_seconds` and no `change_percent`, and its `skipped` field says why
 it has none. Two of the six reasons carry a finding, and the table says which.
 
 | `skipped` | Cause | What to do |
@@ -340,7 +340,7 @@ it has none. Two of the six reasons carry a finding, and the table says which.
 `decktalk verify --json` prints one flat object with the four reserved keys, `run`, and seven fields
 of its own.
 
-{/* sample: decktalk verify --json, build without voice of a fresh starter */}
+{/* sample: decktalk verify --json, a --no-spend build of a fresh starter */}
 
 ```json
 {
@@ -360,12 +360,12 @@ of its own.
       "cue": "1.1:title",
       "spoken": 0.504,
       "shown": 0.52,
-      "offset": 0.016,
+      "offset_seconds": 0.016,
       "change_percent": 1.88,
       "skipped": null
     }
   ],
-  "seconds": 10.351
+  "elapsed_seconds": 10.351
 }
 ```
 
@@ -377,9 +377,9 @@ of its own.
 | `cuts[]` | array | One object per section with a take, with `section`, `at` for where its narration ends in the film, `speech_dbfs` for the level in the window before it and `step_dbfs` for the jump across it. |
 | `seams[]` | array | One object per assembled section that sets `seamless`, with `section`, `at` and `drift`. |
 | `cues[]` | array | One object per cue, with the columns of the printed table plus `change_percent` and `skipped`. |
-| `seconds` | number | How long this call took. |
+| `elapsed_seconds` | number | How long this call took. |
 
-A skipped cue has `null` in `shown`, `offset` and `change_percent`. A measured cue has `null` in
+A skipped cue has `null` in `shown`, `offset_seconds` and `change_percent`. A measured cue has `null` in
 `skipped`. What is wrong is in `findings`, never in a row, so a reader dispatches on a finding's
 `code` and reads a row for the number behind it.
 

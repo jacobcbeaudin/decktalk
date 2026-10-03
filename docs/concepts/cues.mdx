@@ -1,6 +1,6 @@
 ---
 title: Cues
-description: Learn how a cue names a spoken phrase, how a wire id joins cues.json to the page, and what each CUE finding means.
+description: Learn how a cue names a spoken phrase, how a cue id joins cues.json to the page, and what each CUE finding means.
 ---
 
 A cue names a spoken phrase and never a second. `cues.json` says which phrase a moment lands on, the
@@ -8,11 +8,11 @@ A cue names a spoken phrase and never a second. `cues.json` says which phrase a 
 page to those seconds. Read this page when you choose a phrase, or when a cue and its page disagree.
 [Writing for the ear](/guides/writing-for-the-ear) is the guide for writing phrases.
 
-## The wire id
+## The cue id
 
-A cue id is a wire id: the slide id, a colon, and then the local name the page writes. So
-`data-in="expand"` inside `<template data-slide="4.1">` is the wire id `4.1:expand`, and `4.1:expand`
-is what `cues.json` carries. The author writes a short local name that means something inside its own
+A cue id is the slide id, a colon, and then the cue name the page writes. So
+`data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`, and `4.1:expand`
+is what `cues.json` carries. The author writes a short cue name that means something inside its own
 slide, and the runtime qualifies it with the slide it was written in, so two slides may each have a
 moment called `expand` and no cue is ever ambiguous.
 
@@ -35,11 +35,11 @@ Then every picture waits for its own word.
 
 ```json cues.json
 { "sections": { "1": { "cues": [
-  { "cue": "1.1:title", "on": "This is DeckTalk", "occurrence": 1 },
-  { "cue": "1.1:files", "on": "Four files", "occurrence": 1 },
-  { "cue": "1.2:script", "on": "what you will say", "occurrence": 1 },
-  { "cue": "1.2:deck", "on": "the slides", "occurrence": 1 },
-  { "cue": "1.2:word", "on": "its own word", "occurrence": 1 }
+  { "id": "1.1:title", "phrase": "This is DeckTalk", "occurrence": 1 },
+  { "id": "1.1:files", "phrase": "Four files", "occurrence": 1 },
+  { "id": "1.2:script", "phrase": "what you will say", "occurrence": 1 },
+  { "id": "1.2:deck", "phrase": "the slides", "occurrence": 1 },
+  { "id": "1.2:word", "phrase": "its own word", "occurrence": 1 }
 ] } } }
 ```
 
@@ -54,8 +54,8 @@ Then every picture waits for its own word.
 ```
 </CodeGroup>
 
-The page writes `data-in="script"` inside the slide `1.2`, so the wire id is `1.2:script`.
-`cues.json` gives that wire id the phrase `what you will say`, and its second is the start of the
+The page writes `data-in="script"` inside the slide `1.2`, so the cue id is `1.2:script`.
+`cues.json` gives that cue id the phrase `what you will say`, and its second is the start of the
 word "what".
 
 ## What `decktalk cue` does
@@ -72,8 +72,8 @@ decktalk cue --json          # the result as one flat object, carrying run, sect
 ```
 
 A run aimed at some sections leaves every other section's rows in `build/cue-times.json` as they
-were, so a cue run for one section never drops the cues of the rest. `--fail-on certain|any|never`
-chooses which certainty fails the run, and `--allow CODE` carries on past one code.
+were, so a cue run for one section never drops the cues of the rest. `--fail-on error|warning|never`
+chooses which severity fails the run, and `--allow CODE` carries on past one code.
 
 The same arithmetic runs inside `decktalk check`, against the words a voiced run would leave rather
 than the words it already left, so a phrase that will not match is met before anything is bought.
@@ -95,7 +95,7 @@ The stage matches a cue phrase against the section's spoken words with these rul
    spoken as a word of its own, is skipped on both sides, so `R & D` and `tools / fast` resolve.
 6. The stage looks through the spoken words in order for a run that matches the phrase token for
    token. `occurrence` picks which match, counting from 1, and the default is the first.
-7. The second is the start of that run's first word, plus the cue's `offset`, rounded to a
+7. The second is the start of that run's first word, plus the cue's `offset_seconds`, rounded to a
    millisecond and never earlier than the section's own start.
 8. `$start` is the section's own start, which is 0 seconds on its clock.
 9. `$end` is the end of the section's last spoken word.
@@ -110,7 +110,7 @@ matches on "Make your own" and never on the text of the card. A number written i
 in whatever form the voice chose, so write numbers as words in the script and show digits on the
 slide.
 
-Stage directions are not spoken words. A plain direction such as `[beat]` becomes a dash the voice
+Directions are not spoken words. A plain direction such as `[beat]` becomes a dash the voice
 reads as a short pause, and a `[pause N]` becomes a pause of N seconds. Neither is a word, so a
 phrase that spans one still matches. [script.md](/reference/script-md) has the rules for directions.
 
@@ -130,26 +130,26 @@ yet.
 Nine codes name a cue that does not agree with something. Five of them are read from the two files
 before a picture exists, three are measured from a frozen frame or from the finished film, and one
 compares the cue times on disk with the cue file they were placed from. Every
-one carries the sentence below, its certainty, the object it judged and the fix when there is one.
+one carries the sentence below, its severity, the object it judged and the fix when there is one.
 
-| Code | Certainty | What it names | Raised by |
+| Code | Severity | What it names | Raised by |
 |---|---|---|---|
-| [`CUE_MISSING`](/reference/findings/CUE_MISSING) | certain | The page declares a moment that cues.json does not list, so nothing gives it a second. | `cue`, `check` |
-| [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN) | certain | cues.json lists a cue no page declares, so nothing plays it. | `cue`, `check` |
-| [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED) | certain | The cue's phrase is not spoken in its section, so there is no second to place it at. | `cue`, `check`, `verify` |
-| [`CUE_STALE`](/reference/findings/CUE_STALE) | certain | The cue times on disk were placed from a different cues.json than the project's. | `verify` |
-| [`CUE_NO_ONSET`](/reference/findings/CUE_NO_ONSET) | uncertain | The cue resolved with no measured onset, so its second is the section's start and not its word's. | `cue`, `check`, `verify` |
-| [`CUE_OVERLAP`](/reference/findings/CUE_OVERLAP) | uncertain | Two cues resolve close enough together that a viewer cannot tell them apart. | `cue`, `check` |
-| [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE) | certain | Nothing in the picture changed at the cue's second, so the reveal never happened. | `check`, `verify` |
-| [`CUE_THIN_CHANGE`](/reference/findings/CUE_THIN_CHANGE) | uncertain | Less of the picture changed at the cue than a visible reveal must cross. | `check`, `verify` |
-| [`CUE_OFF`](/reference/findings/CUE_OFF) | certain | The change lands further from its word than the offset limit allows. | `verify` |
+| [`CUE_MISSING`](/reference/findings/CUE_MISSING) | error | The page declares a moment that cues.json does not list, so nothing gives it a second. | `cue`, `check` |
+| [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN) | error | cues.json lists a cue no page declares, so nothing plays it. | `cue`, `check` |
+| [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED) | error | The cue's phrase is not spoken in its section, so there is no second to place it at. | `cue`, `check`, `verify` |
+| [`CUE_STALE`](/reference/findings/CUE_STALE) | error | The cue times on disk were placed from a different cues.json than the project's. | `verify` |
+| [`CUE_NO_ONSET`](/reference/findings/CUE_NO_ONSET) | warning | The cue resolved with no measured onset, so its second is the section's start and not its word's. | `cue`, `check`, `verify` |
+| [`CUE_OVERLAP`](/reference/findings/CUE_OVERLAP) | warning | Two cues resolve close enough together that a viewer cannot tell them apart. | `cue`, `check` |
+| [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE) | error | Nothing in the picture changed at the cue's second, so the reveal never happened. | `check`, `verify` |
+| [`CUE_THIN_CHANGE`](/reference/findings/CUE_THIN_CHANGE) | warning | Less of the picture changed at the cue than a visible reveal must cross. | `check`, `verify` |
+| [`CUE_OFF`](/reference/findings/CUE_OFF) | error | The change lands further from its word than the offset limit allows. | `verify` |
 
 What each one means for the film, and what clears it:
 
 - **`CUE_MISSING`** is a moment on the page that nothing in `cues.json` gives a second to. Add the
   row, or take the moment off the page. Its fix adds the row for you, which the next section
   describes.
-- **`CUE_UNKNOWN`** is a row whose wire id no slide of the section's scene declares. The row is named
+- **`CUE_UNKNOWN`** is a row whose cue id no slide of the section's scene declares. The row is named
   and never deleted. When exactly one stale row sits beside exactly one moment nothing lists in the
   same section, the two are read as a rename and an unsafe fix changes the id alone, keeping the
   phrase you already wrote. The phrase is what survives a rename, so the row that carries it is the
@@ -197,13 +197,13 @@ files, and `doctor --fix` applies the fixes a machine offers. `cue` reports the 
 applies nothing.
 
 Both comparisons read the moments off the catalog the page itself published rather than off a scan of
-its markup, because `data-steps`, `data-class` and `data-owns` all declare moments no text scan can
+its markup, because `data-spotlight`, `data-class` and `data-owns` all declare moments no text scan can
 see. `check` reads a catalog live, `cue` reads the one the last recording kept, and the two reach the
 same judgements. A section whose page has never been opened is left unjudged rather than guessed at,
 so `check --no-pages` reaches neither `CUE_MISSING` nor `CUE_UNKNOWN` and names both as judgements it
 could not make.
 
-The fix writes `{"cue": "<wire id>", "on": ""}` and leaves `on` empty, because the phrase is your
+The fix writes `{"id": "<cue id>", "phrase": ""}` and leaves `phrase` empty, because the phrase is your
 line and not DeckTalk's. A project with no `cues.json` at all gets one whole file with a row for
 every moment the deck declares. A project that has one gets the rows added to the section block they
 belong to, or a new block for a section the file holds none for.
@@ -222,13 +222,13 @@ These guidelines help a moment land on the word you meant.
 [Writing for the ear](/guides/writing-for-the-ear) explains each one.
 
 - Start the phrase with the word that names the thing that happens, because the second is the start
-  of the phrase's first word. A noun such as `box of knobs` works, and so does a verb with its
+  of the phrase's first word. A noun such as `box of dials` works, and so does a verb with its
   object, such as `steps downhill`. A connective such as "and then" does not.
 - If a word repeats in the section, use two or three words, or set `occurrence`. Setting
   `occurrence` to 1 keeps the first match and silences the warning.
-- Set a small positive `offset`, 0.1 to 0.2 seconds, so the viewer hears the word begin before the
+- Set a small positive `offset_seconds`, 0.1 to 0.2 seconds, so the viewer hears the word begin before the
   picture moves.
-- Use a negative `offset` only when the audience has to read along, and remember that a cue can never
+- Use a negative `offset_seconds` only when the audience has to read along, and remember that a cue can never
   resolve before its own section starts.
 - Put a `[beat]` or a `[pause N]` before a moment that should feel like an event.
 - Land a summary on `$end`, so it arrives as the voice stops.
@@ -238,19 +238,19 @@ These guidelines help a moment land on the word you meant.
 ## Sound on a cue
 
 A `[[mix.effects]]` table names a `section` and a `cue`, and `assemble` places that sound at the
-second the cue resolved to plus the effect's own `offset`. A music marker matches a spoken phrase by
-these same rules, with the same `on`, `occurrence`, `case_sensitive` and `offset` keys, and raises or
+second the cue resolved to plus the effect's own `offset_seconds`. A music marker matches a spoken phrase by
+these same rules, through its own `on`, `occurrence`, `case_sensitive` and `offset` keys, and raises or
 mutes the music there. [Sound](/concepts/sound) explains both.
 
 ## Terms
 
 | Term | Meaning |
 |---|---|
-| cue | One row of `cues.json`, which pairs a wire id with a spoken phrase. |
-| wire id | The slide id, a colon and the local name the page writes, such as `4.1:expand`. |
-| local name | The name an author writes in a moment attribute, which means something inside its own slide alone. |
+| cue | One row of `cues.json`, which pairs a cue id with a spoken phrase. |
+| cue id | The slide id, a colon and the cue name the page writes, such as `4.1:expand`. |
+| cue name | The name an author writes in a moment attribute, which means something inside its own slide alone. |
 | moment | One of `data-in`, `data-back`, `data-front` and `data-out` on an element, each naming a cue. |
-| phrase | The `on` value: a spoken phrase, `$start` or `$end`. |
+| phrase | The `phrase` value: a spoken phrase, `$start` or `$end`. |
 | cue time | The second a cue resolved to, counted from the start of its own section. |
 | spoken words | The words of the section's words file, which matching and the page's word syncing both read. |
 

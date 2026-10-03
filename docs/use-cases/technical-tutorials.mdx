@@ -55,12 +55,12 @@ a phrase. `decktalk schema page` prints all twenty-four attributes with their va
   </Step>
   <Step title="Draft it with no voice">
     `decktalk build --no-spend` runs the whole pipeline on placeholder narration that still carries
-    a real word clock. It spends nothing and needs no key, so the pacing is settled before a credit
+    real word times. It spends nothing and needs no key, so the pacing is settled before anything
     is bought. `decktalk build --no-spend --to record` stops before the stage that generates audio.
   </Step>
   <Step title="Look at the storyboard, then buy the voice">
     `decktalk storyboard` freezes every slide at every cue onto `build/storyboard.html`, which is
-    the human checkpoint before credits are spent. Then `decktalk build --spend` voices the
+    the human checkpoint before anything is bought. Then `decktalk build --spend` voices the
     sections that need it, and `--max-cost N` refuses the run before the first call if the most it
     could cost is over N US dollars.
   </Step>

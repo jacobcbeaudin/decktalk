@@ -308,10 +308,10 @@ def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
         if shared.get("yes"):
             raise _yes_refused(context)
         session.judging(
-            fail_on=cast("FailOn", shared.get("fail_on") or FailOn.CERTAIN),
+            fail_on=cast("FailOn", shared.get("fail_on") or FailOn.ERROR),
             allow=frozenset(cast("Sequence[Code] | None", shared.get("allow")) or ()),
         )
-        session.spending(
+        session.gate_spend(
             spend=cast("bool | None", shared.get("spend")),
             max_cost=cast("float | None", shared.get("max_cost")),
         )
@@ -342,7 +342,7 @@ _GLOBAL_NAMES = frozenset(name for name, _, _ in GLOBALS)
 def _yes_refused(context: Context) -> UsageError:
     """The refusal `--yes` earns, which names this command's own prompt flags rather than a topic.
 
-    One token that authorises a spend, an overwrite and a lost take is how an agent burns credits it
+    One token that authorises a spend, an overwrite and a lost take is how an agent spends money it
     was told to ask about, so the flag is recognised and refused rather than left unknown.
     """
     named = sorted(

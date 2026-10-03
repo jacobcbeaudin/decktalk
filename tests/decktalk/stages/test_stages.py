@@ -6,7 +6,7 @@ promise is held here rather than in each of the twelve modules that call them.
 The voice helpers read `[voice]` and the speech provider's own table and never name a vendor. The
 paid-take rule is held here from the other side of `tests/contract/test_take_hash.py`: the settings
 and the model a take's digest is taken over, assembled from the provider's own table at its
-defaults, are byte for byte the inputs every paid take was bought under.
+defaults, are byte for byte the inputs every voiced take was bought under.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from support.paths import DATA
 from support.projects import MINIMAL_TOML, load_project
 
 GOLDEN = json.loads((DATA / "take_hash.json").read_text(encoding="utf-8"))["inputs"]
-"""The inputs every paid take of the founder's films was bought under, which no regroup may move."""
+"""The inputs every voiced take of the founder's films was bought under, which no regroup may move."""
 
 
 def test_a_run_that_names_no_section_selects_every_one() -> None:
@@ -82,12 +82,12 @@ def test_a_voice_with_no_table_is_sent_no_vendors_model_and_no_vendors_fields(tm
     assert price_layer(project) is Layer.DEFAULT
 
 
-def test_voice_model_replaces_the_providers_own_default(tmp_path: Path) -> None:
-    project = load_project(tmp_path, MINIMAL_TOML + '\n[voice]\nmodel = "eleven_turbo_v2_5"\n', environ={})
+def test_the_model_is_the_one_the_providers_own_table_names(tmp_path: Path) -> None:
+    project = load_project(tmp_path, MINIMAL_TOML + '\n[elevenlabs]\nmodel = "eleven_turbo_v2_5"\n', environ={})
     assert voice_model(project) == "eleven_turbo_v2_5"
 
 
 def test_the_rate_is_the_one_the_providers_own_table_states(tmp_path: Path) -> None:
-    project = load_project(tmp_path, MINIMAL_TOML + "\n[elevenlabs]\nprice_per_1000_characters = 0.3\n", environ={})
+    project = load_project(tmp_path, MINIMAL_TOML + "\n[elevenlabs]\ndollars_per_1000_characters = 0.3\n", environ={})
     assert dollars_for(2000, project) == pytest.approx(0.6)
     assert price_layer(project) is Layer.PROJECT

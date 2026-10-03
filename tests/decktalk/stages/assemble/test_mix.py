@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.events import FindingEvent
+from decktalk.events import FindingRaised
 from decktalk.findings import Code
 from decktalk.inputs.markers import Marker
 from decktalk.media import ffmpeg
@@ -238,7 +238,7 @@ def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(tmp
     assert "atrim=duration=3.000" in plan.filter
 
 
-def test_a_music_bed_the_project_names_and_has_not_got_is_a_certain_finding(tmp_path):
+def test_a_music_bed_the_project_names_and_has_not_got_is_an_error(tmp_path):
     """A film mixed without the music it declares is not the film the project asked for."""
     toml = MID_CLIP_TOML + '\n[mix]\nmusic = "media/bed.mp3"\n'
     inputs = write_project(tmp_path, toml)
@@ -246,7 +246,7 @@ def test_a_music_bed_the_project_names_and_has_not_got_is_a_certain_finding(tmp_
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
     plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, score=True)
     assert opened.codes() == ["FILE_MISSING"]
-    said = next(line.finding for line in opened.of(FindingEvent))
+    said = next(line.finding for line in opened.of(FindingRaised))
     assert "media/bed.mp3" in said.message
     assert said.location.where == "media/bed.mp3"
     assert "[music]" not in plan.filter
@@ -260,7 +260,7 @@ def test_a_music_bed_the_score_has_not_bought_yet_plays_silence_under_a_warning(
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
     plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, score=True)
     assert opened.codes() == [Code.SOUND_MISSING.value]
-    said = next(line.finding for line in opened.of(FindingEvent))
+    said = next(line.finding for line in opened.of(FindingRaised))
     assert said.location.where == "media/bed.mp3"
     assert "--spend" in said.message
     assert "[music]" not in plan.filter

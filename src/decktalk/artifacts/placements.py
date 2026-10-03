@@ -1,7 +1,7 @@
-"""The cut list: where every section sits in the finished film, and what each section cut was made from.
+"""The placements: where every section sits in the finished film, and what each section cut was made from.
 
-    build/final/cuts.json   one row per section, in the order they play
-    build/sections/NN.json  the key of the section cut beside it, which decides whether it is kept
+    build/final/placements.json   one row per section, in the order they play
+    build/sections/NN.json        the key of the section cut beside it, which decides whether it is kept
 
 This is the one record of the shape of a film. The transcript page, a caption reader and anything
 that wants to jump to a section read it instead of adding up section files, and `substitute` says
@@ -21,7 +21,7 @@ from decktalk.findings import Model, ProjectPath
 from decktalk.results import SectionKey, SectionKind, SectionNumber, Substitute
 
 
-class Cut(Model):
+class Placement(Model):
     """One section in the finished film: where it plays, what it was made from, and what it says."""
 
     section: SectionNumber
@@ -36,13 +36,13 @@ class Cut(Model):
     dip_out: bool = Field(False, description="True when the picture dips to black on the way out of it.")
 
 
-class Cuts(Stored):
-    """The cut list of one finished film."""
+class Placements(Stored):
+    """The placements of one finished film."""
 
-    label: ClassVar[str] = "the cut list of the film"
+    label: ClassVar[str] = "the placements of the film"
 
     fps: int = Field(gt=0, description="The rate the film was encoded at.")
-    sections: tuple[Cut, ...] = Field((), description="Every section, in the order they play.")
+    sections: tuple[Placement, ...] = Field((), description="Every section, in the order they play.")
 
     @property
     def total_seconds(self) -> float:
@@ -70,4 +70,4 @@ class CutKey(Stored):
         return cls(digest=engine_digest(*args, *(f"{path.name}:{file_digest(path)}" for path in sources)))
 
 
-__all__ = ["Cut", "CutKey", "Cuts"]
+__all__ = ["CutKey", "Placement", "Placements"]

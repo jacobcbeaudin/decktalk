@@ -20,6 +20,7 @@ from typer import Context
 from decktalk.cli import catalog
 from decktalk.cli.app import command
 from decktalk.cli.options import Group
+from decktalk.results import Scope
 
 
 @command(
@@ -33,11 +34,12 @@ def schema(
     ctx: Context,  # noqa: ARG001  (the session is made for every command, and this one needs none of it)
     name: Annotated[
         str | None,
-        typer.Argument(metavar="NAME", help="A command, or finding, error, event, settings, project or page."),
+        typer.Argument(metavar="NAME", help="A command, or finding, error, event, settings, cues or page."),
     ] = None,
-    machine: Annotated[
-        bool, typer.Option("--machine", help="With settings, the keys a per-machine file may hold.")
-    ] = False,
+    scope: Annotated[
+        Scope | None,
+        typer.Option("--scope", metavar="SCOPE", help="With settings, the keys one file may hold: project or machine."),
+    ] = None,
 ) -> dict[str, Any]:
     """Print the JSON Schema of a command, a setting or an event.
 
@@ -47,7 +49,7 @@ def schema(
     if name is None:
         return catalog.document()
     try:
-        return catalog.named(name, machine=machine)
+        return catalog.named(name, scope=scope)
     except KeyError as unknown:
         raise typer.BadParameter(
             f"{name!r} names no contract. The names are {', '.join(catalog.names())}.", param_hint="NAME"

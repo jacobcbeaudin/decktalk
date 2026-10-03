@@ -18,7 +18,7 @@ import pytest
 
 from decktalk.artifacts import RecordingLog
 from decktalk.errors import NotBuiltError
-from decktalk.events import Event, Level, Log, Progress
+from decktalk.events import Event, Level, RunLog, StageProgress
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.media import browser, ffmpeg, frames
@@ -278,7 +278,7 @@ def test_one_progress_line_is_emitted_per_section(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     lines: list[Event] = []
     record(inputs, a_run(inputs.root, lines=lines))
-    counted = [line for line in lines if isinstance(line, Progress)]
+    counted = [line for line in lines if isinstance(line, StageProgress)]
     assert [(line.done, line.total) for line in counted] == [(1, 2), (2, 2)]
 
 
@@ -322,7 +322,7 @@ def test_sections_recorded_at_once_come_back_in_order_with_their_own_pair_of_lin
     for number in (1, 2):
         paired = [type(line).__name__ for line in lines if getattr(line, "section", None) == number]
         assert paired[0] == "SectionStart" and "SectionDone" in paired, paired
-    assert [(line.done, line.section) for line in lines if isinstance(line, Progress)] == [(1, 1), (2, 2)]
+    assert [(line.done, line.section) for line in lines if isinstance(line, StageProgress)] == [(1, 1), (2, 2)]
 
 
 def test_a_file_the_page_asked_for_and_the_project_lacks_is_said_on_the_stream(tmp_path: Path, driven: Driven) -> None:
@@ -331,5 +331,5 @@ def test_a_file_the_page_asked_for_and_the_project_lacks_is_said_on_the_stream(t
     driven.missing = ("media/gone.png",)
     lines: list[Event] = []
     record(inputs, a_run(inputs.root, lines=lines), only=[1])
-    said = [line.message for line in lines if isinstance(line, Log) and line.level is Level.WARNING]
+    said = [line.message for line in lines if isinstance(line, RunLog) and line.level is Level.WARNING]
     assert said == ["Section 1 asked for media/gone.png, which the project does not have."]

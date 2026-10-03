@@ -24,7 +24,7 @@ from pydantic import BaseModel
 
 from decktalk.findings import Code, Finding, Location
 
-# A finding fills its own certainty and page from its code, so the sampler is handed one ready made.
+# A finding fills its own severity and page from its code, so the sampler is handed one ready made.
 EXAMPLES: dict[object, BaseModel] = {
     Finding: Finding(code=Code.CUE_OFF, message="It lands 340 ms late.", location=Location(where="2.1:formula")),
 }

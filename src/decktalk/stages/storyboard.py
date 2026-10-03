@@ -1,4 +1,4 @@
-"""Every slide at every cue, frozen onto one page, which is the checkpoint before credits are spent.
+"""Every slide at every cue, frozen onto one page, which is the checkpoint before anything is bought.
 
     build/storyboard/NN/<state>.png   one still per frozen moment
     build/storyboard.html             the contact sheet a person reads
@@ -96,11 +96,11 @@ class Freeze:
     before: str | None = None
 
     @classmethod
-    def state(cls, slide: str, fired: Sequence[str], wires: Sequence[str]) -> Freeze:
+    def state(cls, slide: str, fired: Sequence[str], cue_ids: Sequence[str]) -> Freeze:
         """The state `slide` is in once `fired` has fired, which is before its first cue when nothing has."""
         if fired:
             return cls(slide, cue=fired[-1])
-        return cls(slide, before=wires[0]) if wires else cls(slide)
+        return cls(slide, before=cue_ids[0]) if cue_ids else cls(slide)
 
     def query(self) -> dict[Q, str]:
         """What this state asks the page for, in the contract's own query keys and no others."""
@@ -241,17 +241,17 @@ def panels_of(
     about the change and not about the deck.
     """
     out: list[tuple[Freeze, str | None, float]] = []
-    for slide, wires in slides.items():
+    for slide, cue_ids in slides.items():
         if chosen.slides and slide not in chosen.slides:
             continue
-        opening = min((times[wire] for wire in wires if wire in times), default=SECTION_START_SECONDS)
-        at = {wire: round(times.get(wire, opening), SECOND_DIGITS) for wire in wires}
+        opening = min((times[cue_id] for cue_id in cue_ids if cue_id in times), default=SECTION_START_SECONDS)
+        at = {cue_id: round(times.get(cue_id, opening), SECOND_DIGITS) for cue_id in cue_ids}
         if chosen.names_a_cue:
-            out += [(Freeze(slide, cue=wire), wire, at[wire]) for wire in wires if wire in chosen.after]
-            out += [(Freeze(slide, before=wire), wire, at[wire]) for wire in wires if wire in chosen.before]
+            out += [(Freeze(slide, cue=cue_id), cue_id, at[cue_id]) for cue_id in cue_ids if cue_id in chosen.after]
+            out += [(Freeze(slide, before=cue_id), cue_id, at[cue_id]) for cue_id in cue_ids if cue_id in chosen.before]
             continue
-        out.append((Freeze.state(slide, (), wires), None, round(opening, SECOND_DIGITS)))
-        out += [(Freeze(slide, cue=wire), wire, at[wire]) for wire in wires]
+        out.append((Freeze.state(slide, (), cue_ids), None, round(opening, SECOND_DIGITS)))
+        out += [(Freeze(slide, cue=cue_id), cue_id, at[cue_id]) for cue_id in cue_ids]
     return _at(out, chosen.at) if chosen.at else out
 
 
@@ -378,9 +378,9 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Sel
                 )
                 continue
             resolved = times.times(section.number) if times is not None else {}
-            for freeze, wire, at in panels_of(slides, resolved, chosen):
+            for freeze, cue_id, at in panels_of(slides, resolved, chosen):
                 sheet.frozen(section, freeze)
-                sheet.panel(section, freeze, wire, at)
+                sheet.panel(section, freeze, cue_id, at)
     return sheet.panels
 
 

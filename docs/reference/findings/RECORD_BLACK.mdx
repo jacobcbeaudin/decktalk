@@ -1,5 +1,5 @@
 ---
-title: PAGE_BLACK
+title: RECORD_BLACK
 description: A recorded frame is black, so the film shows nothing at that moment.
 ---
 
@@ -7,7 +7,7 @@ description: A recorded frame is black, so the film shows nothing at that moment
 
 A recorded frame is black, so the film shows nothing at that moment.
 
-This finding is certain, and DeckTalk measures it from what the run produced.
-Pass `--allow PAGE_BLACK` to carry on past it, and `--fail-on` to choose which certainty fails a run.
+This finding is an error, and DeckTalk measures it from what the run produced.
+Pass `--allow RECORD_BLACK` to carry on past it, and `--fail-on` to choose which severity fails a run.
 
 The settings that move this verdict are `verify.after_dip_seconds`, `verify.black_max_luma`.

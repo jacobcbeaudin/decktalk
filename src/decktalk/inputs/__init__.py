@@ -32,8 +32,8 @@ from typing import Any
 from decktalk.artifacts import (
     ClipWords,
     CueTimes,
-    Cuts,
     EstimatedWords,
+    Placements,
     ProviderWords,
     RecordingLog,
     Takes,
@@ -357,14 +357,14 @@ class Inputs:
     def tail_seconds(self, section: int) -> float:
         """Silence after the last sound of one section, in seconds.
 
-        It is the section's own `tail_seconds`, or `[narration] tail_min_seconds` when the section
+        It is the section's own `tail_seconds`, or `[narration] tail_seconds` when the section
         sets none, and like the lead it is placement rather than take content.
         """
         found = self.document.section(section)
         if not isinstance(found, PageSection):
             return 0.0
         own = found.tail_seconds
-        return round(self.settings.narration.tail_min_seconds if own is None else own, 3)
+        return round(self.settings.narration.tail_seconds if own is None else own, 3)
 
     def words(self, section: int, digest: str) -> tuple[Word, ...]:
         """One take's words in seconds after its section starts, which is after that section's lead."""
@@ -399,8 +399,8 @@ class Inputs:
     def cue_times(self) -> CueTimes | None:
         return CueTimes.read(self.workspace.cue_times_path)
 
-    def cuts(self) -> Cuts | None:
-        return Cuts.read(self.workspace.cuts_path)
+    def placements(self) -> Placements | None:
+        return Placements.read(self.workspace.placements_path)
 
     def recording_log(self, key: str) -> RecordingLog | None:
         """One section's recording log, or None when that section was never recorded."""

@@ -33,27 +33,26 @@ from typing import Any
 
 from decktalk.inputs import Inputs
 from decktalk.results import Billing, Layer
-from decktalk.speech import DECLARED, VoiceContext, base_of, billing_of, table_of
+from decktalk.speech import DECLARED, SpeechContext, base_of, billing_of, table_of
 
 CHARACTERS_PER_PRICE = 1000
 """Truth: a per-character rate is stated per thousand characters, which is how a declared rate key reads."""
 
-SECONDS_PER_PRICE = 1
-"""Truth: a per-second rate is stated per second of audio, which is how a declared rate key reads."""
+SECONDS_PER_PRICE = 60
+"""Truth: a bill per second states its rate per minute of audio, which is how a declared rate key reads."""
 
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
 
 
 def voice_model(inputs: Inputs) -> str:
-    """The model that reads this project, which is `[voice] model` or the provider's own default.
+    """The model that reads this project, which is the `model` of the provider's own table.
 
-    The default is read from the provider's own table, so changing `[voice] provider` never sends one
+    The model is set in the provider's own table alone, so changing `[voice] provider` never sends one
     vendor's model id to another, and a provider with no table is sent no model it did not ask for.
     """
-    voice = inputs.settings.voice
-    table = table_of(inputs.settings, voice.provider)
-    return voice.model or (table.model if table is not None else "")
+    table = table_of(inputs.settings, inputs.settings.voice.provider)
+    return table.model if table is not None else ""
 
 
 def price_key(provider: str) -> str | None:
@@ -65,7 +64,7 @@ def price_key(provider: str) -> str | None:
 def rate_of(inputs: Inputs, provider: str | None = None) -> float:
     """What `provider` charges per unit it bills by, which is `[voice] provider`'s rate unless one is named.
 
-    The unit is the one its adapter declares: 1,000 characters for a per-character bill and a second
+    The unit is the one its adapter declares: 1,000 characters for a per-character bill and a minute
     of audio for a per-second one. A free voice, and a provider that declares no bill, charge nothing.
     """
     name = provider or inputs.settings.voice.provider
@@ -106,28 +105,28 @@ def price_layer(inputs: Inputs, provider: str | None = None) -> Layer:
 
 
 def rate_fields(inputs: Inputs, provider: str | None = None) -> dict[str, Any]:
-    """The fields of a `Spend` that say how `provider` bills, at what rate, and who stated it."""
+    """The fields of a `Cost` that say how `provider` bills, at what rate, and who stated it."""
     name = provider or inputs.settings.voice.provider
     by, rate = billing_of(name).by, rate_of(inputs, name)
     return {
         "billing": by,
-        "price_per_1000_characters": rate if by is Billing.PER_CHARACTER else 0.0,
-        "price_per_second": rate if by is Billing.PER_SECOND else 0.0,
+        "dollars_per_1000_characters": rate if by is Billing.PER_CHARACTER else 0.0,
+        "dollars_per_minute": rate if by is Billing.PER_SECOND else 0.0,
         "price_key": price_key(name),
         "price_layer": price_layer(inputs, name),
     }
 
 
-def voice_context(inputs: Inputs, provider: str | None = None) -> VoiceContext:
+def voice_context(inputs: Inputs, provider: str | None = None) -> SpeechContext:
     """What a speech provider is built from, taken from its own table, this project's tuning and its own `.env`.
 
-    The base URL is read from the provider's own table under the key its adapter declares, so a
-    provider with no table is handed none.
+    The base URL is its own table's `base_url`, which only the machine sets, so a provider with no
+    table is handed none.
     """
     settings = inputs.settings
-    return VoiceContext(
+    return SpeechContext(
         secrets=inputs.env,
-        api_base=base_of(settings, provider or settings.voice.provider),
+        base_url=base_of(settings, provider or settings.voice.provider),
         context_chars=settings.narration.context_chars,
         speech_timeout_seconds=settings.narration.timeout_seconds,
     )

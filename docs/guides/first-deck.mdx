@@ -26,9 +26,9 @@ the page ever writes a second, and no row in `cues.json` ever says what a thing 
 
 An element on a slide has four moments, each naming a cue local to that slide: `data-in` when it
 arrives, `data-back` when it steps back, `data-front` when it comes forward again, and `data-out`
-when it leaves. The runtime qualifies a local name with the slide it is written in, so `data-in="waits"`
-inside `<template data-slide="4.1">` is the wire id `4.1:waits`, and that is the id `cues.json`
-carries. Write the local name on the page and the wire id in `cues.json`.
+when it leaves. The runtime qualifies a cue name with the slide it is written in, so `data-in="waits"`
+inside `<template data-slide="4.1">` is the cue id `4.1:waits`, and that is the id `cues.json`
+carries. Write the cue name on the page and the cue id in `cues.json`.
 
 ## Write the section
 
@@ -93,7 +93,7 @@ carries. Write the local name on the page and the wire id in `cues.json`.
 
     - A `[data-scene]` wrapper is a scene and never draws anything itself. `data-name` is what the scene index calls it.
     - Each `<template data-slide>` inside it is one slide, cloned onto the stage when the slide mounts. `data-hold` is how long the preview rests on the slide, and no recording reads it.
-    - An element with `data-in` stays hidden until that cue fires. The local name is yours to choose, and it has to be unique within the slide.
+    - An element with `data-in` stays hidden until that cue fires. The cue name is yours to choose, and it has to be unique within the slide.
     - `data-describe` says in one sentence what the moment shows. It is what the transcript reads and what a reviewer checks a reveal against, and a moment without one is reported.
     - Every element is placed absolutely on the 1920 by 1080 stage, so one thing arriving moves nothing else.
 
@@ -110,15 +110,15 @@ carries. Write the local name on the page and the wire id in `cues.json`.
     ```json cues.json
     "4": {
       "cues": [
-        { "cue": "4.1:heading", "on": "one more section", "occurrence": 1 }
+        { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
       ]
     }
     ```
 
-    `cue` is the wire id: the slide id, a colon, and the local name the page wrote. `on` is a word or
+    `id` is the cue id: the slide id, a colon, and the cue name the page wrote. `phrase` is a word or
     short phrase from that section of `script.md`, matched with case and punctuation ignored, and
     `occurrence` picks which match when the phrase is said more than once. `$start` is the section
-    start, `$end` is the end of speech, and `offset` shifts a cue by seconds.
+    start, `$end` is the end of speech, and `offset_seconds` shifts a cue by seconds.
     [cues.json](/reference/cues-json) lists every key, and [Cues](/concepts/cues) explains the
     matching.
   </Step>
@@ -142,11 +142,11 @@ No voice is named, so the cache cannot be checked, because [voice] id is empty a
 Checking script.md, cues.json, deck/index.html.
 The takes on disk could not be matched to a voice, so this run costs up to $0.03 at $0.30 per 1,000 characters.
 cues.json: CUE_MISSING section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
-  fix (safe): Add 1 row to section 4 of cues.json, each waiting for the phrase you write in its `on`.
-Found 1 finding, 1 certain. 1 fixable with --fix.
+  fix (safe): Add 1 row to section 4 of cues.json, each waiting for the words you write in its `phrase`.
+Found 1 finding, 1 error. 1 fixable with --fix.
 ```
 
-It exits 1, because it found something certain. The slide declares `4.1:waits` and no row gives it a
+It exits 1, because it found an error. The slide declares `4.1:waits` and no row gives it a
 second, which is [CUE_MISSING](/reference/findings/CUE_MISSING). The finding carries a safe fix, so
 `--fix` applies it.
 
@@ -155,8 +155,8 @@ decktalk check --section 4 --no-frames --fix
 ```
 
 ```text
-cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'on' and it will have a second.
-Found 1 finding, 1 certain.
+cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'phrase' and it will have a second.
+Found 1 finding, 1 error.
 ```
 
 The row is in the file:
@@ -164,19 +164,19 @@ The row is in the file:
 ```json cues.json
 "4": {
   "cues": [
-    {"cue": "4.1:waits", "on": ""},
-    { "cue": "4.1:heading", "on": "one more section", "occurrence": 1 }
+    {"id": "4.1:waits", "phrase": ""},
+    { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
   ]
 }
 ```
 
-The fix writes the id, because DeckTalk knows the id, and leaves `on` empty, because the phrase is
+The fix writes the id, because DeckTalk knows the id, and leaves `phrase` empty, because the phrase is
 your line and not DeckTalk's. The run reads the project again after the fix and reports the empty
 phrase as [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED), so it still exits 1. Write the phrase
 and the section is complete.
 
 ```json cues.json
-{ "cue": "4.1:waits", "on": "the picture waits" }
+{ "id": "4.1:waits", "phrase": "the picture waits" }
 ```
 
 ```console
@@ -197,7 +197,7 @@ at $0.30 per 1,000 characters.`
 
 <Tip>Run `decktalk check` with no flags before a build. It opens the pages, freezes every slide
 either side of every cue, and reports a reveal too small to be measured, which is the judgement
-`--no-frames` drops. `--fail-on any` also fails on an uncertain finding, and `--allow CODE` carries
+`--no-frames` drops. `--fail-on warning` also fails on a warning, and `--allow CODE` carries
 on past one code.</Tip>
 
 ## Build it and measure it
@@ -219,7 +219,7 @@ The loudness pass is skipped because the narration is a placeholder, so the soun
        Built build/final/my-lesson.mp4, $0.00, nothing found
 ```
 
-`--no-spend` uses estimated word times and a click track, so the new section costs nothing to try.
+`--no-spend` uses estimated word times and a placeholder, so the new section costs nothing to try.
 Its page records beside the other three, so a fourth section adds little to the time the build
 takes.
 

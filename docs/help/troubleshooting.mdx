@@ -6,7 +6,7 @@ description: Take the code DeckTalk printed from the symptom you saw to the chan
 DeckTalk answers in codes. There are nine error codes and fifty-three finding codes, every one of them
 carries its own page, and this page is the map from what you saw to which code it was.
 
-Each code's page carries its sentence, its certainty and the settings keys that move it. They are
+Each code's page carries its sentence, its severity and the settings keys that move it. They are
 generated from the same enums the tool prints from, so they are the authority on what a code means.
 This page is the other half: what the symptom looks like, which command to run to make the code
 appear as data, and what to change.
@@ -27,8 +27,8 @@ is what it measured. It prints one line per judgement, then one count line.
 
 ```text
 cues.json: CUE_MISSING the deck declares 12 moment(s) and there is no cues.json, so nothing gives any of them a second.
-  fix (safe): Write cues.json with a row for each of the 12 moment(s) the deck declares, each waiting for the phrase you write in its `on`.
-Found 1 finding, 1 certain. 1 fixable with --fix.
+  fix (safe): Write cues.json with a row for each of the 12 moment(s) the deck declares, each waiting for the words you write in its `phrase`.
+Found 1 finding, 1 error. 1 fixable with --fix.
 ```
 
 The line opens with the file and the line number when the finding knows them, and with the object it
@@ -52,7 +52,7 @@ second as an array of objects.
 
 | Command | What it answers |
 |---|---|
-| `decktalk doctor` | Whether this machine has Chromium, ffmpeg, ffprobe and KaTeX, and whether a voice key is set. |
+| `decktalk doctor` | Whether this machine has Chromium, ffmpeg, ffprobe and KaTeX, and whether an API key is set. |
 | `decktalk status` | What is written, what is built and what is stale in this project. |
 | `decktalk check` | Whether `script.md`, `cues.json` and the pages hold together, and what the narration of a voiced run would cost. |
 
@@ -90,10 +90,10 @@ print every other one. `--no-fix` applies none. In the library it is
 `Project.apply(finding, unsafe=False)`, and passing `unsafe=True` is the only way an unsafe fix is
 ever written.
 
-The count line tells you before you run it: `Found 1 finding, 1 certain. 1 fixable with --fix.`
+The count line tells you before you run it: `Found 1 finding, 1 error. 1 fixable with --fix.`
 
 A safe fix does the boring part and leaves the judgement to you. `check --fix` on a project with no
-cue file writes every row the deck declares with an empty `on`, so the next `check` reports a
+cue file writes every row the deck declares with an empty `phrase`, so the next `check` reports a
 `CUE_UNRESOLVED` for each empty phrase and a build stops at `cue` on them. That is the fix working.
 Fill in the phrases and run it again.
 
@@ -102,8 +102,8 @@ Fill in the phrases and run it again.
 | Flag | What it does |
 |---|---|
 | `--allow CODE` | Carry on past this code. It repeats, so `--allow CUE_OVERLAP --allow PAGE_SLIDE_UNUSED` forgives both. |
-| `--fail-on certain` | The default. A certain finding fails the run and an uncertain one does not. |
-| `--fail-on any` | Any finding fails the run. |
+| `--fail-on error` | The default. An error fails the run and a warning does not. |
+| `--fail-on warning` | Any finding fails the run. |
 | `--fail-on never` | No finding fails the run, so the exit code reports only whether the command could run. |
 
 Both work on every command that judges, which is `doctor`, `check`, `storyboard`, `narrate`, `cue`,
@@ -113,7 +113,7 @@ Both work on every command that judges, which is `doctor`, `check`, `storyboard`
 threshold, the build stops after that stage rather than carry the finding into the film, because a
 film that is wrong in a way nobody has to watch it to discover is not worth recording. The stages it
 did not reach are reported as skipped, and the run still returns everything it knows: it exits 1,
-its findings are printed and in the JSON, the money narrate already spent is in `spend`, and
+its findings are printed and in the JSON, the money narrate already spent is in `cost`, and
 `stopped_at` names the stage it stopped after.
 
 {/* sample: decktalk build --no-spend on a built starter whose cue 3.1:idea waits for a phrase nobody says */}
@@ -128,7 +128,7 @@ Cue made one finding that the build stops on, so the build stopped before record
       Verify    0:00
      Stopped at cue, $0.00, 1 finding
 cues.json:30: CUE_UNRESOLVED the cue 3.1:idea waits for 'a phrase nobody says' and section 3 speaks 25 words, none of which is that phrase.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 ```
 
 The two flags that decide what fails a run decide what stops a build, because a build that carried
@@ -136,7 +136,7 @@ on past a finding its exit fails on would spend on a film already called wrong.
 
 - `--allow CODE` carries the build past that code, and it works for every code. The finding is still
   printed and still in the JSON, and it no longer stops the build or counts toward the exit.
-- `--fail-on any` stops on an uncertain finding as well, and `--fail-on never` runs every stage
+- `--fail-on warning` stops on a warning as well, and `--fail-on never` runs every stage
   whatever it finds.
 
 `verify` is the last stage, so its findings end a build rather than stop it. Reach for `--allow` only
@@ -164,7 +164,7 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | Two reveals ran into each other | [CUE_OVERLAP](/reference/findings/CUE_OVERLAP) | [An unresolved cue](#an-unresolved-cue) |
 | `verify` says the cue times are older than cues.json | [CUE_STALE](/reference/findings/CUE_STALE) | [An unresolved cue](#an-unresolved-cue) |
 | A cue resolved and nothing on screen changed | [CUE_NO_CHANGE](/reference/findings/CUE_NO_CHANGE), [CUE_THIN_CHANGE](/reference/findings/CUE_THIN_CHANGE), [PAGE_THIN_DRAW](/reference/findings/PAGE_THIN_DRAW) | [A picture that does not change](#a-picture-that-does-not-change) |
-| The film is black somewhere, stops moving, or a section is short | [PAGE_BLACK](/reference/findings/PAGE_BLACK), [PAGE_STALLED](/reference/findings/PAGE_STALLED), [PAGE_TRUNCATED](/reference/findings/PAGE_TRUNCATED) | [A recording that opens black or stalls](#a-recording-that-opens-black-or-stalls) |
+| The film is black somewhere, stops moving, or a section is short | [RECORD_BLACK](/reference/findings/RECORD_BLACK), [RECORD_STALLED](/reference/findings/RECORD_STALLED), [RECORD_TRUNCATED](/reference/findings/RECORD_TRUNCATED) | [A recording that opens black or stalls](#a-recording-that-opens-black-or-stalls) |
 | Something on the page threw, or a wait never settled | [PAGE_RENDER_THREW](/reference/findings/PAGE_RENDER_THREW), [PAGE_ENTER_THREW](/reference/findings/PAGE_ENTER_THREW), [PAGE_HANDLER_THREW](/reference/findings/PAGE_HANDLER_THREW), [PAGE_SLIDE_HANDLER_THREW](/reference/findings/PAGE_SLIDE_HANDLER_THREW), [PAGE_WAIT_REJECTED](/reference/findings/PAGE_WAIT_REJECTED), [PAGE_WAIT_UNSETTLED](/reference/findings/PAGE_WAIT_UNSETTLED) | [A recording that opens black or stalls](#a-recording-that-opens-black-or-stalls) |
 | A reveal arrived after its word | [CUE_OFF](/reference/findings/CUE_OFF), [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | [A late landing](#a-late-landing) |
 | A motion was still playing when the next cue was read | [PAGE_MOTION_OVERRUN](/reference/findings/PAGE_MOTION_OVERRUN), [PAGE_STAGGER_OVERRUN](/reference/findings/PAGE_STAGGER_OVERRUN), [PAGE_APPEAR_TOO_LONG](/reference/findings/PAGE_APPEAR_TOO_LONG) | [A late landing](#a-late-landing) |
@@ -179,10 +179,10 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | A change reaches the picture and not the transcript | [PAGE_NO_DESCRIPTION](/reference/findings/PAGE_NO_DESCRIPTION), [PAGE_CLASS_UNDESCRIBED](/reference/findings/PAGE_CLASS_UNDESCRIBED), [PAGE_CLASS_NOT_REDUCED](/reference/findings/PAGE_CLASS_NOT_REDUCED) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | An equation shows its source, or an error where the maths should be | [PAGE_KATEX_MISSING](/reference/findings/PAGE_KATEX_MISSING), [PAGE_KATEX_ERROR](/reference/findings/PAGE_KATEX_ERROR) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A word-synced line, a count or a stagger has nothing to work on | [PAGE_WORDS_NOT_FOUND](/reference/findings/PAGE_WORDS_NOT_FOUND), [PAGE_STAGGER_EMPTY](/reference/findings/PAGE_STAGGER_EMPTY) | [A page the contract refuses](#a-page-the-contract-refuses) |
-| The script is not ready for a voice to read it | [TAKE_PLACEHOLDER](/reference/findings/TAKE_PLACEHOLDER), [TAKE_SPOKEN_SYMBOL](/reference/findings/TAKE_SPOKEN_SYMBOL), [TAKE_PAUSE_DROPPED](/reference/findings/TAKE_PAUSE_DROPPED) | [A script that is not ready to be voiced](#a-script-that-is-not-ready-to-be-voiced) |
+| The script is not ready for a voice to read it | [SCRIPT_UNFINISHED](/reference/findings/SCRIPT_UNFINISHED), [SCRIPT_SPOKEN_SYMBOL](/reference/findings/SCRIPT_SPOKEN_SYMBOL), [SCRIPT_PAUSE_DROPPED](/reference/findings/SCRIPT_PAUSE_DROPPED) | [A script that is not ready to be voiced](#a-script-that-is-not-ready-to-be-voiced) |
 | A section plays a placeholder because its take is not on disk | [TAKE_MISSING](/reference/findings/TAKE_MISSING) | [A take that is missing](#a-take-that-is-missing) |
 
-Every code links to its own page, which carries that code's sentence, its certainty and the settings
+Every code links to its own page, which carries that code's sentence, its severity and the settings
 keys that move it. The rest of this page says what to change.
 
 ## A missing toolchain
@@ -205,10 +205,10 @@ fetches both the first time a command needs them and keeps them in a per-user ca
    runs unattended and a password prompt is a hang rather than a question. That is why a Chromium
    that will not launch says to run `decktalk install`.
 
-**The knobs.** `[tools] ffmpeg` and `[tools] ffprobe` name binaries the machine already has.
+**The settings.** `[tools] ffmpeg` and `[tools] ffprobe` name binaries the machine already has.
 `[tools] cache_dir` moves what DeckTalk fetches, Chromium and ffmpeg together. `[record] browser_path` records with a browser the
 machine already has and skips the Chromium download entirely. All four are machine keys, so set them
-with `decktalk config set KEY VALUE --where machine`, because a `decktalk.toml` that sets one is
+with `decktalk config set KEY VALUE --scope machine`, because a `decktalk.toml` that sets one is
 refused. Set
 `PLAYWRIGHT_DOWNLOAD_HOST` to a mirror when a proxy blocks Playwright's own host, and set
 `[tools] cache_dir` when the home directory is read-only or the browser is shared.
@@ -232,7 +232,7 @@ builds with no flag and no key.
 
 | What you want | What to pass |
 |---|---|
-| No spending at all | `--no-spend`, which plays every take on disk and a placeholder with a real word clock wherever a take is missing |
+| No buying at all | `--no-spend`, which plays every take on disk and a placeholder with real word times wherever a take is missing |
 | Spend without being asked | `--spend` |
 | Spend up to a ceiling | `--max-cost N`, which refuses before the first call when the most the run could cost is over N US dollars |
 | Know the price first | `decktalk check`, which prices the narration and buys nothing, and `decktalk score --no-spend` for the sound |
@@ -255,7 +255,7 @@ error[NOT_BUILT]: build/narrate/takes.json has not been built.
 
 Each stage reads what an earlier stage wrote, so a stage run on its own before that one fails here.
 Run the command the hint names, or run `decktalk build`, which runs every stage in order.
-`decktalk narrate --no-spend` writes the takes without spending anything, with a placeholder wherever a take is missing. `decktalk status` names the
+`decktalk narrate --no-spend` writes the takes without buying anything, with a placeholder wherever a take is missing. `decktalk status` names the
 next command to run.
 
 ## A voice that did not answer
@@ -294,16 +294,16 @@ than allowed to overwrite the first one's work.
 
 ## An unresolved cue
 
-A cue is one thing written in two files. The page declares a moment with a local name, and the
-runtime qualifies it into a wire id, which is the slide id, a colon and the local name. So
-`data-in="expand"` inside `<template data-slide="4.1">` is the wire id `4.1:expand`, and that is
-what `cues.json` carries in its `cue` field. Four codes say which half is missing.
+A cue is one thing written in two files. The page declares a moment with a cue name, and the
+runtime qualifies it into a cue id, which is the slide id, a colon and the cue name. So
+`data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`, and that is
+what `cues.json` carries in its `id` field. Four codes say which half is missing.
 
 | Code | Which half is missing | Where the change goes |
 |---|---|---|
 | [CUE_MISSING](/reference/findings/CUE_MISSING) | The page's half exists and the file's does not. | Add the row to `cues.json`, or let `--fix` add it. |
 | [CUE_UNKNOWN](/reference/findings/CUE_UNKNOWN) | The file's half exists and the page's does not. | Draw the element, correct the id, or delete the row. |
-| [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED) | Both halves exist and the narration has no such phrase. | Change the `on` phrase, or change the script. |
+| [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED) | Both halves exist and the narration has no such phrase. | Change the row's `phrase`, or change the script. |
 | [PAGE_CUE_UNKNOWN](/reference/findings/PAGE_CUE_UNKNOWN) | The deck declares no such cue at all. | Name the cue in a moment attribute on the slide, or take it out. |
 
 **Reading `CUE_UNRESOLVED`.** The message names the phrase and how many words the section actually
@@ -316,7 +316,7 @@ cues.json: CUE_UNRESOLVED the cue 1.1:title waits for 'a phrase nobody says' and
 Run `decktalk words --section 1` to see every spoken word with its start and its end, which is the
 clock a phrase is written against. Match the phrase to words that are really there. A phrase is
 matched without case by default, and the row's own keys narrow it: `occurrence` picks which of
-several matches to take, `case_sensitive` makes the match exact, `offset` moves the second the cue
+several matches to take, `case_sensitive` makes the match exact, `offset_seconds` moves the second the cue
 fires, and `verify` set to false leaves the cue out of the measurement.
 
 **Reading `CUE_STALE`.** `verify` measures the film on disk against the cue times the last build
@@ -333,7 +333,7 @@ records only the sections whose cue times moved, and keeps the rest. `decktalk s
 as the next step for the same reason.
 
 **Reading `CUE_MISSING`.** This one carries a safe `edit` fix that writes a row per declared moment
-with an empty `on` for you to fill. On a `cues.json` laid out in a way DeckTalk cannot place a row
+with an empty `phrase` for you to fill. On a `cues.json` laid out in a way DeckTalk cannot place a row
 into, the fix is `display` instead and prints the rows for you to paste.
 
 **Reading `CUE_UNKNOWN`.** When DeckTalk can see which cue the row was probably meant to be, it
@@ -346,7 +346,7 @@ published into its recordings, so a section whose page has never been recorded i
 rather than guessed at. `decktalk check` makes the same comparison against a page it opens live,
 which is why a fresh project shows `CUE_MISSING` and `CUE_UNKNOWN` from `check` and not from `cue`.
 
-`CUE_OVERLAP` is the neighbouring uncertain code. It fires when two cues resolve close enough
+`CUE_OVERLAP` is the neighbouring warning. It fires when two cues resolve close enough
 together that one motion is still playing when the next begins, and the message says how far apart
 they landed and how long the first was still running.
 
@@ -355,11 +355,11 @@ they landed and how long the first was still running.
 A cue that resolves to a second means nothing if nothing on screen moves at that second. Three codes
 measure that, all of them by comparing frames.
 
-| Code | Certainty | What it usually means |
+| Code | Severity | What it usually means |
 |---|---|---|
-| [CUE_NO_CHANGE](/reference/findings/CUE_NO_CHANGE) | certain | The element never arrived, or it was already on screen before its cue. |
-| [CUE_THIN_CHANGE](/reference/findings/CUE_THIN_CHANGE) | uncertain | The element arrived and it is too small for a viewer to notice. |
-| [PAGE_THIN_DRAW](/reference/findings/PAGE_THIN_DRAW) | uncertain | A stroke that draws itself covers too little ground to be read as a change. |
+| [CUE_NO_CHANGE](/reference/findings/CUE_NO_CHANGE) | error | The element never arrived, or it was already on screen before its cue. |
+| [CUE_THIN_CHANGE](/reference/findings/CUE_THIN_CHANGE) | warning | The element arrived and it is too small for a viewer to notice. |
+| [PAGE_THIN_DRAW](/reference/findings/PAGE_THIN_DRAW) | warning | A stroke that draws itself covers too little ground to be read as a change. |
 
 **What you see.** The message carries the measured share of the frame and the floor it is under.
 
@@ -379,7 +379,7 @@ build/frames/01/slide-1.1-after-1.1_title.png: CUE_NO_CHANGE freezing the slide 
    element that only changes class needs `data-class`, and a class change that animates needs the
    page's own stylesheet to do the animating.
 
-**The knobs.** `verify.changed_share_min_percent` is the floor, as a percentage of the frame.
+**The settings.** `verify.changed_share_min_percent` is the floor, as a percentage of the frame.
 `verify.thin_change_factor` is how many times that floor a change must cross to stop being thin.
 `verify.probe_diff_luma` is the per-pixel luma difference that counts a pixel as changed, and
 `verify.probe_delays_seconds` is when after the cue the frames are compared. `video.crf` moves all
@@ -389,17 +389,17 @@ any of them whole with `decktalk config explain verify.changed_share_min_percent
 ## A recording that opens black or stalls
 
 These three are measured against a recording rather than against a file you wrote. `record` measures
-all three on the file it has just written, and `verify` measures `PAGE_BLACK` again on the finished
+all three on the file it has just written, and `verify` measures `RECORD_BLACK` again on the finished
 film.
 
-| Code | Look at | The knob that decides it |
+| Code | Look at | The setting that decides it |
 |---|---|---|
-| [PAGE_BLACK](/reference/findings/PAGE_BLACK) | Whether the page had drawn anything by that second. | `verify.black_max_luma`, `verify.after_dip_seconds` |
-| [PAGE_STALLED](/reference/findings/PAGE_STALLED) | Whether something on the page threw and stopped the drawing. | `record.frame_gap_max_ms` |
-| [PAGE_TRUNCATED](/reference/findings/PAGE_TRUNCATED) | Whether the section's page was still working when its narration ended. | `record.truncated_slack_seconds` |
+| [RECORD_BLACK](/reference/findings/RECORD_BLACK) | Whether the page had drawn anything by that second. | `verify.black_max_luma`, `verify.after_dip_seconds` |
+| [RECORD_STALLED](/reference/findings/RECORD_STALLED) | Whether something on the page threw and stopped the drawing. | `record.frame_gap_max_ms` |
+| [RECORD_TRUNCATED](/reference/findings/RECORD_TRUNCATED) | Whether the section's page was still working when its narration ended. | `record.truncated_slack_seconds` |
 
 **Where the black usually comes from.** The recorder covers the page in magenta from its first paint
-until the narration clock starts, and takes the first clean frame after that run of cover frames as
+until the section clock starts, and takes the first clean frame after that run of cover frames as
 t=0. When the scan finds no cover frames, the run falls back to the first painted frame plus the
 settle, and failing that to `record.fallback_first_paint_seconds` plus the settle. It says so when it
 does:
@@ -444,12 +444,12 @@ reports that itself, through the probe, as one of these:
 The whole point of DeckTalk is that a picture arrives on its word. These codes are how it says a
 picture did not.
 
-| Code | Certainty | What a viewer would notice |
+| Code | Severity | What a viewer would notice |
 |---|---|---|
-| [CUE_OFF](/reference/findings/CUE_OFF) | certain | The picture arrives on the wrong word, or visibly after the right one. |
-| [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | uncertain | Nothing, yet. The measurement had no onset to work from, so the number is not trustworthy. |
-| [CUT_SPEECH](/reference/findings/CUT_SPEECH) | certain | A word is cut in half at a section boundary. |
-| [CUT_POP](/reference/findings/CUT_POP) | certain | The picture jumps at a boundary that promised to be seamless. |
+| [CUE_OFF](/reference/findings/CUE_OFF) | error | The picture arrives on the wrong word, or visibly after the right one. |
+| [CUE_NO_ONSET](/reference/findings/CUE_NO_ONSET) | warning | Nothing, yet. The measurement had no onset to work from, so the number is not trustworthy. |
+| [CUT_SPEECH](/reference/findings/CUT_SPEECH) | error | A word is cut in half at a section boundary. |
+| [CUT_POP](/reference/findings/CUT_POP) | error | The picture jumps at a boundary that promised to be seamless. |
 
 **What to do about `CUE_OFF`.**
 
@@ -460,7 +460,7 @@ picture did not.
 3. One cue that is late on its own is usually a phrase that resolves to the wrong word. Run
    `decktalk words` and read what the section really says around it. Set `occurrence` on the row
    when the phrase repeats.
-4. `offset` on a `cues.json` row moves one cue by a fixed number of seconds. Use it when the picture
+4. `offset_seconds` on a `cues.json` row moves one cue by a fixed number of seconds. Use it when the picture
    genuinely belongs slightly before or after its phrase, and not to paper over a phrase that
    matched the wrong place.
 5. `verify.cue_offset_max_ms` is the limit, and `verify.av_offset_max_ms` is the audio against video
@@ -484,7 +484,7 @@ is what pushes a deck that was fine over the ceiling. `decktalk schema page` pri
 with its range.
 
 **`CUT_SPEECH` and `CUT_POP`** are about the cuts rather than the reveals. A cut that slices a word
-means the section's narration did not have room to finish, and `[narration] tail_min_seconds` is the
+means the section's narration did not have room to finish, and `[narration] tail_seconds` is the
 silence kept after the last word of a section so that a cut breathes.
 `verify.cut_max_dbfs` and `verify.cut_window_seconds` are how quiet, and for how long, a cut has to
 be to pass.
@@ -497,7 +497,7 @@ boundary be an ordinary cut, which `[transition]` dips through.
 
 ## A loudness miss
 
-**What you see.** `MIX_LOUDNESS`, which is uncertain, with the measured numbers in the message.
+**What you see.** `MIX_LOUDNESS`, which is a warning, with the measured numbers in the message.
 
 The mix is mastered to `audio.target_lufs`, with `audio.true_peak_max_dbtp` as the peak ceiling. The
 defaults are -16 LUFS and -1.5 dBTP, which are ordinary values for video on the web.
@@ -528,7 +528,7 @@ on it. [Sound](/concepts/sound#loudness) says exactly when `MIX_LOUDNESS` is rai
 deck/index.html: PAGE_CDN_ASSET the page loaded an asset from https://fonts.example.com, which the project does not own, so the film depends on a host that may change or stop answering.
 ```
 
-It is certain and it carries no fix, because only you can decide what the local copy should be.
+It is an error and it carries no fix, because only you can decide what the local copy should be.
 
 **What to do.**
 
@@ -560,7 +560,7 @@ project clears this.
 2. Give that container a seccomp profile that allows user namespaces. Docker's default profile does
    not, and a render as an ordinary user under it is still refused.
 3. If the pages are your own work, the machine does not need the policy. `trusted` is the default,
-   and `decktalk config unset record.page_policy --where machine` returns to it.
+   and `decktalk config unset record.page_policy --scope machine` returns to it.
 
 Under `untrusted`, a request for another origin is refused rather than sent, so a page that loads a
 font or a library from a CDN renders without it. The run still names that host as `PAGE_CDN_ASSET`,
@@ -572,7 +572,7 @@ and the fix is the one above: put the file beside the page.
 These come out whenever `record` or `check` opens the page. Most of them the page reports about
 itself, through the probe, and the rest DeckTalk reads off the catalog the page published. All of
 them are about markup rather than about timing, so all of them can be cleared before a single credit
-is spent. One of them, `PAGE_SWAP_APART`, is uncertain, and the rest are certain because the
+is spent. One of them, `PAGE_SWAP_APART`, is a warning, and the rest are errors because the
 contract either declares a thing or it does not.
 
 | Code | The change that clears it |
@@ -597,7 +597,7 @@ contract either declares a thing or it does not.
 | [PAGE_CLASS_UNDESCRIBED](/reference/findings/PAGE_CLASS_UNDESCRIBED) | Add the matching pair to `data-describe-class`. |
 | [PAGE_CLASS_NOT_REDUCED](/reference/findings/PAGE_CLASS_NOT_REDUCED) | Make your stylesheet honour `prefers-reduced-motion` for that class. |
 | [PAGE_NO_DESCRIPTION](/reference/findings/PAGE_NO_DESCRIPTION) | Add `data-describe`, or add it empty to say the element is decorative. |
-| [PAGE_SWAP_APART](/reference/findings/PAGE_SWAP_APART) | Move the two halves of the swap closer together. This one is uncertain, because a deliberate jump is possible. |
+| [PAGE_SWAP_APART](/reference/findings/PAGE_SWAP_APART) | Move the two halves of the swap closer together. This one is a warning, because a deliberate jump is possible. |
 
 **What to do.** Run `decktalk schema page`, which prints all twenty-four attributes with their
 values, their defaults, their ranges and their spans. It is generated from `contract.ts`, the one
@@ -613,16 +613,16 @@ Chromium for `prefers-reduced-motion`. The page's own stylesheet is what has to 
 and this code says a class it adds still animates when nobody asked it to.
 
 `PAGE_CLASS_UNDESCRIBED` is the other half of `data-class`. A class change is a change to the
-picture, so `data-describe-class` gives each one a phrase, written as moment and phrase pairs
+picture, so `data-describe-class` gives each one a description, written as cue and description pairs
 separated by a vertical bar, and the transcript prints it.
 
 ## A script that is not ready to be voiced
 
-| Code | Certainty | The change that clears it |
+| Code | Severity | The change that clears it |
 |---|---|---|
-| [TAKE_PLACEHOLDER](/reference/findings/TAKE_PLACEHOLDER) | certain | Replace the placeholder on the line the message names with the words you mean. |
-| [TAKE_SPOKEN_SYMBOL](/reference/findings/TAKE_SPOKEN_SYMBOL) | uncertain | Write the symbol out as the voice must say it. |
-| [TAKE_PAUSE_DROPPED](/reference/findings/TAKE_PAUSE_DROPPED) | certain | Set `[voice] model` to one that renders `[pause N]`, such as `eleven_multilingual_v2`, or take the timed pauses out of the section. |
+| [SCRIPT_UNFINISHED](/reference/findings/SCRIPT_UNFINISHED) | error | Replace the placeholder on the line the message names with the words you mean. |
+| [SCRIPT_SPOKEN_SYMBOL](/reference/findings/SCRIPT_SPOKEN_SYMBOL) | warning | Write the symbol out as the voice must say it. |
+| [SCRIPT_PAUSE_DROPPED](/reference/findings/SCRIPT_PAUSE_DROPPED) | error | Set `[elevenlabs] model` to one that renders `[pause N]`, such as `eleven_multilingual_v2`, or take the timed pauses out of the section. |
 
 All three come from `decktalk check` reading `script.md`, so all three are free to find and all
 three are found before a credit is spent. This is the cheapest check there is, and running it in a
@@ -633,27 +633,27 @@ already paid cannot take the money back, so a script the voice must not receive 
 than read out. `check` reports every such line at once with its line number, where `narrate` stops
 on the first.
 
-`TAKE_SPOKEN_SYMBOL` is uncertain because sometimes you do mean the symbol. Write out what the voice
+`SCRIPT_SPOKEN_SYMBOL` is a warning because sometimes you do mean the symbol. Write out what the voice
 must say, and [Writing for the ear](/guides/writing-for-the-ear) is the guide for it.
 
-`TAKE_PAUSE_DROPPED` names a section with a `[pause N]` on a model that renders no timed pause.
+`SCRIPT_PAUSE_DROPPED` names a section with a `[pause N]` on a model that renders no timed pause.
 ElevenLabs renders one only on its v2 family, `eleven_multilingual_v2`, `eleven_flash_v2_5`,
 `eleven_flash_v2`, `eleven_turbo_v2_5` and `eleven_turbo_v2`, and v3 and v4 read no `<break>` tag, so `narrate` refuses to buy a take that would lose the
 pause. A `[beat]` is a dash the voice reads on any model, so a beat alone never raises it.
 
 ## A take that is missing
 
-| Code | Certainty | The change that clears it |
+| Code | Severity | The change that clears it |
 |---|---|---|
-| [TAKE_MISSING](/reference/findings/TAKE_MISSING) | uncertain | Run the command the message names, `decktalk narrate --section N --spend`, to buy the take. |
+| [TAKE_MISSING](/reference/findings/TAKE_MISSING) | warning | Run the command the message names, `decktalk narrate --section N --spend`, to buy the take. |
 
 A run with `--no-spend` plays every take on disk and puts a placeholder in each section whose take is
-missing, which is one `TAKE_MISSING` per section. It is uncertain because the film is still whole and
-only that section's timing is estimated, so a draft build exits 0. Pass `--fail-on any` to make a
+missing, which is one `TAKE_MISSING` per section. It is a warning because the film is still whole and
+only that section's timing is estimated, so a draft build exits 0. Pass `--fail-on warning` to make a
 missing take fail a run.
 
 A take is found by its text, its voice and its voice settings, so a section reports it after any of
-those changed, and on a fresh clone whose takes were never committed. Without a voice id no paid take
+those changed, and on a fresh clone whose takes were never committed. Without a voice id no voiced take
 can be matched at all, and the run says so in one line before the findings. Set `[voice] id` in
 `decktalk.toml`, which is a published name rather than a secret and is committed with the project,
 and the takes on disk play again.
@@ -665,8 +665,8 @@ Some things are not judgements. Use the stream.
 - `--events` prints one JSON line per event on stderr as it happens, and every run also appends
   `build/events/<run>.jsonl` whether you passed it or not. The discriminator key is `event` and
   there are thirteen names: `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`,
-  `section.done`, `progress`, `finding`, `spend`, `take.charged`, `sound.charged`, `fetch` and `log`.
-- `stage.done` and `section.done` carry an `outcome` of `ok`, `skipped` or `failed`, so a run that
+  `section.done`, `stage.progress`, `finding.raised`, `cost.priced`, `take.charged`, `sound.charged`, `tool.fetch` and `run.log`.
+- `stage.done` and `section.done` carry an `outcome` of `ran`, `skipped` or `failed`, so a run that
   stopped early still says what it did not reach rather than leaving you to infer it from a shorter
   list.
 - `output.events_keep_runs` prunes the oldest files, and its default is 20.

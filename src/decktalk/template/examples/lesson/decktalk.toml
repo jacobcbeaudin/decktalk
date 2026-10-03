@@ -17,7 +17,7 @@ record_margin_seconds = 0.3   # recorded past the narration, so the cut never la
 hold_seconds = 1.5
 
 [narration]
-tail_min_seconds = 1.3
+tail_seconds = 1.3
 
 [voice]
 provider = "elevenlabs"
@@ -25,7 +25,7 @@ id = ""   # the voice that reads the script, a published name rather than a secr
 speed = 1.0
 
 [elevenlabs]
-price_per_1000_characters = 0.30   # what your plan charges, which is what `decktalk check` prices the narration at
+dollars_per_1000_characters = 0.30   # what your plan charges, which is what `decktalk check` prices the narration at
 stability = 0.55
 similarity_boost = 0.75
 

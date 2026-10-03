@@ -1,4 +1,4 @@
-"""The real ElevenLabs path: the base that is checked, the reply that is read, and the key that is not printed.
+"""The real ElevenLabs path: the base the machine names, the reply that is read, and the key that is not printed.
 
 The reply below is the shape `/text-to-speech/{voice}/with-timestamps` answers with, so `speak`
 and `words_from_alignment` are the real ones and only the socket is stood in for.
@@ -19,7 +19,7 @@ import pytest
 from decktalk.errors import InputError, ProviderError
 from decktalk.results import Billing
 from decktalk.secret import Secret
-from decktalk.settings import ALLOW_ANY_API_BASE, ElevenLabsConfig, Settings
+from decktalk.settings import ElevenLabsConfig, Settings
 from decktalk.speech import (
     BEAT,
     HOST_OUTPUT,
@@ -27,10 +27,10 @@ from decktalk.speech import (
     Bill,
     Output,
     Piece,
+    SpeechContext,
     SpeechProvider,
+    SpeechProviders,
     SpeechRequest,
-    VoiceContext,
-    Voices,
     billing_of,
     output_of,
     renders_pauses,
@@ -39,7 +39,6 @@ from decktalk.speech import http as _http
 from decktalk.speech.elevenlabs import (
     BREAK_MODELS,
     ElevenLabs,
-    checked,
     output,
     voice_settings,
     words_from_alignment,
@@ -59,7 +58,7 @@ SPOKEN = 'Hi <break time="0.7s" />\n\nthere, world.'
 """What the voice is sent for those pieces, with the break tag it honours and never says."""
 
 FORMAT = "mp3_44100_128"
-"""The format `[elevenlabs] output_format` asks for by default, which every paid take was bought in."""
+"""The format `[elevenlabs] output_format` asks for by default, which every voiced take was bought in."""
 
 MODEL = "eleven_multilingual_v2"
 """A model that reads `<break>`, which is the one a request with a timed pause may name."""
@@ -100,12 +99,12 @@ def provider(**over: object) -> ElevenLabs:
     """The provider a project with these values would build, which is how a run builds one."""
     fields: dict[str, Any] = {
         "secrets": None,
-        "api_base": BASE,
+        "base_url": BASE,
         "context_chars": 10,
         "speech_timeout_seconds": 180,
         **over,
     }
-    return ElevenLabs(VoiceContext(**fields), Secret(SENTINEL, "ELEVENLABS_API_KEY"))
+    return ElevenLabs(SpeechContext(**fields), Secret(SENTINEL, "ELEVENLABS_API_KEY"))
 
 
 def request(**over: object) -> SpeechRequest:
@@ -116,59 +115,11 @@ def request(**over: object) -> SpeechRequest:
 # ---- the base -----------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "base",
-    [
-        "https://api.elevenlabs.io/v1",
-        "https://api.us.elevenlabs.io/v1",
-        "https://ELEVENLABS.IO/v1",
-        "https://elevenlabs.io",
-    ],
-)
-def test_an_https_elevenlabs_host_passes(base):
-    assert checked(base, allow_any=False) == base.rstrip("/")
-
-
-@pytest.mark.parametrize(
-    "base",
-    [
-        "http://api.elevenlabs.io/v1",  # not https
-        "https://evil.test/v1",  # another host
-        "https://elevenlabs.io.evil.test/v1",  # the domain as a prefix of another
-        "https://notelevenlabs.io/v1",  # the domain as a suffix without its dot
-        "https://api.elevenlabs.io@evil.test/v1",  # userinfo that reads like the right host
-        "https://evil.test/api.elevenlabs.io/v1",  # the domain in the path
-        "api.elevenlabs.io/v1",  # no scheme
-        "",
-    ],
-)
-def test_anything_else_is_an_input_error_that_names_the_override(base):
-    with pytest.raises(InputError) as caught:
-        checked(base, allow_any=False)
-    assert "[elevenlabs] api_base must be an https URL on elevenlabs.io" in str(caught.value)
-    assert ALLOW_ANY_API_BASE in f"{caught.value} {caught.value.hint}"
-
-
-def test_the_machines_switch_allows_any_base():
-    assert checked("http://127.0.0.1:8000/v1", allow_any=True) == "http://127.0.0.1:8000/v1"
-    with pytest.raises(InputError):
-        checked("http://127.0.0.1:8000/v1", allow_any=False)
-
-
-def test_the_provider_refuses_a_foreign_base_before_any_request():
-    """The refusal names the rule and the switch, and never the value, which may hold a path token."""
-    with pytest.raises(InputError) as caught:
-        provider(api_base="https://evil.test/v1/SUPERSECRETTOKEN")
-    said = f"{caught.value} {caught.value.hint}"
-    assert "evil.test" not in said and "SUPERSECRETTOKEN" not in said
-    assert provider(api_base="https://evil.test/v1", allow_any_api_base=True).checked_base.endswith("/v1")
-
-
-def test_the_switch_set_in_the_process_does_not_redirect_the_key(monkeypatch):
-    """Only the machine decides, so a host that set nothing on its machine keeps the key on ElevenLabs."""
-    monkeypatch.setenv(ALLOW_ANY_API_BASE, "1")
-    with pytest.raises(InputError):
-        provider(api_base="https://evil.test/v1")
+def test_the_base_url_the_machine_names_is_where_every_request_goes(monkeypatch):
+    """The base URL is the machine's alone, so a local mock needs no switch beside it."""
+    asked = answers(monkeypatch, REPLY)
+    provider(base_url="http://127.0.0.1:8000/v1/").speak(request())
+    assert asked[0]["url"].startswith("http://127.0.0.1:8000/v1/text-to-speech/")
 
 
 # ---- the real speak -----------------------------------------------------------------------------
@@ -249,8 +200,8 @@ def test_elevenlabs_declares_its_format_and_names_a_take_by_the_codec_in_it():
 
 
 def test_elevenlabs_declares_it_bills_per_character_at_the_rate_its_own_table_states():
-    assert billing_of("elevenlabs") == Bill(Billing.PER_CHARACTER, rate="price_per_1000_characters")
-    assert hasattr(ElevenLabsConfig(), "price_per_1000_characters")
+    assert billing_of("elevenlabs") == Bill(Billing.PER_CHARACTER, rate="dollars_per_1000_characters")
+    assert hasattr(ElevenLabsConfig(), "dollars_per_1000_characters")
     assert billing_of("a-host-voice").by is Billing.UNDECLARED
 
 
@@ -271,7 +222,7 @@ def test_a_reply_with_no_audio_in_it_is_a_provider_failure_rather_than_an_empty_
 
 
 def test_a_refusal_quotes_the_service_and_never_the_key(monkeypatch):
-    """The body is written by whatever host `api_base` names, so it is scrubbed before it is quoted."""
+    """The body is written by whatever host `base_url` names, so it is scrubbed before it is quoted."""
     answers(monkeypatch, json.dumps({"detail": f"invalid api key {SENTINEL}"}).encode(), status=401)
     with pytest.raises(ProviderError) as caught:
         provider().speak(request())
@@ -328,21 +279,21 @@ def test_the_registry_builds_the_cloud_voice():
         def require(self, *names: str) -> list[Secret]:
             return [Secret(SENTINEL, name) for name in names]
 
-    context = VoiceContext(secrets=Env(), api_base=BASE, context_chars=1500, speech_timeout_seconds=90)
-    speech = Voices(factories=PROVIDERS).provider("elevenlabs", context)
+    context = SpeechContext(secrets=Env(), base_url=BASE, context_chars=1500, speech_timeout_seconds=90)
+    speech = SpeechProviders(factories=PROVIDERS).provider("elevenlabs", context)
     assert speech.name == "elevenlabs" and isinstance(speech, ElevenLabs)
     assert speech.context.speech_timeout_seconds == 90
 
 
 def test_a_provider_name_decktalk_does_not_know_is_refused_with_the_ones_it_does():
-    context = VoiceContext(
+    context = SpeechContext(
         secrets=NoSecrets(),
-        api_base=BASE,
+        base_url=BASE,
         context_chars=1,
         speech_timeout_seconds=1,
     )
     with pytest.raises(InputError) as caught:
-        Voices(factories=PROVIDERS).provider("a-local-voice", context)
+        SpeechProviders(factories=PROVIDERS).provider("a-local-voice", context)
     assert "dtsp, elevenlabs" in f"{caught.value} {caught.value.hint}"
 
 

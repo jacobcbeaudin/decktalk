@@ -212,7 +212,7 @@ def credentials(headers: Mapping[str, str], secrets: Collection[Secret]) -> tupl
 def scrub(text: str, carried: Collection[str]) -> str:
     """The text with every credential this request carried taken out of it.
 
-    A reply body is written by whatever host `api_base` names, so a service that echoes the key back
+    A reply body is written by whatever host a `base_url` names, so a service that echoes the key back
     in a 401 would otherwise put it in an error message and on stderr, where a CI job keeps it.
     `carried` is what `credentials` found in the request, so the values are matched whatever header
     sent them.

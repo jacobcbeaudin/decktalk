@@ -57,7 +57,7 @@ export const FRAME_STEP_MS = 40;
  * This one number is three things the design keeps together on purpose. It is the point at which an
  * effect marks its own cue unmeasurable, it is the ceiling `motion.scale` is clamped one frame under,
  * and it is the total a staggered container may not pass. A page range that admitted a value above it would
- * let an author delete a check by turning a knob.
+ * let an author delete a check by changing one attribute.
  */
 export const MEASURABLE_SPAN_SECONDS = 0.5;
 
@@ -136,8 +136,8 @@ export type Count = keyof typeof COUNTS;
 
 // ---- the codes the page reports ---------------------------------------------------------------
 
-/** How sure a code is. A certain code names something that is wrong, and an uncertain one names a risk. */
-export type Certainty = "certain" | "uncertain";
+/** Whether a code fails the default run. An error names something that is wrong, and a warning names a risk. */
+export type Severity = "error" | "warning";
 
 /** Who raises a code. The runtime reports it from the page, and Python measures it from what was recorded. */
 export type RaisedBy = "runtime" | "python";
@@ -145,7 +145,7 @@ export type RaisedBy = "runtime" | "python";
 /** One code the page contract owns, with the sentence a person reads and the fields that fill it. */
 export type CodeRow = {
   readonly message: string;
-  readonly certainty: Certainty;
+  readonly severity: Severity;
   readonly raisedBy: RaisedBy;
 };
 
@@ -159,182 +159,188 @@ export type CodeRow = {
 export const CODES = {
   PAGE_UNKNOWN_ATTR: {
     message: "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_BAD_VALUE: {
     message: "{attr}={value} is not one of {allowed}, so write one of those instead.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_MOMENT_UNKNOWN: {
     message: "{attr}={value} names a cue slide {slide} does not own, so declare it on the slide or correct the name.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_MOMENT_ORDER: {
     message: "The exit {value} is at or before the entrance on the same element, so give the exit a later cue.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_CUE_UNKNOWN: {
     message: "The cue {cue} is not one this deck declares, so remove it or name it in a moment attribute.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_NO_OWNER: {
     message: "No slide owns the cue {cue}, so name it in a moment attribute or list it in data-owns.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_SCENE_EMPTY: {
     message: "The scene {slide} declares no slide, so add a template to it or remove the scene.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_SLIDE_NO_ID: {
     message: "A template carries no data-slide, so give it the id a section names.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_SLIDE_DOUBLED: {
     message: "Two templates claim the slide id {slide}, so every moment local to it has two owners.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_SLIDE_UNUSED: {
     message: "Slide {slide} is never shown, so nothing it declares reaches a recording.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_TEMPLATE_IGNORED: {
     message: "A template inside slide {slide} declares no slide of its own, so nothing ever mounts it.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_WORDS_NOT_FOUND: {
     message: "The line {value} is not among the spoken words, so it cannot be shown word by word.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_KATEX_MISSING: {
     message: "KaTeX is not loaded, so {attr} is left as the author wrote it.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_KATEX_ERROR: {
     message: "KaTeX refused {value}, so the element shows its readable fallback text.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_FREEZE_CUE_UNKNOWN: {
     message: "The cue {cue} is not one of slide {slide}'s cues, so the freeze stopped at nothing.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_RENDER_THREW: {
     message: "The render handler for slide {slide} threw {value}, so the slide is drawn as its markup stands.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_ENTER_THREW: {
     message: "The enter handler for slide {slide} threw {value}, so the slide arrived without it.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_SLIDE_HANDLER_THREW: {
     message: "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_HANDLER_THREW: {
     message: "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_WAIT_REJECTED: {
     message: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_WAIT_UNSETTLED: {
     message: "A promise the page waited for never settled, so the page was drawn without it.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_CLASS_UNDESCRIBED: {
-    message: "data-class names {value} with no phrase for it in data-describe-class, so the transcript loses it.",
-    certainty: "certain",
+    message: "data-class names {value} with no description for it in data-describe-class, so the transcript loses it.",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_CLASS_NOT_REDUCED: {
     message: "The class {value} still animates under reduced motion, so the page's own stylesheet must honour it.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_SWAP_AMBIGUOUS: {
     message: "data-swaps at cue {cue} found {value} elements leaving, so name the one it replaces with a shared cue.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_PREVIEW_AMBIGUOUS: {
     message: "Two sections name the scene {slide}, so a preview cannot tell which one's cue times to play.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_APPEAR_TOO_LONG: {
     message: "data-words=appear is on a line of {value} words, so shorten it or use highlight instead.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_STAGGER_EMPTY: {
     message: "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
-    certainty: "certain",
+    severity: "error",
+    raisedBy: "runtime",
+  },
+  PAGE_SPOTLIGHT_EMPTY: {
+    message:
+      "The spotlight on slide {slide} has no child with data-in, so give its children cues or remove the attribute.",
+    severity: "error",
     raisedBy: "runtime",
   },
   PAGE_MOTION_OVERRUN: {
     message: "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "python",
   },
   PAGE_STAGGER_OVERRUN: {
     message: "The stagger at cue {cue} runs {value} s in all, which passes the half second a cue may still move.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "python",
   },
   PAGE_THIN_DRAW: {
     message: "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
-    certainty: "uncertain",
+    severity: "warning",
     raisedBy: "python",
   },
   PAGE_NO_DESCRIPTION: {
     message: "The element at cue {cue} has no text and no data-tex, so give it data-describe or an empty one.",
-    certainty: "certain",
+    severity: "error",
     raisedBy: "python",
   },
   PAGE_SWAP_APART: {
     message: "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
-    certainty: "uncertain",
-    raisedBy: "python",
-  },
-  PAGE_STALLED: {
-    message: "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
-    certainty: "certain",
-    raisedBy: "python",
-  },
-  PAGE_BLACK: {
-    message: "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
-    certainty: "certain",
-    raisedBy: "python",
-  },
-  PAGE_TRUNCATED: {
-    message: "The recording ends {value} s before the narration does, so the last cues are not in it.",
-    certainty: "certain",
+    severity: "warning",
     raisedBy: "python",
   },
   PAGE_CDN_ASSET: {
     message: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
-    certainty: "certain",
+    severity: "error",
+    raisedBy: "python",
+  },
+  RECORD_STALLED: {
+    message: "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
+    severity: "error",
+    raisedBy: "python",
+  },
+  RECORD_BLACK: {
+    message: "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
+    severity: "error",
+    raisedBy: "python",
+  },
+  RECORD_TRUNCATED: {
+    message: "The recording ends {value} s before the narration does, so the last cues are not in it.",
+    severity: "error",
     raisedBy: "python",
   },
 } as const satisfies Record<string, CodeRow>;
@@ -356,9 +362,9 @@ export type PageWarning = {
 export type Subject = "element" | "container" | "scene" | "slide";
 
 /** What kind of value an attribute takes, which is what a reader parses it as. */
-export type Kind = "moment" | "word" | "flag" | "seconds" | "phrase" | "pairs" | "id" | "names" | "tex";
+export type Kind = "moment" | "word" | "flag" | "seconds" | "description" | "pairs" | "id" | "names" | "tex";
 
-/** What turning an attribute changes, published so an agent can tell a knob from a label. */
+/** What turning an attribute changes, published so an agent can tell a control from a label. */
 export type Affects = "cue-order" | "motion" | "transcript" | "catalog" | "preview" | "style";
 
 /** The values a number attribute admits, in the unit the tool can see. */
@@ -369,7 +375,7 @@ export type Range = {
   readonly unit: "seconds";
 };
 
-/** One row of the attribute table, which is everything published about one knob. */
+/** One row of the attribute table, which is everything published about one attribute. */
 export type AttrRow = {
   readonly name: string;
   readonly on: readonly Subject[];
@@ -423,14 +429,15 @@ export const ATTRS = {
   "data-describe": {
     name: "data-describe",
     on: ["element", "slide"],
-    kind: "phrase",
+    kind: "description",
     values: [],
     default: null,
     range: null,
     code: null,
     span: 0,
     affects: ["transcript", "catalog"],
-    summary: "The subject of the reveal, which the runtime gives a verb per moment. An empty phrase means decorative.",
+    summary:
+      "The subject of the reveal, which the runtime gives a verb per moment. An empty description means decorative.",
   },
   "data-tex": {
     name: "data-tex",
@@ -538,7 +545,7 @@ export const ATTRS = {
     code: "PAGE_CLASS_UNDESCRIBED",
     span: READ_FROM_THE_PAGE,
     affects: ["cue-order", "motion", "transcript", "style"],
-    summary: "Adds a class at a moment, written as moment:name pairs, for the page's own stylesheet.",
+    summary: "Adds a class at a cue, written as cue:class pairs, for the page's own stylesheet.",
   },
   "data-describe-class": {
     name: "data-describe-class",
@@ -550,7 +557,7 @@ export const ATTRS = {
     code: null,
     span: 0,
     affects: ["transcript"],
-    summary: "What each class change means, as moment:phrase pairs separated by a vertical bar.",
+    summary: "What each class change means, as cue:description pairs separated by a vertical bar.",
   },
   "data-stagger": {
     name: "data-stagger",
@@ -564,14 +571,14 @@ export const ATTRS = {
     affects: ["motion"],
     summary: "The container's children arrive this far apart from one cue.",
   },
-  "data-steps": {
-    name: "data-steps",
+  "data-spotlight": {
+    name: "data-spotlight",
     on: ["container"],
     kind: "flag",
     values: [],
     default: null,
     range: null,
-    code: "PAGE_STAGGER_EMPTY",
+    code: "PAGE_SPOTLIGHT_EMPTY",
     span: READ_FROM_THE_PAGE,
     affects: ["cue-order", "motion", "transcript", "catalog"],
     summary: "Each cued child comes to the front as it arrives and the ones before it step back.",
@@ -615,7 +622,7 @@ export const ATTRS = {
   "data-describe-out": {
     name: "data-describe-out",
     on: ["element"],
-    kind: "phrase",
+    kind: "description",
     values: [],
     default: null,
     range: null,
@@ -639,7 +646,7 @@ export const ATTRS = {
   "data-name": {
     name: "data-name",
     on: ["scene"],
-    kind: "phrase",
+    kind: "description",
     values: [],
     default: null,
     range: null,
@@ -682,7 +689,7 @@ export const ATTRS = {
     code: "PAGE_CUE_UNKNOWN",
     span: 0,
     affects: ["cue-order", "catalog"],
-    summary: "Local names of cues only a handler serves, which no moment attribute mentions.",
+    summary: "Cue names only a handler serves, which no moment attribute mentions.",
   },
   "data-enter": {
     name: "data-enter",
@@ -704,13 +711,13 @@ export type Attr = keyof typeof ATTRS;
  * The rows that survive without a code, and the sentence that says why each one is allowed to.
  *
  * An attribute survives when its value can change the verdict of some check or be named by some
- * finding. These five carry a phrase a person wrote, or a preview length nothing records, so no
+ * finding. These five carry text a person wrote, or a preview length nothing records, so no
  * value of them can change a verdict. The list is closed and a test counts it, because an open field
- * saying what a row affects would readmit every knob the panel cut.
+ * saying what a row affects would readmit every attribute the panel cut.
  */
 export const EXEMPT = {
-  "data-describe": "Any phrase clears the finding, so no value of it can change a verdict.",
-  "data-describe-class": "The transcript prints the phrase verbatim, so no value of it can change a verdict.",
+  "data-describe": "Any description clears the finding, so no value of it can change a verdict.",
+  "data-describe-class": "The transcript prints the description verbatim, so no value of it can change a verdict.",
   "data-describe-out": "It replaces one transcript sentence with another, and neither is measured.",
   "data-hold": "The preview alone reads it, and a preview is never recorded.",
   "data-name": "It names a scene in the index, which no check and no finding reads.",
@@ -761,14 +768,14 @@ export const MOMENTS: readonly Attr[] = Object.keys(ATTRS).filter(
 /** The CSS selector that finds every element declaring a moment, built from the registry and never typed twice. */
 export const MOMENT_SELECTOR = MOMENTS.map((name) => `[${name}]`).join(",");
 
-/** The separator between two moment:value pairs, and the one between a pair's moment and its value. */
+/** The separator between two cue:value pairs, and the one between a pair's cue and its value. */
 export const PAIR_SEPARATOR = "|";
 export const PAIR_MARK = ":";
 
-/** The separator between a slide id and a local moment name in the wire id that cues.json carries. */
-export const WIRE_MARK = ":";
+/** The separator between a slide id and a local moment name in the cue id that cues.json carries. */
+export const CUE_MARK = ":";
 
-/** What joins a cue's wire id, or a spoken word, to its second in `?cues=` and `?words=`. */
+/** What joins a cue's cue id, or a spoken word, to its second in `?cues=` and `?words=`. */
 export const TIME_MARK = "@";
 
 /** What separates two entries of `?cues=` and of `?words=`. */
@@ -804,26 +811,26 @@ export const RUNTIME_MARK = "decktalk-runtime";
 
 // ---- the pure readers -----------------------------------------------------------------------
 
-/** The wire id of a local moment, which is the slide it was written in and the name the author wrote. */
-export function wireId(slide: string, local: string): string {
-  return `${slide}${WIRE_MARK}${local}`;
+/** The cue id of a local moment, which is the slide it was written in and the name the author wrote. */
+export function cueId(slide: string, local: string): string {
+  return `${slide}${CUE_MARK}${local}`;
 }
 
 /**
- * The moment and the value of each pair in a `data-class` or a `data-describe-class` value.
+ * The local cue name and the value of each pair in a `data-class` or a `data-describe-class` value.
  *
- * A pair with no mark, an empty moment or an empty value is dropped rather than guessed at, because
+ * A pair with no mark, an empty cue or an empty value is dropped rather than guessed at, because
  * a half-written pair is a spelling mistake and `PAGE_CLASS_UNDESCRIBED` is the code that names it.
  */
-export function pairs(value: string): { moment: string; value: string }[] {
-  const out: { moment: string; value: string }[] = [];
+export function pairs(value: string): { cue: string; value: string }[] {
+  const out: { cue: string; value: string }[] = [];
   for (const part of value.split(PAIR_SEPARATOR)) {
     const at = part.indexOf(PAIR_MARK);
     if (at < 0) continue;
-    const moment = part.slice(0, at).trim();
+    const cue = part.slice(0, at).trim();
     const rest = part.slice(at + 1).trim();
-    if (!moment || !rest) continue;
-    out.push({ moment, value: rest });
+    if (!cue || !rest) continue;
+    out.push({ cue, value: rest });
   }
   return out;
 }
@@ -844,7 +851,7 @@ export function known(name: string): name is Attr {
  * The reason a value is not one its attribute admits, or null when the value is fine.
  *
  * A closed word set is checked against its own list, a number against its published range and its
- * step, and every other kind takes any non-empty string, because a phrase and a cue name are the
+ * step, and every other kind takes any non-empty string, because a description and a cue name are the
  * author's words.
  */
 export function refuse(name: Attr, value: string): string | null {
@@ -865,7 +872,7 @@ export function refuse(name: Attr, value: string): string | null {
 /**
  * The whole span a staggered container puts between its cue and the next one.
  *
- * The arithmetic is exact, which is why `PAGE_STAGGER_OVERRUN` is a certain finding: the last child
+ * The arithmetic is exact, which is why `PAGE_STAGGER_OVERRUN` is an error: the last child
  * starts one step per earlier child after the cue and then plays its own entrance.
  */
 export function staggerSpan(step: number, children: number, entrance: number): number {
@@ -903,7 +910,7 @@ export const CONTRACT = {
   captureFps: CAPTURE_FPS,
   pairSeparator: PAIR_SEPARATOR,
   pairMark: PAIR_MARK,
-  wireMark: WIRE_MARK,
+  cueMark: CUE_MARK,
   timeMark: TIME_MARK,
   listSeparator: LIST_SEPARATOR,
   enginePath: ENGINE_PATH,

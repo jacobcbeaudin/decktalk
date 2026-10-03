@@ -58,7 +58,7 @@ def owner_slide(cue: str, slides: Slides) -> str | None:
     Ownership is declared rather than inferred, so a cue no slide lists belongs to no slide and is
     reported as such rather than handed to whichever slide its id happens to start with.
     """
-    return next((slide for slide, wires in slides.items() if cue in wires), None)
+    return next((slide for slide, cue_ids in slides.items() if cue in cue_ids), None)
 
 
 def mounts(slides: Slides, times: Mapping[str, float]) -> list[tuple[str, float]]:

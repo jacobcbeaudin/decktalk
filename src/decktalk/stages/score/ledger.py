@@ -4,7 +4,7 @@
 
 Every request is paid for, so the one question this file answers is whether the audio on disk was
 made from the request the project asks for now. The answer is a digest of the request body and the
-endpoint as its provider declares it, which leaves out `api_base`, and a row whose digest still
+endpoint as its provider declares it, which leaves out `base_url`, and a row whose digest still
 matches is kept rather than bought again.
 
 The ledger is one file for the whole score rather than a cache file beside every output,

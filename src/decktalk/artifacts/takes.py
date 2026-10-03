@@ -1,21 +1,21 @@
 """The take index, and the frozen inputs a take's name is taken over.
 
-    build/narrate/<hash>.<suffix>  one take, named by the content that produced it and by what it holds
+    build/narrate/<digest>.<suffix>  one take, named by the content that produced it and by what it holds
     build/narrate/takes.json       which section plays which take, and the clock the join makes
 
 The suffix is the one the voice's adapter declares for its output format, so a take asked for in
-`mp3_44100_128` is `<hash>.mp3`, and a placeholder, which DeckTalk writes itself, is always `.mp3`.
+`mp3_44100_128` is `<digest>.mp3`, and a placeholder, which DeckTalk writes itself, is always `.mp3`.
 
 A take sits in the project's `[narration] takes_dir` instead when it names one, and the index stays
 under the build either way. The index is a cache over the takes, which narrate builds again from them
 when it does not read, so a checkout that commits its takes never sees it change, and the takes are
-what a project paid for.
+what a project keeps.
 
-A take is identified by its content hash and by nothing else, so the index maps a section to a piece
+A take is identified by its input digest and by nothing else, so the index maps a section to a piece
 of content and never the other way round. Renumbering a section rewrites one row and moves no file,
 and two sections with the same words share one take.
 
-`TakeInputs` is the whole of what that hash is taken over, declared as a model so the set is frozen
+`TakeInputs` is the whole of what that digest is taken over, declared as a model so the set is frozen
 by a shape rather than by a convention. Every byte of speech is paid for once, so adding a field or
 changing the order here re-voices every project there is, which is what
 `tests/contract/test_take_hash.py` holds against the digests of films that were really voiced. Every
@@ -49,7 +49,7 @@ TAKE_DIGITS = 16
 """How much of the sha256 names a take, which is far more than enough that two never collide."""
 
 PLACEHOLDER_PREFIX = "placeholder-"
-"""What marks the digest of a take nobody paid for, so the two kinds never share a file name."""
+"""What marks the digest of a placeholder, so a placeholder and a voiced take never share a file name."""
 
 PLACEHOLDER_SUFFIX = ".mp3"
 """What a placeholder take is written under, which is the mp3 click track DeckTalk writes itself."""
@@ -78,7 +78,7 @@ class _Digested(Model):
 
 
 class TakeInputs(_Digested):
-    """Everything that decides what a paid take sounds like, which is everything its name is taken over.
+    """Everything that decides what a voiced take sounds like, which is everything its name is taken over.
 
     The payload is the fields below joined by newlines, in the order they are declared. A reader
     who wants to know why a take was voiced again compares two of these rather than guessing.
@@ -139,7 +139,7 @@ class PlaceholderInputs(_Digested):
     """Everything that decides what a placeholder take sounds like, which is its length and its clicks.
 
     No credit is spent on one, so its digest exists only to let an unchanged section be skipped, and
-    its prefix keeps it out of the paid takes a run must never overwrite.
+    its prefix keeps it out of the voiced takes a run must never overwrite.
     """
 
     words_per_minute: float = Field(gt=0, description="The pace the placeholder is sized at.")
@@ -148,7 +148,7 @@ class PlaceholderInputs(_Digested):
 
     @property
     def digest(self) -> str:
-        """The placeholder's name, which is marked so no paid take can ever be mistaken for one."""
+        """The placeholder's name, which is marked so no voiced take can ever be mistaken for one."""
         return PLACEHOLDER_PREFIX + hashlib.sha256(self.payload.encode("utf-8")).hexdigest()[:PLACEHOLDER_DIGITS]
 
 
@@ -161,7 +161,7 @@ def take_file(digest: str, suffix: str) -> str:
 
 
 def is_placeholder(digest: str) -> bool:
-    """True when this digest names a take nobody paid for."""
+    """True when this digest names a placeholder rather than a voiced take."""
     return digest.startswith(PLACEHOLDER_PREFIX)
 
 
@@ -171,7 +171,7 @@ class Take(Model):
     section: SectionNumber
     key: SectionKey
     chapter: str = Field(description="The section's title, which the film's chapter marker carries.")
-    hash: str = Field(
+    digest: str = Field(
         pattern=TAKE_HASH,
         description="The digest of the inputs this take was made from, which names its files, in lowercase hex.",
     )
@@ -232,7 +232,7 @@ class Takes(Stored):
 
     @property
     def voiced(self) -> tuple[int, ...]:
-        """Every section holding a take somebody paid for."""
+        """Every section holding a voiced take."""
         return tuple(take.section for take in self.sections if take.voiced)
 
     @property

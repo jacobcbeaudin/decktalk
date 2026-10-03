@@ -18,7 +18,7 @@ file for it. A sound placed on a cue lands on the second that cue resolved to, w
 | Clip audio | each clip file | Each clip's own sound lands at its section start, trimmed to its picture and faded over 20 milliseconds at each edge, so a cut into it never clicks. |
 | Music | `[mix] music` | One bed loops under the whole film at `[mix] music_db`. It fades in over `music_fade_in_seconds` and out over `music_fade_out_seconds`. |
 | Ambience bed | `[mix] ambience` | One bed loops at `[mix] ambience_db` under each page section that sets `ambience = true`, and is silent everywhere else. |
-| Effects | `[[mix.effects]]` | Each effect plays once, at the second its own cue resolved to plus its own `offset`, at its own `db`. |
+| Effects | `[[mix.effects]]` | Each effect plays once, at the second its own cue resolved to plus its own `offset_seconds`, at its own `db`. |
 
 The anchor is what fixes the length. The picture carries no audio of its own, so without a silence as
 long as the film the soundtrack would run as long as whichever layer happened to be longest.
@@ -46,9 +46,9 @@ One `[[mix.effects]]` table places one sound.
 |---|---|---|---|
 | `file` | path | required | The audio file to play. |
 | `section` | integer | required | The section whose cue places it. The section must exist. |
-| `cue` | string | required | The wire id of a cue in that section, which the `cue` stage resolved. |
+| `cue` | string | required | The cue id of a cue in that section, which the `cue` stage resolved. |
 | `db` | number | -16 | The effect's level, in dB. |
-| `offset` | number | 0 | Seconds added to the cue's own second. This offset belongs to the effect and not to the cue. |
+| `offset_seconds` | number | 0 | Seconds added to the cue's own second. This offset belongs to the effect and not to the cue. |
 | `caption` | string | none | The caption line a viewer reads when the sound plays, such as `ball bounces`. |
 
 A cued sound that names no caption is a hole in what a deaf viewer receives, so `assemble` says so on
@@ -60,7 +60,7 @@ own in the captions.
 `score` is the fourth stage of the six. It generates the music, the ambience bed and the effects
 this project describes, from the prompts in `[score]`, through the sound provider
 `[score] provider` names, which is ElevenLabs's sound and music endpoints with the key and
-`api_base` of `[elevenlabs]`. It spends, which is why it runs where it does: it is the last stage that can buy anything,
+`base_url` of `[elevenlabs]`. It spends, which is why it runs where it does: it is the last stage that can buy anything,
 so `decktalk build --to record` stops before it and an unpaid draft loop never reaches it.
 
 It is a stage like any other, so `decktalk build` reaches it with `--from score`,
@@ -82,12 +82,13 @@ first call when the most the run can cost is over N dollars. `--replace-score` i
 again a sound the ledger holds. It acts only with `--spend`, is confirmed once on a terminal, and
 never buys a take, while `--force` never buys a sound.
 
-A sound is priced per second of audio, at the rate in the sound provider's own table. Each kind
-states its rate per minute of audio as `price_per_minute` in its own table, `[score.ambience]`,
-`[score.effects]` or `[score.music]`, and a request costs the seconds it asks for at that
-rate. A rate nobody stated is zero from the `default` layer, and `--max-cost` refuses a run that buys
+A sound is billed by the second of audio, at the rate in the sound provider's own table. Each kind
+states its rate in US dollars per minute of audio as `dollars_per_minute` in its own table,
+`[score.ambience]`, `[score.effects]` or `[score.music]`, and a request costs the seconds it asks
+for at that rate. The result's `cost` reports the rate in the same unit, under the same name, so the
+rate you typed is the rate you read back. A rate nobody stated is zero from the `default` layer, and `--max-cost` refuses a run that buys
 at one, because the cap would guard a made-up price. The speech rate,
-`[elevenlabs] price_per_1000_characters`, never prices a sound.
+`[elevenlabs] dollars_per_1000_characters`, never prices a sound.
 
 Every request the provider is paid for is a `sound.charged` line on the stream the moment it answers,
 one per bed or effect and one per part of the music, and a run that bought something reports its
@@ -98,8 +99,8 @@ spend as `charged`.
 | Table | Required key | What it generates |
 |---|---|---|
 | `[score.music]` | `prompt` | The music bed. |
-| `[score.ambience]` | `text` | The ambience bed, asked for as a loop so it meets its own end. |
-| `[score.effects.<name>]` | `text` | One effect, named by `<name>`. |
+| `[score.ambience]` | `prompt` | The ambience bed, asked for as a loop so it meets its own end. |
+| `[score.effects.<name>]` | `prompt` | One effect, named by `<name>`. |
 
 Each table holds its prompt and its file beside the settings that size its request, spelled the
 same way in every table. `[score.music]` also takes `force_instrumental`, which is true by
@@ -108,7 +109,7 @@ must be a whole number, `bitrate`, `max_chunk_seconds` and `crossfade_seconds`.
 `[score.ambience]` takes `out`, and its settings are `model`, `duration_seconds` and
 `prompt_influence`. `[score.effects]` holds the same three settings for every effect, and each
 `[score.effects.<name>]` takes `out` and may set any of the three for itself. Each of the three
-tables also states its `price_per_minute`. `[score] provider` names the sound provider, and
+tables also states its `dollars_per_minute`. `[score] provider` names the sound provider, and
 `[score] timeout_seconds` is how long one request may take. [Configuration](/reference/configuration#score)
 lists every setting with its range.
 
@@ -132,10 +133,10 @@ prompt = "calm, minimal instrumental for a lesson: soft piano and warm pads, slo
 duration_seconds = 120
 
 [score.ambience]
-text = "quiet lecture hall room tone, distant HVAC, no voices, steady"
+prompt = "quiet lecture hall room tone, distant HVAC, no voices, steady"
 
 [score.effects.tick]
-text = "soft interface click, single, short, no reverb"
+prompt = "soft interface click, single, short, no reverb"
 ```
 
 ### How each generated file reaches the mix
@@ -167,16 +168,16 @@ on a terminal.
 
 `score/ledger.json` records what this project has already bought, keyed by the request
 that bought it: the endpoint as the sound provider publishes it and the request body, and never
-`api_base`, so a project that moves to another host of the same service buys nothing again. An item whose request still matches its row and whose audio is still on disk is kept
+`base_url`, so a project that moves to another host of the same service buys nothing again. An item whose request still matches its row and whose audio is still on disk is kept
 rather than bought again, and the ledger is written after every paid call, so a run stopped half way
 through a long piece keeps what it has and asks only for the rest.
 
-A planned item nobody has bought is an uncertain [`SOUND_MISSING`](/reference/findings/SOUND_MISSING)
+A planned item nobody has bought is a [`SOUND_MISSING`](/reference/findings/SOUND_MISSING) warning
 against the path a mix would look for, and `assemble` reports the same code when it meets that path
 empty. The layer plays as silence and the film is still made, so `decktalk build --no-spend` on a
-project with a score exits 0, and `--fail-on any` makes it fail. A music file, an ambience file
+project with a score exits 0, and `--fail-on warning` makes it fail. A music file, an ambience file
 or an effect file the project names and that no score item writes is the author's own, so its
-absence is a certain [`FILE_MISSING`](/reference/findings/FILE_MISSING). That layer plays as silence
+absence is a [`FILE_MISSING`](/reference/findings/FILE_MISSING) error. That layer plays as silence
 too, and the build stops after `assemble`. An effect whose cue did not resolve is a sentence on the stream, and the sound is left out
 of the mix and out of the captions.
 
@@ -269,7 +270,7 @@ is 11 LU.
 
 [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) reports what the pass could not fix. It is raised
 when the measured true peak is above the ceiling, and when the measured integrated loudness sits more
-than 1 LU from the target. It is an uncertain finding, because it is a measurement of a film rather
+than 1 LU from the target. It is a warning, because it is a measurement of a film rather
 than a fault in it, and a reader decides.
 
 A run whose narration is a placeholder skips the pass. The placeholder is clicks and silence, and
@@ -292,4 +293,4 @@ sound beyond its narration until you add them.
 - **Put one sound on one cue:** [Put a sound effect on a cue](/guides/effects-on-a-cue)
 - **Give a sound its moment:** [Cues](/concepts/cues)
 - **Look up every key and its range:** [Configuration](/reference/configuration)
-- **See what spends credits:** [Requirements](/requirements#what-spends-and-what-does-not)
+- **See what costs money:** [Requirements](/requirements#what-spends-and-what-does-not)

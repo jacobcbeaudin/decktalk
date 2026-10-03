@@ -172,7 +172,7 @@ def test_the_token_after_an_authorization_scheme_is_scrubbed_on_its_own():
 
 
 def test_a_reply_that_echoes_the_key_never_reaches_the_error(httpserver):
-    """The body is written by whatever host `api_base` names, so the quote is scrubbed before it is used."""
+    """The body is written by whatever host a `base_url` names, so the quote is scrubbed before it is used."""
     httpserver.expect_request("/echo").respond_with_handler(_echo)
     vendor = Vendor(httpserver.url_for(""), KEY)
     with pytest.raises(ProviderError) as info:

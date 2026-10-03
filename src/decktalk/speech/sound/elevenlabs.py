@@ -1,27 +1,26 @@
 """ElevenLabs sound effects and music, which is the one sound provider DeckTalk ships.
 
-It is the same service, key and `api_base` as the ElevenLabs voice, and a second adapter in the
+It is the same service, key and `base_url` as the ElevenLabs voice, and a second adapter in the
 sound table rather than a method of the voice, so the score never needs a voice to buy a sound.
-The key is a `Secret` that only `_headers` reveals, and the base is checked once, when the provider
-is built, by the same rule the voice is checked by.
+The key is a `Secret` that only `_headers` reveals, and the base URL is the machine's alone to set.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, cast
 
 from ...results import SoundKind
 from ...secret import Secret
-from ..elevenlabs import NAME, checked
+from ..elevenlabs import NAME
 from ..http import post_bytes
 from . import SOUND_DECLARED, SoundContext
 
 PUBLISHED_BASE = "https://api.elevenlabs.io/v1"
 """Truth: the base the service publishes its API under, which names a sound's endpoint in its ledger digest.
 
-A request goes to whatever base `[elevenlabs] api_base` names, and the digest names the published
+A request goes to whatever base `[elevenlabs] base_url` names, and the digest names the published
 one whatever that is, so moving to another host of the same service buys no sound again.
 """
 
@@ -49,11 +48,6 @@ class ElevenLabsSound:
     context: SoundContext
     api_key: Secret
     name: str = NAME
-    checked_base: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        # Every URL is built from the base that passed the check, and never from the setting again.
-        self.checked_base = checked(self.context.api_base, allow_any=self.context.allow_any_api_base)
 
     @classmethod
     def for_context(cls, context: SoundContext) -> ElevenLabsSound:
@@ -75,7 +69,7 @@ class ElevenLabsSound:
 
     def _buy(self, path: str, body: Mapping[str, Any], output_format: str) -> bytes:
         return post_bytes(
-            f"{self.checked_base}{path}?output_format={output_format}",
+            f"{self.context.base_url.rstrip('/')}{path}?output_format={output_format}",
             dict(body),
             self._headers(),
             secrets=(self.api_key,),

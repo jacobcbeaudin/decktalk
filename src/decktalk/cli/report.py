@@ -1,7 +1,7 @@
 """The five commands that read a project and spend nothing.
 
 They open the project, report what they found and buy nothing, which is why they sit in one group
-and why none of them takes a spending flag. `status` judges one thing alone, a file the project
+and why none of them takes a spend flag. `status` judges one thing alone, a file the project
 names and does not have, so it never takes `--fail-on` either: a third judge beside `check` and
 `verify` would be a third answer to one question.
 """
@@ -30,7 +30,7 @@ Slides = Annotated[
     typer.Option(
         "--slide",
         metavar="ID",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Only these slides, by the id the page declares. Repeats.",
     ),
 ]
@@ -39,7 +39,7 @@ After = Annotated[
     typer.Option(
         "--after",
         metavar="CUE",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Freeze the slide at the moment this cue fires. Repeats.",
     ),
 ]
@@ -48,7 +48,7 @@ Before = Annotated[
     typer.Option(
         "--before",
         metavar="CUE",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Freeze the slide just before this cue fires. Repeats.",
     ),
 ]
@@ -57,13 +57,13 @@ At = Annotated[
     typer.Option(
         "--at",
         metavar="SECONDS",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Freeze whatever is on screen this many seconds into its section. Repeats.",
     ),
 ]
 
 
-@command(group=Group.PROJECT, epilog="Reads the project and writes nothing.")
+@command(group=Group.PROJECT, epilog="Reads the project and writes only its run's events file.")
 def status(ctx: Context, set_: Overrides = None) -> StatusResult:
     """Report what is written, what is built and what is stale.
 
@@ -149,7 +149,7 @@ def words(ctx: Context, section: Sections = None, set_: Overrides = None) -> Wor
         return project.words(only=sections_of(section), cancel=session.cancel)
 
 
-@command(group=Group.PROJECT, epilog="Writes build/storyboard.html, which is the checkpoint before credits are spent.")
+@command(group=Group.PROJECT, epilog="Writes build/storyboard.html, which is the checkpoint before anything is bought.")
 def storyboard(
     ctx: Context,
     section: Sections = None,

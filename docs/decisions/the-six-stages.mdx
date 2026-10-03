@@ -41,8 +41,8 @@ carries and the next step `status` reports are four readings of those six rows.
 `score` reads its plan from `decktalk.toml` and nothing another stage writes, so it could have
 run first. It runs fourth so that a run stopped at `record` is the unpaid draft loop.
 
-`narrate` and `score` are the two stages that spend money. `narrate` stops spending with
-`--no-spend`, which plays every take on disk and a placeholder with a real word clock for each
+`narrate` and `score` are the two stages that spend money. `narrate` buys nothing with
+`--no-spend`, which plays every take on disk and a placeholder with real word times for each
 missing one, and `score` is simply not reached when a run ends at the recorder. So `decktalk build --no-spend --to record` writes takes,
 resolves every cue and records every page for nothing, and it is the loop an author lives in while
 the words and the pictures are still moving. Had `score` run second, the same loop would either

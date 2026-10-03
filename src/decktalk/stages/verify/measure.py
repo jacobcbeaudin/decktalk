@@ -41,14 +41,14 @@ from decktalk.stages.verify.plan import (
 
 
 def film_starts(inputs: Inputs, film: Path) -> tuple[dict[int, float], float]:
-    """(where each section starts in the film, how long the film runs), read from the cut list.
+    """(where each section starts in the film, how long the film runs), read from the placements.
 
-    The cut list is the film's own record of its shape, so nothing here adds up section files a
+    The placements are the film's own record of its shape, so nothing here adds up section files a
     second time and reaches a total the film does not have.
     """
-    cuts = inputs.cuts()
-    if cuts is not None and cuts.sections:
-        return {cut.section: cut.start for cut in cuts.sections}, cuts.total_seconds
+    placements = inputs.placements()
+    if placements is not None and placements.sections:
+        return {row.section: row.start for row in placements.sections}, placements.total_seconds
     starts: dict[int, float] = {}
     at = 0.0
     for section in inputs.document.sections:
@@ -384,7 +384,7 @@ def _judge(
         cue=cue,
         spoken=round(word, 3),
         shown=shown,
-        offset=landed,
+        offset_seconds=landed,
         change_percent=round(changed, 2),
     )
 

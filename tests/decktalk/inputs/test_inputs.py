@@ -152,7 +152,7 @@ def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch
 
 
 def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monkeypatch):
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
+    monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(tmp_path / "no-user-config.toml"))
     toml = (
         "[project]\nname = 't'\nscirpt = 'script.md'\n"
         "[voice]\nstabilty = 0.4\n"
@@ -186,15 +186,16 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     """Each key is written once, as a field, so a table's reader and its class cannot drift apart."""
     toml = (
         "[project]\nname = 't'\nscript = 'script.md'\ncues = 'cues.json'\nbuild = 'build'\nlanguage = 'fr'\n"
-        "[voice]\nprovider = 'elevenlabs'\nmodel = 'm'\n"
-        "[elevenlabs]\nstability = 0.5\nprice_per_1000_characters = 0.3\n"
+        "[voice]\nprovider = 'elevenlabs'\n"
+        "[elevenlabs]\nmodel = 'm'\nstability = 0.5\ndollars_per_1000_characters = 0.3\n"
         "[transition]\ndips = [[1, 2]]\ndip_seconds = 0.2\npage_fades_in = true\n"
         "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
         "[[section]]\nnumber = 2\npage = 'deck/b.html'\n"
         "[mix]\nmusic_db = -20\n"
         "[audio]\ntarget_lufs = -16\ntrue_peak_max_dbtp = -1.5\nrange_max_lu = 9\n"
-        "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\noffset = 0.1\ncaption = 'a chime'\n"
-        "[score.effects.tap]\ntext = 'a tap'\nout = 'tap.mp3'\nduration_seconds = 0.5\n"
+        "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\n"
+        "offset_seconds = 0.1\ncaption = 'a chime'\n"
+        "[score.effects.tap]\nprompt = 'a tap'\nout = 'tap.mp3'\nduration_seconds = 0.5\n"
         "prompt_influence = 0.4\nmodel = 'sound'\n"
         "[score.music]\nprompt = 'calm'\nduration_seconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
         "model = 'music'\n"
@@ -203,8 +204,8 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     assert p.notes == ()
     assert p.document.language == "fr"
     # `[mix]` is shared, so the document reads its half and neither warns about the other.
-    assert (p.settings.voice.provider, p.settings.voice.model) == ("elevenlabs", "m")
-    assert p.settings.elevenlabs.price_per_1000_characters == 0.3
+    assert (p.settings.voice.provider, p.settings.elevenlabs.model) == ("elevenlabs", "m")
+    assert p.settings.elevenlabs.dollars_per_1000_characters == 0.3
     assert p.settings.audio.range_max_lu == 9
     assert (p.settings.score.music.duration_seconds, p.settings.score.music.model) == (60, "music")
     assert p.document.mix.effects[0].caption == "a chime"
@@ -271,7 +272,7 @@ def test_every_path_key_of_the_document_goes_through_the_one_check(tmp_path):
         "ambience": "[mix]\nambience = '/etc/hosts'\n",
         "slate": "[mix]\nslate = '/etc/hosts'\n",
         "file": "[[mix.effects]]\nfile = '/etc/hosts'\nsection = 1\ncue = '1.1a'\n",
-        "out": "[score.ambience]\ntext = 'x'\nout = '/etc/hosts'\n",
+        "out": "[score.ambience]\nprompt = 'x'\nout = '/etc/hosts'\n",
     }
     for index, (key, table) in enumerate(cases.items()):
         root = tmp_path / f"case{index}"
@@ -323,7 +324,7 @@ def test_the_artifacts_are_read_off_the_workspace_and_are_none_before_a_build(tm
     inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
     assert inputs.takes() is None
     assert inputs.cue_times() is None
-    assert inputs.cuts() is None
+    assert inputs.placements() is None
     assert inputs.recording_log("01") is None
 
 
@@ -343,7 +344,7 @@ def test_a_take_words_are_shifted_by_their_own_section_lead(tmp_path):
     [("abc", InputError, ErrorCode.INPUT), (f"{PLACEHOLDER_PREFIX}abc", NotBuiltError, ErrorCode.NOT_BUILT)],
 )
 def test_a_take_words_that_do_not_read_are_paid_exactly_when_the_take_is(tmp_path, digest, refusal, code):
-    """Only voicing a take again gives its words back, and nobody paid for a placeholder's."""
+    """Only voicing a take again gives its words back, and a placeholder's cost nothing."""
     inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
     path = inputs.workspace.words_path(digest)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -380,7 +381,7 @@ def test_the_preview_document_names_the_scene_each_section_plays(tmp_path):
                 section=1,
                 key="01",
                 estimated=False,
-                cues=(CueTime(cue="1.1:open", phrase="hello", seconds=1.5, offset=0.0),),
+                cues=(CueTime(cue="1.1:open", phrase="hello", seconds=1.5, nudge_seconds=0.0),),
             ),
         )
     ).write(inputs.workspace.cue_times_path)
@@ -550,7 +551,7 @@ def test_a_take_store_that_starts_with_a_tilde_is_under_the_machines_home(tmp_pa
 
 
 def test_a_take_store_inside_the_project_is_refused(tmp_path: Path) -> None:
-    """Paid takes there would be a second takes directory with none of its rules, committed by `git add .`."""
+    """Voiced takes there would be a second takes directory with none of its rules, committed by `git add .`."""
     root = write_project(tmp_path)
     with pytest.raises(InputError, match="inside this project"):
         Inputs.load(root, environ={}, machine=store_named(str(tmp_path / "machine-takes")))

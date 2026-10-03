@@ -35,20 +35,20 @@ have to work out which one that is.
 
 The per-machine settings file holds machine keys alone. A key about the film in that file is
 refused by name, because the file that ships has to carry whatever the machine running it believes.
-`DECKTALK_CONFIG` names a different per-machine file.
+`DECKTALK_MACHINE_FILE` names a different per-machine file.
 
 | Linux | macOS | Windows |
 |---|---|---|
-| `$XDG_CONFIG_HOME/decktalk/decktalk.toml`, or `~/.config/decktalk/decktalk.toml` | `~/Library/Application Support/decktalk/decktalk.toml` | `%APPDATA%\decktalk\decktalk.toml` |
+| `$XDG_CONFIG_HOME/decktalk/machine.toml`, or `~/.config/decktalk/machine.toml` | `~/Library/Application Support/decktalk/machine.toml` | `%APPDATA%\decktalk\machine.toml` |
 
 ## Keys only a machine may set
 
 These keys describe the machine rather than the film: where a tool or a cache lives, and how hard
 this machine may be driven. A project file that sets one is refused by name, because a project
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
-machine's file with `decktalk config set KEY VALUE --where machine`, or set its environment variable.
+machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `output.events_max_bytes`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
+`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `elevenlabs.base_url`, `dtsp.base_url`, `output.events_max_bytes`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
 
 ## Which key moves which failure
 
@@ -62,15 +62,15 @@ have a code and want the candidates before you run anything.
 | `CUE_OFF` | `verify.reference_lead_extra_ms`, `verify.onset_rise_points`, `verify.onset_diff_luma`, `verify.click_search_seconds`, `verify.click_floor_dbfs`, `verify.cue_offset_max_ms`, `verify.av_offset_max_ms` |
 | `CUE_THIN_CHANGE` | `video.crf`, `verify.probe_diff_luma`, `verify.changed_share_min_percent`, `verify.margin_min_points`, `verify.thin_change_factor` |
 | `CUT_POP` | `verify.cut_change_max_percent` |
-| `CUT_SPEECH` | `narration.tail_min_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds`, `verify.cut_window_seconds`, `verify.cut_max_dbfs` |
+| `CUT_SPEECH` | `narration.tail_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds`, `verify.cut_window_seconds`, `verify.cut_max_dbfs` |
 | `MIX_LOUDNESS` | `audio.target_lufs`, `audio.true_peak_max_dbtp` |
-| `PAGE_BLACK` | `verify.after_dip_seconds`, `verify.black_max_luma` |
 | `PAGE_CLASS_NOT_REDUCED` | `motion.reduce` |
 | `PAGE_MOTION_OVERRUN` | `motion.scale` |
 | `PAGE_STAGGER_OVERRUN` | `motion.scale` |
-| `PAGE_STALLED` | `record.frame_gap_max_ms` |
 | `PAGE_THIN_DRAW` | `video.crf`, `verify.changed_share_min_percent` |
-| `PAGE_TRUNCATED` | `record.truncated_slack_seconds` |
+| `RECORD_BLACK` | `verify.after_dip_seconds`, `verify.black_max_luma` |
+| `RECORD_STALLED` | `record.frame_gap_max_ms` |
+| `RECORD_TRUNCATED` | `record.truncated_slack_seconds` |
 
 ## `[video]`
 
@@ -80,7 +80,7 @@ These keys set the frame size and the encoding of every recording and of the fin
 |---|---|---|---|---|---|---|---|
 | `width` | integer | `1920` | must be between 320 and 7680 | pixels | project |  | Frame width in pixels, for every recording and the final mp4. |
 | `height` | integer | `1080` | must be between 240 and 4320 | pixels | project |  | Frame height in pixels, for every recording and the final mp4. |
-| `output_fps` | integer | `25` | must be one of 25, 30, 50, 60 | frames per second | project |  | Frame rate of the final mp4. The recorder's own rate is measured and is not a knob. |
+| `output_fps` | integer | `25` | must be one of 25, 30, 50, 60 | frames per second | project |  | Frame rate of the final mp4. The recorder's own rate is measured and is not a setting. |
 | `preset` | string | `"medium"` | must be one of ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow |  | project |  | x264 preset. Use veryfast for drafts. |
 | `crf` | integer | `18` | must be between 0 and 32 |  | project | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE`, `PAGE_THIN_DRAW` | x264 quality. A lower value gives higher quality and a larger file. |
 | `slate_color` | string | `"0x0e1116"` | must match the pattern ^(#\|0[xX])[0-9A-Fa-f]{6}$ |  | project |  | Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB. |
@@ -102,14 +102,14 @@ These keys govern how the script is turned into audio.
 |---|---|---|---|---|---|---|---|
 | `concurrency` | integer | `2` | must be between 1 and 8 |  | machine |  | How many sections `narrate` voices at once. |
 | `retries` | integer | `3` | must be between 0 and 10 |  | machine |  | How many more times `narrate` asks again when the voice provider answers that it is busy or failed. |
-| `mp3_bitrate` | string | `"128k"` | must be one of 64k, 96k, 128k, 160k, 192k, 256k |  | project |  | Bitrate of the mp3 files that DeckTalk writes, which are the click tracks and the joined narration. |
+| `mp3_bitrate` | string | `"128k"` | must be one of 64k, 96k, 128k, 160k, 192k, 256k |  | project |  | Bitrate of the mp3 files that DeckTalk writes, which are the placeholders and the joined narration. |
 | `words_per_minute` | integer | `140` | must be between 60 and 300 | words per minute | project |  | Pacing of the estimated length in the narrate table. |
-| `silent_words_per_minute` | integer | `150` | must be between 60 and 300 | words per minute | project |  | Pacing of the click track in a build without voice. |
+| `placeholder_words_per_minute` | integer | `150` | must be between 60 and 300 | words per minute | project |  | Pacing of a placeholder, the click audio a section plays until its take is voiced. |
 | `lead_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project |  | Silence before the first word of every spoken section, so the picture changes before the voice speaks. A section's own `lead_seconds` replaces it. |
-| `silent_beat_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project |  | Seconds each beat adds to a section's length in a build without voice. |
-| `tail_min_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project | `CUT_SPEECH` | Silence after the last word of every spoken section, so a cut never falls on speech. The take is placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it. |
+| `placeholder_beat_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project |  | Seconds each beat adds to the length of a placeholder take. |
+| `tail_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project | `CUT_SPEECH` | Silence after the last word of every spoken section, so a cut never falls on speech. The take is placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it. |
 | `takes_dir` | string | `"takes"` | must match the pattern ^.+$ | path | project |  | Directory inside the project that holds every take the film plays and the words its voice sent with each, which you commit so a fresh clone builds the film with no key. The take index stays under the build, because it is a cache built again from the takes. A take is looked for here first and in the machine's take store, `store_dir`, second, and a take this project buys or finds there is written here. |
-| `store_dir` | string | `""` | takes any value of its type | path | machine |  | The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its content hash. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a purchase nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS. |
+| `store_dir` | string | `""` | takes any value of its type | path | machine |  | The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its input digest. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a take nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS. |
 | `context_chars` | integer | `1500` | must be between 0 and 5000 | characters | project |  | Characters of each neighbour section sent with a request, for continuous prosody. |
 | `timeout_seconds` | integer | `180` | must be between 10 and 1800 | seconds | project |  | Seconds before a speech request times out. |
 | `sound_end_noise_dbfs` | number | `-35.0` | must be between -60 and -25 | dBFS | project | `CUT_SPEECH` | Level under which the tail of a take counts as silence, which is where the take's sound ends. |
@@ -118,7 +118,7 @@ These keys govern how the script is turned into audio.
 <Warning>
 **`narration.concurrency`** A voice provider limits requests per account, and a busy answer is retried rather than paid twice.
 
-**`narration.takes_dir`** An empty value, a directory outside the project, an absolute path, the project directory itself, a directory inside the build directory or one that holds it is refused when the project loads, because a bought take must land in a folder the project keeps, and a project someone else wrote would otherwise choose where this machine reads and writes its takes.
+**`narration.takes_dir`** An empty value, a directory outside the project, an absolute path, the project directory itself, a directory inside the build directory or one that holds it is refused when the project loads, because a voiced take must land in a folder the project keeps, and a project someone else wrote would otherwise choose where this machine reads and writes its takes.
 
 **`narration.store_dir`** It holds the spoken words of every script voiced on this machine, so keep it out of a synced or shared folder. A relative path, a folder inside the project or one inside the tool cache is refused when the project loads. Write an absolute path or one that starts with ~.
 
@@ -146,8 +146,8 @@ These keys tune the headless Chromium recording and how narration t=0 is found i
 | `cover_chroma_min` | number | `165.0` | must be between 128 and 255 | luma | project |  | A cover frame has an average U and an average V above this. |
 | `painted_peak_luma_min` | number | `60.0` | must be between 1 and 200 | luma | project |  | A painted frame has a brightest luma above this. |
 | `painted_mean_luma_max` | number | `120.0` | must be between 20 and 240 | luma | project |  | A painted frame has an average luma below this, so a white flash does not count as the picture. |
-| `truncated_slack_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project | `PAGE_TRUNCATED` | Allowed shortfall of a recording against its requested length. |
-| `frame_gap_max_ms` | integer | `150` | must be between 100 and 2000 | milliseconds | project | `PAGE_STALLED` | Longest gap between two presented frames after narration t=0. A longer gap makes `record` try again. |
+| `truncated_slack_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project | `RECORD_TRUNCATED` | Allowed shortfall of a recording against its requested length. |
+| `frame_gap_max_ms` | integer | `150` | must be between 100 and 2000 | milliseconds | project | `RECORD_STALLED` | Longest gap between two presented frames after narration t=0. A longer gap makes `record` try again. |
 
 <Warning>
 **`record.page_policy`** A service that renders pages other people wrote sets `untrusted` on its machine, because a trusted page can reach anything the machine can, including a cloud metadata endpoint.
@@ -182,20 +182,20 @@ These keys are the limits `verify` judges the assembled mp4 against.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `after_dip_seconds` | number | `0.2` | must be between 0 and 2 | seconds | project | `PAGE_BLACK` | Seconds after a section start to the frame that the start check reads. |
+| `after_dip_seconds` | number | `0.2` | must be between 0 and 2 | seconds | project | `RECORD_BLACK` | Seconds after a section start to the frame that the start check reads. |
 | `reference_lead_extra_ms` | number | `0.0` | must be between 0 and 80 | milliseconds | project | `CUE_OFF` | Extra lead added to the reference frame beyond the one the offset limit implies. |
 | `probe_delays_seconds` | array | `[0.7, 1.5]` | must hold at least 1 and must hold values that each must be above 0 and must be at most 10 | seconds | project | `CUE_NO_CHANGE` | Seconds after the cue time for each probe. The later probe catches a slow reveal. |
 | `probe_diff_luma` | integer | `40` | must be between 4 and 200 | luma | project | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE` | Luma difference a pixel must exceed to count as changed, for the probes and the control shares. |
 | `changed_share_min_percent` | number | `0.1` | must be between 0.001 and 5 | percent | project | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE`, `PAGE_THIN_DRAW` | Smallest share of the frame, in percent, that the reported probe must find changed. |
 | `margin_min_points` | number | `0.1` | must be between 0.001 and 5 | percentage points | project | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE` | Smallest margin, in percentage points, between the reported probe and its control. |
-| `thin_change_factor` | number | `3.0` | must be between 1 and 10 |  | project | `CUE_THIN_CHANGE` | A passing cue whose changed share or margin is under this many times its floor is uncertain rather than clean. A value of 1 turns that second opinion off. |
+| `thin_change_factor` | number | `3.0` | must be between 1 and 10 |  | project | `CUE_THIN_CHANGE` | A passing cue whose changed share or margin is under this many times its floor is a warning rather than clean. A value of 1 turns that second opinion off. |
 | `onset_rise_points` | number | `0.01` | must be between 0.001 and 1 | percentage points | project | `CUE_OFF`, `CUE_NO_ONSET` | Rise in the changed share from one frame to the next that marks the onset, in percentage points. |
 | `onset_diff_luma` | integer | `12` | must be between 2 and 60 | luma | project | `CUE_OFF`, `CUE_NO_ONSET` | Luma difference a pixel must exceed to count as changed, for the onset scan alone. |
 | `click_search_seconds` | number | `0.25` | must be between 0.02 and 2 | seconds | project | `CUE_OFF` | Seconds on each side of the cued word's start that the click search covers. |
 | `click_floor_dbfs` | number | `-38.0` | must be between -60 and -24 | dBFS | project | `CUE_OFF` | Level a sample must exceed for the click search to call it the click. |
 | `cue_offset_max_ms` | number | `80.0` | must be between 20 and 400 | milliseconds | project | `CUE_OFF` | How far the measured onset may sit from the cue time, early or late. |
 | `av_offset_max_ms` | number | `120.0` | must be between 80 and 500 | milliseconds | project | `CUE_OFF` | How far the click may sit from the word it marks, early or late. It is wider than the cue limit because the click carries the encoder's own jitter as well. |
-| `black_max_luma` | number | `60.0` | must be between 1 and 200 | luma | project | `PAGE_BLACK` | A frame whose brightest luma is at most this is black, whether `record` or `verify` reads it. |
+| `black_max_luma` | number | `60.0` | must be between 1 and 200 | luma | project | `RECORD_BLACK` | A frame whose brightest luma is at most this is black, whether `record` or `verify` reads it. |
 | `cut_window_seconds` | number | `0.15` | must be between 0.01 and 2 | seconds | project | `CUT_SPEECH` | Seconds of narration before each cut that the cut check measures. |
 | `cut_max_dbfs` | number | `-40.0` | must be between -90 and -20 | dBFS | project | `CUT_SPEECH` | Loudest level the cut window may reach before the cut counts as falling on speech. |
 | `cut_change_max_percent` | number | `0.1` | must be between 0.001 and 10 | percent | project | `CUT_POP` | Largest share of the frame, in percent, that may change across a cut into a seamless section. |
@@ -219,13 +219,12 @@ These keys are the limits `verify` judges the assembled mp4 against.
 
 ## `[voice]`
 
-These keys are the four every voice has: which provider reads the script, in which voice, model and pace. Everything a provider is particular about, its own fields, its default model and its rate, is in that provider's own table, so changing `provider` never sends one vendor's fields to another.
+These keys are the three every voice has: which provider reads the script, in which voice and at what pace. Everything a provider is particular about, its own fields, its model and its rate, is in that provider's own table, so changing `provider` never sends one vendor's fields or model to another.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
 | `provider` | string | `"elevenlabs"` | takes any value of its type |  | project |  | The speech provider that reads the script, which is a name the machine's own map answers. An unregistered name fails when `narrate` runs rather than at load. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a voice served by a local server, whose own keys are `[dtsp]`. |
 | `id` | string | `""` | must match the pattern ^[A-Za-z0-9_-]*$ |  | project |  | The voice that reads the script, as the provider names it. It is a published name rather than a credential, so it is committed with the project, and it is one of the inputs every take is named by. `DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file. |
-| `model` | string | `""` | takes any value of its type |  | project |  | The provider's model that reads the script. It is empty for the model the provider's own table names, such as `[elevenlabs] model` or `[dtsp] model`. |
 | `speed` | number | `1.0` | must be between 0.7 and 1.2 |  | project |  | How fast the voice speaks, as a multiple of its natural pace. |
 
 <Warning>
@@ -263,39 +262,41 @@ These keys decide how much motion a build renders, which changes the film it pro
 
 ## `[elevenlabs]`
 
-These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on elevenlabs.io unless the machine allows any. The score stage buys from the same API with the same key.
+These keys are ElevenLabs's own: its speech fields, its model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `base_url` is the machine's to set. The score stage buys from the same API with the same key.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `model` | string | `"eleven_multilingual_v2"` | takes any value of its type |  | project |  | The ElevenLabs model that reads the script when `[voice] model` is empty. |
+| `model` | string | `"eleven_multilingual_v2"` | takes any value of its type |  | project |  | The ElevenLabs model that reads the script when `[voice] provider` is `elevenlabs`. |
 | `stability` | number | `0.55` | must be between 0 and 1 |  | project |  | How closely the voice holds one delivery across takes. |
 | `similarity_boost` | number | `0.75` | must be between 0 and 1 |  | project |  | How closely the voice holds to the original recording it was cloned from. |
 | `style` | number | `0.0` | must be between 0 and 1 |  | project |  | How much expressive style the voice adds beyond the words. |
 | `speaker_boost` | boolean | `true` | takes any value of its type |  | project |  | Whether ElevenLabs applies its own speaker boost to the take. |
-| `price_per_1000_characters` | number | `0.0` | must be between 0 and 100 | currency per 1000 characters | project |  | What this project's ElevenLabs plan charges per thousand characters of speech. |
+| `dollars_per_1000_characters` | number | `0.0` | must be between 0 and 100 | US dollars per 1000 characters | project |  | What this project's ElevenLabs plan charges in US dollars per thousand characters of speech. |
 | `output_format` | string | `"mp3_44100_128"` | must be one of mp3_22050_32, mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192 |  | project |  | Audio format ElevenLabs returns each take in, as its own codec_rate_bitrate token. It is part of every take's digest, and its codec names the take's file. |
-| `api_base` | string | `"https://api.elevenlabs.io/v1"` | takes any value of its type |  | project |  | Base URL of the ElevenLabs API. |
+| `base_url` | string | `"https://api.elevenlabs.io/v1"` | takes any value of its type |  | machine |  | Base URL of the ElevenLabs API, which the voice and the score both send their requests and the key to. |
 
 <Warning>
 **`elevenlabs.stability`** ElevenLabs takes a share and refuses anything else, so a value read as a percentage fails the request rather than the load.
 
-**`elevenlabs.price_per_1000_characters`** It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. ElevenLabs bills per character, so a zero somebody stated still asks before it buys.
+**`elevenlabs.dollars_per_1000_characters`** It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. ElevenLabs bills per character, so a zero somebody stated still asks before it buys.
 
 **`elevenlabs.output_format`** Every take already bought was bought in the format named here, so another one buys every take again.
+
+**`elevenlabs.base_url`** The script, and for a paid voice the key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.
 
 </Warning>
 
 ## `[dtsp]`
 
-These keys are the `dtsp` voice's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `url` may name only a loopback address over http unless the machine allows any host.
+These keys are the `dtsp` voice's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `url` | string | `"http://127.0.0.1:8765"` | takes any value of its type |  | project |  | Base URL of the local speech server, which must be http on 127.0.0.1, localhost or [::1]. |
-| `model` | string | `"kokoro-82m"` | takes any value of its type |  | project |  | The model the local server reads the script with when `[voice] model` is empty, as the server names it. |
+| `base_url` | string | `"http://127.0.0.1:8765"` | takes any value of its type |  | machine |  | Base URL of the local speech server, which the script is sent to. |
+| `model` | string | `"kokoro-82m"` | takes any value of its type |  | project |  | The model the local server reads the script with when `[voice] provider` is `dtsp`, as the server names it. |
 
 <Warning>
-**`dtsp.url`** The script travels to whatever host this names, so a project file can name only this machine.
+**`dtsp.base_url`** The script, and for a paid voice the key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.
 
 </Warning>
 
@@ -306,7 +307,7 @@ The settings half of `[score]`: how the music, the ambience and the effects are 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
 | `dir` | string | `"score"` | must match the pattern ^.+$ | path | project |  | Directory inside the project that holds every sound the score bought and the ledger that records them, each named by its item, which you commit so a fresh clone mixes the film with no key. Music bought in parts keeps its parts here, and the piece joined from them is a cache under the build. |
-| `provider` | string | `"elevenlabs"` | takes any value of its type |  | project |  | The sound provider the music, the ambience and the effects are bought from, which is a name the machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys with the key and `api_base` of `[elevenlabs]`. |
+| `provider` | string | `"elevenlabs"` | takes any value of its type |  | project |  | The sound provider the music, the ambience and the effects are bought from, which is a name the machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys with the key and `base_url` of `[elevenlabs]`. |
 | `format` | string | `"mp3_44100_128"` | takes any value of its type |  | project |  | Audio format the music, the ambience and the effects are asked for in. A take's format is its voice's own, such as `[elevenlabs] output_format`. |
 | `timeout_seconds` | integer | `600` | must be between 10 and 3600 | seconds | project |  | Seconds before a sound or music request times out. |
 
@@ -324,10 +325,10 @@ The settings half of `[score.ambience]`: how the bed is asked for. Its prompt an
 | `model` | string | `"eleven_text_to_sound_v2"` | takes any value of its type |  | project |  | Model the ambience bed is asked for from. |
 | `duration_seconds` | number | `25.0` | must be between 1 and 60 | seconds | project |  | Length of the ambience bed that is asked for, which `[mix]` loops under its sections. |
 | `prompt_influence` | number | `0.3` | must be between 0 and 1 |  | project |  | How closely the ambience bed follows its prompt. |
-| `price_per_minute` | number | `0.0` | must be between 0 and 100 | currency per minute of audio | project |  | What this project's sound plan charges per minute of ambience audio, which is priced by the second of audio asked for. |
+| `dollars_per_minute` | number | `0.0` | must be between 0 and 100 | US dollars per minute of audio | project |  | What this project's sound plan charges in US dollars per minute of ambience audio, which is priced by the second of audio asked for. |
 
 <Warning>
-**`score.ambience.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+**`score.ambience.dollars_per_minute`** It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
 
 </Warning>
 
@@ -340,10 +341,10 @@ The settings half of `[score.effects]`: how each effect is asked for unless its 
 | `model` | string | `"eleven_text_to_sound_v2"` | takes any value of its type |  | project |  | Model every effect is asked for from, unless its own table names one. |
 | `duration_seconds` | number | `0.5` | must be between 0.1 and 30 | seconds | project |  | Length of every effect that is asked for, unless its own table sets one. |
 | `prompt_influence` | number | `0.5` | must be between 0 and 1 |  | project |  | How closely every effect follows its prompt, unless its own table sets how closely. |
-| `price_per_minute` | number | `0.0` | must be between 0 and 100 | currency per minute of audio | project |  | What this project's sound plan charges per minute of effect audio, which is priced by the second of audio asked for. |
+| `dollars_per_minute` | number | `0.0` | must be between 0 and 100 | US dollars per minute of audio | project |  | What this project's sound plan charges in US dollars per minute of effect audio, which is priced by the second of audio asked for. |
 
 <Warning>
-**`score.effects.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+**`score.effects.dollars_per_minute`** It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
 
 </Warning>
 
@@ -358,10 +359,10 @@ The settings half of `[score.music]`: how the bed is asked for and joined. Its p
 | `bitrate` | string | `"192k"` | must be one of 96k, 128k, 160k, 192k, 256k, 320k |  | project |  | Bitrate of the music file that `score` joins from its chunks. |
 | `max_chunk_seconds` | integer | `300` | must be between 30 and 600 | seconds | project |  | Longest music request. Longer music is requested in chunks and crossfaded. |
 | `crossfade_seconds` | integer | `2` | must be between 0 and 30 | seconds | project |  | Crossfade between two music chunks. |
-| `price_per_minute` | number | `0.0` | must be between 0 and 100 | currency per minute of audio | project |  | What this project's sound plan charges per minute of music audio, which is priced by the second of audio asked for. |
+| `dollars_per_minute` | number | `0.0` | must be between 0 and 100 | US dollars per minute of audio | project |  | What this project's sound plan charges in US dollars per minute of music audio, which is priced by the second of audio asked for. |
 
 <Warning>
-**`score.music.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+**`score.music.dollars_per_minute`** It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
 
 </Warning>
 
@@ -373,7 +374,7 @@ These keys switch the files a build writes beside the final mp4 and how long the
 |---|---|---|---|---|---|---|---|
 | `timestamped_copy` | boolean | `false` | takes any value of its type |  | project |  | Write a second copy of the final mp4 named with the date and time. |
 | `events_keep_runs` | integer | `20` | must be between 1 and 1000 | runs | project |  | How many runs of event files `build/events/` keeps before the oldest is deleted. |
-| `events_max_bytes` | integer | `8388608` | must be between 65536 and 1073741824 | bytes | machine |  | Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its spending are always kept. |
+| `events_max_bytes` | integer | `8388608` | must be between 65536 and 1073741824 | bytes | machine |  | Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its costs are always kept. |
 
 <Warning>
 **`output.events_max_bytes`** A file with no bound grows with every tool call a long film makes, on a disk a host shares.
@@ -396,12 +397,12 @@ These keys name the tools DeckTalk drives, for a machine that supplies its own.
 
 </Warning>
 
-## The numbers that are not knobs
+## The numbers that are not settings
 
 These are the numbers that decide something and are still not settings. A derived number is written
 as its expression, so it follows the keys it reads at every frame size and every rate. A constant is
 a fact about a codec, a standard, or a tool DeckTalk drives, and it is fixed for the same reason a
-sample rate is. Neither can be set, and both are here so that a knob you cannot find is a number you
+sample rate is. Neither can be set, and both are here so that a setting you cannot find is a number you
 can read.
 
 | Number | Kind | Formula | At the defaults | Why |

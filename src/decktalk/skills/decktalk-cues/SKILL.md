@@ -1,18 +1,18 @@
 ---
 name: decktalk-cues
 description: Choose the spoken phrase each reveal on a DeckTalk page waits for, by writing and repairing cues.json. Use when a script, a page or a reveal changes, when a cue is reported as unresolved or unknown, or when a picture appears early, late or not at all. It covers what makes a phrase match, which occurrence to take when a phrase repeats, when an offset is right and when it hides a real problem, and how far apart two reveals should sit. Do not use it to render the film, which belongs to decktalk-build.
-compatibility: This is craft knowledge. The file's own keys are published by `decktalk schema project`, and resolving the phrases needs the narration, which `decktalk --help` names the command for.
+compatibility: This is craft knowledge. The file's own keys are published by `decktalk schema cues`, and resolving the phrases needs the narration, which `decktalk --help` names the command for.
 metadata:
   ends_with: Every moment on the page matched to a phrase, in both directions, with the gaps a viewer can follow.
 ---
 
 # Place the cues
 
-`cues.json` says which spoken phrase each picture waits for. One row names a wire id and the phrase
+`cues.json` says which spoken phrase each picture waits for. One row names a cue id and the phrase
 it lands on, and the page carries the local half of that id on the element that reveals. The page
 owns what a thing looks like and what it means. This file owns when it happens.
 
-A wire id is the slide and the local name, joined by a colon: `data-in="expand"` inside
+A cue id is the slide and the cue name, joined by a colon: `data-in="expand"` inside
 `<template data-slide="4.1">` is `4.1:expand`. Read `references/cue-phrases.md` for the shape of the
 file and the patterns that work.
 
@@ -47,8 +47,8 @@ file and the patterns that work.
   and the author has seen a frame of it and agreed.
 - Never pass a flag that allows an unresolved or unknown cue through.
 - Change the phrase or the page before the script. A script change re-voices that section.
-- Never replace a paid take. In a project that already holds paid takes, rehearse without a voice
-  only on the sections nobody has paid for.
+- Never replace a voiced take. In a project that already holds voiced takes, rehearse on placeholders
+  only for the sections with no voiced take.
 
 ## What never fixes a late reveal
 
@@ -62,6 +62,6 @@ the next reveal begins.
 ## Hand off
 
 Hand off to **decktalk-build** once every phrase resolves and every reveal is seen, so the film can
-be rendered. Tell it which sections changed, whether the project already holds paid takes, and which
+be rendered. Tell it which sections changed, whether the project already holds voiced takes, and which
 tight gaps the author agreed to keep. Hand off to **decktalk-fix** when a command reports a finding
 whose cause is not a phrase you just wrote, and to **decktalk-slide** when the fix is a picture.

@@ -141,7 +141,7 @@ def test_the_catalog_measures_every_cued_element(page, errors, tmp_path):
     assert ball["text"] == "A ball"
     assert ball["box"]["w"] > 0 and ball["box"]["h"] > 0
     assert 0 <= ball["box"]["x"] < 1920 and 0 <= ball["box"]["y"] < 1080
-    # A moment other than an arrival is qualified exactly like one, so every moment is on the wire.
+    # A moment other than an arrival is qualified exactly like one, so every moment carries its cue id.
     assert by_cue["1.1:step"]["moments"]["data-back"] == "1.1:ball"
     # The title has no moment, so it is on screen from the mount, and the scan measures it all the same.
     uncued = by_cue[None]

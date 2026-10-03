@@ -20,7 +20,7 @@ The engine ships two speech adapters and names each one in `PROVIDERS` in
 - `elevenlabs`, the cloud voice, over https.
 - `dtsp`, one HTTP client that talks to `decktalk-voice`, a separate local server that is not part
   of this repository and runs the local speech and alignment models. It needs no key and speaks
-  to a loopback address.
+  to the address the machine names, a loopback address by default.
 
 There are no entry points and no plugin loading. A project file names an adapter by its key in
 `PROVIDERS` and can never name code. A host that embeds the library may hand `Machine.of` its own
@@ -39,20 +39,19 @@ Each adapter declares, in one place:
   declared with `tune()` and layered by `tomlmap` like every other table, with the adapter's own
   bounds. Every vendor field lives there, `stability`, `similarity_boost`, `style` and
   `speaker_boost` among them.
-- **Its default model**, read from its own table, so changing `[voice] provider` never sends one
+- **Its model**, set in its own table alone, so changing `[voice] provider` never sends one
   vendor's model id to another.
 - **Its key variable**, such as `ELEVENLABS_API_KEY`, or none. `doctor`, the plan and every hint
   name the variable the adapter declares.
-- **Its allowed hosts.** ElevenLabs allows https on `elevenlabs.io` and its subdomains. `dtsp`
-  allows `127.0.0.1`, `localhost` and `[::1]`, over `http`. Any other host needs the machine's own
-  switch, `DECKTALK_ALLOW_ANY_API_BASE`, which a project file cannot set.
+- **Its base URL**, `base_url` in its own table, which is machine-scoped, so a project file that
+  names a host is refused and only the machine decides where the key and the script go.
 - **How it renders pauses**, NATIVE or STITCHED, per model where a vendor's models differ.
 - **Its billing**: per character, per second of audio, or free, with the rate in its own table.
 - **Its take identity**, the mapping of its own fields that enters the take digest.
 - **Its output format and the file suffix** a take is written under, so a take is named by what it
   holds.
 
-`[voice]` keeps the four keys every voice has: `provider`, `id`, `model` and `speed`. Each adapter
+`[voice]` keeps the three keys every voice has: `provider`, `id` and `speed`. Each adapter
 bounds `speed` to its own range. The protocol carries no `cache_key`. The digest is taken in one
 place above the boundary, from the take identity the adapter declares.
 
@@ -120,9 +119,9 @@ only to the vendor that issued it.
 
 The sound stage (`score`) buys music, ambience and effects through a `SoundProvider`, a second
 protocol with its own table of adapters beside `PROVIDERS`. It never borrows the speech registry and
-never checks which class a voice is. Sound is priced per second of audio, at a rate in the sound
-adapter's own table, because that is how sound is billed. A sound's ledger digest is taken over the
-endpoint as the service publishes it and the request body, without the configured `api_base`, so
+never checks which class a voice is. Sound is billed by the second of audio, because that is how
+sound is billed, at a rate in US dollars per minute in the sound adapter's own table. A sound's
+ledger digest is taken over the endpoint as the service publishes it and the request body, without the configured `base_url`, so
 moving to another host of the same service or to a local mock buys nothing again.
 
 ### Alignment
@@ -164,7 +163,7 @@ can load code through a project.
 
 Every vendor-shaped fact sits on its adapter because each one, left elsewhere, is a bug waiting for a
 second vendor: a credential header not on a list leaks in an error, a vendor's settings in every take
-hash re-voice a film for a field another vendor ignores, a pause tag is read aloud, a format string is
+digest re-voice a film for a field another vendor ignores, a pause tag is read aloud, a format string is
 sent to a service that does not know it, and a sound is priced at the speech rate. Declaring them
 once means `check` can refuse a mismatch before anything is bought, rather than a request failing
 after.
@@ -174,9 +173,9 @@ vendor its author knew. A value is the thing that must not leak, whatever header
 
 Take identity is where money is. A digest that moves buys every take again, so the ElevenLabs
 rendering is held byte for byte by a golden test, and the newline rule keeps the payload unambiguous
-without changing any digest that exists. The take hash leaves out the neighbouring text sent for
+without changing any digest that exists. The take digest leaves out the neighbouring text sent for
 prosody, so a take is kept when the section before it changes, which costs a little continuity and
-saves a purchase.
+saves buying a take.
 
 The words have their own key because the audio does not depend on the aligner. Putting the aligner in
 the take digest would buy the audio again to re-align it.

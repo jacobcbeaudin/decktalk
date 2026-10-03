@@ -13,7 +13,7 @@
 
 `GROUPS` below is the only place any check is written down. A workflow reads this table at runtime and
 names no command of its own, so a workflow cannot disagree with it. There is no switch that skips a
-check and no way to mark one advisory, because a knob that exists becomes permanent. A run that
+check and no way to mark one advisory, because a switch that exists becomes permanent. A run that
 selects fewer groups than the full set prints the rows it did not run and why, so a short run is never
 mistaken for a complete one.
 

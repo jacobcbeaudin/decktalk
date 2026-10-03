@@ -18,7 +18,7 @@ leave a renderer silent through the two commands that download two hundred megab
 
 The spend gate lives here rather than on the command line, because a service refuses the same spend
 for the same reason. No call buys anything unless its caller said it may spend, and a ceiling is
-checked before the first request rather than counted down as the credits go.
+checked before the first request rather than counted down as the money goes.
 """
 
 from __future__ import annotations
@@ -39,47 +39,48 @@ from typing import TYPE_CHECKING, Any, cast
 
 from decktalk.errors import STOPS, ApprovalRequired, Cancel, DeckTalkError, ErrorInfo, InputError, ToolError
 from decktalk.events import (
+    CostPriced,
     Event,
     Events,
-    Fetch,
+    FindingRaised,
     JsonlSink,
     Level,
-    Log,
-    Progress,
     RunDone,
+    RunLog,
     RunStart,
     SectionDone,
     SectionStart,
     StageDone,
+    StageProgress,
     StageStart,
+    ToolFetch,
     Unit,
 )
-from decktalk.events import FindingEvent as FindingLine
-from decktalk.events import SpendEvent as SpendLine
 from decktalk.files import current_text, replace_all
 from decktalk.findings import (
     FIX_COMMANDS,
     Applicability,
-    Certainty,
     Code,
     CommandFix,
     Edit,
     Finding,
     Location,
-    SettingFix,
+    Severity,
     judge,
 )
 from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
 from decktalk.logs import WHERE, level_of, logging_into, source_of, within
-from decktalk.media.environment import child_environment, children_see, spending
+from decktalk.media.environment import allowing_spend, child_environment, children_see
 from decktalk.media.ffmpeg import installed_paths, using_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     DOLLAR_DIGITS,
+    ApiKeyState,
     ApplyResult,
     Billing,
+    Cost,
     DoctorResult,
     FixOutcome,
     InitResult,
@@ -88,14 +89,12 @@ from decktalk.results import (
     Layer,
     Result,
     Scope,
-    Spend,
     money,
 )
 from decktalk.secret import register_environment
 from decktalk.settings import (
-    ALLOW_ANY_API_BASE,
     BY_ID,
-    CONFIG_VARIABLE,
+    MACHINE_FILE_VARIABLE,
     PROJECT_FILE,
     ToolsConfig,
     edit,
@@ -108,12 +107,10 @@ from decktalk.settings import (
     route,
     scoped,
     validate,
-    write,
 )
 from decktalk.settings import Scope as SettingScope
-from decktalk.speech import PROVIDERS, ProviderFactory, Voices, key_variable
-from decktalk.speech.sound import SOUNDS, SoundFactory, Sounds
-from decktalk.tomlmap import SWITCHED_OFF
+from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders, key_variable
+from decktalk.speech.sound import SOUNDS, SoundFactory, SoundProviders
 from decktalk.toolchain import assets, chromium_fetch, command_line, tail, traced
 from decktalk.toolchain.announce import announcing
 from decktalk.toolchain.cache import caching_in, standard_cache_dir, standard_data_dir
@@ -141,11 +138,11 @@ STORE_FOLDER = "takes"
 
 
 def _refuse_store_in_cache(store: Path | None, cache: Path) -> None:
-    """Refuse a take store inside the tool cache, which anyone may empty while the store holds paid takes."""
+    """Refuse a take store inside the tool cache, which anyone may empty while the store holds voiced takes."""
     if store is not None and store.resolve().is_relative_to(cache.resolve()):
         raise InputError(
             f"[narration] store_dir is {store}, which is inside the tool cache at {cache}, and anyone may empty "
-            "that while the take store holds takes somebody paid for.",
+            "that while the take store holds voiced takes.",
             hint="Name a folder outside the tool cache, such as ~/decktalk-takes, or leave the key unset.",
         )
 
@@ -250,32 +247,32 @@ class Toolchain:
 
 @dataclass(frozen=True)
 class Threshold:
-    """Which findings fail a run: the least certain one that counts, and the codes that never count.
+    """Which findings fail a run: the least severe one that counts, and the codes that never count.
 
     It is the one rule `ok`, the exit code and the point a build stops at are all read from, so a
     caller that reads `ok` and one that reads the exit code agree about every run. The default fails
-    on a certain finding of any code.
+    on an error of any code.
     """
 
-    stop_on: Certainty | None = Certainty.CERTAIN
-    """The least certain finding that fails the run, or None when no finding does."""
+    stop_on: Severity | None = Severity.ERROR
+    """The least severe finding that fails the run, or None when no finding does."""
 
     allow: frozenset[Code] = frozenset()
-    """Codes that never fail the run, whatever their certainty, though they are still reported."""
+    """Codes that never fail the run, whatever their severity, though they are still reported."""
 
     def reaches(self, finding: Finding) -> bool:
         """Whether one finding fails the run."""
         if self.stop_on is None or finding.code in self.allow:
             return False
-        return self.stop_on is Certainty.UNCERTAIN or finding.certainty is Certainty.CERTAIN
+        return self.stop_on is Severity.WARNING or finding.severity is Severity.ERROR
 
     def fails(self, findings: Iterable[Finding]) -> bool:
         """Whether any of these findings fails the run."""
         return any(self.reaches(found) for found in findings)
 
 
-CERTAIN_FAILS = Threshold()
-"""The threshold of a caller that names none, which fails on a certain finding of any code."""
+ERRORS_FAIL = Threshold()
+"""The threshold of a caller that names none, which fails on an error of any code."""
 
 
 class Run:
@@ -307,22 +304,22 @@ class Run:
         # The most everything this run approved under `max_cost` can cost, which the cap is held against.
         self.approved = 0.0
         self.root = root
-        self.voices: Voices = machine.voices
-        self.sounds: Sounds = machine.sounds
+        self.voices: SpeechProviders = machine.voices
+        self.sounds: SoundProviders = machine.sounds
         self.written: list[Path] = []
         self.findings: list[Finding] = []
         self.opened = time.monotonic()
 
     # ---- the stream ---------------------------------------------------------------------
 
-    def emit[E: Event](self, kind: type[E], **fields: object) -> E:
+    def emit[E: Event](self, kind: type[E], /, **fields: object) -> E:
         """Put one line on the stream, with the four fields the library mints already on it."""
         return self.machine.events.emit(self.id, kind, **fields)
 
     def note(self, message: str, *, level: Level = Level.INFO) -> None:
         """One sentence the library would have printed, had the library printed anything."""
         place = WHERE.get()
-        self.emit(Log, level=level, message=message, stage=place.stage, section=place.section)
+        self.emit(RunLog, level=level, message=message, stage=place.stage, section=place.section)
 
     def logged(self, record: logging.LogRecord) -> None:
         """Turn one standard logging record into one line of this run, which is the bridge's receiver.
@@ -339,7 +336,7 @@ class Run:
             data["error"] = f"{type(failure).__name__}: {first}" if first else type(failure).__name__
         place = WHERE.get()
         self.emit(
-            Log,
+            RunLog,
             level=level_of(record.levelno),
             message=record.getMessage(),
             source=source_of(record.name),
@@ -351,14 +348,14 @@ class Run:
     def found(self, finding: Finding) -> Finding:
         """Record one judgement and report it as it was made, rather than holding it to the end."""
         self.findings.append(finding)
-        self.emit(FindingLine, finding=finding)
+        self.emit(FindingRaised, finding=finding)
         return finding
 
     def progress(
         self, stage: Stage, *, done: int, total: int, unit: Unit, label: str, section: int | None = None
     ) -> None:
         """How far through its own work a stage is, counted in the thing it is working on."""
-        self.emit(Progress, stage=stage, section=section, done=done, total=total, unit=unit, label=label)
+        self.emit(StageProgress, stage=stage, section=section, done=done, total=total, unit=unit, label=label)
 
     def wrote(self, path: Path) -> Path:
         """Record one file this run wrote, which is what fills `written` without a stage listing it twice."""
@@ -394,9 +391,9 @@ class Run:
                 yield
         except BaseException as failure:
             ended = Outcome.STOPPED if isinstance(failure, STOPS) else Outcome.FAILED
-            self.emit(done, **both, outcome=ended, seconds=time.monotonic() - started)
+            self.emit(done, **both, outcome=ended, elapsed_seconds=time.monotonic() - started)
             raise
-        self.emit(done, **both, outcome=Outcome.OK, seconds=time.monotonic() - started)
+        self.emit(done, **both, outcome=Outcome.RAN, elapsed_seconds=time.monotonic() - started)
 
     def fetching(self, tool: str, done_bytes: int, total_bytes: int | None = None) -> None:
         """A tool is arriving, which is the one moment a run stops for the network.
@@ -404,11 +401,11 @@ class Run:
         The three arguments are the three fields of the line, so a fetcher reports and nothing in
         between translates. This is the listener the run binds for its own length.
         """
-        self.emit(Fetch, tool=tool, bytes=done_bytes, total_bytes=total_bytes)
+        self.emit(ToolFetch, tool=tool, bytes=done_bytes, total_bytes=total_bytes)
 
     # ---- the spend gate -----------------------------------------------------------------
 
-    def approve(self, spend: Spend) -> Spend:
+    def approve(self, cost: Cost) -> Cost:
         """Let a priced request through, or refuse it before anything is bought.
 
         Every call to a provider passes through here, so no stage can spend without its caller's
@@ -417,23 +414,23 @@ class Run:
         about. `--max-cost` caps the whole run. A build holds its whole price against it first, through
         `approve_whole`, and each approval here then adds the most it can cost to what this run already
         approved, so a stage that asks for more than the build was priced at is refused before anything
-        in it is bought. The ceiling is summed and never the estimate, because credits are consumed one
+        in it is bought. The ceiling is summed and never the estimate, because a provider charges one
         request at a time. What the run bought before such a refusal stays bought and kept.
         """
-        self.emit(SpendLine, spend=spend)
-        if spend.free:
-            return spend
+        self.emit(CostPriced, cost=cost)
+        if cost.free:
+            return cost
         if not self.spend:
             raise ApprovalRequired(
-                f"{spend.sentence} Nothing approved it.",
+                f"{cost.sentence} Nothing approved it.",
                 hint="Pass --spend to approve it, or --no-spend to play placeholders where a take is missing.",
             )
         if self.max_cost is None:
-            return spend
-        self.approved = self._capped(spend, self.max_cost, already=self.approved)
-        return spend
+            return cost
+        self.approved = self._capped(cost, self.max_cost, already=self.approved)
+        return cost
 
-    def approve_whole(self, spend: Spend) -> None:
+    def approve_whole(self, cost: Cost) -> None:
         """Hold the whole run's price against `max_cost` once, before any stage buys anything.
 
         A run that buys from more than one stage is refused here when their sum is over the cap, so
@@ -441,12 +438,12 @@ class Run:
         recorded as approved, because each stage still passes `approve` with its own price, and the
         running total there refuses a stage that asks for more than this price allowed for.
         """
-        if self.spend and self.max_cost is not None and spend.buys and not spend.free:
-            self._capped(spend, self.max_cost, already=0.0)
+        if self.spend and self.max_cost is not None and cost.buys and not cost.free:
+            self._capped(cost, self.max_cost, already=0.0)
 
-    def _capped(self, spend: Spend, cap: float, *, already: float) -> float:
-        """The most the run can cost with `spend` added to what it `already` approved, refused over `cap`."""
-        if spend.billing is Billing.UNDECLARED:
+    def _capped(self, cost: Cost, cap: float, *, already: float) -> float:
+        """The most the run can cost with `cost` added to what it `already` approved, refused over `cap`."""
+        if cost.billing is Billing.UNDECLARED:
             raise ApprovalRequired(
                 "--max-cost was given and the voice declares no bill, so the cap would guard a made-up price.",
                 hint=(
@@ -455,19 +452,19 @@ class Run:
                     "from one that declares none."
                 ),
             )
-        if spend.price_layer is Layer.DEFAULT:
+        if cost.price_layer is Layer.DEFAULT:
             raise ApprovalRequired(
                 "--max-cost was given and nothing states the rate this run buys at, so the cap would guard a made-up "
                 "price.",
                 hint=(
-                    f"Set {spend.price_key or 'the rate its provider declares'} to what your plan charges, "
+                    f"Set {cost.price_key or 'the rate its provider declares'} to what your plan charges, "
                     "then run it again."
                 ),
             )
-        most = round(already + spend.ceiling_dollars, DOLLAR_DIGITS)
+        most = round(already + cost.ceiling_dollars, DOLLAR_DIGITS)
         if most > cap:
             raise ApprovalRequired(
-                f"{spend.sentence} {self._over(most, cap, already)}",
+                f"{cost.sentence} {self._over(most, cap, already)}",
                 hint=f"Raise the ceiling to --max-cost {most:.2f}, or narrow the run with --section.",
             )
         return most
@@ -491,7 +488,7 @@ class Run:
         *,
         findings: Iterable[Finding] | None = None,
         written: Iterable[Path] | None = None,
-        threshold: Threshold = CERTAIN_FAILS,
+        threshold: Threshold = ERRORS_FAIL,
         **fields: object,
     ) -> R:
         """Fill one result: this run's id, the judgements it made, the files it wrote and how long it took.
@@ -508,8 +505,8 @@ class Run:
         if "written" in declared:
             paths = self.written if written is None else list(written)
             fields.setdefault("written", tuple(dict.fromkeys(self._relative(path) for path in paths)))
-        if "seconds" in declared:
-            fields.setdefault("seconds", time.monotonic() - self.opened)
+        if "elapsed_seconds" in declared:
+            fields.setdefault("elapsed_seconds", time.monotonic() - self.opened)
         fields.setdefault("ok", not threshold.fails(judged))
         return model(findings=judged, **cast("dict[str, Any]", fields))
 
@@ -528,12 +525,12 @@ class Machine:
     toolchain: Toolchain
     events: Events = field(default_factory=Events, compare=False)
     overrides: tuple[str, ...] = ()
-    providers: Mapping[str, ProviderFactory] | None = field(default=None, repr=False, compare=False)
-    """The voices this machine answers with by name, or None for the closed set DeckTalk ships.
+    speech_providers: Mapping[str, SpeechFactory] | None = field(default=None, repr=False, compare=False)
+    """The speech providers this machine answers with by name, or None for the closed set DeckTalk ships.
 
     A host's table is code the host wrote and imported itself, not a member of the closed set, and it
     replaces the shipped one rather than sitting over it, so a machine built with a fake voice can
-    reach no real one by a name the host left out. Each value is a `decktalk.speech.ProviderFactory`.
+    reach no real one by a name the host left out. Each value is a `decktalk.speech.SpeechFactory`.
     """
     sound_providers: Mapping[str, SoundFactory] | None = field(default=None, repr=False, compare=False)
     """The sound providers this machine answers with by name, or None for the ones its voices imply.
@@ -544,13 +541,6 @@ class Machine:
     """
     dotenv: bool = True
     """Whether a project's `.env` is read, which is true for the author's own machine and false for a host's."""
-    allow_any_api_base: bool = False
-    """Whether a voice's base URL may name a host its adapter does not allow, which only a machine decides.
-
-    It is a field rather than a variable the speech layer reads, so a host that built its machine by
-    hand decides it, and a key is never sent elsewhere because the process that runs a call happened
-    to have the switch set.
-    """
     notes: tuple[str, ...] = field(default=(), compare=False)
     """What reading the machine noticed, such as a misspelled variable or key, which every run says."""
     store: Path | None = None
@@ -573,7 +563,6 @@ class Machine:
             store_dir=standard_data_dir(environ, home) / STORE_FOLDER,
             overrides=overrides,
             dotenv=True,
-            allow_any_api_base=environ.get(ALLOW_ANY_API_BASE, "").lower() not in SWITCHED_OFF,
         )
 
     @classmethod
@@ -585,22 +574,20 @@ class Machine:
         cwd: Path,
         cache_dir: Path,
         store_dir: Path | None = None,
-        providers: Mapping[str, ProviderFactory] | None = None,
+        speech_providers: Mapping[str, SpeechFactory] | None = None,
         sound_providers: Mapping[str, SoundFactory] | None = None,
         overrides: Iterable[str] = (),
         dotenv: bool = False,
-        allow_any_api_base: bool = False,
     ) -> Machine:
         """A machine built from values its caller chose, which is how a host runs other people's projects.
 
         Nothing here reads the process. `environ` is every variable a run on this machine may see,
         which for a render job is none and for a voice job is the key and the voice id. The machine
         file at `config_path` is read when it is there and is where a machine-scope fix lands.
-        `providers` replaces the shipped voices by name, and `sound_providers` the shipped sound
-        providers. A project's `.env` is left unread unless
-        `dotenv` says otherwise, and a voice sends its key and its script only to the hosts its
-        adapter allows unless `allow_any_api_base` says otherwise, because both are what a tenant's
-        upload would reach for.
+        `speech_providers` replaces the shipped voices by name, and `sound_providers` the shipped sound
+        providers. A project's `.env` is left unread unless `dotenv` says otherwise, because it is what
+        a tenant's upload would reach for, and every base URL a request goes to is a machine-scoped key,
+        so no project can send the key or the script anywhere this machine did not name.
         """
         register_environment(environ)
         tables = read_machine_toml(config_path)
@@ -626,10 +613,9 @@ class Machine:
             cwd=cwd,
             toolchain=toolchain,
             overrides=pairs,
-            providers=providers,
+            speech_providers=speech_providers,
             sound_providers=sound_providers,
             dotenv=dotenv,
-            allow_any_api_base=allow_any_api_base,
             notes=(*env_warnings(environ), *key_warnings(tables, config_path.name), *refused),
             store=store_dir,
         )
@@ -640,29 +626,27 @@ class Machine:
         return self.toolchain.cache_dir
 
     @property
-    def voices(self) -> Voices:
-        """The voices this machine answers with, where its key may go and how often it asks again.
+    def voices(self) -> SpeechProviders:
+        """The voices this machine answers with, and how often each asks again.
 
         The retries are a machine-scoped key, so the machine's own file, environment and overrides
         decide them whole and no project can.
         """
         mine = _machine_overrides(self.overrides)
         tuned = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings
-        return Voices(
-            factories=PROVIDERS if self.providers is None else self.providers,
-            allow_any_api_base=self.allow_any_api_base,
+        return SpeechProviders(
+            factories=PROVIDERS if self.speech_providers is None else self.speech_providers,
             retries=tuned.narration.retries,
         )
 
     @property
-    def sounds(self) -> Sounds:
-        """The sound providers this machine answers with, where their key may go and how often they ask again."""
+    def sounds(self) -> SoundProviders:
+        """The sound providers this machine answers with, and how often each asks again."""
         if self.sound_providers is not None:
             factories = self.sound_providers
         else:
-            factories = SOUNDS if self.providers is None else {}
-        voices = self.voices
-        return Sounds(factories=factories, allow_any_api_base=voices.allow_any_api_base, retries=voices.retries)
+            factories = SOUNDS if self.speech_providers is None else {}
+        return SoundProviders(factories=factories, retries=self.voices.retries)
 
     def child_environ(self) -> dict[str, str]:
         """The environment a DeckTalk command this machine starts runs with, so the command acts on this machine.
@@ -671,14 +655,14 @@ class Machine:
         two are spelled into the child's environment, and a child `decktalk install` fetches into the
         cache this machine reads and writes to the file this machine holds.
         """
-        child = {**self.environ, CONFIG_VARIABLE: str(self.config_path)}
+        child = {**self.environ, MACHINE_FILE_VARIABLE: str(self.config_path)}
         if self.toolchain.tools.cache_dir or self.toolchain.cache is not None:
             child[BY_ID["tools.cache_dir"].environment] = str(self.cache_dir)
         return child
 
     @property
-    def voice_key(self) -> bool:
-        """True when the credential a paid run would use is set, which is asked and never revealed.
+    def api_key_state(self) -> ApiKeyState:
+        """Whether the API key a voiced run would use is set, which is asked and never revealed.
 
         The variable is the one the voice `[voice] provider` names declares, and a voice that declares
         none needs none. A machine has no project, so the provider is the one its own layers name.
@@ -686,7 +670,9 @@ class Machine:
         mine = _machine_overrides(self.overrides)
         provider = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings.voice.provider
         variable = key_variable(provider)
-        return variable is None or bool(self.environ.get(variable))
+        if variable is None:
+            return ApiKeyState.NOT_NEEDED
+        return ApiKeyState.SET if self.environ.get(variable) else ApiKeyState.MISSING
 
     # ---- opening a run ------------------------------------------------------------------
 
@@ -723,7 +709,7 @@ class Machine:
         # once and each run's events file is read on its own.
         for note in self.notes:
             run.note(note, level=Level.WARNING)
-        outcome, error = Outcome.OK, None
+        outcome, error = Outcome.RAN, None
         try:
             # The toolchain, the download listener, the rule about `.env`, the environment a launched
             # browser is built from and whether the key is in reach are what this run renders, fetches,
@@ -733,7 +719,7 @@ class Machine:
             with (
                 self.toolchain.bound(cancel=run.cancel),
                 children_see(self.environ),
-                spending(run.spend),
+                allowing_spend(run.spend),
                 announcing(run.fetching),
                 reading_dotenv(self.dotenv),
                 logging_into(run.logged, run=run.id),
@@ -751,7 +737,12 @@ class Machine:
         finally:
             dropped = written.dropped if written is not None else 0
             self.events.emit(
-                run.id, RunDone, outcome=outcome, seconds=time.monotonic() - run.opened, error=error, dropped=dropped
+                run.id,
+                RunDone,
+                outcome=outcome,
+                elapsed_seconds=time.monotonic() - run.opened,
+                error=error,
+                dropped=dropped,
             )
             if sink is not None:
                 sink.close()
@@ -798,12 +789,12 @@ class Machine:
                 cache=self.cache_dir,
                 python=f"{sys.version.split()[0]} ({sys.executable})",
                 platform=f"{platform.platform()} ({sys.platform})",
-                voice_key=self.voice_key,
+                api_key_state=self.api_key_state,
                 bias_ms=self._bias(measure=measure),
             )
 
     def apply(self, fix: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
-        """Carry out the fixes a machine can make, which is turning a machine knob and running a command."""
+        """Carry out the fixes a machine can make, which is changing a machine setting and running a command."""
         with self._run(root=self.cwd) as run:
             return apply_fixes(run, fix, root=self.cwd, scope=Scope.MACHINE, unsafe=unsafe)
 
@@ -950,8 +941,6 @@ def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, .
     Every file is then replaced together by `replace_all`, so a fix whose last edit is refused, or
     whose last file cannot be written, leaves every file as it was.
     """
-    if isinstance(fix, SettingFix):
-        return (_write_key(run, fix.key, fix.value, root=root, scope=scope),)
     if isinstance(fix, CommandFix):
         _run_command(run, fix, root=root)
         return ()
@@ -1037,12 +1026,6 @@ def _inside(root: Path, named: Path) -> Path:
             location=Location(where=Path(named).as_posix()),
         ) from outside
     return root / path.resolve().relative_to(root.resolve())
-
-
-def _write_key(run: Run, key: str, value: str, *, root: Path, scope: Scope) -> Path:
-    """Set one settings key through the settings writer, and name the file it lands in."""
-    file = _settings_file(run, root, scope)
-    return write(file, key, value, scope=scope, environ=run.machine.environ).file
 
 
 def _edited(edit: Edit, lines: list[str], path: Path, root: Path) -> list[str]:

@@ -1,4 +1,4 @@
-"""Every knob DeckTalk publishes, with the range that is safe to turn it through.
+"""Every setting DeckTalk publishes, with the range that is safe to turn it through.
 
 One dataclass per table, composed into `Settings`. Each field is declared with `tune()`, which
 carries everything any surface says about that key: what it changes, what its default is, the
@@ -6,7 +6,7 @@ range the loader enforces, the wider range its type would admit, its true unit, 
 moves, which file it belongs in, where its value is expected to come from, what a value at the
 edge risks and which other key or published number it relates to. Nothing about a key is written
 anywhere else, so the JSON Schema, the reference page, `config explain` and a finding that names
-a knob are four renderings of one row.
+a setting are four renderings of one row.
 
 Five layers set a key, lowest to highest: the default here, the same table in the per-machine
 file, the same table in the project's `decktalk.toml`, the environment variable named
@@ -16,9 +16,9 @@ value and not its layer cannot tell a deliberate choice from a default.
 
 Two rules keep the published range honest. The published range is the safe range: a bound is here
 because a value past it deletes a check, corrupts the evidence a later stage measures or breaks a
-tool, and the loader refuses outside it. A number that is not a knob is published too: every
+tool, and the loader refuses outside it. A number that is not a setting is published too: every
 derived expression and every named constant is in `NUMBERS` with its formula and its reason, so a
-reader who cannot find a knob learns the number is deliberately not one.
+reader who cannot find a setting learns the number is deliberately not one.
 """
 
 from __future__ import annotations
@@ -115,7 +115,7 @@ class VideoConfig:
     )
     output_fps: int = tune(
         25,
-        "Frame rate of the final mp4. The recorder's own rate is measured and is not a knob.",
+        "Frame rate of the final mp4. The recorder's own rate is measured and is not a setting.",
         unit="frames per second",
         bounds=Bounds(enum=(25, 30, 50, 60)),
         requires="video.output_fps >= CAPTURE_FPS",
@@ -173,7 +173,7 @@ class NarrationConfig:
     )
     mp3_bitrate: str = tune(
         "128k",
-        "Bitrate of the mp3 files that DeckTalk writes, which are the click tracks and the joined narration.",
+        "Bitrate of the mp3 files that DeckTalk writes, which are the placeholders and the joined narration.",
         bounds=Bounds(enum=("64k", "96k", "128k", "160k", "192k", "256k")),
     )
     words_per_minute: int = tune(
@@ -182,9 +182,9 @@ class NarrationConfig:
         unit="words per minute",
         bounds=Bounds(ge=60, le=300),
     )
-    silent_words_per_minute: int = tune(
+    placeholder_words_per_minute: int = tune(
         150,
-        "Pacing of the click track in a build without voice.",
+        "Pacing of a placeholder, the click audio a section plays until its take is voiced.",
         unit="words per minute",
         bounds=Bounds(ge=60, le=300),
     )
@@ -195,13 +195,13 @@ class NarrationConfig:
         unit="seconds",
         bounds=Bounds(ge=0, le=5),
     )
-    silent_beat_seconds: float = tune(
+    placeholder_beat_seconds: float = tune(
         0.7,
-        "Seconds each beat adds to a section's length in a build without voice.",
+        "Seconds each beat adds to the length of a placeholder take.",
         unit="seconds",
         bounds=Bounds(ge=0, le=10),
     )
-    tail_min_seconds: float = tune(
+    tail_seconds: float = tune(
         0.7,
         "Silence after the last word of every spoken section, so a cut never falls on speech. The take is "
         "placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it.",
@@ -220,7 +220,7 @@ class NarrationConfig:
         hazard=(
             "An empty value, a directory outside the project, an absolute path, the project directory itself, a "
             "directory inside the build directory or one that holds it is refused when the project loads, "
-            "because a bought take must land in a folder the project keeps, and a project someone else wrote "
+            "because a voiced take must land in a folder the project keeps, and a project someone else wrote "
             "would otherwise choose where this machine reads and writes its takes."
         ),
         see_also=("narration.store_dir",),
@@ -228,9 +228,9 @@ class NarrationConfig:
     store_dir: str = tune(
         "",
         "The take store: a folder outside every project where this machine keeps a second copy of every take "
-        "it buys and the words its voice sent with it, each named by its content hash. A take is looked for "
+        "it buys and the words its voice sent with it, each named by its input digest. A take is looked for "
         "here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the "
-        "same words as another plays it without buying it, and a purchase nobody committed yet survives a "
+        "same words as another plays it without buying it, and a take nobody committed yet survives a "
         "`git clean`. Each take is written here once, and a store that already holds a good copy keeps it. "
         "It is empty for the `takes` folder in the per-user data folder, such as "
         "`~/Library/Application Support/decktalk/takes` on macOS.",
@@ -397,7 +397,7 @@ class RecordConfig:
         "Allowed shortfall of a recording against its requested length.",
         unit="seconds",
         bounds=Bounds(ge=0, le=5),
-        decides=(Code.PAGE_TRUNCATED,),
+        decides=(Code.RECORD_TRUNCATED,),
     )
     frame_gap_max_ms: int = tune(
         150,
@@ -405,7 +405,7 @@ class RecordConfig:
         unit="milliseconds",
         bounds=Bounds(ge=REPORT_FRAME_GAP_MS, le=2000),
         requires="record.frame_gap_max_ms >= REPORT_FRAME_GAP_MS",
-        decides=(Code.PAGE_STALLED,),
+        decides=(Code.RECORD_STALLED,),
         hazard=(
             "The runtime reports a gap no finer than its own reporting floor, so a limit under that floor "
             "makes every section stall and every retry spend the recording again."
@@ -470,7 +470,7 @@ class VerifyConfig:
         "Seconds after a section start to the frame that the start check reads.",
         unit="seconds",
         bounds=Bounds(ge=0, le=2),
-        decides=(Code.PAGE_BLACK,),
+        decides=(Code.RECORD_BLACK,),
     )
     reference_lead_extra_ms: float = tune(
         0.0,
@@ -530,7 +530,7 @@ class VerifyConfig:
     )
     thin_change_factor: float = tune(
         3.0,
-        "A passing cue whose changed share or margin is under this many times its floor is uncertain "
+        "A passing cue whose changed share or margin is under this many times its floor is a warning "
         "rather than clean. A value of 1 turns that second opinion off.",
         bounds=Bounds(ge=1, le=10),
         decides=(Code.CUE_THIN_CHANGE,),
@@ -608,7 +608,7 @@ class VerifyConfig:
         unit="luma",
         bounds=Bounds(ge=1, le=200),
         typed=A_LUMA,
-        decides=(Code.PAGE_BLACK,),
+        decides=(Code.RECORD_BLACK,),
         see_also=("record.painted_peak_luma_min",),
     )
     cut_window_seconds: float = tune(
@@ -638,10 +638,10 @@ class VerifyConfig:
 
 @dataclass(frozen=True)
 class VoiceConfig:
-    """These keys are the four every voice has: which provider reads the script, in which voice, model and pace.
+    """These keys are the three every voice has: which provider reads the script, in which voice and at what pace.
 
-    Everything a provider is particular about, its own fields, its default model and its rate, is in
-    that provider's own table, so changing `provider` never sends one vendor's fields to another.
+    Everything a provider is particular about, its own fields, its model and its rate, is in that
+    provider's own table, so changing `provider` never sends one vendor's fields or model to another.
     """
 
     provider: str = tune(
@@ -661,12 +661,6 @@ class VoiceConfig:
             "The id is placed in the path of every speech request, so a value that could hold a slash, a dot "
             "or a query would let a project somebody else wrote send the key to another endpoint of the service."
         ),
-    )
-    model: str = tune(
-        "",
-        "The provider's model that reads the script. It is empty for the model the provider's own table "
-        "names, such as `[elevenlabs] model` or `[dtsp] model`.",
-        see_also=("elevenlabs.model", "dtsp.model"),
     )
     speed: float = tune(
         1.0,
@@ -737,6 +731,13 @@ class MotionConfig:
     )
 
 
+BASE_URL_HAZARD = (
+    "The script, and for a paid voice the key, travels to whatever host this names, so only the machine names "
+    "it and a project file that sets it is refused."
+)
+"""Why a speech or sound base URL is the machine's to set, said once for every table that holds one."""
+
+
 ELEVENLABS_MP3_FORMATS = (
     "mp3_22050_32",
     "mp3_44100_32",
@@ -750,16 +751,15 @@ ELEVENLABS_MP3_FORMATS = (
 
 @dataclass(frozen=True)
 class ElevenLabsConfig:
-    """These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API.
+    """These keys are ElevenLabs's own: its speech fields, its model, its rate, its output format and its API.
 
-    The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on
-    elevenlabs.io unless the machine allows any. The score stage buys from the same API with the same key.
+    The key it is bought with is `ELEVENLABS_API_KEY`, and `base_url` is the machine's to set. The
+    score stage buys from the same API with the same key.
     """
 
     model: str = tune(
         "eleven_multilingual_v2",
-        "The ElevenLabs model that reads the script when `[voice] model` is empty.",
-        see_also=("voice.model",),
+        "The ElevenLabs model that reads the script when `[voice] provider` is `elevenlabs`.",
     )
     stability: float = tune(
         0.55,
@@ -782,10 +782,10 @@ class ElevenLabsConfig:
         True,
         "Whether ElevenLabs applies its own speaker boost to the take.",
     )
-    price_per_1000_characters: float = tune(
+    dollars_per_1000_characters: float = tune(
         0.0,
-        "What this project's ElevenLabs plan charges per thousand characters of speech.",
-        unit="currency per 1000 characters",
+        "What this project's ElevenLabs plan charges in US dollars per thousand characters of speech.",
+        unit="US dollars per 1000 characters",
         bounds=Bounds(ge=0, le=100),
         source=Source.STATED,
         evidence="the plan page of the account whose key this project uses",
@@ -802,7 +802,13 @@ class ElevenLabsConfig:
         bounds=Bounds(enum=ELEVENLABS_MP3_FORMATS),
         hazard="Every take already bought was bought in the format named here, so another one buys every take again.",
     )
-    api_base: str = tune("https://api.elevenlabs.io/v1", "Base URL of the ElevenLabs API.")
+    base_url: str = tune(
+        "https://api.elevenlabs.io/v1",
+        "Base URL of the ElevenLabs API, which the voice and the score both send their requests and the key to.",
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=BASE_URL_HAZARD,
+    )
 
 
 @dataclass(frozen=True)
@@ -810,19 +816,19 @@ class DtspConfig:
     """These keys are the `dtsp` voice's own: where its local server listens and the model it reads with.
 
     `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is
-    not part of this repository. It needs no key, bills nothing, and `url` may name only a loopback
-    address over http unless the machine allows any host.
+    not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.
     """
 
-    url: str = tune(
+    base_url: str = tune(
         "http://127.0.0.1:8765",
-        "Base URL of the local speech server, which must be http on 127.0.0.1, localhost or [::1].",
-        hazard="The script travels to whatever host this names, so a project file can name only this machine.",
+        "Base URL of the local speech server, which the script is sent to.",
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=BASE_URL_HAZARD,
     )
     model: str = tune(
         "kokoro-82m",
-        "The model the local server reads the script with when `[voice] model` is empty, as the server names it.",
-        see_also=("voice.model",),
+        "The model the local server reads the script with when `[voice] provider` is `dtsp`, as the server names it.",
     )
 
 
@@ -849,11 +855,11 @@ class AmbienceConfig:
         "How closely the ambience bed follows its prompt.",
         bounds=A_SHARE,
     )
-    price_per_minute: float = tune(
+    dollars_per_minute: float = tune(
         0.0,
-        "What this project's sound plan charges per minute of ambience audio, which is priced by the second "
-        "of audio asked for.",
-        unit="currency per minute of audio",
+        "What this project's sound plan charges in US dollars per minute of ambience audio, which is priced by "
+        "the second of audio asked for.",
+        unit="US dollars per minute of audio",
         bounds=Bounds(ge=0, le=100),
         source=Source.STATED,
         evidence="the plan page of the account whose key buys the sound",
@@ -880,11 +886,11 @@ class EffectsConfig:
         "How closely every effect follows its prompt, unless its own table sets how closely.",
         bounds=A_SHARE,
     )
-    price_per_minute: float = tune(
+    dollars_per_minute: float = tune(
         0.0,
-        "What this project's sound plan charges per minute of effect audio, which is priced by the second "
-        "of audio asked for.",
-        unit="currency per minute of audio",
+        "What this project's sound plan charges in US dollars per minute of effect audio, which is priced by "
+        "the second of audio asked for.",
+        unit="US dollars per minute of audio",
         bounds=Bounds(ge=0, le=100),
         source=Source.STATED,
         evidence="the plan page of the account whose key buys the sound",
@@ -922,11 +928,11 @@ class MusicConfig:
         unit="seconds",
         bounds=Bounds(ge=0, le=30),
     )
-    price_per_minute: float = tune(
+    dollars_per_minute: float = tune(
         0.0,
-        "What this project's sound plan charges per minute of music audio, which is priced by the second "
-        "of audio asked for.",
-        unit="currency per minute of audio",
+        "What this project's sound plan charges in US dollars per minute of music audio, which is priced by "
+        "the second of audio asked for.",
+        unit="US dollars per minute of audio",
         bounds=Bounds(ge=0, le=100),
         source=Source.STATED,
         evidence="the plan page of the account whose key buys the sound",
@@ -962,8 +968,8 @@ class ScoreConfig:
         "elevenlabs",
         "The sound provider the music, the ambience and the effects are bought from, which is a name the "
         "machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys "
-        "with the key and `api_base` of `[elevenlabs]`.",
-        see_also=("elevenlabs.api_base",),
+        "with the key and `base_url` of `[elevenlabs]`.",
+        see_also=("elevenlabs.base_url",),
     )
     format: str = tune(
         "mp3_44100_128",
@@ -1006,7 +1012,7 @@ class OutputConfig:
     events_max_bytes: int = tune(
         8_388_608,
         "Bytes one run's events file may reach before debug and info lines are left out of it. "
-        "Lines about the run, its stages, its sections, its findings and its spending are always kept.",
+        "Lines about the run, its stages, its sections, its findings and its costs are always kept.",
         unit="bytes",
         bounds=Bounds(ge=65_536, le=1_073_741_824),
         scope=Scope.MACHINE,
@@ -1092,27 +1098,22 @@ DOCUMENT_TABLES = ("project", "section", "transition")
 keys the document owns, so neither is wholly one thing.
 """
 
-CONFIG_VARIABLE = "DECKTALK_CONFIG"
+MACHINE_FILE = "machine.toml"
+"""The per-machine settings file's name, which is not the project's so the two files are never confused."""
+
+MACHINE_FILE_VARIABLE = "DECKTALK_MACHINE_FILE"
 """The variable that names a per-machine settings file other than the standard one."""
 
-ALLOW_ANY_API_BASE = "DECKTALK_ALLOW_ANY_API_BASE"
-"""The variable that lets a voice's base URL name a host its adapter does not allow, for a local mock.
-
-The machine reads it when it is built from the process environment and carries the answer as a
-field, because the environment is the user's own machine and a project file is not, so the file
-alone can never redirect the key.
-"""
-
-STANDALONE_ENV = frozenset(("DECKTALK_PROJECT", CONFIG_VARIABLE, ALLOW_ANY_API_BASE))
-"""The three variables DeckTalk reads that name no key. Every other DECKTALK_ name is a key or a typo."""
+STANDALONE_ENV = frozenset(("DECKTALK_PROJECT", MACHINE_FILE_VARIABLE))
+"""The two variables DeckTalk reads that name no key. Every other DECKTALK_ name is a key or a typo."""
 
 
 @dataclass(frozen=True)
 class Number:
-    """One number that is deliberately not a knob, published with its formula and its reason.
+    """One number that is deliberately not a setting, published with its formula and its reason.
 
     A derived number is written as its expression and never as its value, so a reader who goes
-    looking for a knob that used to exist meets the arithmetic instead of nothing. A constant is a
+    looking for a setting that used to exist meets the arithmetic instead of nothing. A constant is a
     fact about a codec, a standard or a tool DeckTalk drives, and the sentence says which.
     """
 
@@ -1264,7 +1265,7 @@ NUMBERS: tuple[Number, ...] = (
         ),
     ),
 )
-"""Every number that is not a knob, with the formula or the fact that fixes it."""
+"""Every number that is not a setting, with the formula or the fact that fixes it."""
 
 NUMBERS_BY_ID: dict[str, Number] = {number.id: number for number in NUMBERS}
 
@@ -1273,7 +1274,7 @@ class Layers(Model):
     """What every layer said about every key, which is the record `config explain` renders.
 
     It is built at load and again at reload, so a watch loop that sees an edited `decktalk.toml`
-    sees the layer that set each key move with it. A finding that names a knob quotes the winning
+    sees the layer that set each key move with it. A finding that names a setting quotes the winning
     row, because a value without its layer cannot tell a deliberate choice from a default.
     """
 
@@ -1307,12 +1308,12 @@ class Loaded:
 
 
 def machine_config_path(environ: Mapping[str, str], home: Path, platform: str = sys.platform) -> Path:
-    """The per-machine settings file this environment names, which DECKTALK_CONFIG moves.
+    """The per-machine settings file this environment names, which DECKTALK_MACHINE_FILE moves.
 
     The environment and the home directory are arguments, because the machine that owns them is the
     one reader of the process, and a host that builds its machine by hand names its own file.
     """
-    override = environ.get(CONFIG_VARIABLE)
+    override = environ.get(MACHINE_FILE_VARIABLE)
     if override:
         return Path(override)
     if platform == "darwin":
@@ -1321,7 +1322,7 @@ def machine_config_path(environ: Mapping[str, str], home: Path, platform: str = 
         root = Path(environ.get("APPDATA") or home / "AppData" / "Roaming")
     else:
         root = Path(environ.get("XDG_CONFIG_HOME") or home / ".config")
-    return root / "decktalk" / PROJECT_FILE
+    return root / "decktalk" / MACHINE_FILE
 
 
 def read_toml(path: Path) -> dict[str, Any]:
@@ -1366,7 +1367,7 @@ def refuse_off_scope(data: Mapping[str, Any], allowed: Scope, *, file: Path, tex
         where = key.scope.value
         raise InputError(
             f"{file.name}: '{dotted}' is {where}-scoped, so it belongs in {WHERE_SCOPE_BELONGS[key.scope]}.",
-            hint=f"Remove it from {file.name} and run `decktalk config set {dotted} <value> --where {where}`.",
+            hint=f"Remove it from {file.name} and run `decktalk config set {dotted} <value> --scope {where}`.",
             location=Location(
                 where=f"[{key.table}] {key.name}",
                 file=file,
@@ -1497,7 +1498,7 @@ def route(overrides: tuple[str, ...]) -> dict[str, str]:
             )
         if key.split(".")[0] in DOCUMENT_TABLES:
             raise InputError(
-                f"'{key}' is project content rather than a knob, so no override can set it.",
+                f"'{key}' is project content rather than a setting, so no override can set it.",
                 hint=f"Edit [{key.split('.')[0]}] in {PROJECT_FILE} instead.",
             )
         key_named(key)
@@ -1716,7 +1717,7 @@ def _scoped_key(key: str, scope: Scope, *, action: str, rerun: str) -> Key:
     if known.scope is not scope:
         raise InputError(
             f"'{key}' is {known.scope.value}-scoped, so it cannot be {action} the {scope.value} file.",
-            hint=f"Run `{rerun} --where {known.scope.value}`.",
+            hint=f"Run `{rerun} --scope {known.scope.value}`.",
         )
     return known
 
@@ -1740,7 +1741,7 @@ def edit(text: str, key: str, value: str, *, scope: Scope, file: Path) -> Edited
     The key is refused when no key has that name, when it belongs in the other file, or when the
     value is not one the key takes. The document is edited rather than rewritten, because a person
     wrote the comments around the key and a writer that dumped a parsed tree would delete them the
-    first time an agent turned a knob. The text that comes back is not yet validated as a whole,
+    first time an agent changed a setting. The text that comes back is not yet validated as a whole,
     because a caller may have more changes to make to it first.
     """
     known = _scoped_key(key, scope, action="written to", rerun=f"decktalk config set {key} {value}")

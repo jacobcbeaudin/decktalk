@@ -12,6 +12,7 @@
 
 import { frameAt, now, round, run, schedule, start } from "./clock.ts";
 import {
+  cueId,
   FRAME_STEP_MS,
   LIST_SEPARATOR,
   MILLISECONDS,
@@ -19,7 +20,6 @@ import {
   type Q,
   SLIDE_ENTRANCES,
   TIME_MARK,
-  wireId,
 } from "./contract.ts";
 import { typeset, ready as typesetterReady } from "./katex.ts";
 import { fire, type Mounted, prepare } from "./reveal.ts";
@@ -213,7 +213,7 @@ function fireCue(cue: string, due: number): void {
   const slide = state.slide;
   const slideEl = state.mounted?.el ?? null;
   const ctx = context(cue, slide ? slide.id : "", now());
-  const local = slide ? cue.slice(wireId(slide.id, "").length) : cue;
+  const local = slide ? cue.slice(cueId(slide.id, "").length) : cue;
   const own = slide?.on[local];
   if (own) {
     try {
@@ -237,7 +237,7 @@ function fireCue(cue: string, due: number): void {
 
 // ---- the modes ---------------------------------------------------------------------------------------
 
-/** `?cues=` as the recorder writes it, which is a wire id and a second, sorted by the second. */
+/** `?cues=` as the recorder writes it, which is a cue id and a second, sorted by the second. */
 function parseCues(raw: string): { id: string; at: number }[] {
   return raw
     .split(LIST_SEPARATOR)

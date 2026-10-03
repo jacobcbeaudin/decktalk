@@ -201,10 +201,10 @@ src/decktalk/
     page.py              The page contract as Python reads it: every attribute, the code that judges it and every query key.
   models                 the frozen models and the settings tree, which every layer above reads
     results.py           What every call returns: one frozen result per command, each a flat object a reader can dispatch on.
-    events.py            One stream of progress: twelve moments, the four fields the library mints onto each, and the subscribers that render them.
+    events.py            One stream of progress: thirteen moments, the four fields the library mints onto each, and the subscribers that render them.
     logs.py              The bridge from Python's standard logging to the run's event stream, which is the one output there is.
     tomlmap.py           One loader from a mapping to typed values, with located errors and "did you mean" hints.
-    settings.py          Every knob DeckTalk publishes, with the range that is safe to turn it through.
+    settings.py          Every setting DeckTalk publishes, with the range that is safe to turn it through.
   leaves                 one job each, and no knowledge of a project
     toolchain/           What DeckTalk fetches or ships for one machine, and where it keeps it.
       announce.py        How a download says it is happening, so a run that stops for the network says so as it happens.
@@ -234,7 +234,7 @@ src/decktalk/
     template.py          The projects and the skills packaged in the wheel, and writing one of them into a directory.
     artifacts/           The typed build artifacts and the files they are written to.
       cue_times.py       Every cue resolved to a second on its section's own clock.
-      cuts.py            The cut list: where every section sits in the finished film, and what each section cut was made from.
+      placements.py      The placements: where every section sits in the finished film, and what each section cut was made from.
       recordings.py      Everything `record` did for one section, and everything it judged about the result.
       stills.py          Frozen frames kept by what drew them, so one state of a page is drawn once whoever asks for it.
       stored.py          A build artifact as a file: one frozen model per file, read once and written atomically.
@@ -251,16 +251,16 @@ src/decktalk/
       timeline.py        Where the narration plays in the final film: the narration clock placed on the film's clock.
       workspace.py       Every path under `build/`, named once.
     machine.py           This computer and this process, as one value, and the run every call opens on it.
-    explain.py           One knob explained: what set it, what it feeds, and what a candidate value would do to this project.
+    explain.py           One setting explained: what set it, what it feeds, and what a candidate value would do to this project.
     stages/              The pipeline, one package per stage and one module per call that reports or cuts.
       build.py           The whole pipeline in order, or the span of it one run asked for.
       clip.py            A span of one built section, cut into its own file with its own sound and its own words.
       pool.py            The one pool every stage fans its sections out to, and the three ways it stops.
       status.py          What the project's files say, what is built from them, what has gone stale, and what to do next.
-      storyboard.py      Every slide at every cue, frozen onto one page, which is the checkpoint before credits are spent.
+      storyboard.py      Every slide at every cue, frozen onto one page, which is the checkpoint before anything is bought.
       words.py           Every spoken word with its span, which is how a cue phrase is written.
       assemble/          Stage 5: the recordings, the narration, the clips and the score become one film.
-        cut.py           Every section becomes one silent mp4, and the cut list records where each one plays.
+        cut.py           Every section becomes one silent mp4, and the placements record where each one plays.
         loudness.py      EBU R128 loudness: measure, apply one gain, limit the true peaks, and measure again.
         mix.py           The whole soundtrack as one ffmpeg filter graph, one `MixInput` per layer.
         publish.py       Everything a viewer receives beside the picture: captions, chapters, the transcript and the poster.
@@ -271,7 +271,7 @@ src/decktalk/
       cue/               Stage 2: every cue phrase becomes a second on its own section's clock.
         catalog.py       `cues.json` read against the catalog the page itself published, and the fixes that reconcile them.
         resolve.py       The arithmetic that turns one cue phrase into one second on its section's own clock.
-      narrate/           Stage one: `script.md` becomes one take per section, indexed by content hash.
+      narrate/           Stage one: `script.md` becomes one take per section, indexed by input digest.
         plan.py          The take plan: what a run would voice, what it already holds, and what that would cost.
         script_rules.py  What the voice must never receive, and the scans `check` judges a script by.
         takes.py         Writing one take, placing it, and joining every take into one narration track.
@@ -335,7 +335,7 @@ to no module goes in `tests/contract/`, which is a closed list, so it gains a ro
 repository artifact it holds.
 
 A project is opened with `decktalk.open(path)`, six verbs move it forward, every call returns a
-frozen result whose findings carry a code, a location, a certainty and often a fix, and nothing in
+frozen result whose findings carry a code, a location, a severity and often a fix, and nothing in
 the library prints. The supported Python API is a root of about thirty names, `decktalk.__all__`,
 which `scripts/build_api.py` generates, and the public modules `decktalk.results`,
 `decktalk.events`, `decktalk.findings`, `decktalk.settings`, `decktalk.speech` and
@@ -387,6 +387,8 @@ People and agents read these docs. Write so that neither has to guess.
 - Put a condition before its action: "If the build stops, run `decktalk cue`."
 - Use active voice and present tense.
 - Use the [glossary](https://docs.decktalk.ai/reference/glossary) term for each thing. Never use a synonym.
+  A word in the glossary's **Not** column fails `tests/contract/test_retired_words.py` in the help,
+  a docs page or a skill.
 - Write complete sentences. In a reference table, a short phrase is fine.
 - Do not use semicolons, em dashes, idioms or version-specific wording.
 - State each fact on one page, and link to it from the others.

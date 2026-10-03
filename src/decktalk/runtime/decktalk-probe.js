@@ -61,7 +61,7 @@
     "data-describe": {
       name: "data-describe",
       on: ["element", "slide"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -69,7 +69,7 @@
       span: 0,
       affects: ["transcript", "catalog"],
       summary:
-        "The subject of the reveal, which the runtime gives a verb per moment. An empty phrase means decorative.",
+        "The subject of the reveal, which the runtime gives a verb per moment. An empty description means decorative.",
     },
     "data-tex": {
       name: "data-tex",
@@ -177,7 +177,7 @@
       code: "PAGE_CLASS_UNDESCRIBED",
       span: READ_FROM_THE_PAGE,
       affects: ["cue-order", "motion", "transcript", "style"],
-      summary: "Adds a class at a moment, written as moment:name pairs, for the page's own stylesheet.",
+      summary: "Adds a class at a cue, written as cue:class pairs, for the page's own stylesheet.",
     },
     "data-describe-class": {
       name: "data-describe-class",
@@ -189,7 +189,7 @@
       code: null,
       span: 0,
       affects: ["transcript"],
-      summary: "What each class change means, as moment:phrase pairs separated by a vertical bar.",
+      summary: "What each class change means, as cue:description pairs separated by a vertical bar.",
     },
     "data-stagger": {
       name: "data-stagger",
@@ -203,14 +203,14 @@
       affects: ["motion"],
       summary: "The container's children arrive this far apart from one cue.",
     },
-    "data-steps": {
-      name: "data-steps",
+    "data-spotlight": {
+      name: "data-spotlight",
       on: ["container"],
       kind: "flag",
       values: [],
       default: null,
       range: null,
-      code: "PAGE_STAGGER_EMPTY",
+      code: "PAGE_SPOTLIGHT_EMPTY",
       span: READ_FROM_THE_PAGE,
       affects: ["cue-order", "motion", "transcript", "catalog"],
       summary: "Each cued child comes to the front as it arrives and the ones before it step back.",
@@ -254,7 +254,7 @@
     "data-describe-out": {
       name: "data-describe-out",
       on: ["element"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -278,7 +278,7 @@
     "data-name": {
       name: "data-name",
       on: ["scene"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -321,7 +321,7 @@
       code: "PAGE_CUE_UNKNOWN",
       span: 0,
       affects: ["cue-order", "catalog"],
-      summary: "Local names of cues only a handler serves, which no moment attribute mentions.",
+      summary: "Cue names only a handler serves, which no moment attribute mentions.",
     },
     "data-enter": {
       name: "data-enter",
@@ -338,11 +338,11 @@
   };
   var MOMENTS = Object.keys(ATTRS).filter((name) => ATTRS[name].kind === "moment");
   var MOMENT_SELECTOR = MOMENTS.map((name) => `[${name}]`).join(",");
-  var WIRE_MARK = ":";
+  var CUE_MARK = ":";
   var ENGINE_PATH = "/__decktalk/";
   var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
-  function wireId(slide, local) {
-    return `${slide}${WIRE_MARK}${local}`;
+  function cueId(slide, local) {
+    return `${slide}${CUE_MARK}${local}`;
   }
 
   // src/decktalk/runtime/src/probe/probe.ts
@@ -516,7 +516,7 @@
     const moments = {};
     for (const name of MOMENT_ATTRS) {
       const local = attrs[name];
-      if (local) moments[name] = wireId(slideId, local);
+      if (local) moments[name] = cueId(slideId, local);
     }
     return {
       attrs,

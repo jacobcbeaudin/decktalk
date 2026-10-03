@@ -3,11 +3,10 @@
 The `/text-to-speech` endpoint returns the audio and a start and an end time per character, which
 `words_from_alignment` groups into words, and that is the whole reason DeckTalk can cut on a word.
 The same service sells sound effects and music, which are bought by its own adapter in the sound
-table, `speech/sound/elevenlabs.py`, with this key and this `api_base`.
+table, `speech/sound/elevenlabs.py`, with this key and this `base_url`.
 
-The key travels in a header to whatever host `[elevenlabs] api_base` names, so the base is checked
-once when the provider is built against the hosts this adapter declares, https on elevenlabs.io and
-its subdomains, and the key is a `Secret` that only the header builder reveals. The
+The key travels in a header to whatever host `[elevenlabs] base_url` names, which only the machine
+sets, and the key is a `Secret` that only the header builder reveals. The
 voice id is not a secret: it names which voice reads the script, the way a model name names which
 model does, and it arrives in the request rather than being read from the environment here.
 """
@@ -16,14 +15,14 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, cast
 
 from ..errors import InputError, ProviderError
 from ..results import Word
 from ..secret import Secret
 from ..settings import ElevenLabsConfig
-from . import DECLARED, PUNCT, Output, SpeechRequest, VoiceContext, canonical_text, checked_base
+from . import DECLARED, PUNCT, Output, SpeechContext, SpeechRequest, canonical_text
 from .http import post_json
 
 NAME = "elevenlabs"
@@ -50,7 +49,7 @@ def voice_settings(table: ElevenLabsConfig, speed: float) -> dict[str, Any]:
 
     The names differ in one place, because the service calls the speaker boost `use_speaker_boost`
     while the key an author writes is `speaker_boost`. These five values are sent with every request
-    and are also the settings a take's digest is taken over, so a paid take keeps its name.
+    and are also the settings a take's digest is taken over, so a voiced take keeps its name.
     """
     return {
         "stability": table.stability,
@@ -74,16 +73,6 @@ def output(table: ElevenLabsConfig) -> Output:
 def renders_pauses(model: str) -> bool:
     """Whether this ElevenLabs model renders a timed pause, which it does by reading a `<break>` tag."""
     return model in BREAK_MODELS
-
-
-def checked(api_base: str, *, allow_any: bool) -> str:
-    """`api_base` when it is on the hosts this adapter declares or the machine allows any, and otherwise an error.
-
-    The key travels in a header to whatever host `api_base` names, so the value is checked before the
-    first request, wherever it came from. The voice and the sound adapter share this one rule.
-    """
-    declared = DECLARED[NAME]
-    return checked_base(api_base, declared.hosts, setting=f"[{declared.table}] {declared.base}", allow_any=allow_any)
 
 
 def words_from_alignment(chars: list[str], starts: list[float], ends: list[float]) -> list[Word]:
@@ -122,22 +111,16 @@ class ElevenLabs:
     """Speech with word timestamps from the cloud voice.
 
     The key is a `Secret`, so no log line, error, `repr` or JSON payload that reaches this provider
-    can print it, and `_headers` is the one place it is revealed. The base URL is checked once, when
-    the provider is built.
+    can print it, and `_headers` is the one place it is revealed.
     """
 
-    context: VoiceContext
-    """The tuning that shapes every request, and the machine's switch and retries that `Voices.provider` set on it."""
+    context: SpeechContext
+    """The tuning that shapes every request, and the retries that `SpeechProviders.provider` set on it."""
     api_key: Secret
     name: str = NAME
-    checked_base: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        # Every URL is built from the base that passed the check, and never from the setting again.
-        self.checked_base = checked(self.context.api_base, allow_any=self.context.allow_any_api_base)
 
     @classmethod
-    def for_context(cls, context: VoiceContext) -> ElevenLabs:
+    def for_context(cls, context: SpeechContext) -> ElevenLabs:
         """The provider one project asks for: its key, and the tuning that shapes its requests."""
         (api_key,) = context.secrets.require(cast("str", DECLARED[NAME].key_variable))
         return cls(context, api_key)
@@ -159,7 +142,7 @@ class ElevenLabs:
                 f"the ElevenLabs model {request.model!r} reads no <break> tag, so a timed pause would be dropped.",
                 hint=f"Use one of {', '.join(sorted(BREAK_MODELS))}, or take the timed pauses out of the script.",
             )
-        url = f"{self.checked_base}/text-to-speech/{request.voice_id}/with-timestamps"
+        url = f"{self.context.base_url.rstrip('/')}/text-to-speech/{request.voice_id}/with-timestamps"
         payload: dict[str, Any] = {
             # The pieces in the canonical text, which writes a timed pause as the <break> tag these models read.
             "text": canonical_text(request.pieces),

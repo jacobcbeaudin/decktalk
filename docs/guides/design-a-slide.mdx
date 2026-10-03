@@ -58,18 +58,18 @@ and a departure "leaves".
 ```
 
 An element that has a cue, carries no `data-describe` and draws no text of its own earns
-[`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION), which is certain. A shape with no
+[`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION), which is an error. A shape with no
 words in it is the usual cause, because a filled block is the one kind of reveal that is easy to see
 and impossible to read.
 
 Three attributes go with it.
 
-- `data-describe=""` is a decorative element, said out loud in the markup. An empty phrase clears the
+- `data-describe=""` is a decorative element, said out loud in the markup. An empty description clears the
   finding and writes no transcript line.
 - `data-describe-out` replaces the departure sentence when leaving means something of its own, such
   as the lesson's `data-describe-out="the hand-written rules drop away"`.
-- `data-describe-class` gives a phrase to each class change, as `moment:phrase` pairs separated by a
-  vertical bar. A `data-class` change with no phrase beside it earns
+- `data-describe-class` gives a description to each class change, as `cue:description` pairs separated by a
+  vertical bar. A `data-class` change with no description beside it earns
   [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED), because the transcript
   would otherwise lose the change entirely.
 
@@ -81,8 +81,8 @@ share of the frame those pixels cover.
 
 | Changed share of the frame | What is reported |
 |---|---|
-| Under `verify.changed_share_min_percent`, 0.1 percent | [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE), certain. Nothing happened that a frame can show. |
-| Under that floor times `verify.thin_change_factor`, so under 0.3 percent | [`CUE_THIN_CHANGE`](/reference/findings/CUE_THIN_CHANGE), uncertain. The reveal is there and it is faint. |
+| Under `verify.changed_share_min_percent`, 0.1 percent | [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE), an error. Nothing happened that a frame can show. |
+| Under that floor times `verify.thin_change_factor`, so under 0.3 percent | [`CUE_THIN_CHANGE`](/reference/findings/CUE_THIN_CHANGE), a warning. The reveal is there and it is faint. |
 | Above 0.3 percent | Clean. |
 
 On a 1920 by 1080 frame, 0.3 percent is about 6,220 pixels and 0.1 percent about 2,073, which is
@@ -129,7 +129,7 @@ to eleven captured frames at 25 fps, and a value off that grid earns
 the entrance starts.
 
 An element whose measured motion still runs past 0.5 seconds earns
-[`PAGE_MOTION_OVERRUN`](/reference/findings/PAGE_MOTION_OVERRUN), which is certain. Since the longest
+[`PAGE_MOTION_OVERRUN`](/reference/findings/PAGE_MOTION_OVERRUN), which is an error. Since the longest
 entrance a page may write is 0.44 seconds, the two ways to reach it are `motion.scale` above one and
 a staggered container.
 
@@ -159,7 +159,7 @@ The lesson example staggers four tiles at 0.04 with a `fade` entrance, so its to
 
 The same four tiles at 0.2 with a `draw` entrance would total 0.2 × 3 + 0.44, which is 1.04 seconds,
 and DeckTalk measures that exactly and reports
-[`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN) as a certain finding. Fix it by
+[`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN) as an error. Fix it by
 shortening the step, choosing a shorter entrance, or splitting the container across two cues.
 
 A container that carries `data-stagger` and has no children spreads one entrance over nothing, which
@@ -194,7 +194,7 @@ decktalk build --set motion.reduce=true
 ```
 
 There is no flag for it, because no flag duplicates a settings key. `motion.scale` is the companion
-knob, a multiplier from 0.25 to 4 on every declared span, and a scaled span is clamped at the
+setting, a multiplier from 0.25 to 4 on every declared span, and a scaled span is clamped at the
 measurable ceiling rather than obeyed, so slowing a deck down cannot delete its own checks.
 
 The runtime can only reduce the motion it owns. A `data-class` hands the change to the page's own
@@ -211,7 +211,7 @@ stylesheet, and that stylesheet owes the reduced form. The lesson example writes
 DeckTalk lays every slide out once, adds each class named in `data-class`, and reads the longest
 animation or transition the stylesheet gives that element. Under a reduced render, a class that still
 animates earns [`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED), which is
-certain and names the class. It can only be raised under a reduced render, so judge the page that way
+an error and names the class. It can only be raised under a reduced render, so judge the page that way
 at least once:
 
 ```console
@@ -233,7 +233,7 @@ browser at all and then says which judgements it could not reach.
 
 `decktalk storyboard` freezes every slide at every cue onto one page, `build/storyboard.html`, and
 narrows to `--section`, `--slide`, `--after`, `--before` and `--at`. It is the human checkpoint
-before any voice credits are spent, and it is where unrendered maths, overlapping elements and text
+before anything is bought, and it is where unrendered maths, overlapping elements and text
 running off the frame become obvious.
 
 ## Next

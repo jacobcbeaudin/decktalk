@@ -8,11 +8,11 @@
 would show while both can still be changed for nothing. It plans the takes the way `narrate` would,
 prices them, resolves every cue against the words those takes will carry, reads the catalog each
 page publishes, and freezes the frames either side of every cue so a reveal that would not be
-measured is met here rather than after the credits are gone. The score is priced by its own
+measured is met here rather than after the money is gone. The score is priced by its own
 stage, so a sound is never in this price.
 
-It has two scope flags and no others, because neither names a stage a run could skip nor a knob a
-project could turn. Without pages it judges the script, the cue phrases and the take plan with no
+It has two scope flags and no others, because neither names a stage a run could skip nor a setting a
+project could change. Without pages it judges the script, the cue phrases and the take plan with no
 browser at all and says which judgements it could not reach, so a hook that has no browser still
 prices the narration and reads its script. Every judgement that scaffolds a `cues.json` row reads the
 catalog a page publishes, so a new deck gets those rows from a run with pages. Without frames it keeps the
@@ -42,8 +42,7 @@ from decktalk.media.browser import chromium
 from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
-from decktalk.results import CheckResult, Panel, SectionCues, SpendState
-from decktalk.speech import check_host
+from decktalk.results import CheckResult, CostState, Panel, SectionCues
 from decktalk.stages import selects, voice_model
 from decktalk.stages.check.scan import (
     judged_pages,
@@ -55,7 +54,7 @@ from decktalk.stages.check.scan import (
 from decktalk.stages.check.script import pause_findings, script_findings
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
-from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
+from decktalk.stages.narrate import TakePlan, cost_of, planned_words, voiced_plan
 from decktalk.stages.narrate.plan import dropped_pauses, named_voice
 from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
 from decktalk.stages.verify import opted_out
@@ -99,12 +98,7 @@ def check(
     pages: bool = True,
     frames: bool = True,
 ) -> CheckResult:
-    """Judge the script, the cue file and the pages, and price the narration a voiced build would buy.
-
-    A voice whose base URL names a host its adapter does not allow is refused first, so the place a
-    script would be sent is judged before anything is planned, priced or bought.
-    """
-    check_host(inputs.settings, inputs.settings.voice.provider, run.voices)
+    """Judge the script, the cue file and the pages, and price the narration a voiced build would buy."""
     wanted = selects(only)
     script = inputs.relative(inputs.script_path)
     segments = _segments(inputs, run)
@@ -114,7 +108,7 @@ def check(
 
     extra = _named_pages(inputs, paths)
     plans = _plan(inputs, run, spoken)
-    spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
+    cost = cost_of(plans, inputs, state=CostState.ESTIMATE)
     resolved, times = _resolve(inputs, run, plans, wanted)
     sections = [one for one in inputs.document.page_sections if wanted(one.number)]
 
@@ -132,7 +126,7 @@ def check(
         judged=_judged(inputs, script, resolved, sections if pages else (), extra if pages else ()),
         pages=pages,
         frames=pages and frames,
-        spend=spend,
+        cost=cost,
         storyboard=None if sheet is None else inputs.relative(sheet),
     )
 

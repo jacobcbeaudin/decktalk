@@ -13,12 +13,11 @@ from typing import Any
 
 import pytest
 
-from decktalk.errors import InputError
 from decktalk.results import SoundKind
 from decktalk.secret import Secret
 from decktalk.settings import ElevenLabsConfig
 from decktalk.speech import http as _http
-from decktalk.speech.sound import SOUNDS, SoundContext, Sounds, endpoint
+from decktalk.speech.sound import SOUNDS, SoundContext, SoundProviders, endpoint
 from decktalk.speech.sound.elevenlabs import MUSIC_PATH, PUBLISHED_BASE, SOUND_PATH, ElevenLabsSound
 
 SENTINEL = "sk_sentinel_sound_key_that_must_never_print"
@@ -53,7 +52,7 @@ def answers(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
 
 def a_context(**over: Any) -> SoundContext:
-    fields: dict[str, Any] = {"secrets": Env(), "api_base": BASE, "timeout_seconds": 42}
+    fields: dict[str, Any] = {"secrets": Env(), "base_url": BASE, "timeout_seconds": 42}
     return SoundContext(**{**fields, **over})
 
 
@@ -61,7 +60,7 @@ def test_an_effect_is_bought_from_the_sound_endpoint_of_the_base_it_was_built_wi
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     asked = answers(monkeypatch)
-    sound = Sounds(factories=SOUNDS).provider("elevenlabs", a_context())
+    sound = SoundProviders(factories=SOUNDS).provider("elevenlabs", a_context())
     assert sound.effect({"text": "a chime"}, output_format=FORMAT) == AUDIO
     (sent,) = asked
     assert sent["url"] == f"{BASE}{SOUND_PATH}?output_format={FORMAT}"
@@ -81,23 +80,16 @@ def test_the_key_is_never_printed_by_the_adapter() -> None:
     assert SENTINEL not in repr(ElevenLabsSound.for_context(a_context()))
 
 
-def test_a_base_off_the_service_is_refused_before_anything_is_sent() -> None:
-    with pytest.raises(InputError, match="api_base"):
-        ElevenLabsSound.for_context(a_context(api_base="https://example.com/v1"))
-
-
-def test_a_base_the_machine_allows_is_used_as_it_is(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_base_the_machine_names_is_used_as_it_is(monkeypatch: pytest.MonkeyPatch) -> None:
     asked = answers(monkeypatch)
-    sound = Sounds(factories=SOUNDS, allow_any_api_base=True).provider(
-        "elevenlabs", a_context(api_base="http://127.0.0.1:9/v1/")
-    )
+    sound = SoundProviders(factories=SOUNDS).provider("elevenlabs", a_context(base_url="http://127.0.0.1:9/v1/"))
     sound.effect({"text": "a tap"}, output_format=FORMAT)
     assert asked[0]["url"] == f"http://127.0.0.1:9/v1{SOUND_PATH}?output_format={FORMAT}"
 
 
 def test_the_endpoint_a_digest_names_is_the_published_one_whatever_base_is_set() -> None:
     """At the default base the published endpoint is the URL every bought sound's digest was taken over."""
-    assert PUBLISHED_BASE == ElevenLabsConfig().api_base
+    assert PUBLISHED_BASE == ElevenLabsConfig().base_url
     assert endpoint("elevenlabs", SoundKind.EFFECT) == f"{PUBLISHED_BASE}{SOUND_PATH}"
     assert endpoint("elevenlabs", SoundKind.AMBIENCE) == f"{PUBLISHED_BASE}{SOUND_PATH}"
     assert endpoint("elevenlabs", SoundKind.MUSIC) == f"{PUBLISHED_BASE}{MUSIC_PATH}"

@@ -8,7 +8,8 @@ DeckTalk reads the ElevenLabs API key from the environment or from `.env` in the
 
 - DeckTalk never prints the key.
 - DeckTalk never writes the key under `build/`.
-- DeckTalk sends the key only to the ElevenLabs API base in the configuration (`api_base`).
+- DeckTalk sends the key only to the ElevenLabs base URL this machine names (`[elevenlabs] base_url`), which no
+  project file can set.
 - Error messages show `<voice id>` in place of the voice id.
 
 ## Verify a release

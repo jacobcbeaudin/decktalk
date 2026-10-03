@@ -38,7 +38,7 @@ due is the same failure whether the page calls it a swap or calls it a motion.
 """
 
 Slides = dict[str, tuple[str, ...]]
-"""Each slide of one scene, in page order, with the wire ids of the cues it declares in cue order."""
+"""Each slide of one scene, in page order, with the cue ids of the cues it declares in cue order."""
 
 
 def scene_entry(entries: Sequence[MeasuredScene] | None, scene: str) -> MeasuredScene | None:
@@ -56,7 +56,7 @@ def slide_cues(entry: MeasuredScene | None) -> Slides | None:
 
     Ownership is declared: a slide owns exactly the cues the catalog lists against it, which are the
     moments its own elements name plus whatever `data-owns` adds. Nothing here reads an id prefix,
-    because a wire id is a slide and a local name and never an arithmetic about a number.
+    because a cue id is a slide and a local name and never an arithmetic about a number.
     """
     if entry is None:
         return None
@@ -65,20 +65,20 @@ def slide_cues(entry: MeasuredScene | None) -> Slides | None:
 
 
 def scene_cues(entry: MeasuredScene) -> tuple[str, ...]:
-    """Every wire id one scene declares, in the order the catalog names them and without repeats.
+    """Every cue id one scene declares, in the order the catalog names them and without repeats.
 
     A moment reaches the catalog twice, once as the attribute of the element that draws it and once
     in the scene's own cue map, and the two agree. Both are read because a scene whose cues are
     served by a handler alone declares them in the map and on no element.
     """
-    named = [wire for ids in entry.cues.values() for wire in ids]
-    found = [wire for row in measured_rows(entry) for wire in row.moments.values() if wire]
+    named = [cue_id for ids in entry.cues.values() for cue_id in ids]
+    found = [cue_id for row in measured_rows(entry) for cue_id in row.moments.values() if cue_id]
     return tuple(dict.fromkeys(found + named))
 
 
 def _moments(entry: MeasuredScene, slide: str) -> list[str]:
-    """The wire ids one slide's own elements name, for a scene that lists its cues nowhere else."""
-    return [wire for row in entry.elements.get(slide, ()) for wire in row.moments.values() if wire]
+    """The cue ids one slide's own elements name, for a scene that lists its cues nowhere else."""
+    return [cue_id for row in entry.elements.get(slide, ()) for cue_id in row.moments.values() if cue_id]
 
 
 def page_findings(

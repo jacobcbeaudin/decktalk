@@ -23,6 +23,7 @@ from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
 from werkzeug.utils import send_from_directory
 
+from decktalk.findings import Code
 from decktalk.page import (
     APPEAR_WORDS_MAX,
     ATTENTION,
@@ -48,7 +49,7 @@ pytestmark = pytest.mark.browser
 
 
 # The three-slide scene every markup test uses: attributes only, no JavaScript anywhere. Its moments
-# are local names, so the wire ids the recorder sees are "1.1:ball" and the rest.
+# are local names, so the cue ids the recorder sees are "1.1:ball" and the rest.
 MARKUP_SCENE = """
 <div data-scene="1" data-name="Open">
   <template data-slide="1.1" data-hold="6">
@@ -245,8 +246,8 @@ def test_every_moment_attribute_joins_the_cue_order(page, tmp_path, attribute, l
 
 
 def test_a_local_moment_is_qualified_with_the_slide_that_carries_it(page, tmp_path):
-    """The author writes `ball` and the wire carries `1.1:ball`, which is the whole of the qualification."""
-    opened(page, deck(tmp_path, "wire.html"))
+    """The author writes `ball` and its cue id is `1.1:ball`, which is the whole of the qualification."""
+    opened(page, deck(tmp_path, "qualified.html"))
     cues = page.evaluate("() => window.__decktalk.catalog[0].cues")
     assert cues["1.1"] == ["1.1:ball", "1.1:step"]
     assert cues["1.3"] == ["1.3:late", "1.3:aside"]
@@ -283,7 +284,7 @@ def test_a_class_moment_joins_the_cue_order_and_declares_its_span(page, tmp_path
 
 
 def test_cue_mode_fires_in_order_and_reports_each_cue(page, tmp_path):
-    """The recorder passes wire ids and seconds, and the page fires each at its own second."""
+    """The recorder passes cue ids and seconds, and the page fires each at its own second."""
     url = deck(tmp_path, "cued.html")
     settled(page, f"{url}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:step@0.3,1.2:sum@0.6")
     page.wait_for_function("() => window.__decktalk.fired.length === 3")
@@ -329,7 +330,7 @@ def test_a_preview_without_cue_times_still_shows_every_cue(page, tmp_path):
 
 
 def test_a_preview_plays_the_cue_times_the_project_resolved(page, origin):
-    """The point of a preview is to review the film's own timing without spending a recording on it."""
+    """The point of a preview is to review the film's own timing without making a recording for it."""
     origin.publish({"sections": [{"key": "01", "scene": "1", "cues": [{"cue": "1.1:step", "at": 0.2}]}]})
     page.goto(f"{origin.write('timed.html', MARKUP_SCENE)}?scene=1")
     page.wait_for_function("() => window.__decktalk.fired.length === 1")
@@ -443,23 +444,23 @@ def test_a_staggered_container_spreads_one_cue_across_its_children(page, tmp_pat
     assert delays == ["0s", "0.08s", "0.16s"]
     span = page.evaluate("() => window.__decktalk.catalog[0].spans['6.1:tiles']")
     assert span == pytest.approx(0.08 * 2 + ENTRANCES["rise"].seconds)
-    # The published span is the honest arithmetic, which is what makes the overrun a certain finding.
+    # The published span is the honest arithmetic, which is what makes the overrun an error.
     assert span > MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1000
 
 
-def test_steps_brings_each_child_forward_and_steps_the_ones_before_it_back(page, tmp_path):
-    """A stepped list is written once and lands in the catalog as though every moment were typed."""
+def test_a_spotlight_brings_each_child_forward_and_steps_the_ones_before_it_back(page, tmp_path):
+    """A spotlit list is written once and lands in the catalog as though every moment were typed."""
     scene = """
     <div data-scene="7">
       <template data-slide="7.1">
-        <ul class="list" data-steps>
+        <ul class="list" data-spotlight>
           <li class="one" data-in="first" data-describe="the first point">one</li>
           <li class="two" data-in="second" data-describe="the second point">two</li>
         </ul>
       </template>
     </div>
     """
-    page.goto(f"{write_page(tmp_path, 'steps.html', scene)}?scene=7&t0=0&cues=7.1:first@0.05,7.1:second@0.3")
+    page.goto(f"{write_page(tmp_path, 'spotlight.html', scene)}?scene=7&t0=0&cues=7.1:first@0.05,7.1:second@0.3")
     page.wait_for_function("() => window.__decktalk.fired.length === 2")
     page.wait_for_timeout(int(ATTENTION["back"].seconds * 1000) + 200)
     assert page.evaluate("() => document.querySelector('.one').classList.contains('dt-back')") is True
@@ -621,7 +622,7 @@ def test_each_moment_of_one_element_fires_in_the_order_its_cues_land(page, tmp_p
 
 
 def test_a_decorative_element_writes_no_line(page, tmp_path):
-    """An empty phrase is the author saying the element means nothing, which the transcript honours."""
+    """An empty description is the author saying the element means nothing, which the transcript honours."""
     scene = """
     <div data-scene="11">
       <template data-slide="11.1"><p class="rule" data-in="show" data-describe="">---</p></template>
@@ -691,7 +692,7 @@ def test_a_page_callback_that_throws_becomes_a_warning(page, errors, tmp_path, s
 
 
 def test_an_attribute_the_registry_does_not_define_is_reported(page, tmp_path):
-    """Every misspelling of every knob is one condition, and this is the code that names it."""
+    """Every misspelling of every attribute is one condition, and this is the code that names it."""
     scene = """
     <div data-scene="14">
       <template data-slide="14.1"><p data-inn="show" data-describe="the line">a line</p></template>
@@ -741,7 +742,7 @@ def test_katex_refusing_a_value_leaves_the_readable_text(page, tmp_path):
 
 
 MISTAKES = {
-    # The transcript is the reason a class may ship at all, so a class with no phrase is refused.
+    # The transcript is the reason a class may ship at all, so a class with no description is refused.
     "class-undescribed": (
         {"PAGE_CLASS_UNDESCRIBED"},
         '<template data-slide="3.1"><p data-in="show" data-class="cancel:stale">h over h</p></template>',
@@ -750,6 +751,11 @@ MISTAKES = {
     "stagger-empty": (
         {"PAGE_STAGGER_EMPTY"},
         '<template data-slide="3.1"><p data-in="tiles" data-stagger="0.08" data-describe="nothing">x</p></template>',
+    ),
+    # A spotlight walks its cued children, so a container with none of them brings nothing forward.
+    "spotlight-empty": (
+        {Code.PAGE_SPOTLIGHT_EMPTY.value},
+        '<template data-slide="3.1"><ul data-spotlight><li data-describe="a point">one</li></ul></template>',
     ),
     # Zero candidates and two candidates are both guesses, and the page refuses to make either.
     "swap-ambiguous": (
@@ -762,7 +768,7 @@ MISTAKES = {
         '<p data-in="loose" data-describe="a line outside every slide">loose</p>'
         '<template data-slide="3.1"><p data-in="show" data-describe="the line">a line</p></template>',
     ),
-    # The declared order makes the comparison exact, so this is a certain finding and not a guess.
+    # The declared order makes the comparison exact, so this is an error and not a guess.
     "moment-order": (
         {"PAGE_MOMENT_ORDER"},
         '<template data-slide="3.1"><p data-in="show" data-out="show" data-describe="the line">a line</p></template>',
@@ -770,7 +776,7 @@ MISTAKES = {
     # A scene that declares no slide and a slide that declares no id both reach no recording.
     "scene-empty": ({"PAGE_SCENE_EMPTY"}, ""),
     "slide-no-id": ({"PAGE_SLIDE_NO_ID"}, "<template></template>"),
-    # Every moment local to a doubled id has two owners, which no wire id can tell apart.
+    # Every moment local to a doubled id has two owners, which no cue id can tell apart.
     "slide-doubled": (
         {"PAGE_SLIDE_DOUBLED"},
         '<template data-slide="3.1"><p data-in="a" data-describe="one">one</p></template>'

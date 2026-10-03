@@ -5,7 +5,7 @@ carries: the starter, the lesson example and the six skills, read from the packa
 of the wheel reads them.
 
 Two rules matter most. Every attribute the page contract publishes is written by one of the two
-example projects, which is the founder's guard that no knob ships untested, and the declared table
+example projects, which is the guard that no attribute ships untested, and the declared table
 below says which example writes which row, so a row nothing exercises is named rather than
 discovered. And a skill names a command of the final vocabulary or it names none, because the CLI is
 the instruction set and a copy of it inside a skill is a copy that goes stale.
@@ -29,7 +29,7 @@ from decktalk import template
 from decktalk.inputs.cues import load_cues
 from decktalk.inputs.document import Document
 from decktalk.inputs.script import parse_script
-from decktalk.page import ATTRS, MOMENTS, PAIR_MARK, PAIR_SEPARATOR, WIRE_MARK, Attr
+from decktalk.page import ATTRS, CUE_MARK, MOMENTS, PAIR_MARK, PAIR_SEPARATOR, Attr
 from decktalk.pipeline import Stage
 from decktalk.toolchain import assets
 
@@ -56,7 +56,7 @@ SKILLS = assets.package_file("skills")
 
 
 class Deck(HTMLParser):
-    """Every scene, slide, wire id and attribute one deck page writes, read without a browser.
+    """Every scene, slide, cue id and attribute one deck page writes, read without a browser.
 
     A static read is enough here because a packaged page is written entirely in markup, which is the
     shape the slide guide teaches. The one cue a handler serves is declared in `data-owns`, so it is
@@ -96,9 +96,9 @@ class Deck(HTMLParser):
     def _add(self, local: str) -> None:
         slide = self._slide
         assert slide is not None
-        wire = f"{slide}{WIRE_MARK}{local.strip()}"
-        if wire not in self.cues[slide]:
-            self.cues[slide].append(wire)
+        cue_id = f"{slide}{CUE_MARK}{local.strip()}"
+        if cue_id not in self.cues[slide]:
+            self.cues[slide].append(cue_id)
 
 
 class Project(NamedTuple):
@@ -110,7 +110,7 @@ class Project(NamedTuple):
     decks: dict[str, Deck]
 
     @property
-    def wire_ids(self) -> set[str]:
+    def cue_ids(self) -> set[str]:
         return {cue for deck in self.decks.values() for cues in deck.cues.values() for cue in cues}
 
     @property
@@ -155,7 +155,7 @@ EXERCISED: dict[Attr, tuple[str, ...]] = {
     Attr.CLASS: (LESSON,),
     Attr.DESCRIBE_CLASS: (LESSON,),
     Attr.STAGGER: (LESSON,),
-    Attr.STEPS: (LESSON,),
+    Attr.SPOTLIGHT: (LESSON,),
     Attr.IN_SECONDS: (LESSON,),
     Attr.OUT_STYLE: (LESSON,),
     Attr.SWAPS: (LESSON,),
@@ -169,7 +169,7 @@ EXERCISED: dict[Attr, tuple[str, ...]] = {
 }
 """Which packaged example writes which attribute, declared so a gap is named rather than found.
 
-The founder's guard is that every row of the published table is exercised by the starter or by the
+The guard is that every row of the published table is exercised by the starter or by the
 lesson, and that a row nothing exercises is cut before the release. This table is what makes the
 guard readable: the test below holds it equal to what the two pages really write, in both
 directions, so a row that loses its last writer fails here with its own name.
@@ -213,15 +213,15 @@ def test_every_section_names_a_scene_the_page_it_names_declares(project: Project
 @pytest.mark.parametrize("project", PARSED.values(), ids=lambda p: p.name)
 def test_the_page_and_the_cue_file_name_the_same_moments(project: Project) -> None:
     listed = {
-        cue.cue
+        cue.id
         for section in load_cues(
             project.root / project.document.cues, project.root, {s.number for s in project.document.sections}
         )
         for cue in section.cues
     }
-    assert listed == project.wire_ids, (
-        f"{sorted(listed - project.wire_ids)} are listed and undeclared, and "
-        f"{sorted(project.wire_ids - listed)} are declared and unlisted."
+    assert listed == project.cue_ids, (
+        f"{sorted(listed - project.cue_ids)} are listed and undeclared, and "
+        f"{sorted(project.cue_ids - listed)} are declared and unlisted."
     )
 
 
@@ -233,9 +233,9 @@ def test_every_cue_phrase_occurs_exactly_once_in_its_own_section(project: Projec
         project.root / project.document.cues, project.root, {s.number for s in project.document.sections}
     ):
         for cue in section.cues:
-            phrase = words(cue.on)
+            phrase = words(cue.phrase)
             found = len(re.findall(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", spoken[section.number]))
-            assert found == 1, f"{cue.cue} lands on {cue.on!r}, which the section says {found} times."
+            assert found == 1, f"{cue.id} lands on {cue.phrase!r}, which the section says {found} times."
 
 
 def words(text: str) -> str:

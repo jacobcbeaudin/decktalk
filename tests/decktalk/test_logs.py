@@ -22,7 +22,7 @@ from werkzeug import Request, Response
 import decktalk
 from decktalk import logs
 from decktalk.errors import Cancel, ErrorCode, NotBuiltError, ProjectLocked, ProviderError
-from decktalk.events import Event, Level, Line, Log, RunDone
+from decktalk.events import Event, Level, Line, RunDone, RunLog
 from decktalk.findings import Applicability, Code, CommandFix
 from decktalk.logs import HANDLER, LOGGER, RunHandler, install, level_of, logging_into, within
 from decktalk.machine import Machine, Run, Toolchain, apply_fix
@@ -44,8 +44,8 @@ from support.service import Service
 log = logging.getLogger("decktalk.media.ffmpeg")
 
 
-def lines_of(seen: list[Event]) -> list[Log]:
-    return [line for line in seen if isinstance(line, Log)]
+def lines_of(seen: list[Event]) -> list[RunLog]:
+    return [line for line in seen if isinstance(line, RunLog)]
 
 
 def test_a_record_written_inside_a_run_becomes_a_line_of_that_run(tmp_path: Path) -> None:
@@ -148,7 +148,7 @@ def test_a_renderer_that_logs_does_not_recurse_into_the_stream(tmp_path: Path) -
 
     with here.events.subscribe(chatty), here._run() as run:
         run.note("one")
-    assert [line.event for line in seen] == ["run.start", "log", "run.done"]
+    assert [line.event for line in seen] == ["run.start", "run.log", "run.done"]
 
 
 def test_two_runs_on_two_threads_each_keep_their_own_lines(tmp_path: Path) -> None:
@@ -560,7 +560,7 @@ def test_every_failure_path_leaves_its_record_in_the_events_file(
     fault, record, ended, limit = FAILURES[name]
     lines = recorded(tmp_path, lambda run: fault(run, monkeypatch, tmp_path), limit=limit)
     if record is not None:
-        said = [line for line in lines if isinstance(line, Log) and line.source == record.source]
+        said = [line for line in lines if isinstance(line, RunLog) and line.source == record.source]
         matching = [line for line in said if line.level is record.level and record.keys <= set(line.data or {})]
         assert len(matching) == record.count, [line.model_dump() for line in said]
     last = lines[-1]
@@ -579,7 +579,7 @@ def test_a_busy_voice_leaves_a_warning_per_retry_and_a_trace_per_attempt(tmp_pat
     service.expect_request("/speak").respond_with_json({"ok": True})
     url = service.url_for("/speak")
     lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, secrets=(), timeout=5, retries=3))
-    said = [line for line in lines if isinstance(line, Log) and line.source == "speech.http"]
+    said = [line for line in lines if isinstance(line, RunLog) and line.source == "speech.http"]
     retries = [line.data or {} for line in said if line.level is Level.WARNING]
     attempts = [line.data or {} for line in said if line.level is Level.DEBUG]
     assert [(data["wait_seconds"], data["wait_source"]) for data in retries] == [(2.0, "retry-after")] * 2
@@ -603,7 +603,7 @@ def test_a_key_sent_as_x_api_key_reaches_no_line_of_the_events_stream(tmp_path: 
     url = service.url_for("/speak")
     headers = {"X-API-Key": held.reveal(), "Accept": "audio/mpeg"}
     lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, headers, secrets=(held,), timeout=5, retries=3))
-    said = [line for line in lines if isinstance(line, Log) and line.source == "speech.http"]
+    said = [line for line in lines if isinstance(line, RunLog) and line.source == "speech.http"]
     assert [line.level for line in said] == [Level.DEBUG, Level.WARNING] * 2 + [Level.DEBUG]
     last = lines[-1]
     assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.PROVIDER
@@ -618,7 +618,7 @@ def test_a_stalled_voice_is_sent_once_and_ends_as_a_provider_refusal_that_says_p
     service.expect_request("/speak").respond_with_handler(service.stalls)
     url = service.url_for("/speak")
     lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, secrets=(), timeout=1, retries=1))
-    assert [line for line in lines if isinstance(line, Log) and line.level is Level.WARNING] == []
+    assert [line for line in lines if isinstance(line, RunLog) and line.level is Level.WARNING] == []
     last = lines[-1]
     assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.PROVIDER
     assert "possibly charged" in last.error.message

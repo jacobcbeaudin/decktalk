@@ -8,7 +8,7 @@ metadata:
 
 # Revise the film
 
-A revision is an edit that respects what has already been paid for. The goal is the smallest set of
+A revision is an edit that respects the takes already voiced. The goal is the smallest set of
 changed sections and a written record of what changed and what it cost. Read
 `references/edit-scope.md` for what each kind of edit costs and which neighbours it drags in, and
 `references/claims-ledger.md` for the ledger.
@@ -16,7 +16,7 @@ changed sections and a written record of what changed and what it cost. Read
 ## The craft
 
 1. **Read the project as it stands.** Which sections exist, which recordings no longer match and
-   why, whether the takes are paid or placeholders, and which cut is already built.
+   why, whether the takes are voiced or placeholders, and which cut is already built.
 2. **Collect what changed.** Ask for the release notes or the list of changes, and for the date
    beyond which a claim counts as stale. List every changed name, number, price, feature and screen.
 3. **List the stale claims.** Every ledger row older than that date, and every row a change touches.
@@ -28,9 +28,9 @@ changed sections and a written record of what changed and what it cost. Read
 6. **Make the fewest edits.** Keep every section number, every chapter, every cue id and every voice
    setting. Edit only the sentences a change touches, and update the number on screen and the number
    in the script together.
-7. **Prove the scope before anything is spent.** Every section that would be paid for should be a
-   section you touched. When a section you did not touch would be paid for, stop and find out why:
-   its text changed by accident, a voice setting changed, or this checkout has no take cache.
+7. **Prove the scope before anything is spent.** Every section that would be voiced should be a
+   section you touched. When a section you did not touch would be voiced, stop and find out why:
+   its text changed by accident, a voice setting changed, or this checkout holds no takes directory.
 8. **Keep the previous cut.** Ask for a dated second file before rebuilding, so the cut the author
    already approved survives.
 9. **Put the price in front of the author and wait**, exactly as a first build does.
@@ -41,8 +41,8 @@ changed sections and a written record of what changed and what it cost. Read
 
 - Never change the voice, the model or a voice setting. Each re-voices the whole film.
 - Never renumber or insert a section without saying that every renumbered section is recorded again.
-  No take is paid for twice for its position, so only new words cost money.
-- Never replace a paid take. Rehearse with a build told not to spend, which plays every paid take on
+  No take is voiced twice for its position, so only new words cost money.
+- Never replace a voiced take. Rehearse with a build told not to spend, which plays every voiced take on
   disk and a placeholder, with a `TAKE_MISSING` finding, for each section whose new words have no take.
 - Never leave a claim in the film that the ledger cannot source.
 - Never pass a flag that hides a finding or forces a run past a refusal.
@@ -51,7 +51,7 @@ changed sections and a written record of what changed and what it cost. Read
 
 - A changed screenshot changes the picture and not the words, so the section is recorded again and
   not voiced again.
-- A fresh clone has no take cache, so every section looks new. Work where the build is, or say what a
+- A clone whose takes directory was never committed holds no takes, so every section looks new. Work where the build is, or say what a
   full re-voice would cost.
 - Limiting a rebuild to some sections limits what is voiced as well as what is recorded, so the
   price of a limited run covers those sections alone.

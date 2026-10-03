@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import pytest
 
-from decktalk.events import Event, Level, Log
+from decktalk.events import Event, Level, RunLog
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
@@ -40,19 +40,19 @@ CUES = {1: {"1.1:a": 2.0}}
 # ---- where the film's sections sit ---------------------------------------------------------------
 
 
-def test_the_section_starts_are_read_from_the_cut_list(assembled: Callable[..., Inputs]) -> None:
-    """The cut list is the film's own record of its shape, so nothing adds the files up again."""
+def test_the_section_starts_are_read_from_the_placements(assembled: Callable[..., Inputs]) -> None:
+    """The placements are the film's own record of its shape, so nothing adds the files up again."""
     inputs = assembled(CUES)
     starts, total = film_starts(inputs, inputs.workspace.film)
     assert starts == STARTS
     assert total == pytest.approx(2 * SECTION_SECONDS)
 
 
-def test_a_film_with_no_cut_list_falls_back_to_the_section_files(
+def test_a_film_with_no_placements_falls_back_to_the_section_files(
     assembled: Callable[..., Inputs], measured: Measurements
 ) -> None:
     inputs = assembled(CUES)
-    inputs.workspace.cuts_path.unlink()
+    inputs.workspace.placements_path.unlink()
     measured.duration = 4.0
     starts, total = film_starts(inputs, inputs.workspace.film)
     assert starts == {1: 0.0, 2: 4.0}
@@ -142,9 +142,7 @@ def judged(inputs: Inputs) -> tuple[tuple, list]:
         return rows, list(run.findings)
 
 
-def test_a_cue_nothing_happened_at_is_a_certain_finding(
-    assembled: Callable[..., Inputs], measured: Measurements
-) -> None:
+def test_a_cue_nothing_happened_at_is_an_error(assembled: Callable[..., Inputs], measured: Measurements) -> None:
     inputs = assembled(CUES)
     measured.changed = 0.0
     rows, found = judged(inputs)
@@ -153,7 +151,7 @@ def test_a_cue_nothing_happened_at_is_a_certain_finding(
     assert rows[0].shown is None
 
 
-def test_a_cue_that_passed_by_a_thin_margin_is_an_uncertain_finding(
+def test_a_cue_that_passed_by_a_thin_margin_is_a_warning(
     assembled: Callable[..., Inputs], measured: Measurements
 ) -> None:
     inputs = assembled(CUES)
@@ -187,7 +185,7 @@ def test_a_reveal_outside_the_offset_limit_names_the_milliseconds_and_the_limit(
     assert [row.code for row in found] == [Code.CUE_OFF]
     assert "+400 ms" in found[0].message
     assert f"{inputs.settings.verify.cue_offset_max_ms:.0f} ms" in found[0].message
-    assert rows[0].offset == pytest.approx(0.4)
+    assert rows[0].offset_seconds == pytest.approx(0.4)
 
 
 def test_a_reveal_on_its_word_says_nothing_and_reports_where_it_landed(
@@ -218,7 +216,7 @@ def test_a_cue_fitted_between_its_neighbours_is_a_detail_that_says_nothing_is_wr
     lines: list[Event] = []
     with opened(inputs.root) as run, run.machine.events.subscribe(lines.append):
         planned_cues(inputs, run, STARTS, 2 * SECTION_SECONDS, [(1, "1.1:a")], set())
-    notes = [line for line in lines if isinstance(line, Log)]
+    notes = [line for line in lines if isinstance(line, RunLog)]
     assert notes and all(line.level is Level.DEBUG for line in notes)
     assert notes[0].message[0].isupper()
     assert "s after its word" in notes[0].message and "not a problem" in notes[0].message

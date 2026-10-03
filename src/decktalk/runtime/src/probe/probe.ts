@@ -28,7 +28,7 @@
  * runtime owns.
  */
 
-import { ATTRS, type Attr, MOMENT_SELECTOR, type Q, type ReportField, wireId } from "../contract.ts";
+import { ATTRS, type Attr, cueId, MOMENT_SELECTOR, type Q, type ReportField } from "../contract.ts";
 import type * as Seam from "../telemetry.ts";
 
 /** The cover over the first paint, and the square that keeps the compositor painting under it. */
@@ -241,7 +241,7 @@ const ELEMENT_ATTRS: Attr[] = (Object.keys(ATTRS) as Attr[]).filter((name) =>
 /** The attribute that makes a container stagger its children, typed as a contract row so a rename fails to compile. */
 const STAGGER: Attr = "data-stagger";
 
-/** The moment attributes alone, which are the rows that qualify into a wire id. */
+/** The moment attributes alone, which are the rows that qualify into a cue id. */
 const MOMENT_ATTRS: Attr[] = ELEMENT_ATTRS.filter((name) => ATTRS[name].kind === "moment");
 
 function boxOf(el: Element, frame: DOMRect, scale: number): Seam.Box {
@@ -263,7 +263,7 @@ function rowFor(el: Element, slideId: string, frame: DOMRect, scale: number): Se
   const moments: Record<string, string> = {};
   for (const name of MOMENT_ATTRS) {
     const local = attrs[name];
-    if (local) moments[name] = wireId(slideId, local);
+    if (local) moments[name] = cueId(slideId, local);
   }
   return {
     attrs,

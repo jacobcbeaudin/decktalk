@@ -26,7 +26,7 @@ from decktalk.stages.storyboard import (
 from support.pages import a_project, catalog
 from support.runs import a_run
 
-CUES = {"1": {"cues": [{"cue": "1.1:a", "on": "there"}]}}
+CUES = {"1": {"cues": [{"id": "1.1:a", "phrase": "there"}]}}
 """One cue whose phrase the demo script really speaks, so it resolves to a second."""
 
 

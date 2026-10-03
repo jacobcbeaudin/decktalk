@@ -52,11 +52,11 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_disk: bool = True) -> Inputs:
     """A project whose section one is narrated and cut, which is what a clip is taken out of."""
     inputs = load_project(tmp_path, TOML, page=SCENE_ONE, media=("media/b-roll.mp4",))
-    take = a_take(1, seconds=2.0, hash="0123456789abcdef", voiced=voiced, lead_seconds=0.5)
+    take = a_take(1, seconds=2.0, digest="0123456789abcdef", voiced=voiced, lead_seconds=0.5)
     write_takes(inputs, take)
     Words(words=WORDS).write(inputs.workspace.takes / words_file("0123456789abcdef"))
     if take_on_disk:
-        inputs.workspace.take_path(take.hash).write_bytes(b"")
+        inputs.workspace.take_path(take.digest).write_bytes(b"")
     if cut:
         inputs.workspace.section_video("01").parent.mkdir(parents=True, exist_ok=True)
         inputs.workspace.section_video("01").write_bytes(b"")
@@ -77,7 +77,7 @@ def test_a_clip_reports_its_span_its_hold_and_the_two_files_it_wrote(tmp_path: P
     inputs = a_project(tmp_path)
     result = cut_a_clip(inputs, a_run(tmp_path), hold_seconds=0.2)
     assert result.section == 1
-    assert result.film == Path("media/answer.mp4")
+    assert result.file == Path("media/answer.mp4")
     assert result.words == Path("media/answer.words.json")
     assert (result.start, result.end) == (0.0, 0.8)
     assert result.hold_seconds == 0.2

@@ -36,15 +36,15 @@ touched.
 
 ## Proving the scope
 
-Before anything is spent, read which sections would be paid for.
+Before anything is spent, read which sections would be voiced.
 
 - A section whose text is unchanged is already on disk and costs nothing.
 - A section that could not be checked at all is priced at its worst case, so quote both figures rather
   than the certain one alone.
-- When a section you did not touch would be paid for, stop. Either its text changed by accident, or a
-  voice setting changed, or the take cache is missing because this is a fresh checkout.
-- A project that has only ever been built without a voice is the exception. Every section there is
-  new, because no take has been paid for yet, and that is expected rather than a scope failure.
+- When a section you did not touch would be voiced, stop. Either its text changed by accident, or a
+  voice setting changed, or the takes directory is missing from this checkout.
+- A project that has only ever been built on placeholders is the exception. Every section there is
+  new, because no take has been voiced yet, and that is expected rather than a scope failure.
 
 ## Keeping the previous cut
 

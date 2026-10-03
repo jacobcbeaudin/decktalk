@@ -18,8 +18,8 @@ import pytest
 
 from decktalk.cli import main
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError, NotBuiltError
-from decktalk.events import Log, SpendEvent, StageDone, StageStart
-from decktalk.findings import Certainty, Code, Finding, Location
+from decktalk.events import CostPriced, RunLog, StageDone, StageStart
+from decktalk.findings import Code, Finding, Location, Severity
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.media import audio
@@ -27,19 +27,19 @@ from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
     Billing,
+    Cost,
+    CostState,
     CueResult,
     Layer,
     NarrateResult,
     RecordResult,
     Result,
     ScoreResult,
-    Spend,
-    SpendState,
     StoryboardResult,
     VerifyResult,
     money,
 )
-from decktalk.settings import CONFIG_VARIABLE
+from decktalk.settings import MACHINE_FILE_VARIABLE
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import build as build_module
 from decktalk.stages import score as score_stage
@@ -58,7 +58,7 @@ TOML = """
 name = "t"
 
 [elevenlabs]
-price_per_1000_characters = 0.30
+dollars_per_1000_characters = 0.30
 
 [[section]]
 number = 1
@@ -85,38 +85,38 @@ VOICED = {"DECKTALK_VOICE_ID": "voice-under-test"}
 """What a machine that names the voice hands a project, so a take on disk can be matched to it."""
 
 
-def price(dollars: float = 0.0, *, state: SpendState = SpendState.ESTIMATE) -> Spend:
+def price(dollars: float = 0.0, *, state: CostState = CostState.ESTIMATE) -> Cost:
     """One stage's price, stated the way every stage of the product states one."""
-    return Spend(
+    return Cost(
         state=state,
         sections=(1,),
         characters=int(dollars * 1000),
         dollars=dollars,
         ceiling_dollars=dollars,
         billing=Billing.PER_CHARACTER,
-        price_per_1000_characters=RATE,
+        dollars_per_1000_characters=RATE,
         price_layer=Layer.PROJECT,
     )
 
 
-SOUND_RATE = 0.002
-"""Dollars per second of sound audio, which a score's own price is quoted at."""
+SOUND_RATE = 0.12
+"""Dollars per minute of sound audio, which a score's own price is quoted at."""
 
 
-def sound_price(seconds: float) -> Spend:
+def sound_price(seconds: float) -> Cost:
     """The score's price, which is billed per second of audio rather than per character."""
-    dollars = round(seconds * SOUND_RATE, 2)
-    return Spend(
-        state=SpendState.ESTIMATE,
+    dollars = round(seconds * SOUND_RATE / 60, 2)
+    return Cost(
+        state=CostState.ESTIMATE,
         sections=(1,),
         characters=0,
         seconds=seconds,
         dollars=dollars,
         ceiling_dollars=dollars,
         billing=Billing.PER_SECOND,
-        price_per_1000_characters=0.0,
-        price_per_second=SOUND_RATE,
-        price_key="score.music.price_per_minute",
+        dollars_per_1000_characters=0.0,
+        dollars_per_minute=SOUND_RATE,
+        price_key="score.music.dollars_per_minute",
         price_layer=Layer.PROJECT,
     )
 
@@ -165,9 +165,9 @@ class Answers:
     verify: list[Finding] = field(default_factory=list)
     narrate_dollars: float = 0.0
     score_dollars: float = 0.0
-    narrate_spend: Spend | None = None
+    narrate_cost: Cost | None = None
     """The narration's whole price, when a test needs one other than `narrate_dollars` at the speech rate."""
-    score_spend: Spend | None = None
+    score_cost: Cost | None = None
     """The score's whole price, when a test needs one other than `score_dollars` at the speech rate."""
     storyboard_page: str | None = "build/storyboard.html"
     film: bytes | None = None
@@ -182,11 +182,11 @@ def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
             findings=tuple(answers.narrate),
             run=RUN_ID,
             written=(),
-            spending=False,
+            spend=False,
             sections=(),
-            spend=answers.narrate_spend or price(answers.narrate_dollars),
+            cost=answers.narrate_cost or price(answers.narrate_dollars),
             takes=Path("build/narrate/takes.json"),
-            seconds=0.0,
+            elapsed_seconds=0.0,
         ),
         "cue": lambda: CueResult(
             ok=not answers.cue,
@@ -195,19 +195,25 @@ def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
             written=(),
             sections=(),
             file=Path("build/cue-times.json"),
-            seconds=0.0,
+            elapsed_seconds=0.0,
         ),
         "record": lambda: RecordResult(
-            ok=not answers.record, findings=tuple(answers.record), run=RUN_ID, written=(), sections=(), seconds=0.0
+            ok=not answers.record,
+            findings=tuple(answers.record),
+            run=RUN_ID,
+            written=(),
+            sections=(),
+            elapsed_seconds=0.0,
         ),
         "score": lambda: ScoreResult(
             ok=not answers.score,
             findings=tuple(answers.score),
             run=RUN_ID,
             written=(),
+            spend=False,
             items=(),
-            spend=answers.score_spend or price(answers.score_dollars),
-            seconds=0.0,
+            cost=answers.score_cost or price(answers.score_dollars),
+            elapsed_seconds=0.0,
         ),
         "assemble": lambda: AssembleResult(
             ok=not answers.assemble,
@@ -218,7 +224,7 @@ def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
             film_seconds=12.0,
             sections=(),
             loudness=None,
-            seconds=0.0,
+            elapsed_seconds=0.0,
         ),
         "verify": lambda: VerifyResult(
             ok=not answers.verify,
@@ -226,7 +232,7 @@ def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
             run=RUN_ID,
             film=Path("build/final/t.mp4"),
             film_seconds=12.0,
-            seconds=0.0,
+            elapsed_seconds=0.0,
         ),
         "storyboard": lambda: StoryboardResult(
             ok=True,
@@ -280,13 +286,13 @@ def test_the_plan_is_the_pipelines_own_order(inputs: Inputs, watched: Watched, c
     result = build(inputs, watched.run)
     assert calls.names == [stage.value for stage in Stage]
     assert [row.stage for row in result.stages] == list(Stage)
-    assert {row.outcome for row in result.stages} == {Outcome.OK}
+    assert {row.outcome for row in result.stages} == {Outcome.RAN}
 
 
 def test_stages_narrows_the_plan_to_the_span_it_names(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     result = build(inputs, watched.run, stages=[Stage.NARRATE, Stage.CUE])
     assert calls.names == ["narrate", "cue"]
-    assert [row.outcome for row in result.stages] == [Outcome.OK, Outcome.OK, *[Outcome.SKIPPED] * 4]
+    assert [row.outcome for row in result.stages] == [Outcome.RAN, Outcome.RAN, *[Outcome.SKIPPED] * 4]
 
 
 def test_skip_removes_a_stage_the_span_would_have_run(inputs: Inputs, watched: Watched, calls: Calls) -> None:
@@ -355,7 +361,7 @@ def test_a_run_that_starts_past_a_partial_recording_is_refused(inputs: Inputs, w
 def _with_a_score(inputs: Inputs) -> Inputs:
     """The same project with one generated ambience bed declared and nothing generated yet."""
     toml = inputs.root / "decktalk.toml"
-    toml.write_text(TOML + '\n[score.ambience]\ntext = "a quiet room"\n', encoding="utf-8")
+    toml.write_text(TOML + '\n[score.ambience]\nprompt = "a quiet room"\n', encoding="utf-8")
     inputs.workspace.narrate_dir.mkdir(parents=True)
     inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
     inputs.workspace.recordings_dir.mkdir(parents=True)
@@ -365,7 +371,7 @@ def _with_a_score(inputs: Inputs) -> Inputs:
 
 
 def test_a_run_that_skips_the_score_assembles_without_it(inputs: Inputs, watched: Watched, calls: Calls) -> None:
-    """One knob decides the sound: a run told to skip the stage neither needs its files nor mixes them."""
+    """One switch decides the sound: a run told to skip the stage neither needs its files nor mixes them."""
     declared = _with_a_score(inputs)
     build(declared, watched.run, stages=[Stage.ASSEMBLE], skip=[Stage.SCORE])
     assert calls.options("assemble")["score"] is False
@@ -397,7 +403,7 @@ def test_a_run_that_may_not_spend_draws_no_storyboard(inputs: Inputs, watched: W
 
 
 def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: Watched, calls: Calls) -> None:
-    """A stage handed a flag it does not read would accept a knob that changes nothing."""
+    """A stage handed a flag it does not read would accept a switch that changes nothing."""
     build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False, allow=[Code.CUE_UNKNOWN])
     assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False}
     assert calls.options("cue") == {"only": [1]}, "the cue stage was told what the caller allows"
@@ -411,7 +417,7 @@ PAYING_TOML = (
     TOML.replace('scene = "1"', 'scene = "1"\nambience = true', 1)
     + """
 [score.ambience]
-text = "a quiet room"
+prompt = "a quiet room"
 """
 )
 """The two-section project with one bought sound beside its two takes, so a build buys from both stages."""
@@ -502,7 +508,7 @@ def test_a_build_that_may_not_spend_makes_the_film_with_silence_where_an_unbough
     assert result.stopped_at is None
     assert result.ok
     assert Code.SOUND_MISSING in {found.code for found in result.findings}
-    strict = build(paying, make_run(paying, spend=False).run, stop_on=Certainty.UNCERTAIN, allow={Code.TAKE_MISSING})
+    strict = build(paying, make_run(paying, spend=False).run, stop_on=Severity.WARNING, allow={Code.TAKE_MISSING})
     assert strict.stopped_at is Stage.SCORE
     assert not strict.ok
     assert purchases.counts == (0, 0)
@@ -529,8 +535,8 @@ def test_neither_replace_flag_buys_anything_without_spend(
     assert purchases.counts == (2, 1)
 
 
-PRICED_TOML = PAYING_TOML.replace("price_per_1000_characters = 0.30", "price_per_1000_characters = 60.0").replace(
-    'text = "a quiet room"', 'text = "a quiet room"\nprice_per_minute = 2.16'
+PRICED_TOML = PAYING_TOML.replace("dollars_per_1000_characters = 0.30", "dollars_per_1000_characters = 60.0").replace(
+    'prompt = "a quiet room"', 'prompt = "a quiet room"\ndollars_per_minute = 2.16'
 )
 """The paying project at rates where its takes and its sound each cost under a dollar and together more."""
 
@@ -563,7 +569,7 @@ def test_the_command_line_refuses_the_whole_build_with_its_json_refusal(
 ) -> None:
     """`build --spend --max-cost` and `Project.build(spend=True, max_cost=...)` open one run, so one cap holds."""
     paying = load_project(tmp_path / "paying", PRICED_TOML, script=SCRIPT, environ=VOICED)
-    for name, value in {**VOICED, CONFIG_VARIABLE: str(tmp_path / "machine.toml")}.items():
+    for name, value in {**VOICED, MACHINE_FILE_VARIABLE: str(tmp_path / "machine.toml")}.items():
         monkeypatch.setenv(name, value)
     code = main(["-p", str(paying.root), "--json", "build", "--spend", "--max-cost", str(CAP)])
     assert purchases.counts == (0, 0)
@@ -591,14 +597,14 @@ def test_a_stage_that_asks_for_more_than_the_build_was_priced_at_is_refused_and_
     with pytest.raises(ApprovalRequired) as refused:
         build(paying, watched.run)
     assert purchases.counts == (2, 0)
-    assert [line.spend.ceiling_dollars for line in watched.of(SpendEvent)] == [TAKES, SOUND]
+    assert [line.cost.ceiling_dollars for line in watched.of(CostPriced)] == [TAKES, SOUND]
     said = str(refused.value)
     assert money(TAKES + SOUND) in said and money(CAP) in said and "kept" in said, said
     kept = paying.takes()
     assert kept is not None and len(kept.voiced) == 2, "the takes it bought are kept"
 
 
-def test_a_certain_finding_stops_the_run_where_it_was_found(
+def test_an_error_stops_the_run_where_it_was_found(
     inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
 ) -> None:
     """A cue whose phrase is never spoken leaves a slide that never appears, so the film is not made."""
@@ -608,7 +614,7 @@ def test_a_certain_finding_stops_the_run_where_it_was_found(
     assert result.ok is False
     assert result.stopped_at is Stage.CUE
     assert [found.code for found in result.findings] == [Code.CUE_UNRESOLVED]
-    assert [row.outcome for row in result.stages] == [Outcome.OK, Outcome.OK, *[Outcome.SKIPPED] * 4]
+    assert [row.outcome for row in result.stages] == [Outcome.RAN, Outcome.RAN, *[Outcome.SKIPPED] * 4]
     assert result.film is None
 
 
@@ -618,7 +624,7 @@ def test_a_run_that_stops_says_so_in_a_sentence(
     """The stream says which stage stopped the run and how many findings did it, counted in words."""
     answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
     build(inputs, watched.run)
-    said = [line.message for line in watched.of(Log)]
+    said = [line.message for line in watched.of(RunLog)]
     assert said == ["Cue made 1 finding that the build stops on, so the build stopped before record rather "
                     "than carry it into the film."]  # fmt: skip
     assert "(s)" not in said[0]
@@ -635,25 +641,23 @@ def test_a_stopped_run_keeps_what_narrate_already_charged(
     watched = make_run(inputs, spend=True)
     result = build(inputs, watched.run)
     assert result.stopped_at is Stage.CUE
-    assert result.spend.dollars == pytest.approx(1.0)
+    assert result.cost.dollars == pytest.approx(1.0)
 
 
-def test_an_uncertain_finding_lets_the_run_carry_on(
-    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
-) -> None:
+def test_a_warning_lets_the_run_carry_on(inputs: Inputs, watched: Watched, answers: Answers, calls: Calls) -> None:
     answers.record.append(judged(Code.PAGE_SWAP_APART, Stage.RECORD))
-    assert judged(Code.PAGE_SWAP_APART, Stage.RECORD).certainty is Certainty.UNCERTAIN
+    assert judged(Code.PAGE_SWAP_APART, Stage.RECORD).severity is Severity.WARNING
     result = build(inputs, watched.run)
     assert calls.names[-1] == "verify"
     assert result.stopped_at is None
 
 
-def test_a_threshold_of_any_finding_stops_on_an_uncertain_one(
+def test_a_threshold_of_any_finding_stops_on_a_warning(
     inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
 ) -> None:
-    """`--fail-on any` means the run stops where the command would fail, which is at any finding."""
+    """`--fail-on warning` means the run stops where the command would fail, which is at any finding."""
     answers.record.append(judged(Code.PAGE_SWAP_APART, Stage.RECORD))
-    result = build(inputs, watched.run, stop_on=Certainty.UNCERTAIN)
+    result = build(inputs, watched.run, stop_on=Severity.WARNING)
     assert calls.names == ["narrate", "cue", "record"]
     assert result.stopped_at is Stage.RECORD
     assert result.ok is False
@@ -662,9 +666,9 @@ def test_a_threshold_of_any_finding_stops_on_an_uncertain_one(
 @pytest.mark.parametrize(
     ("stop_on", "allow", "stops_at"),
     [
-        pytest.param(Certainty.CERTAIN, (), None, id="default carries on"),
-        pytest.param(Certainty.UNCERTAIN, (), Stage.NARRATE, id="any stops at narrate"),
-        pytest.param(Certainty.UNCERTAIN, (Code.TAKE_MISSING,), None, id="any with it allowed carries on"),
+        pytest.param(Severity.ERROR, (), None, id="default carries on"),
+        pytest.param(Severity.WARNING, (), Stage.NARRATE, id="any stops at narrate"),
+        pytest.param(Severity.WARNING, (Code.TAKE_MISSING,), None, id="any with it allowed carries on"),
     ],
 )
 def test_a_missing_take_builds_the_film_unless_the_threshold_says_any(
@@ -672,7 +676,7 @@ def test_a_missing_take_builds_the_film_unless_the_threshold_says_any(
     watched: Watched,
     answers: Answers,
     calls: Calls,
-    stop_on: Certainty,
+    stop_on: Severity,
     allow: tuple[Code, ...],
     stops_at: Stage | None,
 ) -> None:
@@ -710,9 +714,9 @@ def test_any_allowed_code_is_forgiven_the_same_way(
     inputs: Inputs, watched: Watched, answers: Answers, calls: Calls
 ) -> None:
     """`--allow` means what it means on every other command, not only for one code."""
-    answers.record.append(judged(Code.PAGE_BLACK, Stage.RECORD))
-    assert judged(Code.PAGE_BLACK, Stage.RECORD).certainty is Certainty.CERTAIN
-    result = build(inputs, watched.run, allow=[Code.PAGE_BLACK])
+    answers.record.append(judged(Code.RECORD_BLACK, Stage.RECORD))
+    assert judged(Code.RECORD_BLACK, Stage.RECORD).severity is Severity.ERROR
+    result = build(inputs, watched.run, allow=[Code.RECORD_BLACK])
     assert calls.names[-1] == "verify"
     assert result.stopped_at is None
     assert result.ok is True
@@ -739,7 +743,7 @@ def test_what_verify_found_ends_the_run_rather_than_stopping_it(
     answers.verify.append(judged(Code.CUE_OFF, Stage.VERIFY))
     result = build(inputs, watched.run)
     assert calls.names[-1] == "verify"
-    assert result.stages[-1].outcome is Outcome.OK
+    assert result.stages[-1].outcome is Outcome.RAN
 
 
 @pytest.mark.usefixtures("calls")
@@ -749,9 +753,9 @@ def test_the_spend_is_every_stage_that_priced_something_added_up(
     answers.narrate_dollars = 1.0
     answers.score_dollars = 0.5
     result = build(inputs, watched.run)
-    assert result.spend.dollars == pytest.approx(1.5)
-    assert result.spend.ceiling_dollars == pytest.approx(1.5)
-    assert result.spend.price_per_1000_characters == RATE
+    assert result.cost.dollars == pytest.approx(1.5)
+    assert result.cost.ceiling_dollars == pytest.approx(1.5)
+    assert result.cost.dollars_per_1000_characters == RATE
 
 
 @pytest.mark.usefixtures("calls")
@@ -760,12 +764,12 @@ def test_a_total_of_speech_and_sound_says_it_is_mixed_and_counts_both(
 ) -> None:
     """Characters and seconds are two bills, so the total names neither one's rate as the whole run's."""
     answers.narrate_dollars = 0.3
-    answers.score_spend = sound_price(120.0)
+    answers.score_cost = sound_price(120.0)
     result = build(inputs, watched.run)
-    assert result.spend.billing is Billing.MIXED
-    assert (result.spend.characters, result.spend.seconds) == (300, 120.0)
-    assert (result.spend.price_per_1000_characters, result.spend.price_per_second) == (RATE, SOUND_RATE)
-    assert result.spend.sentence == (
+    assert result.cost.billing is Billing.MIXED
+    assert (result.cost.characters, result.cost.seconds) == (300, 120.0)
+    assert (result.cost.dollars_per_1000_characters, result.cost.dollars_per_minute) == (RATE, SOUND_RATE)
+    assert result.cost.sentence == (
         "This run costs $0.54 for 300 characters and about 120 seconds of audio at the rates each stage states."
     )
 
@@ -775,12 +779,12 @@ def test_a_total_that_buys_only_sound_is_billed_the_way_sound_is(
     inputs: Inputs, watched: Watched, answers: Answers
 ) -> None:
     """A narration with every take on disk buys nothing, so the sound alone decides how the total bills."""
-    answers.narrate_spend = price(0.0).model_copy(update={"sections": ()})
-    answers.score_spend = sound_price(60.0)
+    answers.narrate_cost = price(0.0).model_copy(update={"sections": ()})
+    answers.score_cost = sound_price(60.0)
     result = build(inputs, watched.run)
-    assert result.spend.billing is Billing.PER_SECOND
-    assert result.spend.price_per_second == SOUND_RATE
-    assert result.spend.sentence.endswith("per second of audio.")
+    assert result.cost.billing is Billing.PER_SECOND
+    assert result.cost.dollars_per_minute == SOUND_RATE
+    assert result.cost.sentence.endswith("per minute of audio.")
 
 
 @pytest.mark.usefixtures("calls")
@@ -788,22 +792,22 @@ def test_a_free_voice_beside_paid_sound_leaves_the_sound_to_bill_the_total(
     inputs: Inputs, watched: Watched, answers: Answers
 ) -> None:
     """The free takes cost nothing and state no rate, so the total names the rate somebody stated."""
-    answers.narrate_spend = price(0.0).model_copy(update={"billing": Billing.FREE, "price_per_1000_characters": 0.0})
-    answers.score_spend = sound_price(60.0)
+    answers.narrate_cost = price(0.0).model_copy(update={"billing": Billing.FREE, "dollars_per_1000_characters": 0.0})
+    answers.score_cost = sound_price(60.0)
     result = build(inputs, watched.run)
-    assert result.spend.billing is Billing.PER_SECOND
-    assert (result.spend.price_key, result.spend.price_layer) == ("score.music.price_per_minute", Layer.PROJECT)
+    assert result.cost.billing is Billing.PER_SECOND
+    assert (result.cost.price_key, result.cost.price_layer) == ("score.music.dollars_per_minute", Layer.PROJECT)
 
 
 @pytest.mark.usefixtures("calls")
 def test_a_voice_that_declares_no_bill_leaves_the_whole_total_undeclared(
     inputs: Inputs, watched: Watched, answers: Answers
 ) -> None:
-    answers.narrate_spend = price(0.3).model_copy(update={"billing": Billing.UNDECLARED})
-    answers.score_spend = sound_price(60.0)
+    answers.narrate_cost = price(0.3).model_copy(update={"billing": Billing.UNDECLARED})
+    answers.score_cost = sound_price(60.0)
     result = build(inputs, watched.run)
-    assert result.spend.billing is Billing.UNDECLARED
-    assert "cannot price it" in result.spend.sentence
+    assert result.cost.billing is Billing.UNDECLARED
+    assert "cannot price it" in result.cost.sentence
 
 
 def test_a_run_that_priced_nothing_still_reports_a_spend(inputs: Inputs, watched: Watched, calls: Calls) -> None:
@@ -814,16 +818,16 @@ def test_a_run_that_priced_nothing_still_reports_a_spend(inputs: Inputs, watched
     inputs.workspace.film.write_bytes(b"")
     result = build(inputs, watched.run, stages=[Stage.VERIFY])
     assert calls.names == ["verify"]
-    assert result.spend.dollars == 0.0
-    assert result.spend.state is SpendState.ESTIMATE
-    assert result.spend.price_per_1000_characters == RATE
+    assert result.cost.dollars == 0.0
+    assert result.cost.state is CostState.ESTIMATE
+    assert result.cost.dollars_per_1000_characters == RATE
 
 
 @pytest.mark.usefixtures("calls")
 def test_the_film_and_whether_it_could_spend_come_back_on_the_result(inputs: Inputs, watched: Watched) -> None:
     result = build(inputs, watched.run)
     assert result.film == Path("build/final/t.mp4")
-    assert result.spending is False
+    assert result.spend is False
     assert result.run == RUN_ID
 
 

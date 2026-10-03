@@ -1,6 +1,6 @@
 """Stage 5: the recordings, the narration, the clips and the score become one film.
 
-    cut.py        every section as one silent mp4, and the cut list
+    cut.py        every section as one silent mp4, and the placements
     mix.py        the whole soundtrack as one filter graph, one `MixInput` per layer
     loudness.py   the two-pass normalization and what it measured
     publish.py    captions, chapters, the transcript, the poster and the atomic final file
@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from decktalk.artifacts import Cuts, Takes
+from decktalk.artifacts import Placements, Takes
 from decktalk.errors import ToolError
 from decktalk.events import Unit
 from decktalk.inputs import Inputs
@@ -26,7 +26,7 @@ from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import AssembleResult, RenderedSection, counted
-from decktalk.stages.assemble.cut import Rendered, cut_list, remove_stray_cuts, render_sections, rendered_starts
+from decktalk.stages.assemble.cut import Rendered, placements_of, remove_stray_cuts, render_sections, rendered_starts
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
 from decktalk.stages.assemble.mix import MixPlan, encode_soundtrack, mix_soundtrack
 from decktalk.stages.assemble.publish import (
@@ -151,8 +151,8 @@ def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *,
     return after
 
 
-def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes) -> Cuts:
-    """The captions, the chapters, the cut list and the transcript, and the cut list they are read from."""
+def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes) -> Placements:
+    """The captions, the chapters, the placements and the transcript, and the placements they are read from."""
     paths = inputs.workspace.deliverables()
     starts = rendered_starts(rows)
     texts = caption_texts(inputs, takes)
@@ -163,12 +163,12 @@ def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: T
     cues = with_sound_captions(spoken, sound_captions(inputs, starts))
     chapters = build_chapters(rows, inputs.chapters())
     write_caption_files(paths, cues, chapters)
-    cuts = cut_list(inputs, rows)
-    cuts.write(paths["cuts"])
-    write_transcript_page(inputs, paths["transcript"], cuts, texts)
-    for name in ("srt", "vtt", "chapters", "cuts", "transcript"):
+    placements = placements_of(inputs, rows)
+    placements.write(paths["placements"])
+    write_transcript_page(inputs, paths["transcript"], placements, texts)
+    for name in ("srt", "vtt", "chapters", "placements", "transcript"):
         run.wrote(paths[name])
-    return cuts
+    return placements
 
 
 def _rendered_rows(inputs: Inputs, rows: list[Rendered]) -> tuple[RenderedSection, ...]:

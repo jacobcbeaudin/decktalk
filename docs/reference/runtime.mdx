@@ -116,8 +116,8 @@ slide, in document order. The wrapper never draws, and the runtime clones a temp
 time its slide mounts.
 
 An element has four moments, each naming a cue local to its slide. It arrives, it steps back, it
-comes to the front, and it leaves. The runtime qualifies a local name into the wire id `cues.json`
-carries, which is the slide id, a colon and the local name.
+comes to the front, and it leaves. The runtime qualifies a cue name into the cue id `cues.json`
+carries, which is the slide id, a colon and the cue name.
 
 ```html deck/index.html
 <div data-scene="2" data-name="How it works">
@@ -130,7 +130,7 @@ carries, which is the slide id, a colon and the local name.
 </div>
 ```
 
-`data-in="formula"` inside `<template data-slide="2.1">` is the wire id `2.1:formula`, and that is
+`data-in="formula"` inside `<template data-slide="2.1">` is the cue id `2.1:formula`, and that is
 what `cues.json` gives a second to. No attribute writes a second: `cues.json` owns seconds and the
 page owns what a thing looks like and what it means.
 
@@ -139,7 +139,7 @@ span, are published by `decktalk schema page`. Read that and write from it.
 
 | Written on | Attributes |
 |---|---|
-| An element or a container | `data-in`, `data-describe`, `data-tex`, `data-tex-display`, `data-in-style`, `data-back`, `data-front`, `data-out`, `data-words`, `data-count`, `data-class`, `data-describe-class`, `data-stagger`, `data-steps`, `data-in-seconds`, `data-out-style`, `data-swaps`, `data-describe-out` |
+| An element or a container | `data-in`, `data-describe`, `data-tex`, `data-tex-display`, `data-in-style`, `data-back`, `data-front`, `data-out`, `data-words`, `data-count`, `data-class`, `data-describe-class`, `data-stagger`, `data-spotlight`, `data-in-seconds`, `data-out-style`, `data-swaps`, `data-describe-out` |
 | The scene wrapper | `data-scene`, `data-name` |
 | A slide template | `data-slide`, `data-hold`, `data-owns`, `data-enter`, `data-describe` |
 
@@ -188,7 +188,7 @@ The URL picks one, and `window.__decktalk.mode` reports it.
 |---|---|---|
 | `index` | No `scene`, `cues` or `slide`. | The page lists its scenes and slides. Every slide is laid out once in a hidden layer and measured, which is the catalog a judgement without a recording is read from. |
 | `preview` | `?scene=N` | The scene plays at the speed a person reads it. The page asks the origin for the cue times the last run resolved and uses them, and falls back to one second per cue when there are none. |
-| `cue` | `?cues=…` | The scene plays against the narration clock, which is the mode a recording is made in. |
+| `cue` | `?cues=…` | The scene plays against the section clock, which is the mode a recording is made in. |
 | `freeze` | `?slide=ID` | One slide is drawn with its cues already fired and nothing in motion, which is what makes two frozen frames comparable. |
 
 `slide` wins over `scene` and `cues`. With `cues` and no `scene`, the scene that owns the earliest
@@ -206,7 +206,7 @@ behaviour of its own drives this object.
 | `DeckTalk.scene(id, input)` | Declare one scene from script, for a deck that would rather build its slides than write them. It returns `DeckTalk`. |
 | `DeckTalk.on(cue, fn)` | Run a function at one cue, wherever in the deck that cue belongs. It returns `DeckTalk`. |
 | `DeckTalk.start()` | Read the page and start it, which a page that loads the runtime late may need to call itself. |
-| `DeckTalk.startClock()` | Start the narration clock, which is what the recorder sends once its cover has come off. |
+| `DeckTalk.startClock()` | Start the section clock, which is what the recorder sends once its cover has come off. |
 | `DeckTalk.waitFor(promise)` | Hold readiness until a promise of the page's own has settled. It returns `DeckTalk`. |
 | `DeckTalk.scenes` | Every scene the page declared, which a deck reads to walk its own slides. |
 | `DeckTalk.params` | The page's own query, for anything the contract does not answer. |
@@ -344,6 +344,7 @@ belong to Python, and a page that reported one of those would be a deck judging 
 | `PAGE_PREVIEW_AMBIGUOUS` | Two sections name one scene, so a preview cannot choose whose cue times to play. |
 | `PAGE_APPEAR_TOO_LONG` | A line shown with data-words=appear holds more words than one cue can carry one at a time. |
 | `PAGE_STAGGER_EMPTY` | An element staggers its children and has none, so the stagger plays nothing. |
+| `PAGE_SPOTLIGHT_EMPTY` | A spotlight container has no child with a cue, so nothing comes to the front. |
 
 {/* end page codes */}
 

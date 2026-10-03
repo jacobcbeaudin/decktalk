@@ -1,6 +1,6 @@
 ---
 title: Agent skills
-description: The six packaged skills that carry the craft a command line cannot teach, and the guards that keep an agent from spending your money.
+description: The six packaged skills that carry the craft a command line cannot teach, and the guards that keep an agent from buying with your money.
 ---
 
 DeckTalk ships six agent skills. A skill is a folder with a `SKILL.md` file, written in the Agent
@@ -46,14 +46,14 @@ The skills are written so that an agent cannot spend your money or hide a failur
 - A voiced run stops and asks. `decktalk-build` names every section a voiced run would voice and
   why, the total, and the price the estimate is based on, and then waits for an answer. When nobody
   can answer, it runs only what spends nothing.
-- No skill passes a flag that hides a finding, forces a run past a refusal or discards a paid take.
+- No skill passes a flag that hides a finding, forces a run past a refusal or discards a voiced take.
 - No skill changes the voice, the model or a voice setting without an answer, because each of those
   re-voices every section that uses it.
 - No skill buys music or an effect without an answer of its own, because generated sound spends too.
 - `decktalk-fix` reads the findings out of the JSON rather than parsing a printed table, fixes the
   cause rather than the measurement, and stops after three tries with a report instead of a fourth
   guess.
-- No skill reports a film as done while a certain finding stands.
+- No skill reports a film as done while an error stands.
 - An error is not a finding. On an error the agent stops and tells you, because an error means
   DeckTalk itself could not run.
 

@@ -10,8 +10,8 @@ founder's own Mac was permanently weaker than a Linux runner. `--timing=gate` is
 everywhere now, and the legs that own a weak runner pass `--timing=report` themselves, so the
 weakening lives in the `GROUPS` table that owns them rather than in every test that measures a cue.
 
-**The policy is one seam rather than a habit.** A suite that drives a real build reads its certain
-findings through `held_to`, so a test written next year is on the policy by reading a run the way
+**The policy is one seam rather than a habit.** A suite that drives a real build reads its errors
+through `held_to`, so a test written next year is on the policy by reading a run the way
 every other test reads one. Applying the rule test by test left a test whose subject was which
 sections got recorded again failing a whole merge on a reveal that this runner was told to report.
 
@@ -34,7 +34,7 @@ from typing import Any
 
 import pytest
 
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Code, Severity
 from decktalk.page import FRAME_STEP_MS
 
 LATE_FRAME = (Code.CUE_OFF,)
@@ -112,14 +112,14 @@ def judged(codes: Iterable[Code], gate: bool) -> list[Code]:
 
 
 def faults(codes: Iterable[Code], gate: bool) -> list[Code]:
-    """Every reported code this runner fails on, which is the judged ones it is certain about."""
-    return [found for found in judged(codes, gate) if found.certainty is Certainty.CERTAIN]
+    """Every reported code this runner fails on, which is the judged ones that are errors."""
+    return [found for found in judged(codes, gate) if found.severity is Severity.ERROR]
 
 
 def tolerated(code: int, codes: Iterable[Code], gate: bool) -> str | None:
     """None when a build finished acceptably, else the one sentence saying why it did not.
 
-    A build exits 0 when it found nothing certain. Where timing is not gated, a build that exited on
+    A build exits 0 when it found no error. Where timing is not gated, a build that exited on
     late reveals alone is acceptable too. Every other fault fails on every platform, and so does a
     late reveal wherever timing is gated.
     """
@@ -128,7 +128,7 @@ def tolerated(code: int, codes: Iterable[Code], gate: bool) -> str | None:
     rows = list(codes)
     if failing := faults(rows, gate):
         return f"the build exited {code} on a fault this runner judges: {[found.name for found in failing]}"
-    if not any(found.certainty is Certainty.CERTAIN for found in rows):
+    if not any(found.severity is Severity.ERROR for found in rows):
         return f"the build exited {code} with no finding row to explain it"
     return None
 
@@ -149,9 +149,9 @@ def note_late_reveals(config: pytest.Config, subject: str, news: Iterable[str]) 
 
 
 def held_to(config: pytest.Config, subject: str, findings: Iterable[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-    """Every certain finding this runner holds a deck to, with the ones it tolerated written to the log.
+    """Every error this runner holds a deck to, with the ones it tolerated written to the log.
 
-    This is the one seam a suite reads a run's certain findings through, so a leg that reports cue
+    This is the one seam a suite reads a run's errors through, so a leg that reports cue
     timing reports it in every test that leg runs rather than in the tests somebody remembered to
     change. A row is a finding as `--json` publishes it, and the code it names is what decides
     whether this runner judges the row or only prints it.
@@ -160,7 +160,7 @@ def held_to(config: pytest.Config, subject: str, findings: Iterable[Mapping[str,
     held: list[Mapping[str, Any]] = []
     news: list[str] = []
     for row in findings:
-        if row["certainty"] != Certainty.CERTAIN.value:
+        if row["severity"] != Severity.ERROR.value:
             continue
         if holds(Code(row["code"]), gate):
             held.append(row)

@@ -13,7 +13,7 @@ from decktalk.cli.options import FailOn
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import ErrorCode
 from decktalk.events import RunStart
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Code, Severity
 from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
@@ -22,24 +22,26 @@ from decktalk.results import (
     BuildResult,
     CheckResult,
     ClipResult,
+    Cost,
     CueResult,
     FixOutcome,
     NarrateResult,
     RecordResult,
     ScoreResult,
-    Spend,
     VerifyResult,
 )
-from support.spends import a_spend
+from support.costs import a_cost
 
 from .conftest import ANSWERS, Fake, finding
 
-NARRATE = NarrateResult(ok=True, run="r", spending=False, sections=(), spend=a_spend(), seconds=1.0)
-CUE = CueResult(ok=True, run="r", sections=(), seconds=1.0)
-RECORD = RecordResult(ok=True, run="r", sections=(), seconds=1.0)
-SCORE = ScoreResult(ok=True, run="r", items=(), spend=a_spend(), seconds=1.0)
-ASSEMBLE = AssembleResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, sections=(), seconds=1.0)
-VERIFY = VerifyResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, seconds=1.0)
+NARRATE = NarrateResult(ok=True, run="r", spend=False, sections=(), cost=a_cost(), elapsed_seconds=1.0)
+CUE = CueResult(ok=True, run="r", sections=(), elapsed_seconds=1.0)
+RECORD = RecordResult(ok=True, run="r", sections=(), elapsed_seconds=1.0)
+SCORE = ScoreResult(ok=True, run="r", spend=False, items=(), cost=a_cost(), elapsed_seconds=1.0)
+ASSEMBLE = AssembleResult(
+    ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, sections=(), elapsed_seconds=1.0
+)
+VERIFY = VerifyResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, elapsed_seconds=1.0)
 MOVING = {
     "narrate": NARRATE,
     "cue": CUE,
@@ -60,7 +62,7 @@ STYLING = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
         (("narrate", "--no-spend"), "spend", False),  # never buys
         (("cue", "--section", "2"), "only", (2,)),
         (("record", "--section", "1,3-4"), "only", (1, 3, 4)),
-        (("score", "--no-spend"), "spend", False),  # the spending flags are shared
+        (("score", "--no-spend"), "spend", False),  # the spend flags are shared
         (("assemble", "--skip", "score"), "score", False),  # the one stage it can leave out
         (
             ("build", "--no-spend", "--from", "record", "--to", "assemble"),
@@ -96,7 +98,7 @@ def test_no_spend_never_prices_never_prompts_and_never_buys(run, project, tty: b
 
 
 def test_an_unset_spend_with_no_terminal_refuses_and_names_both_flags(run, project) -> None:
-    made = project(narrate=NARRATE, check=_priced(a_spend()))
+    made = project(narrate=NARRATE, check=_priced(a_cost()))
     ran = run("narrate")
     assert ran.exit_code == ErrorCode.APPROVAL.exit_code
     assert "decktalk narrate --spend" in ran.err
@@ -104,9 +106,29 @@ def test_an_unset_spend_with_no_terminal_refuses_and_names_both_flags(run, proje
     assert [name for name, _, _ in made.calls if name == "narrate"] == []
 
 
+@pytest.mark.parametrize(
+    ("command", "instead"),
+    [
+        (Stage.NARRATE.value, "play a placeholder wherever a take is missing"),
+        (Stage.SCORE.value, "play silence where a sound is unbought"),
+        ("build", "play a placeholder wherever a take is missing and silence where a sound is unbought"),
+    ],
+)
+def test_a_spend_refusal_says_what_no_spend_plays_for_what_the_command_buys(
+    run, project, monkeypatch, command: str, instead: str
+) -> None:
+    """A score buys sounds and never a take, so its refusal never offers a placeholder in place of one."""
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(billing=Billing.PER_SECOND))
+    project(**{command: MOVING[command]}, check=_priced(a_cost()))
+    ran = run(command)
+    assert ran.exit_code == ErrorCode.APPROVAL.exit_code, ran.err
+    said = " ".join(STYLING.sub("", ran.err).split())
+    assert f"decktalk {command} --no-spend to {instead}." in said, said
+
+
 @pytest.mark.parametrize("tty", [True, False], ids=["terminal", "no-terminal"])
 def test_an_unset_spend_with_nothing_to_buy_runs_without_asking(run, project, tty: bool) -> None:
-    made = project(narrate=NARRATE, check=_priced(a_spend(0.0, 0.0, sections=())))
+    made = project(narrate=NARRATE, check=_priced(a_cost(0.0, 0.0, sections=())))
     ran = run("narrate", tty=tty)
     assert ran.exit_code == 0, ran.err
     assert "Spend that now?" not in ran.err
@@ -115,7 +137,7 @@ def test_an_unset_spend_with_nothing_to_buy_runs_without_asking(run, project, tt
 
 @pytest.mark.parametrize("tty", [True, False], ids=["terminal", "no-terminal"])
 def test_an_unset_spend_on_a_voice_that_bills_nothing_runs_without_asking(run, project, tty: bool) -> None:
-    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
+    free = a_cost(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
     made = project(narrate=NARRATE, check=_priced(free))
     ran = run("narrate", tty=tty)
     assert ran.exit_code == 0, ran.err
@@ -125,8 +147,8 @@ def test_an_unset_spend_on_a_voice_that_bills_nothing_runs_without_asking(run, p
 
 def test_an_unset_score_is_priced_by_what_it_would_buy(run, project, monkeypatch) -> None:
     """A score whose items are all bought asks nothing, whatever the narration would cost."""
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
-    made = project(score=SCORE, check=_priced(a_spend()))
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(0.0, 0.0, sections=()))
+    made = project(score=SCORE, check=_priced(a_cost()))
     ran = run("score")
     assert ran.exit_code == 0, ran.err
     assert [name for name, _, _ in made.calls] == ["score"]
@@ -134,7 +156,7 @@ def test_an_unset_score_is_priced_by_what_it_would_buy(run, project, monkeypatch
 
 
 def test_an_unset_score_with_sounds_to_buy_and_no_terminal_refuses(run, project, monkeypatch) -> None:
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend())
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost())
     made = project(score=SCORE)
     ran = run("score")
     assert ran.exit_code == ErrorCode.APPROVAL.exit_code
@@ -147,8 +169,8 @@ def test_an_unset_run_told_to_rebuild_with_nothing_to_buy_asks_nothing_and_buys_
     run, project, monkeypatch, command: str
 ) -> None:
     """`--force` rebuilds what is free, so with every take and sound held there is nothing to approve."""
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
-    made = project(**{command: MOVING[command]}, check=_priced(a_spend(0.0, 0.0, sections=())))
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(0.0, 0.0, sections=()))
+    made = project(**{command: MOVING[command]}, check=_priced(a_cost(0.0, 0.0, sections=())))
     ran = run(command, "--force")
     assert ran.exit_code == 0, ran.err
     assert made.called(command)["spend"] is False
@@ -159,8 +181,8 @@ def test_an_unset_run_told_to_rebuild_with_nothing_to_buy_asks_nothing_and_buys_
 def test_an_unset_run_told_to_replace_voiced_takes_asks_even_with_every_take_on_disk(
     run, project, monkeypatch, command: str
 ) -> None:
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
-    made = project(**{command: MOVING[command]}, check=_priced(a_spend(0.0, 0.0, sections=())))
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(0.0, 0.0, sections=()))
+    made = project(**{command: MOVING[command]}, check=_priced(a_cost(0.0, 0.0, sections=())))
     assert run(command, "--replace-voiced").exit_code == ErrorCode.APPROVAL.exit_code
     assert [name for name, _, _ in made.calls if name == command] == []
 
@@ -169,8 +191,8 @@ def test_an_unset_run_told_to_replace_voiced_takes_asks_even_with_every_take_on_
 def test_an_unset_run_told_to_replace_the_score_asks_even_with_every_sound_on_disk(
     run, project, monkeypatch, command: str
 ) -> None:
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
-    made = project(**{command: MOVING[command]}, check=_priced(a_spend(0.0, 0.0, sections=())))
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(0.0, 0.0, sections=()))
+    made = project(**{command: MOVING[command]}, check=_priced(a_cost(0.0, 0.0, sections=())))
     refused = run(command, "--replace-score")
     assert refused.exit_code == ErrorCode.APPROVAL.exit_code
     assert f"decktalk {command} --spend" in refused.err, refused.err
@@ -211,23 +233,23 @@ def test_score_takes_no_force_because_every_sound_it_makes_is_bought(run, projec
 
 
 def test_an_unset_narrate_is_priced_for_the_sections_it_runs(run, project) -> None:
-    made = project(narrate=NARRATE, check=_priced(a_spend(0.0, 0.0, sections=())))
+    made = project(narrate=NARRATE, check=_priced(a_cost(0.0, 0.0, sections=())))
     run("narrate", "--section", "2")
     assert made.called("check")["only"] == (2,)
 
 
 def test_an_unset_build_whose_takes_are_bought_asks_about_the_sounds_it_would_buy(run, project, monkeypatch) -> None:
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend())
-    made = project(build=ANSWERS["build"], check=_priced(a_spend(0.0, 0.0, sections=())))
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost())
+    made = project(build=ANSWERS["build"], check=_priced(a_cost(0.0, 0.0, sections=())))
     assert run("build").exit_code == ErrorCode.APPROVAL.exit_code
     assert [name for name, _, _ in made.calls if name == "build"] == []
 
 
 def test_an_unset_build_on_a_terminal_asks_about_its_takes_and_its_sounds_together(run, project, monkeypatch) -> None:
     """The price a person approves is the whole run's, so a build that buys takes and sounds shows both."""
-    takes = a_spend(0.14, 0.14, sections=(1, 2))
-    sounds = a_spend(2.0, 2.0, sections=(1,), billing=Billing.PER_SECOND).model_copy(
-        update={"characters": 0, "seconds": 120.0, "price_per_second": 2.0 / 120.0}
+    takes = a_cost(0.14, 0.14, sections=(1, 2))
+    sounds = a_cost(2.0, 2.0, sections=(1,), billing=Billing.PER_SECOND).model_copy(
+        update={"characters": 0, "seconds": 120.0, "dollars_per_minute": 1.0}
     )
     monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: sounds)
     made = project(build=ANSWERS["build"], check=_priced(takes), storyboard=ANSWERS["storyboard"])
@@ -241,8 +263,8 @@ def test_an_unset_build_on_a_terminal_asks_about_its_takes_and_its_sounds_togeth
 
 def test_an_unset_build_on_a_free_voice_still_asks_about_the_sounds_it_would_buy(run, project, monkeypatch) -> None:
     """A free voice buys its takes without asking, and the paid score beside it is still asked about."""
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(billing=Billing.PER_SECOND))
-    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(billing=Billing.PER_SECOND))
+    free = a_cost(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
     made = project(build=ANSWERS["build"], check=_priced(free))
     ran = run("build")
     assert ran.exit_code == ErrorCode.APPROVAL.exit_code, ran.err
@@ -255,7 +277,7 @@ def test_an_unset_build_on_a_free_voice_whose_sound_cannot_be_priced_is_asked_ab
 ) -> None:
     """A score nobody could price is never bought on the strength of a free voice beside it."""
     monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: None)
-    free = a_spend(0.0, 0.0, sections=sections, billing=Billing.FREE)
+    free = a_cost(0.0, 0.0, sections=sections, billing=Billing.FREE)
     made = project(build=ANSWERS["build"], check=_priced(free))
     assert run("build").exit_code == ErrorCode.APPROVAL.exit_code
     assert [name for name, _, _ in made.calls if name == "build"] == []
@@ -265,8 +287,8 @@ def test_an_unset_build_on_a_free_voice_whose_sound_cannot_be_priced_is_asked_ab
 def test_an_unset_build_on_a_free_voice_with_no_sound_to_buy_runs_without_asking(
     run, project, monkeypatch, tty: bool
 ) -> None:
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
-    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(0.0, 0.0, sections=()))
+    free = a_cost(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
     made = project(build=ANSWERS["build"], check=_priced(free))
     ran = run("build", tty=tty)
     assert ran.exit_code == 0, ran.err
@@ -276,8 +298,8 @@ def test_an_unset_build_on_a_free_voice_with_no_sound_to_buy_runs_without_asking
 
 @pytest.mark.parametrize("span", [("--from", "record"), ("--skip", "narrate", "--skip", "score")])
 def test_an_unset_build_that_runs_no_stage_that_buys_is_never_priced(run, project, monkeypatch, span) -> None:
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
-    made = project(build=ANSWERS["build"], check=_priced(a_spend()))
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(0.0, 0.0, sections=()))
+    made = project(build=ANSWERS["build"], check=_priced(a_cost()))
     assert run("build", *span).exit_code == 0
     assert [name for name, _, _ in made.calls if name == "check"] == []
 
@@ -286,8 +308,10 @@ def test_an_unset_build_that_runs_no_stage_that_buys_is_never_priced(run, projec
     ("flags", "code"),
     [
         pytest.param((), 0, id="unset"),
-        pytest.param(("--fail-on", FailOn.ANY.value), 1, id="fail-on-any"),
-        pytest.param(("--fail-on", FailOn.ANY.value, "--allow", Code.TAKE_MISSING.value), 0, id="fail-on-any-allowed"),
+        pytest.param(("--fail-on", FailOn.WARNING.value), 1, id="fail-on-warning"),
+        pytest.param(
+            ("--fail-on", FailOn.WARNING.value, "--allow", Code.TAKE_MISSING.value), 0, id="fail-on-warning-allowed"
+        ),
     ],
 )
 def test_a_missing_take_fails_a_build_only_at_the_threshold_that_names_it(
@@ -319,9 +343,9 @@ def test_no_voice_is_an_unknown_option(run, command: str) -> None:
     assert "--no-voice" in ran.err
 
 
-def _priced(spend: Spend) -> CheckResult:
+def _priced(spend: Cost) -> CheckResult:
     """What `check` answers with when a command prices a run before asking about it."""
-    return CheckResult(ok=True, run="r", judged=(), pages=False, frames=False, spend=spend)
+    return CheckResult(ok=True, run="r", judged=(), pages=False, frames=False, cost=spend)
 
 
 def test_narrate_keeps_every_paid_take_unless_the_flag_says_otherwise(run, project) -> None:
@@ -340,7 +364,7 @@ def test_assemble_refuses_a_skip_that_names_a_stage_it_does_not_run(run, project
 
 
 def test_score_says_what_its_spending_flags_buy(run) -> None:
-    """The spending family is shared, and on score the thing bought is sound rather than a voice."""
+    """The spend family is shared, and on score the thing bought is sound rather than a voice."""
     said = " ".join(run("score", "--help").out.split())
     assert "play a placeholder" not in said
     assert "buy nothing: report the plan" in said
@@ -367,12 +391,12 @@ def test_build_stops_where_the_exit_code_would_fail_and_carries_on_past_what_is_
     run("build", "--no-spend", "--allow", Code.CUE_UNKNOWN.value)
     asked = made.called("build")
     assert asked["allow"] == frozenset({Code.CUE_UNKNOWN})
-    assert asked["stop_on"] is Certainty.CERTAIN
+    assert asked["stop_on"] is Severity.ERROR
     assert "score" not in asked
 
 
-@pytest.mark.parametrize(("flag", "stops"), [(FailOn.ANY, Certainty.UNCERTAIN), (FailOn.NEVER, None)])
-def test_fail_on_moves_where_a_build_stops(run, project, answers, flag: FailOn, stops: Certainty | None) -> None:
+@pytest.mark.parametrize(("flag", "stops"), [(FailOn.WARNING, Severity.WARNING), (FailOn.NEVER, None)])
+def test_fail_on_moves_where_a_build_stops(run, project, answers, flag: FailOn, stops: Severity | None) -> None:
     made = project(build=answers["build"])
     run("build", "--no-spend", "--fail-on", flag.value)
     assert made.called("build")["stop_on"] is stops
@@ -413,7 +437,7 @@ def test_every_stderr_line_under_events_is_one_json_object(run, project, answers
 
 
 def test_a_refusal_under_events_is_one_json_object_on_stderr(run, project, answers, monkeypatch) -> None:
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(0.0, 0.0, sections=()))
     project(build=answers["build"], check=answers["check"])
     ran = run("build", "--events")
     assert ran.exit_code == 2
@@ -422,7 +446,7 @@ def test_a_refusal_under_events_is_one_json_object_on_stderr(run, project, answe
 
 
 def test_build_without_a_terminal_and_without_a_flag_refuses_the_spend(run, project, answers, monkeypatch) -> None:
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(0.0, 0.0, sections=()))
     project(build=answers["build"], check=answers["check"])
     ran = run("build")
     assert ran.exit_code == 2
@@ -431,7 +455,7 @@ def test_build_without_a_terminal_and_without_a_flag_refuses_the_spend(run, proj
 
 
 def test_the_approval_refusal_is_one_object_under_json(run, project, answers, monkeypatch) -> None:
-    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_cost(0.0, 0.0, sections=()))
     project(build=answers["build"], check=answers["check"])
     ran = run("build", "--json")
     assert ran.exit_code == 2
@@ -446,7 +470,7 @@ def test_clip_needs_exactly_one_section(run, project) -> None:
             ok=True,
             run="r",
             section=1,
-            film="clip-1.mp4",
+            file="clip-1.mp4",
             words="clip-1.words.json",
             start=0.0,
             end=2.0,

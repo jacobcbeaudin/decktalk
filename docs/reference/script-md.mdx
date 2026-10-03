@@ -5,7 +5,7 @@ description: Every rule of the narration script, from the numbered heading to th
 
 `script.md` holds the words the voice says, split into numbered sections. One numbered section is
 one cut of the film. `narrate` reads this file, turns each section into a spoken take, and writes
-the word clock that `cue`, `assemble` and `verify` all measure against. This page is the whole rule
+the words that `cue`, `assemble` and `verify` all measure against. This page is the whole rule
 the parser holds you to: the heading, every bracketed direction, how a chapter title is taken, the
 silence a section carries, and the three findings a script can earn.
 
@@ -72,7 +72,7 @@ slate a missing clip plays. Three sources are read in order, and the first that 
 3. `Section N`, for a section that has neither.
 
 Consecutive sections that end up with the same title share one chapter marker. A take is named by
-the content hash of the text it was voiced from, and the title is not part of that text, so
+the input digest of the text it was voiced from, and the title is not part of that text, so
 retitling a section voices nothing.
 
 ## Directions and placeholders
@@ -82,10 +82,10 @@ bracketed text are accepted, and every other kind is refused.
 
 | Written | Spoken | What the parser does |
 |---|---|---|
-| `[Scene 1. The title, then the two cards.]` | no | A bracketed span that is a whole line on its own is a stage direction. It is removed and it makes a beat. |
+| `[Scene 1. The title, then the two cards.]` | no | A bracketed span that is a whole line on its own is a direction. It is removed and it makes a beat. |
 | `[beat]` | no | Inside a paragraph this makes a beat. |
 | `[pause 3]` or `[pause 2.5]` | no | Inside a paragraph this makes a pause of that many seconds. The word `pause` is matched without case, and the seconds may be a whole number or a decimal. |
-| `[NUMBER]`, `[CLIENT_NAME]` | yes | This is an open placeholder. It matches a capital letter followed by capitals, digits and underscores, and the voice reads its name out, which is what `TAKE_PLACEHOLDER` is for. |
+| `[NUMBER]`, `[CLIENT_NAME]` | yes | This is an unfilled blank. It matches a capital letter followed by capitals, digits and underscores, and the voice reads its name out, which is what `SCRIPT_UNFINISHED` is for. |
 | `[the docs](https://docs.decktalk.ai)` | the text | A markdown link is replaced by its own text before anything else is read. |
 
 A pause is data, not text: each paragraph is sent with the pause after it, and the voice's provider
@@ -100,7 +100,7 @@ because frequent measured silences unsettle the voice.
 A model that renders no timed pause cannot voice a section that holds one. ElevenLabs renders one
 only on its v2 family, `eleven_multilingual_v2`, `eleven_flash_v2_5`, `eleven_flash_v2`,
 `eleven_turbo_v2_5` and `eleven_turbo_v2`, and v3 and v4 read no `<break>` tag. `check` reports such a section as
-[`TAKE_PAUSE_DROPPED`](/reference/findings/TAKE_PAUSE_DROPPED), and `narrate` refuses to buy its take
+[`SCRIPT_PAUSE_DROPPED`](/reference/findings/SCRIPT_PAUSE_DROPPED), and `narrate` refuses to buy its take
 rather than drop the pause. A beat is a dash every model reads, so a beat is never refused.
 
 ### What a script may not hold
@@ -119,7 +119,7 @@ the line it sits on.
 ```text
 error[INPUT]: script.md has 1 thing the voice must not receive:
   line 29: [maybe] inside a paragraph, which becomes a pause nobody asked for
-  hint: A stage direction goes on a line of its own. Inside a paragraph, write [beat] or [pause N] and nothing else.
+  hint: A direction goes on a line of its own. Inside a paragraph, write [beat] or [pause N] and nothing else.
   docs: https://docs.decktalk.ai/reference/errors/INPUT
 ```
 
@@ -165,7 +165,7 @@ before the voice speaks.
 | Where the silence goes | Project key | Section key | Default |
 |---|---|---|---|
 | Before the section's first word | `[narration] lead_seconds` | `[[section]] lead_seconds` | 0.5 |
-| After the section's last word | `[narration] tail_min_seconds` | `[[section]] tail_seconds` | 0.7, and the starter sets 1.3 |
+| After the section's last word | `[narration] tail_seconds` | `[[section]] tail_seconds` | 0.7, and the starter sets 1.3 |
 
 ffmpeg places both when it joins the takes into one narration track. The speech provider never
 receives them and no take file holds them, which is what lets one take serve whatever section number
@@ -175,7 +175,7 @@ pause the voice left after its last word never plays.
 
 Because placement reads the take and that section's own two keys and nothing else, a section lands
 the same way whether this run voiced its take or found it cached, and an edit to one section never
-moves another. Neither key is part of the take's content hash, so changing a lead or a tail voices
+moves another. Neither key is part of the take's input digest, so changing a lead or a tail voices
 nothing and costs nothing.
 
 A silence that ends within 0.06 seconds or one audio frame of the end of the file, whichever is
@@ -185,44 +185,44 @@ its safe range.
 
 ## How long a section runs
 
-The take index and a build without voice work a section's length out from its words.
+The take index and a placeholder work a section's length out from its words.
 
 ```text
 estimated_seconds     = words / narration.words_per_minute * 60
-placeholder length    = words / narration.silent_words_per_minute * 60
+placeholder length    = words / narration.placeholder_words_per_minute * 60
                       + the seconds of every timed pause
-                      + beats * narration.silent_beat_seconds
+                      + beats * narration.placeholder_beat_seconds
 section span          = lead + the take's sound end + tail
 ```
 
 `words` is the count of spoken words, which is the cleaned text with its dashes removed. The timed
 pause total covers every `[pause N]` and every break tag written by hand. A dash
 with a space before it counts as a beat wherever it appears, including one typed into the prose. The
-defaults are 140 words per minute, 150 for a build without voice, 0.7 seconds for a beat and for
-`tail_min_seconds`, and 0.5 seconds for `lead_seconds`.
+defaults are 140 words per minute, 150 for a placeholder, 0.7 seconds for a beat and for
+`tail_seconds`, and 0.5 seconds for `lead_seconds`.
 
 ## The three findings a script can earn
 
 `decktalk check` judges the script without voicing it, reports every line at once rather than
 stopping on the first, and prices what a voiced run would cost. Three codes cover the script.
 
-| Code | Certainty | What it names |
+| Code | Severity | What it names |
 |---|---|---|
-| `TAKE_PLACEHOLDER` | certain | One line of the spoken text holds something a voiced run would read out or swallow. That is an open placeholder such as `[NUMBER]`, and it is also each of the three things `narrate` refuses. One finding is raised per thing found, carrying the line and the section it sits in. |
-| `TAKE_PAUSE_DROPPED` | certain | One section holds a `[pause N]` and `[voice] model` renders no timed pause, which on ElevenLabs is every model outside its v2 family, v3 and v4 among them. One finding is raised per section, and `narrate` refuses to buy the take. |
-| `TAKE_SPOKEN_SYMBOL` | uncertain | One section speaks a word holding a digit or one of the currency signs for dollar, euro and pound, or one of `%`, `&`, `@`, `#`, `*`, `/`, `+`, `=`, `<`, `>`, `~`, `^` and the vertical bar. One finding is raised per section, naming the first five such words. |
+| `SCRIPT_UNFINISHED` | error | One line of the spoken text holds something a voiced run would read out or swallow. That is an unfilled blank such as `[NUMBER]`, and it is also each of the three things `narrate` refuses. One finding is raised per thing found, carrying the line and the section it sits in. |
+| `SCRIPT_PAUSE_DROPPED` | error | One section holds a `[pause N]` and the model in the voice provider's own table, such as `[elevenlabs] model`, renders no timed pause, which on ElevenLabs is every model outside its v2 family, v3 and v4 among them. One finding is raised per section, and `narrate` refuses to buy the take. |
+| `SCRIPT_SPOKEN_SYMBOL` | warning | One section speaks a word holding a digit or one of the currency signs for dollar, euro and pound, or one of `%`, `&`, `@`, `#`, `*`, `/`, `+`, `=`, `<`, `>`, `~`, `^` and the vertical bar. One finding is raised per section, naming the first five such words. |
 
 {/* sample: decktalk check --no-pages, starter with [IDEA] added to section 3 */}
 
 ```text
-script.md:29: TAKE_PLACEHOLDER script.md line 29 holds something a voiced run would read out or swallow, which is that [IDEA] is still open, so a voiced run would read 'IDEA' out.
-Found 1 finding, 1 certain.
+script.md:29: SCRIPT_UNFINISHED script.md line 29 holds something a voiced run would read out or swallow, which is that [IDEA] is still open, so a voiced run would read 'IDEA' out.
+Found 1 finding, 1 error.
 ```
 
-`narrate` does not refuse an open placeholder, so `check` is what stands between a placeholder and a
-take you have paid for. `TAKE_SPOKEN_SYMBOL` is a note rather than a refusal, because `41` may be
-exactly what you want the voice to try. Pass `--allow TAKE_SPOKEN_SYMBOL` to carry on past it, and
-`--fail-on any` to fail on it.
+`narrate` does not refuse unfinished text, so `check` is what stands between unfinished text and a
+voiced take. `SCRIPT_SPOKEN_SYMBOL` is a note rather than a refusal, because `41` may be
+exactly what you want the voice to try. Pass `--allow SCRIPT_SPOKEN_SYMBOL` to carry on past it, and
+`--fail-on warning` to fail on it.
 
 ## Numbers and symbols
 

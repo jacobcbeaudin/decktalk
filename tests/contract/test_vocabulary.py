@@ -2,7 +2,7 @@
 
     uv run python tests/contract/test_vocabulary.py --write   # lower a count the code has shrunk
 
-A stage, an outcome, a finding code, an error code, a certainty, a layer, a scope, a take status, a
+A stage, an outcome, a finding code, an error code, a layer, a scope, a take status, a
 sound status, a section kind, a skip reason, a substitute, a spend state, a setting's
 nature and a setting's source are each a member of a plain enum, and a plain enum never compares
 equal to a string. So a string literal that spells one of them is either
@@ -55,9 +55,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from decktalk.errors import ErrorCode
-from decktalk.findings import Applicability, Certainty, Code, RaisedBy
+from decktalk.findings import Applicability, Code, RaisedBy
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
+    CostState,
     Layer,
     Nature,
     Scope,
@@ -66,7 +67,6 @@ from decktalk.results import (
     SoundKind,
     SoundStatus,
     Source,
-    SpendState,
     Substitute,
     TakeStatus,
 )
@@ -110,7 +110,6 @@ command, and the end to end runners."""
 WORD_ENUMS: tuple[type[Enum], ...] = (
     Stage,
     Outcome,
-    Certainty,
     RaisedBy,
     Applicability,
     Layer,
@@ -119,7 +118,7 @@ WORD_ENUMS: tuple[type[Enum], ...] = (
     SkipReason,
     SoundKind,
     SoundStatus,
-    SpendState,
+    CostState,
     Substitute,
     TakeStatus,
     Nature,
@@ -131,6 +130,10 @@ WORD_ENUMS: tuple[type[Enum], ...] = (
 the payload also uses as a key, such as the `error` a result carries and the `section` a location
 names, so a literal spelling one is no evidence of a second spelling. Both are held instead by the
 event assertions in `tests/contract/test_results.py`.
+
+`findings.Severity` is absent for the same reason. Its `error` and `warning` are also a log level, a
+console message's kind, the `error` schema and the `error` key a result carries, so a literal
+spelling one is no evidence either. The frozen list in `tests/decktalk/test_findings.py` holds it.
 """
 
 CODE_ENUMS: tuple[type[Enum], ...] = (Code, ErrorCode)
@@ -147,7 +150,7 @@ ALSO_NAMES = {
     "project": "It names the `[project]` table and the module a caller opens, so a literal is one of those.",
     "score": "It names the `[score]` table, the stage module and `build/score`.",
     "narrate": "It names the stage module and `build/narrate`, which the workspace joins a path from.",
-    "cue": "It names the stage module and the key of a row in `cues.json`.",
+    "cue": "It names the stage module and the `cue` a location, a cue time and a mix effect carry.",
     "clip": "It names the stage module, the `clip` key of a section and the command a caller calls.",
     "page": "It names the vocabulary module and the `page` key of a section.",
     "record": "It names the stage module and the `[record]` table.",
@@ -317,13 +320,13 @@ PLANTED = [
     ("dict key", 'row = {"skipped": 1}\ntally = {"CUE_OFF": 1}', [Code.CUE_OFF.value]),
     (
         "mapping read",
-        'seen = doc.get("certain")\nsure = row == "uncertain"',
-        [Certainty.UNCERTAIN.value],
+        'seen = doc.get("ran")\nsure = row == "skipped"',
+        [Outcome.SKIPPED.value],
     ),
     ("attribute", 'quiet = getattr(args, "quiet")\ncode = getattr(Code, "CUE_OFF")', [Code.CUE_OFF.value]),
     ("setitem", 'mp.setitem(HANDLERS, "voiced", f)\nmp.setitem(HANDLERS, "INPUT", f)', [ErrorCode.INPUT.value]),
     ("command line", 'main(["verify", "--json"], check=lambda d: d.code == "CUE_OFF")', [Code.CUE_OFF.value]),
-    ("flag list", 'lines = [("--strict", "voiced")]\nmore = [("--strict", "PAGE_BLACK")]', [Code.PAGE_BLACK.value]),
+    ("flag list", 'lines = [("--strict", "voiced")]\nmore = [("--strict", "RECORD_BLACK")]', [Code.RECORD_BLACK.value]),
     ("command", 'Command("clip", "cut a span")\nCommand("CUE_OFF", "judge")', [Code.CUE_OFF.value]),
     (
         "membership",
@@ -332,8 +335,8 @@ PLANTED = [
     ),
     (
         "key tuple",
-        'WHERE_KEYS = ("where", "page")\nCODE_KEYS = ("PAGE_BLACK",)\nSTATES = ("kept",)',
-        [Code.PAGE_BLACK.value, TakeStatus.KEPT.value],
+        'WHERE_KEYS = ("where", "page")\nCODE_KEYS = ("RECORD_BLACK",)\nSTATES = ("kept",)',
+        [Code.RECORD_BLACK.value, TakeStatus.KEPT.value],
     ),
 ]
 """Each exemption beside a literal it must still see: (the exemption, a source, the words it must find)."""

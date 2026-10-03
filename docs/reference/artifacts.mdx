@@ -1,6 +1,6 @@
 ---
 title: Build artifacts
-description: Every file DeckTalk keeps under build/ today, what each one is for, and how the engine reads it. The promised part is the contract page.
+description: Every file DeckTalk keeps under build/ today, what each one is for, and how the engine reads it. The promised part is the stability promise.
 ---
 
 Everything a run generates lives under one directory. `[project] build` names it, and it is `build/`
@@ -14,7 +14,7 @@ placeholders, the joined narration and the joined music stay under `build/`, bec
 them again for nothing.
 
 This page describes the engine as it is, and most of it is a private cache. What DeckTalk promises a
-caller is [the contract](/reference/contract): the `--json` results, the events file, `build/final/`
+caller is [the stability promise](/reference/stability): the `--json` results, the events file, `build/final/`
 and the exit codes. A shape on this page can change in any release, and a script that reads a cache
 file reads something nobody promised it.
 
@@ -56,9 +56,9 @@ takes directory and the score directory, which you commit:
 
 ```
 my-lesson/takes/
-  <hash>.mp3                    one take, named by the content that produced it, under the suffix of
+  <digest>.mp3                    one take, named by the content that produced it, under the suffix of
                                 the format its voice declares, which is .mp3 for ElevenLabs
-  <hash>.words.json             that take's words, in seconds after the take starts, with the size
+  <digest>.words.json             that take's words, in seconds after the take starts, with the size
                                 and BLAKE3 of the take they came with
 my-lesson/score/
   ambience.mp3                  the ambience bed, when the project declares one
@@ -81,8 +81,8 @@ Everything else a run writes is under the build directory:
 my-lesson/build/
   narrate/
     takes.json                  which section plays which take, and the clock the join makes
-    placeholder-<hash>.mp3      a click track standing in for a take nobody bought yet
-    placeholder-<hash>.words.json  its estimated words
+    placeholder-<digest>.mp3      a placeholder for a section with no voiced take yet
+    placeholder-<digest>.words.json  its estimated words
     narration.mp3               the takes joined into one track, which assemble mixes under the picture
   cue-times.json                every cue resolved to a second on its own section's clock
   recordings/
@@ -108,7 +108,7 @@ my-lesson/build/
     <name>.chapters.txt         the chapter markers, as ffmetadata
     <name>-transcript.html      the whole film as one page, which is the media alternative
     <name>-poster.png           the opening slide as a lossless PNG
-    cuts.json                   where every section sits in the finished film
+    placements.json                   where every section sits in the finished film
   events/
     <run>.jsonl                 one JSON line per event of one run
   kept.json                     what the last assemble and verify read, wrote and found
@@ -144,7 +144,7 @@ from the takes on disk, keeps every take it finds and buys nothing for it.
       "section": 1,
       "key": "01",
       "chapter": "Open",
-      "hash": "9f2c1ab7d4e60518",
+      "digest": "9f2c1ab7d4e60518",
       "voiced": true,
       "word_count": 38,
       "characters": 200,
@@ -168,7 +168,7 @@ from the takes on disk, keeps every take it finds and buys nothing for it.
 | `sections[].section` | The section this row is about, as the author numbered it. |
 | `sections[].key` | The section's key, which names its files under the build directory. |
 | `sections[].chapter` | The section's title, which the film's chapter marker carries. |
-| `sections[].hash` | The digest of the inputs this take was made from, which names its files. |
+| `sections[].digest` | The digest of the inputs this take was made from, which names its files. |
 | `sections[].voiced` | True when a provider spoke this take, false on a placeholder. |
 | `sections[].word_count` | How many words this take speaks. |
 | `sections[].characters` | How many characters were sent to the voice, which a per-character bill counts. |
@@ -186,9 +186,9 @@ over the rows rather than a second file that can disagree with them. Each of tho
 a pure function of the take's own bytes and its own section's settings, so a section lands the same
 way whether this run voiced its take or found it cached.
 
-### A take is named by a hash of its inputs
+### A take is named by a digest of its inputs
 
-A take is identified by its content hash and by nothing else. The index maps a section to a piece of
+A take is identified by its input digest and by nothing else. The index maps a section to a piece of
 content and never the other way round, so renumbering a section rewrites one row and moves no file,
 and two sections with the same words share one take.
 
@@ -217,9 +217,9 @@ what the digest test in the repository holds it to.
 
 A placeholder take is named the same way over its own three inputs, which are the pace it is sized
 at, how long a declared pause is held, and the text it stands in for. Its digest carries the prefix
-`placeholder-`, so a run that writes placeholders can never overwrite a take somebody paid for.
+`placeholder-`, so a run that writes placeholders can never overwrite a voiced take.
 
-## `takes/<hash>.words.json`
+## `takes/<digest>.words.json`
 
 Beside every take sits its words file, under the same digest. This is the smallest artifact and the
 one every other reads: a cue resolves against it, the captions are built from it, and the clicks of
@@ -262,8 +262,8 @@ speaks.
       "key": "01",
       "estimated": true,
       "cues": [
-        { "cue": "1.1:title", "phrase": "This is DeckTalk", "seconds": 0.5, "offset": 0.0 },
-        { "cue": "1.1:files", "phrase": "Four files", "seconds": 1.921, "offset": 0.0 }
+        { "cue": "1.1:title", "phrase": "This is DeckTalk", "seconds": 0.5, "nudge_seconds": 0.0 },
+        { "cue": "1.1:files", "phrase": "Four files", "seconds": 1.921, "nudge_seconds": 0.0 }
       ]
     }
   ]
@@ -273,10 +273,10 @@ speaks.
 | Field | Meaning |
 |---|---|
 | `sections[].estimated` | True when the seconds come from estimated words rather than a voiced take. |
-| `sections[].cues[].cue` | The cue's wire id, which is its slide, a colon and the local name the page writes. |
+| `sections[].cues[].cue` | The cue's cue id, which is its slide, a colon and the cue name the page writes. |
 | `sections[].cues[].phrase` | The phrase in the script this cue lands on. |
 | `sections[].cues[].seconds` | When it lands, in seconds after its section starts, or null when it did not resolve. |
-| `sections[].cues[].offset` | The author's own nudge in seconds, which is already inside `seconds`. |
+| `sections[].cues[].nudge_seconds` | The author's own nudge in seconds, which is already inside `seconds`. |
 
 The recorder passes these seconds to the page as the `cues` query, so a cue with no second behind it
 is left out of that value rather than passed as a null the page would have to reason about. A page
@@ -294,7 +294,7 @@ log as soon as that section is done and a measurement always belongs to the reco
 ```json build/recordings/01.json
 {
   "section": 1,
-  "input_hash": "4b1d90a7c3e2f085",
+  "digest": "4b1d90a7c3e2f085",
   "recording": {
     "url": "http://project.localhost/deck/index.html?scene=1&cues=1.1%3Atitle%400.5&t0=signal",
     "assets": ["deck/index.html"],
@@ -324,11 +324,11 @@ log as soon as that section is done and a measurement always belongs to the reco
     {
       "code": "PAGE_NO_DESCRIPTION",
       "message": "The element at cue 1.1:title has no text and no data-tex, so give it data-describe or an empty one.",
-      "certainty": "certain",
+      "severity": "error",
       "location": { "where": "1.1:title", "file": "deck/index.html", "line": null, "section": 1, "cue": "1.1:title" },
       "stage": "record",
       "fix": null,
-      "url": "https://docs.decktalk.ai/reference/findings/PAGE_NO_DESCRIPTION"
+      "docs": "https://docs.decktalk.ai/reference/findings/PAGE_NO_DESCRIPTION"
     }
   ],
   "checks": {
@@ -342,7 +342,7 @@ log as soon as that section is done and a measurement always belongs to the reco
 | Field | Meaning |
 |---|---|
 | `section` | The section this recording plays. |
-| `input_hash` | The digest of what this section was recorded from, which is what a skip is keyed on. |
+| `digest` | The digest of what this section was recorded from, which is what a skip is keyed on. |
 | `recording` | What the recorder knew, as the browser driver read it. |
 | `recording.url` | The page URL the recorder opened, with its cues and its words. |
 | `recording.assets` | Every project file the page loaded, project-relative. |
@@ -364,7 +364,7 @@ log as soon as that section is done and a measurement always belongs to the reco
 Every judgement the recorder makes is a finding, so the page's own warnings, the exceptions it threw
 and the checks over the frames are one list a reader dispatches on by code.
 
-`input_hash` is what decides whether a section is recorded again. It is taken over the page URL with
+`digest` is what decides whether a section is recorded again. It is taken over the page URL with
 its cues and its words, the frame geometry, the markup of the one scene the section plays, the rest
 of its page, which every scene shares, and the content of every file the page loaded. A section
 whose digest is unchanged would be recorded again for nothing, so it is kept.
@@ -402,7 +402,7 @@ Beside them is `ledger.json`, which is what this project has already bought.
 |---|---|
 | `items[].name` | What the author calls this item in `decktalk.toml`. |
 | `items[].kind` | `music`, `ambience` or `effect`. |
-| `items[].digest` | The digest of the request this file was made from, which is the endpoint as the sound provider publishes it and the body, and never `api_base`. |
+| `items[].digest` | The digest of the request this file was made from, which is the endpoint as the sound provider publishes it and the body, and never `base_url`. |
 | `items[].file` | The audio this request produced, project-relative. |
 | `items[].seconds` | How long that audio runs, or null when unmeasured. |
 | `items[].parts` | The digest of each music part, in the order they are joined, and empty for a single request. |
@@ -468,7 +468,7 @@ the digest of every file it wrote, and every finding it made.
 
 | Field | Meaning |
 |---|---|
-| `assemble.key`, `verify.key` | The digest of everything the stage read, with the options it was run with. |
+| `assemble.digest`, `verify.digest` | The digest of everything the stage read, with the options it was run with. |
 | `assemble.options`, `verify.options` | The options the stage was run with, as the build passed them. |
 | `assemble.outputs`, `verify.outputs` | Each file the stage wrote, project-relative, against the digest of its bytes. |
 | `assemble.findings`, `verify.findings` | What the stage found, which a build that keeps the stage reports again. |
@@ -495,17 +495,17 @@ Everything a viewer receives. `<name>` is the project name.
 | `<name>.chapters.txt` | The chapter markers as ffmetadata, muxed into the film. Two sections sharing one chapter share one marker. |
 | `<name>-transcript.html` | The media alternative: one page with a heading per chapter, what was said, and the description of each reveal the page reported. |
 | `<name>-poster.png` | The opening slide as a lossless PNG, drawn by the page rather than taken out of the mp4. |
-| `cuts.json` | Where every section sits in the finished film. |
+| `placements.json` | Where every section sits in the finished film. |
 
 `output.timestamped_copy` writes a second copy of the film beside the first, named with the date and
 the minute the copy was taken.
 
-### `build/final/cuts.json`
+### `build/final/placements.json`
 
 This is the one record of the shape of a film. The transcript page, a caption reader and anything
 that wants to jump to a section read it instead of adding section files up.
 
-```json build/final/cuts.json
+```json build/final/placements.json
 {
   "fps": 25,
   "sections": [
@@ -603,8 +603,8 @@ cannot clear a note it was never told about.
 
 ## Related
 
-- **What a caller may rely on:** [The contract](/reference/contract)
+- **What a caller may rely on:** [The stability promise](/reference/stability)
 - **Read these files from Python:** [Python API](/reference/python-api)
 - **Run the stages that write them:** [CLI](/reference/cli)
-- **Move the take cache or prune the event files:** [Configuration](/reference/configuration)
+- **Move the take store or prune the event files:** [Configuration](/reference/configuration)
 - **Look up what the page reports into a recording log:** [Runtime](/reference/runtime)

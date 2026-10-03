@@ -108,7 +108,7 @@ KEPT_FILE = "kept.json"
 class KeptStage(Model):
     """What one stage read, what it wrote and what it found the last time a build ran it."""
 
-    key: str = Field(description="The digest of everything the stage read, with the options it was run with.")
+    digest: str = Field(description="The digest of everything the stage read, with the options it was run with.")
     options: dict[str, JsonValue] = Field(description="The options the stage was run with, as the build passed them.")
     outputs: dict[str, str] = Field(
         default_factory=dict,
@@ -143,7 +143,7 @@ def kept_path(inputs: Inputs) -> Path:
     return inputs.workspace.build / KEPT_FILE
 
 
-def assemble_key(inputs: Inputs, options: Mapping[str, JsonValue]) -> str:
+def assemble_digest(inputs: Inputs, options: Mapping[str, JsonValue]) -> str:
     """The digest of everything `assemble` reads, with the options a build runs it with.
 
     The list is deliberately wide: the project file, the script, the cue file, every file the local
@@ -157,7 +157,7 @@ def assemble_key(inputs: Inputs, options: Mapping[str, JsonValue]) -> str:
     return engine_digest(settings, json.dumps(options, sort_keys=True), *read)
 
 
-def verify_key(inputs: Inputs, assembled: str, options: Mapping[str, JsonValue]) -> str:
+def verify_digest(inputs: Inputs, assembled: str, options: Mapping[str, JsonValue]) -> str:
     """The digest of what `verify` measures: the film's own bytes, what made it, and the options.
 
     What made the film is the assemble digest, which already carries every setting and every file
@@ -190,7 +190,7 @@ def assembled(inputs: Inputs, kept: Kept) -> str | None:
     record = kept.assemble
     if record is None or not holds_film(inputs, record):
         return None
-    return record.key if assemble_key(inputs, record.options) == record.key else None
+    return record.digest if assemble_digest(inputs, record.options) == record.digest else None
 
 
 def holds_film(inputs: Inputs, record: KeptStage) -> bool:
@@ -242,7 +242,7 @@ def next_command(inputs: Inputs, *, stale: bool = False) -> str | None:
     if stale or _words_moved(inputs) or (kept.assemble is not None and made is None):
         return f"decktalk {BUILD}"
     measured = kept.verify
-    if made is not None and measured is not None and verify_key(inputs, made, measured.options) == measured.key:
+    if made is not None and measured is not None and verify_digest(inputs, made, measured.options) == measured.digest:
         return None
     return f"decktalk {Stage.VERIFY.value}"
 
@@ -293,7 +293,7 @@ def section_rows(inputs: Inputs, run: Run) -> tuple[SectionStatus, ...]:
     rows: list[SectionStatus] = []
     for section in inputs.document.sections:
         take = takes.of(section.number) if takes is not None else None
-        on_disk = take is not None and inputs.workspace.take_path(take.hash).is_file()
+        on_disk = take is not None and inputs.workspace.take_path(take.digest).is_file()
         said = spoken.get(section.number)
         # `voiced` is the take's own word, so a placeholder take on disk is not one a voice spoke
         # and the column that says what this project has paid for never counts it.
@@ -307,7 +307,7 @@ def section_rows(inputs: Inputs, run: Run) -> tuple[SectionStatus, ...]:
                 source=source_of(section),
                 voiced=voiced,
                 recorded=recorded,
-                cut=inputs.workspace.section_video(section.key).is_file(),
+                assembled=inputs.workspace.section_video(section.key).is_file(),
                 stale=_stale(inputs, run, section, recorded=recorded),
             )
         )
@@ -328,7 +328,7 @@ def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool) -> boo
 def judgements(inputs: Inputs, run: Run) -> None:
     """Every file the project names and has not got, and every file it has that will not parse.
 
-    A file that is absent is a certain `FILE_MISSING`, because the next command cannot read it. A
+    A file that is absent is a `FILE_MISSING` error, because the next command cannot read it. A
     file that is there and will not parse has no code in the frozen list, so it is one sentence on
     the stream carrying the loader's own words, its file and its line.
     """
@@ -436,7 +436,7 @@ def played_takes(inputs: Inputs) -> set[str] | None:
         log.debug("The script's takes could not be named, so no take is called unplayed.", exc_info=unread)
         return None
     index = inputs.takes()
-    return named | ({row.hash for row in index.sections} if index is not None else set())
+    return named | ({row.digest for row in index.sections} if index is not None else set())
 
 
 def _take_of(name: str) -> str | None:
@@ -484,7 +484,7 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
     """Report what is written, what is built, what is stale, and what to do next.
 
     Nothing is written and only the built film is measured, because how long a film runs is a fact
-    about its own bytes and the cut list beside it is a record of what a run meant to write.
+    about its own bytes and the placements beside it are a record of what a run meant to write.
     """
     judgements(inputs, run)
     rows = section_rows(inputs, run)
@@ -508,7 +508,7 @@ __all__ = [
     "BUILT",
     "Kept",
     "KeptStage",
-    "assemble_key",
+    "assemble_digest",
     "assembled",
     "live_runs",
     "next_command",
@@ -518,5 +518,5 @@ __all__ = [
     "played_takes",
     "status",
     "unplayed_takes",
-    "verify_key",
+    "verify_digest",
 ]

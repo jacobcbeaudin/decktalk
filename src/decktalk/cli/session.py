@@ -32,10 +32,16 @@ from decktalk.files import json_text
 from decktalk.findings import Code, Finding
 from decktalk.machine import Machine, Threshold
 from decktalk.project import Project
-from decktalk.results import ErrorResult, Result, Spend, counted
+from decktalk.results import Cost, ErrorResult, Result, counted
 
 FOUND_SOMETHING = 1
 """What a run exits with when it judged something at or above the threshold `--fail-on` set."""
+
+TAKES_PLAY = "a placeholder wherever a take is missing"
+"""What a run that may not spend plays in place of a take it would buy, which a spend refusal names."""
+
+SOUNDS_PLAY = "silence where a sound is unbought"
+"""What a run that may not spend plays in place of a sound it would buy, which a spend refusal names."""
 
 
 @dataclass(frozen=True)
@@ -91,7 +97,7 @@ class Session:
         self.command = command
         self.cancel = Cancel()
         self.allowed: frozenset[Code] = frozenset()
-        self.fail_on = FailOn.CERTAIN
+        self.fail_on = FailOn.ERROR
         self.spend: bool | None = None
         self.max_cost: float | None = None
         self._said = False
@@ -214,7 +220,7 @@ class Session:
 
     # ---- the spend gate -----------------------------------------------------------------------
 
-    def spending(self, *, spend: bool | None, max_cost: float | None) -> None:
+    def gate_spend(self, *, spend: bool | None, max_cost: float | None) -> None:
         """Hold the two flags that decide what this run buys, where an unset `--spend` means ask."""
         self.spend, self.max_cost = spend, max_cost
 
@@ -222,9 +228,10 @@ class Session:
         self,
         project: Project,
         *,
-        price: Callable[[], Spend | None] | None = None,
+        price: Callable[[], Cost | None] | None = None,
         replacing: bool = False,
         storyboard: bool = False,
+        plays: str = TAKES_PLAY,
     ) -> bool:
         """Whether this run may buy what is missing, asked once before anything is bought.
 
@@ -238,7 +245,8 @@ class Session:
         takes. Otherwise, on a terminal the checkpoint is the storyboard and the price: the run
         says what it will cost and where to look at what it is about to narrate, and then it asks.
         Without a terminal there is nobody to ask, so the run refuses and names the two flags that
-        answer, and the refusal carries the price so that one call prices the run.
+        answer, and the refusal carries the price so that one call prices the run. `plays` is what
+        `--no-spend` plays in place of what this command would buy, which the refusal's hint names.
         """
         if self.spend is not None:
             return self.spend
@@ -248,26 +256,26 @@ class Session:
         if priced is not None and not priced.buys and not replacing:
             return False
         if not self.asks:
-            raise ApprovalRequired(_spend_sentence(priced), hint=_spend_hint(self.command))
+            raise ApprovalRequired(_cost_sentence(priced), hint=_spend_hint(self.command, plays))
         if storyboard:
             self.say(self.storyboard_line(project))
         if priced is not None:
             self.say(priced.sentence)
         return self.confirm("Spend that now?")
 
-    def price(self, project: Project, *, only: Sequence[int] | None = None) -> Spend | None:
+    def price(self, project: Project, *, only: Sequence[int] | None = None) -> Cost | None:
         """What a voiced run of these sections would cost, read without opening a browser.
 
         The judgement that prices a run is `check`, so the price a refusal carries and the price
         `decktalk check --json` reports are one number worked out in one place.
         """
         try:
-            return project.check(only=only, pages=False, frames=False).spend
+            return project.check(only=only, pages=False, frames=False).cost
         except DeckTalkError:
             # silent: the check run's own run.done line carries why it could not price.
             return None
 
-    def sound_price(self, project: Project, *, only: Sequence[int] | None, replace_score: bool = False) -> Spend | None:
+    def sound_price(self, project: Project, *, only: Sequence[int] | None, replace_score: bool = False) -> Cost | None:
         """What buying this project's score would cost, read from its plan and its ledger.
 
         No run is opened and no client is built, so pricing takes no lock, writes no events file and
@@ -369,19 +377,16 @@ class Session:
         return self.reported(ErrorInfo.of_failure(failure))
 
 
-def _spend_sentence(spend: Spend | None) -> str:
+def _cost_sentence(spend: Cost | None) -> str:
     """The sentence an approval refusal carries, with the price in it whenever the price is known."""
     if spend is None:
         return "This run may buy something and no terminal is here to approve it."
     return f"{spend.sentence} No terminal is here to approve it."
 
 
-def _spend_hint(command: str) -> str:
+def _spend_hint(command: str, plays: str) -> str:
     """The two whole commands that answer a spend refusal, which is what makes a hint a hint."""
-    return (
-        f"Run decktalk {command} --spend to approve that spend, or decktalk {command} --no-spend to "
-        "play a placeholder wherever a take is missing."
-    )
+    return f"Run decktalk {command} --spend to approve that spend, or decktalk {command} --no-spend to play {plays}."
 
 
 def of(ctx: Context) -> Session:

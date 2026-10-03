@@ -33,7 +33,7 @@ from decktalk import settings
 from decktalk.cli import catalog
 from decktalk.errors import DeckTalkError
 from decktalk.events import EVENTS, Event, Line
-from decktalk.findings import Applicability, Code, Finding, Location, SettingFix
+from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.machine import Machine
 from decktalk.pipeline import Stage
 from decktalk.project import Origin, Project
@@ -451,9 +451,9 @@ def test_a_measured_duration_is_declared_volatile(row: Row):
 
 
 def test_a_finding_carries_everything_a_reader_dispatches_on():
-    """R9: the code, the sentence, the certainty, the object judged, the fix and the page that explains it."""
+    """R9: the code, the sentence, the severity, the object judged, the fix and the page that explains it."""
     declared = set(Finding.model_fields)
-    assert {"code", "message", "certainty", "location", "fix", "url"} <= declared
+    assert {"code", "message", "severity", "location", "fix", "docs"} <= declared
     assert "where" in Location.model_fields
     assert Location.model_fields["where"].is_required(), "the object a finding judged is never null"
 
@@ -591,11 +591,10 @@ def test_applying_a_fix_reports_what_it_changed(project: Project, capsys: pytest
         code=SOME_CODE,
         message="The frame is narrower than the deck draws.",
         location=Location(where="1.1:first"),
-        fix=SettingFix(
+        fix=EditFix(
             title="Widen the frame.",
             applicability=Applicability.SAFE,
-            key="video.width",
-            value="1280",
+            edits=(Edit(file=Path("decktalk.toml"), key="video.width", new="1280"),),
         ),
     )
     applied = project.apply(finding)

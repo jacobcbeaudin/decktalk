@@ -29,10 +29,10 @@ ROOT: dict[str, tuple[str, ...]] = {
     "machine": ("Machine", "Toolchain", "init"),
     # The stage names every verb, every result and every event is told by.
     "pipeline": ("Stage",),
-    # The judgement every call returns and the code and certainty a caller filters it by.
-    "findings": ("Finding", "Code", "Certainty"),
+    # The judgement every call returns and the code and severity a caller filters it by.
+    "findings": ("Finding", "Code", "Severity"),
     # The result every call returns and the price every call that buys states.
-    "results": ("Result", "Spend"),
+    "results": ("Result", "Cost"),
     # The stream every run writes to, one line of it, and the file sink a caller subscribes.
     "events": ("Events", "Event", "JsonlSink"),
     # The errors a caller catches, the code each carries, and the token that cancels a run.
@@ -58,7 +58,7 @@ DOCSTRING = '''"""DeckTalk: narrated presentation videos, cut to the word.
 
 A project is a directory. `decktalk.open(path)` returns a project, six verbs move it forward, and a
 handful of calls report on it, cut a piece out of it or serve it. Every call returns a frozen result
-whose findings are diagnostics with a code, a location, a certainty and often a fix a caller can
+whose findings are diagnostics with a code, a location, a severity and often a fix a caller can
 apply. Every call opens a run and writes to one event stream, which any renderer subscribes to.
 Nothing in this package prints, nothing reads the environment except `Machine.from_environment`, and
 a path a result carries is always relative to the project root.

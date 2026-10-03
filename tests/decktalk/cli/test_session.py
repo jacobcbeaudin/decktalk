@@ -13,9 +13,9 @@ from rich.console import Console
 from decktalk.cli.options import FailOn, When
 from decktalk.cli.session import Globals, Session, Terminal
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Code, Severity
 from decktalk.results import Billing, CheckResult, Layer, StatusResult
-from support.spends import a_spend
+from support.costs import a_cost
 
 from .conftest import ANSWERS, Fake, finding
 
@@ -57,11 +57,11 @@ def test_color_never_turns_colour_off_without_the_variable(monkeypatch: pytest.M
     ("fail_on", "allow", "found", "code"),
     [
         (None, frozenset(), (), 0),  # a run that judged nothing
-        (None, frozenset(), (Code.CUE_UNRESOLVED,), 1),  # a certain judgement under the default threshold
-        (None, frozenset(), (Code.CUE_THIN_CHANGE,), 0),  # an uncertain one fails only under any
-        (FailOn.ANY, frozenset(), (Code.CUE_THIN_CHANGE,), 1),
+        (None, frozenset(), (Code.CUE_UNRESOLVED,), 1),  # an error under the default threshold
+        (None, frozenset(), (Code.CUE_THIN_CHANGE,), 0),  # a warning fails only under --fail-on warning
+        (FailOn.WARNING, frozenset(), (Code.CUE_THIN_CHANGE,), 1),
         (FailOn.NEVER, frozenset(), (Code.CUE_UNRESOLVED,), 0),
-        (FailOn.CERTAIN, frozenset({Code.CUE_UNRESOLVED}), (Code.CUE_UNRESOLVED,), 0),  # an allowed code
+        (FailOn.ERROR, frozenset({Code.CUE_UNRESOLVED}), (Code.CUE_UNRESOLVED,), 0),  # an allowed code
     ],
     ids=["nothing", "sure", "unsure", "unsure-failing", "off", "allowed"],
 )
@@ -79,13 +79,13 @@ def test_the_exit_code_fails_on_what_the_threshold_names_and_nothing_it_allows(
     [
         (("check",), ()),
         (("check",), (Code.CUE_THIN_CHANGE,)),
-        (("check", "--fail-on", "any"), (Code.CUE_THIN_CHANGE,)),
+        (("check", "--fail-on", "warning"), (Code.CUE_THIN_CHANGE,)),
         (("check",), (Code.CUE_UNRESOLVED,)),
         (("check", "--fail-on", "never"), (Code.CUE_UNRESOLVED,)),
         (("check", "--allow", Code.CUE_UNRESOLVED.value), (Code.CUE_UNRESOLVED,)),
-        (("check", "--allow", Code.CUE_UNRESOLVED.value, "--fail-on", "any"), (Code.CUE_UNRESOLVED,)),
+        (("check", "--allow", Code.CUE_UNRESOLVED.value, "--fail-on", "warning"), (Code.CUE_UNRESOLVED,)),
         (("build", "--no-spend", "--allow", Code.CUE_UNKNOWN.value), (Code.CUE_UNKNOWN,)),
-        (("build", "--no-spend", "--fail-on", "any"), (Code.CUE_THIN_CHANGE,)),
+        (("build", "--no-spend", "--fail-on", "warning"), (Code.CUE_THIN_CHANGE,)),
     ],
     ids=["nothing", "unsure", "any-unsure", "sure", "never", "allowed", "allowed-any", "build-allowed", "build-any"],
 )
@@ -97,7 +97,7 @@ def test_ok_under_json_is_true_exactly_when_the_exit_code_is_0(run, project, arg
     """
     judged = tuple(finding(code) for code in found)
     answer = ANSWERS[argv[0]].model_copy(
-        update={"findings": judged, "ok": not any(one.certainty is Certainty.CERTAIN for one in judged)}
+        update={"findings": judged, "ok": not any(one.severity is Severity.ERROR for one in judged)}
     )
     project(**{argv[0]: answer})
     ran = run(*argv, "--json")
@@ -111,8 +111,8 @@ def test_ok_under_json_is_false_whenever_the_command_could_not_run(run, project)
     assert json.loads(ran.out)["ok"] is False
 
 
-def test_a_thin_change_is_the_uncertain_judgement_the_table_uses() -> None:
-    assert finding(Code.CUE_THIN_CHANGE).certainty is Certainty.UNCERTAIN
+def test_a_thin_change_is_the_warning_the_table_uses() -> None:
+    assert finding(Code.CUE_THIN_CHANGE).severity is Severity.WARNING
 
 
 def test_a_refusal_takes_the_exit_code_its_own_code_carries() -> None:
@@ -169,7 +169,7 @@ def test_a_flag_answers_before_a_terminal_is_asked(monkeypatch: pytest.MonkeyPat
 def test_a_spend_with_no_terminal_refuses_and_names_both_flags() -> None:
     made = session()
     made.terminal = terminal(is_terminal=False)
-    made.spending(spend=None, max_cost=None)
+    made.gate_spend(spend=None, max_cost=None)
     fake = Fake(check=_check())
     with pytest.raises(ApprovalRequired) as refused:
         made.spends(fake.project())
@@ -184,7 +184,7 @@ def test_no_spend_never_asks_and_never_buys(monkeypatch: pytest.MonkeyPatch, is_
     made = session()
     made.terminal = terminal(is_terminal=is_terminal)
     monkeypatch.setattr(made, "confirm", _never_asked)
-    made.spending(spend=False, max_cost=None)
+    made.gate_spend(spend=False, max_cost=None)
     fake = Fake(check=_check())
     assert made.spends(fake.project()) is False
     assert fake.calls == [], "a run told not to spend was priced as if it might"
@@ -193,7 +193,7 @@ def test_no_spend_never_asks_and_never_buys(monkeypatch: pytest.MonkeyPatch, is_
 def test_spend_buys_without_asking(monkeypatch: pytest.MonkeyPatch) -> None:
     made = session()
     monkeypatch.setattr(made, "confirm", _never_asked)
-    made.spending(spend=True, max_cost=None)
+    made.gate_spend(spend=True, max_cost=None)
     assert made.spends(Fake().project()) is True
 
 
@@ -204,8 +204,8 @@ def test_a_run_with_nothing_to_buy_is_never_asked_and_buys_nothing(
     made = session()
     made.terminal = terminal(is_terminal=is_terminal)
     monkeypatch.setattr(made, "confirm", _never_asked)
-    made.spending(spend=None, max_cost=None)
-    assert made.spends(Fake().project(), price=lambda: a_spend(0.0, 0.0, sections=())) is False
+    made.gate_spend(spend=None, max_cost=None)
+    assert made.spends(Fake().project(), price=lambda: a_cost(0.0, 0.0, sections=())) is False
 
 
 @pytest.mark.parametrize("is_terminal", [True, False])
@@ -215,23 +215,23 @@ def test_a_voice_that_bills_nothing_is_never_asked_and_is_bought_from(
     made = session()
     made.terminal = terminal(is_terminal=is_terminal)
     monkeypatch.setattr(made, "confirm", _never_asked)
-    made.spending(spend=None, max_cost=None)
-    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
+    made.gate_spend(spend=None, max_cost=None)
+    free = a_cost(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
     assert made.spends(Fake().project(), price=lambda: free) is True
 
 
 def test_a_run_told_to_replace_its_paid_takes_is_asked_even_with_nothing_missing() -> None:
     made = session()
     made.terminal = terminal(is_terminal=False)
-    made.spending(spend=None, max_cost=None)
+    made.gate_spend(spend=None, max_cost=None)
     with pytest.raises(ApprovalRequired):
-        made.spends(Fake().project(), price=lambda: a_spend(0.0, 0.0, sections=()), replacing=True)
+        made.spends(Fake().project(), price=lambda: a_cost(0.0, 0.0, sections=()), replacing=True)
 
 
 def test_no_spend_never_buys_from_a_voice_that_bills_nothing() -> None:
     made = session()
-    made.spending(spend=False, max_cost=None)
-    free = a_spend(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
+    made.gate_spend(spend=False, max_cost=None)
+    free = a_cost(0.0, 0.0, sections=(1, 2), billing=Billing.FREE)
     assert made.spends(Fake().project(), price=lambda: free) is False
 
 
@@ -240,8 +240,8 @@ def test_a_price_of_zero_on_a_voice_that_bills_is_still_asked_about(layer: Layer
     """Free is what the voice declares, so a zero rate, stated or the default, never skips the question."""
     made = session()
     made.terminal = terminal(is_terminal=False)
-    made.spending(spend=None, max_cost=None)
-    zero = a_spend(0.0, 0.0, layer=layer).model_copy(update={"price_per_1000_characters": 0.0})
+    made.gate_spend(spend=None, max_cost=None)
+    zero = a_cost(0.0, 0.0, layer=layer).model_copy(update={"dollars_per_1000_characters": 0.0})
     with pytest.raises(ApprovalRequired):
         made.spends(Fake().project(), price=lambda: zero)
 
@@ -273,7 +273,7 @@ def _status(*found: object) -> StatusResult:
 
 def _check() -> CheckResult:
     """What `check` answers with when a session prices a run before refusing it."""
-    return CheckResult(ok=True, run="r", judged=(), pages=False, frames=False, spend=a_spend())
+    return CheckResult(ok=True, run="r", judged=(), pages=False, frames=False, cost=a_cost())
 
 
 def test_a_console_reads_the_terminal_rather_than_being_told_about_it() -> None:

@@ -1,4 +1,4 @@
-"""The contract page names what DeckTalk promises a caller, held to what the code does.
+"""The stability page names what DeckTalk promises a caller, held to what the code does.
 
 A caller builds on four things: the `--json` result of each command, the events file, `build/final/`
 and the exit code. The page that promises them is checked against the result model, the workspace,
@@ -24,7 +24,7 @@ from decktalk.stages.score.ledger import LEDGER_FILE, Ledger
 from support.paths import REPO
 from support.projects import load_project
 
-PAGE = REPO / "docs" / "reference" / "contract.mdx"
+PAGE = REPO / "docs" / "reference" / "stability.mdx"
 NAV = REPO / "docs" / "docs.json"
 
 
@@ -32,9 +32,9 @@ def page() -> str:
     return PAGE.read_text(encoding="utf-8")
 
 
-def test_the_contract_page_is_in_the_navigation() -> None:
+def test_the_stability_page_is_in_the_navigation() -> None:
     pages = re.findall(r'"(reference/[^"]+)"', NAV.read_text(encoding="utf-8"))
-    assert "reference/contract" in pages
+    assert "reference/stability" in pages
     json.loads(NAV.read_text(encoding="utf-8"))
 
 
@@ -88,6 +88,6 @@ def test_the_paid_records_are_listed_by_kind_and_by_the_folder_the_code_keeps_th
     for kind in ("Score audio", "Ledger"):
         assert score in rows[kind][1] and "build/" not in " ".join(rows[kind]), kind
     assert kept in rows["Score audio"][1]
-    assert f"`<hash>{WORDS_SUFFIX}`" in rows["Provider words"][0] and ProviderWords.paid
+    assert f"`<digest>{WORDS_SUFFIX}`" in rows["Provider words"][0] and ProviderWords.paid
     assert f"`{LEDGER_FILE}`" in rows["Ledger"][0] and Ledger.paid
     assert not [kind for kind, row in rows.items() if "takes.json" in " ".join(row)], "the take index is a cache"

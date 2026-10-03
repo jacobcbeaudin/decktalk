@@ -28,7 +28,7 @@ purpose, and every one of them needs an API key that you supply.
 
 {% endfor %}### Reading a request before you make it
 
-`decktalk check --json` prices the narration of a voiced run with no API key and no request. Its `spend` object
+`decktalk check --json` prices the narration of a voiced run with no API key and no request. Its `cost` object
 reports the sections a voiced run would pay for, their character count, the price per thousand
 characters and the layer that set it, so a reviewer can read exactly what would be sent before
 anything is sent. `decktalk build` stops at the same point and names the price before it spends a
@@ -42,7 +42,7 @@ section is then sent on its own, with no surrounding text.
 DeckTalk fetches the tools a recording needs, once per machine: the first command that opens a page
 downloads the browser, the first command that encodes downloads the media tool, and `decktalk
 install` does both up front. These requests carry nothing from your project, and after they succeed
-a build without voice needs no network at all, unless a page loads something from another host.
+a build that does not spend needs no network at all, unless a page loads something from another host.
 
 | Host | What it holds | Fetched by | What DeckTalk sends |
 |---|---|---|---|
@@ -73,8 +73,7 @@ program of your own, the same records also reach that program's logging, with ev
 DeckTalk holds already replaced by its variable name. Where that logging goes is the program's
 choice.
 
-No DeckTalk environment variable has its value printed, logged or placed in a request body. The one
-exception is `DECKTALK_ALLOW_ANY_API_BASE`, which is a switch and never a secret. An error message
+No DeckTalk environment variable has its value printed, logged or placed in a request body. An error message
 that quotes a reply from a service has every credential the request carried replaced before the quote
 is cut to length, whatever header carried it. A redirect to another host, scheme or port never carries
 a header that holds a credential.
@@ -99,7 +98,7 @@ and none of them is a DeckTalk feature you have to wait for.
   writes placeholder narration where a take is missing, and makes a complete video. It contacts no
   service, so you can show a finished internal video before any approval comes back.
 - **Use the browser the machine already has.** Set `record.browser_path` with
-  `decktalk config set record.browser_path PATH --where machine`, or point `[tools] cache_dir` at a
+  `decktalk config set record.browser_path PATH --scope machine`, or point `[tools] cache_dir` at a
   directory whose `ms-playwright` folder your administrators have already filled. Both are machine
   keys, so a project file that sets either is refused. The pinned build is the reference, and a managed
   browser is supported and unverified.
@@ -114,7 +113,7 @@ and none of them is a DeckTalk feature you have to wait for.
   and takes `--host` and `--port`, so a proxy that intercepts the loopback address needs a bypass
   for it.
 - **Refuse what a page reaches for.** Set `record.page_policy` to `untrusted` with
-  `decktalk config set record.page_policy untrusted --where machine` when the machine records pages
+  `decktalk config set record.page_policy untrusted --scope machine` when the machine records pages
   it should not trust with the network. [A page someone else wrote](/requirements#a-page-someone-else-wrote)
   says what that policy holds.
 

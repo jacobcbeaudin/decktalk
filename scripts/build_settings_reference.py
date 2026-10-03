@@ -11,8 +11,8 @@ rather than the committed file, so the two can be written in either order.
 
 It names the keys only a machine may set, because a project file that sets one is refused. It then
 gives the index from a verdict to the keys that move it, because that is the lookup an agent makes
-after a failure, and it ends with the numbers that are deliberately not knobs, because the second
-lookup an agent makes is for a knob that does not exist.
+after a failure, and it ends with the numbers that are deliberately not settings, because the second
+lookup an agent makes is for a setting that does not exist.
 """
 
 from __future__ import annotations
@@ -66,11 +66,11 @@ have to work out which one that is.
 
 The per-machine settings file holds machine keys alone. A key about the film in that file is
 refused by name, because the file that ships has to carry whatever the machine running it believes.
-`DECKTALK_CONFIG` names a different per-machine file.
+`DECKTALK_MACHINE_FILE` names a different per-machine file.
 
 | Linux | macOS | Windows |
 |---|---|---|
-| `$XDG_CONFIG_HOME/decktalk/decktalk.toml`, or `~/.config/decktalk/decktalk.toml` | `~/Library/Application Support/decktalk/decktalk.toml` | `%APPDATA%\\decktalk\\decktalk.toml` |
+| `$XDG_CONFIG_HOME/decktalk/machine.toml`, or `~/.config/decktalk/machine.toml` | `~/Library/Application Support/decktalk/machine.toml` | `%APPDATA%\\decktalk\\machine.toml` |
 """
 
 FOOTER = """## Related
@@ -91,15 +91,15 @@ MACHINE_LEAD = """## Keys only a machine may set
 These keys describe the machine rather than the film: where a tool or a cache lives, and how hard
 this machine may be driven. A project file that sets one is refused by name, because a project
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
-machine's file with `decktalk config set KEY VALUE --where machine`, or set its environment variable.
+machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 """
 
-NUMBERS_LEAD = """## The numbers that are not knobs
+NUMBERS_LEAD = """## The numbers that are not settings
 
 These are the numbers that decide something and are still not settings. A derived number is written
 as its expression, so it follows the keys it reads at every frame size and every rate. A constant is
 a fact about a codec, a standard, or a tool DeckTalk drives, and it is fixed for the same reason a
-sample rate is. Neither can be set, and both are here so that a knob you cannot find is a number you
+sample rate is. Neither can be set, and both are here so that a setting you cannot find is a number you
 can read.
 """
 
@@ -186,7 +186,7 @@ def _table(document: dict[str, Any], dotted: str) -> dict[str, Any]:
 
 
 def numbers(document: dict[str, Any]) -> list[str]:
-    """The `x-numbers` array as the page's closing section, which is where a missing knob is explained."""
+    """The `x-numbers` array as the page's closing section, which is where a missing setting is explained."""
     out = [NUMBERS_LEAD, "| Number | Kind | Formula | At the defaults | Why |", "|---|---|---|---|---|"]
     for number in document["x-numbers"]:
         unit = f" {number['unit']}" if number["unit"] else ""

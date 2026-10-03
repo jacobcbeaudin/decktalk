@@ -26,7 +26,7 @@ Every result carries all four.
 |---|---|---|
 | `schema` | integer | The shape version of the object, always `2`. It changes only when the shape changes, and it is not the product version. Check it before reading anything else. |
 | `ok` | boolean | True when the command ran and judged nothing that reaches the threshold `--fail-on` and `--allow` set, so it is true exactly when the command exits 0. |
-| `findings` | array | Every judgement this call made, in the order it made them, which is the order the `finding` events streamed. Empty when it judged nothing. Read `certainty` to tell the ones that fail the run from the rest. |
+| `findings` | array | Every judgement this call made, in the order it made them, which is the order the `finding.raised` events streamed. Empty when it judged nothing. Read `severity` to tell the ones that fail the run from the rest. |
 | `error` | object or null | Filled only when the command could not run at all, and null otherwise. |
 
 ## The two declared fields
@@ -57,9 +57,9 @@ document about schemas is unreadable. Every other command under `--json` prints 
 decktalk schema finding     # the Finding model, with its fixes and its codes
 decktalk schema error       # the error object
 decktalk schema event       # the thirteen event lines
-decktalk schema settings    # every knob, its default, its range, its unit and its hazard
+decktalk schema settings    # every setting, its default, its range, its unit and its hazard
 decktalk schema page        # the twenty-four page attributes
-decktalk schema project     # the shape of cues.json
+decktalk schema cues     # the shape of cues.json
 ```
 
 ## A result that read a project
@@ -84,7 +84,7 @@ decktalk schema project     # the shape of cues.json
       "source": "deck/index.html?scene=1",
       "voiced": false,
       "recorded": false,
-      "cut": false,
+      "assembled": false,
       "stale": false
     },
     {
@@ -94,7 +94,7 @@ decktalk schema project     # the shape of cues.json
       "source": "deck/index.html?scene=2",
       "voiced": false,
       "recorded": false,
-      "cut": false,
+      "assembled": false,
       "stale": false
     },
     {
@@ -104,7 +104,7 @@ decktalk schema project     # the shape of cues.json
       "source": "deck/index.html?scene=3",
       "voiced": false,
       "recorded": false,
-      "cut": false,
+      "assembled": false,
       "stale": false
     }
   ],
@@ -139,7 +139,7 @@ cost, so it is the one call an agent makes to learn the price of a run.
   ],
   "pages": false,
   "frames": false,
-  "spend": {
+  "cost": {
     "state": "estimate",
     "sections": [1, 2, 3],
     "characters": 0,
@@ -147,9 +147,9 @@ cost, so it is the one call an agent makes to learn the price of a run.
     "dollars": 0.0,
     "ceiling_dollars": 0.14,
     "billing": "per_character",
-    "price_per_1000_characters": 0.3,
-    "price_per_second": 0.0,
-    "price_key": "elevenlabs.price_per_1000_characters",
+    "dollars_per_1000_characters": 0.3,
+    "dollars_per_minute": 0.0,
+    "price_key": "elevenlabs.dollars_per_1000_characters",
     "averaged": false,
     "price_layer": "project"
   },
@@ -160,11 +160,11 @@ cost, so it is the one call an agent makes to learn the price of a run.
 `pages` and `frames` say how far the judgement reached. Both are true on a plain `decktalk check`,
 `--no-frames` drops the freeze comparison alone, and `--no-pages` drops both and names on stderr
 every code it could not reach. `--max-cost` is compared against `ceiling_dollars` and never against
-`dollars`, because credits are consumed one request at a time.
+`dollars`, because a provider charges one request at a time.
 
 ## A result that judged and failed
 
-The same call on a project whose script still holds an open placeholder and whose cue waits for a
+The same call on a project whose script still holds an unfilled blank and whose cue waits for a
 phrase the script does not speak. It exits 1, and `error` is null, because both of these are
 judgements about the project rather than a reason the command could not run.
 
@@ -174,9 +174,9 @@ judgements about the project rather than a reason the command could not run.
   "ok": false,
   "findings": [
     {
-      "code": "TAKE_PLACEHOLDER",
+      "code": "SCRIPT_UNFINISHED",
       "message": "script.md line 14 holds something a voiced run would read out or swallow, which is that [VERSION] is still open, so a voiced run would read 'VERSION' out.",
-      "certainty": "certain",
+      "severity": "error",
       "location": {
         "where": "script.md",
         "file": "script.md",
@@ -186,12 +186,12 @@ judgements about the project rather than a reason the command could not run.
       },
       "stage": null,
       "fix": null,
-      "url": "https://docs.decktalk.ai/reference/findings/TAKE_PLACEHOLDER"
+      "docs": "https://docs.decktalk.ai/reference/findings/SCRIPT_UNFINISHED"
     },
     {
       "code": "CUE_UNRESOLVED",
       "message": "the cue 2.1:average waits for 'the mean of the numbers' and section 2 speaks 30 words, none of which is that phrase.",
-      "certainty": "certain",
+      "severity": "error",
       "location": {
         "where": "2.1:average",
         "file": "cues.json",
@@ -201,7 +201,7 @@ judgements about the project rather than a reason the command could not run.
       },
       "stage": null,
       "fix": null,
-      "url": "https://docs.decktalk.ai/reference/findings/CUE_UNRESOLVED"
+      "docs": "https://docs.decktalk.ai/reference/findings/CUE_UNRESOLVED"
     }
   ],
   "error": null,
@@ -210,7 +210,7 @@ judgements about the project rather than a reason the command could not run.
   "judged": ["script.md", "cues.json"],
   "pages": false,
   "frames": false,
-  "spend": {
+  "cost": {
     "state": "estimate",
     "sections": [1, 2, 3],
     "characters": 0,
@@ -218,9 +218,9 @@ judgements about the project rather than a reason the command could not run.
     "dollars": 0.0,
     "ceiling_dollars": 0.15,
     "billing": "per_character",
-    "price_per_1000_characters": 0.3,
-    "price_per_second": 0.0,
-    "price_key": "elevenlabs.price_per_1000_characters",
+    "dollars_per_1000_characters": 0.3,
+    "dollars_per_minute": 0.0,
+    "price_key": "elevenlabs.dollars_per_1000_characters",
     "averaged": false,
     "price_layer": "project"
   },
@@ -241,22 +241,22 @@ the script does not speak, cut to the keys a build adds.
   "ok": false,
   "error": null,
   "stages": [
-    {"stage": "narrate", "outcome": "ok", "seconds": 0.308},
-    {"stage": "cue", "outcome": "ok", "seconds": 0.004},
-    {"stage": "record", "outcome": "skipped", "seconds": 0.0},
-    {"stage": "score", "outcome": "skipped", "seconds": 0.0},
-    {"stage": "assemble", "outcome": "skipped", "seconds": 0.0},
-    {"stage": "verify", "outcome": "skipped", "seconds": 0.0}
+    {"stage": "narrate", "outcome": "ran", "elapsed_seconds": 0.308},
+    {"stage": "cue", "outcome": "ran", "elapsed_seconds": 0.004},
+    {"stage": "record", "outcome": "skipped", "elapsed_seconds": 0.0},
+    {"stage": "score", "outcome": "skipped", "elapsed_seconds": 0.0},
+    {"stage": "assemble", "outcome": "skipped", "elapsed_seconds": 0.0},
+    {"stage": "verify", "outcome": "skipped", "elapsed_seconds": 0.0}
   ],
-  "spending": false,
+  "spend": false,
   "film": null,
   "stopped_at": "cue"
 }
 ```
 
-`spending` is true when the caller let the run buy what is missing, which `--spend` does. A run that
+`spend` is true when the caller let the run buy what is missing, which `--spend` does. A run that
 may not plays every take on disk and reports each section whose take is missing as
-[`TAKE_MISSING`](/reference/findings/TAKE_MISSING), an uncertain finding, so a draft build still
+[`TAKE_MISSING`](/reference/findings/TAKE_MISSING), a warning, so a draft build still
 runs through under the default threshold.
 
 `stopped_at` is null on a build that ran through, whatever it found. `--allow CODE` carries a build
@@ -311,19 +311,19 @@ decktalk --json check --nope
 
 A finding is one judgement, in the same shape in every result, in the event stream and in the
 library. `decktalk schema finding` prints the model, and `decktalk schema` prints every code with
-its sentence, its certainty and the settings keys that move it.
+its sentence, its severity and the settings keys that move it.
 
 | Key | Type | Meaning |
 |---|---|---|
 | `code` | string | The stable code a caller dispatches on, such as `CUE_OFF`. There are fifty-three of them. |
 | `message` | string | One sentence, with every measured number and its limit written into it. |
-| `certainty` | `certain` or `uncertain` | Whether this is wrong for sure or only probably wrong. |
+| `severity` | `error` or `warning` | Whether this is wrong for sure or only probably wrong. |
 | `location` | object | Where the finding is. |
 | `stage` | stage name or null | The stage that raised it, or null when no stage did. |
 | `fix` | object or null | A change that resolves it, or null when none is known. |
-| `url` | string | The docs page for this code. |
+| `docs` | string | The docs page for this code. |
 
-`certainty` and `url` are the code's own and are written into the object rather than left for a
+`severity` and `docs` are the code's own and are written into the object rather than left for a
 reader to look up, so one line of JSON carries everything a decision needs.
 
 `location` carries five keys. `where` is required and never null, because the object a finding
@@ -331,15 +331,15 @@ judges is what tells a reader which side of the spend it came from.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `where` | string | The object this finding judges, such as a cue's wire id, a slide or a file. |
+| `where` | string | The object this finding judges, such as a cue's cue id, a slide or a file. |
 | `file` | string or null | The file to open, project-relative. |
 | `line` | integer or null | The line in that file, counting from one. |
 | `section` | integer or null | The section number this is about. |
-| `cue` | string or null | The wire id of the cue this is about. |
+| `cue` | string or null | The cue id of the cue this is about. |
 
-## The three fixes
+## The two fixes
 
-A `fix` is one of three kinds, and `kind` is the discriminator. Every fix carries a `title`, which
+A `fix` is one of two kinds, and `kind` is the discriminator. Every fix carries a `title`, which
 is one sentence saying what applying it does, and an `applicability`, which decides whether it may
 be applied without asking.
 
@@ -351,7 +351,7 @@ be applied without asking.
 
 **`kind: "edit"`** changes files. Its `edits` array is applied together or not at all. Each edit
 names one file and exactly one locator, so nothing has to be guessed: `pointer` is a JSON pointer
-for a JSON file, `key` is a dotted TOML key for a TOML file, and `line` is a line number for any
+for a JSON file, `key` is a dotted TOML key for a TOML file, such as a settings key in `decktalk.toml`, and `line` is a line number for any
 other text file. `old` is what is there now, or null when the edit only adds, and `new` is what goes
 there instead, which is the empty string when the edit removes.
 
@@ -361,7 +361,7 @@ deck declares two moments `cues.json` does not list.
 ```json
 {
   "kind": "edit",
-  "title": "Add 2 rows to section 3 of cues.json, each waiting for the phrase you write in its `on`.",
+  "title": "Add 2 rows to section 3 of cues.json, each waiting for the words you write in its `phrase`.",
   "applicability": "safe",
   "edits": [
     {
@@ -370,23 +370,9 @@ deck declares two moments `cues.json` does not list.
       "key": null,
       "line": 66,
       "old": null,
-      "new": "        {\"cue\": \"3.1:again\", \"on\": \"\"},\n        {\"cue\": \"3.1:make\", \"on\": \"\"},"
+      "new": "        {\"id\": \"3.1:again\", \"phrase\": \"\"},\n        {\"id\": \"3.1:make\", \"phrase\": \"\"},"
     }
   ]
-}
-```
-
-**`kind: "setting"`** turns a knob, in the same key space `config set` and `--set` take. It carries
-`key` and `value`, and the value is spelled the way a command line would spell it, so a reader who
-wants the range applies `decktalk config explain` to the key.
-
-```json
-{
-  "kind": "setting",
-  "title": "Raise the offset limit so this landing is inside it.",
-  "applicability": "unsafe",
-  "key": "verify.cue_offset_max_ms",
-  "value": "100"
 }
 ```
 
@@ -410,13 +396,12 @@ never reaches a display one.
 
 ## Which findings fail a run
 
-`--fail-on` names the threshold and `--allow` names an exception. Neither is compared against a
-field value by hand.
+`--fail-on` names the least severe finding that fails a run, and `--allow` names an exception.
 
 | Flag | Effect |
 |---|---|
-| `--fail-on certain` | Exit 1 on a certain finding. This is the default. |
-| `--fail-on any` | Exit 1 on any finding, certain or uncertain. |
+| `--fail-on error` | Exit 1 on an error. This is the default. |
+| `--fail-on warning` | Exit 1 on any finding, error or warning. |
 | `--fail-on never` | Exit 0 whatever was found. The findings are still in the result. |
 | `--allow CODE` | Carry on past this one code. Repeats. |
 
@@ -480,7 +465,7 @@ decktalk build --no-spend --events --json
 ```
 
 Under `--events` every line of stderr is one JSON object. The sentences DeckTalk would otherwise
-print are `log` lines among them, the first line is `run.start`, which names the file the events are
+print are `run.log` lines among them, the first line is `run.start`, which names the file the events are
 appended to, and a refusal is written as the one object `{"ok": false, "error": {...}}`.
 
 The discriminator key is `event`, and every line carries `event`, `time`, `seq` and `run`. `seq`
@@ -489,20 +474,20 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `event` | What it says | Its own fields |
 |---|---|---|
 | `run.start` | A run opened. | `events_path` |
-| `run.done` | A run closed, and why when it did not finish. | `outcome`, `seconds`, `error`, `dropped` |
+| `run.done` | A run closed, and why when it did not finish. | `outcome`, `elapsed_seconds`, `error`, `dropped` |
 | `stage.start` | A stage began, with its place in the run's plan. | `stage`, `index`, `count` |
-| `stage.done` | A stage ended. | `stage`, `outcome`, `seconds` |
+| `stage.done` | A stage ended. | `stage`, `outcome`, `elapsed_seconds` |
 | `section.start` | One section of a stage began. | `stage`, `section` |
-| `section.done` | One section of a stage ended. | `stage`, `section`, `outcome`, `seconds` |
-| `progress` | How far through its own work a stage is. | `stage`, `section`, `done`, `total`, `unit`, `label` |
-| `finding` | A judgement was made, carried as it was found. | `finding` |
-| `spend` | A price was worked out. | `spend` |
-| `take.charged` | The provider was paid for one take. A free voice writes none. | `section`, `take`, `characters`, `dollars` |
-| `sound.charged` | The sound provider was paid for one request. | `item`, `sound`, `digest`, `seconds`, `dollars` |
-| `fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
-| `log` | One sentence the library would have printed. | `level`, `message`, `source`, `stage`, `section`, `data` |
+| `section.done` | One section of a stage ended. | `stage`, `section`, `outcome`, `elapsed_seconds` |
+| `stage.progress` | How far through its own work a stage is. | `stage`, `section`, `done`, `total`, `unit`, `label` |
+| `finding.raised` | A judgement was made, carried as it was found. | `finding` |
+| `cost.priced` | A cost was worked out. | `cost` |
+| `take.charged` | The provider was paid for one take. A free voice writes none. | `section`, `digest`, `characters`, `dollars` |
+| `sound.charged` | The sound provider was paid for one request. | `name`, `kind`, `digest`, `seconds`, `dollars` |
+| `tool.fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
+| `run.log` | One sentence the library would have printed. | `level`, `message`, `source`, `stage`, `section`, `data` |
 
-`outcome` is `ok`, `kept`, `skipped`, `stopped` or `failed`, and it is on `run.done`, `stage.done`
+`outcome` is `ran`, `kept`, `skipped`, `stopped` or `failed`, and it is on `run.done`, `stage.done`
 and `section.done`. `kept` is a stage the run planned and did not repeat, because nothing it reads had
 changed since it last ran, `skipped` is a stage the run did not plan or did not reach, and `stopped`
 is a run the caller cancelled or interrupted. One field
@@ -511,26 +496,27 @@ same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `p
 and `level` on a log line is `debug`, `info`, `warning` or `error`.
 
 `run.done` carries `error` in the shape a result's `error` takes when the run stopped or failed, and
-null when it finished, so the events file of a failed run says why. A `log` line carries `source`,
+null when it finished, so the events file of a failed run says why. A `run.log` line carries `source`,
 the module that wrote it such as `media.ffmpeg`, or null for a stage's own sentence, and the `stage`
 and `section` it was written in. Its `data` is a flat map of the measured values behind the
 sentence, so a reader filters on a value rather than parsing English.
 
-A `finding` line carries the judgement in the same shape the result will carry, so an agent that
+A `finding.raised` line carries the judgement in the same shape the result will carry, so an agent that
 watches the stream can react before the call returns.
 
-A `spend` line carries `state`, which is `estimate` before the run buys anything and `charged`
-after, along with `sections`, `characters`, `seconds`, `dollars`, `ceiling_dollars`, `billing`,
-`price_per_1000_characters`, `price_per_second`, `price_key` and `price_layer`. `billing` is how the
-voice declares it bills, `per_character`, `per_second`, `free` or `undeclared`, and says which of
-the two rates the price was worked out at. A build's total is `mixed` when it adds characters of
-speech to seconds of sound, and then carries both rates.
+A `cost.priced` line carries `cost`. Its `state` is `estimate` before the run buys anything and
+`charged` after, along with `sections`, `characters`, `seconds`, `dollars`, `ceiling_dollars`,
+`billing`, `dollars_per_1000_characters`, `dollars_per_minute`, `price_key` and `price_layer`.
+`billing` is how the voice declares it bills, `per_character`, `per_second`, `free` or `undeclared`,
+and says which of the two rates the price was worked out at. Both rates are in US dollars, and a
+sound's rate is per minute of audio, the unit its `dollars_per_minute` setting is typed in. A build's
+total is `mixed` when it adds characters of speech to seconds of sound, and then carries both rates.
 
 `build/events/` keeps the most recent `output.events_keep_runs` runs and deletes the oldest, and
 that key defaults to 20. Run `decktalk config explain output.events_keep_runs` for its range. One
 file stops taking progress, fetch, debug and info lines once it reaches `output.events_max_bytes`,
 8 MiB by default, and keeps every line about the run, its stages and sections, its findings and its
-spending. `run.done` says in `dropped` how many lines were left out, so a reader can tell a bounded
+costs. `run.done` says in `dropped` how many lines were left out, so a reader can tell a bounded
 file from a quiet run.
 
 ## Watching from Python

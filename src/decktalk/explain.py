@@ -1,4 +1,4 @@
-"""One knob explained: what set it, what it feeds, and what a candidate value would do to this project.
+"""One setting explained: what set it, what it feeds, and what a candidate value would do to this project.
 
 Everything about a key that can be looked up is in the published schema, so this module is only
 what has to be computed. Three things are: which of the five layers actually set the value here,
@@ -37,7 +37,7 @@ from .tomlmap import Key
 log = logging.getLogger(__name__)
 
 Cue = tuple[float, str]
-"""One resolved cue as the explainer reads it, which is its second and its wire id, in that order so it sorts."""
+"""One resolved cue as the explainer reads it, which is its second and its cue id, in that order so it sorts."""
 
 TYPE_NAMES: dict[object, str] = {bool: "boolean", int: "integer", float: "number", str: "string"}
 """A scalar key's type as the schema names it."""
@@ -49,7 +49,7 @@ ARRAY_TYPE = "array of numbers"
 def explain(
     key: str, *, project: Path | None = None, value: str | None = None, machine: Machine | None = None
 ) -> ConfigExplainResult:
-    """One knob, its layers, the numbers it feeds and what a candidate would clamp in this project.
+    """One setting, its layers, the numbers it feeds and what a candidate would clamp in this project.
 
     `project` is a project directory. Without one the answer is about the defaults and the machine
     alone, which is what an agent reading the instruction set before it has a project needs.
@@ -102,7 +102,7 @@ def explain(
 def _opened(project: Path, machine: Machine) -> Inputs | None:
     """The project whole, or None while its document does not parse yet.
 
-    A knob is explainable in a project whose sections are still being written, so a document the
+    A setting is explainable in a project whose sections are still being written, so a document the
     loader refuses costs the answer its cues and nothing else. A refused setting is not swallowed,
     because the settings-only load that follows meets the same refusal and raises it.
     """
@@ -176,7 +176,7 @@ def _cues(project: Inputs) -> tuple[tuple[str, tuple[Cue, ...]], ...]:
     The times are read through `CueTimes`, the model `cue` writes them with, from the build directory
     the project names, so a moved build directory is read where it is. A row whose second is null was
     never resolved against a word, so it is left out rather than read as a cue at zero. A file that is
-    there and cannot be read explains nothing about cues, because a knob is explainable without them.
+    there and cannot be read explains nothing about cues, because a setting is explainable without them.
     """
     try:
         resolved = project.cue_times()

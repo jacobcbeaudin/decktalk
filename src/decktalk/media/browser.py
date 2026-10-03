@@ -235,7 +235,7 @@ class RecordingSink(Protocol):
     """Where the log of one recording is kept, which the recorder clears before it captures and fills after.
 
     The pair on disk has to be complete or absent. A webm replaced under the log of the recording
-    before it keeps its hash and moves narration t=0, so the next assemble trims the new picture at
+    before it keeps its digest and moves narration t=0, so the next assemble trims the new picture at
     the old moment and every reveal in the section lands wrong. Clearing first and writing last
     leaves a crash with no log, which the next run reads as a section it has not recorded.
     """

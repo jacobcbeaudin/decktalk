@@ -69,12 +69,12 @@ It is rounded where it is declared, so a run, a stage, a section and a result al
 clocks the same way and no emitter rounds for itself.
 """
 
-SPENDING = (
+SPEND = (
     "True when the caller let this run buy what is missing, which spend=True and --spend do. A run that may "
-    "not buys nothing: a free voice still makes each missing take, and a voice that bills leaves a placeholder "
-    "in its place."
+    "not buys nothing: a free voice still makes each missing take, a take that must be bought plays as a "
+    "placeholder, and a sound that must be bought plays silence."
 )
-"""What the `spending` field of a result that can buy says, written once for the two results that carry it."""
+"""What the `spend` field of a result that can buy says, written once for every result that carries it."""
 
 NextCommand = Annotated[
     str | None,
@@ -94,8 +94,8 @@ def section_key(number: int) -> str:
     return f"{number:02d}"
 
 
-class SpendState(Enum):
-    """Whether a price is what a run would cost or what it did cost."""
+class CostState(Enum):
+    """Whether a cost is what a run would cost or what it did cost."""
 
     ESTIMATE = "estimate"
     CHARGED = "charged"
@@ -142,7 +142,7 @@ class Nature(Enum):
 
     A number is a key when a project could hold another value for a reason a sentence can state.
     Taste and apparatus are the two answers that make one, and truth and derived are the two that
-    make a published number instead, so an agent that cannot find a knob learns the number is
+    make a published number instead, so an agent that cannot find a setting learns the number is
     deliberately not one rather than proposing a setting that cannot exist. Calibration is the
     fifth answer and belongs to a published number alone: it is a fact measured once from a tool
     DeckTalk drives, so it is neither a standard nor arithmetic and no project may state it.
@@ -164,6 +164,14 @@ class Source(Enum):
 
     CHOSEN = "chosen"
     STATED = "stated"
+
+
+class ApiKeyState(Enum):
+    """Whether the API key a voiced run would use is in reach, which is asked and never revealed."""
+
+    SET = "set"
+    MISSING = "missing"
+    NOT_NEEDED = "not_needed"
 
 
 class TakeStatus(Enum):
@@ -224,14 +232,14 @@ def counted(count: int, noun: str, plural: str | None = None) -> str:
     return f"{count:,} {noun if count == 1 else plural or noun + 's'}"
 
 
-class Spend(Model):
+class Cost(Model):
     """What a run costs, priced once so a caller never works it out from a character count.
 
     `--max-cost` caps the whole run, and is compared against the `ceiling_dollars` of everything the
-    run approved and never against `dollars`, because credits are consumed one request at a time.
+    run approved and never against `dollars`, because a provider charges one request at a time.
     """
 
-    state: SpendState = Field(description="Whether this is what the run would cost or what it did cost.")
+    state: CostState = Field(description="Whether this is what the run would cost or what it did cost.")
     sections: tuple[SectionNumber, ...] = Field(description="The sections this price covers, in script order.")
     characters: int = Field(ge=0, description="How many characters of script this price is for.")
     seconds: float = Field(
@@ -240,11 +248,11 @@ class Spend(Model):
     dollars: float = Field(ge=0, description="The price at the stated rate, in US dollars.")
     ceiling_dollars: float = Field(ge=0, description="The most this run can cost, in US dollars.")
     billing: Billing = Field(description="How the voice bills, which its adapter declares and the rate is per.")
-    price_per_1000_characters: float = Field(
-        ge=0, description="The rate a per-character bill was worked out at, per 1,000 characters."
+    dollars_per_1000_characters: float = Field(
+        ge=0, description="The rate a per-character bill was worked out at, in US dollars per 1,000 characters."
     )
-    price_per_second: float = Field(
-        0.0, ge=0, description="The rate a per-second bill was worked out at, per second of audio."
+    dollars_per_minute: float = Field(
+        0.0, ge=0, description="The rate a per-second bill was worked out at, in US dollars per minute of audio."
     )
     price_key: str | None = Field(
         None, description="The dotted key that states the rate, or null when the voice declares none to state."
@@ -279,11 +287,11 @@ class Spend(Model):
     def rate(self) -> str:
         """The rate this price was worked out at, in words, which every sentence that states a price ends on."""
         if self.billing is Billing.PER_SECOND:
-            stated = f"{rate_money(self.price_per_second)} per second of audio"
+            stated = f"{rate_money(self.dollars_per_minute)} per minute of audio"
             return f"an average of {stated}" if self.averaged else stated
         if self.billing is Billing.MIXED:
             return "the rates each stage states"
-        return f"{money(self.price_per_1000_characters)} per 1,000 characters"
+        return f"{money(self.dollars_per_1000_characters)} per 1,000 characters"
 
     @property
     def amount(self) -> str:
@@ -297,9 +305,14 @@ class Spend(Model):
         return counted(self.characters, "character")
 
     @property
+    def _maker(self) -> str:
+        """Who a price that is not money is owed to: the voice for speech, and the provider for sound alone."""
+        return "voice" if self.characters > 0 else "provider"
+
+    @property
     def _made(self) -> str:
         """The verb a price that is not money says what the run does with, which is voicing speech and making sound."""
-        charged = self.state is SpendState.CHARGED
+        charged = self.state is CostState.CHARGED
         if self.characters > 0:
             return "voiced" if charged else "voices"
         return "made" if charged else "makes"
@@ -316,10 +329,12 @@ class Spend(Model):
         rate = self.rate
         made = self._made
         if self.free and self.buys and self.ceiling_dollars == 0:
-            return f"This run {made} {self.amount} for nothing, because the voice is free."
+            return f"This run {made} {self.amount} for nothing, because the {self._maker} is free."
         if self.billing is Billing.UNDECLARED and self.buys:
-            return f"This run {made} {self.amount} on a voice that declares no bill, so DeckTalk cannot price it."
-        if self.state is SpendState.CHARGED:
+            return (
+                f"This run {made} {self.amount} on a {self._maker} that declares no bill, so DeckTalk cannot price it."
+            )
+        if self.state is CostState.CHARGED:
             if self.dollars == self.ceiling_dollars == 0:
                 return "This run bought nothing."
             return f"This run spent {money(self.dollars)} on {self.amount} at {rate}."
@@ -351,14 +366,14 @@ DOLLAR_DIGITS = 2
 """Truth: a price in dollars is read to the cent, which is the smallest unit anybody is charged."""
 
 RATE_DIGITS = 4
-"""Truth: the significant digits a rate under a cent is written to, which a second of sound is priced at."""
+"""Truth: the significant digits a rate under a cent is written to, so a cheap plan's rate never reads as free."""
 
 
 def rate_money(dollars: float) -> str:
     """A rate in US dollars, to the cent unless it is under one, when its own digits are kept.
 
-    A second of generated sound costs a fraction of a cent, which written to the cent would read as
-    free, so a rate that small keeps its significant digits.
+    A rate under a cent, written to the cent, would read as free, so a rate that small keeps its
+    significant digits.
     """
     if dollars == 0 or dollars >= CENT:
         return money(dollars)
@@ -423,7 +438,7 @@ class SectionStatus(Model):
     source: str = Field(description="The page or the file this section plays.")
     voiced: bool = Field(description="True when a voice spoke a take of this section's current text.")
     recorded: bool = Field(description="True when a recording of this section is on disk.")
-    cut: bool = Field(description="True when this section has been cut into the film.")
+    assembled: bool = Field(description="True when this section has been assembled into the film.")
     stale: bool = Field(description="True when what is on disk no longer matches what the project says.")
 
 
@@ -490,16 +505,16 @@ class SectionTake(Model):
     characters: int = Field(ge=0, description="How many characters of script this take speaks.")
     seconds: float | None = Field(None, ge=0, description="How long the take runs, or null before it exists.")
     file: ProjectPath | None = Field(None, description="The take's audio file, or null before it exists.")
-    hash: str = Field(description="The content hash that decides whether a take may be reused.")
+    digest: str = Field(description="The input digest that names the take and decides whether it may be reused.")
 
 
 class CueTime(Model):
     """One cue resolved against the words its section speaks."""
 
-    cue: str = Field(description="The cue's wire id, which is its slide and its local name.")
+    cue: str = Field(description="The cue's cue id, which is its slide and its local name.")
     phrase: str = Field(description="The phrase in the script this cue lands on.")
     seconds: float | None = Field(None, ge=0, description="When it lands, in seconds after its section starts.")
-    offset: float = Field(0.0, description="The author's own nudge in seconds, added to the resolved second.")
+    nudge_seconds: float = Field(0.0, description="The author's own nudge in seconds, added to the resolved second.")
 
 
 class SectionCues(Model):
@@ -584,10 +599,10 @@ class CueCheck(Model):
     """One cue measured on the finished film against the word it was promised to."""
 
     section: SectionNumber
-    cue: str = Field(description="The cue's wire id.")
+    cue: str = Field(description="The cue's cue id.")
     spoken: float = Field(ge=0, description="When the cue's word is spoken in the film, in seconds.")
     shown: float | None = Field(None, ge=0, description="When the picture changed, or null when it did not.")
-    offset: float | None = Field(None, description="How far the change is from its word, in seconds.")
+    offset_seconds: float | None = Field(None, description="How far the change is from its word, in seconds.")
     change_percent: float | None = Field(None, ge=0, description="How much of the picture changed, as a percent.")
     skipped: SkipReason | None = Field(None, description="Why this cue was not measured, or null when it was.")
 
@@ -597,7 +612,7 @@ class StageRun(Model):
 
     stage: Stage = Field(description="The stage this row is about.")
     outcome: Outcome = Field(description="Whether the stage ran, was kept from the last run, was skipped, or failed.")
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
 
 
 class SettingValue(Model):
@@ -628,7 +643,7 @@ class NumberView(Model):
     value: JsonValue = Field(description="What the formula works out to at the values in force.")
     candidate: JsonValue | None = Field(None, description="What it would work out to at the candidate, or null.")
     unit: str | None = Field(None, description="The number's true unit, or null when it has none.")
-    sentence: str = Field(description="Why this number is not a knob, which opens with its nature.")
+    sentence: str = Field(description="Why this number is not a setting, which opens with its nature.")
 
 
 class FixOutcome(Model):
@@ -689,8 +704,11 @@ class DoctorResult(Result):
     cache: ProjectPath = Field(description="The directory the fetched tools live in.")
     python: str = Field(description="The Python this DeckTalk runs on.")
     platform: str = Field(description="The operating system and processor this machine reports.")
-    voice_key: bool = Field(
-        description="True when the credential a voiced run would use is set, or when its voice needs none."
+    api_key_state: ApiKeyState = Field(
+        alias="api_key",
+        description=(
+            "Whether the API key a voiced run would use is set, missing, or not needed because its voice takes none."
+        ),
     )
     bias_ms: float | None = Field(None, description="This host's measured presentation bias, or null when unmeasured.")
 
@@ -724,7 +742,7 @@ class CheckResult(Result):
     judged: tuple[ProjectPath, ...] = Field(description="Every file and page this call judged, project-relative.")
     pages: bool = Field(description="True when the pages were opened in a browser rather than read as text.")
     frames: bool = Field(description="True when slides were frozen and compared as pictures.")
-    spend: Spend = Field(description="What the narration of a voiced build would cost, leaving out any sound.")
+    cost: Cost = Field(description="What the narration of a voiced build would cost, leaving out any sound.")
     storyboard: ProjectPath | None = Field(None, description="The storyboard this call wrote, or null.")
 
 
@@ -736,7 +754,7 @@ class WordsResult(Result):
 
 
 class StoryboardResult(Result):
-    """The contact sheet of every slide at every cue, which is the checkpoint before credits are spent."""
+    """The contact sheet of every slide at every cue, which is the checkpoint before anything is bought."""
 
     reports_findings: ClassVar[bool] = True
 
@@ -793,10 +811,10 @@ class ConfigUnsetResult(Result):
 
 
 class ConfigExplainResult(Result):
-    """One knob read whole: what it is, what it does, what may be set, what set it and what it feeds.
+    """One setting read whole: what it is, what it does, what may be set, what set it and what it feeds.
 
     `decktalk.explain` answers with this and `config explain` prints it, so the library and the
-    command give one answer about one knob.
+    command give one answer about one setting.
     """
 
     key: str = Field(description="The key's dotted name.")
@@ -837,11 +855,11 @@ class NarrateResult(Result):
 
     run: Run
     written: Written
-    spending: bool = Field(description=SPENDING)
+    spend: bool = Field(description=SPEND)
     sections: tuple[SectionTake, ...] = Field(description="Every section this run considered, in script order.")
-    spend: Spend = Field(description="What this run cost, or would have cost.")
+    cost: Cost = Field(description="What this run cost, or would have cost.")
     takes: ProjectPath | None = Field(None, description="The take index this run wrote, or null on a dry run.")
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
 
 
 class CueResult(Result):
@@ -853,7 +871,7 @@ class CueResult(Result):
     written: Written
     sections: tuple[SectionCues, ...] = Field(description="Every section that declares a cue, in script order.")
     file: ProjectPath | None = Field(None, description="The cue times this run wrote, or null when it wrote none.")
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
 
 
 class RecordResult(Result):
@@ -864,7 +882,7 @@ class RecordResult(Result):
     run: Run
     written: Written
     sections: tuple[SectionRecording, ...] = Field(description="Every section this run considered, in script order.")
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
 
 
 class ScoreResult(Result):
@@ -875,9 +893,10 @@ class ScoreResult(Result):
 
     run: Run
     written: Written
+    spend: bool = Field(description=SPEND)
     items: tuple[SoundItem, ...] = Field(description="Every item, in the order decktalk.toml declares them.")
-    spend: Spend = Field(description="What this run cost, or would have cost.")
-    seconds: Elapsed
+    cost: Cost = Field(description="What this run cost, or would have cost.")
+    elapsed_seconds: Elapsed
 
 
 class AssembleResult(Result):
@@ -891,7 +910,7 @@ class AssembleResult(Result):
     film_seconds: float = Field(ge=0, description="How long the finished film runs.")
     sections: tuple[RenderedSection, ...] = Field(description="Every section as it sits in the film, in film order.")
     loudness: Loudness | None = Field(None, description="What the mix measured, or null when it was not measured.")
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
 
 
 class VerifyResult(Result):
@@ -906,7 +925,7 @@ class VerifyResult(Result):
     cuts: tuple[CutCheck, ...] = Field((), description="Every cut between two sections, in film order.")
     seams: tuple[SeamCheck, ...] = Field((), description="Every seamless cut, in film order.")
     cues: tuple[CueCheck, ...] = Field((), description="Every cue measured against its word, in film order.")
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
 
 
 class BuildResult(Result):
@@ -918,15 +937,15 @@ class BuildResult(Result):
     run: Run
     written: Written
     stages: tuple[StageRun, ...] = Field(description="Every stage this run planned, in run order.")
-    spending: bool = Field(description=SPENDING)
-    spend: Spend = Field(description="What this run cost, or would have cost.")
+    spend: bool = Field(description=SPEND)
+    cost: Cost = Field(description="What this run cost, or would have cost.")
     film: ProjectPath | None = Field(None, description="The finished film, or null when the run made none.")
     storyboard: ProjectPath | None = Field(None, description="The storyboard this run wrote, or null.")
     stopped_at: Stage | None = Field(
         None,
         description="The stage whose findings stopped the run, or null when it ran through.",
     )
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
 
 
 class ClipResult(Result):
@@ -935,7 +954,7 @@ class ClipResult(Result):
     run: Run
     written: Written
     section: SectionNumber
-    film: ProjectPath = Field(description="The clip this call wrote, project-relative.")
+    file: ProjectPath = Field(description="The clip this call wrote, project-relative.")
     words: ProjectPath = Field(description="The clip's own words file, project-relative.")
     start: float = Field(ge=0, description="The first frame's time in the section, in seconds.")
     end: float = Field(ge=0, description="The time just after the last frame, in seconds.")
@@ -965,6 +984,7 @@ module loads, so a result declared anywhere else never joins it.
 
 
 __all__ = [
+    "ApiKeyState",
     "ApplyResult",
     "AssembleResult",
     "Billing",
@@ -1015,8 +1035,8 @@ __all__ = [
     "SoundStatus",
     "Source",
     "ScoreResult",
-    "Spend",
-    "SpendState",
+    "Cost",
+    "CostState",
     "StageRun",
     "StartCheck",
     "StatusResult",

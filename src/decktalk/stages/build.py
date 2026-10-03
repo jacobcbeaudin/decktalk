@@ -42,26 +42,26 @@ from pydantic import JsonValue, TypeAdapter
 
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level, StageDone
-from decktalk.findings import Certainty, Code, Finding
+from decktalk.findings import Code, Finding, Severity
 from decktalk.inputs import Inputs
 from decktalk.logs import cache_decision
 from decktalk.machine import Run, Threshold
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
-from decktalk.results import DOLLAR_DIGITS, Billing, BuildResult, Layer, Result, Spend, SpendState, StageRun, counted
+from decktalk.results import DOLLAR_DIGITS, Billing, BuildResult, Cost, CostState, Layer, Result, StageRun, counted
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import score as score_stage
 from decktalk.stages.status import (
     BUILT,
     Kept,
     KeptStage,
-    assemble_key,
+    assemble_digest,
     assembled,
     holds_film,
     intact,
     kept_path,
     outputs_of,
     read_kept,
-    verify_key,
+    verify_digest,
 )
 
 log = logging.getLogger(__name__)
@@ -116,7 +116,7 @@ def build(
     loudness: bool = True,
     strict: bool = False,
     allow: Collection[Code] = (),
-    stop_on: Certainty | None = Certainty.CERTAIN,
+    stop_on: Severity | None = Severity.ERROR,
 ) -> BuildResult:
     """Run every stage of the pipeline, or the span of them `stages` names, in run order.
 
@@ -127,15 +127,15 @@ def build(
     stage, and carrying on would deliver a film that is wrong in a way the run already knows about.
 
     `allow` and `stop_on` are the caller's own threshold, which is what `--allow` and `--fail-on`
-    set on the command line. A code in `allow` never stops the run, `Certainty.CERTAIN` stops on a
-    certain finding, `Certainty.UNCERTAIN` stops on any finding, and None lets every stage run so
+    set on the command line. A code in `allow` never stops the run, `Severity.ERROR` stops on a
+    error, `Severity.WARNING` stops on any finding, and None lets every stage run so
     that `verify` measures what the earlier stages made. The stages after a stop are reported as
     skipped and the result names the stage in `stopped_at`. The result's `ok` is read from the same
     threshold, so it is false on a run that stopped and on one whose verify judged something the
     threshold fails on, and true on a run whose every finding was allowed or under the line.
 
     Whether the film carries the score is read from `skip`, because a run told to leave the
-    stage out is a run that does not want its sound, and a second knob for the same decision would
+    stage out is a run that does not want its sound, and a second switch for the same decision would
     let a caller skip the stage and still be refused for the file it never asked for.
     """
     plan = _plan(stages, skip)
@@ -156,7 +156,7 @@ def build(
     kept = read_kept(inputs)
     fresh: dict[Stage, KeptStage] = {}
     rows: list[StageRun] = []
-    spends: list[Spend] = []
+    spends: list[Cost] = []
     film: Path | None = None
     stopped_at: Stage | None = None
     for stage in Stage:
@@ -166,25 +166,25 @@ def build(
         run.check()
         opened = time.monotonic()
         taken = {name: options[name] for name in OPTIONS[stage]}
-        key = _key(stage, inputs, kept, fresh, taken)
+        digest = _digest(stage, inputs, kept, fresh, taken)
         standing = None
         if stage in KEEPS:
-            standing, why = (None, FORCED) if force else _standing(stage, inputs, kept, key)
-            cache_decision(log, stage.value, hit=standing is not None, why=why, key=key)
+            standing, why = (None, FORCED) if force else _standing(stage, inputs, kept, digest)
+            cache_decision(log, stage.value, hit=standing is not None, why=why, key=digest)
         if standing is not None:
             findings = _keep(stage, run, standing)
-            rows.append(StageRun(stage=stage, outcome=Outcome.KEPT, seconds=time.monotonic() - opened))
+            rows.append(StageRun(stage=stage, outcome=Outcome.KEPT, elapsed_seconds=time.monotonic() - opened))
             fresh[stage] = standing
             if stage is Stage.ASSEMBLE:
                 film = inputs.relative(inputs.workspace.film)
         else:
             with run.stage(stage, index=plan.index(stage) + FIRST, count=len(plan)):
                 answer = _call(stage, run, inputs, taken)
-            rows.append(StageRun(stage=stage, outcome=Outcome.OK, seconds=time.monotonic() - opened))
-            spends += _spend_of(answer)
+            rows.append(StageRun(stage=stage, outcome=Outcome.RAN, elapsed_seconds=time.monotonic() - opened))
+            spends += _cost_of(answer)
             findings = [found for found in answer.findings if found.stage is stage]
-            if key is not None:
-                fresh[stage] = _remember(stage, inputs, key, taken, findings)
+            if digest is not None:
+                fresh[stage] = _remember(stage, inputs, digest, taken, findings)
             if stage is Stage.ASSEMBLE:
                 film = _film_of(answer)
         if stage is not Stage.VERIFY and _stopped(stage, findings, run, plan, threshold):
@@ -195,8 +195,8 @@ def build(
         BuildResult,
         threshold=threshold,
         stages=tuple(rows),
-        spending=run.spend,
-        spend=total(spends) if spends else narrate.spend_of([], inputs, state=SpendState.ESTIMATE),
+        spend=run.spend,
+        cost=total(spends) if spends else narrate.cost_of([], inputs, state=CostState.ESTIMATE),
         film=film,
         storyboard=board,
         stopped_at=stopped_at,
@@ -210,7 +210,7 @@ KEEPS: dict[Stage, str] = {Stage.ASSEMBLE: "assemble", Stage.VERIFY: "verify"}
 """The stages a build can keep, against the field of the record that holds each one."""
 
 
-def _key(
+def _digest(
     stage: Stage, inputs: Inputs, kept: Kept, fresh: Mapping[Stage, KeptStage], taken: Mapping[str, object]
 ) -> str | None:
     """The digest this stage would be kept on, or None when it is a stage a build never keeps.
@@ -223,29 +223,29 @@ def _key(
         return None
     options = _as_json(taken)
     if stage is Stage.ASSEMBLE:
-        return assemble_key(inputs, options)
-    made = fresh[Stage.ASSEMBLE].key if Stage.ASSEMBLE in fresh else assembled(inputs, kept)
+        return assemble_digest(inputs, options)
+    made = fresh[Stage.ASSEMBLE].digest if Stage.ASSEMBLE in fresh else assembled(inputs, kept)
     if made is None or not inputs.workspace.film.is_file():
         return None
-    return verify_key(inputs, made, options)
+    return verify_digest(inputs, made, options)
 
 
 FORCED = "forced"
 """Why a stage was made again when the caller asked for every stage to run."""
 
 
-def _standing(stage: Stage, inputs: Inputs, kept: Kept, key: str | None) -> tuple[KeptStage | None, str]:
+def _standing(stage: Stage, inputs: Inputs, kept: Kept, digest: str | None) -> tuple[KeptStage | None, str]:
     """The record of this stage's last run when it still stands, which is what lets a build keep it.
 
     The token beside it says why it stands or why it does not, which is the line an author reads to
     learn which input moved.
     """
-    if key is None:
+    if digest is None:
         return None, "film-missing"
     record: KeptStage | None = getattr(kept, KEEPS[stage])
     if record is None:
         return None, "no-record"
-    if record.key != key:
+    if record.digest != digest:
         return None, "key-changed"
     stands = holds_film(inputs, record) if stage is Stage.ASSEMBLE else intact(inputs, record)
     return (record, "unchanged") if stands else (None, "outputs-changed")
@@ -254,18 +254,20 @@ def _standing(stage: Stage, inputs: Inputs, kept: Kept, key: str | None) -> tupl
 def _keep(stage: Stage, run: Run, record: KeptStage) -> list[Finding]:
     """Report a stage this run keeps, and report again what it found when it last ran."""
     run.note(f"{stage.value.capitalize()} kept what it made last time, because nothing it reads has changed.")
-    run.emit(StageDone, stage=stage, outcome=Outcome.KEPT, seconds=NOTHING)
+    run.emit(StageDone, stage=stage, outcome=Outcome.KEPT, elapsed_seconds=NOTHING)
     for found in record.findings:
         run.found(found)
     return list(record.findings)
 
 
 def _remember(
-    stage: Stage, inputs: Inputs, key: str, taken: Mapping[str, object], findings: Sequence[Finding]
+    stage: Stage, inputs: Inputs, digest: str, taken: Mapping[str, object], findings: Sequence[Finding]
 ) -> KeptStage:
     """The record of a stage this run performed, with what it wrote, for the next build to keep."""
     wrote = inputs.workspace.deliverables().values() if stage is Stage.ASSEMBLE else ()
-    return KeptStage(key=key, options=_as_json(taken), outputs=outputs_of(inputs, wrote), findings=tuple(findings))
+    return KeptStage(
+        digest=digest, options=_as_json(taken), outputs=outputs_of(inputs, wrote), findings=tuple(findings)
+    )
 
 
 def _kept_after(kept: Kept, fresh: Mapping[Stage, KeptStage]) -> Kept:
@@ -338,8 +340,8 @@ def _storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None) -> Path
 
 def _skipped(run: Run, stage: Stage) -> StageRun:
     """Close a stage this run leaves out, so a renderer meets every stage of the pipeline once."""
-    run.emit(StageDone, stage=stage, outcome=Outcome.SKIPPED, seconds=NOTHING)
-    return StageRun(stage=stage, outcome=Outcome.SKIPPED, seconds=NOTHING)
+    run.emit(StageDone, stage=stage, outcome=Outcome.SKIPPED, elapsed_seconds=NOTHING)
+    return StageRun(stage=stage, outcome=Outcome.SKIPPED, elapsed_seconds=NOTHING)
 
 
 def _hold_to_ceiling(
@@ -359,7 +361,7 @@ def _hold_to_ceiling(
     """
     if not run.spend or run.max_cost is None:
         return
-    spends: list[Spend] = []
+    spends: list[Cost] = []
     if Stage.NARRATE in plan:
         spends.append(narrate.price(inputs, only=only, replace_voiced=replace_voiced))
     if Stage.SCORE in plan:
@@ -373,10 +375,10 @@ def _call(stage: Stage, run: Run, inputs: Inputs, taken: Mapping[str, object]) -
     return getattr(MODULES[stage], stage.value)(inputs, run, **taken)
 
 
-def _spend_of(answer: Result) -> list[Spend]:
+def _cost_of(answer: Result) -> list[Cost]:
     """The price one stage reported, or nothing at all from a stage that buys nothing."""
-    spent = getattr(answer, "spend", None)
-    return [spent] if isinstance(spent, Spend) else []
+    spent = getattr(answer, "cost", None)
+    return [spent] if isinstance(spent, Cost) else []
 
 
 def _film_of(answer: Result) -> Path | None:
@@ -406,7 +408,7 @@ def _stopped(
     return True
 
 
-def total(spends: Sequence[Spend]) -> Spend:
+def total(spends: Sequence[Cost]) -> Cost:
     """What the whole run costs, which is every stage that priced anything added together.
 
     It is the one way a run's price is summed, so the price a build asks about before it buys and
@@ -431,16 +433,16 @@ def total(spends: Sequence[Spend]) -> Spend:
     unstated = [spend for spend in deciding if spend.price_layer is Layer.DEFAULT]
     named = (unstated or deciding)[0]
     per_character, per_second = first.get(Billing.PER_CHARACTER), first.get(Billing.PER_SECOND)
-    return Spend(
-        state=SpendState.CHARGED if any(s.state is SpendState.CHARGED for s in spends) else SpendState.ESTIMATE,
+    return Cost(
+        state=CostState.CHARGED if any(s.state is CostState.CHARGED for s in spends) else CostState.ESTIMATE,
         sections=tuple(sorted({number for spend in spends for number in spend.sections})),
         characters=sum(spend.characters for spend in spends),
         seconds=sum(spend.seconds for spend in spends),
         dollars=round(sum(spend.dollars for spend in spends), DOLLAR_DIGITS),
         ceiling_dollars=round(sum(spend.ceiling_dollars for spend in spends), DOLLAR_DIGITS),
         billing=bills[0] if len(bills) == 1 else Billing.MIXED,
-        price_per_1000_characters=per_character.price_per_1000_characters if per_character else 0.0,
-        price_per_second=per_second.price_per_second if per_second else 0.0,
+        dollars_per_1000_characters=per_character.dollars_per_1000_characters if per_character else 0.0,
+        dollars_per_minute=per_second.dollars_per_minute if per_second else 0.0,
         price_key=named.price_key,
         averaged=any(spend.averaged for spend in deciding),
         price_layer=named.price_layer,

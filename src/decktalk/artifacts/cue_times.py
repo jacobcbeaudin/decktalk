@@ -2,9 +2,9 @@
 
     build/cue-times.json   one block per section, each holding every cue that section declares
 
-A row's `cue` is the wire id the page understands, `phrase` is the script phrase it was matched
-against, `seconds` is where it lands after its section starts, and `offset` is the author's own
-nudge, which is already inside `seconds`. The rows are the same `SectionCues` and `CueTime` a
+A row's `cue` is the cue id the page understands, `phrase` is the script phrase it was matched
+against, `seconds` is where it lands after its section starts, and `nudge_seconds` is the author's
+own nudge, which is already inside `seconds`. The rows are the same `SectionCues` and `CueTime` a
 `cue` result carries, so the file the stage writes and the JSON a caller reads are one shape.
 
 The recorder passes this file's seconds to the page as the `cues` query, spelt with the marks the
@@ -42,7 +42,7 @@ class CueTimes(Stored):
         return self.times(section).get(cue)
 
     def times(self, section: int) -> dict[str, float]:
-        """One section's resolved cues, keyed by wire id, with the unresolved ones left out."""
+        """One section's resolved cues, keyed by cue id, with the unresolved ones left out."""
         return {row.cue: row.seconds for row in self.rows(section) if row.seconds is not None}
 
     def query(self, section: int) -> str | None:

@@ -28,7 +28,7 @@ from decktalk.findings import Applicability, Code, CommandFix, Finding, Location
 from decktalk.machine import Machine
 from decktalk.media import audio
 from decktalk.secret import Secret, redact, redacted, register, register_environment, secret_name
-from decktalk.settings import ALLOW_ANY_API_BASE, CONFIG_VARIABLE
+from decktalk.settings import MACHINE_FILE_VARIABLE
 from support.service import Service
 from support.speech import alignment
 
@@ -218,10 +218,7 @@ name = "canary"
 
 [voice]
 provider = "elevenlabs"
-price_per_1000_characters = 0.30
-
-[elevenlabs]
-api_base = "{base}"
+dollars_per_1000_characters = 0.30
 
 [[section]]
 number = 1
@@ -277,9 +274,11 @@ class HostileVoice:
 
 
 def _canary_project(root: Path, base: str, key: str) -> Path:
+    """A project whose key is in `.env`, on a machine whose own file sends the voice to `base`."""
     (root / "deck").mkdir(parents=True)
     (root / "deck" / "index.html").write_text("<p>deck</p>", encoding="utf-8")
-    (root / "decktalk.toml").write_text(CANARY_TOML.format(base=base), encoding="utf-8")
+    (root / "decktalk.toml").write_text(CANARY_TOML, encoding="utf-8")
+    (root.parent / "machine.toml").write_text(f'[elevenlabs]\nbase_url = "{base}"\n', encoding="utf-8")
     (root / "script.md").write_text(CANARY_SCRIPT, encoding="utf-8")
     (root / ".env").write_text(f"ELEVENLABS_API_KEY={key}\n", encoding="utf-8")
     return root
@@ -329,7 +328,6 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
         cwd=root,
         cache_dir=tmp_path / "cache",
         dotenv=True,
-        allow_any_api_base=True,
     )
     project = decktalk.open(root, machine=here)
     raised: list[BaseException] = []
@@ -361,8 +359,7 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
     monkeypatch.setenv("ELEVENLABS_API_KEY", key)
     monkeypatch.setenv("DECKTALK_VOICE_ID", "voice-canary")
     monkeypatch.setenv("HOST_DB_PASSWORD", host)
-    monkeypatch.setenv(ALLOW_ANY_API_BASE, "1")
-    monkeypatch.setenv(CONFIG_VARIABLE, str(tmp_path / "machine.toml"))
+    monkeypatch.setenv(MACHINE_FILE_VARIABLE, str(tmp_path / "machine.toml"))
     printed: list[str] = []
     for mode in (["--json"], ["--events"], ["-v"], []):
         voice.script = ["refuse"]

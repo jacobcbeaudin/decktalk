@@ -110,7 +110,7 @@ def test_a_voiced_take_is_charged_on_the_stream_once(inputs: Inputs, watched: Wa
     write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)
     (charged,) = watched.of(TakeCharged)
     assert charged.section == 1
-    assert charged.take == "00000000000000af"
+    assert charged.digest == "00000000000000af"
     assert charged.characters == len(canonical_text(segment.pieces))
     assert charged.dollars == pytest.approx(len(canonical_text(segment.pieces)) / 1000 * 0.30)
 
