@@ -284,10 +284,14 @@ Set the rate with `[voice] price_per_1000_characters` so that a ceiling guards a
 
 ## `Cancel`
 
-Every mutating call takes `cancel`. `Cancel` is thread safe, because the caller that stops a run is
-a terminal's interrupt handler or a renderer's own thread and never the thread doing the work. A
-stage checks the token between sections, so a cancelled run leaves whole artifacts behind rather
-than half of one, and raises `Cancelled`.
+Every mutating call takes `cancel`. `Cancel` is the token a host holds to stop a run between
+sections, and it is thread safe, because the caller that stops a run, such as a renderer's own
+thread, is never the thread doing the work. A stage checks the token between sections, so a
+cancelled run leaves whole artifacts behind rather than half of one, and raises `Cancelled`.
+
+Nothing in the CLI sets the token. A Ctrl-C reaches the run as `KeyboardInterrupt`: the first starts
+no new section and waits for the ones in flight, keeping every take already paid for, and a second
+leaves at once.
 
 ```python
 import threading
@@ -313,7 +317,7 @@ declares `run`, and one whose command writes files also declares `written`.
 | Key | Meaning |
 |---|---|
 | `schema` | The shape version of the object, which is always `2`. It is spelled `schema_` in Python and `schema` in JSON. |
-| `ok` | True when the command ran and judged nothing certain. |
+| `ok` | True when the call ran and judged nothing that reaches its threshold. A certain finding reaches it by default, and `build` reads it from `stop_on` and `allow`. On the command line the threshold is the one `--fail-on` and `--allow` set, so `ok` is true exactly when the command exits 0. |
 | `findings` | Every judgement this call made, certain first. |
 | `error` | An `ErrorInfo`, filled only when the command could not run at all. |
 | `run` | The id of the run this call opened, which names its events file. |

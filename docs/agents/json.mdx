@@ -25,7 +25,7 @@ Every result carries all four.
 | Key | Type | Meaning |
 |---|---|---|
 | `schema` | integer | The shape version of the object, always `2`. It changes only when the shape changes, and it is not the product version. Check it before reading anything else. |
-| `ok` | boolean | True when the command ran and judged nothing certain. |
+| `ok` | boolean | True when the command ran and judged nothing that reaches the threshold `--fail-on` and `--allow` set, so it is true exactly when the command exits 0. |
 | `findings` | array | Every judgement this call made, certain first. Empty when it judged nothing. |
 | `error` | object or null | Filled only when the command could not run at all, and null otherwise. |
 
@@ -447,7 +447,7 @@ null. `message` never carries the value of a secret. Each code has a page of its
 
 | Exit | Meaning |
 |---|---|
-| 0 | The command ran and found nothing. |
+| 0 | The command ran and nothing it found reached the threshold `--fail-on` and `--allow` set. |
 | 1 | The command ran and found something at or above the threshold `--fail-on` set. |
 | 2 | The command line was refused, which is `USAGE` or `APPROVAL`. |
 | 3 | The command could not run, which is every other error code. |

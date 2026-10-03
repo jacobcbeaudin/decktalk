@@ -83,13 +83,16 @@ than the words it already left, so a phrase that will not match is met before an
 The stage matches a cue phrase against the section's spoken words with these rules.
 
 1. It splits the phrase and the spoken words on whitespace.
-2. Each token keeps only A to Z, a to z, 0 to 9 and the straight apostrophe. Accented letters, Greek
-   letters and curly apostrophes are dropped.
+2. Each token keeps its letters and digits, in any script, and its apostrophes, with a curly
+   apostrophe read as the straight one. So `café`, `naïve` and `η` are tokens as written.
 3. Matching ignores case unless the cue sets `case_sensitive` to true.
-4. A token with no characters left is ignored, so the phrase `learning rate η` matches as
-   `learning rate`.
-5. A hyphenated word is one token. `zig-zag` becomes `zigzag`, so the phrase `zig zag` does not match
-   it.
+4. A token with no letter or digit left is ignored, so the phrase `learning rate -` matches as
+   `learning rate`. A letter is never ignored, so the phrase `learning rate η` needs a spoken `η`.
+5. A word that punctuation divides, such as `state-of-the-art` or `R&D`, matches whole and by its
+   parts. The phrases `state of the art` and `state-of-the-art` both match a spoken
+   `state-of-the-art`, and `zig-zag` matches a spoken `zig zag`. A phrase that starts inside such a
+   word lands on that word's start. A word with no letter or digit in it, such as an `&` or a `/`
+   spoken as a word of its own, is skipped on both sides, so `R & D` and `tools / fast` resolve.
 6. The stage looks through the spoken words in order for a run that matches the phrase token for
    token. `occurrence` picks which match, counting from 1, and the default is the first.
 7. The second is the start of that run's first word, plus the cue's `offset`, rounded to a

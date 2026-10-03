@@ -92,13 +92,16 @@ The phrase is matched against the words of that section and nothing else, which 
 beside the take as `<hash>.words.json`, each with its start and its end in seconds
 after the section starts. `decktalk words` prints them. Matching normalises each word by dropping every
 character that is not a letter, a digit or an apostrophe, and then lowercasing it unless the row sets
-`case_sensitive`. The phrase matches where its normalised words equal a run of normalised spoken
-words.
+`case_sensitive`. A character it drops also divides the word into parts, so every word is read two
+ways: whole, and as its parts. The phrase matches where its words equal a run of spoken words read
+whole, or where its parts equal a run of spoken parts.
 
-Two consequences are worth writing down. A phrase with punctuation in it matches the same words the
-plain phrase does, because the punctuation is dropped from both sides. A phrase that normalises to
-one token can only ever match one spoken word, which is why a cue on `decktalk.ai` matches nothing
-when the script says "decktalk dot AI".
+Three consequences are worth writing down. `state of the art` and `state-of-the-art` both match a
+spoken `state-of-the-art`, `zig-zag` matches a spoken `zig zag`, and a phrase that starts inside such
+a word lands on that word's start. A word with no letter or digit in it, such as the `&` or the `/` a
+voice gives back as a word of its own, is skipped on both sides, so `R & D` resolves. And a phrase
+matches only words the voice spoke, which is why a cue on `decktalk.ai` matches nothing when the
+script says "decktalk dot AI": the spoken `dot` sits between its parts.
 
 `occurrence` picks which match, counting from 1. When a phrase occurs more than once and the row
 names no occurrence, the cue takes the first and `cue` says so on its stream, naming every second the

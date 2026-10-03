@@ -267,7 +267,7 @@ Every command's `--json` is one flat object. There is no wrapper, no `command` k
 | Key | Meaning |
 |---|---|
 | `schema` | The shape version, always `2`. |
-| `ok` | True when the command ran and judged nothing certain. |
+| `ok` | True when the command ran and judged nothing that reaches the threshold `--fail-on` and `--allow` set, so it is true exactly when the command exits 0. |
 | `findings` | Every judgement, certain first. |
 | `error` | Filled only when the command could not run, and null otherwise. |
 | `run` | The run id, on every result whose command opens a run. |

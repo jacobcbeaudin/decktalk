@@ -4,7 +4,7 @@ description: "Run DeckTalk with nobody watching: the toolchain up front, no prom
 ---
 
 A build without voice needs no account and no API key, and once Chromium and ffmpeg are on the
-machine it needs no network at all. Everything else a job needs is here: one command that fetches the
+machine it needs no network at all unless a page loads something from another host. Everything else a job needs is here: one command that fetches the
 toolchain, one flag that turns every prompt into a flag or a refusal, two ways to read a run as data,
 and one exit rule every command shares.
 
@@ -27,8 +27,9 @@ there and fetches nothing, so it is safe to leave in a job forever.
 - `decktalk doctor` reports what this machine holds and what a run would use, and fetches nothing. Its
   `cache` field is the directory to cache, read from the machine rather than guessed.
 
-After `install`, no command reaches the network unless it buys speech or sound. A build with
-`--no-voice` never does.
+After `install`, DeckTalk itself reaches the network only to buy speech or sound, and a build with
+`--no-voice` never does. A page that loads a font or a library from another host still reaches for
+it, as [What leaves your machine](/reference/what-leaves-your-machine#requests-a-page-makes) explains.
 
 ## Never prompt
 
@@ -185,34 +186,72 @@ laptop disagree.
 ## A GitHub Actions job
 
 ```yaml .github/workflows/video.yml
+name: video
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
 jobs:
   video:
     runs-on: ubuntu-latest
+    env:
+      DECKTALK_VERSION: "0.5.0"
+      DECKTALK_PROJECT: lessons/derivatives
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10
-      - run: uv tool install decktalk
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv tool install "decktalk==$DECKTALK_VERSION"
       - name: Cache Chromium and ffmpeg
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/ms-playwright
             ~/.cache/decktalk
-          key: decktalk-tools-${{ runner.os }}
+          key: decktalk-tools-${{ runner.os }}-${{ runner.arch }}-${{ env.DECKTALK_VERSION }}
       - run: decktalk install --no-input
-      - run: decktalk doctor --no-input --json > doctor.json
-      - run: decktalk check --no-input --json > check.json
-      - run: decktalk build --no-voice --no-input --json > build.json
+      - run: mkdir -p reports
+      - run: decktalk doctor --no-input --json > reports/doctor.json
+      - run: decktalk check --no-input --json > reports/check.json
+      - run: decktalk build --no-voice --no-input --allow CUE_OFF --json > reports/build.json
         env:
           DECKTALK_VIDEO_PRESET: veryfast
-      - uses: actions/upload-artifact@v7
+      - name: Keep the film, its files and the reports
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: film
           path: |
-            build/final/
-            *.json
+            ${{ env.DECKTALK_PROJECT }}/build/final/
+            reports/
+      - name: Keep the film on its own, so it plays without unzipping
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          path: ${{ env.DECKTALK_PROJECT }}/build/final/*.mp4
+          archive: false
 ```
+
+The job runs on every push to `main` and on every pull request, and its token can read the
+repository and nothing more. Each action is pinned to a commit, with its version in the comment
+beside it.
+
+`DECKTALK_VERSION` pins DeckTalk, and the tool cache is keyed on it as well as on the runner. Each
+DeckTalk version pins its own ffmpeg build and installs with the Playwright release that chooses its
+Chromium, so a new version starts from an empty cache and fetches the builds it wants, rather than
+restoring the ones the last version used. `decktalk install` fetches anything the restored cache
+lacks.
+
+`DECKTALK_PROJECT` names the project's directory, so every command finds it from the repository
+root and the upload reads the film from the project's own `build/final/`. The reports are written to
+`reports/` at the root, outside the project. The second upload is the film alone with `archive`
+set to false, so it is a single file that plays in the browser, and it takes its name from that file.
 
 `decktalk build` runs all six stages, and `verify` is the last of them, so the film is measured inside
 the same run that made it and its findings already decide the build's exit code. A job does not need
@@ -221,39 +260,29 @@ a second command to gate on the film.
 `--no-voice` puts a click at every word start, so the measurement covers the recording, the cut and
 the mix and not only the cue times, on a job that spends nothing.
 
-### Allow for a slower runner
+A pull request from a fork runs the fork's page on your runner. Under the default
+`record.page_policy` that page reaches the network as it would in a browser.
+[A page someone else wrote](/requirements#a-page-someone-else-wrote) explains the policy that refuses it.
 
-A hosted runner has no GPU that Chromium can use, so every frame is drawn in software and the macOS
-and Windows runners are slower than Linux. A reveal can start two or three frames late there, and
-`verify` reports [`CUE_OFF`](/reference/findings/CUE_OFF).
+### Report cue timing on a hosted runner
 
-Widen the limits for that runner alone and keep the defaults on the machine that records the
-published film. `--set` is the way to do it for one run, and the environment variable is the way to
-do it for a whole job.
+A hosted runner has no GPU that Chromium can use, so every frame is drawn in software and the
+moment a frame reaches the recording moves from run to run. A reveal can land a few frames late on
+any hosted runner, Linux included, and `verify` reports [`CUE_OFF`](/reference/findings/CUE_OFF)
+on a deck that is correct.
 
-```yaml .github/workflows/video.yml
-      - name: Widen the timing limits on the slower runners
-        if: runner.os != 'Linux'
-        run: |
-          echo "DECKTALK_VERIFY_CUE_OFFSET_MAX_MS=140" >> "$GITHUB_ENV"
-          echo "DECKTALK_VERIFY_AV_OFFSET_MAX_MS=200" >> "$GITHUB_ENV"
-          echo "DECKTALK_RECORD_FRAME_GAP_MAX_MS=400" >> "$GITHUB_ENV"
-```
+So the job above passes `--allow CUE_OFF`. The finding stays in `build.json` with its offset, and
+it stops counting toward the exit, so the job still fails on every other finding. Judge timing on the
+machine that records the published film, with the defaults.
 
-Every one of those keys publishes the range that is safe to turn it through, and the loader refuses a
-value outside it, naming the file and the line.
+DeckTalk's own end-to-end suite makes the same choice. It reports cue timing on every hosted runner,
+and its Linux row will gate it once three runs in a row on `main` show no late reveal.
+
+A job that has to gate on timing anyway can widen the limits for the whole job instead, with
+`DECKTALK_VERIFY_CUE_OFFSET_MAX_MS` in its `env`. Every key publishes the range that is safe to turn
+it through, and the loader refuses a value outside it, naming the file and the line.
 [Configuration](/reference/configuration#verify) states each range and what a value past it costs
 you.
-
-A runner whose job is to prove the project builds, rather than to judge its timing, can report a
-late reveal instead of failing on it. `--allow CUE_OFF` keeps the finding in the output and stops it
-counting toward the exit, and every other finding still counts. DeckTalk's own test suites make the
-same choice on hosted runners: Linux gates cue timing, and macOS and Windows report it, because their
-compositors present frames late.
-
-```console
-decktalk build --no-voice --no-input --allow CUE_OFF
-```
 
 ## Build offline
 

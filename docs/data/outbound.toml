@@ -6,6 +6,9 @@
 #
 # `[[service]]` rows are requests that carry the project's own content to a service.
 # `[[download]]` rows are one-time fetches of a tool, and they carry nothing of the project.
+# `[[page]]` rows are requests a recorded page makes itself, which `[record] page_policy` lets
+# through or refuses. Their host is whatever the page names, so the row says who sends them and
+# under which policy rather than naming a host.
 #
 # The `#:schema` line `decktalk init` writes names a file on raw.githubusercontent.com. DeckTalk never
 # fetches it, so it has no row here. An editor that understands the line fetches the schema on its
@@ -62,3 +65,11 @@ name = "ffmpeg and ffprobe on an Apple silicon Mac"
 sent_by = "the first command that encodes, or `decktalk install`"
 body = "A download request for two pinned archives, and nothing else."
 note = "The archives are checked against pinned SHA-256 digests and discarded when a digest does not match."
+
+[[page]]
+host = "Any host the page names"
+name = "A page's own requests"
+sent_by = "`decktalk record`, `decktalk check` and `decktalk storyboard`, and `decktalk assemble` when it draws the poster, so `decktalk build` too"
+body = "Whatever the page asks for, such as a font, a script, an image or a call to an API its author wrote. DeckTalk adds nothing to the request. The browser that makes it is started with paths, locale and proxy settings alone, so `ELEVENLABS_API_KEY` and every other key the process holds are not in its environment."
+policy = "Under the default `record.page_policy = \"trusted\"` the request goes to the network the way it would in the author's browser, through the machine's own proxy. Under `untrusted` it is refused before it leaves the browser, whatever its scheme."
+note = "Either way the run names every other origin the page reached for, as [`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET), so a reviewer reads which hosts a deck depends on from `decktalk check --json` before anything is recorded."

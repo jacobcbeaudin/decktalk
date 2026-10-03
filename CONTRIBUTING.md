@@ -5,11 +5,10 @@ writes much of the code under that review, with the checks below as the proof. T
 configuration keys and the Python names are still moving, so a pull request written today may not
 apply by the time it is read. Please open an issue before writing one.
 
-Three things help most right now.
+Two things help most right now.
 
 - **Open an issue.** A bug report, a question or an idea is welcome now, and it lands in the design
   before the code is written.
-- **Share what you built.** Put a link in [Discussions](https://github.com/jacobcbeaudin/decktalk/discussions).
 - **Say what was confusing.** The docs are part of the product, and a page that lost you is a bug.
 
 Expect a reply within about a week.
