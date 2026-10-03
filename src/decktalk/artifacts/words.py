@@ -23,7 +23,8 @@ record. A clip's
 words file is the author's own input once a `[[section]] words` key names it, so `Inputs.clip_words`
 refuses one that does not read as `INPUT`, naming that key, and never asks for it to be deleted. Words
 DeckTalk can time again for nothing, such as an aligner reading a take's audio, are a cache of their
-own kind, kept under a key of their own and never at a take's `<digest>.words.json`.
+own kind, kept under a key of their own and never at a take's `<digest>.words.json`. A copy moved onto a
+section's clock is made by `on_section_clock` and is a reading, which no writer puts on disk.
 """
 
 from __future__ import annotations
@@ -45,6 +46,9 @@ class Words(Stored):
     """Every word of one take or one clip, in the order they are spoken."""
 
     label: ClassVar[str] = "the words of a take or a clip"
+
+    estimated: ClassVar[bool] = False
+    """True on words DeckTalk timed from the script's pace rather than from audio, so every time is a guess."""
 
     words: tuple[Word, ...] = Field((), description="Every spoken word with its span, in speaking order.")
 
@@ -95,6 +99,8 @@ class EstimatedWords(Words):
 
     label: ClassVar[str] = "the words DeckTalk estimated for this placeholder take"
 
+    estimated: ClassVar[bool] = True
+
 
 class ClipWords(Words):
     """Every word inside one clip, on the clip's own clock, cut from the words of the take it plays.
@@ -104,6 +110,17 @@ class ClipWords(Words):
     """
 
     label: ClassVar[str] = "the words of one clip"
+
+
+def on_section_clock[W: Words](words: W, lead: float) -> W:
+    """These words moved `lead` seconds later onto their section's clock, as a copy no writer puts on disk.
+
+    A words file holds its take's own clock, and a section's clock starts its lead earlier, so a copy on
+    the section clock is a reading of the record and never the record: `Stored.text` refuses it.
+    """
+    moved = words.model_copy(update={"words": words.shifted(lead)}) if lead else words.model_copy()
+    moved._view = True
+    return moved
 
 
 def words_file(digest: str) -> str:
@@ -118,5 +135,6 @@ __all__ = [
     "EstimatedWords",
     "ProviderWords",
     "Words",
+    "on_section_clock",
     "words_file",
 ]

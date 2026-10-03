@@ -201,20 +201,20 @@ def encode_soundtrack(inputs: Inputs, src: Path, dst: Path, *, filters: str | No
     )  # fmt: skip
 
 
-def marker_times(
-    markers: Sequence[Marker], starts: Mapping[int, float], takes: Takes, inputs: Inputs
-) -> list[float | None]:
+def marker_times(markers: Sequence[Marker], starts: Mapping[int, float], inputs: Inputs) -> list[float | None]:
     """Where each marker falls in the finished film, or None when its phrase is not in the narration.
 
     A marker resolves exactly as a cue does, against the words of its own section, which already sit
-    after that section's lead. Each section's words are read once however many markers it holds.
+    after that section's lead. Only a page section is narrated, so on a clip section only `$start`
+    resolves and the clip's words are never read. Each section's words are read once however many
+    markers it holds.
     """
     heard: dict[int, tuple[Sequence[Word], Spoken] | None] = {}
 
     def words_of(section: int) -> tuple[Sequence[Word], Spoken] | None:
         if section not in heard:
-            take = takes.of(section)
-            words = inputs.section_words(section, take.digest) if take is not None else None
+            page = isinstance(inputs.document.section(section), PageSection)
+            words = inputs.words(section).words if page else None
             heard[section] = None if words is None else (words, Spoken.of(words))
         return heard[section]
 
@@ -287,7 +287,7 @@ def _clip_audio(chain: Chain, rows: list[Rendered], starts: Mapping[int, float])
         )
 
 
-def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, float],
+def _music_shape(inputs: Inputs, run: Run, starts: Mapping[int, float],
                  speech: list[Span]) -> list[str]:  # fmt: skip
     """The volume factors the music plays under: the duck under speech, and the swells the markers ask for."""
     mix = inputs.document.mix
@@ -304,7 +304,7 @@ def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, fl
         run.note(note, level=Level.WARNING)
     boosts: list[Span] = []
     mutes: list[Span] = []
-    for marker, at in zip(markers.markers, marker_times(markers.markers, starts, takes, inputs), strict=True):
+    for marker, at in zip(markers.markers, marker_times(markers.markers, starts, inputs), strict=True):
         if at is None:
             run.note(f"The marker {marker.name!r} is unresolved, so it shapes nothing.", level=Level.WARNING)
             continue
@@ -319,7 +319,7 @@ def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, fl
     return factors
 
 
-def _music(chain: Chain, inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, float],
+def _music(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float],
            speech: list[Span], total: float) -> None:  # fmt: skip
     """The music bed, ducked under every span that carries speech and shaped by the markers."""
     mix = inputs.document.mix
@@ -329,7 +329,7 @@ def _music(chain: Chain, inputs: Inputs, run: Run, takes: Takes, starts: Mapping
     if not path.exists():
         _missing_sound(inputs, run, mix.music, "music")
         return
-    volume = f"{gain(mix.music_db):.5f}*" + "*".join(_music_shape(inputs, run, takes, starts, speech))
+    volume = f"{gain(mix.music_db):.5f}*" + "*".join(_music_shape(inputs, run, starts, speech))
     chain.layer(
         chain.add(LOOP, str(path)),
         f",atrim=duration={total:.3f},asetpts=PTS-STARTPTS,volume='{volume}':eval=frame,"
@@ -420,7 +420,7 @@ def plan_mix(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, *, sc
     _clip_audio(chain, rows, starts)
     if score:
         speech = speech_spans(rows, takes, starts)
-        _music(chain, inputs, run, takes, starts, speech, total)
+        _music(chain, inputs, run, starts, speech, total)
         _ambience(chain, inputs, run, rows, starts, total)
         _effects(chain, inputs, run, starts)
     return chain.mixed(total)

@@ -11,14 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Words, words_file
 from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from decktalk.inputs import Inputs
 from decktalk.results import Word
-from decktalk.stages.words import section_words, words
+from decktalk.stages.words import words
 from support.projects import write_project
 from support.runs import a_run
-from support.takes import a_take, write_takes
+from support.takes import a_take, narrated
 
 TOML = """
 [project]
@@ -43,14 +42,14 @@ SPOKEN = {1: "Hello, there.", 2: "Second, section."}
 def an_inputs(root: Path, *, numbers: tuple[int, ...] = (1, 2), voiced: bool = True) -> Inputs:
     write_project(root, TOML)
     inputs = Inputs.load(root, environ={})
-    write_takes(inputs, *(a_take(number, voiced=voiced, spoken=SPOKEN[number]) for number in numbers))
-    for number in numbers:
-        spoken = SPOKEN[number].split()
-        rows = tuple(
+    said = {
+        number: [
             Word(word=token.strip(",."), start=round(index * 0.5, 3), end=round(index * 0.5 + 0.4, 3))
-            for index, token in enumerate(spoken)
-        )
-        Words(words=rows).write(inputs.workspace.takes / words_file(f"{number:016x}"))
+            for index, token in enumerate(SPOKEN[number].split())
+        ]
+        for number in numbers
+    }
+    narrated(inputs, *(a_take(number, voiced=voiced, spoken=SPOKEN[number]) for number in numbers), words=said)
     return inputs
 
 
@@ -104,19 +103,3 @@ def test_the_command_writes_nothing(tmp_path: Path) -> None:
     run = a_run(tmp_path)
     words(an_inputs(tmp_path), run)
     assert run.written == []
-
-
-def test_one_section_is_read_the_same_way_the_whole_command_reads_it(tmp_path: Path) -> None:
-    """`clip` asks for one section through this, so the two agree about every start and every end."""
-    inputs = an_inputs(tmp_path)
-    whole = words(inputs, a_run(tmp_path))
-    assert section_words(inputs, 2) == whole.sections[1]
-
-
-def test_one_section_of_a_project_that_has_not_narrated_is_nothing_rather_than_a_refusal(tmp_path: Path) -> None:
-    write_project(tmp_path, TOML)
-    assert section_words(Inputs.load(tmp_path, environ={}), 1) is None
-
-
-def test_a_section_the_take_index_does_not_hold_is_nothing(tmp_path: Path) -> None:
-    assert section_words(an_inputs(tmp_path, numbers=(1,)), 2) is None

@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts import Words, take_file, words_file
+from decktalk.artifacts import Words
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs
 from decktalk.machine.run import Run
@@ -17,7 +17,7 @@ from support.fakes import FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
 from support.runs import a_run, notes
-from support.takes import TAKE_SUFFIX, a_take, write_takes
+from support.takes import a_take, narrated
 
 TOML = """
 [project]
@@ -52,11 +52,9 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_disk: bool = True) -> Inputs:
     """A project whose section one is narrated and cut, which is what a clip is taken out of."""
     inputs = load_project(tmp_path, TOML, page=SCENE_ONE, media=("media/b-roll.mp4",))
-    take = a_take(1, seconds=2.0, digest="0123456789abcdef", voiced=voiced, lead_seconds=0.5)
-    write_takes(inputs, take)
-    Words(words=WORDS).write(inputs.workspace.takes / words_file("0123456789abcdef"))
-    if take_on_disk:
-        (inputs.workspace.takes / take_file(take.digest, TAKE_SUFFIX)).write_bytes(b"")
+    (take,) = narrated(inputs, a_take(1, seconds=2.0, voiced=voiced, lead_seconds=0.5), words={1: WORDS}).sections
+    if not take_on_disk:
+        inputs.take_places.find(take.digest).audio.unlink()
     if cut:
         inputs.workspace.section_video("01").parent.mkdir(parents=True, exist_ok=True)
         inputs.workspace.section_video("01").write_bytes(b"")

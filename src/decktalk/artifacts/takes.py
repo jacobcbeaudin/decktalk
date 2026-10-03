@@ -224,6 +224,18 @@ class Takes(Stored):
     output_format: str = Field(description="The audio format the last run that wrote this index asked for.")
     sections: tuple[Take, ...] = Field((), description="One row per narrated section, in section order.")
 
+    @model_validator(mode="after")
+    def _rows_agree_with_their_digests(self) -> Takes:
+        """Refuse a row whose `voiced` disagrees with its digest, so whether a take was voiced is one fact."""
+        for take in self.sections:
+            if take.voiced == is_placeholder(take.digest):
+                spoken = "was" if take.voiced else "was not"
+                raise ValueError(
+                    f"the row of section {take.section} says its take {take.digest} {spoken} spoken by a provider, "
+                    "and its digest says otherwise"
+                )
+        return self
+
     @property
     def estimated(self) -> bool:
         """True when any row is a placeholder, which is what tells a reader the clock is a guess."""

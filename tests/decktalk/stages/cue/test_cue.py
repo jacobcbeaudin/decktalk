@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import CueTimes, Words, words_file
+from decktalk.artifacts import CueTimes
 from decktalk.errors import Cancelled, NotBuiltError
 from decktalk.events import FindingRaised, SectionStart
 from decktalk.findings import Code
@@ -20,7 +20,7 @@ from decktalk.stages.cue import cue
 from support.pages import SCENE_ONE, elements, write_log
 from support.projects import load_project
 from support.runs import Watched, a_run, notes
-from support.takes import a_take, write_takes
+from support.takes import a_take, narrated
 
 TOML = """
 [project]
@@ -45,11 +45,12 @@ WORDS = (
 """The words section one speaks, before its own lead is added to them."""
 
 
-def a_project(tmp_path: Path, *, cues: dict | None = None, voiced: bool = True) -> Inputs:
-    """A project with one take for section one, and the cue file the case asks for."""
+def a_project(
+    tmp_path: Path, *, cues: dict | None = None, voiced: bool = True, words: Sequence[Word] = WORDS
+) -> Inputs:
+    """A project with one take for section one speaking `words`, and the cue file the case asks for."""
     inputs = load_project(tmp_path, TOML, page=SCENE_ONE, cues=cues)
-    write_takes(inputs, a_take(1, seconds=2.0, digest="0123456789abcdef", voiced=voiced, sound_end_seconds=1.7))
-    Words(words=WORDS).write(inputs.workspace.takes / words_file("0123456789abcdef"))
+    narrated(inputs, a_take(1, seconds=2.0, voiced=voiced, sound_end_seconds=1.7), words={1: words})
     return inputs
 
 
@@ -116,10 +117,22 @@ def test_a_project_with_no_take_index_is_told_which_stage_writes_one(tmp_path: P
     assert "decktalk narrate" in (refused.value.hint or "")
 
 
+def test_a_section_with_no_take_is_unresolved_while_one_with_no_words_has_a_start(tmp_path: Path) -> None:
+    """Cue keys its words on the take index, so a page section with no row has no take to place a cue against."""
+    inputs = a_project(tmp_path, cues={"2": {"cues": [{"id": "2.1:a", "phrase": "hello"}]}})
+    result = cue(inputs, a_run(tmp_path))
+    (finding,) = result.findings
+    assert finding.code is Code.CUE_UNRESOLVED
+    assert finding.message == (
+        "the cue 2.1:a waits for 'hello' and section 2 has no take, so there are no words to place it against."
+    )
+
+
 def test_a_repeated_phrase_is_a_line_on_the_stream_and_never_a_judgement(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path, cues={"1": {"cues": [{"id": "1.1:a", "phrase": "Hello"}]}})
-    Words(words=(*WORDS, Word(word="Hello", start=2.0, end=2.4))).write(
-        inputs.workspace.takes / words_file("0123456789abcdef")
+    inputs = a_project(
+        tmp_path,
+        cues={"1": {"cues": [{"id": "1.1:a", "phrase": "Hello"}]}},
+        words=(*WORDS, Word(word="Hello", start=2.0, end=2.4)),
     )
     run = a_run(tmp_path)
     said = notes(run)

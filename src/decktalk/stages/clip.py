@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import WORDS_SUFFIX, ClipWords, Take, Takes
+from decktalk.artifacts import WORDS_SUFFIX, ClipWords, Take
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
 from decktalk.inputs import Inputs, PageSection
@@ -31,7 +31,7 @@ from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact
 from decktalk.results import ClipResult, SectionWords, Word
-from decktalk.stages.words import section_words
+from decktalk.stages.words import row_of
 
 FRAME_SLACK = 0.5
 """Truth: half a frame, which is the most a span may pass the last frame by and still name it."""
@@ -86,14 +86,15 @@ def clip(
     words_file = film.with_name(film.stem + WORDS_SUFFIX)
 
     _render(inputs, video, source, film, span=span, lead=take.lead_seconds, gain_db=gain_db, fps=fps)
-    inside, cut = _clip_words(inputs, section, span.first_seconds, span.last_seconds)
+    said = row_of(inputs, take)
+    inside, cut = _clip_words(said, span.first_seconds, span.last_seconds)
     for word in cut:
         run.note(
             f"The span from {span.first_seconds:g}s to {span.last_seconds:g}s cuts the word {word!r} in two, "
             "so the words file leaves it out.",
             level=Level.WARNING,
         )
-    if not take.voiced:
+    if said.estimated:
         run.note(
             f"Section {section} carries placeholder narration, so every word time in this clip is an estimate.",
             level=Level.WARNING,
@@ -110,7 +111,7 @@ def clip(
         seconds=span.total_seconds,
         hold_seconds=span.hold_seconds,
         gain_db=gain_db,
-        estimated=not take.voiced,
+        estimated=said.estimated,
     )
 
 
@@ -174,7 +175,7 @@ def _section_video(inputs: Inputs, section: PageSection) -> Path:
 
 def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
     """One section's take and the file that holds it, or a refusal naming the command that makes it."""
-    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
+    takes = inputs.takes(required=True)
     take = takes.of(number)
     if take is None:
         raise NotBuiltError(
@@ -268,11 +269,8 @@ def _render(
     )  # fmt: skip
 
 
-def _clip_words(inputs: Inputs, number: int, first: float, last: float) -> tuple[tuple[Word, ...], tuple[str, ...]]:
+def _clip_words(said: SectionWords, first: float, last: float) -> tuple[tuple[Word, ...], tuple[str, ...]]:
     """(the words wholly inside the span, in seconds after it starts, the words the span cuts in two)."""
-    said: SectionWords | None = section_words(inputs, number)
-    if said is None:
-        return (), ()
     inside: list[Word] = []
     cut: list[str] = []
     for word in said.words:

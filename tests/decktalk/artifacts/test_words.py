@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts.stored import file_digest
-from decktalk.artifacts.words import WORDS_SUFFIX, AudioPrint, ProviderWords, Words, words_file
+from decktalk.artifacts.words import WORDS_SUFFIX, AudioPrint, ProviderWords, Words, on_section_clock, words_file
 from decktalk.errors import InputError
 from decktalk.results import Word
 
@@ -73,3 +73,38 @@ def test_a_providers_words_with_no_fingerprint_still_read(tmp_path: Path) -> Non
     path = SPOKEN.write(tmp_path / words_file("abc123"))
     read = ProviderWords.read(path)
     assert read is not None and read.audio is None
+
+
+def test_words_moved_onto_a_section_clock_are_never_written_to_any_file(tmp_path: Path) -> None:
+    """A copy on the section clock is a reading of a paid record, so writing it would overwrite what was bought."""
+    printed = AudioPrint.of(b"the take's own bytes", suffix=".mp3")
+    path = ProviderWords(words=SPOKEN.words, audio=printed).write(tmp_path / words_file("abc123"))
+    kept = path.read_bytes()
+    read = ProviderWords.read(path)
+    assert read is not None
+    moved = on_section_clock(read, 0.5)
+    with pytest.raises(ValueError, match="never written"):
+        moved.write(path)
+    with pytest.raises(ValueError, match="never written"):
+        _ = moved.text
+    assert path.read_bytes() == kept
+    assert type(moved) is ProviderWords and moved.audio == read.audio
+    assert moved.words[0].start == read.words[0].start + 0.5
+
+
+def test_a_copy_at_no_lead_keeps_every_time_as_it_was_and_is_still_never_written(tmp_path: Path) -> None:
+    moved = on_section_clock(SPOKEN, 0.0)
+    assert moved.words == SPOKEN.words
+    with pytest.raises(ValueError, match="never written"):
+        moved.write(tmp_path / words_file("abc123"))
+    assert not (tmp_path / words_file("abc123")).exists()
+
+
+def test_words_on_a_section_clock_equal_the_same_fields_read_from_the_file(tmp_path: Path) -> None:
+    """Equality reads the words, never whether a value is a copy made for a reader."""
+    read = Words.read(SPOKEN.write(tmp_path / words_file("abc123")))
+    assert read is not None
+    moved = on_section_clock(read, 0.0)
+    assert moved == read and read == moved
+    assert hash(moved) == hash(read)
+    assert on_section_clock(read, 0.5) != read

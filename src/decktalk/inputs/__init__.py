@@ -24,11 +24,12 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal, overload
 
 from decktalk.artifacts import (
     ClipWords,
@@ -43,9 +44,10 @@ from decktalk.artifacts import (
     content_digest,
     file_digest,
     is_placeholder,
+    on_section_clock,
 )
 from decktalk.artifacts.stills import Stills, still_key
-from decktalk.errors import InputError
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.files import current_text
 from decktalk.inputs.cues import CuedSection, load_cues
 from decktalk.inputs.document import (
@@ -67,7 +69,7 @@ from decktalk.inputs.script import ScriptSection, read_script
 from decktalk.inputs.take_places import TakePlaces
 from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
-from decktalk.results import Word
+from decktalk.pipeline import Artifact
 from decktalk.settings import BY_ID, PROJECT_FILE, Layers, Loaded, Settings
 from decktalk.settings.layers import key_warnings, load, machine_folder, read_project_toml, value_of
 from decktalk.speech import output_of
@@ -358,20 +360,32 @@ class Inputs:
         own = found.tail_seconds
         return round(self.settings.narration.tail_seconds if own is None else own, 3)
 
-    def section_words(self, section: int, digest: str) -> tuple[Word, ...]:
-        """One take's words in seconds after its section starts, which is after that section's lead."""
-        found = self.take_words(digest)
-        if found is None:
-            return ()
-        lead = self.lead_seconds(section)
-        return found.shifted(lead) if lead else found.words
-
     # ---- the artifacts under build/ ---------------------------------------------------------
 
     @cached_property
     def take_places(self) -> TakePlaces:
         """Every place this project's voiced takes are kept, which one instance serves for this value's whole life."""
         return TakePlaces(self.workspace, wait_seconds=self.settings.narration.store_wait_seconds)
+
+    def words(self, number: int) -> Words:
+        """One section's words on its section clock, as the kind that timed them, and never None.
+
+        A page section answers its take's words, read through `take_words` by the digest its take index row
+        names and moved later by the section's lead. A row whose words file is gone answers no words of the
+        kind its digest names, so a placeholder still says its times are estimates. A clip section answers
+        the words file its `words` key names, which already runs on the clip's own clock, and one that does
+        not read is refused as `INPUT`. No take index, no row, or no such section answers an empty `Words`.
+        Every answer is a copy for reading, which no writer puts on disk.
+        """
+        found = self.document.section(number)
+        if isinstance(found, ClipSection):
+            return on_section_clock(self.clip_words(found) or Words(), 0.0)
+        index = self.takes()
+        take = index.of(number) if index is not None and found is not None else None
+        if take is None:
+            return on_section_clock(Words(), 0.0)
+        said = self.take_words(take.digest) or _words_kind(take.digest)()
+        return on_section_clock(said, self.lead_seconds(number))
 
     def take_words(self, digest: str) -> Words | None:
         """One take's words on the take's own clock, or None when it has none yet.
@@ -380,18 +394,33 @@ class Inputs:
         provider sent back the words of a voiced take, which are a paid record refused rather than built
         again when they do not read, and DeckTalk estimated a placeholder's, which are a cache.
         """
-        model = EstimatedWords if is_placeholder(digest) else ProviderWords
-        return model.read(self.take_places.find(digest).words)
+        return _words_kind(digest).read(self.take_places.find(digest).words)
 
-    def takes(self) -> Takes | None:
-        """The take index as narrate last wrote it, or None when there is none that reads.
+    @overload
+    def takes(self) -> Takes | None: ...
+    @overload
+    def takes(self, *, required: Literal[True]) -> Takes: ...
+    def takes(self, *, required: bool = False) -> Takes | None:
+        """The take index as narrate last wrote it, read once while its file is unchanged.
 
-        The index is a cache over the takes on disk: every row is read again off the script, the
-        settings and the take and words files its digest names, so narrate builds an index that does
-        not read again for nothing and never buys a take for it. A stage that cannot run without the
-        index asks `Takes.require`, which refuses one that does not read as never built.
+        Plain, it is None before narrate has run or when the index does not read, which is what a reader
+        that may run first wants. With `required`, a stage that cannot run without the index is refused as
+        `NOT_BUILT`, naming the command that writes it. The index is a cache over the takes on disk, so
+        narrate builds one that does not read again for nothing and never buys a take for it.
         """
-        return Takes.previous(self.workspace.takes_path)
+        found = self._take_index.get()
+        if isinstance(found, NotBuiltError):
+            if required:
+                raise found.with_traceback(None)
+            return None
+        if found is None and required:
+            raise NotBuiltError(f"{self.workspace.takes_path.name} has not been built.", hint=Artifact.TAKES.next_step)
+        return found
+
+    @cached_property
+    def _take_index(self) -> _TakeIndex:
+        """The take index held against its file's stat, which one instance serves for this value's whole life."""
+        return _TakeIndex(self.workspace.takes_path)
 
     def cue_times(self) -> CueTimes | None:
         return CueTimes.read(self.workspace.cue_times_path)
@@ -496,6 +525,47 @@ class Inputs:
             for section in self.document.sections
             if (section.page if isinstance(section, PageSection) else section.clip) == wanted
         )
+
+
+def _words_kind(digest: str) -> type[ProviderWords] | type[EstimatedWords]:
+    """Who timed the words of the take with this digest: DeckTalk for a placeholder, its provider for any other."""
+    return EstimatedWords if is_placeholder(digest) else ProviderWords
+
+
+class _TakeIndex:
+    """The take index as last read, held while its file keeps the inode, size and times it was read at.
+
+    Narrate replaces the index in one atomic rename, which gives it a new inode, so a run that narrates
+    and then cues reads the new index without being told to. A file that does not read is held as the
+    refusal it earns, so its one "built again" record is written once while it stays as it is.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._lock = threading.Lock()
+        self._held: tuple[tuple[int, int, int, int], Takes | NotBuiltError] | None = None
+
+    def get(self) -> Takes | NotBuiltError | None:
+        """The index, the refusal its unreadable file earns, or None when there is no file."""
+        try:
+            stat = self._path.stat()
+        except FileNotFoundError:  # silent: no index is narrate not having run, which None says
+            return None
+        key = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        with self._lock:
+            held = self._held
+        if held is not None and held[0] == key:
+            return held[1]
+        try:
+            found: Takes | NotBuiltError | None = Takes.read(self._path)
+        except NotBuiltError as unread:
+            log.info("%s It will be built again.", unread, extra={"data": {"file": self._path.name}})
+            found = unread
+        if found is None:
+            return None
+        with self._lock:
+            self._held = (key, found)
+        return found
 
 
 __all__ = [

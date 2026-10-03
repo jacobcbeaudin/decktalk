@@ -20,7 +20,7 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 
-from decktalk.artifacts import Placement, Placements, Takes, Words
+from decktalk.artifacts import Placement, Placements, Takes
 from decktalk.captions import (
     CaptionCue,
     Chapter,
@@ -76,7 +76,7 @@ def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], t
     placed = takes.placed
     for take in takes.sections:
         shift = offsets.get(take.section, 0.0) + placed[take.section].start
-        words = list(Words(words=inputs.section_words(take.section, take.digest)).shifted(shift))
+        words = list(inputs.words(take.section).shifted(shift))
         text = texts.get(take.section)
         cues += caption_cues(display_words(words, text) if text else words)
     return cues

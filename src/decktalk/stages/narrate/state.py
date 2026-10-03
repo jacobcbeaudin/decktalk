@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 
-from decktalk.artifacts import EstimatedWords, ProviderWords, Take
+from decktalk.artifacts import EstimatedWords, ProviderWords, Take, on_section_clock
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import ScriptSection
@@ -302,10 +302,9 @@ class TakeStates(Mapping[int, SectionTakeState]):
         if digest is not None:
             found = self._inputs.take_words(digest)
             if isinstance(found, ProviderWords):
-                return found.model_copy(update={"words": found.shifted(lead)})
+                return on_section_clock(found, lead)
         length = section.placeholder_seconds(self._inputs.settings.narration)
-        estimated = EstimatedWords(words=tuple(estimated_words(section, length)))
-        return EstimatedWords(words=estimated.shifted(lead))
+        return on_section_clock(EstimatedWords(words=tuple(estimated_words(section, length))), lead)
 
     def plan(self, *, spend: bool, force: bool = False) -> NarratePlan:
         """What one narrate run does with each selected section, sending nothing and writing nothing.

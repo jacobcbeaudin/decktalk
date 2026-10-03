@@ -8,15 +8,16 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import PLACEHOLDER_PREFIX, CueTimes, Words, is_placeholder
-from decktalk.artifacts.words import words_file
+from decktalk.artifacts import ClipWords, CueTimes, EstimatedWords, ProviderWords, Takes, Words
 from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from decktalk.inputs import PAID_FOLDERS as LOADED_PAID_FOLDERS
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import ClipSection
 from decktalk.inputs.env import reading_dotenv
+from decktalk.pipeline import Artifact
 from decktalk.results import CueTime, SectionCues, Word
 from support.projects import MINIMAL_TOML, write_project
+from support.takes import a_take, narrated, write_takes
 
 TITLED_CLIP_TOML = """
 [project]
@@ -339,35 +340,171 @@ def test_the_artifacts_are_read_off_the_workspace_and_are_none_before_a_build(tm
     assert inputs.recording_log("01") is None
 
 
-def test_a_take_words_are_shifted_by_their_own_section_lead(tmp_path):
+LEAD_TOML = MINIMAL_TOML.replace(
+    'clip = "media/open.mp4"', 'clip = "media/open.mp4"\nwords = "media/open.words.json"'
+) + ("\n[narration]\nlead_seconds = 0.5\n")
+"""A project whose page sections open on half a second of silence and whose clip names a words file."""
+
+HELLO = (Word(word="hello", start=0.0, end=0.4),)
+"""One word on its take's own clock, before any lead moves it."""
+
+
+def test_a_voiced_take_answers_the_words_its_provider_sent_moved_by_the_section_lead(tmp_path):
     """A cue resolves against the section clock, which starts before the first word rather than on it."""
-    toml = MINIMAL_TOML + "\n[narration]\nlead_seconds = 0.5\n"
-    inputs = Inputs.load(write_project(tmp_path, toml), environ={})
-    spoken = Words(words=(Word(word="hello", start=0.0, end=0.4),))
-    spoken.write(inputs.workspace.takes / words_file("abc"))
-    assert inputs.section_words(1, "abc") == (Word(word="hello", start=0.5, end=0.9),)
-    assert inputs.section_words(0, "abc") == (Word(word="hello", start=0.0, end=0.4),)  # a clip has no lead
-    assert inputs.section_words(1, "nothing") == ()
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    narrated(inputs, a_take(1), words={1: HELLO})
+    heard = inputs.words(1)
+    assert type(heard) is ProviderWords and heard.audio is not None
+    assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
+    assert heard.estimated is False
+
+
+def test_a_placeholder_answers_the_words_decktalk_estimated_and_says_so(tmp_path):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    narrated(inputs, a_take(1, voiced=False), words={1: HELLO})
+    heard = inputs.words(1)
+    assert type(heard) is EstimatedWords and heard.estimated is True
+    assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
+
+
+def test_a_clip_section_answers_its_words_file_on_the_clip_own_clock(tmp_path):
+    """A clip has no lead: its words file already runs on the clip's own clock."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    ClipWords(words=HELLO).write(tmp_path / "media" / "open.words.json")
+    heard = inputs.words(0)
+    assert type(heard) is ClipWords and heard.words == HELLO and heard.estimated is False
+
+
+def test_a_clip_words_file_that_does_not_read_is_refused_as_the_author_input(tmp_path):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    path = tmp_path / "media" / "open.words.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(InputError) as refused:
+        inputs.words(0)
+    assert refused.value.code is ErrorCode.INPUT and "words names media/open.words.json" in str(refused.value)
+    assert path.read_text(encoding="utf-8") == "{not json"
+
+
+@pytest.mark.parametrize("missing", ["index", "row", "section"])
+def test_a_section_with_no_take_answers_no_words(tmp_path, missing):
+    """A reader that may run before narrate asks without a guard, and hears nothing rather than a refusal."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    if missing == "row":
+        narrated(inputs, a_take(2), words={2: HELLO})
+    elif missing == "section":
+        narrated(inputs, a_take(9), words={9: HELLO})
+    heard = inputs.words(9 if missing == "section" else 1)
+    assert type(heard) is Words and heard.words == ()
+
+
+@pytest.mark.parametrize(("paid", "kind"), [(True, ProviderWords), (False, EstimatedWords)])
+def test_a_take_whose_words_file_is_gone_answers_no_words_of_its_own_kind(tmp_path, paid, kind):
+    """A placeholder whose estimated words were deleted still says its times are estimates."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    write_takes(inputs, a_take(1, voiced=paid))
+    heard = inputs.words(1)
+    assert type(heard) is kind and heard.words == () and heard.estimated is not paid
 
 
 @pytest.mark.parametrize(
-    ("digest", "refusal", "code"),
-    [("abc", InputError, ErrorCode.INPUT), (f"{PLACEHOLDER_PREFIX}abc", NotBuiltError, ErrorCode.NOT_BUILT)],
+    ("paid", "refusal", "code"), [(True, InputError, ErrorCode.INPUT), (False, NotBuiltError, ErrorCode.NOT_BUILT)]
 )
-def test_a_take_words_that_do_not_read_are_paid_exactly_when_the_take_is(tmp_path, digest, refusal, code):
+def test_a_take_words_that_do_not_read_are_paid_exactly_when_the_take_is(tmp_path, paid, refusal, code):
     """Only voicing a take again gives its words back, and a placeholder's cost nothing."""
-    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
-    path = (
-        inputs.workspace.narrate_dir / words_file(digest)
-        if is_placeholder(digest)
-        else inputs.workspace.takes / words_file(digest)
-    )
-    path.parent.mkdir(parents=True, exist_ok=True)
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    (take,) = narrated(inputs, a_take(1, voiced=paid), words={1: HELLO}).sections
+    path = inputs.take_places.find(take.digest).words
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(refusal) as refused:
-        inputs.section_words(1, digest)
+        inputs.words(1)
     assert refused.value.code is code
     assert path.read_text(encoding="utf-8") == "{not json"
+
+
+def test_words_on_the_section_clock_are_never_written_over_the_record_they_were_read_from(tmp_path):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    (take,) = narrated(inputs, a_take(1), words={1: HELLO}).sections
+    path = inputs.take_places.find(take.digest).words
+    kept = path.read_bytes()
+    heard = inputs.words(1)
+    with pytest.raises(ValueError, match="never written"):
+        heard.write(path)
+    with pytest.raises(ValueError, match="never written"):
+        _ = heard.text
+    assert path.read_bytes() == kept
+    for number in (0, 2):
+        with pytest.raises(ValueError, match="never written"):
+            _ = inputs.words(number).text
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        pytest.param(a_take(1).model_dump(mode="json") | {"voiced": False}, id="not-voiced-on-a-voiced-digest"),
+        pytest.param(
+            a_take(1).model_dump(mode="json") | {"digest": "placeholder-0000000001"},
+            id="voiced-on-a-placeholder-digest",
+        ),
+    ],
+)
+def test_an_index_whose_row_disagrees_with_its_digest_is_a_cache_to_build_again(tmp_path, row):
+    """Whether a take was voiced is one fact, which its digest states, so a row that says otherwise is no index."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    path = inputs.workspace.takes_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    index = {"script": "script.md", "model": "m", "output_format": "mp3_44100_128", "sections": [row]}
+    path.write_text(json.dumps(index), encoding="utf-8")
+    assert inputs.takes() is None
+    with pytest.raises(NotBuiltError):
+        Takes.read(path)
+
+
+def test_the_take_index_is_read_once_while_its_file_is_unchanged(tmp_path, monkeypatch):
+    """Every stage asks for the index per section, so one unchanged file is parsed once for all of them."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    write_takes(inputs, a_take(1))
+    reads: list[Path] = []
+    real = Takes.parse.__func__
+
+    def counted(cls: type[Takes], path: Path) -> Takes | None:
+        reads.append(path)
+        return real(cls, path)
+
+    monkeypatch.setattr(Takes, "parse", classmethod(counted))
+    for _ in range(3):
+        assert inputs.takes() is not None
+    assert inputs.takes(required=True).of(1) is not None
+    assert len(reads) == 1
+    write_takes(inputs, a_take(1), a_take(2))
+    found = inputs.takes()
+    assert found is not None and found.of(2) is not None
+    assert len(reads) == 2
+
+
+def test_a_project_that_never_narrated_has_no_index_or_is_refused_naming_narrate(tmp_path):
+    """A project may move its build directory, so the refusal names the file and never `build/`."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    assert inputs.takes() is None
+    with pytest.raises(NotBuiltError) as refused:
+        inputs.takes(required=True)
+    assert str(refused.value) == "takes.json has not been built."
+    assert refused.value.hint == Artifact.TAKES.next_step
+
+
+def test_an_index_that_does_not_read_is_none_or_a_cache_to_build_again_as_asked(tmp_path, caplog):
+    """The index is a cache, so one that does not read is never built rather than a fault in the project."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    path = inputs.workspace.takes_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+    with caplog.at_level("INFO", logger="decktalk"):
+        assert inputs.takes() is None
+        assert inputs.takes() is None
+    assert len([record for record in caplog.records if "built again" in record.getMessage()]) == 1
+    with pytest.raises(NotBuiltError) as refused:
+        inputs.takes(required=True)
+    assert refused.value.code is ErrorCode.NOT_BUILT and "takes.json" in (refused.value.hint or "")
 
 
 def test_a_path_is_published_relative_to_the_project(tmp_path):

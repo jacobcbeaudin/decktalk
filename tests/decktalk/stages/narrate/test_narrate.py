@@ -29,7 +29,7 @@ from decktalk.events import CostPriced, RunLog, SectionDone, SectionStart, Stage
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
 from decktalk.media import audio
-from decktalk.pipeline import Artifact, Outcome, Stage
+from decktalk.pipeline import Outcome, Stage
 from decktalk.results import CostState, NarrateResult, TakeOutcome, Word, up_to_the_cent
 from decktalk.settings import MACHINE_FILE_VARIABLE
 from decktalk.speech import DECLARED, FREE, PROVIDERS, Piece, SpeechContext, SpeechRequest
@@ -395,14 +395,14 @@ def test_paid_takes_that_cannot_be_matched_are_kept_and_say_why_and_a_fresh_proj
     narrate(fresh, first.run)
     assert not [line for line in first.of(RunLog) if VOICE_ID_VARIABLE in line.message]
     narrate(inputs, make_run(inputs, spend=True).run, force=True)
-    played = {row.digest for row in Takes.require(inputs.workspace.takes_path, Artifact.TAKES).sections}
+    played = {row.digest for row in inputs.takes(required=True).sections}
     nameless = Inputs.load(inputs.root, environ={})
     again = make_run(nameless)
     result = narrate(nameless, again.run)
     assert [line for line in again.of(RunLog) if VOICE_ID_VARIABLE in line.message]
     assert missing_sections(result) == []
     assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
-    assert {row.digest for row in Takes.require(inputs.workspace.takes_path, Artifact.TAKES).sections} == played
+    assert {row.digest for row in inputs.takes(required=True).sections} == played
 
 
 def test_a_run_that_may_spend_with_every_take_on_disk_builds_no_voice(

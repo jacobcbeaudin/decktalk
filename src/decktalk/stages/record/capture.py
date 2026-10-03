@@ -81,16 +81,9 @@ def words_param(words: tuple[Word, ...]) -> str | None:
     return LIST_SEPARATOR.join(f"{said}{TIME_MARK}{start:.{WORD_DIGITS}f}" for said, start in pairs)
 
 
-def spoken_words(inputs: Inputs, section: int) -> tuple[Word, ...]:
-    """One section's words in seconds after it starts, or nothing when it has no take yet."""
-    takes = inputs.takes()
-    take = takes.of(section) if takes is not None else None
-    return () if take is None else inputs.section_words(section, take.digest)
-
-
 def words_query(inputs: Inputs, section: PageSection) -> str | None:
     """The section's spoken words with their seconds, which is what a word-synced line is drawn on."""
-    return words_param(spoken_words(inputs, section.number))
+    return words_param(inputs.words(section.number).words)
 
 
 def scene_url(inputs: Inputs, section: PageSection, params: dict[Q, str]) -> str:
@@ -312,7 +305,6 @@ __all__ = [
     "scene_params",
     "scene_url",
     "section_digest",
-    "spoken_words",
     "words_param",
     "words_query",
 ]

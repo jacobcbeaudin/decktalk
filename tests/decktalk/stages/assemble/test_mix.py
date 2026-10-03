@@ -328,7 +328,7 @@ def test_speech_spans_cover_every_spoken_section_and_every_clip(tmp_path):
 
 def test_a_marker_resolves_against_the_words_of_its_own_section(tmp_path):
     inputs = write_project(tmp_path)
-    takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta gamma"))})
+    take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta gamma"))})
     starts = {1: 4.0}
     markers = [
         Marker(name="m", section=1, phrase="$start"),
@@ -336,7 +336,23 @@ def test_a_marker_resolves_against_the_words_of_its_own_section(tmp_path):
         Marker(name="m", section=1, phrase="nowhere"),
         Marker(name="m", section=9, phrase="$start"),
     ]
-    assert marker_times(markers, starts, takes, inputs) == [4.0, 4.4, None, None]
+    assert marker_times(markers, starts, inputs) == [4.0, 4.4, None, None]
+
+
+def test_a_marker_on_a_clip_section_resolves_only_its_start_and_never_reads_the_clip_words(tmp_path):
+    """A clip's words are not narration, so a damaged clip words file never refuses the mix."""
+    toml = MID_CLIP_TOML.replace(
+        'clip = "media/broll.mp4"', 'clip = "media/broll.mp4"\nwords = "media/broll.words.json"'
+    )
+    inputs = write_project(tmp_path, toml)
+    (tmp_path / "media").mkdir(exist_ok=True)
+    (tmp_path / "media" / "broll.words.json").write_text("{not json", encoding="utf-8")
+    markers = [
+        Marker(name="m", section=2, phrase="$start"),
+        Marker(name="m", section=2, phrase="beta"),
+        Marker(name="m", section=2, phrase="$end"),
+    ]
+    assert marker_times(markers, {2: 3.0}, inputs) == [3.0, None, None]
 
 
 def test_the_input_arguments_follow_the_order_the_graph_indexes_them():

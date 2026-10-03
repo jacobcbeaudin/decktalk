@@ -23,14 +23,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from decktalk.artifacts import CueTimes, Takes
+from decktalk.artifacts import CueTimes
 from decktalk.events import Level
 from decktalk.findings import Finding
 from decktalk.inputs import CuedSection, Inputs
 from decktalk.machine.run import Run
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import measured_rows, overlap_findings, scene_entry
-from decktalk.pipeline import Artifact, Stage
+from decktalk.pipeline import Stage
 from decktalk.results import CueResult, SectionCues, Word
 from decktalk.stages import selects
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
@@ -47,10 +47,11 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> CueRe
     reported, and whether it fails the run is the caller's threshold to decide.
     """
     wanted = selects(only)
-    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
+    takes = inputs.takes(required=True)
     cued = [block for block in inputs.cues() if wanted(block.number)]
-    words = {take.section: inputs.section_words(take.section, take.digest) for take in takes.sections}
-    estimated = {take.section for take in takes.sections if not take.voiced}
+    heard = {take.section: inputs.words(take.section) for take in takes.sections}
+    words = {number: said.words for number, said in heard.items()}
+    estimated = {number for number, said in heard.items() if said.estimated}
 
     sections, judged, notes = resolve_sections(
         cued,

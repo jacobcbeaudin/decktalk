@@ -37,7 +37,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import RecordingChecks, RecordingLog, Start, Takes
+from decktalk.artifacts import RecordingChecks, RecordingLog, Start
 from decktalk.errors import InputError
 from decktalk.events import Level, SectionDone, SectionStart, Unit
 from decktalk.findings import Code, Finding, Location, judge
@@ -143,7 +143,7 @@ def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
     A section with no span in the take index has no length to record, so it is named in one sentence
     and left out rather than recorded for a length nobody stated.
     """
-    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
+    takes = inputs.takes(required=True)
     cue_times = inputs.cue_times()
     wanted = selects(only)
     planned: list[Job] = []

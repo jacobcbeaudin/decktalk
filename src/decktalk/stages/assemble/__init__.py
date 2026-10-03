@@ -24,7 +24,7 @@ from decktalk.inputs.timeline import narration_offsets
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
-from decktalk.pipeline import Artifact, Stage
+from decktalk.pipeline import Stage
 from decktalk.results import AssembleResult, RenderedSection, counted
 from decktalk.stages.assemble.cut import Rendered, placements_of, remove_stray_videos, render_sections, rendered_starts
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
@@ -84,7 +84,7 @@ def assemble(
     strict: bool = False,
 ) -> AssembleResult:
     """Cut, mix, normalize and publish the whole film, with everything a viewer receives beside it."""
-    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
+    takes = inputs.takes(required=True)
     remove_stray_videos(inputs)
     passes = Passes(run, len(inputs.document.sections))
     rows = render_sections(

@@ -11,10 +11,9 @@ A file is written under a temporary name in the same directory and renamed over 
 is atomic on every platform DeckTalk ships on, so a reader never opens a half-written artifact and
 a run interrupted mid-write leaves the previous file whole.
 
-A stage that needs an artifact as its input refuses one that will not parse as one that was never
-built. The hint names the stage that writes it, read from `PIPELINE` through `Artifact.next_step`,
-so no stage spells a "run this first" sentence of its own. A refusal names the file it looked for
-rather than the artifact's default path, because a project may move its build directory.
+A stage that needs the take index reads it through `Inputs.takes(required=True)`, which refuses an
+index that is absent or does not read as never built and names the stage that writes it, through
+`Artifact.next_step`.
 
 A stage that reads its own earlier output reads it through `previous`, which counts a file it cannot
 read as absent. `build/` is DeckTalk's cache and that stage is about to write the file again, so an
@@ -41,12 +40,11 @@ from pathlib import Path
 from typing import ClassVar, Self
 
 from blake3 import blake3
-from pydantic import ValidationError
+from pydantic import PrivateAttr, ValidationError
 
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.files import replace_all
 from decktalk.findings import Model
-from decktalk.pipeline import Artifact
 
 log = logging.getLogger(__name__)
 
@@ -129,6 +127,9 @@ class Stored(Model):
     regained: ClassVar[str] = ""
     """What alone gives a paid record back, as its refusal says it, such as voicing its take again."""
 
+    _view: bool = PrivateAttr(default=False)
+    """True on a copy changed for a reader, such as words on their section's clock, which no writer puts on disk."""
+
     @classmethod
     def read(cls, path: Path) -> Self | None:
         """The artifact at `path`, or None when nothing has written one there yet.
@@ -178,13 +179,11 @@ class Stored(Model):
             log.info("%s It will be built again.", exc, extra={"data": {"file": path.name}})
             return None
 
-    @classmethod
-    def require(cls, path: Path, artifact: Artifact) -> Self:
-        """The artifact at `path`, or a `NOT_BUILT` refusal naming the stage that writes it."""
-        found = cls.read(path)
-        if found is None:
-            raise NotBuiltError(f"{path.name} has not been built.", hint=artifact.next_step)
-        return found
+    def __eq__(self, other: object) -> bool:
+        """Two artifacts are equal when their fields are, whether or not either is a copy made for a reader."""
+        if not isinstance(other, Stored):
+            return NotImplemented
+        return type(self) is type(other) and self.__dict__ == other.__dict__
 
     def write(self, path: Path) -> Path:
         """Write this artifact over `path` in one step, and give back the path it was written to."""
@@ -194,6 +193,8 @@ class Stored(Model):
     @property
     def text(self) -> str:
         """This artifact as the file holds it, for a writer that replaces it together with another file."""
+        if self._view:
+            raise ValueError(f"this copy of {self.label} was changed for a reader, so it is never written to a file.")
         return json.dumps(self.model_dump(mode="json"), indent=2, allow_nan=False) + "\n"
 
 

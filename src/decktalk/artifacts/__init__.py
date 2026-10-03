@@ -46,6 +46,7 @@ from decktalk.artifacts.words import (
     EstimatedWords,
     ProviderWords,
     Words,
+    on_section_clock,
     words_file,
 )
 
@@ -76,6 +77,7 @@ __all__ = [
     "file_digest",
     "input_digest",
     "is_placeholder",
+    "on_section_clock",
     "take_file",
     "words_file",
 ]

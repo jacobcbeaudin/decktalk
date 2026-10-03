@@ -21,7 +21,6 @@ from decktalk.artifacts.stored import (
     file_digest,
 )
 from decktalk.errors import ErrorCode, InputError, NotBuiltError
-from decktalk.pipeline import Artifact
 
 
 class Tiny(Stored):
@@ -61,22 +60,6 @@ def test_a_write_replaces_the_file_whole(tmp_path: Path) -> None:
     assert json.loads(path.read_text(encoding="utf-8")) == {"count": 2}
 
 
-def test_a_missing_artifact_names_the_stage_that_writes_it(tmp_path: Path) -> None:
-    with pytest.raises(NotBuiltError) as refused:
-        Tiny.require(tmp_path / "takes.json", Artifact.TAKES)
-    assert refused.value.code is ErrorCode.NOT_BUILT
-    assert "decktalk narrate" in (refused.value.hint or "")
-
-
-def test_an_artifact_that_will_not_parse_is_reported_as_one_that_was_never_built(tmp_path: Path) -> None:
-    """The recovery is the same either way, so the two do not need two codes between them."""
-    path = tmp_path / "takes.json"
-    path.write_text("{not json", encoding="utf-8")
-    with pytest.raises(NotBuiltError) as refused:
-        Tiny.require(path, Artifact.TAKES)
-    assert "takes.json" in (refused.value.hint or "")
-
-
 def test_a_writer_counts_its_own_file_it_cannot_read_as_absent_and_says_so(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -105,14 +88,6 @@ def test_an_artifact_is_frozen() -> None:
 
 def test_the_engine_names_the_version_it_was_installed_as() -> None:
     assert ENGINE_VERSION == engine_version() != ""
-
-
-def test_a_refusal_names_the_file_it_looked_for_and_never_the_default_build_directory(tmp_path: Path) -> None:
-    """A project may move its build directory, and a refusal naming `build/` would send a reader elsewhere."""
-    with pytest.raises(NotBuiltError) as refused:
-        Stored.require(tmp_path / "out" / "narrate" / "takes.json", Artifact.TAKES)
-    assert str(refused.value) == "takes.json has not been built."
-    assert refused.value.hint == Artifact.TAKES.next_step
 
 
 def test_a_file_that_is_not_there_digests_to_one_word(tmp_path: Path) -> None:

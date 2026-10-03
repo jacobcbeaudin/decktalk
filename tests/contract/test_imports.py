@@ -90,8 +90,8 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.status", "stages.kept"): "the rule that decides the film and its measurement still stand",
     # The score is ready to mix once its bought music is joined, which the stage that joins it decides.
     ("stages.kept", "stages.score"): "the rule that decides the score is ready to mix",
-    # A clip is cut on the section clock, which is the one thing `words` computes.
-    ("stages.clip", "stages.words"): "the section clock a clip is cut on",
+    # A clip lists its words with the script's own spelling, which `words` puts back on every row.
+    ("stages.clip", "stages.words"): "the script's spelling a clip's words carry",
     # Every stage that fans its sections out to workers shares one pool, so they all halt alike.
     ("stages.narrate", "stages.pool"): "the one pool every stage fans out to",
     ("stages.record", "stages.pool"): "the one pool every stage fans out to",
