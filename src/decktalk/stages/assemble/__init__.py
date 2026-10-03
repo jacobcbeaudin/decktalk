@@ -1,4 +1,4 @@
-"""Stage 5: the recordings, the narration, the clips and the soundscape become one film.
+"""Stage 5: the recordings, the narration, the clips and the score become one film.
 
     cut.py        every section as one silent mp4, and the cut list
     mix.py        the whole soundtrack as one filter graph, one `MixInput` per layer
@@ -80,7 +80,7 @@ def assemble(
     run: Run,
     *,
     only: Sequence[int] | None = None,
-    soundscape: bool = True,
+    score: bool = True,
     loudness: bool = True,
     strict: bool = False,
 ) -> AssembleResult:
@@ -98,7 +98,7 @@ def assemble(
     for path in (work, mixed):
         path.unlink(missing_ok=True)
 
-    plan = mix_soundtrack(inputs, run, rows, takes, mixed, soundscape=soundscape)
+    plan = mix_soundtrack(inputs, run, rows, takes, mixed, score=score)
     passes.finished(f"mix {len(plan.inputs)} audio layers")
     try:
         after = _deliver(inputs, run, mixed, work, takes, loudness=loudness, strict=strict)

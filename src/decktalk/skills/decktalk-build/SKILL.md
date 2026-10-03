@@ -26,8 +26,8 @@ craft of a build is knowing which half you are in.
 3. **Never replace a paid take.** A build that does not spend keeps and plays every paid take, and
    only the flag that discards a take throws one away. Never pass it without an answer from the author.
 4. **Judge before you spend.** `decktalk check` measures the project without producing anything and
-   prices the narration a voiced run would buy. The sound is not in that price: `decktalk soundscape`
-   told not to spend prices a soundscape. Stop on anything certain. Read the rows it could not
+   prices the narration a voiced run would buy. The sound is not in that price: `decktalk score`
+   told not to spend prices a score. Stop on anything certain. Read the rows it could not
    measure as well as the rows it failed, because a skipped row proves nothing and still leaves a
    run green.
 5. **Show the storyboard.** It is the frames of every slide at every cue, and it is the human

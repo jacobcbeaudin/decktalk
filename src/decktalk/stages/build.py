@@ -1,6 +1,6 @@
 """The whole pipeline in order, or the span of it one run asked for.
 
-`build` runs the six stages narrate, cue, record, soundscape, assemble and verify, in that order,
+`build` runs the six stages narrate, cue, record, score, assemble and verify, in that order,
 and reports each one on the event stream as it opens and closes. The run's account of itself is the
 stream, its lines are appended to `build/events/<run>.jsonl` by the machine's own sink, and every
 file the stages wrote is already recorded on the run. The one file a build writes itself is the
@@ -49,7 +49,7 @@ from decktalk.machine import Run, Threshold
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
 from decktalk.results import DOLLAR_DIGITS, Billing, BuildResult, Layer, Result, Spend, SpendState, StageRun, counted
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
-from decktalk.stages import soundscape as soundscape_stage
+from decktalk.stages import score as score_stage
 from decktalk.stages.status import (
     BUILT,
     Kept,
@@ -76,7 +76,7 @@ MODULES: dict[Stage, ModuleType] = {
     Stage.NARRATE: narrate,
     Stage.CUE: cue,
     Stage.RECORD: record,
-    Stage.SOUNDSCAPE: soundscape_stage,
+    Stage.SCORE: score_stage,
     Stage.ASSEMBLE: assemble,
     Stage.VERIFY: verify,
 }
@@ -134,20 +134,20 @@ def build(
     threshold, so it is false on a run that stopped and on one whose verify judged something the
     threshold fails on, and true on a run whose every finding was allowed or under the line.
 
-    Whether the film carries the soundscape is read from `skip`, because a run told to leave the
+    Whether the film carries the score is read from `skip`, because a run told to leave the
     stage out is a run that does not want its sound, and a second knob for the same decision would
     let a caller skip the stage and still be refused for the file it never asked for.
     """
     plan = _plan(stages, skip)
     threshold = Threshold(stop_on=stop_on, allow=frozenset(allow))
-    soundscape = Stage.SOUNDSCAPE not in skip
-    _require_what_the_plan_skips(inputs, plan, soundscape=soundscape)
+    score = Stage.SCORE not in skip
+    _require_what_the_plan_skips(inputs, plan, score=score)
     options: dict[str, object] = {
         "only": only,
         "force": force,
         "replace_voiced": replace_voiced,
         "replace_score": replace_score,
-        "soundscape": soundscape,
+        "score": score,
         "loudness": loudness,
         "strict": strict,
     }
@@ -301,10 +301,10 @@ def _plan(stages: Sequence[Stage] | None, skip: Sequence[Stage]) -> tuple[Stage,
     return plan
 
 
-def _require_what_the_plan_skips(inputs: Inputs, plan: tuple[Stage, ...], *, soundscape: bool) -> None:
+def _require_what_the_plan_skips(inputs: Inputs, plan: tuple[Stage, ...], *, score: bool) -> None:
     """Refuse a run that reads an artifact no stage of it writes and nothing has written yet."""
     for artifact in required(plan):
-        if artifact is Artifact.SOUNDSCAPE and not soundscape:
+        if artifact is Artifact.SCORE and not score:
             continue
         if BUILT[artifact](inputs):
             continue
@@ -362,8 +362,8 @@ def _hold_to_ceiling(
     spends: list[Spend] = []
     if Stage.NARRATE in plan:
         spends.append(narrate.price(inputs, only=only, replace_voiced=replace_voiced))
-    if Stage.SOUNDSCAPE in plan:
-        spends.append(soundscape_stage.price(inputs, only=only, replace_score=replace_score))
+    if Stage.SCORE in plan:
+        spends.append(score_stage.price(inputs, only=only, replace_score=replace_score))
     if spends:
         run.approve_whole(total(spends))
 
@@ -413,7 +413,7 @@ def total(spends: Sequence[Spend]) -> Spend:
     the price its result reports after are the same sum of the same stages.
 
     The total is billed the way the stages that buy something at a price bill, so a free voice beside
-    a paid soundscape leaves the sound's bill and rate to the total. When those are one bill, its rate
+    a paid score leaves the sound's bill and rate to the total. When those are one bill, its rate
     is the total's. When a bill per character meets a bill per second the total is `mixed`: it carries
     each rate and counts both the characters and the seconds, and the rate it names is the least
     surely stated, so a sentence never prices sound at the speech rate or speech at the sound one. A

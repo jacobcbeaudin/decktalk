@@ -119,9 +119,9 @@ project.narrate(*, only=None, spend=False, max_cost=None,
                 force=False, replace_voiced=False, cancel=None) -> NarrateResult
 project.cue(*, only=None, cancel=None) -> CueResult
 project.record(*, only=None, force=False, cancel=None) -> RecordResult
-project.soundscape(*, only=None, spend=False, max_cost=None,
-                   replace_score=False, cancel=None) -> SoundscapeResult
-project.assemble(*, only=None, soundscape=True, loudness=True, strict=False,
+project.score(*, only=None, spend=False, max_cost=None,
+                   replace_score=False, cancel=None) -> ScoreResult
+project.assemble(*, only=None, score=True, loudness=True, strict=False,
                  cancel=None) -> AssembleResult
 project.verify(*, only=None, cancel=None) -> VerifyResult
 project.build(*, stages=None, skip=(), only=None, spend=False, max_cost=None,
@@ -137,14 +137,14 @@ project.clip(section, *, start, end, out, gain_db=0.0, hold_seconds=0.0,
 ```
 
 `only` is a sequence of section numbers on every call that takes it. `Stage` is the enum the six
-stages are members of, in run order: `NARRATE`, `CUE`, `RECORD`, `SOUNDSCAPE`, `ASSEMBLE`, `VERIFY`.
+stages are members of, in run order: `NARRATE`, `CUE`, `RECORD`, `SCORE`, `ASSEMBLE`, `VERIFY`.
 
 | Call | What it does | What it writes |
 |---|---|---|
 | `narrate` | Speaks each section of the script and times every word in it. | `build/narrate/takes.json`, the takes and the words files beside it. |
 | `cue` | Turns each cue phrase into a second on its own section's clock. | `build/cue-times.json` |
 | `record` | Records each page section in headless Chromium, against the seconds the cues named. | `build/recordings/` |
-| `soundscape` | Generates the music, the ambience bed and the effects the project describes. | `build/soundscape/` |
+| `score` | Composes the music, the ambience bed and the effects the project describes. | `score/`, the bought sounds and their ledger, and `build/score/` |
 | `assemble` | Cuts, mixes and encodes the sections into one film. | `build/final/` |
 | `verify` | Measures the finished film: every start, every cut, every seam and every landing. | only its events file, under the build lock |
 | `build` | Runs every stage in order, or the span `stages` names, less whatever `skip` names. | whatever the stages it ran write |
@@ -160,14 +160,14 @@ Every call in the table also appends its own events file, `build/events/<run>.js
 
 | Parameter | Calls | What it does |
 |---|---|---|
-| `spend` | `narrate`, `soundscape`, `build` | True buys what is missing. False, the default, buys nothing: `narrate` plays every take on disk and a click track with a word clock for each missing one, reported as `TAKE_MISSING`, and `soundscape` reports its plan with each unbought item as `SOUND_MISSING`, which the film plays as silence. The library buys nothing without `spend=True`, whatever the price. |
-| `max_cost` | `narrate`, `soundscape`, `build` | A ceiling in US dollars on the most the run can cost, checked before the first paid request. A run over it raises `ApprovalRequired`. |
+| `spend` | `narrate`, `score`, `build` | True buys what is missing. False, the default, buys nothing: `narrate` plays every take on disk and a click track with a word clock for each missing one, reported as `TAKE_MISSING`, and `score` reports its plan with each unbought item as `SOUND_MISSING`, which the film plays as silence. The library buys nothing without `spend=True`, whatever the price. |
+| `max_cost` | `narrate`, `score`, `build` | A ceiling in US dollars on the most the run can cost, checked before the first paid request. A run over it raises `ApprovalRequired`. |
 | `only` | every call but `status` and `clip` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. |
-| `force` | `narrate`, `record`, `build` | Does the free work again where what is on disk still matches, and never spends. `narrate` makes each placeholder again and keeps every paid take, and `build` keeps every paid take and every item of the soundscape. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
+| `force` | `narrate`, `record`, `build` | Does the free work again where what is on disk still matches, and never spends. `narrate` makes each placeholder again and keeps every paid take, and `build` keeps every paid take and every item of the score. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
 | `replace_voiced` | `narrate`, `build` | Sets aside the voiced take a section holds. A run that spends voices the section again and plays the new take. One that does not plays a placeholder in its place for that run, and the voiced take stays on disk. Without it, a run that does not spend plays every voiced take on disk. It never buys a sound. |
-| `replace_score` | `soundscape`, `build` | Buys every bought sound the run selects again, each music part included. A run that does not spend ignores it and keeps every bought sound on disk. It never buys a take. |
-| `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it, and a build whose `skip` names `Stage.SOUNDSCAPE` also leaves the soundscape's audio out of the mix. |
-| `soundscape` | `assemble` | False leaves the soundscape's audio out of the mix. |
+| `replace_score` | `score`, `build` | Buys every bought sound the run selects again, each music part included. A run that does not spend ignores it and keeps every bought sound on disk. It never buys a take. |
+| `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it, and a build whose `skip` names `Stage.SCORE` also leaves the score's audio out of the mix. |
+| `score` | `assemble` | False leaves the score's audio out of the mix. |
 | `loudness` | `assemble`, `build` | False skips the loudness pass, so the soundtrack is encoded as it was mixed. A placeholder narration skips it in any case. |
 | `strict` | `assemble`, `build` | True raises `ToolError` when the mix misses the loudness it was mastered to, rather than reporting `MIX_LOUDNESS` and writing the film. |
 | `stop_on` | `build` | The least certain finding that stops the run: `Certainty.CERTAIN`, the default, stops on a certain one, `Certainty.UNCERTAIN` on any, and None never stops. |
@@ -192,10 +192,10 @@ if result.stopped_at is not None:
 
 | Exception | Raised by |
 |---|---|
-| `ApprovalRequired` | `narrate`, `soundscape` and `build`, when a purchase was not approved or `max_cost` refuses it, and every call that opens a page under `record.page_policy = "untrusted"` while it may spend. |
+| `ApprovalRequired` | `narrate`, `score` and `build`, when a purchase was not approved or `max_cost` refuses it, and every call that opens a page under `record.page_policy = "untrusted"` while it may spend. |
 | `ProjectLocked` | Every call that writes, when another writer holds the build directory. |
 | `NotBuiltError` | A call that needs an artifact no earlier run made, such as `cue`, `words` or `verify` before any `narrate`. |
-| `ProviderError` | `narrate`, `soundscape` and `build` on a paid run, when the voice service fails. |
+| `ProviderError` | `narrate`, `score` and `build` on a paid run, when the voice service fails. |
 | `ToolError` | Every call that opens a page or runs ffmpeg, when Chromium or ffmpeg is missing or fails. |
 | `InputError` | Every call, when a file the author writes is missing, unreadable or malformed. |
 | `Cancelled` | Every call, when its `cancel` token is set. |
@@ -265,13 +265,13 @@ print(result.film, result.words, result.seconds, result.estimated)
 No library call buys anything without `spend=True`, whatever the price. One switch decides it, so
 there is nothing two flags could contradict. The command line adds one rule of its own: with neither
 `--spend` nor `--no-spend`, a voice whose adapter declares it free, such as `dtsp`, is bought from
-without asking, and a build still asks about any soundscape it would buy beside it.
+without asking, and a build still asks about any score it would buy beside it.
 The voice is built only when a take must be bought, so a call that buys nothing reads no key.
 
 A call with `spend=False`, the default, plays every take on disk, paid or placeholder. For `narrate`
 each section whose take is missing plays a click track with a word clock and is reported as
 [`TAKE_MISSING`](/reference/findings/TAKE_MISSING), which is uncertain, so the default threshold
-builds the film past it. `soundscape` reports its plan without buying it. A repository that commits
+builds the film past it. `score` reports its plan without buying it. A repository that commits
 its takes and its `[voice] id` therefore builds its real film on a machine that holds no key.
 
 `max_cost` is a ceiling in US dollars on the whole run, checked before the first paid request
@@ -321,7 +321,7 @@ except decktalk.ApprovalRequired as refused:
 | `price_per_1000_characters` | The rate a per-character bill was worked out at. |
 | `price_per_second` | The rate a per-second bill was worked out at. |
 | `price_key` | The dotted key that states the rate, or `None` when the voice has no rate to state. |
-| `averaged` | True when the price is several rates together, as a soundscape that buys music and effects at their own rates is, so the rate is what they average to and `price_key` names the one least surely stated. |
+| `averaged` | True when the price is several rates together, as a score that buys music and effects at their own rates is, so the rate is what they average to and `price_key` names the one least surely stated. |
 | `price_layer` | Which layer set that rate. `Layer.DEFAULT` means nobody stated it. |
 
 Set the rate under the key `price_key` names, `[elevenlabs] price_per_1000_characters` for
@@ -523,7 +523,7 @@ There are thirteen names and thirteen models. Skip and fail are not names, becau
 did not repeat, because nothing it reads had changed since the last build ran it, and `STOPPED` is
 a run, a stage or a section its caller cancelled or interrupted. `Unit` is `TAKE`,
 `SECTION`, `ASSET`, `PASS` or `PROBE`, so a renderer names the thing rather than a bare number:
-narrate counts takes, record counts sections, soundscape counts assets, assemble counts encoding
+narrate counts takes, record counts sections, score counts assets, assemble counts encoding
 passes and verify counts probes. `Level` is `DEBUG`, `INFO`, `WARNING` or `ERROR`.
 
 `JsonlSink` is the subscriber that appends one JSON line per event to a file. Every run of a project
@@ -712,8 +712,8 @@ contract a host builds on.
 ### A machine the host builds
 
 ```python
-decktalk.Machine.of(*, environ, config_path, cwd, cache_dir, providers=None, sound_providers=None,
-                    overrides=(), dotenv=False, allow_any_api_base=False) -> Machine
+decktalk.Machine.of(*, environ, config_path, cwd, cache_dir, store_dir=None, providers=None,
+                    sound_providers=None, overrides=(), dotenv=False, allow_any_api_base=False) -> Machine
 ```
 
 `Machine.from_environment()` reads the process. `Machine.of` reads nothing, so every value a job may
@@ -725,6 +725,7 @@ see is one the host chose.
 | `config_path` | The per-machine settings file, read when it is there and where a machine fix lands. The host writes the machine-scoped keys it sets, such as `[record] concurrency`, here. |
 | `cwd` | The directory a relative project path is read from. |
 | `cache_dir` | Where the fetched Chromium and ffmpeg live. |
+| `store_dir` | The take store a project on this machine keeps a second copy of every bought take in, when `[narration] store_dir` names none. The default is none, so a host that runs other people's projects shares no takes across them unless it passes one. |
 | `providers` | The voices this machine answers with by name. It replaces the shipped table, so a machine built with a fake voice reaches no real one by a name the host left out. [Voices](#voices) shows one. |
 | `sound_providers` | The sound providers it answers with by name. A machine given `providers` and no sound table answers with none. |
 | `overrides` | `key=value` strings, spelled as `--set` spells them, that override settings on this machine. A project opened on it starts from them, and the overrides `decktalk.open` is given come after them. |
@@ -772,7 +773,7 @@ build directory is the only thing that moves between them.
 
 | Process | Calls | What it holds |
 |---|---|---|
-| Voice | `narrate` and `soundscape`, with `spend=True` | The key. It opens no page. |
+| Voice | `narrate` and `score`, with `spend=True` | The key. It opens no page. |
 | Render | `check`, `storyboard`, `record`, `assemble` and `verify` | No key. Its pages run under `record.page_policy = "untrusted"`. |
 
 `cue` reads only files and opens no page, so it runs in either. `assemble` draws the poster from the
@@ -836,7 +837,7 @@ The hash is what makes a retry safe to meter. A take already on disk is read fro
 bought again, so it earns no line, and a ledger keyed on `take` sees at once when two runs bought
 the same words.
 
-`soundscape` writes a `sound.charged` line the same way, once for each request the sound provider is
+`score` writes a `sound.charged` line the same way, once for each request the sound provider is
 paid for: one per ambience bed or effect, and one per part of the music. `item` is the name the item
 has in `decktalk.toml`, `sound` is `music`, `ambience` or `effect`, `digest` is the request's digest
 in the sound ledger, `seconds` is how much audio was asked for, and `dollars` is those seconds at the

@@ -8,7 +8,7 @@
 would show while both can still be changed for nothing. It plans the takes the way `narrate` would,
 prices them, resolves every cue against the words those takes will carry, reads the catalog each
 page publishes, and freezes the frames either side of every cue so a reveal that would not be
-measured is met here rather than after the credits are gone. The soundscape is priced by its own
+measured is met here rather than after the credits are gone. The score is priced by its own
 stage, so a sound is never in this price.
 
 It has two scope flags and no others, because neither names a stage a run could skip nor a knob a

@@ -55,8 +55,8 @@ from decktalk.results import (
     RecordResult,
     Result,
     Scope,
+    ScoreResult,
     ServeResult,
-    SoundscapeResult,
     StatusResult,
     StoryboardResult,
     VerifyResult,
@@ -229,6 +229,7 @@ class Project:
             environ=machine.environ,
             machine=dict(machine.tables),
             overrides=(*machine.overrides, *overrides),
+            store=machine.store,
         )
         self._runs: set[str] = set()
         self.events = ProjectEvents(machine, self._runs)
@@ -311,7 +312,7 @@ class Project:
         """Record each page section in a headless browser, against the seconds the cues named."""
         return self._call(Stage.RECORD, RecordResult, cancel=cancel, only=only, force=force)
 
-    def soundscape(
+    def score(
         self,
         *,
         only: Sequence[int] | None = None,
@@ -319,8 +320,8 @@ class Project:
         max_cost: float | None = None,
         replace_score: bool = False,
         cancel: Cancel | None = None,
-    ) -> SoundscapeResult:
-        """Generate the music, the ambience bed and the effects this project describes.
+    ) -> ScoreResult:
+        """Compose the music, the ambience bed and the effects this project describes.
 
         `spend` set to true buys what needs buying, and the default reports the plan and buys
         nothing. `max_cost` is a ceiling in US dollars, checked before the first paid request. An
@@ -331,20 +332,20 @@ class Project:
         Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`, and
         `ProviderError` when the sound service fails on a paid run.
         """
-        return self._call(Stage.SOUNDSCAPE, SoundscapeResult, cancel=cancel, spend=spend,
+        return self._call(Stage.SCORE, ScoreResult, cancel=cancel, spend=spend,
                           max_cost=max_cost, only=only, replace_score=replace_score)  # fmt: skip
 
     def assemble(
         self,
         *,
         only: Sequence[int] | None = None,
-        soundscape: bool = True,
+        score: bool = True,
         loudness: bool = True,
         strict: bool = False,
         cancel: Cancel | None = None,
     ) -> AssembleResult:
         """Cut, mix and encode the sections into one film."""
-        return self._call(Stage.ASSEMBLE, AssembleResult, cancel=cancel, only=only, soundscape=soundscape,
+        return self._call(Stage.ASSEMBLE, AssembleResult, cancel=cancel, only=only, score=score,
                           loudness=loudness, strict=strict)  # fmt: skip
 
     def verify(self, *, only: Sequence[int] | None = None, cancel: Cancel | None = None) -> VerifyResult:
@@ -375,14 +376,14 @@ class Project:
         `stages` is the span to run, in run order, and `skip` leaves stages out of it. A stage whose
         findings reach `stop_on` stops the run, unless their code is in `allow`, and the result still
         comes back with its findings, its spend and the stage it stopped after in `stopped_at`. None
-        as `stop_on` runs every stage whatever it finds. The film carries the soundscape unless
+        as `stop_on` runs every stage whatever it finds. The film carries the score unless
         `skip` names that stage, which is the one knob for that decision. `spend` means what it means
-        to `narrate` and `soundscape`, and `max_cost` caps the takes and the sounds together, so a
+        to `narrate` and `score`, and `max_cost` caps the takes and the sounds together, so a
         build whose two prices pass it is refused before it buys anything. `replace_voiced` means what it means to
-        `narrate` and `replace_score` means what it means to `soundscape`, so each buys again only
+        `narrate` and `replace_score` means what it means to `score`, so each buys again only
         what its own stage bought. `force` means what it means to `narrate` and `record`, and it also
         cuts and measures a film that nothing changed again. It never buys, so every paid take and
-        every item of the soundscape is kept. `loudness` and `strict` mean what they mean to
+        every item of the score is kept. `loudness` and `strict` mean what they mean to
         `assemble`.
 
         Raises `ApprovalRequired` and `ProviderError` as `narrate` does, and `ToolError`

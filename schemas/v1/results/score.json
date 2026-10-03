@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "soundscape.json",
+  "$id": "score.json",
   "$defs": {
     "Applicability": {
       "description": "How much a fix may be trusted, which is what decides whether `--fix` applies it.\n\nA safe fix cannot lose the author's work, an unsafe fix can, and a display fix is a change only\na person can make, so it is printed and never applied.",
@@ -517,7 +517,7 @@
     },
     "SoundItem": {
       "additionalProperties": false,
-      "description": "One piece of the soundscape, which is a music bed, an ambience bed or an effect.",
+      "description": "One piece of the score, which is a music bed, an ambience bed or an effect.",
       "properties": {
         "name": {
           "description": "What the author calls this item in decktalk.toml.",
@@ -576,7 +576,7 @@
       "type": "object"
     },
     "SoundKind": {
-      "description": "What one soundscape item is, which decides where it sits in the mix.",
+      "description": "What one score item is, which decides where it sits in the mix.",
       "enum": [
         "music",
         "ambience",
@@ -586,7 +586,7 @@
       "type": "string"
     },
     "SoundStatus": {
-      "description": "What one run did about one soundscape item.",
+      "description": "What one run did about one score item.",
       "enum": [
         "planned",
         "kept",
@@ -707,7 +707,7 @@
         "narrate",
         "cue",
         "record",
-        "soundscape",
+        "score",
         "assemble",
         "verify"
       ],
@@ -716,7 +716,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Every piece of the soundscape this run planned or generated.",
+  "description": "Every piece of the score this run planned or generated.",
   "properties": {
     "schema": {
       "const": 1,
@@ -794,6 +794,6 @@
     "spend",
     "seconds"
   ],
-  "title": "SoundscapeResult",
+  "title": "ScoreResult",
   "type": "object"
 }

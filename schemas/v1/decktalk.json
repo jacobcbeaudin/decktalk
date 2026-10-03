@@ -238,22 +238,23 @@
           "x-environment": "DECKTALK_NARRATION_TAIL_MIN_SECONDS"
         },
         "takes_dir": {
-          "description": "Directory inside the project that holds its takes, their words files and the take index, so a committed copy builds the film on a fresh clone with no key. It is empty for `build/narrate/`. A take is looked for here first and in `cache_dir` second, and a take this project buys or finds elsewhere is written here.",
+          "description": "Directory inside the project that holds every take the film plays and the words its voice sent with each, which you commit so a fresh clone builds the film with no key. The take index stays under the build, because it is a cache built again from the takes. A take is looked for here first and in the machine's take store, `store_dir`, second, and a take this project buys or finds there is written here.",
           "type": "string",
-          "default": "",
-          "x-range": "takes any value of its type",
+          "default": "takes",
+          "pattern": "^.+$",
+          "x-range": "must match the pattern ^.+$",
           "x-unit": "path",
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-hazard": "A directory outside the project, an absolute path or the project directory itself is refused when the project loads, because a project someone else wrote would otherwise choose where this machine reads and writes its takes.",
+          "x-hazard": "An empty value, a directory outside the project, an absolute path, the project directory itself, a directory inside the build directory or one that holds it is refused when the project loads, because a bought take must land in a folder the project keeps, and a project someone else wrote would otherwise choose where this machine reads and writes its takes.",
           "x-see-also": [
-            "narration.cache_dir"
+            "narration.store_dir"
           ],
           "x-environment": "DECKTALK_NARRATION_TAKES_DIR"
         },
-        "cache_dir": {
-          "description": "Directory this machine keeps takes and their words files in, each named by its content hash, so many projects share one store and a deleted `build/` keeps them. A take is looked for here after the project's `takes_dir`, and a bought take is written here only when the project names no `takes_dir`.",
+        "store_dir": {
+          "description": "The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its content hash. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a purchase nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS.",
           "type": "string",
           "default": "",
           "x-range": "takes any value of its type",
@@ -261,11 +262,12 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
+          "x-hazard": "It holds the spoken words of every script voiced on this machine, so keep it out of a synced or shared folder. A relative path, a folder inside the project or one inside the tool cache is refused when the project loads. Write an absolute path or one that starts with ~.",
           "x-see-also": [
             "narration.takes_dir",
             "tools.cache_dir"
           ],
-          "x-environment": "DECKTALK_NARRATION_CACHE_DIR"
+          "x-environment": "DECKTALK_NARRATION_STORE_DIR"
         },
         "context_chars": {
           "description": "Characters of each neighbour section sent with a request, for continuous prosody.",
@@ -1194,7 +1196,7 @@
     },
     "elevenlabs": {
       "type": "object",
-      "description": "These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on elevenlabs.io unless the machine allows any. The soundscape buys from the same API with the same key.",
+      "description": "These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on elevenlabs.io unless the machine allows any. The score stage buys from the same API with the same key.",
       "x-kind": "tuning",
       "properties": {
         "model": {
@@ -1336,11 +1338,27 @@
       },
       "additionalProperties": false
     },
-    "soundscape": {
+    "score": {
       "type": "object",
-      "description": "The settings half of `[soundscape]`: how the music, the ambience and the effects are asked for. Each item's own table holds its prompt and its file, which are project content, beside the settings that size its request, so a key is spelled the same way the item it sizes spells it.",
+      "description": "The settings half of `[score]`: how the music, the ambience and the effects are asked for. Each item's own table holds its prompt and its file, which are project content, beside the settings that size its request, so a key is spelled the same way the item it sizes spells it.",
       "x-kind": "mixed",
       "properties": {
+        "dir": {
+          "description": "Directory inside the project that holds every sound the score bought and the ledger that records them, each named by its item, which you commit so a fresh clone mixes the film with no key. Music bought in parts keeps its parts here, and the piece joined from them is a cache under the build.",
+          "type": "string",
+          "default": "score",
+          "pattern": "^.+$",
+          "x-range": "must match the pattern ^.+$",
+          "x-unit": "path",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-hazard": "An empty value, a directory outside the project, an absolute path, the project directory itself, a directory inside the build directory or one that holds it is refused when the project loads, because a bought sound must land in a folder the project keeps, and a project someone else wrote would otherwise choose where this machine writes what it buys.",
+          "x-see-also": [
+            "narration.takes_dir"
+          ],
+          "x-environment": "DECKTALK_SCORE_DIR"
+        },
         "provider": {
           "description": "The sound provider the music, the ambience and the effects are bought from, which is a name the machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys with the key and `api_base` of `[elevenlabs]`.",
           "type": "string",
@@ -1352,7 +1370,7 @@
           "x-see-also": [
             "elevenlabs.api_base"
           ],
-          "x-environment": "DECKTALK_SOUNDSCAPE_PROVIDER"
+          "x-environment": "DECKTALK_SCORE_PROVIDER"
         },
         "format": {
           "description": "Audio format the music, the ambience and the effects are asked for in. A take's format is its voice's own, such as `[elevenlabs] output_format`.",
@@ -1365,7 +1383,7 @@
           "x-see-also": [
             "elevenlabs.output_format"
           ],
-          "x-environment": "DECKTALK_SOUNDSCAPE_FORMAT"
+          "x-environment": "DECKTALK_SCORE_FORMAT"
         },
         "timeout_seconds": {
           "description": "Seconds before a sound or music request times out.",
@@ -1378,11 +1396,11 @@
           "x-scope": "project",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_SOUNDSCAPE_TIMEOUT_SECONDS"
+          "x-environment": "DECKTALK_SCORE_TIMEOUT_SECONDS"
         },
         "ambience": {
           "type": "object",
-          "description": "The settings half of `[soundscape.ambience]`: how the bed is asked for. Its prompt and file are content.",
+          "description": "The settings half of `[score.ambience]`: how the bed is asked for. Its prompt and file are content.",
           "x-kind": "mixed",
           "properties": {
             "model": {
@@ -1393,7 +1411,7 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_AMBIENCE_MODEL"
+              "x-environment": "DECKTALK_SCORE_AMBIENCE_MODEL"
             },
             "duration_seconds": {
               "description": "Length of the ambience bed that is asked for, which `[mix]` loops under its sections.",
@@ -1406,7 +1424,7 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_AMBIENCE_DURATION_SECONDS"
+              "x-environment": "DECKTALK_SCORE_AMBIENCE_DURATION_SECONDS"
             },
             "prompt_influence": {
               "description": "How closely the ambience bed follows its prompt.",
@@ -1418,7 +1436,7 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_AMBIENCE_PROMPT_INFLUENCE"
+              "x-environment": "DECKTALK_SCORE_AMBIENCE_PROMPT_INFLUENCE"
             },
             "price_per_minute": {
               "description": "What this project's sound plan charges per minute of ambience audio, which is priced by the second of audio asked for.",
@@ -1432,18 +1450,18 @@
               "x-nature": "taste",
               "x-source": "stated",
               "x-evidence": "the plan page of the account whose key buys the sound",
-              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
+              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
               "x-see-also": [
-                "soundscape.provider"
+                "score.provider"
               ],
-              "x-environment": "DECKTALK_SOUNDSCAPE_AMBIENCE_PRICE_PER_MINUTE"
+              "x-environment": "DECKTALK_SCORE_AMBIENCE_PRICE_PER_MINUTE"
             }
           },
           "additionalProperties": true
         },
         "effects": {
           "type": "object",
-          "description": "The settings half of `[soundscape.effects]`: how each effect is asked for unless its own table says.",
+          "description": "The settings half of `[score.effects]`: how each effect is asked for unless its own table says.",
           "x-kind": "mixed",
           "properties": {
             "model": {
@@ -1454,7 +1472,7 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_EFFECTS_MODEL"
+              "x-environment": "DECKTALK_SCORE_EFFECTS_MODEL"
             },
             "duration_seconds": {
               "description": "Length of every effect that is asked for, unless its own table sets one.",
@@ -1467,7 +1485,7 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_EFFECTS_DURATION_SECONDS"
+              "x-environment": "DECKTALK_SCORE_EFFECTS_DURATION_SECONDS"
             },
             "prompt_influence": {
               "description": "How closely every effect follows its prompt, unless its own table sets how closely.",
@@ -1479,7 +1497,7 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_EFFECTS_PROMPT_INFLUENCE"
+              "x-environment": "DECKTALK_SCORE_EFFECTS_PROMPT_INFLUENCE"
             },
             "price_per_minute": {
               "description": "What this project's sound plan charges per minute of effect audio, which is priced by the second of audio asked for.",
@@ -1493,18 +1511,18 @@
               "x-nature": "taste",
               "x-source": "stated",
               "x-evidence": "the plan page of the account whose key buys the sound",
-              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
+              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
               "x-see-also": [
-                "soundscape.provider"
+                "score.provider"
               ],
-              "x-environment": "DECKTALK_SOUNDSCAPE_EFFECTS_PRICE_PER_MINUTE"
+              "x-environment": "DECKTALK_SCORE_EFFECTS_PRICE_PER_MINUTE"
             }
           },
           "additionalProperties": true
         },
         "music": {
           "type": "object",
-          "description": "The settings half of `[soundscape.music]`: how the bed is asked for and joined. Its prompt is content.",
+          "description": "The settings half of `[score.music]`: how the bed is asked for and joined. Its prompt is content.",
           "x-kind": "mixed",
           "properties": {
             "model": {
@@ -1515,7 +1533,7 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_MODEL"
+              "x-environment": "DECKTALK_SCORE_MUSIC_MODEL"
             },
             "duration_seconds": {
               "description": "Length of the music that is asked for, which `[mix]` fades out at the end of the film.",
@@ -1528,10 +1546,10 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_DURATION_SECONDS"
+              "x-environment": "DECKTALK_SCORE_MUSIC_DURATION_SECONDS"
             },
             "bitrate": {
-              "description": "Bitrate of the music file that `soundscape` joins from its chunks.",
+              "description": "Bitrate of the music file that `score` joins from its chunks.",
               "type": "string",
               "default": "192k",
               "enum": [
@@ -1546,7 +1564,7 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_BITRATE"
+              "x-environment": "DECKTALK_SCORE_MUSIC_BITRATE"
             },
             "max_chunk_seconds": {
               "description": "Longest music request. Longer music is requested in chunks and crossfaded.",
@@ -1559,7 +1577,7 @@
               "x-scope": "project",
               "x-nature": "apparatus",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_MAX_CHUNK_SECONDS"
+              "x-environment": "DECKTALK_SCORE_MUSIC_MAX_CHUNK_SECONDS"
             },
             "crossfade_seconds": {
               "description": "Crossfade between two music chunks.",
@@ -1572,7 +1590,7 @@
               "x-scope": "project",
               "x-nature": "taste",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_CROSSFADE_SECONDS"
+              "x-environment": "DECKTALK_SCORE_MUSIC_CROSSFADE_SECONDS"
             },
             "price_per_minute": {
               "description": "What this project's sound plan charges per minute of music audio, which is priced by the second of audio asked for.",
@@ -1586,11 +1604,11 @@
               "x-nature": "taste",
               "x-source": "stated",
               "x-evidence": "the plan page of the account whose key buys the sound",
-              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
+              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
               "x-see-also": [
-                "soundscape.provider"
+                "score.provider"
               ],
-              "x-environment": "DECKTALK_SOUNDSCAPE_MUSIC_PRICE_PER_MINUTE"
+              "x-environment": "DECKTALK_SCORE_MUSIC_PRICE_PER_MINUTE"
             }
           },
           "additionalProperties": true
@@ -1695,8 +1713,9 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
+          "x-hazard": "A relative path is refused when the machine loads. Write an absolute path or one that starts with ~.",
           "x-see-also": [
-            "narration.cache_dir"
+            "narration.store_dir"
           ],
           "x-environment": "DECKTALK_TOOLS_CACHE_DIR"
         }

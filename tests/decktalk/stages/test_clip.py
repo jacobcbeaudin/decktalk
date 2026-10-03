@@ -54,7 +54,7 @@ def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_
     inputs = load_project(tmp_path, TOML, page=SCENE_ONE, media=("media/b-roll.mp4",))
     take = a_take(1, seconds=2.0, hash="0123456789abcdef", voiced=voiced, lead_seconds=0.5)
     write_takes(inputs, take)
-    Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("0123456789abcdef"))
+    Words(words=WORDS).write(inputs.workspace.takes / words_file("0123456789abcdef"))
     if take_on_disk:
         inputs.workspace.take_path(take.hash).write_bytes(b"")
     if cut:

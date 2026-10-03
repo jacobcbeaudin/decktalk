@@ -40,7 +40,7 @@ Run one stage, in this order:
   narrate         Voice each section of script.md and time every word.
   cue             Turn each cue phrase into a second on its section clock.
   record          Record each page section in headless Chromium.
-  soundscape      Generate the music, the ambience bed and the effects.
+  score           Compose the music, the ambience bed and the effects.
   assemble        Cut, mix and encode the sections into one mp4.
   verify          Measure the finished mp4: every start, cut, seam and landing.
 

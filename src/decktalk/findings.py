@@ -362,7 +362,7 @@ class Code(Enum):
     )
     SOUND_MISSING = (
         "SOUND_MISSING",
-        "A sound the soundscape declares has not been bought, so silence plays where it would until a run "
+        "A sound the `[score]` table declares has not been bought, so silence plays where it would until a run "
         "with --spend buys it.",
         RaisedBy.PYTHON,
         Certainty.UNCERTAIN,

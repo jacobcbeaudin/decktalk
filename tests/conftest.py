@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 from hypothesis import settings
 
+from decktalk import machine
 from support.tools import FETCHED, MARKED_BY_PATH, SUITE_MARKERS, machine_tools
 
 pytest_plugins = ["pytester"]
@@ -83,6 +84,18 @@ def httpserver_listen_address() -> tuple[str, int]:
     It also leaves `localhost` a second host on the same machine, which a redirect test needs.
     """
     return ("127.0.0.1", 0)
+
+
+@pytest.fixture(autouse=True)
+def no_real_take_store(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Keep every machine the suite builds from its environment off this user's real data folder.
+
+    A machine keeps its take store in the per-user data folder by default, and a test that buys a take
+    through `Machine.from_environment` would write it there. The machine reads that folder through one
+    name, so each test hands it a fresh directory instead, the way a host hands its machine a cache.
+    """
+    data = tmp_path_factory.mktemp("data")
+    monkeypatch.setattr(machine, "standard_data_dir", lambda _environ, _home: data)
 
 
 @pytest.fixture(autouse=True)

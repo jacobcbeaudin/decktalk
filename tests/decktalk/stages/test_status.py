@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Take, file_digest
+from decktalk.artifacts import Take, file_digest, take_file, words_file
 from decktalk.events import Level, Log
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
@@ -15,12 +15,14 @@ from decktalk.page import Q
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, StatusResult
 from decktalk.stages import status as stage
+from decktalk.stages import voice_model
+from decktalk.stages.narrate.plan import take_inputs
 from decktalk.stages.status import BUILT, next_command, source_of, status, voiced_text
 from support.fakes import FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
 from support.runs import a_run, notes
-from support.takes import a_take, write_takes
+from support.takes import TAKE_SUFFIX, a_take, write_takes
 
 TOML = """
 [project]
@@ -53,7 +55,7 @@ def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: 
     """One take for section one, written to the index with its audio file beside it."""
     take = a_take(1, seconds=2.0, voiced=voiced, spoken=spoken)
     write_takes(inputs, take)
-    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
     inputs.workspace.take_path(take.hash).write_bytes(b"")
     return take
 
@@ -87,9 +89,9 @@ def built_up_to(inputs: Inputs, steps: int) -> None:
         pytest.param(0, "decktalk narrate --no-spend", id="nothing built rehearses the voice"),
         pytest.param(1, f"decktalk {Stage.CUE.value}", id="takes resolve their cues"),
         pytest.param(2, f"decktalk {Stage.RECORD.value}", id="cue times record"),
-        # A project that describes no soundscape is never told to generate one: a stage with nothing
+        # A project that describes no score is never told to generate one: a stage with nothing
         # to do is not the next thing to do.
-        pytest.param(3, f"decktalk {Stage.ASSEMBLE.value}", id="recordings assemble, past the soundscape"),
+        pytest.param(3, f"decktalk {Stage.ASSEMBLE.value}", id="recordings assemble, past the score"),
         pytest.param(4, f"decktalk {Stage.VERIFY.value}", id="a film is measured"),
     ],
 )
@@ -352,3 +354,77 @@ def test_a_script_that_will_not_parse_is_recorded_rather_than_read_as_no_words(
         assert voiced_text(unparsed) == {}
     [record] = [record for record in caplog.records if record.name == "decktalk.stages.status"]
     assert record.exc_info is not None and "no '## N. Title' section" in str(record.exc_info[1])
+
+
+# ---- takes no section plays --------------------------------------------------------------------
+
+VOICED = TOML.replace("[[section]]", '[voice]\nid = "voice-under-test"\n\n[[section]]', 1)
+"""The demo project with its voice named, which is what lets the report name the take each section plays."""
+
+
+def played_digest(inputs: Inputs) -> str:
+    """The digest of the take section one plays, taken the one way narrate takes it."""
+    [segment] = inputs.spoken()
+    voice = inputs.settings.voice
+    return take_inputs(inputs, segment, provider=voice.provider, voice_id=voice.id, model=voice_model(inputs)).digest
+
+
+def a_take_pair(inputs: Inputs, digest: str, *, audio: bytes = b"audio", words: bytes = b"{}") -> list[Path]:
+    """One take and its words file in the takes directory, which is all the listing reads of them."""
+    inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
+    pair = [inputs.workspace.takes / take_file(digest, TAKE_SUFFIX), inputs.workspace.takes / words_file(digest)]
+    pair[0].write_bytes(audio)
+    pair[1].write_bytes(words)
+    return pair
+
+
+def test_takes_no_section_plays_are_counted_with_their_size_and_none_is_deleted(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=VOICED)
+    a_take_pair(inputs, played_digest(inputs))
+    old = a_take_pair(inputs, "00000000000000ab", audio=b"x" * 1_500_000, words=b"y" * 2_000)
+    aligned = inputs.workspace.takes / "aligned" / "k1.words.json"
+    aligned.parent.mkdir()
+    aligned.write_bytes(b"z" * 500)
+    (inputs.workspace.takes / "README.md").write_text("not a take", encoding="utf-8")
+    (inputs.workspace.takes / "00000000000000cd.words.json.unreadable").write_bytes(b"set aside")
+    before = sorted(path for path in inputs.workspace.takes.rglob("*"))
+    run = a_run(tmp_path)
+    unplayed = status(inputs, run).unplayed
+    assert unplayed is not None
+    assert unplayed.directory == Path("takes")
+    assert (unplayed.takes, unplayed.aligned) == (1, 1)
+    assert unplayed.bytes == 1_500_000 + 2_000 + 500
+    assert unplayed.files == tuple(sorted(inputs.relative(path) for path in [*old, aligned]))
+    sentence = unplayed.sentence or ""
+    assert sentence.startswith("1 take and 1 aligned words file in takes/ that no section plays (1.5 MB). ")
+    assert "git rm" in sentence
+    assert sorted(path for path in inputs.workspace.takes.rglob("*")) == before, "the report deletes nothing"
+    assert run.written == []
+
+
+def test_a_take_the_index_still_plays_is_not_listed_after_the_script_moves_on(tmp_path: Path) -> None:
+    """The index names what the film plays until narrate runs again, so its takes are never offered for removal."""
+    inputs = a_project(tmp_path, toml=VOICED, script=SCRIPT.replace("Hello there again.", "Hello once more."))
+    played = a_take(1, hash="00000000000000ef", spoken="Hello there again.")
+    write_takes(inputs, played)
+    a_take_pair(inputs, played.hash)
+    unplayed = status(inputs, a_run(tmp_path)).unplayed
+    assert unplayed is not None
+    assert (unplayed.takes, unplayed.files) == (0, ())
+
+
+def test_a_project_with_every_take_played_says_nothing_of_them(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=VOICED)
+    a_take_pair(inputs, played_digest(inputs))
+    unplayed = status(inputs, a_run(tmp_path)).unplayed
+    assert unplayed is not None
+    assert (unplayed.takes, unplayed.aligned, unplayed.bytes) == (0, 0, 0)
+    assert unplayed.sentence is None
+
+
+def test_with_no_voice_named_no_take_is_called_unplayed(tmp_path: Path) -> None:
+    """Without the voice the digest the script plays cannot be taken, so the report claims nothing about any take."""
+    inputs = a_project(tmp_path)
+    old = a_take_pair(inputs, "00000000000000ab")
+    assert status(inputs, a_run(tmp_path)).unplayed is None
+    assert all(path.is_file() for path in old)

@@ -69,10 +69,20 @@ Both land in one directory, Chromium in its `ms-playwright` folder and ffmpeg in
 
 | Linux | macOS | Windows |
 |---|---|---|
-| `$XDG_CACHE_HOME/decktalk`, else `~/.cache/decktalk` | `~/Library/Caches/decktalk` | `%LOCALAPPDATA%\decktalk` |
+| `$XDG_CACHE_HOME/decktalk`, else `~/.cache/decktalk` | `~/Library/Caches/decktalk` | `%LOCALAPPDATA%\decktalk\cache` |
 
 It is per user, so a second project on the same machine downloads nothing. `tools.cache_dir` moves
-the whole directory, browser and encoder together, and `decktalk doctor` names it as `cache`.
+the whole directory, browser and encoder together, and `decktalk doctor` names it as `cache`. Anyone
+may empty it.
+
+The take store, a second copy of every take this machine buys, is kept apart from it in the per-user
+data folder, which a cleaner leaves alone and a backup includes. `narration.store_dir` moves it.
+
+| Linux | macOS | Windows |
+|---|---|---|
+| `$XDG_DATA_HOME/decktalk/takes`, else `~/.local/share/decktalk/takes` | `~/Library/Application Support/decktalk/takes` | `%LOCALAPPDATA%\decktalk\takes` |
+
+Both keys take an absolute path or one that starts with `~`, and a relative one is refused.
 DeckTalk tells Playwright where the browser folder is on the download and on every launch, so a
 `PLAYWRIGHT_BROWSERS_PATH` set in the shell is not used: set `tools.cache_dir` instead.
 
@@ -241,7 +251,7 @@ A build voiced by ElevenLabs, the cloud voice, needs two values from ElevenLabs.
 
 | Value | What it is | Read by |
 |---|---|---|
-| `ELEVENLABS_API_KEY` | Your API key. This is the credential. | a voiced build, `decktalk narrate`, `decktalk soundscape` |
+| `ELEVENLABS_API_KEY` | Your API key. This is the credential. | a voiced build, `decktalk narrate`, `decktalk score` |
 | `[voice] id` | The id of the voice to speak in. It is a published name rather than a secret. | a voiced build, `decktalk narrate` |
 
 Put the key in `.env` beside `decktalk.toml`, or export it. A variable already in the environment
@@ -260,13 +270,13 @@ key is set and never what it is.
 ## What spends and what does not
 
 Two things call ElevenLabs. The `narrate` stage sends each section's text and gets speech back, and
-`decktalk soundscape` generates the music, the ambience bed and the effects.
+`decktalk score` generates the music, the ambience bed and the effects.
 
 | Command | When it spends |
 |---|---|
 | `decktalk build` | When the run is voiced. It voices each section whose text or voice settings changed, and every section when the cache is empty. |
 | `decktalk narrate` | The same sections as a build, for that stage alone. |
-| `decktalk soundscape` | For each part whose request changed or whose file is missing. |
+| `decktalk score` | For each part whose request changed or whose file is missing. |
 
 No library or command call spends without approval. On the command line the flags are `--no-spend`, which plays every take on disk, writes
 placeholder narration where a take is missing and calls nothing, `--spend`, which approves the spend,
@@ -305,7 +315,7 @@ and will not invent it. Each voice declares how it bills, per character, per sec
 free, and the key its rate is set under, and the price is worked out the way it declares.
 
 `decktalk check` prices the narration of a voiced run without calling anything, and its result
-carries a `Spend`. It leaves the soundscape out, which `decktalk soundscape --no-spend` prices. A
+carries a `Spend`. It leaves the score out, which `decktalk score --no-spend` prices. A
 build asks about both at once: the price it shows before it buys is its takes and its sounds added
 together, the same total its result reports.
 
@@ -340,7 +350,7 @@ decktalk check --json
 - `ceiling_dollars` is the most the run can reach.
 - `price_per_1000_characters` or `price_per_second` is the rate, whichever the bill is counted in.
 - `price_key` is the key that states the rate, or null for a voice with no rate to state.
-- `averaged` is true when the price is several rates together, such as a soundscape's music and
+- `averaged` is true when the price is several rates together, such as a score's music and
   effects, so the rate is their average and `price_key` names the one least surely stated.
 - `price_layer` names which of the five settings layers set the rate, where `default` means nobody did.
 

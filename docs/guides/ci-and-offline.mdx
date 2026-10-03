@@ -170,7 +170,7 @@ the full check. `--no-frames` is the middle setting: it keeps the browser and th
 and drops the freeze comparison alone.
 
 `check --json` carries `spend`, so one call is also how an agent prices the narration before
-approving it. The soundscape is priced apart, by `decktalk soundscape --no-spend --json`.
+approving it. The score is priced apart, by `decktalk score --no-spend --json`.
 
 ## Say where the project is
 
@@ -269,16 +269,26 @@ that runs `decktalk-voice` beside it gets every missing take voiced under the sa
 ### Build with the takes you committed
 
 A take is found by its content, so a repository that commits its takes builds its real film on a
-runner with no API key. Name a directory inside the project for them, run `decktalk narrate --spend`
-once on your own machine, and commit that directory. It holds the takes, their words files and the
-take index, and nothing else, because a placeholder and the joined narration stay under `build/`.
+runner with no API key. Run `decktalk narrate --spend` once on your own machine and commit `takes/`.
+It holds the takes and their words files and nothing else, because a placeholder, the take index and
+the joined narration stay under `build/`, so a job that plays them changes no tracked file. A project
+with a score does the same with `decktalk score --spend` and `score/`, which holds the bought sounds
+and their ledger, while the music joined from its parts stays under `build/score/`.
 
 ```toml
-[narration]
-takes_dir = "voice"
-
 [voice]
 id = "<your voice id>"
+```
+
+A minute of ElevenLabs speech at `mp3_44100_128` is about 1 MB, and its words file about 11 KB, so a
+10 minute film's takes come to about 10 MB, and each change of voice adds that again because the old
+takes stay until you remove them. A repository reaches GitHub's advised 1 GB only after about a hundred
+such revoicings. If you would rather keep the audio out of the repository's history, Git LFS takes it
+with one line in `.gitattributes`, and the checkout step then needs `lfs: true`:
+
+```text .gitattributes
+takes/** filter=lfs diff=lfs merge=lfs -text
+score/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
 ```
 
 The voice id is a published name rather than a secret, so it is committed beside the takes and the

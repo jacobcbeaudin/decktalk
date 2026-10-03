@@ -1,9 +1,9 @@
 """The sound boundary, which is anything that writes an effect or a piece of music from a prompt.
 
 Sound is its own seam beside speech. A vendor that sells both still has two adapters, one in each
-table, so the soundscape never borrows the speech registry and never checks which class a voice is.
+table, so the score never borrows the speech registry and never checks which class a voice is.
 
-    [soundscape]
+    [score]
     provider = "elevenlabs"   # the name a sound provider is registered under
 
 A sound provider is built from a `SoundContext`, which carries values and never a project, so this
@@ -12,7 +12,7 @@ number and a source of secrets.
 
 The sound adapters DeckTalk ships are a closed set, declared once in `SOUND_DECLARED`, and `SOUNDS`
 is their factories, which a machine a host built by hand replaces with its own table.
-Every run carries its machine's `Sounds`, and the soundscape asks the run's `sounds.provider` for its
+Every run carries its machine's `Sounds`, and the score stage asks the run's `sounds.provider` for its
 provider, so a host that handed its machine a fake table is never billed through the shipped one.
 
 What an adapter declares before it is built is in `SOUND_DECLARED`: the variable its key is read
@@ -38,7 +38,7 @@ class SoundContext:
 
     secrets: Secrets
     api_base: str  # the base its own table names, such as [elevenlabs] api_base
-    timeout_seconds: int  # [soundscape] timeout_seconds
+    timeout_seconds: int  # [score] timeout_seconds
     retries: int = 0
     """How many more times a busy or failed request is sent, which the machine alone decides."""
     allow_any_api_base: bool = False
@@ -46,7 +46,7 @@ class SoundContext:
 
 
 class SoundProvider(Protocol):
-    """Writes one effect or one piece of music from the request a soundscape item describes."""
+    """Writes one effect or one piece of music from the request a score item describes."""
 
     name: str
 
@@ -128,7 +128,7 @@ class Sounds:
         if factory is None:
             known = ", ".join(sorted(self.factories)) or "none"
             raise InputError(
-                f"[soundscape] provider = {name!r} is not a sound provider this machine answers for.",
+                f"[score] provider = {name!r} is not a sound provider this machine answers for.",
                 hint=f"The sound providers it knows are {known}.",
             )
         return factory(replace(context, allow_any_api_base=self.allow_any_api_base, retries=self.retries))

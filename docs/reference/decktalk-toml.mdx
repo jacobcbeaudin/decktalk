@@ -73,7 +73,7 @@ refusal names what it read and would not accept.
 - A top-level table is neither a document table nor a settings table.
 - The file has no `[[section]]` table.
 - A required key is missing, such as a `[[section]]` with no `number`.
-- A value has the wrong type. `seconds = 120.5` under `[soundscape.music]` fails, because that key is
+- A value has the wrong type. `seconds = 120.5` under `[score.music]` fails, because that key is
   an integer and a mapping carries the type its author wrote.
 - Two `[[section]]` tables share a `number`.
 - A section has both `page` and `clip`, or neither.
@@ -184,7 +184,7 @@ hold_seconds = 2      # the last frame stays 2 seconds before section 5
 
 A page may load only what this file declares. Every page is opened at a local origin that answers
 for the directory each `page` sits in and for the files the document names, which are each clip and
-its `words`, every `[mix]` file, every `[[mix.effects]]` file and every `[soundscape]` `out`. Every
+its `words`, every `[mix]` file, every `[[mix.effects]]` file and every `[score]` `out`. Every
 other file in the project is refused, so the script, the cue file, `build/` and `.env` stay out of a
 page's reach. A declared file is reached by the spelling written here and by no other, so
 `media/Theme.mp3` does not answer a request for `media/theme.mp3` on any platform. A declared
@@ -230,8 +230,8 @@ environment. The local voice needs none.
 
 `[elevenlabs]` holds `model`, `stability`, `similarity_boost`, `style`, `speaker_boost`,
 `price_per_1000_characters`, `output_format` and `api_base`. ElevenLabs bills per character, so its
-rate is stated per thousand characters. The soundscape buys from the same API with the same key and
-`api_base`, and its own request settings and its rates per minute of audio are in `[soundscape]`.
+rate is stated per thousand characters. The score stage buys from the same API with the same key and
+`api_base`, and its own request settings and its rates per minute of audio are in `[score]`.
 [Configuration](/reference/configuration#elevenlabs) has each one with its range. The voice id, the
 model, `speed`, the four voice fields and `output_format` are part of a take's content hash, so
 changing one makes the next voiced build voice every section again. The price and the API base are
@@ -241,57 +241,58 @@ not.
 `decktalk-voice`, a separate local server that is not part of this repository. `url` must be http on
 `127.0.0.1`, `localhost` or `[::1]`, and `decktalk check` refuses any other host unless the machine
 sets `DECKTALK_ALLOW_ANY_API_BASE`. The local voice bills nothing, so buying its takes asks for no
-`--spend`, and a build still asks about a soundscape it would buy. Its takes are named by `dtsp`, the voice id, the model and `speed`, so they never share a
+`--spend`, and a build still asks about a score it would buy. Its takes are named by `dtsp`, the voice id, the model and `speed`, so they never share a
 name with an ElevenLabs take of the same words. [Configuration](/reference/configuration#dtsp) has
 both keys.
 
-## `[soundscape]`
+## `[score]`
 
-`[soundscape]` holds the prompts that `decktalk soundscape` generates from. It is optional, and no
-packaged project writes one. Every item writes to `build/soundscape/` unless the table names another
-path, and a generated file that `[mix]` then names is what the film actually plays.
+`[score]` holds the prompts that `decktalk score` generates from. It is optional, and no
+packaged project writes one. Every sound it buys is written to the score directory, `[score] dir`,
+which is `score/` by default and which you commit, unless the item names another path. A generated
+file that `[mix]` then names is what the film actually plays.
 
 Each item's table is shared: its prompt and its file are the document, and beside them sit the
-settings that size its request, spelled the same way in every table. [Configuration](/reference/configuration#soundscape)
-has every setting with its range, and `[soundscape] timeout_seconds` is how long one request may take.
+settings that size its request, spelled the same way in every table. [Configuration](/reference/configuration#score)
+has every setting with its range, and `[score] timeout_seconds` is how long one request may take.
 
 ```toml decktalk.toml
-[soundscape.ambience]
+[score.ambience]
 text = "a quiet room, distant traffic, no music"
 
-[soundscape.effects.chime]
+[score.effects.chime]
 text = "one soft glass chime"
 
-[soundscape.music]
+[score.music]
 prompt = "calm piano under a lesson, unhurried"
 duration_seconds = 360
 ```
 
-### `[soundscape.ambience]`
+### `[score.ambience]`
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `text` | string | required | The prompt. |
-| `out` | path | `[mix] ambience`, else `build/soundscape/ambience.mp3` | Where to write it. |
+| `out` | path | `[mix] ambience`, else `score/ambience.mp3` | Where to write it. |
 | `duration_seconds` | number | `25` | A setting: how long a bed to ask for. The bed loops under every section that sets `ambience = true`. |
 | `prompt_influence` | number | `0.3` | A setting: how closely the sound follows the prompt. |
 | `model` | string | `eleven_text_to_sound_v2` | A setting: the sound model to ask. |
 
-### `[soundscape.effects]` and `[soundscape.effects.<name>]`
+### `[score.effects]` and `[score.effects.<name>]`
 
-`[soundscape.effects]` holds three settings for every effect: `duration_seconds`, which is `0.5`,
-`prompt_influence`, which is `0.5`, and `model`. One `[soundscape.effects.<name>]` table per effect
+`[score.effects]` holds three settings for every effect: `duration_seconds`, which is `0.5`,
+`prompt_influence`, which is `0.5`, and `model`. One `[score.effects.<name>]` table per effect
 names it, and `<name>` is the name the file is written under. It takes `text`, which is required, and
-`out`, which is `build/soundscape/<name>.mp3` by default, and it may set any of the three settings for
+`out`, which is `score/<name>.mp3` by default, and it may set any of the three settings for
 itself. A `[[mix.effects]]` row is what places the finished sound in the film.
 
-### `[soundscape.music]`
+### `[score.music]`
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `prompt` | string | required | The prompt. |
 | `force_instrumental` | boolean | `true` | Ask for no vocals. |
-| `out` | path | `[mix] music`, else `build/soundscape/music.mp3` | Where to write it. |
+| `out` | path | `[mix] music`, else `build/score/music.mp3` | Where to write the piece joined from its parts, which are bought into `score/music-part<n>.mp3`. |
 | `duration_seconds` | integer | `360` | A setting: how long a piece to ask for. It is an integer, so `120.5` fails the load. |
 | `model` | string | `music_v2` | A setting: the music model to ask. |
 | `bitrate` | string | `192k` | A setting: the bitrate of the file joined from the parts. |
@@ -394,7 +395,7 @@ unit, its scope and its hazard by `decktalk schema settings` and documented in f
 | [`[video]`](/reference/configuration#video) | The frame size, the frame rate and the video encoding of every recording and of the final mp4. |
 | [`[audio]`](/reference/configuration#audio) | The final audio: its bitrate, its sample rate, its channels, and the loudness, the true peak and the range it is mastered to. |
 | [`[mix]`](/reference/configuration#mix) | The ramps of the music duck, the ambience bed and each marker. |
-| [`[soundscape]`](/reference/configuration#soundscape) | How each sound and the music are asked for: their models, their lengths and how the music is joined. |
+| [`[score]`](/reference/configuration#score) | How each sound and the music are asked for: their models, their lengths and how the music is joined. |
 | [`[verify]`](/reference/configuration#verify) | Every limit the finished film is measured against. |
 | [`[motion]`](/reference/configuration#motion) | Reduced motion and the multiplier on every declared motion span. |
 | [`[output]`](/reference/configuration#output) | The timestamped copy and how many runs of event files are kept. |

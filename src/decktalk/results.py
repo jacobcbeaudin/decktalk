@@ -175,7 +175,7 @@ class TakeStatus(Enum):
 
 
 class SoundKind(Enum):
-    """What one soundscape item is, which decides where it sits in the mix."""
+    """What one score item is, which decides where it sits in the mix."""
 
     MUSIC = "music"
     AMBIENCE = "ambience"
@@ -183,7 +183,7 @@ class SoundKind(Enum):
 
 
 class SoundStatus(Enum):
-    """What one run did about one soundscape item."""
+    """What one run did about one score item."""
 
     PLANNED = "planned"
     KEPT = "kept"
@@ -436,6 +436,51 @@ class LiveRun(Model):
     stage: Stage | None = Field(None, description="The stage that run was last in, or null before the first.")
 
 
+BYTES_PER_MB = 1_000_000
+"""How many bytes a megabyte is in a sentence that sizes files, which is the decimal unit a file browser shows."""
+
+BYTES_PER_KB = 1_000
+"""How many bytes a kilobyte is, for files too small to read as a tenth of a megabyte."""
+
+
+def sized(count: int) -> str:
+    """A number of bytes as a file browser shows it: megabytes to one place, then kilobytes, then bytes."""
+    if count < BYTES_PER_KB:
+        return counted(count, "byte")
+    if count * 10 < BYTES_PER_MB:
+        return f"{count / BYTES_PER_KB:.0f} KB"
+    return f"{count / BYTES_PER_MB:.1f} MB"
+
+
+class UnplayedTakes(Model):
+    """The takes in the takes directory that no section plays, which DeckTalk lists and never deletes.
+
+    A take is a paid record, so one the script has moved on from stays where it is until its author
+    removes it with `git rm`. A take counts as played when the take index names it or when a section's
+    current text, voice and settings name it, so a take the film still plays is never offered.
+    """
+
+    directory: ProjectPath = Field(description="The takes directory these files are in, project-relative.")
+    takes: int = Field(ge=0, description="How many takes no section plays, each its audio and its words file.")
+    aligned: int = Field(ge=0, description="How many aligned words files under aligned/ no section plays.")
+    bytes: int = Field(ge=0, description="How many bytes every file listed here holds, added up.")
+    files: tuple[ProjectPath, ...] = Field(
+        (), description="Every file no section plays, project-relative and sorted, which is what git rm is given."
+    )
+
+    @property
+    def sentence(self) -> str | None:
+        """What a reader is told about these files, or None when there are none."""
+        if not self.files:
+            return None
+        named = [counted(self.takes, "take")] if self.takes else []
+        named += [counted(self.aligned, "aligned words file")] if self.aligned else []
+        return (
+            f"{' and '.join(named)} in {self.directory.as_posix()}/ that no section plays ({sized(self.bytes)}). "
+            "DeckTalk never deletes from the takes directory, so remove the ones you no longer want with git rm."
+        )
+
+
 class SectionTake(Model):
     """One section's take: what it cost, how long it runs and what the run did about it."""
 
@@ -478,7 +523,7 @@ class SectionRecording(Model):
 
 
 class SoundItem(Model):
-    """One piece of the soundscape, which is a music bed, an ambience bed or an effect."""
+    """One piece of the score, which is a music bed, an ambience bed or an effect."""
 
     name: str = Field(description="What the author calls this item in decktalk.toml.")
     kind: SoundKind = Field(description="Whether this item is music, ambience or an effect.")
@@ -661,6 +706,11 @@ class StatusResult(Result):
     film: ProjectPath | None = Field(None, description="The built film, or null when none is built.")
     film_seconds: float | None = Field(None, ge=0, description="How long the built film runs, or null.")
     runs: tuple[LiveRun, ...] = Field((), description="Every run whose events file is still open.")
+    unplayed: UnplayedTakes | None = Field(
+        None,
+        description="The takes in the takes directory that no section plays, or null when the takes each section "
+        "plays cannot be named, as when no voice is named.",
+    )
     next: NextCommand
 
 
@@ -817,8 +867,8 @@ class RecordResult(Result):
     seconds: Elapsed
 
 
-class SoundscapeResult(Result):
-    """Every piece of the soundscape this run planned or generated."""
+class ScoreResult(Result):
+    """Every piece of the score this run planned or generated."""
 
     reports_findings: ClassVar[bool] = True
     spends: ClassVar[bool] = True
@@ -964,7 +1014,7 @@ __all__ = [
     "SoundKind",
     "SoundStatus",
     "Source",
-    "SoundscapeResult",
+    "ScoreResult",
     "Spend",
     "SpendState",
     "StageRun",
@@ -973,6 +1023,7 @@ __all__ = [
     "StoryboardResult",
     "Substitute",
     "TakeStatus",
+    "UnplayedTakes",
     "VerifyResult",
     "Word",
     "WordsResult",

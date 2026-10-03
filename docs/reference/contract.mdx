@@ -72,19 +72,25 @@ The deliverables, named after `[project] name`, which is `<name>` below.
 
 ## The paid records
 
-Four things record money spent, so they are never treated as a cache.
+Four kinds of file record money spent, so they are never treated as a cache. Each stays where it is
+and is never deleted by DeckTalk.
 
-- The take audio, one file per voiced take, named by the digest of what was sent. It is not a file
-  DeckTalk parses, so it is kept, never deleted by DeckTalk.
-- Each voiced take's `<hash>.words.json`, the words the speech provider sent back with it.
-- `build/soundscape/ledger.json`, what the soundscape has bought.
-- The audio each soundscape item bought, which the ledger lists. It is kept, never deleted by DeckTalk.
+| Kind | File | Folder |
+|---|---|---|
+| Take audio | `<hash>.mp3`, one per voiced take, named by the digest of what was sent | The takes directory, `takes/` unless `[narration] takes_dir` names another, with a second copy in the take store, `[narration] store_dir` |
+| Provider words | `<hash>.words.json`, the words the speech provider sent back with its take | Beside its take, in the takes directory, `takes/`, and the take store, `[narration] store_dir` |
+| Score audio | `<name>.mp3` for the ambience bed and each effect, and `music-part<n>.mp3` for each part of the music, named by the item the score stage bought | The score directory, `score/` unless `[score] dir` names another, or the path a sound's own `out` names |
+| Ledger | `ledger.json`, what the score stage has bought, keyed by the request that made it | Beside the score audio, in the score directory, `score/` |
 
-When `[narration] takes_dir` is set, the take audio and its words files live there instead.
+The take store sits outside every project, and a take is copied there once when it is bought. A
+take's suffix is the one its voice declares for the format it asks for, which is `.mp3` for every
+ElevenLabs format.
 
 A newer release reads the words files and the ledger or refuses them with a sentence. It never
 builds one again and never deletes one, because counting a paid record as absent would buy what it
 records again. The refusal says so, and leaves the file where it is for the person whose money it is.
+A take no section plays any more stays too, and `decktalk status` lists it so its author can remove
+it with `git rm`.
 
 The take index, `takes.json`, is not one of them. It is a cache over the takes on disk, which
 `narrate` builds again from them when it does not read, so a broken index buys nothing.

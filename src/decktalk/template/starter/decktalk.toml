@@ -32,7 +32,6 @@ hold_seconds = 1.5     # the last frame holds this long after the narration
 
 [narration]
 tail_min_seconds = 1.3  # silence kept after the last word of a section, so a cut breathes
-# takes_dir = "voice"   # keep the paid takes here and commit them, so a clone builds with no key
 
 [voice]
 provider = "elevenlabs"

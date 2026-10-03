@@ -107,7 +107,7 @@ Fill in the phrases and run it again.
 | `--fail-on never` | No finding fails the run, so the exit code reports only whether the command could run. |
 
 Both work on every command that judges, which is `doctor`, `check`, `storyboard`, `narrate`, `cue`,
-`record`, `soundscape`, `assemble`, `verify` and `build`.
+`record`, `score`, `assemble`, `verify` and `build`.
 
 `build` also stops on what fails it. When a stage inside a build judges something at the `--fail-on`
 threshold, the build stops after that stage rather than carry the finding into the film, because a
@@ -123,7 +123,7 @@ its findings are printed and in the JSON, the money narrate already spent is in 
          Cue    0:00
 Cue made one finding that the build stops on, so the build stopped before record rather than carry it into the film.
       Record    0:00
-  Soundscape    0:00
+  Score    0:00
     Assemble    0:00
       Verify    0:00
      Stopped at cue, $0.00, 1 finding
@@ -154,7 +154,7 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | A command said ffmpeg or Chromium is missing or failed | [TOOL](/reference/errors/TOOL) | [A missing toolchain](#a-missing-toolchain) |
 | `doctor` listed a component with no version and no path | [FILE_MISSING](/reference/findings/FILE_MISSING) | [A missing toolchain](#a-missing-toolchain) |
 | A file the project names is not on disk | [FILE_MISSING](/reference/findings/FILE_MISSING) | [A missing toolchain](#a-missing-toolchain) |
-| A sound the soundscape describes plays as silence | [SOUND_MISSING](/reference/findings/SOUND_MISSING) | [A missing toolchain](#a-missing-toolchain) |
+| A sound the score describes plays as silence | [SOUND_MISSING](/reference/findings/SOUND_MISSING) | [A missing toolchain](#a-missing-toolchain) |
 | The command exited 2 without doing anything | [USAGE](/reference/errors/USAGE) | [A refused command line](#a-refused-command-line) |
 | A run refused because it would have spent money | [APPROVAL](/reference/errors/APPROVAL) | [A refused command line](#a-refused-command-line) |
 | A stage said a file it reads has not been built | [NOT_BUILT](/reference/errors/NOT_BUILT) | [A stage run before the one it reads](#a-stage-run-before-the-one-it-reads) |
@@ -215,9 +215,9 @@ refused. Set
 
 `FILE_MISSING` is also what a stage raises when a file the project names is not on disk, such as an
 audio file of your own that a `[[mix.effects]]` row cues or a clip a section names. There the fix is
-to write the file or correct the path. A sound the soundscape describes and has not bought yet is
+to write the file or correct the path. A sound the score describes and has not bought yet is
 [`SOUND_MISSING`](/reference/findings/SOUND_MISSING) instead, a warning that plays silence in its
-place, and `decktalk soundscape --spend` buys it.
+place, and `decktalk score --spend` buys it.
 
 ## A refused command line
 
@@ -226,7 +226,7 @@ Exit 2 means DeckTalk refused before doing anything, and a retry of the same lin
 **`USAGE`.** The parser refused the line. The message names what is wrong with it. Run
 `decktalk <command> --help`, or `decktalk schema` for the whole instruction set as one JSON object.
 
-**`APPROVAL`.** A run that would spend money was not approved. `narrate` and `soundscape` are the two
+**`APPROVAL`.** A run that would spend money was not approved. `narrate` and `score` are the two
 stages that spend. A run with nothing to buy is never asked, so a project whose takes are all on disk
 builds with no flag and no key.
 
@@ -235,7 +235,7 @@ builds with no flag and no key.
 | No spending at all | `--no-spend`, which plays every take on disk and a placeholder with a real word clock wherever a take is missing |
 | Spend without being asked | `--spend` |
 | Spend up to a ceiling | `--max-cost N`, which refuses before the first call when the most the run could cost is over N US dollars |
-| Know the price first | `decktalk check`, which prices the narration and buys nothing, and `decktalk soundscape --no-spend` for the sound |
+| Know the price first | `decktalk check`, which prices the narration and buys nothing, and `decktalk score --no-spend` for the sound |
 
 `--no-input` never prompts. It takes the safe default, or it refuses and names the flag that would
 have answered, which is what makes a non-interactive run deterministic.

@@ -49,7 +49,7 @@ Full rules: [script.md](/reference/script-md).
 The project file. `[project]` holds `name` and the optional `script`, `cues` and `build` paths. One
 `[[section]]` per script section, in order, each with a `number` and an optional `chapter`. A page
 section adds `page` and `scene`, and a clip section adds `clip` and plays a video file of your own.
-`[voice]`, `[transition]`, `[mix]` and `[soundscape]` follow, and every tuning table is optional.
+`[voice]`, `[transition]`, `[mix]` and `[score]` follow, and every tuning table is optional.
 
 Full rules: [decktalk.toml](/reference/decktalk-toml) and [Configuration](/reference/configuration).
 
@@ -139,8 +139,8 @@ decktalk schema page
 | `narrate` | the script | `build/narrate/takes.json`, the take files and their words files, `build/narrate/narration.mp3` | The script becomes spoken takes with a word clock. |
 | `cue` | `build/narrate/takes.json` | `build/cue-times.json` | Each cue phrase becomes a second on its section clock. |
 | `record` | `build/narrate/takes.json`, `build/cue-times.json` | `build/recordings/` | The pages are recorded against those seconds. |
-| `soundscape` | `[soundscape]` in `decktalk.toml` | `build/soundscape/` | The music, the ambience bed and the effects are generated. |
-| `assemble` | the takes, the recordings and the soundscape | `build/sections/`, then `build/final/` | The parts are cut, mixed and encoded into one film. |
+| `score` | `[score]` in `decktalk.toml` | `score/` and `build/score/` | The music, the ambience bed and the effects are generated. |
+| `assemble` | the takes, the recordings and the score | `build/sections/`, then `build/final/` | The parts are cut, mixed and encoded into one film. |
 | `verify` | `build/cue-times.json` and `build/final/` | nothing | The finished film is measured against the clock the earlier stages promised. |
 
 `build/final/` holds `<name>.mp4`, `<name>.srt`, `<name>.vtt`, `<name>.chapters.txt`, `cuts.json`,
@@ -199,7 +199,7 @@ credits are spent.
 | `decktalk narrate` | Voice each section of `script.md` and time every word. | `--section N`, `--force`, `--replace-voiced`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk cue` | Turn each cue phrase into a second on its section clock. | `--section N` |
 | `decktalk record` | Record each page section in headless Chromium. | `--section N`, `--force` |
-| `decktalk soundscape` | Generate the music, the ambience bed and the effects. | `--section N`, `--replace-score`, `--no-spend`, `--spend`, `--max-cost N` |
+| `decktalk score` | Generate the music, the ambience bed and the effects. | `--section N`, `--replace-score`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk assemble` | Cut, mix and encode the sections into one mp4. | `--section N`, `--skip STAGE` |
 | `decktalk verify` | Measure the finished mp4: every start, cut, seam and landing. | `--section N` |
 
@@ -247,7 +247,7 @@ repeats, and it is on `check`, `words`, `storyboard`, `build`, `clip` and every 
 project's own.
 
 **The spend flags** are on the three commands that can buy something, which are `narrate`,
-`soundscape` and `build`. `--no-spend` plays every take on disk, puts a placeholder where a paid
+`score` and `build`. `--no-spend` plays every take on disk, puts a placeholder where a paid
 take is missing and reports it as `TAKE_MISSING`, and needs no API key. A free voice such as `dtsp`
 makes its takes either way. `--spend` buys what is missing without asking first. `--max-cost N` refuses before the first call if the most the run can cost is over N US
 dollars, and it is compared against the spend object's `ceiling_dollars`. With neither flag, a run
@@ -256,7 +256,7 @@ error code `APPROVAL`. A run with nothing to buy is not asked, and neither is on
 declares itself free, which buys without asking. `--no-spend` never buys, whatever the price.
 
 **The findings flags** are on every command that can judge something, which are `doctor`, `check`,
-`storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`, `verify` and `build`.
+`storyboard`, `narrate`, `cue`, `record`, `score`, `assemble`, `verify` and `build`.
 `--fail-on certain` is the default, `--fail-on any` also fails on an uncertain finding, and
 `--fail-on never` fails on none. `--allow CODE` carries on past one code and repeats. `--fix`
 applies every safe fix and `--no-fix` applies none, on `doctor`, `check` and `build`.
@@ -342,10 +342,10 @@ under `%APPDATA%\decktalk\` on Windows, and under `$XDG_CONFIG_HOME/decktalk/` o
 than about the film.
 
 The settings sit in `[video]`, `[narration]`, `[record]`, `[audio]`, `[verify]`, `[voice]`, `[mix]`,
-`[motion]`, `[elevenlabs]`, `[soundscape]`, `[output]` and `[tools]`. `decktalk.toml` also carries
+`[motion]`, `[elevenlabs]`, `[score]`, `[output]` and `[tools]`. `decktalk.toml` also carries
 the tables that are project content rather than tuning, which are `[project]`, `[[section]]`,
-`[transition]`, the prompts of `[soundscape]` with `[soundscape.effects.<name>]`, and
-`[[mix.effects]]`. `[mix]` and `[soundscape]` are each both things at once, because each holds
+`[transition]`, the prompts of `[score]` with `[score.effects.<name>]`, and
+`[[mix.effects]]`. `[mix]` and `[score]` are each both things at once, because each holds
 content keys the document owns beside settings the settings loader declares.
 
 The published range is the safe range. A bound is there because a value past it deletes a check,
@@ -376,7 +376,7 @@ for finding in result.findings:
 `decktalk.init(path, *, machine, name, example, skills, force)` writes one.
 `Machine.from_environment()` is the only function that reads the environment, the per-machine file
 or the working directory. `Project` carries the twelve calls `narrate`, `cue`, `record`,
-`soundscape`, `assemble`, `verify`, `build`, `status`, `check`, `words`, `storyboard` and `clip`,
+`score`, `assemble`, `verify`, `build`, `status`, `check`, `words`, `storyboard` and `clip`,
 each taking `cancel`, along with `apply`, `serve`, `reload` and `sections_touching`. No library call
 spends without `spend=True`, `max_cost` is checked before the first paid call, and
 `ApprovalRequired` is raised rather than spending.

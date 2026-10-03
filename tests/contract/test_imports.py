@@ -65,7 +65,7 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.build", "stages.narrate"): "by design",
     ("stages.build", "stages.cue"): "by design",
     ("stages.build", "stages.record"): "by design",
-    ("stages.build", "stages.soundscape"): "by design",
+    ("stages.build", "stages.score"): "by design",
     ("stages.build", "stages.assemble"): "by design",
     ("stages.build", "stages.verify"): "by design",
     ("stages.build", "stages.storyboard"): "the checkpoint drawn before any credit is spent",
@@ -77,13 +77,18 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.check", "stages.verify"): "by design",
     # The storyboard owns how a frozen page is opened, so the poster is drawn from a page opened the same way.
     ("stages.assemble", "stages.storyboard"): "the one way a frozen page is opened",
-    ("stages.assemble", "stages.soundscape"): "which sound files are the score's to buy, so an absent one is a warning",
+    ("stages.assemble", "stages.score"): "which sound files are the score's to buy, so an absent one is a warning",
     # The recorder owns the query a page section is opened at, so the storyboard opens the same page
     # by reading that one rule rather than spelling it a second time.
     ("stages.storyboard", "stages.record"): "the page URL the recorder owns",
     # One rule decides whether a recording still matches the project, and the report that names a
     # stale one asks the stage that wrote it rather than comparing file times of its own.
     ("stages.status", "stages.record"): "the rule that decides a recording is stale",
+    # A take is named by narrate's digest alone, so the report that lists the takes no section plays
+    # names each section's take the way narrate does rather than spelling a digest of its own.
+    ("stages.status", "stages.narrate"): "the digest a section's take is named by",
+    # The score is ready to mix once its bought music is joined, which the stage that joins it decides.
+    ("stages.status", "stages.score"): "the rule that decides the score is ready to mix",
     # A clip is cut on the section clock, which is the one thing `words` computes.
     ("stages.clip", "stages.words"): "the section clock a clip is cut on",
     # Every stage that fans its sections out to workers shares one pool, so they all halt alike.

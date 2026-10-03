@@ -9,6 +9,7 @@ the product uses.
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,7 +32,7 @@ from decktalk.results import (
     NarrateResult,
     RecordResult,
     Result,
-    SoundscapeResult,
+    ScoreResult,
     Spend,
     SpendState,
     StoryboardResult,
@@ -41,7 +42,7 @@ from decktalk.results import (
 from decktalk.settings import CONFIG_VARIABLE
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import build as build_module
-from decktalk.stages import soundscape as soundscape_stage
+from decktalk.stages import score as score_stage
 from decktalk.stages.build import build
 from decktalk.stages.status import read_kept
 from support.fakes import FakeVoice
@@ -99,11 +100,11 @@ def price(dollars: float = 0.0, *, state: SpendState = SpendState.ESTIMATE) -> S
 
 
 SOUND_RATE = 0.002
-"""Dollars per second of sound audio, which a soundscape's own price is quoted at."""
+"""Dollars per second of sound audio, which a score's own price is quoted at."""
 
 
 def sound_price(seconds: float) -> Spend:
-    """The soundscape's price, which is billed per second of audio rather than per character."""
+    """The score's price, which is billed per second of audio rather than per character."""
     dollars = round(seconds * SOUND_RATE, 2)
     return Spend(
         state=SpendState.ESTIMATE,
@@ -115,7 +116,7 @@ def sound_price(seconds: float) -> Spend:
         billing=Billing.PER_SECOND,
         price_per_1000_characters=0.0,
         price_per_second=SOUND_RATE,
-        price_key="soundscape.music.price_per_minute",
+        price_key="score.music.price_per_minute",
         price_layer=Layer.PROJECT,
     )
 
@@ -148,7 +149,7 @@ class Calls:
 
 @pytest.fixture
 def inputs(tmp_path: Path) -> Inputs:
-    """A two-section project with no soundscape, which is the shape most of these tests want."""
+    """A two-section project with no score, which is the shape most of these tests want."""
     return load_project(tmp_path / "proj", TOML, script=SCRIPT)
 
 
@@ -159,15 +160,15 @@ class Answers:
     narrate: list[Finding] = field(default_factory=list)
     cue: list[Finding] = field(default_factory=list)
     record: list[Finding] = field(default_factory=list)
-    soundscape: list[Finding] = field(default_factory=list)
+    score: list[Finding] = field(default_factory=list)
     assemble: list[Finding] = field(default_factory=list)
     verify: list[Finding] = field(default_factory=list)
     narrate_dollars: float = 0.0
-    soundscape_dollars: float = 0.0
+    score_dollars: float = 0.0
     narrate_spend: Spend | None = None
     """The narration's whole price, when a test needs one other than `narrate_dollars` at the speech rate."""
-    soundscape_spend: Spend | None = None
-    """The soundscape's whole price, when a test needs one other than `soundscape_dollars` at the speech rate."""
+    score_spend: Spend | None = None
+    """The score's whole price, when a test needs one other than `score_dollars` at the speech rate."""
     storyboard_page: str | None = "build/storyboard.html"
     film: bytes | None = None
     """What the faked assemble writes as the film, or None when it writes nothing, as most tests want."""
@@ -199,13 +200,13 @@ def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
         "record": lambda: RecordResult(
             ok=not answers.record, findings=tuple(answers.record), run=RUN_ID, written=(), sections=(), seconds=0.0
         ),
-        "soundscape": lambda: SoundscapeResult(
-            ok=not answers.soundscape,
-            findings=tuple(answers.soundscape),
+        "score": lambda: ScoreResult(
+            ok=not answers.score,
+            findings=tuple(answers.score),
             run=RUN_ID,
             written=(),
             items=(),
-            spend=answers.soundscape_spend or price(answers.soundscape_dollars),
+            spend=answers.score_spend or price(answers.score_dollars),
             seconds=0.0,
         ),
         "assemble": lambda: AssembleResult(
@@ -251,7 +252,7 @@ def calls(monkeypatch: pytest.MonkeyPatch, answers: Answers) -> Iterator[Calls]:
         "narrate": narrate,
         "cue": cue,
         "record": record,
-        "soundscape": soundscape_stage,
+        "score": score_stage,
         "assemble": assemble,
         "verify": verify,
         "storyboard": storyboard,
@@ -321,16 +322,14 @@ def test_a_run_that_starts_past_a_missing_artifact_names_the_file_and_the_stage(
     assert calls.names == []
 
 
-def test_a_run_of_the_soundscape_alone_needs_no_take_index(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+def test_a_run_of_the_score_alone_needs_no_take_index(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """The sound is planned from the project file alone, so no narration has to exist before it is bought."""
-    build(inputs, watched.run, stages=[Stage.SOUNDSCAPE])
-    assert calls.names == ["soundscape"]
+    build(inputs, watched.run, stages=[Stage.SCORE])
+    assert calls.names == ["score"]
 
 
-def test_a_project_with_no_soundscape_may_still_assemble_without_one(
-    inputs: Inputs, watched: Watched, calls: Calls
-) -> None:
-    """The soundscape is the one artifact a project may honestly have none of."""
+def test_a_project_with_no_score_may_still_assemble_without_one(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    """The score is the one artifact a project may honestly have none of."""
     (inputs.workspace.narrate_dir).mkdir(parents=True)
     inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
     inputs.workspace.recordings_dir.mkdir(parents=True)
@@ -353,10 +352,10 @@ def test_a_run_that_starts_past_a_partial_recording_is_refused(inputs: Inputs, w
     assert calls.names == []
 
 
-def _with_a_soundscape(inputs: Inputs) -> Inputs:
+def _with_a_score(inputs: Inputs) -> Inputs:
     """The same project with one generated ambience bed declared and nothing generated yet."""
     toml = inputs.root / "decktalk.toml"
-    toml.write_text(TOML + '\n[soundscape.ambience]\ntext = "a quiet room"\n', encoding="utf-8")
+    toml.write_text(TOML + '\n[score.ambience]\ntext = "a quiet room"\n', encoding="utf-8")
     inputs.workspace.narrate_dir.mkdir(parents=True)
     inputs.workspace.takes_path.write_text("{}", encoding="utf-8")
     inputs.workspace.recordings_dir.mkdir(parents=True)
@@ -365,18 +364,18 @@ def _with_a_soundscape(inputs: Inputs) -> Inputs:
     return Inputs.load(inputs.root, environ={})
 
 
-def test_a_run_that_skips_the_soundscape_assembles_without_it(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+def test_a_run_that_skips_the_score_assembles_without_it(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     """One knob decides the sound: a run told to skip the stage neither needs its files nor mixes them."""
-    declared = _with_a_soundscape(inputs)
-    build(declared, watched.run, stages=[Stage.ASSEMBLE], skip=[Stage.SOUNDSCAPE])
-    assert calls.options("assemble")["soundscape"] is False
+    declared = _with_a_score(inputs)
+    build(declared, watched.run, stages=[Stage.ASSEMBLE], skip=[Stage.SCORE])
+    assert calls.options("assemble")["score"] is False
 
 
-def test_a_run_that_does_not_skip_the_soundscape_needs_it(inputs: Inputs, watched: Watched, calls: Calls) -> None:
-    declared = _with_a_soundscape(inputs)
+def test_a_run_that_does_not_skip_the_score_needs_it(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+    declared = _with_a_score(inputs)
     with pytest.raises(NotBuiltError) as refused:
         build(declared, watched.run, stages=[Stage.ASSEMBLE])
-    assert "decktalk soundscape" in (refused.value.hint or "")
+    assert "decktalk score" in (refused.value.hint or "")
     assert calls.names == []
 
 
@@ -403,17 +402,15 @@ def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: W
     assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False}
     assert calls.options("cue") == {"only": [1]}, "the cue stage was told what the caller allows"
     assert calls.options("record") == {"only": [1], "force": True}
-    assert calls.options("soundscape") == {"only": [1], "replace_score": False}, (
-        "force reached the stage that buys sound"
-    )
-    assert calls.options("assemble") == {"only": [1], "soundscape": True, "loudness": False, "strict": True}
+    assert calls.options("score") == {"only": [1], "replace_score": False}, "force reached the stage that buys sound"
+    assert calls.options("assemble") == {"only": [1], "score": True, "loudness": False, "strict": True}
     assert calls.options("verify") == {"only": [1]}
 
 
 PAYING_TOML = (
     TOML.replace('scene = "1"', 'scene = "1"\nambience = true', 1)
     + """
-[soundscape.ambience]
+[score.ambience]
 text = "a quiet room"
 """
 )
@@ -449,7 +446,7 @@ def purchases(monkeypatch: pytest.MonkeyPatch, fake_voice: FakeVoice, answers: A
     between them are replaced because no test of what is bought needs a browser or an encoder.
     """
     bought = Purchases(voice=fake_voice)
-    monkeypatch.setattr(soundscape_stage, "client_for", lambda _run, _inputs: bought)
+    monkeypatch.setattr(score_stage, "client_for", lambda _run, _inputs: bought)
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
     made = _results(answers)
     for name, module in {"cue": cue, "record": record, "assemble": assemble, "verify": verify}.items():
@@ -468,6 +465,19 @@ def test_a_forced_build_that_may_spend_buys_no_take_and_no_sound_again(
     assert purchases.counts == (2, 1)
     build(paying, make_run(paying, spend=True).run, force=True)
     assert purchases.counts == (2, 1), "a forced build bought again what the project already held"
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_build_after_the_build_directory_is_deleted_buys_no_take_and_no_sound_again(
+    tmp_path: Path, make_run: Callable[..., Watched], purchases: Purchases
+) -> None:
+    """Every paid record lives in a folder the project keeps, so deleting the build directory costs nothing."""
+    paying = load_project(tmp_path / "paying", PAYING_TOML, script=SCRIPT, environ=VOICED)
+    build(paying, make_run(paying, spend=True).run)
+    assert purchases.counts == (2, 1)
+    shutil.rmtree(paying.workspace.build)
+    build(paying, make_run(paying, spend=True).run)
+    assert purchases.counts == (2, 1), "a build bought again what the project already held"
 
 
 @pytest.mark.usefixtures("fake_ffmpeg")
@@ -493,7 +503,7 @@ def test_a_build_that_may_not_spend_makes_the_film_with_silence_where_an_unbough
     assert result.ok
     assert Code.SOUND_MISSING in {found.code for found in result.findings}
     strict = build(paying, make_run(paying, spend=False).run, stop_on=Certainty.UNCERTAIN, allow={Code.TAKE_MISSING})
-    assert strict.stopped_at is Stage.SOUNDSCAPE
+    assert strict.stopped_at is Stage.SCORE
     assert not strict.ok
     assert purchases.counts == (0, 0)
 
@@ -569,9 +579,9 @@ def test_a_stage_that_asks_for_more_than_the_build_was_priced_at_is_refused_and_
 ) -> None:
     """The gate keeps the run's own total, so a sound priced low up front cannot carry the run over the cap."""
     paying = load_project(tmp_path / "paying", PRICED_TOML, script=SCRIPT, environ=VOICED)
-    real = soundscape_stage.price
+    real = score_stage.price
     monkeypatch.setattr(
-        soundscape_stage,
+        score_stage,
         "price",
         lambda *_a, **_k: real(paying).model_copy(
             update={"seconds": 0.0, "sections": (), "dollars": 0.0, "ceiling_dollars": 0.0}
@@ -737,7 +747,7 @@ def test_the_spend_is_every_stage_that_priced_something_added_up(
     inputs: Inputs, watched: Watched, answers: Answers
 ) -> None:
     answers.narrate_dollars = 1.0
-    answers.soundscape_dollars = 0.5
+    answers.score_dollars = 0.5
     result = build(inputs, watched.run)
     assert result.spend.dollars == pytest.approx(1.5)
     assert result.spend.ceiling_dollars == pytest.approx(1.5)
@@ -750,7 +760,7 @@ def test_a_total_of_speech_and_sound_says_it_is_mixed_and_counts_both(
 ) -> None:
     """Characters and seconds are two bills, so the total names neither one's rate as the whole run's."""
     answers.narrate_dollars = 0.3
-    answers.soundscape_spend = sound_price(120.0)
+    answers.score_spend = sound_price(120.0)
     result = build(inputs, watched.run)
     assert result.spend.billing is Billing.MIXED
     assert (result.spend.characters, result.spend.seconds) == (300, 120.0)
@@ -766,7 +776,7 @@ def test_a_total_that_buys_only_sound_is_billed_the_way_sound_is(
 ) -> None:
     """A narration with every take on disk buys nothing, so the sound alone decides how the total bills."""
     answers.narrate_spend = price(0.0).model_copy(update={"sections": ()})
-    answers.soundscape_spend = sound_price(60.0)
+    answers.score_spend = sound_price(60.0)
     result = build(inputs, watched.run)
     assert result.spend.billing is Billing.PER_SECOND
     assert result.spend.price_per_second == SOUND_RATE
@@ -779,10 +789,10 @@ def test_a_free_voice_beside_paid_sound_leaves_the_sound_to_bill_the_total(
 ) -> None:
     """The free takes cost nothing and state no rate, so the total names the rate somebody stated."""
     answers.narrate_spend = price(0.0).model_copy(update={"billing": Billing.FREE, "price_per_1000_characters": 0.0})
-    answers.soundscape_spend = sound_price(60.0)
+    answers.score_spend = sound_price(60.0)
     result = build(inputs, watched.run)
     assert result.spend.billing is Billing.PER_SECOND
-    assert (result.spend.price_key, result.spend.price_layer) == ("soundscape.music.price_per_minute", Layer.PROJECT)
+    assert (result.spend.price_key, result.spend.price_layer) == ("score.music.price_per_minute", Layer.PROJECT)
 
 
 @pytest.mark.usefixtures("calls")
@@ -790,7 +800,7 @@ def test_a_voice_that_declares_no_bill_leaves_the_whole_total_undeclared(
     inputs: Inputs, watched: Watched, answers: Answers
 ) -> None:
     answers.narrate_spend = price(0.3).model_copy(update={"billing": Billing.UNDECLARED})
-    answers.soundscape_spend = sound_price(60.0)
+    answers.score_spend = sound_price(60.0)
     result = build(inputs, watched.run)
     assert result.spend.billing is Billing.UNDECLARED
     assert "cannot price it" in result.spend.sentence

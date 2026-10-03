@@ -103,6 +103,7 @@ from decktalk.settings import (
     key_warnings,
     load,
     machine_config_path,
+    machine_folder,
     read_machine_toml,
     route,
     scoped,
@@ -115,7 +116,7 @@ from decktalk.speech.sound import SOUNDS, SoundFactory, Sounds
 from decktalk.tomlmap import SWITCHED_OFF
 from decktalk.toolchain import assets, chromium_fetch, command_line, tail, traced
 from decktalk.toolchain.announce import announcing
-from decktalk.toolchain.cache import caching_in, standard_cache_dir
+from decktalk.toolchain.cache import caching_in, standard_cache_dir, standard_data_dir
 from decktalk.toolchain.ffmpeg_fetch import FFMPEG_VERSION, fetch_ffmpeg
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -133,6 +134,20 @@ KATEX = "katex"
 
 FIX_TIMEOUT_SECONDS = 1800.0
 """The longest a command fix may run, which fetches a browser and an encoder in minutes and never in an hour."""
+
+
+STORE_FOLDER = "takes"
+"""The take store's folder inside DeckTalk's per-user data folder."""
+
+
+def _refuse_store_in_cache(store: Path | None, cache: Path) -> None:
+    """Refuse a take store inside the tool cache, which anyone may empty while the store holds paid takes."""
+    if store is not None and store.resolve().is_relative_to(cache.resolve()):
+        raise InputError(
+            f"[narration] store_dir is {store}, which is inside the tool cache at {cache}, and anyone may empty "
+            "that while the take store holds takes somebody paid for.",
+            hint="Name a folder outside the tool cache, such as ~/decktalk-takes, or leave the key unset.",
+        )
 
 
 def new_run() -> str:
@@ -538,6 +553,12 @@ class Machine:
     """
     notes: tuple[str, ...] = field(default=(), compare=False)
     """What reading the machine noticed, such as a misspelled variable or key, which every run says."""
+    store: Path | None = None
+    """The standard per-user folder this machine keeps its take store in, when `[narration] store_dir` names none.
+
+    It is None for a machine a host built without one, so a host that runs other people's projects
+    keeps no store across them unless it says so.
+    """
 
     @classmethod
     def from_environment(cls, *, overrides: Iterable[str] = ()) -> Machine:
@@ -549,6 +570,7 @@ class Machine:
             config_path=machine_config_path(environ, home),
             cwd=Path.cwd(),
             cache_dir=standard_cache_dir(environ, home),
+            store_dir=standard_data_dir(environ, home) / STORE_FOLDER,
             overrides=overrides,
             dotenv=True,
             allow_any_api_base=environ.get(ALLOW_ANY_API_BASE, "").lower() not in SWITCHED_OFF,
@@ -562,6 +584,7 @@ class Machine:
         config_path: Path,
         cwd: Path,
         cache_dir: Path,
+        store_dir: Path | None = None,
         providers: Mapping[str, ProviderFactory] | None = None,
         sound_providers: Mapping[str, SoundFactory] | None = None,
         overrides: Iterable[str] = (),
@@ -584,12 +607,18 @@ class Machine:
         pairs = tuple(overrides)
         mine = _machine_overrides(pairs)
         loaded = load(project={}, machine=tables, machine_path=config_path, environ=environ, overrides=mine)
+        # Both machine folders are read here, where the machine file is known, so a relative one is
+        # refused naming it, and the tools are handed the cache with its `~` already expanded.
+        store = machine_folder(loaded, "narration.store_dir", environ) or store_dir
+        named = machine_folder(loaded, "tools.cache_dir", environ)
+        tools = loaded.settings.tools if named is None else replace(loaded.settings.tools, cache_dir=str(named))
+        _refuse_store_in_cache(store, named or cache_dir)
         # A machine whose `[tools]` names no usable pair is still a machine: every run says why, so
         # `doctor` reports the key to mend rather than a missing encoder `install` could not fix.
         try:
-            toolchain, refused = Toolchain.of(loaded.settings.tools, cache=cache_dir), ()
+            toolchain, refused = Toolchain.of(tools, cache=cache_dir), ()
         except ToolError as refusal:
-            toolchain, refused = Toolchain(tools=loaded.settings.tools, cache=cache_dir), (f"{refusal} {refusal.hint}",)
+            toolchain, refused = Toolchain(tools=tools, cache=cache_dir), (f"{refusal} {refusal.hint}",)
         return cls(
             environ=dict(environ),
             tables=tables,
@@ -602,6 +631,7 @@ class Machine:
             dotenv=dotenv,
             allow_any_api_base=allow_any_api_base,
             notes=(*env_warnings(environ), *key_warnings(tables, config_path.name), *refused),
+            store=store_dir,
         )
 
     @property

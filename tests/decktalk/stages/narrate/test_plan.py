@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import TakeInputs, Takes, take_file, words_file
+from decktalk.artifacts import AudioPrint, ProviderWords, TakeInputs, Takes, take_file, words_file
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.inputs.workspace import Workspace
@@ -66,12 +66,20 @@ def test_the_digest_of_a_paid_take_is_the_one_its_film_was_billed_for(
     assert made.digest == digest, f"{film} section {section} would be voiced again"
 
 
-def test_a_take_is_cached_only_when_its_audio_and_its_words_are_both_there(tmp_path: Path) -> None:
-    space = Workspace(root=tmp_path, build=tmp_path, name="demo", suffix=TAKE_SUFFIX, takes=tmp_path)
-    (tmp_path / take_file("abc", TAKE_SUFFIX)).write_bytes(b"")
+def test_a_take_is_cached_only_when_its_audio_and_its_words_are_both_there_and_agree(tmp_path: Path) -> None:
+    space = Workspace(
+        root=tmp_path, build=tmp_path, name="demo", suffix=TAKE_SUFFIX, takes=tmp_path, score_dir=tmp_path
+    )
+    (tmp_path / take_file("abc", TAKE_SUFFIX)).write_bytes(b"take")
     assert not is_cached("abc", space)
     (tmp_path / words_file("abc")).write_text("{}", encoding="utf-8")
     assert is_cached("abc", space)
+    ProviderWords(audio=AudioPrint.of(b"another take")).write(tmp_path / words_file("abc"))
+    assert not is_cached("abc", space), "the audio does not hold the bytes its words recorded"
+    ProviderWords(audio=AudioPrint.of(b"take")).write(tmp_path / words_file("abc"))
+    assert is_cached("abc", space)
+    (tmp_path / take_file("abc", TAKE_SUFFIX)).write_bytes(b"")
+    assert not is_cached("abc", space), "an empty take is no take"
 
 
 def test_a_placeholder_digest_moves_with_the_pace_it_was_sized_at(
@@ -102,9 +110,9 @@ def test_a_section_whose_take_is_on_disk_is_kept(inputs: Inputs) -> None:
     targets = list(inputs.spoken())
     first = placeholder_plan(inputs, targets)[0]
     assert first.digest is not None
-    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
-    (inputs.workspace.takes_dir / take_file(first.digest, TAKE_SUFFIX)).write_bytes(b"")
-    (inputs.workspace.takes_dir / words_file(first.digest)).write_text('{"words": []}', encoding="utf-8")
+    inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
+    (inputs.workspace.narrate_dir / take_file(first.digest, TAKE_SUFFIX)).write_bytes(b"")
+    (inputs.workspace.narrate_dir / words_file(first.digest)).write_text('{"words": []}', encoding="utf-8")
     assert placeholder_plan(inputs, targets)[0].status is TakeStatus.KEPT
 
 
@@ -130,9 +138,9 @@ def test_a_keyless_plan_finds_the_take_a_voice_already_made(make_inputs: Callabl
     targets = list(project.spoken())
     first, *_rest = voiced_plan(project, targets, model="m", voice_id=VOICE_ID)[0]
     assert first.digest is not None
-    project.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
-    (project.workspace.takes_dir / take_file(first.digest, TAKE_SUFFIX)).write_bytes(b"")
-    (project.workspace.takes_dir / words_file(first.digest)).write_text('{"words": []}', encoding="utf-8")
+    project.workspace.takes.mkdir(parents=True, exist_ok=True)
+    (project.workspace.takes / take_file(first.digest, TAKE_SUFFIX)).write_bytes(b"take")
+    (project.workspace.takes / words_file(first.digest)).write_text('{"words": []}', encoding="utf-8")
     plans, _why = voiced_plan(project, targets, model="m", voice_id=VOICE_ID)
     assert [plan.status for plan in plans] == [TakeStatus.KEPT, TakeStatus.VOICED, TakeStatus.VOICED]
     spend = spend_of(plans, project, state=SpendState.ESTIMATE)

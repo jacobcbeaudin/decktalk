@@ -16,6 +16,12 @@ writes it, and a stage added to the pipeline reaches this report with no line ch
 everything is on disk, anything that moved since it was built names `build`, which keeps what did
 not move and redoes the rest.
 
+The takes directory keeps every take the project ever bought, so after a voice change or an edit it
+holds takes no section plays. This report lists them with their size and never removes one, because
+each is a paid record and its author decides with `git rm`. A take counts as played when the take
+index or a section's current digest names it, so a report that cannot name the digests, with no
+voice named, claims nothing about any take.
+
 Whether a recording still stands is `record`'s rule, asked of `record`, because one rule decides
 what a run skips and what this report calls stale and neither compares file times.
 
@@ -32,13 +38,16 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import re
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import ClassVar
 
 from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
+from decktalk.artifacts import WORDS_SUFFIX, is_placeholder
 from decktalk.artifacts.stored import Stored, engine_digest, file_digest
+from decktalk.artifacts.takes import TAKE_HASH
 from decktalk.errors import DeckTalkError
 from decktalk.events import Level, Line, StageStart
 from decktalk.findings import Code, Finding, Location, Model, judge
@@ -49,14 +58,19 @@ from decktalk.machine import Run
 from decktalk.media import ffmpeg
 from decktalk.page import Q
 from decktalk.pipeline import PIPELINE, Artifact, Stage
-from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult
+from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult, UnplayedTakes
 from decktalk.settings import PROJECT_FILE
+from decktalk.stages import score, voice_model
+from decktalk.stages.narrate.plan import named_voice, take_inputs
 from decktalk.stages.record import stale_recording
 
 log = logging.getLogger(__name__)
 
 LINE = TypeAdapter(Line)
 """The one reader of an event file, so a line this library cannot read is never taken for a run."""
+
+ALIGNED_DIR = "aligned"
+"""The folder inside the takes directory that aligned words are kept in, beside the takes they time."""
 
 BUILD = "build"
 """The command a stale project runs, which redoes what moved and keeps every stage whose inputs did not."""
@@ -74,8 +88,9 @@ BUILT: dict[Artifact, Callable[[Inputs], bool]] = {
     Artifact.RECORDINGS: lambda inputs: all(
         inputs.workspace.recording(section.key).is_file() for section in inputs.document.page_sections
     ),
-    # A project that describes no soundscape has nothing to generate, so that stage is never next.
-    Artifact.SOUNDSCAPE: lambda inputs: inputs.document.soundscape.empty or _holds(inputs.workspace.soundscape_dir),
+    # A project that describes no score has nothing to generate, so that stage is never next, and one
+    # whose bought music is not joined yet has the score next, which joins it for nothing.
+    Artifact.SCORE: lambda inputs: inputs.document.score.empty or score.ready(inputs),
     # The film is what the final directory is for, and a directory a stopped run left behind is not one.
     Artifact.FINAL: lambda inputs: inputs.workspace.film.is_file(),
 }
@@ -189,7 +204,7 @@ def _assemble_reads(inputs: Inputs) -> list[Path]:
     named = [inputs.root / PROJECT_FILE, inputs.script_path, inputs.cues_path]
     named += [inputs.root / served for served in inputs.served_paths()]
     named += [workspace.takes_path, workspace.narration_path, workspace.cue_times_path]
-    named += [workspace.recordings_dir, workspace.soundscape_dir]
+    named += [workspace.recordings_dir, workspace.score_dir, workspace.joined_dir]
     return sorted({found for path in named for found in _files(path)}, key=lambda path: path.as_posix())
 
 
@@ -400,6 +415,71 @@ def _live_run(inputs: Inputs, run: Run, path: Path) -> LiveRun | None:
     )
 
 
+def played_takes(inputs: Inputs) -> set[str] | None:
+    """Every take a section plays, or None when the voice is unnamed and the script's own takes cannot be named.
+
+    A take is played when the take index names it, since the film plays that take until narrate runs
+    again, or when a section's current text, voice and settings name it, since the next narrate plays
+    that one. Both are counted, so no take the film still needs is ever called unplayed.
+    """
+    voice_id = named_voice(inputs)
+    if not voice_id:
+        return None
+    provider = inputs.settings.voice.provider
+    try:
+        model = voice_model(inputs)
+        named = {
+            take_inputs(inputs, segment, provider=provider, voice_id=voice_id, model=model).digest
+            for segment in inputs.spoken()
+        }
+    except DeckTalkError as unread:
+        log.debug("The script's takes could not be named, so no take is called unplayed.", exc_info=unread)
+        return None
+    index = inputs.takes()
+    return named | ({row.hash for row in index.sections} if index is not None else set())
+
+
+def _take_of(name: str) -> str | None:
+    """The digest of the voiced take a file in the takes directory belongs to, or None when it is not one.
+
+    A take's audio is its digest and one suffix, and its words file is its digest and `.words.json`,
+    so a copy set aside as `.unreadable`, or any file of the author's own, names no take.
+    """
+    digest, _, rest = name.partition(".")
+    if re.fullmatch(TAKE_HASH, digest) is None or is_placeholder(digest):
+        return None
+    return digest if rest == WORDS_SUFFIX.removeprefix(".") or rest.isalnum() else None
+
+
+def unplayed_takes(inputs: Inputs) -> UnplayedTakes | None:
+    """The takes and aligned words in the takes directory that no section plays, read and never touched.
+
+    Each is a paid record or the measured timing of one, so DeckTalk lists them for their author to
+    remove with `git rm` and deletes none of them. No stage of this version reads aligned words, so
+    every file under `aligned/` is one no section plays. A file that is not named like a take, such
+    as a damaged copy set aside as `.unreadable`, is not a take and is left out.
+    """
+    played = played_takes(inputs)
+    if played is None:
+        return None
+    takes = inputs.workspace.takes
+    named = ((path, _take_of(path.name)) for path in sorted(takes.iterdir() if takes.is_dir() else ()))
+    pairs = [(path, digest) for path, digest in named if digest is not None and path.is_file()]
+    gone = {digest for _path, digest in pairs if digest not in played}
+    unplayed = [path for path, digest in pairs if digest in gone]
+    aligned_dir = takes / ALIGNED_DIR
+    aligned = sorted(aligned_dir.glob(f"*{WORDS_SUFFIX}")) if aligned_dir.is_dir() else []
+    aligned = [path for path in aligned if path.is_file()]
+    files = sorted([*unplayed, *aligned])
+    return UnplayedTakes(
+        directory=inputs.relative(takes),
+        takes=len(gone),
+        aligned=len(aligned),
+        bytes=sum(path.stat().st_size for path in files),
+        files=tuple(inputs.relative(path) for path in files),
+    )
+
+
 def status(inputs: Inputs, run: Run) -> StatusResult:
     """Report what is written, what is built, what is stale, and what to do next.
 
@@ -419,6 +499,7 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
         film=inputs.relative(film) if built else None,
         film_seconds=ffmpeg.probe_duration(film) if built else None,
         runs=live_runs(inputs, run),
+        unplayed=unplayed_takes(inputs),
         next=next_command(inputs, stale=any(row.stale for row in rows)),
     )
 
@@ -434,6 +515,8 @@ __all__ = [
     "read_kept",
     "section_rows",
     "source_of",
+    "played_takes",
     "status",
+    "unplayed_takes",
     "verify_key",
 ]

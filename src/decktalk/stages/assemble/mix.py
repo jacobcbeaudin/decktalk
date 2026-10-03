@@ -33,7 +33,7 @@ from decktalk.media.audio import gain
 from decktalk.media.encode import Encoder
 from decktalk.page import MILLISECONDS, SECOND_DIGITS
 from decktalk.pipeline import Stage
-from decktalk.stages import soundscape
+from decktalk.stages import score as score_stage
 from decktalk.stages.assemble.cut import Rendered, concat, rendered_starts
 
 CLIP_FADE_SECONDS = 0.02
@@ -60,7 +60,7 @@ class MixInput:
     def args(self, total: float) -> list[str]:
         """The ffmpeg input arguments for this layer, in the order the filter graph indexes them.
 
-        A file layer is a sound the project names or the soundscape wrote, so it opens through
+        A file layer is a sound the project names or the score stage wrote, so it opens through
         `ffmpeg.source`, which reads that one file and follows no name inside it. The generated
         anchor is the one input that is not a file.
         """
@@ -374,19 +374,19 @@ def _effects(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float]
 def _missing_sound(inputs: Inputs, run: Run, named: str, what: str, *, section: int | None = None) -> None:
     """One judgement for a sound file the project names and has not got, which plays as silence.
 
-    A file the soundscape writes is only unbought, which is the author's choice not to spend yet, so
+    A file the score stage writes is only unbought, which is the author's choice not to spend yet, so
     it is an uncertain `SOUND_MISSING` and the film is still made. A file nothing writes is the
     author's own and is gone, which is a certain `FILE_MISSING`.
     """
     path = inputs.path(named)
-    unbought = path in soundscape.score_files(inputs)
+    unbought = path in score_stage.score_files(inputs)
     run.found(
         judge(
             Code.SOUND_MISSING if unbought else Code.FILE_MISSING,
             f"the project names {named} as {what} and "
             + (
-                "the soundscape has not bought it yet, so that layer plays as silence. "
-                "Run `decktalk soundscape --spend` to buy it."
+                "the score stage has not bought it yet, so that layer plays as silence. "
+                "Run `decktalk score --spend` to buy it."
                 if unbought
                 else "it is not on disk, so that layer plays as silence."
             ),
@@ -396,7 +396,7 @@ def _missing_sound(inputs: Inputs, run: Run, named: str, what: str, *, section: 
     )
 
 
-def plan_mix(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, *, soundscape: bool) -> MixPlan:
+def plan_mix(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, *, score: bool) -> MixPlan:
     """The whole soundtrack as one graph, laid layer by layer under a picture of a fixed length."""
     chain = Chain(sample_rate=inputs.settings.audio.sample_rate)
     starts = rendered_starts(rows)
@@ -404,7 +404,7 @@ def plan_mix(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, *, so
     _anchor(chain)
     _narration(chain, inputs, rows, takes, starts)
     _clip_audio(chain, rows, starts)
-    if soundscape:
+    if score:
         speech = speech_spans(rows, takes, starts)
         _music(chain, inputs, run, takes, starts, speech, total)
         _ambience(chain, inputs, run, rows, starts, total)
@@ -417,7 +417,7 @@ def mix_input_args(plan: MixPlan) -> list[str]:
     return [arg for layer in plan.inputs for arg in layer.args(plan.total)]
 
 
-def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, work: Path, *, soundscape: bool
+def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, work: Path, *, score: bool
                    ) -> MixPlan:  # fmt: skip
     """Join the section cuts and lay the whole soundtrack under them, into one work file.
 
@@ -435,7 +435,7 @@ def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes,
             hint="Add a [[section]] that names a page or a clip.",
         )
     concat(concat_files, picture)
-    plan = plan_mix(inputs, run, rows, takes, soundscape=soundscape)
+    plan = plan_mix(inputs, run, rows, takes, score=score)
     enc = Encoder(inputs.settings.video, inputs.settings.audio)
     try:
         graph.write_text(plan.filter, encoding="utf-8")

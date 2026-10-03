@@ -3,8 +3,8 @@
     narrate/     the script becomes one take per section, with a time for every word
     cue/         every cue phrase becomes a second on its own section's clock
     record/      each page section is recorded against those seconds
-    soundscape/  the music, the ambience bed and the effects are generated
-    assemble/    the recordings, the narration and the soundscape become one film
+    score/       the music, the ambience bed and the effects are generated
+    assemble/    the recordings, the narration and the score become one film
     verify/      the finished film is measured against the clock it was promised
     build.py     the six stages in order, or the span of them a caller named
     check.py     what a build would spend and show, judged before anything is spent

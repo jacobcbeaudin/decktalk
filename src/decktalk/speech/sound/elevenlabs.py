@@ -1,7 +1,7 @@
 """ElevenLabs sound effects and music, which is the one sound provider DeckTalk ships.
 
 It is the same service, key and `api_base` as the ElevenLabs voice, and a second adapter in the
-sound table rather than a method of the voice, so the soundscape never needs a voice to buy a sound.
+sound table rather than a method of the voice, so the score never needs a voice to buy a sound.
 The key is a `Secret` that only `_headers` reveals, and the base is checked once, when the provider
 is built, by the same rule the voice is checked by.
 """

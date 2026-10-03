@@ -1,20 +1,20 @@
 """Stage one: `script.md` becomes one take per section, indexed by content hash.
 
-    build/narrate/<hash>.<suffix>    one take, named by the content that produced it, under the
+    takes/<hash>.<suffix>            one take, named by the content that produced it, under the
                                      suffix its voice declares for what it holds, such as .mp3
-    build/narrate/<hash>.words.json  a start and an end for every word in it
+    takes/<hash>.words.json          a start and an end for every word in it
     build/narrate/takes.json         which section plays which take, what it cost, and where each
                                      section lands once the takes are joined
     build/narrate/narration.mp3      every take joined, with each section's silence around it
 
 The take a section plays is found by content alone, so inserting a section, renumbering one or
 retitling one moves no file and voices nothing, and two sections with the same words share one take.
-`[narration] takes_dir` moves the paid takes, their words files and the index into a directory
-inside the project that the author commits, so a fresh clone plays them with no key. A take is
-looked for there first, then in the machine's `[narration] cache_dir`, then under `build/narrate/`,
-and one this project buys or finds in the second or third place is written to the first place that
-is set. A placeholder and the joined track stay under `build/narrate/`, because a build makes them
-again for nothing.
+Every take a voice spoke lives in the takes directory, `[narration] takes_dir`, which is `takes/`
+inside the project and which the author commits, so a fresh clone plays them with no key and
+deleting `build/` costs nothing. A take is looked for there first and then in the machine's
+`[narration] store_dir`, and one found in the second place is copied into the first. A placeholder,
+the take index and the joined track stay under `build/narrate/`, because a build makes them again
+for nothing.
 
 Every take on disk is played, paid or placeholder, and the voice is built only when a take must be
 made, so a run that makes nothing reads no key. Spend gates money and nothing else. A voice that
@@ -22,7 +22,9 @@ declares it bills nothing makes every missing take whether or not the run may sp
 may not spend never calls a voice that bills. Such a run plays a placeholder for each section whose
 take is missing: a click track sized at `silent_words_per_minute` plus the declared pauses, with
 evenly spaced estimated words, so the whole pipeline runs offline. Each such section is one
-`TAKE_MISSING` finding, which names the command that buys its take. A project that has paid for
+`TAKE_MISSING` finding, which says why its take did not play in the words the plan found, and names
+the command that buys it. A takes directory holding none of the takes the project played before is
+said as that, because a renamed or missing folder is not a script edit. A project that has paid for
 eight sections therefore builds its film with no key, and rehearses its ninth for nothing. A free
 voice that nothing answers is a server that is not running, so its sections play placeholders too,
 and their findings say to start it rather than to buy anything.
@@ -49,10 +51,11 @@ from decktalk.inputs.script import Segment
 from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.pipeline import Stage
-from decktalk.results import NarrateResult, SectionTake, Spend, SpendState, TakeStatus
+from decktalk.results import NarrateResult, SectionTake, Spend, SpendState, TakeStatus, counted
 from decktalk.speech import SpeechProvider, is_free, output_of, start_hint
 from decktalk.stages import selects, voice_model
 from decktalk.stages.narrate.plan import (
+    NO_TAKE_YET,
     VOICE_ID_VARIABLE,
     TakePlan,
     is_cached,
@@ -84,6 +87,9 @@ from decktalk.stages.narrate.takes import (
 from decktalk.stages.pool import Halt, Pool, nothing_to_open
 
 log = logging.getLogger(__name__)
+
+UNREACHED = "its voice could not be reached"
+"""Why a section a free voice would have made plays a placeholder, when nothing answered for that voice."""
 
 
 def narrate(
@@ -146,7 +152,7 @@ def narrate(
             f"placeholder. {start_hint(inputs.settings.voice.provider)}, then run decktalk narrate again.",
             level=Level.WARNING,
         )
-    missing += [_take_missing(inputs, segment, unreached=True) for segment in unreached]
+    missing += [_take_missing(inputs, segment, UNREACHED, unreached=True) for segment in unreached]
     for found in sorted(missing, key=lambda found: found.location.section or 0):
         run.found(found)
     return run.result(
@@ -186,31 +192,77 @@ def _without_buying(
     missing = [plan.segment for plan in paid if plan.segment.index not in on_disk]
     stand_ins = {plan.segment.index: plan for plan in placeholder_plan(inputs, missing, force=force)} if missing else {}
     plans = [on_disk.get(plan.segment.index) or stand_ins[plan.segment.index] for plan in paid]
-    previous = inputs.takes()
-    unmatched = why is not None and previous is not None and bool(previous.voiced)
+    gone = _takes_gone(inputs)
+    reasons = _reasons(inputs, paid, why=why, replaced=found, gone=gone)
     return plans, [
-        _take_missing(inputs, segment, replaced=segment.index in found, unmatched=unmatched) for segment in missing
+        _take_missing(inputs, segment, reasons[segment.index], moved=bool(gone) and segment.index not in found)
+        for segment in missing
     ]
 
 
+def _reasons(inputs: Inputs, paid: list[TakePlan], *, why: str | None, replaced: set[int], gone: int) -> dict[int, str]:
+    """Why each section's take did not play, as the clause its `TAKE_MISSING` finding says after "because".
+
+    A section this run was told to replace says so, and so does a takes directory holding none of the
+    `gone` takes the project played before, which is what a renamed or missing folder looks like. Paid takes
+    that cannot be matched without a voice say to name it. Every other section says what its plan
+    found, and a section sharing another section's words says that section's reason, since nothing
+    voices either of them.
+    """
+    previous = inputs.takes()
+    unmatched = why is not None and previous is not None and bool(previous.voiced)
+    first: dict[str, str] = {}
+    out: dict[int, str] = {}
+    for plan in paid:
+        number = plan.segment.index
+        planned = plan.reason or NO_TAKE_YET
+        if plan.digest is not None:
+            # The first section planned for a digest is the one whose reason holds, and a later one only shares it.
+            planned = first.setdefault(plan.digest, planned)
+        if number in replaced:
+            out[number] = "this run was told to replace its paid take, which stays on disk for a run without that flag"
+        elif gone:
+            takes = inputs.relative(inputs.workspace.takes).as_posix()
+            out[number] = (
+                f"the takes directory {takes} holds none of the {counted(gone, 'take')} this project played before, "
+                "which is what a renamed or missing folder looks like"
+            )
+        elif unmatched:
+            out[number] = (
+                f"no take on disk can be matched to it until [voice] id or {VOICE_ID_VARIABLE} names the voice"
+            )
+        else:
+            out[number] = planned
+    return out
+
+
+def _takes_gone(inputs: Inputs) -> int:
+    """How many takes the project last played, when its takes directory holds none of them, or 0.
+
+    The take index names every voiced take the project played, so a takes directory with not one of
+    them is a folder renamed, moved or never checked out, and not a script edited section by section.
+    """
+    previous = inputs.takes()
+    if previous is None:
+        return 0
+    played = {row.hash for row in previous.sections if row.voiced}
+    takes = inputs.workspace.takes
+    if any(inputs.workspace.held_at(takes, digest) for digest in played):
+        return 0
+    return len(played)
+
+
 def _take_missing(
-    inputs: Inputs, segment: Segment, *, replaced: bool = False, unmatched: bool = False, unreached: bool = False
+    inputs: Inputs, segment: Segment, why: str, *, unreached: bool = False, moved: bool = False
 ) -> Finding:
     """The finding for one section that plays a placeholder, saying why its take did not play and what makes it.
 
     What makes the take is the voice's bill: a voice that bills is bought from with `--spend`, and a
-    free one that could not be reached is started.
+    free one that could not be reached is started. A takes directory that `moved` is pointed at first,
+    because the takes in it are already paid for.
     """
     number = segment.index
     provider = inputs.settings.voice.provider
-    if unreached:
-        why = "its voice could not be reached"
-    elif replaced:
-        why = "this run was told to replace its paid take, which stays on disk for a run without that flag"
-    elif unmatched:
-        why = f"no take on disk can be matched to it until [voice] id or {VOICE_ID_VARIABLE} names the voice"
-    else:
-        why = "it has no take of its current text on disk"
     if unreached:
         action = f"{start_hint(provider)}, then run decktalk narrate --section {number}."
     elif is_free(provider):
@@ -218,6 +270,8 @@ def _take_missing(
         action = f"Name the voice, then run decktalk narrate --section {number} to make its take for nothing."
     else:
         action = f"Run decktalk narrate --section {number} --spend to buy its take."
+    if moved:
+        action = f"Point [narration] takes_dir at the folder that holds them, or {action[0].lower()}{action[1:]}"
     return judge(
         Code.TAKE_MISSING,
         f"Section {number} plays a placeholder, because {why}. {action}",
@@ -276,7 +330,7 @@ def _write_takes(
     def one(plan: TakePlan) -> None:
         number = plan.segment.index
         with run.section(Stage.NARRATE, number):
-            row, status = _one_take(inputs, run, plan, provider, progress.down if free else None)
+            row, status = _one_take(inputs, run, plan, provider, progress.down if free else None, progress.checked)
             made = SectionTake(
                 section=number,
                 key=plan.segment.key,
@@ -348,10 +402,17 @@ class _Progress:
     lock: threading.Lock = field(default_factory=threading.Lock)
     down: threading.Event = field(default_factory=threading.Event)
     """Set once a free voice did not answer, so no section after it waits on the same voice again."""
+    checked: set[str] = field(default_factory=set)
+    """Every take whose copies this run has verified, so each is hashed whole once however many sections play it."""
 
 
 def _one_take(
-    inputs: Inputs, run: Run, plan: TakePlan, provider: SpeechProvider | None, down: threading.Event | None
+    inputs: Inputs,
+    run: Run,
+    plan: TakePlan,
+    provider: SpeechProvider | None,
+    down: threading.Event | None,
+    checked: set[str],
 ) -> tuple[Take, TakeStatus]:
     """One section's take, made or found, with what this run did about it.
 
@@ -372,7 +433,7 @@ def _one_take(
         log, Unit.TAKE.value, hit=hit, why=why, key=digest, section=plan.segment.index, reason=plan.reason or None
     )
     if hit:
-        for path in keep_at_home(inputs, digest):
+        for path in keep_at_home(inputs, run, plan.segment.index, digest, checked):
             run.wrote(path)
         voiced = not is_placeholder(digest)
         return take_row(inputs, plan.segment, plan.chapter, digest, voiced=voiced), TakeStatus.KEPT
@@ -405,7 +466,7 @@ def _one_take(
 def _stand_in(inputs: Inputs, run: Run, plan: TakePlan) -> tuple[Take, TakeStatus]:
     """The placeholder one section plays because its free voice did not answer, found on disk or made now."""
     (stand_in,) = placeholder_plan(inputs, [plan.segment])
-    row, _kept = _one_take(inputs, run, replace(stand_in, chapter=plan.chapter), None, None)
+    row, _kept = _one_take(inputs, run, replace(stand_in, chapter=plan.chapter), None, None, set())
     return row, TakeStatus.PLACEHOLDER
 
 

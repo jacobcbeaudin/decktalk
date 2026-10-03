@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import os
 import socket
 import subprocess
 import sys
@@ -52,7 +53,7 @@ from decktalk.speech.sound import SOUNDS, SoundContext
 from decktalk.stages.narrate.plan import speech_provider
 from decktalk.toolchain import chromium_fetch, command_line
 from decktalk.toolchain.announce import announce
-from decktalk.toolchain.cache import cache_dir, standard_cache_dir
+from decktalk.toolchain.cache import cache_dir, standard_cache_dir, standard_data_dir
 from support.fakes import BareBrowser, FakeChromium, FakeVoice
 from support.links import link
 from support.logs import data_of
@@ -144,14 +145,57 @@ def test_a_fetch_that_no_machine_bound_is_refused_rather_than_guessed() -> None:
         ("darwin", {"XDG_CACHE_HOME": "/ignored"}, "home/Library/Caches/decktalk"),
         ("linux", {}, "home/.cache/decktalk"),
         ("linux", {"XDG_CACHE_HOME": "/xdg"}, "/xdg/decktalk"),
-        ("win32", {"LOCALAPPDATA": "/local"}, "/local/decktalk"),
-        ("win32", {}, "home/AppData/Local/decktalk"),
+        ("win32", {"LOCALAPPDATA": "/local"}, "/local/decktalk/cache"),
+        ("win32", {}, "home/AppData/Local/decktalk/cache"),
     ],
 )
 def test_the_standard_cache_is_worked_out_from_the_environment_the_machine_holds(
     platform: str, environ: dict[str, str], expected: str
 ) -> None:
+    """On Windows the cache is a folder of its own beside the take store, so the store is never inside it."""
     assert standard_cache_dir(environ, Path("home"), platform) == Path(expected)
+
+
+@pytest.mark.parametrize(
+    ("platform", "environ", "expected"),
+    [
+        ("darwin", {"XDG_DATA_HOME": "/ignored"}, "home/Library/Application Support/decktalk"),
+        ("linux", {}, "home/.local/share/decktalk"),
+        ("linux", {"XDG_DATA_HOME": "/xdg"}, "/xdg/decktalk"),
+        ("win32", {"LOCALAPPDATA": "/local", "APPDATA": "/roaming"}, "/local/decktalk"),
+        ("win32", {}, "home/AppData/Local/decktalk"),
+    ],
+)
+def test_the_standard_data_folder_is_kept_apart_from_the_cache(
+    platform: str, environ: dict[str, str], expected: str
+) -> None:
+    """A cleaner empties a cache and a backup skips it, and the data folder holds the take store's paid records."""
+    data = standard_data_dir(environ, Path("home"), platform)
+    assert data == Path(expected)
+    assert not data.is_relative_to(standard_cache_dir(environ, Path("home"), platform))
+
+
+def test_a_machine_keeps_its_take_store_in_the_data_folder_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "none.toml"))
+    here = Machine.from_environment()
+    assert here.store == machine_module.standard_data_dir(dict(os.environ), Path.home()) / "takes"
+    assert not here.store.is_relative_to(standard_data_dir(dict(os.environ), Path.home())), "the suite wrote home"
+
+
+def test_a_host_machine_keeps_no_take_store_unless_it_names_one(tmp_path: Path) -> None:
+    """A host runs other people's projects, so a store that crosses them is a choice it makes."""
+    assert a_host(tmp_path).store is None
+    assert a_host(tmp_path, store_dir=tmp_path / "store").store == tmp_path / "store"
+
+
+def test_a_take_store_inside_the_tool_cache_is_refused_at_load(tmp_path: Path) -> None:
+    """Anyone may empty the tool cache, and the take store holds takes somebody paid for."""
+    with pytest.raises(InputError, match="tool cache"):
+        a_host(tmp_path, store_dir=tmp_path / "host" / "cache" / "takes")
+    with pytest.raises(InputError, match="tool cache"):
+        a_host(tmp_path, overrides=(f"narration.store_dir={tmp_path / 'host' / 'cache' / 'takes'}",))
 
 
 def test_a_toolchain_that_is_not_there_names_the_command_that_fetches_it() -> None:
@@ -772,6 +816,23 @@ def a_context() -> VoiceContext:
         context_chars=1,
         speech_timeout_seconds=1,
     )
+
+
+@pytest.mark.parametrize("key", ["tools.cache_dir", "narration.store_dir"])
+def test_a_relative_machine_folder_is_refused_at_load_naming_the_machine_file(tmp_path: Path, key: str) -> None:
+    """A machine folder has no project to be relative to, so a relative one would move with the working directory."""
+    table, name = key.split(".")
+    config = tmp_path / "host" / "machine.toml"
+    config.parent.mkdir(parents=True)
+    config.write_text(f'[{table}]\n{name} = "relative/folder"\n', encoding="utf-8")
+    with pytest.raises(InputError, match="relative") as refused:
+        a_host(tmp_path)
+    assert str(config) in str(refused.value)
+
+
+def test_a_tool_cache_that_starts_with_a_tilde_is_under_the_machines_home(tmp_path: Path) -> None:
+    here = a_host(tmp_path, environ={"HOME": str(tmp_path / "home")}, overrides=("tools.cache_dir=~/tools",))
+    assert here.cache_dir == tmp_path / "home" / "tools"
 
 
 def test_an_override_reaches_the_machine_by_its_own_scope(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

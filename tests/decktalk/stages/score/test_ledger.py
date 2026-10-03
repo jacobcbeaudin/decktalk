@@ -14,7 +14,7 @@ import pytest
 
 from decktalk.errors import ErrorCode, InputError
 from decktalk.results import SoundKind
-from decktalk.stages.soundscape.ledger import (
+from decktalk.stages.score.ledger import (
     DIGEST_DIGITS,
     UNFINISHED_DIGEST,
     Ledger,
@@ -32,7 +32,7 @@ def an_entry(name: str = "chime", digest: str = "abc123", **fields: object) -> S
             "name": name,
             "kind": SoundKind.EFFECT,
             "digest": digest,
-            "file": Path("build/soundscape/chime.mp3"),
+            "file": Path("build/score/chime.mp3"),
             "seconds": 1.5,
             "request": '{"text":"a bright chime"}',
             **fields,

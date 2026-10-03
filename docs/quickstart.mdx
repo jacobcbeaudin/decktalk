@@ -153,7 +153,7 @@ sizes and the cache paths.
     | File | What it is |
     |---|---|
     | `script.md` | The narration. Each `## N. Title` heading opens section N. |
-    | `decktalk.toml` | The project file: one `[[section]]` per script section, plus the voice, the mix and the soundscape. |
+    | `decktalk.toml` | The project file: one `[[section]]` per script section, plus the voice, the mix and the score. |
     | `cues.json` | One row per moment on a page, naming the spoken phrase it lands on. |
     | `deck/index.html` | The slides. They load the runtime and KaTeX from `/__decktalk/`, which DeckTalk serves, so the project holds no copy of either. |
     | `.env.example` | The two ElevenLabs variables a voiced run reads, as placeholders. |
@@ -173,15 +173,15 @@ sizes and the cache paths.
          Narrate    0:00
              Cue    0:00
           Record    0:22
-    The project declares no soundscape for this run, so there is nothing to generate.
-      Soundscape    0:00
+    The project declares no score for this run, so there is nothing to generate.
+           Score    0:00
     The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
         Assemble    0:02
           Verify    0:02
            Built build/final/my-lesson.mp4, $0.00, 3 findings
-    script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no take of its current text on disk. Run decktalk narrate --section 1 --spend to buy its take.
-    script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take of its current text on disk. Run decktalk narrate --section 2 --spend to buy its take.
-    script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no take of its current text on disk. Run decktalk narrate --section 3 --spend to buy its take.
+    script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no take yet. Run decktalk narrate --section 1 --spend to buy its take.
+    script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take yet. Run decktalk narrate --section 2 --spend to buy its take.
+    script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no take yet. Run decktalk narrate --section 3 --spend to buy its take.
     Found 3 findings, 0 certain.
     ```
 
@@ -194,7 +194,7 @@ sizes and the cache paths.
     already had Chromium and ffmpeg. Recording is the long part. It runs in real time, with several
     sections recording at once as the machine's CPU allows, so a longer film takes longer.
 
-    The two middle lines are the run explaining itself. The starter declares no soundscape, so that
+    The two middle lines are the run explaining itself. The starter declares no score, so that
     stage has nothing to do. The loudness pass is skipped because normalising a click track to a
     broadcast target would teach you nothing about the mix your voice will make.
 
@@ -351,8 +351,8 @@ film.
   <Step title="Price the run before you make it">
     `decktalk check` judges the written files and the pages and prices the narration a voiced build
     would buy. It produces nothing and calls no API, so it is the one call to make when you want the
-    price of the voice. A project with a soundscape prices its sound with
-    `decktalk soundscape --no-spend`.
+    price of the voice. A project with a score prices its sound with
+    `decktalk score --no-spend`.
 
     ```console
     decktalk check --json

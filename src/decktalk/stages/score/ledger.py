@@ -1,13 +1,13 @@
 """What this project has already bought from the sound service, as one typed file it reads and writes.
 
-    build/soundscape/ledger.json   one row per generated item, keyed by the request that made it
+    score/ledger.json   one row per generated item, keyed by the request that made it
 
 Every request is paid for, so the one question this file answers is whether the audio on disk was
 made from the request the project asks for now. The answer is a digest of the request body and the
 endpoint as its provider declares it, which leaves out `api_base`, and a row whose digest still
 matches is kept rather than bought again.
 
-The ledger is one file for the whole soundscape rather than a cache file beside every output,
+The ledger is one file for the whole score rather than a cache file beside every output,
 because the outputs may sit wherever `decktalk.toml` sends them and a run has to read the whole
 record before it prices anything. It is a `Stored` model, so it is written under a temporary name
 and renamed over the target in one step: a half-written ledger would read as a project that has
@@ -35,7 +35,7 @@ DIGEST_DIGITS = 16
 """Truth: sixteen hex characters of a sha256, which two requests of one project never collide within."""
 
 LEDGER_FILE = "ledger.json"
-"""What the record of bought audio is called, under the directory the soundscape is generated into."""
+"""What the record of bought audio is called, in the score directory beside the audio it records."""
 
 UNFINISHED_DIGEST = ""
 """What a row carries while the parts of one piece are still being bought, which matches no request.

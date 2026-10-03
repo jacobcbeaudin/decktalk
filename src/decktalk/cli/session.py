@@ -268,15 +268,15 @@ class Session:
             return None
 
     def sound_price(self, project: Project, *, only: Sequence[int] | None, replace_score: bool = False) -> Spend | None:
-        """What buying this project's soundscape would cost, read from its plan and its ledger.
+        """What buying this project's score would cost, read from its plan and its ledger.
 
         No run is opened and no client is built, so pricing takes no lock, writes no events file and
         can never buy anything. A run told to replace the score is priced at every item it selects.
         """
-        from decktalk.stages import soundscape  # noqa: PLC0415  (a stage is loaded by the call that needs it)
+        from decktalk.stages import score  # noqa: PLC0415  (a stage is loaded by the call that needs it)
 
         try:
-            return soundscape.price(project._inputs, only=only, replace_score=replace_score)
+            return score.price(project._inputs, only=only, replace_score=replace_score)
         except DeckTalkError:
             # silent: the run that follows meets the same refusal and reports it.
             return None

@@ -19,7 +19,7 @@ DeckTalk built the film [Halfway](https://decktalk.ai/films/halfway) from text f
 
 ## How it is built
 
-DeckTalk is a pipeline of six stages: `narrate`, `cue`, `record`, `soundscape`, `assemble` and `verify`. Each stage is one command and one package, and reads only what the stages before it wrote. `decktalk build` runs them in order, or any span of them.
+DeckTalk is a pipeline of six stages: `narrate`, `cue`, `record`, `score`, `assemble` and `verify`. Each stage is one command and one package, and reads only what the stages before it wrote. `decktalk build` runs them in order, or any span of them.
 
 - **The word clock.** The voice returns a start and an end for every word, and every other time in the film is derived from those. A cue in `cues.json` names a spoken phrase rather than a second, so a rewritten sentence moves every picture after it with no timeline to edit.
 - **A content-addressed build over takes.** A take is named by a hash of its text, its voice, its model and its settings. A recording, a section cut and a frozen frame are each kept under a digest of everything they read. Edit one sentence and only its section is voiced and recorded again, so a fix costs a few cents of speech and not the whole film.

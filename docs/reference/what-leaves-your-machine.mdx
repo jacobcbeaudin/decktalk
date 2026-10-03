@@ -23,8 +23,8 @@ purpose, and every one of them needs an API key that you supply.
 | Host | Request | Sent by | What DeckTalk sends |
 |---|---|---|---|
 | api.elevenlabs.io | Narration | `decktalk narrate`, and `decktalk build` on a voiced run | The section's spoken text, the voice id, the model name and the audio format, together with up to `narration.context_chars` characters of the previous section and up to the same of the next section as speaking context. The default is 1500 characters, and `narration.context_chars = 0` keeps the neighbouring sections on your machine. |
-| api.elevenlabs.io | Sound effects and ambience | `decktalk soundscape` | The prompt string written in the `[soundscape.ambience]` or a `[soundscape.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
-| api.elevenlabs.io | Music | `decktalk soundscape` | The prompt string written in the `[soundscape.music]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
+| api.elevenlabs.io | Sound effects and ambience | `decktalk score` | The prompt string written in the `[score.ambience]` or a `[score.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
+| api.elevenlabs.io | Music | `decktalk score` | The prompt string written in the `[score.music]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
 
 **Narration to `api.elevenlabs.io`.** The request carries the value of `ELEVENLABS_API_KEY` in a header, to the host `[elevenlabs] api_base` names. That value must be an https URL on elevenlabs.io, because the key goes wherever it points. Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-spend` sends nothing at all.
 

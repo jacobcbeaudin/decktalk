@@ -20,6 +20,7 @@ from decktalk.template import (
     write_project,
 )
 from decktalk.toolchain import assets
+from support.git import git
 
 
 def test_every_example_is_named_once_and_a_reserved_one_says_so() -> None:
@@ -78,6 +79,32 @@ def test_every_project_init_writes_loads_with_nothing_to_warn_about(tmp_path: Pa
     """A key a template still spells under a table it left would be read by nothing, so it is held here."""
     write_project(tmp_path, name="demo", example_name=example_name, skills=False, force=False)
     assert Inputs.load(tmp_path, environ={}).notes == ()
+
+
+def test_the_starter_keeps_its_takes_in_the_default_takes_directory(tmp_path: Path) -> None:
+    """Every project commits `takes/` by default, so the starter names no folder of its own for them."""
+    write_project(tmp_path, name="demo", example_name=None, skills=False, force=False)
+    assert "takes_dir" not in (tmp_path / "decktalk.toml").read_text(encoding="utf-8")
+    assert Inputs.load(tmp_path, environ={}).workspace.takes == tmp_path.resolve() / "takes"
+
+
+@pytest.mark.parametrize("example_name", [None, "lesson"])
+def test_every_project_init_writes_commits_its_takes_and_its_score_and_ignores_the_build(
+    tmp_path: Path, example_name: str | None
+) -> None:
+    """The two folders a clean machine cannot fill for free are kept, and the one it can is ignored."""
+    write_project(tmp_path, name="demo", example_name=example_name, skills=False, force=False)
+    assert "dir =" not in (tmp_path / "decktalk.toml").read_text(encoding="utf-8")
+    workspace = Inputs.load(tmp_path, environ={}).workspace
+    assert workspace.score_dir == tmp_path.resolve() / "score"
+    paid = [workspace.takes / "a.mp3", workspace.score_dir / "music-part1.mp3", workspace.score_dir / "ledger.json"]
+    for path in [*paid, workspace.joined_dir / "music.mp3"]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"audio")
+    git(tmp_path, "init", "-q")
+    seen = set(git(tmp_path, "ls-files", "--others", "--exclude-standard").split())
+    assert {path.relative_to(tmp_path.resolve()).as_posix() for path in paid} <= seen
+    assert not [name for name in seen if name.startswith("build/")]
 
 
 def test_the_project_name_is_filled_into_the_files_that_carry_it(tmp_path: Path) -> None:

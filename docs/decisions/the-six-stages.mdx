@@ -1,16 +1,16 @@
 ---
 title: The pipeline is six stages
-description: Why the pipeline is these six stages, why soundscape follows record, and why check is a command.
+description: Why the pipeline is these six stages, why score follows record, and why check is a command.
 ---
 
 ## Decision
 
 `PIPELINE` in `src/decktalk/pipeline.py` declares six stages in run order: `narrate`, `cue`,
-`record`, `soundscape`, `assemble`, `verify`. Each row names the stage, the artifacts it reads, the
+`record`, `score`, `assemble`, `verify`. Each row names the stage, the artifacts it reads, the
 artifacts it writes and one sentence saying why it sits where it does. Nothing else in the tree
 declares the order.
 
-Two things follow from that declaration and are worth stating on their own. `soundscape` runs after
+Two things follow from that declaration and are worth stating on their own. `score` runs after
 `record` rather than beside `narrate`. `check` is a command and not a stage.
 
 ## Why these six
@@ -23,7 +23,7 @@ can name.
 | `narrate` | What does the film say, and when is each word said? | `build/narrate/takes.json` |
 | `cue` | Which second on its section clock does each cue phrase fall on? | `build/cue-times.json` |
 | `record` | What does the page look like while those seconds pass? | `build/recordings/` |
-| `soundscape` | What does the film sound like under the voice? | `build/soundscape/` |
+| `score` | What does the film sound like under the voice? | `score/` and `build/score/` |
 | `assemble` | What is the film? | `build/final/` |
 | `verify` | Is the finished film in step with the clock the others promised? | nothing |
 
@@ -36,16 +36,16 @@ with a confusing name. Finding narration t=0 in a recording is the clearest case
 precondition check, the validation of `--from`, `--to` and `--skip`, the hint a `NOT_BUILT` error
 carries and the next step `status` reports are four readings of those six rows.
 
-## Why `soundscape` sits after `record`
+## Why `score` sits after `record`
 
-`soundscape` reads its plan from `decktalk.toml` and nothing another stage writes, so it could have
+`score` reads its plan from `decktalk.toml` and nothing another stage writes, so it could have
 run first. It runs fourth so that a run stopped at `record` is the unpaid draft loop.
 
-`narrate` and `soundscape` are the two stages that spend money. `narrate` stops spending with
+`narrate` and `score` are the two stages that spend money. `narrate` stops spending with
 `--no-spend`, which plays every take on disk and a placeholder with a real word clock for each
-missing one, and `soundscape` is simply not reached when a run ends at the recorder. So `decktalk build --no-spend --to record` writes takes,
+missing one, and `score` is simply not reached when a run ends at the recorder. So `decktalk build --no-spend --to record` writes takes,
 resolves every cue and records every page for nothing, and it is the loop an author lives in while
-the words and the pictures are still moving. Had `soundscape` run second, the same loop would either
+the words and the pictures are still moving. Had `score` run second, the same loop would either
 have to skip a stage by name or buy audio on every pass.
 
 A run stopped there still reports the stages it did not reach. `build --json` carries a row per

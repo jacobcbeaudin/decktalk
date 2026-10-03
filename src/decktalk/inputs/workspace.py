@@ -1,11 +1,11 @@
 """Every path under `build/`, named once.
 
-    build/narrate/      the takes, their words files and the take index, unless
-                        `[narration] takes_dir` keeps them in the project, and the
-                        joined narration and every placeholder take in every case
+    build/narrate/      the take index, the joined narration and every placeholder take,
+                        while every take a voice spoke sits in the takes directory
     build/cue-times.json  every cue resolved against those words
     build/recordings/   one webm and one recording log per page section
-    build/soundscape/   the music, the ambience bed and the effects
+    build/score/        the music joined from the parts the score bought,
+                        while every bought sound and its ledger sit in the score directory
     build/sections/     one mp4 per section, cut to its span, and the key it was cut from
     build/frames/       the frozen slides `check` compares
     build/stills/       every frozen frame kept by what drew it, which check, storyboard
@@ -27,7 +27,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from decktalk.artifacts import is_placeholder, take_file, words_file
+from decktalk.artifacts import is_placeholder, pair_fault, take_file, words_file
 from decktalk.inputs.paths import confined
 from decktalk.pipeline import Artifact
 
@@ -47,10 +47,12 @@ class Workspace:
     name: str
     suffix: str
     """What a bought take is written under, which the voice's adapter declares for the format it asks for."""
-    takes: Path | None = None
-    """The project's own take directory, which `[narration] takes_dir` names inside the project."""
-    shared: Path | None = None
-    """The machine's take store, which `[narration] cache_dir` names and many projects may read."""
+    takes: Path
+    """The project's takes directory, which `[narration] takes_dir` names inside the project."""
+    score_dir: Path
+    """The project's score directory, which `[score] dir` names inside the project and holds what the score bought."""
+    store: Path | None = None
+    """The machine's take store, a second copy of every take it bought, which many projects may read."""
 
     def confine(self) -> None:
         """Refuse this build directory when anything in it leads outside it, before a run writes there.
@@ -62,8 +64,8 @@ class Workspace:
         tree that passes here stays inside the project for the length of the run.
         """
         confined(self.root, self.build)
-        if self.takes is not None:
-            confined(self.root, self.takes, named="the take directory")
+        confined(self.root, self.takes, named="the take directory")
+        confined(self.root, self.score_dir, named="the score directory")
 
     def of(self, artifact: Artifact) -> Path:
         """Where this project keeps one artifact the pipeline declares, under its own build directory."""
@@ -75,43 +77,65 @@ class Workspace:
         return self.build / "narrate"
 
     @property
-    def takes_dir(self) -> Path:
-        """Where a bought take is written: the project's take directory, else the machine's store, else the build."""
-        return self.takes or self.shared or self.narrate_dir
-
-    @property
     def take_places(self) -> tuple[Path, ...]:
-        """Every directory a take is looked for in, first to last: the project's, the machine's, the build's."""
-        found = (self.takes, self.shared, self.narrate_dir)
+        """Every directory a take is looked for in, first to last: the project's, then the machine's."""
+        found = (self.takes, self.store)
         return tuple(dict.fromkeys(place for place in found if place is not None))
 
     def holding(self, digest: str) -> Path | None:
-        """The first place that holds both the take of this digest and its words file, or None."""
-        places = (self.narrate_dir,) if is_placeholder(digest) else self.take_places
-        both = (self.take_file(digest), words_file(digest))
-        return next((place for place in places if all((place / name).exists() for name in both)), None)
+        """The first place that holds a good copy of the take of this digest and its words file, or None.
+
+        A placeholder is a cache under the build, so both of its files being there is enough. A voiced
+        take is a paid record, so a place counts only when its words read and its audio holds the bytes
+        they recorded, and a damaged copy in the takes directory never hides a good one in the store.
+        """
+        if is_placeholder(digest):
+            return self.narrate_dir if self.held_at(self.narrate_dir, digest) else None
+        return next((place for place in self.take_places if self.fault_at(place, digest) is None), None)
+
+    def held_at(self, place: Path, digest: str) -> bool:
+        """True when this place holds both files of the take of this digest, whatever they hold."""
+        return all((place / name).is_file() for name in (self.take_file(digest), words_file(digest)))
+
+    def fault_at(self, place: Path, digest: str, *, whole: bool = False) -> str | None:
+        """What is wrong with this place's copy of a voiced take, or None when it holds a good one.
+
+        A place that does not hold both files has no copy, and that is said too, so only a copy that is
+        there and good reads as None. `whole` also checks the audio's BLAKE3.
+        """
+        if not self.held_at(place, digest):
+            return f"{place} holds no copy of take {digest}."
+        return pair_fault(place / self.take_file(digest), place / words_file(digest), whole=whole)
+
+    def damaged(self, digest: str) -> tuple[tuple[Path, str], ...]:
+        """Every place holding both files of a voiced take that do not agree, with what is wrong with each."""
+        found = ((place, self.fault_at(place, digest)) for place in self.take_places if self.held_at(place, digest))
+        return tuple((place, fault) for place, fault in found if fault is not None)
 
     def take_file(self, digest: str) -> str:
         """The name of the audio file of the take with this digest, under the suffix of what it holds."""
         return take_file(digest, self.suffix)
 
-    def home_of(self, digest: str) -> Path:
-        """Where the take of this digest is written, which is the build for a placeholder nobody paid for."""
-        return self.narrate_dir if is_placeholder(digest) else self.takes_dir
-
     def take_path(self, digest: str) -> Path:
         """The audio file of this take where it is found, or where it would be written when it is nowhere."""
-        return (self.holding(digest) or self.home_of(digest)) / self.take_file(digest)
+        return self._found(digest) / self.take_file(digest)
 
     def words_path(self, digest: str) -> Path:
         """The words file of this take where it is found, or where it would be written when it is nowhere."""
-        return (self.holding(digest) or self.home_of(digest)) / words_file(digest)
+        return self._found(digest) / words_file(digest)
+
+    def _found(self, digest: str) -> Path:
+        """Where this take is held, or where it is written: the build for a placeholder, the takes directory else."""
+        return self.holding(digest) or (self.narrate_dir if is_placeholder(digest) else self.takes)
 
     @property
     def takes_path(self) -> Path:
-        """The take index, which sits beside the project's own takes and is never in the machine's store."""
-        index = self.of(Artifact.TAKES)
-        return index if self.takes is None else self.takes / index.name
+        """The take index, which is a cache over the takes and so always sits under the build directory.
+
+        A run that plays committed takes rewrites it, so keeping it beside them would change a tracked
+        file on every checkout that builds, which is what a job with no key must never do.
+        """
+        return self.of(Artifact.TAKES)
 
     @property
     def narration_path(self) -> Path:
@@ -127,8 +151,9 @@ class Workspace:
         return self.of(Artifact.RECORDINGS)
 
     @property
-    def soundscape_dir(self) -> Path:
-        return self.of(Artifact.SOUNDSCAPE)
+    def joined_dir(self) -> Path:
+        """The music joined from its bought parts, which is a cache the score makes again for nothing."""
+        return self.of(Artifact.SCORE)
 
     @property
     def sections_dir(self) -> Path:

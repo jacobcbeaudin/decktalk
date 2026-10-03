@@ -634,7 +634,7 @@ class TestTheTables:
 
     def test_the_value_of_a_dotted_key_is_the_value_the_tree_holds(self) -> None:
         settings = Settings()
-        assert value_of(settings, "soundscape.music.model") == settings.soundscape.music.model
+        assert value_of(settings, "score.music.model") == settings.score.music.model
 
     def test_the_findings_a_key_decides_are_real_codes(self) -> None:
         for key in KEYS:
@@ -660,16 +660,16 @@ MOVED: list[tuple[str, str, Any]] = [
     ("mix.loudness.target_lufs", "audio.target_lufs", -14.0),
     ("mix.loudness.true_peak_max_dbtp", "audio.true_peak_max_dbtp", -2.0),
     ("mix.loudness.range_max_lu", "audio.range_max_lu", 9.0),
-    ("elevenlabs.timeout_seconds", "soundscape.timeout_seconds", 300),
-    ("elevenlabs.music_model", "soundscape.music.model", "music_v3"),
-    ("elevenlabs.music_bitrate", "soundscape.music.bitrate", "256k"),
-    ("elevenlabs.max_music_chunk_seconds", "soundscape.music.max_chunk_seconds", 120),
-    ("elevenlabs.music_crossfade_seconds", "soundscape.music.crossfade_seconds", 4),
-    ("elevenlabs.ambience_seconds", "soundscape.ambience.duration_seconds", 30.0),
-    ("elevenlabs.ambience_prompt_influence", "soundscape.ambience.prompt_influence", 0.4),
-    ("elevenlabs.effect_seconds", "soundscape.effects.duration_seconds", 1.0),
-    ("elevenlabs.effect_prompt_influence", "soundscape.effects.prompt_influence", 0.6),
-    ("soundscape.music.seconds", "soundscape.music.duration_seconds", 120),
+    ("elevenlabs.timeout_seconds", "score.timeout_seconds", 300),
+    ("elevenlabs.music_model", "score.music.model", "music_v3"),
+    ("elevenlabs.music_bitrate", "score.music.bitrate", "256k"),
+    ("elevenlabs.max_music_chunk_seconds", "score.music.max_chunk_seconds", 120),
+    ("elevenlabs.music_crossfade_seconds", "score.music.crossfade_seconds", 4),
+    ("elevenlabs.ambience_seconds", "score.ambience.duration_seconds", 30.0),
+    ("elevenlabs.ambience_prompt_influence", "score.ambience.prompt_influence", 0.4),
+    ("elevenlabs.effect_seconds", "score.effects.duration_seconds", 1.0),
+    ("elevenlabs.effect_prompt_influence", "score.effects.prompt_influence", 0.6),
+    ("score.music.seconds", "score.music.duration_seconds", 120),
 ]
 """Every key the regroup moved, as (where it was, where it is, a value other than its default)."""
 
@@ -683,7 +683,7 @@ voice's model and each adapter's default model, so for these the warning is held
 rather than to offering the one that moved.
 """
 
-CONTENT = {"soundscape.music": {"prompt": "calm"}}
+CONTENT = {"score.music": {"prompt": "calm"}}
 """The content a shared table needs beside a setting before the document will read it."""
 
 
@@ -725,16 +725,16 @@ class TestTheRegroup:
 
     def test_the_sound_models_moved_beside_the_items_they_default(self) -> None:
         """One old key named the model of the ambience and of every effect, and each now has its own."""
-        loaded = load(machine={}, project={"soundscape": {"effects": {"model": "s2"}}}, environ={}).settings
-        assert loaded.soundscape.effects.model == "s2"
-        assert loaded.soundscape.ambience.model == Settings().soundscape.ambience.model
+        loaded = load(machine={}, project={"score": {"effects": {"model": "s2"}}}, environ={}).settings
+        assert loaded.score.effects.model == "s2"
+        assert loaded.score.ambience.model == Settings().score.ambience.model
         (said,) = key_warnings({"elevenlabs": {"sound_model": "s2"}}, "decktalk.toml")
         assert said.startswith("decktalk.toml: [elevenlabs]: ignoring unknown key 'sound_model'")
 
     @pytest.mark.parametrize(
         ("variable", "meant"),
         [
-            ("DECKTALK_ELEVENLABS_MUSIC_MODEL", "DECKTALK_SOUNDSCAPE_MUSIC_MODEL"),
+            ("DECKTALK_ELEVENLABS_MUSIC_MODEL", "DECKTALK_SCORE_MUSIC_MODEL"),
             ("DECKTALK_VOICE_STABILITY", "DECKTALK_ELEVENLABS_STABILITY"),
             ("DECKTALK_VIDEO_SAMPLE_RATE", "DECKTALK_AUDIO_SAMPLE_RATE"),
             ("DECKTALK_VIDEO_CRV", "DECKTALK_VIDEO_CRF"),

@@ -19,11 +19,20 @@ on a moment of silence, so its sound ends where its words do and it is placed ex
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
-from decktalk.artifacts import EstimatedWords, ProviderWords, Take, Takes, Words, is_placeholder, words_file
-from decktalk.events import TakeCharged
+from decktalk.artifacts import (
+    AudioPrint,
+    EstimatedWords,
+    ProviderWords,
+    Take,
+    Takes,
+    Words,
+    is_placeholder,
+    words_file,
+)
+from decktalk.events import Level, TakeCharged
+from decktalk.files import replace_all
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import Segment
 from decktalk.machine import Run
@@ -32,7 +41,7 @@ from decktalk.page import SECOND_DIGITS
 from decktalk.results import Word
 from decktalk.speech import PUNCT, SpeechProvider, SpeechRequest, canonical_text, is_free
 from decktalk.stages import billed, dollars_for
-from decktalk.stages.narrate.plan import TakePlan, is_cached
+from decktalk.stages.narrate.plan import TakePlan, damaged_refusal, is_cached
 
 PLACEHOLDER_CLOSE_SECONDS = 0.1
 """Calibration: the silence a click track ends on, which is long enough that where its sound ends can be measured."""
@@ -114,7 +123,7 @@ def take_row(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voi
 def write_placeholder_take(inputs: Inputs, segment: Segment, chapter: str, digest: str) -> tuple[Take, list[Path]]:
     """Write one click track and its estimated words, and give back the row and the files."""
     cfg = inputs.settings.narration
-    home = inputs.workspace.home_of(digest)
+    home = inputs.workspace.narrate_dir
     out = home / inputs.workspace.take_file(digest)
     duration = segment.silent_seconds(cfg)
     words = estimated_words(segment, duration)
@@ -140,7 +149,7 @@ def write_voiced_take(
     digest: str,
     request: SpeechRequest,
 ) -> tuple[Take, list[Path]]:
-    """Send one request, write the audio and its words as they came, and give back the row and the files.
+    """Send one request, write the audio and its words as one pair, and give back the row and the files.
 
     A provider that bills is paid the moment it answers, so the charge goes on the stream before
     anything that could fail writes the take. A host that keeps its own ledger then records every
@@ -149,7 +158,7 @@ def write_voiced_take(
     figure the run was approved at. A provider that declares it bills nothing is paid nothing, so its
     take puts no charge on the stream, and every charge line is money paid, as `sound.charged` is.
     """
-    home = inputs.workspace.home_of(digest)
+    home = inputs.workspace.takes
     out = home / inputs.workspace.take_file(digest)
     spoken, words = provider.speak(request)
     voice = inputs.settings.voice.provider
@@ -163,29 +172,94 @@ def write_voiced_take(
             characters=characters,
             dollars=dollars_for(billed(characters, seconds, voice), inputs),
         )
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(spoken)
     written = home / words_file(digest)
-    ProviderWords(words=tuple(words)).write(written)
+    pair = {out: spoken, written: ProviderWords(words=tuple(words), audio=AudioPrint.of(spoken)).text}
+    # The audio and its words are replaced as one pair, and the words are moved last, so a run
+    # stopped while it writes leaves both or neither and never audio with no words to vouch for it.
+    replace_all(pair)
+    keep_in_store(inputs, run, digest, {path.name: content for path, content in pair.items()})
     return take_row(inputs, segment, chapter, digest, voiced=True), [out, written]
 
 
-def keep_at_home(inputs: Inputs, digest: str) -> list[Path]:
-    """Copy a paid take found elsewhere, with its words file, to where this project writes its takes.
+def keep_in_store(inputs: Inputs, run: Run, digest: str, pair: dict[str, str | bytes]) -> None:
+    """Write a take this run just made through to the machine's take store, once per take.
 
-    A project that names a `takes_dir` commits it, so every take the film plays must be there for a
-    clone to play it too, including one found in the machine's store or in an older build. The copy
-    leaves the place it was found as it was, so a machine's store is read and never moved, and a
-    take already at home, or a placeholder, copies nothing.
+    The store is a second copy of every take this machine bought, so a purchase nobody committed yet
+    survives a `git clean`, and another project with the same words finds it. It is written once: a
+    store that already holds a good copy keeps it, so a re-buy changes this project's takes directory
+    and no other project's take. A damaged copy there is moved aside first, never deleted. A store
+    that cannot be written loses nothing, because the takes directory already holds the pair, so
+    the run says so and goes on.
     """
     workspace = inputs.workspace
-    found, home = workspace.holding(digest), workspace.home_of(digest)
-    if is_placeholder(digest) or found is None or found == home:
+    store = workspace.store
+    if store is None or workspace.fault_at(store, digest) is None:
+        return
+    try:
+        for name in pair:
+            stale = store / name
+            if stale.exists():
+                stale.replace(stale.with_name(name + UNREADABLE_SUFFIX))
+        replace_all({store / name: content for name, content in pair.items()})
+    except OSError as failed:
+        run.note(
+            f"Take {digest} could not be copied into the take store at {store} ({failed.strerror or failed}). "
+            f"It is safe in {inputs.relative(workspace.takes).as_posix()}.",
+            level=Level.WARNING,
+        )
+
+
+UNREADABLE_SUFFIX = ".unreadable"
+"""What a damaged copy of a paid take is renamed to end in, which moves it aside and never deletes it."""
+
+
+def keep_at_home(inputs: Inputs, run: Run, number: int, digest: str, checked: set[str]) -> list[Path]:
+    """Make sure the takes directory holds a verified copy of this voiced take, and give back what it wrote.
+
+    The takes directory is committed, so every take the film plays must be there for a clone to play
+    it too. Each place is verified in order, its BLAKE3 included, once per take per run, which
+    `checked` remembers. The first good copy wins. One found in the machine's take store is copied into
+    the takes directory as one pair, after any copy already there is moved aside as `.unreadable`,
+    so a damaged copy is never copied, never deleted and never hides a good one, and the run says so
+    once. When every copy is damaged, the run is refused with the sentence a paid record is refused
+    with, because the next step would buy the take again.
+    """
+    workspace = inputs.workspace
+    if is_placeholder(digest) or digest in checked:
         return []
-    home.mkdir(parents=True, exist_ok=True)
-    copied = [home / workspace.take_file(digest), home / words_file(digest)]
-    for kept in copied:
-        shutil.copyfile(found / kept.name, kept)
+    checked.add(digest)
+    home = workspace.takes
+    damaged: list[tuple[Path, str]] = []
+    for place in workspace.take_places:
+        if not workspace.held_at(place, digest):
+            continue
+        fault = workspace.fault_at(place, digest, whole=True)
+        if fault is None:
+            return [] if place == home else _copy_home(inputs, run, digest, place, damaged)
+        damaged.append((place, fault))
+    if damaged:
+        raise damaged_refusal(inputs, number, digest, *damaged[0])
+    return []
+
+
+def _copy_home(inputs: Inputs, run: Run, digest: str, found: Path, damaged: list[tuple[Path, str]]) -> list[Path]:
+    """Copy the verified pair in `found` into the takes directory as one pair, moving any copy there aside."""
+    workspace = inputs.workspace
+    home = workspace.takes
+    names = (workspace.take_file(digest), words_file(digest))
+    moved = [home / name for name in names if (home / name).exists()]
+    for stale in moved:
+        stale.replace(stale.with_name(stale.name + UNREADABLE_SUFFIX))
+    if moved:
+        why = next((fault for place, fault in damaged if place == home), "it was not a whole pair")
+        run.note(
+            f"The copy of take {digest} in {inputs.relative(home).as_posix()} is damaged: {why} It was moved "
+            f"aside as {', '.join(path.name + UNREADABLE_SUFFIX for path in moved)}, and the good copy in "
+            f"{found} was copied in its place.",
+            level=Level.WARNING,
+        )
+    copied = [home / name for name in names]
+    replace_all({home / name: (found / name).read_bytes() for name in names})
     return copied
 
 
@@ -250,7 +324,9 @@ __all__ = [
     "PLACEHOLDER_CLOSE_SECONDS",
     "estimated_words",
     "join_takes",
+    "UNREADABLE_SUFFIX",
     "keep_at_home",
+    "keep_in_store",
     "place",
     "planned_words",
     "sound_end_of",

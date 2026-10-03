@@ -54,8 +54,8 @@ from decktalk.inputs.document import (
     MixEffect,
     MusicSpec,
     PageSection,
+    Score,
     Section,
-    Soundscape,
     SoundSpec,
     Transition,
 )
@@ -66,13 +66,34 @@ from decktalk.inputs.script import Segment, read_script
 from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import Word
-from decktalk.settings import PROJECT_FILE, Layers, Settings, key_warnings, load, read_project_toml
+from decktalk.settings import (
+    BY_ID,
+    PROJECT_FILE,
+    Layers,
+    Loaded,
+    Settings,
+    key_warnings,
+    load,
+    machine_folder,
+    read_project_toml,
+    value_of,
+)
 from decktalk.speech import output_of
 
 log = logging.getLogger(__name__)
 
 ENV_FILE = ".env"
 """What a project calls the file its speech credential lives in, which is never committed."""
+
+PAID_FOLDERS: Mapping[str, str] = {
+    "narration.takes_dir": "the takes",
+    "score.dir": "the bought sounds",
+}
+"""Every setting that names a project folder of paid records, with what the folder holds.
+
+Each one is read through `Inputs._paid_folder`, so a folder added here is held to the project and
+kept out of the build directory without a check of its own.
+"""
 
 
 @dataclass(frozen=True)
@@ -96,12 +117,15 @@ class Inputs:
         environ: Mapping[str, str],
         machine: Mapping[str, Any] | None = None,
         overrides: tuple[str, ...] = (),
+        store: Path | None = None,
     ) -> Inputs:
         """The project in `root`, with every layer above the defaults already applied.
 
         Nothing here reads the environment or the working directory. The caller passes the
         environment it wants read, the machine's own tuning tables and any override for this run,
         which is what lets one process hold two projects without either leaking into the other.
+        `store` is the take store the machine keeps when `[narration] store_dir` names none, or None
+        for a machine that keeps none.
         """
         root = root.resolve()
         if not (root / PROJECT_FILE).exists():
@@ -113,10 +137,10 @@ class Inputs:
         toml = read_project_toml(root)
         document = Document.from_toml(toml, default_name=root.name)
         loaded = load(root, project=toml, machine=machine, environ=environ, overrides=overrides)
-        takes_dir = cls._takes_dir(root, loaded.settings)
-        shared = cls._shared_takes(root, loaded.settings)
-        notes = document.notes + tuple(key_warnings(toml, PROJECT_FILE)) + cls._takes_note(root, shared)
         build = contained(root, document.build)
+        paid = {key: cls._paid_folder(root, loaded.settings, key, build, document.build) for key in PAID_FOLDERS}
+        store = cls._take_store(root, loaded, environ, store)
+        notes = document.notes + tuple(key_warnings(toml, PROJECT_FILE))
         cls._refuse_served_build(root, build, document)
         return cls(
             root=root,
@@ -126,8 +150,9 @@ class Inputs:
                 build=build,
                 name=document.name,
                 suffix=output_of(loaded.settings, loaded.settings.voice.provider).suffix,
-                takes=takes_dir,
-                shared=shared,
+                takes=paid["narration.takes_dir"],
+                score_dir=paid["score.dir"],
+                store=store,
             ),
             env=Env(file=root / ENV_FILE, environ=environ),
             settings=loaded.settings,
@@ -156,53 +181,67 @@ class Inputs:
                 )
 
     @staticmethod
-    def _takes_dir(root: Path, settings: Settings) -> Path | None:
-        """The project's own take directory that `[narration] takes_dir` names, refused unless it is inside.
+    def _paid_folder(root: Path, settings: Settings, key: str, build: Path, build_named: str) -> Path:
+        """The project directory one paid-folder key names, refused unless the project keeps it.
 
-        The directory is committed and travels with the project, so it is held to the project the way
-        every file the project names is. An absolute path is refused by its spelling even when it
-        happens to point inside, because the same file on another clone would point somewhere else,
-        and the project directory itself is refused because the takes would then sit among the files
-        an author writes.
+        Every key in `PAID_FOLDERS` goes through here. The folder is committed and travels with the
+        project, so it is held to the project the way every file the project names is. An absolute
+        path is refused by its spelling even when it happens to point inside, because the same file on
+        another clone would point somewhere else, and the project directory itself is refused because
+        the paid records would then sit among the files an author writes. A folder inside the build
+        directory, which `[project] build` names, is refused too, and so is a build directory inside the
+        folder, because the build is a cache that is deleted and a paid record deleted with it is bought
+        again. The key's own range has already refused an empty value.
         """
-        named = settings.narration.takes_dir
-        if not named:
-            return None
+        spec = BY_ID[key]
+        named = str(value_of(settings, key))
+        what = PAID_FOLDERS[key]
+        located = at(root / PROJECT_FILE, root)
+        suggestion = f'Name a directory inside the project, such as {spec.name} = "{spec.default}", and commit it.'
         refusal = InputError(
-            f"[narration] takes_dir is {named}, which is not a directory inside the project, "
-            "so the takes would not travel with it.",
-            hint='Name a directory inside the project, such as takes_dir = "voice", and commit it.',
-            location=at(root / PROJECT_FILE, root),
+            f"[{spec.table}] {spec.name} is {named}, which is not a directory inside the project, "
+            f"so {what} would not travel with it.",
+            hint=suggestion,
+            location=located,
         )
         if Path(named).is_absolute():
             raise refusal
         try:
-            takes = contained(root, named)
+            kept = contained(root, named)
         except InputError as outside:
             raise refusal from outside
-        if takes.resolve() == root.resolve():
+        if kept.resolve() == root.resolve():
             raise refusal
-        return takes
+        held, cache = kept.resolve(), build.resolve()
+        if held.is_relative_to(cache) or cache.is_relative_to(held):
+            raise InputError(
+                f"[{spec.table}] {spec.name} is {named} and [project] build is {build_named}, so one is inside "
+                f"the other. The build directory is a cache that is deleted, and {what} are paid records that "
+                "must never be deleted with it or bought again.",
+                hint=suggestion,
+                location=located,
+            )
+        return kept
 
     @staticmethod
-    def _shared_takes(root: Path, settings: Settings) -> Path | None:
-        """The machine's take store that `[narration] cache_dir` names, which is read after the project's."""
-        named = settings.narration.cache_dir
-        return (root / named).resolve() if named else None
+    def _take_store(root: Path, loaded: Loaded, environ: Mapping[str, str], standard: Path | None) -> Path | None:
+        """The machine's take store, which `[narration] store_dir` names and is read after the project's.
 
-    @staticmethod
-    def _takes_note(root: Path, takes: Path | None) -> tuple[str, ...]:
-        """One sentence when the takes are kept outside the project, which the author should know about.
-
-        A project file somebody else wrote should not send this machine's takes somewhere surprising
-        without saying so, and the path is the author's own to allow or to change.
+        When the key names none it is the machine's own standard folder, or none for a machine that
+        keeps none. It is refused inside this project, where it would be a second takes directory with
+        none of its rules. The machine refuses one inside its tool cache, where it knows that folder.
         """
-        if takes is None or takes.is_relative_to(root):
-            return ()
-        return (
-            f"[narration] cache_dir puts the takes at {takes}, which is outside this project. "
-            "Takes are named by content, so several projects may share one such directory.",
-        )
+        store = machine_folder(loaded, "narration.store_dir", environ) or standard
+        if store is None:
+            return None
+        if store.resolve().is_relative_to(root.resolve()):
+            raise InputError(
+                f"[narration] store_dir is {store}, which is inside this project, so the take store would be a "
+                "second takes directory that a commit could carry.",
+                hint="Name a folder outside every project, such as ~/decktalk-takes, or leave the key unset.",
+                location=at(root / PROJECT_FILE, root),
+            )
+        return store
 
     # ---- paths --------------------------------------------------------------------------
 
@@ -384,7 +423,7 @@ class Inputs:
         """Every project-relative path the local origin may answer for, in the order the document names them.
 
         The origin serves the deck directory, the files the document declares and the files the
-        soundscape generates, and nothing else, so a recorded page and a preview an author leaves
+        score generates, and nothing else, so a recorded page and a preview an author leaves
         running both reach their own pictures and their own modules while the script, the cue file,
         the build directory and the credential beside them stay out of reach. A recorder and a
         preview reading two lists would be two answers to one security question.
@@ -396,8 +435,8 @@ class Inputs:
         mix = document.mix
         named += [name for name in (mix.music, mix.ambience, mix.slate, mix.music_markers) if name]
         named += [effect.file for effect in mix.effects]
-        soundscape = document.soundscape
-        generated = (soundscape.ambience, soundscape.music, *soundscape.effects.values())
+        score = document.score
+        generated = (score.ambience, score.music, *score.effects.values())
         named += [item.out for item in generated if item is not None and item.out]
         # A name is folded as a path rather than stripped as text, and one that folds to the root
         # itself is dropped, because a declared root would declare the whole project.
@@ -474,7 +513,7 @@ __all__ = [
     "Section",
     "Segment",
     "SoundSpec",
-    "Soundscape",
+    "Score",
     "Transition",
     "Workspace",
 ]

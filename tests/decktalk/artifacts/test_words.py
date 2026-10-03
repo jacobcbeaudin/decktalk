@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts.words import WORDS_SUFFIX, ProviderWords, Words, words_file
+from decktalk.artifacts.stored import file_digest
+from decktalk.artifacts.words import WORDS_SUFFIX, AudioPrint, ProviderWords, Words, words_file
 from decktalk.errors import InputError
 from decktalk.results import Word
 
@@ -56,3 +57,19 @@ def test_a_providers_words_that_do_not_read_say_only_voicing_the_take_again_give
     assert "Only voicing this take again gives these words back" in str(refused.value)
     assert "paid for" not in str(refused.value)
     assert "costs money on a paid provider" in (refused.value.hint or "")
+
+
+def test_a_providers_words_carry_the_fingerprint_of_the_audio_they_were_sent_with(tmp_path: Path) -> None:
+    audio = tmp_path / "take.mp3"
+    audio.write_bytes(b"the take's own bytes")
+    printed = AudioPrint.of(audio.read_bytes())
+    assert (printed.bytes, printed.blake3) == (audio.stat().st_size, file_digest(audio))
+    path = ProviderWords(words=SPOKEN.words, audio=printed).write(tmp_path / words_file("abc123"))
+    assert ProviderWords.read(path) == ProviderWords(words=SPOKEN.words, audio=printed)
+
+
+def test_a_providers_words_with_no_fingerprint_still_read(tmp_path: Path) -> None:
+    """A words file with no fingerprint is read as it is, because filling one in would rewrite a paid record."""
+    path = SPOKEN.write(tmp_path / words_file("abc123"))
+    read = ProviderWords.read(path)
+    assert read is not None and read.audio is None

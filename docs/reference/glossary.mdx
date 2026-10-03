@@ -16,7 +16,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 | narrate | The stage that turns the script into spoken takes with a word clock. It writes `build/narrate/takes.json`, the take files and their words files. | [How it works](/concepts/how-it-works) |
 | cue | The stage that turns each cue phrase into a second on its section clock. It writes `build/cue-times.json`. | [Cues](/concepts/cues) |
 | record | The stage that records each page section in headless Chromium against those seconds. It writes `build/recordings/`. | [How it works](/concepts/how-it-works) |
-| soundscape | The stage that generates the music, the ambience bed and the effects. It writes `build/soundscape/`. | [Sound](/concepts/sound) |
+| score | The generated sound beside the narration, which is the music, the ambience bed and the effects, and the stage that composes it. It keeps what it buys in `score/` and joins the music under `build/score/`. | [Sound](/concepts/sound) |
 | assemble | The stage that cuts, mixes and encodes the sections into one film. It writes `build/final/`. | [How it works](/concepts/how-it-works) |
 | verify | The stage that measures the finished film against the clock the earlier stages promised. It writes no artifact, only its events file and the build lock. | [Verify](/reference/verify) |
 
@@ -38,9 +38,11 @@ They run in this order, and each is both a command and a call on a `Project`.
 | project | One directory holding `script.md`, `decktalk.toml`, `cues.json` and the deck pages, and the `build/` directory those four produce. | [decktalk.toml](/reference/decktalk-toml) |
 | section | One numbered part of the script and the `[[section]]` table that pairs it with a scene or a clip. | [decktalk.toml](/reference/decktalk-toml) |
 | take | One section's spoken audio, named by the digest of everything that changes it. Two sections with the same text and voice share one take. | [Build artifacts](/reference/artifacts) |
+| takes directory | The folder inside the project that holds every take the film plays and the words its voice sent with each, `takes/` unless `[narration] takes_dir` names another. You commit it, so a clone builds the film with no key. | [Rebuild one section](/guides/rebuild-one-section) |
+| take store | The folder outside every project where this machine keeps a second copy of every take it buys, which `[narration] store_dir` names. A take missing from the takes directory is checked and copied in from here, and nothing plays from it directly. | [Rebuild one section](/guides/rebuild-one-section) |
+| score directory | The folder inside the project that holds every sound the score bought and the ledger that records them, each named by its item, `score/` unless `[score] dir` names another. You commit it, so a clone mixes the film with no key. | [Sound](/concepts/sound) |
 | clip | A video file of your own that a clip section plays with its own audio, and the file `decktalk clip` cuts out of a built section. | [Add a clip section](/guides/clip-section) |
 | storyboard | The page at `build/storyboard.html` that freezes every slide at every cue, which is the checkpoint a person reads before credits are spent. | [CLI](/reference/cli) |
-| soundscape | The generated sound beside the narration, which is the music, the ambience bed and the effects. | [Sound](/concepts/sound) |
 | machine | This computer and this process, which is what holds the toolchain, the per-machine settings and the credential a voiced run uses. | [Python API](/reference/python-api) |
 
 ## A run and what it reports

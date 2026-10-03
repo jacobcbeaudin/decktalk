@@ -320,7 +320,7 @@ def nearest(key: str, known: Iterable[str]) -> str | None:
 
     The last part of a key names the thing it sets, and a person who remembers that thing and not
     its table writes it under the wrong one, as `record.fps` for `video.output_fps`, or under the
-    table it used to live in, as `elevenlabs.music_model` for `soundscape.music.model`. So a key
+    table it used to live in, as `elevenlabs.music_model` for `score.music.model`. So a key
     named by the typed one is offered first, then a key whose last part is spelled nearly like it,
     the closest whole key among them when there are several, and the closest spelling of the whole
     key only when none exists.

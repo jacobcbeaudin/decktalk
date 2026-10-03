@@ -145,7 +145,7 @@ SHARED = {
 
 ALSO_NAMES = {
     "project": "It names the `[project]` table and the module a caller opens, so a literal is one of those.",
-    "soundscape": "It names the `[soundscape]` table, the stage module and `build/soundscape`.",
+    "score": "It names the `[score]` table, the stage module and `build/score`.",
     "narrate": "It names the stage module and `build/narrate`, which the workspace joins a path from.",
     "cue": "It names the stage module and the key of a row in `cues.json`.",
     "clip": "It names the stage module, the `clip` key of a section and the command a caller calls.",
@@ -154,8 +154,8 @@ ALSO_NAMES = {
     "verify": "It names the stage module and the `[verify]` table.",
     "assemble": "It names the stage module the facade imports by name.",
     "machine": "It names the module that holds the machine and the file its settings are written to.",
-    "music": "It names the bed the `[mix]` table points a file at, which the `[soundscape]` table does not list.",
-    "ambience": "It names the bed the `[mix]` table points a file at, which the `[soundscape]` table does not list.",
+    "music": "It names the bed the `[mix]` table points a file at, which the `[score]` table does not list.",
+    "ambience": "It names the bed the `[mix]` table points a file at, which the `[score]` table does not list.",
     "derived": "It is the word a published number's sentence opens with, which `x-numbers` reads back.",
     "environment": "It names the layer and the kind of unknown key a refusal reports, which is the same fact.",
 }

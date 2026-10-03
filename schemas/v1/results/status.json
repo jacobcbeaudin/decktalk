@@ -608,12 +608,60 @@
         "narrate",
         "cue",
         "record",
-        "soundscape",
+        "score",
         "assemble",
         "verify"
       ],
       "title": "Stage",
       "type": "string"
+    },
+    "UnplayedTakes": {
+      "additionalProperties": false,
+      "description": "The takes in the takes directory that no section plays, which DeckTalk lists and never deletes.\n\nA take is a paid record, so one the script has moved on from stays where it is until its author\nremoves it with `git rm`. A take counts as played when the take index names it or when a section's\ncurrent text, voice and settings name it, so a take the film still plays is never offered.",
+      "properties": {
+        "directory": {
+          "description": "The takes directory these files are in, project-relative.",
+          "format": "path",
+          "title": "Directory",
+          "type": "string"
+        },
+        "takes": {
+          "description": "How many takes no section plays, each its audio and its words file.",
+          "minimum": 0,
+          "title": "Takes",
+          "type": "integer"
+        },
+        "aligned": {
+          "description": "How many aligned words files under aligned/ no section plays.",
+          "minimum": 0,
+          "title": "Aligned",
+          "type": "integer"
+        },
+        "bytes": {
+          "description": "How many bytes every file listed here holds, added up.",
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "files": {
+          "default": [],
+          "description": "Every file no section plays, project-relative and sorted, which is what git rm is given.",
+          "items": {
+            "format": "path",
+            "type": "string"
+          },
+          "title": "Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "directory",
+        "takes",
+        "aligned",
+        "bytes"
+      ],
+      "title": "UnplayedTakes",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -719,6 +767,18 @@
       },
       "title": "Runs",
       "type": "array"
+    },
+    "unplayed": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/UnplayedTakes"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The takes in the takes directory that no section plays, or null when the takes each section plays cannot be named, as when no voice is named."
     },
     "next": {
       "anyOf": [

@@ -11,6 +11,7 @@ import pytest
 from decktalk.artifacts import PLACEHOLDER_PREFIX, CueTimes, Words
 from decktalk.artifacts.words import words_file
 from decktalk.errors import ErrorCode, InputError, NotBuiltError
+from decktalk.inputs import PAID_FOLDERS as LOADED_PAID_FOLDERS
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import ClipSection
 from decktalk.inputs.env import reading_dotenv
@@ -158,7 +159,7 @@ def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monk
         "[[section]]\nnumber = 1\npage = 'deck/a.html'\nscnee = 2\nslate_seconds = 3\n"
         "[[section]]\nnumber = 2\nclip = 'b.mp4'\nzebra = 1\n"
         "[mix]\nmusic_dbb = -20\n"
-        "[soundscape.music]\nprompt = 'calm'\nsecond = 60\n"
+        "[score.music]\nprompt = 'calm'\nsecond = 60\n"
         "[video]\npresett = 'veryfast'\n"
     )
     p = Inputs.load(write_project(tmp_path, toml), environ={})
@@ -170,15 +171,15 @@ def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monk
         "decktalk.toml: [[section]] number=1: ignoring 'slate_seconds', which applies only to a clip section",
         f"decktalk.toml: [[section]] number=2: ignoring unknown key 'zebra'{page}",
         f"decktalk.toml: [mix]: ignoring unknown key 'music_dbb' (did you mean 'music_db'?){page}",
-        f"decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'duration_seconds'?){page}",
+        f"decktalk.toml: [score.music]: ignoring unknown key 'second' (did you mean 'duration_seconds'?){page}",
         f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",
         f"decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'elevenlabs.stability'?){page}",
     )
     # A warning, not an error: the load succeeds and every misspelled key keeps its default.
     assert p.settings.elevenlabs.stability == 0.55
     assert p.settings.video.preset == "medium"
-    assert p.document.soundscape.music is not None
-    assert p.settings.soundscape.music.duration_seconds == 360
+    assert p.document.score.music is not None
+    assert p.settings.score.music.duration_seconds == 360
 
 
 def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
@@ -193,9 +194,9 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
         "[mix]\nmusic_db = -20\n"
         "[audio]\ntarget_lufs = -16\ntrue_peak_max_dbtp = -1.5\nrange_max_lu = 9\n"
         "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\noffset = 0.1\ncaption = 'a chime'\n"
-        "[soundscape.effects.tap]\ntext = 'a tap'\nout = 'tap.mp3'\nduration_seconds = 0.5\n"
+        "[score.effects.tap]\ntext = 'a tap'\nout = 'tap.mp3'\nduration_seconds = 0.5\n"
         "prompt_influence = 0.4\nmodel = 'sound'\n"
-        "[soundscape.music]\nprompt = 'calm'\nduration_seconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
+        "[score.music]\nprompt = 'calm'\nduration_seconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
         "model = 'music'\n"
     )
     p = Inputs.load(write_project(tmp_path, toml), environ={})
@@ -205,7 +206,7 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     assert (p.settings.voice.provider, p.settings.voice.model) == ("elevenlabs", "m")
     assert p.settings.elevenlabs.price_per_1000_characters == 0.3
     assert p.settings.audio.range_max_lu == 9
-    assert (p.settings.soundscape.music.duration_seconds, p.settings.soundscape.music.model) == (60, "music")
+    assert (p.settings.score.music.duration_seconds, p.settings.score.music.model) == (60, "music")
     assert p.document.mix.effects[0].caption == "a chime"
 
 
@@ -270,7 +271,7 @@ def test_every_path_key_of_the_document_goes_through_the_one_check(tmp_path):
         "ambience": "[mix]\nambience = '/etc/hosts'\n",
         "slate": "[mix]\nslate = '/etc/hosts'\n",
         "file": "[[mix.effects]]\nfile = '/etc/hosts'\nsection = 1\ncue = '1.1a'\n",
-        "out": "[soundscape.ambience]\ntext = 'x'\nout = '/etc/hosts'\n",
+        "out": "[score.ambience]\ntext = 'x'\nout = '/etc/hosts'\n",
     }
     for index, (key, table) in enumerate(cases.items()):
         root = tmp_path / f"case{index}"
@@ -331,7 +332,7 @@ def test_a_take_words_are_shifted_by_their_own_section_lead(tmp_path):
     toml = MINIMAL_TOML + "\n[narration]\nlead_seconds = 0.5\n"
     inputs = Inputs.load(write_project(tmp_path, toml), environ={})
     spoken = Words(words=(Word(word="hello", start=0.0, end=0.4),))
-    spoken.write(inputs.workspace.takes_dir / words_file("abc"))
+    spoken.write(inputs.workspace.takes / words_file("abc"))
     assert inputs.words(1, "abc") == (Word(word="hello", start=0.5, end=0.9),)
     assert inputs.words(0, "abc") == (Word(word="hello", start=0.0, end=0.4),)  # a clip has no lead
     assert inputs.words(1, "nothing") == ()
@@ -521,3 +522,126 @@ def test_a_build_directory_linked_out_of_the_project_is_refused_at_load(tmp_path
     (root / "build").symlink_to(elsewhere, target_is_directory=True)
     with pytest.raises(InputError, match="outside the project"):
         Inputs.load(root, environ={})
+
+
+# ---- the machine's take store --------------------------------------------------------------------
+
+
+def store_named(named: str) -> dict[str, dict[str, str]]:
+    """The machine's own tables naming its take store, as a machine file would."""
+    return {"narration": {"store_dir": named}}
+
+
+@pytest.mark.parametrize("named", ["shared-takes", "./takes", "../takes"])
+def test_a_relative_take_store_is_refused_at_load(tmp_path: Path, named: str) -> None:
+    """A relative store would name a different folder inside every project, which `git add .` then commits."""
+    root = write_project(tmp_path)
+    with pytest.raises(InputError, match=r"\[narration\] store_dir") as refused:
+        Inputs.load(root, environ={}, machine=store_named(named))
+    assert "relative" in str(refused.value)
+    assert "~" in (refused.value.hint or "")
+
+
+def test_a_take_store_that_starts_with_a_tilde_is_under_the_machines_home(tmp_path: Path) -> None:
+    (tmp_path / "proj").mkdir()
+    root = write_project(tmp_path / "proj")
+    loaded = Inputs.load(root, environ={"HOME": str(tmp_path / "home")}, machine=store_named("~/dt-takes"))
+    assert loaded.workspace.store == tmp_path / "home" / "dt-takes"
+
+
+def test_a_take_store_inside_the_project_is_refused(tmp_path: Path) -> None:
+    """Paid takes there would be a second takes directory with none of its rules, committed by `git add .`."""
+    root = write_project(tmp_path)
+    with pytest.raises(InputError, match="inside this project"):
+        Inputs.load(root, environ={}, machine=store_named(str(tmp_path / "machine-takes")))
+
+
+def test_a_project_reads_the_take_store_its_machine_keeps_unless_a_key_names_another(tmp_path: Path) -> None:
+    (tmp_path / "proj").mkdir()
+    root = write_project(tmp_path / "proj")
+    standard = tmp_path / "data" / "takes"
+    assert Inputs.load(root, environ={}, store=standard).workspace.store == standard
+    named = Inputs.load(root, environ={}, machine=store_named(str(tmp_path / "named")), store=standard)
+    assert named.workspace.store == tmp_path / "named"
+    assert Inputs.load(root, environ={}).workspace.store is None
+
+
+# ---- a paid folder and the build directory -------------------------------------------------------
+
+
+def with_folder(table: str, key: str, named: str, *, build: str | None = None) -> str:
+    """The minimal project with one paid folder named, and the build directory moved when `build` names one."""
+    project = f'name = "t"\nbuild = "{build}"' if build is not None else 'name = "t"'
+    return MINIMAL_TOML.replace('name = "t"', project) + f'\n[{table}]\n{key} = "{named}"\n'
+
+
+PAID_FOLDERS = [("narration", "takes_dir", "takes"), ("score", "dir", "score")]
+"""Every setting that names a folder of paid records, with its default name."""
+
+
+def test_every_paid_folder_setting_goes_through_the_one_check() -> None:
+    """The load reads each paid folder off one list, so these tests cover every key on it."""
+    assert set(LOADED_PAID_FOLDERS) == {f"{table}.{key}" for table, key, _ in PAID_FOLDERS}
+
+
+@pytest.mark.parametrize(("table", "key", "standard"), PAID_FOLDERS)
+@pytest.mark.parametrize(("build", "under"), [(None, "build"), ("out", "out")])
+@pytest.mark.parametrize("deeper", [True, False])
+def test_a_paid_folder_inside_the_build_directory_is_refused_at_load(
+    tmp_path: Path, table: str, key: str, standard: str, build: str | None, under: str, deeper: bool
+) -> None:
+    """The build directory is a cache that is deleted, so a paid record kept there would be bought again."""
+    named = f"{under}/{standard}" if deeper else under
+    root = write_project(tmp_path, with_folder(table, key, named, build=build))
+    with pytest.raises(InputError) as refused:
+        Inputs.load(root, environ={})
+    assert refused.value.code is ErrorCode.INPUT
+    message = str(refused.value)
+    assert f"[{table}] {key} is {named}" in message
+    assert f"[project] build is {under}" in message
+    assert "deleted" in message
+    assert "paid" in message
+
+
+@pytest.mark.parametrize(("table", "key"), [(table, key) for table, key, _ in PAID_FOLDERS])
+@pytest.mark.parametrize(
+    ("build", "named"), [(None, "buildings"), (None, "builds/x"), ("out", "outtakes"), ("out", "build/x")]
+)
+def test_a_paid_folder_that_only_shares_letters_with_the_build_directory_is_accepted(
+    tmp_path: Path, table: str, key: str, build: str | None, named: str
+) -> None:
+    root = write_project(tmp_path, with_folder(table, key, named, build=build))
+    loaded = Inputs.load(root, environ={})
+    held = {"narration": loaded.workspace.takes, "score": loaded.workspace.score_dir}[table]
+    assert held == root / named
+
+
+@pytest.mark.parametrize(("table", "key", "standard"), PAID_FOLDERS)
+@pytest.mark.parametrize("deeper", [True, False])
+def test_a_build_directory_inside_a_paid_folder_is_refused_at_load(
+    tmp_path: Path, table: str, key: str, standard: str, deeper: bool
+) -> None:
+    """Every build file would land in the folder the project commits, among the paid records."""
+    build = f"{standard}/build" if deeper else standard
+    root = write_project(tmp_path, with_folder(table, key, standard, build=build))
+    with pytest.raises(InputError) as refused:
+        Inputs.load(root, environ={})
+    assert refused.value.code is ErrorCode.INPUT
+    message = str(refused.value)
+    assert f"[{table}] {key} is {standard}" in message
+    assert f"[project] build is {build}" in message
+
+
+@pytest.mark.parametrize(("table", "key", "standard"), PAID_FOLDERS)
+def test_a_build_directory_that_only_shares_letters_with_a_paid_folder_is_accepted(
+    tmp_path: Path, table: str, key: str, standard: str
+) -> None:
+    build = f"{standard}helf"
+    root = write_project(tmp_path, with_folder(table, key, standard, build=build))
+    assert Inputs.load(root, environ={}).workspace.build == root / build
+
+
+def test_the_default_paid_folders_sit_beside_the_build_directory_and_load(tmp_path: Path) -> None:
+    loaded = Inputs.load(write_project(tmp_path), environ={})
+    assert loaded.workspace.takes == loaded.root / "takes"
+    assert loaded.workspace.score_dir == loaded.root / "score"

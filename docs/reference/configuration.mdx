@@ -48,7 +48,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --where machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.cache_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `output.events_max_bytes`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
+`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `output.events_max_bytes`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
 
 ## Which key moves which failure
 
@@ -108,8 +108,8 @@ These keys govern how the script is turned into audio.
 | `lead_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project |  | Silence before the first word of every spoken section, so the picture changes before the voice speaks. A section's own `lead_seconds` replaces it. |
 | `silent_beat_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project |  | Seconds each beat adds to a section's length in a build without voice. |
 | `tail_min_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project | `CUT_SPEECH` | Silence after the last word of every spoken section, so a cut never falls on speech. The take is placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it. |
-| `takes_dir` | string | `""` | takes any value of its type | path | project |  | Directory inside the project that holds its takes, their words files and the take index, so a committed copy builds the film on a fresh clone with no key. It is empty for `build/narrate/`. A take is looked for here first and in `cache_dir` second, and a take this project buys or finds elsewhere is written here. |
-| `cache_dir` | string | `""` | takes any value of its type | path | machine |  | Directory this machine keeps takes and their words files in, each named by its content hash, so many projects share one store and a deleted `build/` keeps them. A take is looked for here after the project's `takes_dir`, and a bought take is written here only when the project names no `takes_dir`. |
+| `takes_dir` | string | `"takes"` | must match the pattern ^.+$ | path | project |  | Directory inside the project that holds every take the film plays and the words its voice sent with each, which you commit so a fresh clone builds the film with no key. The take index stays under the build, because it is a cache built again from the takes. A take is looked for here first and in the machine's take store, `store_dir`, second, and a take this project buys or finds there is written here. |
+| `store_dir` | string | `""` | takes any value of its type | path | machine |  | The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its content hash. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a purchase nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS. |
 | `context_chars` | integer | `1500` | must be between 0 and 5000 | characters | project |  | Characters of each neighbour section sent with a request, for continuous prosody. |
 | `timeout_seconds` | integer | `180` | must be between 10 and 1800 | seconds | project |  | Seconds before a speech request times out. |
 | `sound_end_noise_dbfs` | number | `-35.0` | must be between -60 and -25 | dBFS | project | `CUT_SPEECH` | Level under which the tail of a take counts as silence, which is where the take's sound ends. |
@@ -118,7 +118,9 @@ These keys govern how the script is turned into audio.
 <Warning>
 **`narration.concurrency`** A voice provider limits requests per account, and a busy answer is retried rather than paid twice.
 
-**`narration.takes_dir`** A directory outside the project, an absolute path or the project directory itself is refused when the project loads, because a project someone else wrote would otherwise choose where this machine reads and writes its takes.
+**`narration.takes_dir`** An empty value, a directory outside the project, an absolute path, the project directory itself, a directory inside the build directory or one that holds it is refused when the project loads, because a bought take must land in a folder the project keeps, and a project someone else wrote would otherwise choose where this machine reads and writes its takes.
+
+**`narration.store_dir`** It holds the spoken words of every script voiced on this machine, so keep it out of a synced or shared folder. A relative path, a folder inside the project or one inside the tool cache is refused when the project loads. Write an absolute path or one that starts with ~.
 
 **`narration.sound_end_noise_dbfs`** Above about -25 dBFS the scan calls quiet speech silence, so the take is placed early and the cut that follows it lands on a word.
 
@@ -261,7 +263,7 @@ These keys decide how much motion a build renders, which changes the film it pro
 
 ## `[elevenlabs]`
 
-These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on elevenlabs.io unless the machine allows any. The soundscape buys from the same API with the same key.
+These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API. The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on elevenlabs.io unless the machine allows any. The score stage buys from the same API with the same key.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
@@ -297,19 +299,25 @@ These keys are the `dtsp` voice's own: where its local server listens and the mo
 
 </Warning>
 
-## `[soundscape]`
+## `[score]`
 
-The settings half of `[soundscape]`: how the music, the ambience and the effects are asked for. Each item's own table holds its prompt and its file, which are project content, beside the settings that size its request, so a key is spelled the same way the item it sizes spells it.
+The settings half of `[score]`: how the music, the ambience and the effects are asked for. Each item's own table holds its prompt and its file, which are project content, beside the settings that size its request, so a key is spelled the same way the item it sizes spells it.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
+| `dir` | string | `"score"` | must match the pattern ^.+$ | path | project |  | Directory inside the project that holds every sound the score bought and the ledger that records them, each named by its item, which you commit so a fresh clone mixes the film with no key. Music bought in parts keeps its parts here, and the piece joined from them is a cache under the build. |
 | `provider` | string | `"elevenlabs"` | takes any value of its type |  | project |  | The sound provider the music, the ambience and the effects are bought from, which is a name the machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys with the key and `api_base` of `[elevenlabs]`. |
 | `format` | string | `"mp3_44100_128"` | takes any value of its type |  | project |  | Audio format the music, the ambience and the effects are asked for in. A take's format is its voice's own, such as `[elevenlabs] output_format`. |
 | `timeout_seconds` | integer | `600` | must be between 10 and 3600 | seconds | project |  | Seconds before a sound or music request times out. |
 
-## `[soundscape.ambience]`
+<Warning>
+**`score.dir`** An empty value, a directory outside the project, an absolute path, the project directory itself, a directory inside the build directory or one that holds it is refused when the project loads, because a bought sound must land in a folder the project keeps, and a project someone else wrote would otherwise choose where this machine writes what it buys.
 
-The settings half of `[soundscape.ambience]`: how the bed is asked for. Its prompt and file are content.
+</Warning>
+
+## `[score.ambience]`
+
+The settings half of `[score.ambience]`: how the bed is asked for. Its prompt and file are content.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
@@ -319,13 +327,13 @@ The settings half of `[soundscape.ambience]`: how the bed is asked for. Its prom
 | `price_per_minute` | number | `0.0` | must be between 0 and 100 | currency per minute of audio | project |  | What this project's sound plan charges per minute of ambience audio, which is priced by the second of audio asked for. |
 
 <Warning>
-**`soundscape.ambience.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+**`score.ambience.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
 
 </Warning>
 
-## `[soundscape.effects]`
+## `[score.effects]`
 
-The settings half of `[soundscape.effects]`: how each effect is asked for unless its own table says.
+The settings half of `[score.effects]`: how each effect is asked for unless its own table says.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
@@ -335,25 +343,25 @@ The settings half of `[soundscape.effects]`: how each effect is asked for unless
 | `price_per_minute` | number | `0.0` | must be between 0 and 100 | currency per minute of audio | project |  | What this project's sound plan charges per minute of effect audio, which is priced by the second of audio asked for. |
 
 <Warning>
-**`soundscape.effects.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+**`score.effects.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
 
 </Warning>
 
-## `[soundscape.music]`
+## `[score.music]`
 
-The settings half of `[soundscape.music]`: how the bed is asked for and joined. Its prompt is content.
+The settings half of `[score.music]`: how the bed is asked for and joined. Its prompt is content.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
 | `model` | string | `"music_v2"` | takes any value of its type |  | project |  | Model the music is asked for from. |
 | `duration_seconds` | integer | `360` | must be between 1 and 3600 | seconds | project |  | Length of the music that is asked for, which `[mix]` fades out at the end of the film. |
-| `bitrate` | string | `"192k"` | must be one of 96k, 128k, 160k, 192k, 256k, 320k |  | project |  | Bitrate of the music file that `soundscape` joins from its chunks. |
+| `bitrate` | string | `"192k"` | must be one of 96k, 128k, 160k, 192k, 256k, 320k |  | project |  | Bitrate of the music file that `score` joins from its chunks. |
 | `max_chunk_seconds` | integer | `300` | must be between 30 and 600 | seconds | project |  | Longest music request. Longer music is requested in chunks and crossfaded. |
 | `crossfade_seconds` | integer | `2` | must be between 0 and 30 | seconds | project |  | Crossfade between two music chunks. |
 | `price_per_minute` | number | `0.0` | must be between 0 and 100 | currency per minute of audio | project |  | What this project's sound plan charges per minute of music audio, which is priced by the second of audio asked for. |
 
 <Warning>
-**`soundscape.music.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+**`score.music.price_per_minute`** It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
 
 </Warning>
 
@@ -382,6 +390,11 @@ These keys name the tools DeckTalk drives, for a machine that supplies its own.
 | `ffprobe` | string | `""` | takes any value of its type | path | machine |  | ffprobe executable. It is empty for the build DeckTalk fetches itself. |
 | `timeout_seconds` | number | `600.0` | must be between 10 and 7200 | seconds | machine |  | Longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before it is stopped. |
 | `cache_dir` | string | `""` | takes any value of its type | path | machine |  | Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. It is empty for the standard per-user cache. |
+
+<Warning>
+**`tools.cache_dir`** A relative path is refused when the machine loads. Write an absolute path or one that starts with ~.
+
+</Warning>
 
 ## The numbers that are not knobs
 

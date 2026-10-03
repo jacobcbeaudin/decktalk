@@ -5,10 +5,13 @@ description: Every file DeckTalk keeps under build/ today, what each one is for,
 
 Everything a run generates lives under one directory. `[project] build` names it, and it is `build/`
 unless the project says otherwise. Nothing under it is written by hand, and deleting the whole of it
-costs only the time to make it again, except for the paid records: the voiced takes, the words their
-voice sent back, the sound ledger and the sound it lists record money spent. `[narration] takes_dir`,
-committed with the project, and then the machine's `[narration] cache_dir` move the takes somewhere
-a `build/` that is deleted cannot take them.
+costs only the time to make it again. The paid records never live under `build/`. The voiced takes
+and the words their voice sent back live in the takes directory, `takes/` unless
+`[narration] takes_dir` names another, which you commit, with a second copy in the machine's take
+store, `[narration] store_dir`. The bought sounds and the ledger that lists them live in the score
+directory, `score/` unless `[score] dir` names another, which you commit too. The take index, the
+placeholders, the joined narration and the joined music stay under `build/`, because a build makes
+them again for nothing.
 
 This page describes the engine as it is, and most of it is a private cache. What DeckTalk promises a
 caller is [the contract](/reference/contract): the `--json` results, the events file, `build/final/`
@@ -48,23 +51,45 @@ spelled with forward slashes on all three platforms.
 
 ## The tree
 
+The takes a voice spoke and the sounds the score bought are not under `build/`. They sit in the
+takes directory and the score directory, which you commit:
+
+```
+my-lesson/takes/
+  <hash>.mp3                    one take, named by the content that produced it, under the suffix of
+                                the format its voice declares, which is .mp3 for ElevenLabs
+  <hash>.words.json             that take's words, in seconds after the take starts, with the size
+                                and BLAKE3 of the take they came with
+my-lesson/score/
+  ambience.mp3                  the ambience bed, when the project declares one
+  <name>.mp3                    one file per declared effect
+  music-part<n>.mp3             each part of the music bed, when the project declares one
+  ledger.json                   what this project has already bought, keyed by the request that made it
+```
+
+Each sound is named by its item, so `--replace-score` with `--spend` writes over the same file.
+
+A take stays in the takes directory after the script moves on from it, such as after a voice change.
+`decktalk status` lists the takes there that no section plays, and any aligned words under
+`aligned/`, with their size, and `--json` carries them as `unplayed`. DeckTalk never deletes one,
+so remove the ones you no longer want with `git rm`. A take counts as played when the take index or
+a section's current text, voice and settings name it, and with no voice named `unplayed` is null.
+
+Everything else a run writes is under the build directory:
+
 ```
 my-lesson/build/
   narrate/
     takes.json                  which section plays which take, and the clock the join makes
-    <hash>.mp3                  one take, named by the content that produced it, under the suffix of
-                                the format its voice declares, which is .mp3 for ElevenLabs
-    <hash>.words.json           that take's words, in seconds after the take starts
+    placeholder-<hash>.mp3      a click track standing in for a take nobody bought yet
+    placeholder-<hash>.words.json  its estimated words
     narration.mp3               the takes joined into one track, which assemble mixes under the picture
   cue-times.json                every cue resolved to a second on its own section's clock
   recordings/
     NN.webm                     one section as the browser recorded it
     NN.json                     what record did for that section, judged and measured
-  soundscape/
-    music.mp3                   the music bed, when the project declares one
-    ambience.mp3                the ambience bed, when the project declares one
-    <name>.mp3                  one file per declared effect
-    ledger.json                 what this project has already bought, keyed by the request that made it
+  score/
+    music.mp3                   the music bed joined from its parts, when the project declares one
   sections/
     NN.mp4                      one section cut to its own span, which assemble concatenates
     NN.json                     the key that cut was made from, which decides whether it is kept
@@ -194,23 +219,29 @@ A placeholder take is named the same way over its own three inputs, which are th
 at, how long a declared pause is held, and the text it stands in for. Its digest carries the prefix
 `placeholder-`, so a run that writes placeholders can never overwrite a take somebody paid for.
 
-## `build/narrate/<hash>.words.json`
+## `takes/<hash>.words.json`
 
 Beside every take sits its words file, under the same digest. This is the smallest artifact and the
 one every other reads: a cue resolves against it, the captions are built from it, and the clicks of
 a placeholder take sit at each `start`.
 
 The words the speech provider sends back with a voiced take are a paid record, because only voicing the take
-again gives them back. One that does not read is refused with a sentence and left where it is, never
-built again. Words DeckTalk estimated for a placeholder take are a cache like the rest of `build/`.
+again gives them back. They are written in one step with the take, and they record the take's size
+and BLAKE3 under `audio`, because a take's name says what was asked for and only this fingerprint can
+tell a truncated or swapped take from a good one. A copy whose words do not read, or whose take does
+not match them, is skipped wherever it is found, moved aside as `<name>.unreadable` when a good copy
+replaces it, and never copied or deleted. When no copy anywhere is good, the run is refused with a
+sentence, because the next step would buy the take again. Words DeckTalk estimated for a placeholder
+take are a cache under `build/narrate/`, like the rest of `build/`.
 
-```json build/narrate/9f2c1ab7d4e60518.words.json
+```json takes/9f2c1ab7d4e60518.words.json
 {
   "words": [
     { "word": "This", "start": 0.0, "end": 0.454 },
     { "word": "is", "start": 0.474, "end": 0.927 },
     { "word": "DeckTalk", "start": 0.947, "end": 1.401 }
-  ]
+  ],
+  "audio": { "bytes": 22656, "blake3": "4be0ce1f9a2d7c31" }
 }
 ```
 
@@ -341,22 +372,24 @@ whose digest is unchanged would be recorded again for nothing, so it is kept.
 `report` is what the page answered `window.__dtprobe.report()` with, kept whole.
 [Runtime](/reference/runtime) gives every field of it.
 
-## `build/soundscape/`
+## `score/ledger.json`
 
-One audio file per item the `[soundscape]` table declares, named after the item unless the table
-sends it elsewhere. The ambience bed is `ambience.mp3`, the music bed is `music.mp3`, and each
-effect is named after the key it is declared under.
+The score directory holds one audio file per sound the `[score]` table declares, named after the
+item unless the table sends it elsewhere. The ambience bed is `ambience.mp3`, each effect is named
+after the key it is declared under, and the music bed is bought in parts, `music-part1.mp3` and on,
+which are joined into `build/score/music.mp3`. A run that finds the parts and not the joined piece
+joins them again, which buys nothing.
 
 Beside them is `ledger.json`, which is what this project has already bought.
 
-```json build/soundscape/ledger.json
+```json score/ledger.json
 {
   "items": [
     {
       "name": "music",
       "kind": "music",
       "digest": "7c04a1ee39b2d5f8",
-      "file": "build/soundscape/music.mp3",
+      "file": "build/score/music.mp3",
       "seconds": 96.0,
       "parts": ["3ab1d0f27c845e69", "9de2b61840cf37a5"],
       "request": "{\"chunks\":[{\"prompt\":\"a slow warm pad\"}],\"crossfade_seconds\":1.5}"
@@ -377,7 +410,7 @@ Beside them is `ledger.json`, which is what this project has already bought.
 
 Every request is paid for, so the one question this file answers is whether the audio on disk was
 made from the request the project asks for now. A row whose digest still matches is kept rather than
-bought again. It is one file for the whole soundscape rather than a cache file beside every output,
+bought again. It is one file for the whole score rather than a cache file beside every output,
 because the outputs may sit wherever `decktalk.toml` sends them and a run has to read the whole
 record before it prices anything. A ledger that is there and will not parse, including one an older
 release wrote in another shape, is refused with a sentence and left on disk rather than read as a

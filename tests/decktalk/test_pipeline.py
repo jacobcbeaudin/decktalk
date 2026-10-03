@@ -13,7 +13,7 @@ from support.paths import SRC
 
 
 def test_the_six_stages_are_declared_in_run_order() -> None:
-    assert [stage.value for stage in Stage] == ["narrate", "cue", "record", "soundscape", "assemble", "verify"]
+    assert [stage.value for stage in Stage] == ["narrate", "cue", "record", "score", "assemble", "verify"]
 
 
 def test_the_pipeline_has_one_row_per_stage_in_the_same_order() -> None:
@@ -71,8 +71,8 @@ def test_the_graph_is_the_table_read_as_edges() -> None:
         Stage.NARRATE: frozenset(),
         Stage.CUE: {Stage.NARRATE},
         Stage.RECORD: {Stage.NARRATE, Stage.CUE},
-        Stage.SOUNDSCAPE: frozenset(),
-        Stage.ASSEMBLE: {Stage.NARRATE, Stage.RECORD, Stage.SOUNDSCAPE},
+        Stage.SCORE: frozenset(),
+        Stage.ASSEMBLE: {Stage.NARRATE, Stage.RECORD, Stage.SCORE},
         Stage.VERIFY: {Stage.CUE, Stage.ASSEMBLE},
     }
 
@@ -82,7 +82,7 @@ def test_the_graph_is_the_table_read_as_edges() -> None:
     [
         ((Stage.NARRATE,), (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)),
         ((Stage.CUE,), (Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)),
-        ((Stage.SOUNDSCAPE,), (Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.SCORE,), (Stage.ASSEMBLE, Stage.VERIFY)),
         ((Stage.ASSEMBLE,), (Stage.VERIFY,)),
         ((Stage.VERIFY,), ()),
         ((Stage.RECORD, Stage.ASSEMBLE), (Stage.VERIFY,)),
@@ -104,10 +104,10 @@ def test_a_table_that_reads_in_a_circle_is_refused(monkeypatch: pytest.MonkeyPat
     ("plan", "wanted"),
     [
         (tuple(Stage), ()),
-        ((Stage.ASSEMBLE,), (Artifact.TAKES, Artifact.RECORDINGS, Artifact.SOUNDSCAPE)),
+        ((Stage.ASSEMBLE,), (Artifact.TAKES, Artifact.RECORDINGS, Artifact.SCORE)),
         ((Stage.VERIFY,), (Artifact.CUE_TIMES, Artifact.FINAL)),
         ((Stage.RECORD,), (Artifact.TAKES, Artifact.CUE_TIMES)),
-        ((Stage.SOUNDSCAPE,), ()),
+        ((Stage.SCORE,), ()),
         ((Stage.NARRATE, Stage.CUE), ()),
     ],
 )
@@ -149,10 +149,10 @@ def stage_source(stage: Stage) -> str:
 
 
 def test_the_key_holders_are_the_stages_that_pass_the_spend_gate() -> None:
-    """A stage holds the key exactly when its code asks the run to approve a price, which is narrate and soundscape."""
+    """A stage holds the key exactly when its code asks the run to approve a price, which is narrate and score."""
     for stage in Stage:
         assert stage.spec.holds_key == ("run.approve(" in stage_source(stage)), stage
-    assert Stage.voice_part() == (Stage.NARRATE, Stage.SOUNDSCAPE)
+    assert Stage.voice_part() == (Stage.NARRATE, Stage.SCORE)
 
 
 def test_the_page_openers_are_the_stages_that_reach_the_browser() -> None:

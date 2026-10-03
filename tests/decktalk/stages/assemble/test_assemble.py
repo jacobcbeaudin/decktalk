@@ -154,14 +154,14 @@ def test_strict_refuses_a_mix_that_missed_the_loudness_it_was_mastered_to(tmp_pa
     assert "loudness" in str(refused.value)
 
 
-def test_a_run_that_asks_for_no_soundscape_lays_no_bed(tmp_path, rendering, monkeypatch):  # fmt: skip
+def test_a_run_that_asks_for_no_score_lays_no_bed(tmp_path, rendering, monkeypatch):  # fmt: skip
     inputs = write_project(
         tmp_path, TITLED_TOML.replace("[narration]", '[mix]\nmusic = "media/bed.mp3"\n\n[narration]')
     )
     opened = open_run(tmp_path)
     monkeypatch.setattr(browser, "render_slate", draw_slate)
     take_index(inputs, GAPPED, voiced=False)
-    result = assemble(inputs, opened.run, soundscape=False)
+    result = assemble(inputs, opened.run, score=False)
     assert "media/bed.mp3" not in {row.location.where for row in result.findings}
     assert not any("bed.mp3" in " ".join(call) for call in rendering.calls)
 

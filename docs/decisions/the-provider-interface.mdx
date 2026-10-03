@@ -118,7 +118,7 @@ only to the vendor that issued it.
 
 ### Sound is its own seam
 
-The sound stage (`soundscape`) buys music, ambience and effects through a `SoundProvider`, a second
+The sound stage (`score`) buys music, ambience and effects through a `SoundProvider`, a second
 protocol with its own table of adapters beside `PROVIDERS`. It never borrows the speech registry and
 never checks which class a voice is. Sound is priced per second of audio, at a rate in the sound
 adapter's own table, because that is how sound is billed. A sound's ledger digest is taken over the

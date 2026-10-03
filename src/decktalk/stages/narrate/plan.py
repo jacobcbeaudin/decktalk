@@ -21,9 +21,10 @@ as one section rather than as the whole film.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from decktalk.artifacts import PlaceholderInputs, TakeInputs, Takes
+from decktalk.artifacts import PlaceholderInputs, TakeInputs, Takes, is_placeholder, words_file
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
@@ -38,6 +39,15 @@ from decktalk.stages import billed, dollars_for, rate_fields, voice_context
 
 WITHOUT_A_VOICE = "no voice is named, so the cache cannot be checked"
 """Why a section's take is unknown, which is the one state a plan cannot resolve on its own."""
+
+CHANGED = "the text, the voice, the model or the voice settings changed"
+"""Why a section's words are on disk under another digest, which only one of a take's inputs moving explains."""
+
+NO_TAKE_YET = "it has no take yet"
+"""Why a section never had a take, worded as a clause so the plan and the `TAKE_MISSING` finding read it alike."""
+
+SHARED = "another section of this run voices these words"
+"""Why a section sends nothing for words an earlier section of the same run already plans to make."""
 
 
 def take_identity(inputs: Inputs) -> dict[str, Any]:
@@ -77,12 +87,40 @@ def placeholder_inputs(inputs: Inputs, segment: Segment) -> PlaceholderInputs:
 
 
 def is_cached(digest: str, workspace: Workspace) -> bool:
-    """True when some place a take is looked for holds this take and its words file, which is the whole cache.
+    """True when some place a take is looked for holds a good copy of this take and its words file.
 
-    The places are the project's own take directory, then the machine's store, then the build, so a
-    clone that committed its takes and a laptop that keeps them for every project both find them.
+    The places are the project's takes directory, then the machine's take store, so a clone that committed
+    its takes and a laptop that keeps them for every project both find them. A placeholder is looked
+    for under the build alone, because a build makes it again for nothing.
     """
     return workspace.holding(digest) is not None
+
+
+def refuse_damaged(inputs: Inputs, number: int, digest: str) -> None:
+    """Refuse a voiced take whose every copy on disk is damaged, before a run plans to make it.
+
+    A take some place holds a good copy of is found and never reaches here. One that no place holds
+    at all is simply missing. One that is there and damaged everywhere is a paid record only voicing it
+    again gives back, so the run stops rather than buying it again or playing a placeholder over it,
+    and the damaged copy is left where it is.
+    """
+    if is_placeholder(digest):
+        return
+    damaged = inputs.workspace.damaged(digest)
+    if damaged:
+        raise damaged_refusal(inputs, number, digest, *damaged[0])
+
+
+def damaged_refusal(inputs: Inputs, number: int, digest: str, place: Path, fault: str) -> InputError:
+    """The sentence a voiced take is refused with when no place holds a good copy and `place` holds a damaged one."""
+    takes = inputs.relative(inputs.workspace.takes).as_posix()
+    return InputError(
+        f"{fault} No place holds a good copy of the take section {number} plays, and only voicing it again "
+        "gives it back, so DeckTalk neither buys it again nor deletes it.",
+        hint=f"Put a good copy of {inputs.workspace.take_file(digest)} and {words_file(digest)} in {takes}, or run "
+        f"decktalk narrate --section {number} --replace-voiced --spend knowing that it buys the take again.",
+        location=at(place / words_file(digest), inputs.root, section=number),
+    )
 
 
 def speech_provider(run: Run, inputs: Inputs) -> SpeechProvider:
@@ -202,7 +240,7 @@ def requests_for(inputs: Inputs, targets: list[Segment], *, model: str, voice_id
 
 
 def miss_reason(previous: Takes | None, segment: Segment, digest: str, *, voiced: bool, elsewhere: set[str]) -> str:
-    """Why this section's take is not on disk, in the words the plan and the payload both carry.
+    """Why this section's take is not on disk, as a clause the plan, the log and the `TAKE_MISSING` finding all carry.
 
     A take is found by its content, so the index is searched by content before it is searched by
     section number. `elsewhere` is the spoken text of every other section this run is planning, which
@@ -212,12 +250,11 @@ def miss_reason(previous: Takes | None, segment: Segment, digest: str, *, voiced
     rows = previous.sections if previous is not None else ()
     if any(row.hash == digest for row in rows):
         return "the take or its words file is missing"
-    changed = "the text, the voice, the model or the voice settings changed"
     same_words = [row for row in rows if row.spoken == segment.spoken]
     if same_words:
-        return "only a take without voice exists" if voiced and not any(r.voiced for r in same_words) else changed
+        return "only a take without voice exists" if voiced and not any(r.voiced for r in same_words) else CHANGED
     row = next((r for r in rows if r.section == segment.index), None)
-    return changed if row is not None and row.spoken not in elsewhere else "no take yet"
+    return CHANGED if row is not None and row.spoken not in elsewhere else NO_TAKE_YET
 
 
 def plan_takes(
@@ -252,14 +289,14 @@ def plan_takes(
             continue
         digest = digests[segment.index]
         if digest in planned:
-            shared = "another section of this run voices these words"
-            plans.append(TakePlan(segment, TakeStatus.KEPT, shared, chapter, digest, request))
+            plans.append(TakePlan(segment, TakeStatus.KEPT, SHARED, chapter, digest, request))
         elif again:
             plans.append(TakePlan(segment, wanted, "this run was told to make it again", chapter, digest, request))
             planned.add(digest)
         elif is_cached(digest, inputs.workspace):
             plans.append(TakePlan(segment, TakeStatus.KEPT, "", chapter, digest, request))
         else:
+            refuse_damaged(inputs, segment.index, digest)
             elsewhere = {other.spoken for other in targets if other.index != segment.index}
             reason = miss_reason(previous, segment, digest, voiced=voiced, elsewhere=elsewhere)
             plans.append(TakePlan(segment, wanted, reason, chapter, digest, request))
@@ -277,7 +314,7 @@ def _unchecked_plan(previous: Takes | None, segment: Segment, chapter: str, requ
     row = previous.of(segment.index) if previous is not None else None
     if row is not None and row.voiced:
         return TakePlan(segment, TakeStatus.VOICED, WITHOUT_A_VOICE, chapter=chapter, request=request, unchecked=True)
-    why = "only a take without voice exists" if row is not None else "no take yet"
+    why = "only a take without voice exists" if row is not None else NO_TAKE_YET
     return TakePlan(segment, TakeStatus.VOICED, why, chapter=chapter, request=request)
 
 
@@ -344,11 +381,16 @@ def spend_of(plans: list[TakePlan], inputs: Inputs, *, state: SpendState) -> Spe
 
 
 __all__ = [
+    "CHANGED",
+    "NO_TAKE_YET",
+    "SHARED",
     "UNNAMED",
     "VOICE_ID_VARIABLE",
     "TakePlan",
     "DROPPED_PAUSE_HINT",
     "dropped_pauses",
+    "damaged_refusal",
+    "refuse_damaged",
     "refuse_dropped_pauses",
     "is_cached",
     "miss_reason",

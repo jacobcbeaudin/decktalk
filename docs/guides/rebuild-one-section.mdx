@@ -22,7 +22,7 @@ offered.
 ## Name the sections with `--section`
 
 `--section` is the one selector, and it means the same thing on `build`, `narrate`, `cue`, `record`,
-`soundscape`, `assemble`, `verify`, `words`, `storyboard`, `check` and `clip`. It takes one number, a
+`score`, `assemble`, `verify`, `words`, `storyboard`, `check` and `clip`. It takes one number, a
 comma list or a range, and it repeats, so these four lines name the same kind of thing.
 
 ```console
@@ -81,27 +81,28 @@ Nothing else is in it, and each absence is a decision you can rely on.
   twice.
 
 A take file is named by its digest, under the suffix of the format it holds, which is `.mp3` for
-every ElevenLabs format. `narrate` sends nothing for a section whose take and words file are both on
-disk. It looks in three places, in this order:
+every ElevenLabs format. `narrate` sends nothing for a section whose take and words file are on disk
+and agree. It looks in two places, in this order:
 
-1. [`narration.takes_dir`](/reference/configuration#narration), a directory inside the project that
-   holds its takes, their words files and the take index. Commit it, and a fresh clone builds the
-   real film with no key. Every take this project buys is written there, and a take found in one of
-   the other two places is copied there, so the directory always holds the whole film.
-2. [`narration.cache_dir`](/reference/configuration#narration), a store this machine keeps for every
-   project, which survives a deleted `build/`. It is a machine key, set with
-   `decktalk config set narration.cache_dir DIR --where machine`. A take is written there only when
-   the project names no `takes_dir`.
-3. `build/narrate/`, where the takes live when neither key is set.
+1. The takes directory, `takes/` inside the project unless
+   [`narration.takes_dir`](/reference/configuration#narration) names another. It holds every take the
+   film plays and the words its voice sent with each. Commit it, and a fresh clone builds the real film
+   with no key. Every take this project buys is written there, and a take found in the take store is
+   copied there, so the directory always holds the whole film.
+2. The take store, [`narration.store_dir`](/reference/configuration#narration), a folder outside every
+   project where this machine keeps a second copy of every take it buys. It is on by default, in the
+   per-user data folder, and `decktalk config set narration.store_dir DIR --where machine` moves it.
+   It is written once per take, so a re-buy with `--replace-voiced` changes this project's takes
+   directory and never the take another project plays. It holds the spoken words of every script
+   voiced on this machine, so keep it out of a synced or shared folder.
 
-```toml
-[narration]
-takes_dir = "voice"   # commit voice/ and a clone plays these takes
-```
+A copy whose words do not read, or whose take does not hold the bytes they recorded, is skipped and
+moved aside as `<name>.unreadable` when a good copy replaces it. DeckTalk never deletes a take.
 
-A `takes_dir` outside the project, an absolute path or the project directory itself is refused when
-the project loads. A placeholder take and the joined narration are always under `build/narrate/`,
-because a build makes them again for nothing.
+A `takes_dir` that is empty, outside the project, an absolute path or the project directory itself is
+refused when the project loads, and so is a `store_dir` that is relative, inside the project or inside
+the tool cache. A placeholder take, the take index and the joined narration are always under
+`build/narrate/`, because a build makes them again for nothing.
 
 A section that is voiced again costs the characters of its whole text and not only the changed
 sentence, so `decktalk check` is the call that prices an edit before you run it.
@@ -251,7 +252,7 @@ Three flags redo work. `--force` costs nothing, and the two replace flags buy ag
 own.
 
 `--force` builds again from nothing and never spends. It keeps every voiced take and every sound the
-soundscape bought, and makes again everything that costs nothing. `narrate` remakes the placeholders,
+score bought, and makes again everything that costs nothing. `narrate` remakes the placeholders,
 `record` records every section it planned, and `assemble` and `verify` run and measure again even when
 nothing they read has moved. With `--spend` or `--no-spend`, a forced run buys only what is missing,
 as an unforced run does.
@@ -268,15 +269,15 @@ voiced rehearses its new section for nothing. `--replace-voiced --no-spend` play
 place of the voiced takes for that one run, and the voiced takes stay on disk for the next.
 
 ```text
-script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take of its current text on disk. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take yet. Run decktalk narrate --section 2 --spend to buy its take.
 ```
 
-`--replace-score` is the same for the soundscape. With `--spend` it buys every bought sound again,
+`--replace-score` is the same for the score. With `--spend` it buys every bought sound again,
 each part of the music included, and it never buys a take. `--replace-voiced` never buys a sound.
 Without `--spend`, `--replace-score` keeps every bought sound on disk, so it never acts on its own.
 
 ```console
-decktalk soundscape --replace-score --spend
+decktalk score --replace-score --spend
 ```
 
 On a terminal, each replace flag is confirmed once before anything is replaced. Without a terminal
@@ -333,7 +334,7 @@ stage, run that stage alone and the two after it that read what it wrote.
 | A slide moved and the script did not | `decktalk record --section N`, then `decktalk assemble`, then `decktalk verify --section N` |
 | A cue phrase moved | `decktalk cue`, then `decktalk record --section N`, then `decktalk assemble` |
 | A clip file, `[transition]` or a `[mix]` level moved | `decktalk assemble`, then `decktalk verify` |
-| A sound effect's prompt moved | `decktalk soundscape --spend`, then `decktalk assemble` |
+| A sound effect's prompt moved | `decktalk score --spend`, then `decktalk assemble` |
 
 `--from STAGE` and `--to STAGE` do the same thing through `build`, which is the way to say it when
 the span is more than one stage.

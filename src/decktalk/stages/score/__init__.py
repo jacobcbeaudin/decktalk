@@ -1,27 +1,34 @@
 """Stage 4: the music, the ambience bed and the effects this project describes are generated.
 
-    build/soundscape/<name>.mp3   one file per item the `[soundscape]` table declares
-    build/soundscape/ledger.json  what this project has already bought, keyed by the request
+    score/<name>.mp3          one bought file per ambience bed and effect, named by its item
+    score/music-part<n>.mp3   each part of the music, bought in turn
+    score/ledger.json         what this project has already bought, keyed by the request
+    build/score/music.mp3     the music joined from its parts, which is a cache
 
 It runs after `record`, so the unpaid draft loop still stops at a recording and every credit a run
 spends is already spent by the time the film is cut. `narrate` is the other stage that buys, with
 `cue` and `record` between the two, so a run that reaches here has nothing left to pay for.
 
 Ambience and effects are one sound request each, and music is asked for in chunks of at most
-`[soundscape.music] max_chunk_seconds` and joined with a crossfade, because the service will not
+`[score.music] max_chunk_seconds` and joined with a crossfade, because the service will not
 write a long piece in one answer. Every request is priced by the seconds of audio it asks for, at
 the per-minute rate its kind's own table states.
 
-The provider is the one `[soundscape] provider` names in the run's own sound table, which is a seam
+The provider is the one `[score] provider` names in the run's own sound table, which is a seam
 of its own beside the voices, so this stage names no vendor and never asks what class it was given.
 
-Every path this stage writes comes from `Workspace`, so no build directory is spelled here and a
-project that moves its build directory moves its soundscape with it. What has already been bought
-is `ledger.py`, one typed file rather than a cache beside every output, and an item whose request
-still matches its row is kept rather than bought again. Every item here is bought, so this stage has
-nothing free to make again and takes no `force`, which never spends. An item is bought again only
-once its request moves or its audio is gone, or when `replace_score` says to buy every item again,
-which a run that may not spend ignores because it has nothing to replace a bought sound with.
+Every path this stage writes comes from `Workspace`, so no directory is spelled here. What is
+bought lands in the score directory, `[score] dir`, which the project commits, so deleting the build
+directory never buys a sound again. Each file is named by its item, so buying one again writes over
+the one file the project keeps. The music joined from its parts is free to make again, so it is a
+cache under the build, joined again by any run that finds its parts and not the piece.
+
+What has already been bought is `ledger.py`, one typed file beside the audio rather than a cache
+beside every output, and an item whose request still matches its row is kept rather than bought
+again. Every purchase here is paid, so this stage takes no `force`, which never spends. An item is
+bought again only once its request moves or its bought audio is gone, or when `replace_score` says
+to buy every item again, which a run that may not spend ignores because it has nothing to replace a
+bought sound with.
 
 Nothing is bought without `run.approve`, so a run that may not spend reports the plan and writes
 nothing at all. The run's own `spend` is the only thing that says so, because a second flag beside
@@ -29,7 +36,7 @@ it could be set to contradict the gate. The sound provider is built only once so
 every paid request is a `sound.charged` line the moment the provider answers, and the spend a run
 that bought something reports is marked charged.
 
-`only` names section numbers, because that is what every other stage takes, and the soundscape's own
+`only` names section numbers, because that is what every other stage takes, and the score's own
 items are named rather than numbered. An effect is wanted when a `[[mix.effects]]` row cues it in a
 selected section, the ambience bed is wanted when a selected page section asks for one, and the
 music is wanted whenever any section is selected, because one bed plays under the whole film.
@@ -55,9 +62,9 @@ from decktalk.results import (
     DOLLAR_DIGITS,
     Billing,
     Layer,
+    ScoreResult,
     SoundItem,
     SoundKind,
-    SoundscapeResult,
     SoundStatus,
     Spend,
     SpendState,
@@ -65,7 +72,7 @@ from decktalk.results import (
 from decktalk.settings import AmbienceConfig, EffectsConfig, MusicConfig
 from decktalk.speech.sound import SOUND_DECLARED, SoundContext, SoundProvider, endpoint
 from decktalk.stages import selects
-from decktalk.stages.soundscape.ledger import (
+from decktalk.stages.score.ledger import (
     LEDGER_FILE,
     UNFINISHED_DIGEST,
     Ledger,
@@ -74,10 +81,10 @@ from decktalk.stages.soundscape.ledger import (
 )
 
 AMBIENCE_NAME = "ambience"
-"""What the ambience bed is called, which is the one item the `[soundscape]` table does not name."""
+"""What the ambience bed is called, which is the one item the `[score]` table does not name."""
 
 MUSIC_NAME = "music"
-"""What the music bed is called, which the `[soundscape]` table does not name either."""
+"""What the music bed is called, which the `[score]` table does not name either."""
 
 SECONDS_PER_MINUTE = 60
 """Truth: the seconds in a minute, which is what a rate stated per minute is divided by to price a second."""
@@ -86,7 +93,7 @@ SECOND_DIGITS = 3
 """Truth: the seconds of audio a price is for are kept to the millisecond, the finest a request asks for."""
 
 TABLES = {SoundKind.AMBIENCE: "ambience", SoundKind.EFFECT: "effects", SoundKind.MUSIC: "music"}
-"""The `[soundscape]` table each kind is sized and priced by."""
+"""The `[score]` table each kind is sized and priced by."""
 
 PRICE_KEY = "price_per_minute"
 """The key each kind's table states its rate under, whose layer decides whether a ceiling may refuse a run."""
@@ -114,6 +121,13 @@ class Planned:
     endpoint: str
     bodies: tuple[dict[str, Any], ...]
     digest: str
+    parts: tuple[Path, ...] = ()
+    """Where each bought part of the music is kept, in the order they are joined into `out`."""
+
+    @property
+    def bought(self) -> tuple[Path, ...]:
+        """The files this item's purchase wrote, which are its parts for the music and its one file for a sound."""
+        return self.parts or (self.out,)
 
     @property
     def seconds(self) -> float:
@@ -164,23 +178,24 @@ def music_bodies(spec: MusicSpec, cfg: MusicConfig) -> list[dict[str, Any]]:
     return bodies
 
 
-def _out(inputs: Inputs, named: str | None, default: str) -> Path:
+def _out(inputs: Inputs, named: str | None, default: Path) -> Path:
     """Where one item is written, which is the path the project names or the workspace's own."""
-    return inputs.path(named) if named else inputs.workspace.soundscape_dir / default
+    return inputs.path(named) if named else default
 
 
 def plan_items(inputs: Inputs) -> list[Planned]:
-    """Every item the `[soundscape]` table declares, in the order the table declares them.
+    """Every item the `[score]` table declares, in the order the table declares them.
 
     Nothing here reads the disk or the network, so what a run would ask for can be read without
     asking for it, which is what prices a run before it spends. Each request is named in its digest
     by the endpoint its provider declares, which leaves out `api_base`, so a project that moves to
     another host of the same service keeps every sound it bought.
     """
-    spec = inputs.document.soundscape
+    spec = inputs.document.score
     mix = inputs.document.mix
-    cfg = inputs.settings.soundscape
+    cfg = inputs.settings.score
     sound, music = endpoint(cfg.provider, SoundKind.EFFECT), endpoint(cfg.provider, SoundKind.MUSIC)
+    kept = inputs.workspace.score_dir
     items: list[Planned] = []
     if spec.ambience is not None:
         body = sound_body(spec.ambience, cfg.ambience, loop=True)
@@ -189,7 +204,7 @@ def plan_items(inputs: Inputs) -> list[Planned]:
                 name=AMBIENCE_NAME,
                 kind=SoundKind.AMBIENCE,
                 prompt=spec.ambience.text,
-                out=_out(inputs, spec.ambience.out or mix.ambience, f"{AMBIENCE_NAME}.mp3"),
+                out=_out(inputs, spec.ambience.out or mix.ambience, kept / f"{AMBIENCE_NAME}.mp3"),
                 endpoint=sound,
                 bodies=(body,),
                 digest=request_digest(sound, body),
@@ -202,7 +217,7 @@ def plan_items(inputs: Inputs) -> list[Planned]:
                 name=name,
                 kind=SoundKind.EFFECT,
                 prompt=effect.text,
-                out=_out(inputs, effect.out, f"{name}.mp3"),
+                out=_out(inputs, effect.out, kept / f"{name}.mp3"),
                 endpoint=sound,
                 bodies=(body,),
                 digest=request_digest(sound, body),
@@ -216,10 +231,11 @@ def plan_items(inputs: Inputs) -> list[Planned]:
                 name=MUSIC_NAME,
                 kind=SoundKind.MUSIC,
                 prompt=spec.music.prompt,
-                out=_out(inputs, spec.music.out or mix.music, f"{MUSIC_NAME}.mp3"),
+                out=_out(inputs, spec.music.out or mix.music, inputs.workspace.joined_dir / f"{MUSIC_NAME}.mp3"),
                 endpoint=music,
                 bodies=tuple(bodies),
                 digest=request_digest(music, whole),
+                parts=tuple(kept / f"{MUSIC_NAME}-part{index + 1}.mp3" for index in range(len(bodies))),
             )
         )
     return items
@@ -229,7 +245,7 @@ def wanted(inputs: Inputs, only: Sequence[int] | None) -> Callable[[Planned], bo
     """Whether one item belongs to this run, which a run that names no section answers yes to.
 
     A section is what every other stage selects on, so this is where the film's own sections are
-    read back into the names the soundscape table uses.
+    read back into the names the score table uses.
     """
     chosen = selects(only)
     document = inputs.document
@@ -250,19 +266,30 @@ def wanted(inputs: Inputs, only: Sequence[int] | None) -> Callable[[Planned], bo
 
 
 def stale(ledger: Ledger, item: Planned) -> bool:
-    """Whether this item has to be bought, which is when its request moved or its audio is not there."""
+    """Whether this item has to be bought, which is when its request moved or its bought audio is not there."""
     entry = ledger.of(item.name)
-    return entry is None or entry.digest != item.digest or not item.out.is_file()
+    return entry is None or entry.digest != item.digest or not all(path.is_file() for path in item.bought)
+
+
+def unjoined(item: Planned) -> bool:
+    """Whether this item's parts are all kept and the piece joined from them is not, which costs nothing to make."""
+    return bool(item.parts) and not item.out.is_file() and all(part.is_file() for part in item.parts)
+
+
+def ready(inputs: Inputs) -> bool:
+    """Whether the score has bought something and every piece joined from bought parts is in place to mix."""
+    held = inputs.workspace.score_dir
+    return held.is_dir() and any(held.iterdir()) and not any(unjoined(item) for item in plan_items(inputs))
 
 
 def price_key_of(kind: SoundKind) -> str:
     """The dotted key that states this kind's rate per minute of audio."""
-    return f"soundscape.{TABLES[kind]}.{PRICE_KEY}"
+    return f"score.{TABLES[kind]}.{PRICE_KEY}"
 
 
 def rate_of(inputs: Inputs, kind: SoundKind) -> float:
     """What this kind of sound costs per second of audio, from the rate per minute its own table states."""
-    table: AmbienceConfig | EffectsConfig | MusicConfig = getattr(inputs.settings.soundscape, TABLES[kind])
+    table: AmbienceConfig | EffectsConfig | MusicConfig = getattr(inputs.settings.score, TABLES[kind])
     return table.price_per_minute / SECONDS_PER_MINUTE
 
 
@@ -318,31 +345,31 @@ def spend_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | Non
 def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_score: bool = False) -> Spend:
     """What a run of this stage with these options would buy, read from the plan and the ledger alone.
 
-    It opens no run and builds no client, so a caller prices a soundscape without touching the
+    It opens no run and builds no client, so a caller prices a score without touching the
     project's lock, its events or the service. A run told to replace the score buys every item it
     selects, so that is what it is priced at.
     """
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
-    ledger = Ledger.read(inputs.workspace.soundscape_dir / LEDGER_FILE) or Ledger()
+    ledger = Ledger.read(inputs.workspace.score_dir / LEDGER_FILE) or Ledger()
     return spend_of(inputs, [item for item in planned if replace_score or stale(ledger, item)], only)
 
 
 def sound_context(inputs: Inputs) -> SoundContext:
     """What a sound provider is built from: its own table's base, this project's timeout and its own `.env`."""
     settings = inputs.settings
-    declared = SOUND_DECLARED.get(settings.soundscape.provider)
+    declared = SOUND_DECLARED.get(settings.score.provider)
     api_base = str(getattr(settings, declared.table).api_base) if declared is not None else ""
-    return SoundContext(secrets=inputs.env, api_base=api_base, timeout_seconds=settings.soundscape.timeout_seconds)
+    return SoundContext(secrets=inputs.env, api_base=api_base, timeout_seconds=settings.score.timeout_seconds)
 
 
 def client_for(run: Run, inputs: Inputs) -> SoundProvider:
-    """The sound provider `[soundscape] provider` names in the run's own sound table.
+    """The sound provider `[score] provider` names in the run's own sound table.
 
     It is looked up in the run's sounds, so a host that handed its machine another table is never
     billed through the shipped one, and the machine's switch and retries apply here too.
     """
-    return run.sounds.provider(inputs.settings.soundscape.provider, sound_context(inputs))
+    return run.sounds.provider(inputs.settings.score.provider, sound_context(inputs))
 
 
 def _keep(ledger: Ledger, path: Path, entry: SoundEntry) -> Ledger:
@@ -369,7 +396,7 @@ def _buy_sound(
 ) -> tuple[Ledger, float]:
     """Buy one ambience bed or one effect, write it, and record what it was bought with and what it cost."""
     body = item.bodies[0]
-    audio_bytes = client.effect(body, output_format=inputs.settings.soundscape.format)
+    audio_bytes = client.effect(body, output_format=inputs.settings.score.format)
     dollars = _charge(run, inputs, item, item.digest, body)
     item.out.parent.mkdir(parents=True, exist_ok=True)
     item.out.write_bytes(audio_bytes)
@@ -406,31 +433,34 @@ def _buy_music(
     keeps no part, because a part kept from the old piece would be joined into the new one. Only the
     parts bought by this run are charged.
     """
-    cfg = inputs.settings.soundscape.music
     previous = None if replace else ledger.of(item.name)
     known = previous.parts if previous is not None else ()
-    item.out.parent.mkdir(parents=True, exist_ok=True)
-    parts: list[Path] = []
     digests: list[str] = []
     dollars = 0.0
-    for index, body in enumerate(item.bodies):
+    for index, (body, part) in enumerate(zip(item.bodies, item.parts, strict=True)):
         run.check()
-        part = item.out.with_name(f"{item.out.stem}-part{index + 1}.mp3")
+        part.parent.mkdir(parents=True, exist_ok=True)
         digest = request_digest(item.endpoint, body)
         if index < len(known) and known[index] == digest and part.is_file():
             run.note(f"{part.name} was bought before and its request is unchanged, so this run keeps it.")
         else:
-            audio_bytes = client.music(body, output_format=inputs.settings.soundscape.format)
+            audio_bytes = client.music(body, output_format=inputs.settings.score.format)
             dollars += _charge(run, inputs, item, digest, body)
             part.write_bytes(audio_bytes)
             run.wrote(part)
         digests.append(digest)
-        parts.append(part)
         ledger = _keep(ledger, path, _entry(inputs, item, UNFINISHED_DIGEST, digests))
-    audio.crossfade_join(parts, item.out, crossfade_seconds=cfg.crossfade_seconds, bitrate=cfg.bitrate)
-    run.wrote(item.out)
+    _join(run, inputs, item)
     run.wrote(path)
     return _keep(ledger, path, _entry(inputs, item, item.digest, digests)), dollars
+
+
+def _join(run: Run, inputs: Inputs, item: Planned) -> None:
+    """Join the kept parts of the music into the one piece the mix plays, which spends nothing."""
+    cfg = inputs.settings.score.music
+    item.out.parent.mkdir(parents=True, exist_ok=True)
+    audio.crossfade_join(list(item.parts), item.out, crossfade_seconds=cfg.crossfade_seconds, bitrate=cfg.bitrate)
+    run.wrote(item.out)
 
 
 def _row(inputs: Inputs, item: Planned, status: SoundStatus, seconds: float | None) -> SoundItem:
@@ -443,6 +473,14 @@ def _row(inputs: Inputs, item: Planned, status: SoundStatus, seconds: float | No
         seconds=seconds,
         file=inputs.relative(item.out) if item.out.is_file() else None,
     )
+
+
+def _kept(run: Run, inputs: Inputs, item: Planned, ledger: Ledger) -> SoundItem:
+    """One item this run keeps, with the music joined again from its kept parts when the piece is gone."""
+    if unjoined(item):
+        _join(run, inputs, item)
+    entry = ledger.of(item.name)
+    return _row(inputs, item, SoundStatus.KEPT, entry.seconds if entry else None)
 
 
 def _named(item: Planned) -> str:
@@ -464,14 +502,14 @@ def _missing(inputs: Inputs, item: Planned) -> Location:
     return Location(where=item.name, file=inputs.relative(item.out))
 
 
-def soundscape(
+def score(
     inputs: Inputs,
     run: Run,
     *,
     only: Sequence[int] | None = None,
     replace_score: bool = False,
-) -> SoundscapeResult:
-    """Generate the music, the ambience bed and the effects this project describes.
+) -> ScoreResult:
+    """Compose the music, the ambience bed and the effects this project describes.
 
     A run that may not spend reports what it would ask for and buys nothing, which is the plan an
     author reads before approving a spend. `replace_score` is the one way a bought sound is bought
@@ -484,7 +522,7 @@ def soundscape(
     """
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
-    path = inputs.workspace.soundscape_dir / LEDGER_FILE
+    path = inputs.workspace.score_dir / LEDGER_FILE
     ledger = Ledger.read(path) or Ledger()
     replace = run.spend and replace_score
     fresh = {item.name for item in planned if replace or stale(ledger, item)}
@@ -498,10 +536,9 @@ def soundscape(
     bought_any = False
     for done, item in enumerate(planned):
         run.check()
-        run.progress(Stage.SOUNDSCAPE, done=done, total=len(planned), unit=Unit.ASSET, label=item.name)
+        run.progress(Stage.SCORE, done=done, total=len(planned), unit=Unit.ASSET, label=item.name)
         if item.name not in fresh:
-            entry = ledger.of(item.name)
-            rows.append(_row(inputs, item, SoundStatus.KEPT, entry.seconds if entry else None))
+            rows.append(_kept(run, inputs, item, ledger))
             continue
         if client is None:
             rows.append(_row(inputs, item, SoundStatus.PLANNED, None))
@@ -514,23 +551,23 @@ def soundscape(
         bought_any = True
         bought = ledger.of(item.name)
         rows.append(_row(inputs, item, SoundStatus.GENERATED, bought.seconds if bought else None))
-    run.progress(Stage.SOUNDSCAPE, done=len(planned), total=len(planned), unit=Unit.ASSET, label="soundscape")
+    run.progress(Stage.SCORE, done=len(planned), total=len(planned), unit=Unit.ASSET, label="score")
     if not planned:
-        run.note("The project declares no soundscape for this run, so there is nothing to generate.", level=Level.INFO)
+        run.note("The project declares no score for this run, so there is nothing to generate.", level=Level.INFO)
     for item, row in zip(planned, rows, strict=True):
         if row.status is SoundStatus.PLANNED and not item.out.is_file():
             run.found(
                 judge(
                     Code.SOUND_MISSING,
                     f"{_named(item)} is not bought yet, so the film plays silence where it would be. Buying it "
-                    f"with `decktalk soundscape --spend` asks for {item.seconds:g} seconds of audio.",
+                    f"with `decktalk score --spend` asks for {item.seconds:g} seconds of audio.",
                     _missing(inputs, item),
-                    stage=Stage.SOUNDSCAPE,
+                    stage=Stage.SCORE,
                 )
             )
     if bought_any:
         spend = spend.model_copy(update={"state": SpendState.CHARGED, "dollars": round(charged, DOLLAR_DIGITS)})
-    return run.result(SoundscapeResult, items=tuple(rows), spend=spend)
+    return run.result(ScoreResult, items=tuple(rows), spend=spend)
 
 
 __all__ = [
@@ -545,8 +582,10 @@ __all__ = [
     "score_files",
     "sound_context",
     "sound_body",
-    "soundscape",
+    "score",
+    "ready",
     "spend_of",
     "stale",
+    "unjoined",
     "wanted",
 ]

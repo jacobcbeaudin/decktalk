@@ -38,8 +38,8 @@ its unit and its hazard, and `decktalk config explain KEY` gives one of them who
 | `cues.json` | Which spoken phrase each moment on the page waits for | `cue` |
 | `deck/*.html` | The pictures, as scenes of slides whose elements declare their moments | `record` |
 
-Everything under `build/` is generated and git-ignored. A project is recreated from the four files
-and the credits it spends.
+Everything under `build/` is generated and git-ignored. A project is recreated from the four files,
+the takes in `takes/` and the sounds in `score/`, which are committed because they cost money.
 
 ## The six stages
 
@@ -53,11 +53,11 @@ one table.
 | `narrate` | Voice each section and get a time for every word. | `build/narrate/takes.json`, one take and one words file per section |
 | `cue` | Turn each cue phrase into a second on that section's clock. | `build/cue-times.json` |
 | `record` | Record each page section in headless Chromium and find narration t=0 in the frames. | `build/recordings/` |
-| `soundscape` | Generate the music, the ambience bed and the effects. | `build/soundscape/` |
+| `score` | Compose the music, the ambience bed and the effects. | `score/`, the bought sounds and their ledger, and `build/score/` |
 | `assemble` | Cut each section to its span, join them, mix the sound and publish. | `build/final/<name>.mp4`, captions, chapters, transcript, poster |
 | `verify` | Measure the finished film against what it was supposed to be. | nothing |
 
-`soundscape` sits after `record` because it spends, and stopping at `record` is therefore the draft
+`score` sits after `record` because it spends, and stopping at `record` is therefore the draft
 loop that costs nothing. `assemble` consumes what all four before it wrote, which is why a stage that
 spends money and writes an artifact has to be reachable by `--from`, `--to`, `--skip`, the spend gate
 and the event stream rather than hidden inside another stage.
@@ -211,7 +211,7 @@ keep such a deck from reaching what the service holds.
   the process's own.
 - **The key never shares a run with a stranger's page.** Each row of `PIPELINE` says whether its
   stage `holds_key` or `opens_pages`, and no row is both. A host runs `Stage.voice_part()`, which is
-  `narrate` and `soundscape`, in a voice process that holds the key, and `Stage.render_part()` with
+  `narrate` and `score`, in a voice process that holds the key, and `Stage.render_part()` with
   `check` and `storyboard` in a render process that holds none. The build directory is the only thing
   that moves between them. A run that may spend refuses to open an untrusted page, at the one place
   a browser starts, so a voiced `build` on a host is refused before it buys anything rather than

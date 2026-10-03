@@ -113,7 +113,7 @@ A finding carries its code, its sentence, its certainty and often a fix an agent
 | `CUT_SPEECH` | certain | Speech is still sounding at a section cut, so the film slices a word in two. |
 | `CUT_POP` | certain | The picture steps at a section cut, so the film pops on the seam. |
 | `MIX_LOUDNESS` | uncertain | The mixed film misses the loudness it was mastered to. |
-| `SOUND_MISSING` | uncertain | A sound the soundscape declares has not been bought, so silence plays where it would until a run with --spend buys it. |
+| `SOUND_MISSING` | uncertain | A sound the `[score]` table declares has not been bought, so silence plays where it would until a run with --spend buys it. |
 | `FILE_MISSING` | certain | A file the project names is not on disk. |
 
 ## Commands
@@ -397,15 +397,15 @@ It answers with the `record` result: `decktalk schema record`.
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
 
-#### `decktalk soundscape`
+#### `decktalk score`
 
-Generate the music, the ambience bed and the effects.
+Compose the music, the ambience bed and the effects.
 
 ```text
-decktalk soundscape [OPTIONS]
+decktalk score [OPTIONS]
 ```
 
-It answers with the `soundscape` result: `decktalk schema soundscape`.
+It answers with the `score` result: `decktalk schema score`.
 
 | Option | Meaning |
 |---|---|
@@ -430,7 +430,7 @@ It answers with the `assemble` result: `decktalk schema assemble`.
 | Option | Meaning |
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
-| `--skip` `STAGE` | Mix without this stage's audio. soundscape is the one stage assemble can leave out. |
+| `--skip` `STAGE` | Mix without this stage's audio. score is the one stage assemble can leave out. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -466,7 +466,7 @@ It answers with the `build` result: `decktalk schema build`.
 
 | Option | Meaning |
 |---|---|
-| `--from` `STAGE` | Start at this stage: narrate, cue, record, soundscape, assemble or verify. |
+| `--from` `STAGE` | Start at this stage: narrate, cue, record, score, assemble or verify. |
 | `--to` `STAGE` | Stop after this stage, inclusive. |
 | `--skip` `STAGE` | Run every stage but this one. Repeats. |
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
@@ -503,4 +503,4 @@ It answers with the `clip` result: `decktalk schema clip`.
 
 ## The contract
 
-`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes `apply`, `assemble`, `build`, `check`, `clip`, `config-explain`, `config-get`, `config-list`, `config-set`, `config-unset`, `cue`, `doctor`, `error`, `init`, `install`, `narrate`, `record`, `serve`, `soundscape`, `status`, `storyboard`, `verify`, `words`, `event`, `finding`, `page`, `project`, `settings`.
+`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes `apply`, `assemble`, `build`, `check`, `clip`, `config-explain`, `config-get`, `config-list`, `config-set`, `config-unset`, `cue`, `doctor`, `error`, `init`, `install`, `narrate`, `record`, `score`, `serve`, `status`, `storyboard`, `verify`, `words`, `event`, `finding`, `page`, `project`, `settings`.

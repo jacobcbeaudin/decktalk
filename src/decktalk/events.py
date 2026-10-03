@@ -138,7 +138,7 @@ class SectionDone(Event):
 class Progress(Event):
     """How far through its own work one stage is, counted in the thing it is working on.
 
-    Narrate emits one per take, record one per section, soundscape one per asset, assemble one per
+    Narrate emits one per take, record one per section, score one per asset, assemble one per
     encoding pass and verify one per probe, so every stage that takes time reports the same shape.
     """
 
@@ -182,7 +182,7 @@ class TakeCharged(Event):
 
 
 class SoundCharged(Event):
-    """The sound provider was paid for one request, which is a soundscape item or one part of its music.
+    """The sound provider was paid for one request, which is a score item or one part of its music.
 
     It is written the moment the provider answers, once per paid request, so a host that keeps its
     own ledger records every sound it paid for and can tell by the digest that a retried run did not

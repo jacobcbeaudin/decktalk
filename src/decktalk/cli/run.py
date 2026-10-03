@@ -40,7 +40,7 @@ from decktalk.results import (
     CueResult,
     NarrateResult,
     RecordResult,
-    SoundscapeResult,
+    ScoreResult,
     Spend,
     VerifyResult,
     counted,
@@ -55,7 +55,7 @@ FromStage = Annotated[
         "--from",
         metavar="STAGE",
         rich_help_panel=Panel.SCOPE.value,
-        help="Start at this stage: narrate, cue, record, soundscape, assemble or verify.",
+        help="Start at this stage: narrate, cue, record, score, assemble or verify.",
     ),
 ]
 ToStage = Annotated[
@@ -64,13 +64,13 @@ ToStage = Annotated[
 ]
 # The flags below share a name with a family in `options.py` and mean something narrower on the one
 # command that declares them, so each says what it does there rather than what the family does.
-SkipSoundscape = Annotated[
+SkipScore = Annotated[
     Stage | None,
     typer.Option(
         "--skip",
         metavar="STAGE",
         rich_help_panel=Panel.SCOPE.value,
-        help="Mix without this stage's audio. soundscape is the one stage assemble can leave out.",
+        help="Mix without this stage's audio. score is the one stage assemble can leave out.",
     ),
 ]
 OneSection = Annotated[
@@ -82,10 +82,10 @@ OneSection = Annotated[
         help="The one section to cut the clip from, such as 3.",
     ),
 ]
-SOUNDSCAPE_SPENDING = {
+SCORE_SPENDING = {
     "spend": "Buy what needs it without asking first, or buy nothing: report the plan and write nothing.",
 }
-"""The spending flags as `soundscape` means them, where the thing bought is sound rather than a voice."""
+"""The spending flags as `score` means them, where the thing bought is sound rather than a voice."""
 
 RECORD_AGAIN = {"force": "Record every section again, even one whose recording still matches its page."}
 """What `--force` redoes on `record`, which is the capture rather than the whole build."""
@@ -167,12 +167,12 @@ def record(ctx: Context, section: Sections = None, force: Force = False, set_: O
 
 @command(
     group=Group.STAGE,
-    helps=SOUNDSCAPE_SPENDING,
+    helps=SCORE_SPENDING,
 )
-def soundscape(
+def score(
     ctx: Context, section: Sections = None, replace_score: ReplaceScore = False, set_: Overrides = None
-) -> SoundscapeResult:
-    """Generate the music, the ambience bed and the effects.
+) -> ScoreResult:
+    """Compose the music, the ambience bed and the effects.
 
     It runs after `record` and before `assemble`, whose mix consumes what it writes.
     \f
@@ -187,7 +187,7 @@ def soundscape(
         replacing=replace_score,
     )
     with session.watching(project.events):
-        return project.soundscape(
+        return project.score(
             only=only,
             spend=spend,
             max_cost=session.max_cost,
@@ -197,9 +197,7 @@ def soundscape(
 
 
 @command(group=Group.STAGE)
-def assemble(
-    ctx: Context, section: Sections = None, skip: SkipSoundscape = None, set_: Overrides = None
-) -> AssembleResult:
+def assemble(ctx: Context, section: Sections = None, skip: SkipScore = None, set_: Overrides = None) -> AssembleResult:
     """Cut, mix and encode the sections into one mp4.
     \f
     It is the editing room's word for joining shots into a cut, where render, encode and mix each
@@ -210,16 +208,16 @@ def assemble(
     with session.watching(project.events):
         return project.assemble(
             only=sections_of(section),
-            soundscape=_skipped_here(skip) is not Stage.SOUNDSCAPE,
+            score=_skipped_here(skip) is not Stage.SCORE,
             cancel=session.cancel,
         )
 
 
 def _skipped_here(skip: Stage | None) -> Stage | None:
-    """The stage `--skip` names on a command that runs one stage, which is the soundscape alone."""
-    if skip is not None and skip is not Stage.SOUNDSCAPE:
+    """The stage `--skip` names on a command that runs one stage, which is the score alone."""
+    if skip is not None and skip is not Stage.SCORE:
         raise typer.BadParameter(
-            f"assemble runs one stage, so --skip names soundscape alone and not {skip.value}.", param_hint="--skip"
+            f"assemble runs one stage, so --skip names score alone and not {skip.value}.", param_hint="--skip"
         )
     return skip
 
@@ -278,7 +276,7 @@ def build(
             replacing=replace_voiced or replace_score,
             storyboard=True,
         )
-        if planned & {Stage.NARRATE, Stage.SOUNDSCAPE}
+        if planned & {Stage.NARRATE, Stage.SCORE}
         else bool(session.spend)
     )
     with session.watching(project.events, opening=True):
@@ -320,7 +318,7 @@ def _build_price(
 ) -> Callable[[], Spend | None]:
     """How a build is priced before it is asked about: every stage it performs that buys, added together.
 
-    The price a person approves is the whole run's, so the takes and the soundscape are summed by the
+    The price a person approves is the whole run's, so the takes and the score are summed by the
     same total the build's result reports, and a yes never lets through a stage the question left out.
     That total keeps the free-voice rules: a free voice beside a sound that buys nothing is asked
     nothing, and a free voice beside a paid sound is asked about the sound. A stage that could not be
@@ -335,7 +333,7 @@ def _build_price(
         priced: list[Spend | None] = []
         if Stage.NARRATE in planned:
             priced.append(session.price(project, only=only))
-        if Stage.SOUNDSCAPE in planned:
+        if Stage.SCORE in planned:
             priced.append(session.sound_price(project, only=only, replace_score=replace_score))
         stated = [spend for spend in priced if spend is not None]
         return total(stated) if stated and len(stated) == len(priced) else None
@@ -414,4 +412,4 @@ def _replacing_score(session: sessions.Session, asked: bool, *, spend: bool) -> 
     return asked and spend and (not session.asks or session.confirm(question))
 
 
-__all__ = ["assemble", "build", "clip", "cue", "narrate", "record", "soundscape", "verify"]
+__all__ = ["assemble", "build", "clip", "cue", "narrate", "record", "score", "verify"]

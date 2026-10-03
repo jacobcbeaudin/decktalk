@@ -35,8 +35,8 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_NARRATION_RETRIES"
         },
-        "cache_dir": {
-          "description": "Directory this machine keeps takes and their words files in, each named by its content hash, so many projects share one store and a deleted `build/` keeps them. A take is looked for here after the project's `takes_dir`, and a bought take is written here only when the project names no `takes_dir`.",
+        "store_dir": {
+          "description": "The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its content hash. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a purchase nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS.",
           "type": "string",
           "default": "",
           "x-range": "takes any value of its type",
@@ -44,11 +44,12 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
+          "x-hazard": "It holds the spoken words of every script voiced on this machine, so keep it out of a synced or shared folder. A relative path, a folder inside the project or one inside the tool cache is refused when the project loads. Write an absolute path or one that starts with ~.",
           "x-see-also": [
             "narration.takes_dir",
             "tools.cache_dir"
           ],
-          "x-environment": "DECKTALK_NARRATION_CACHE_DIR"
+          "x-environment": "DECKTALK_NARRATION_STORE_DIR"
         }
       },
       "additionalProperties": false
@@ -174,8 +175,9 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
+          "x-hazard": "A relative path is refused when the machine loads. Write an absolute path or one that starts with ~.",
           "x-see-also": [
-            "narration.cache_dir"
+            "narration.store_dir"
           ],
           "x-environment": "DECKTALK_TOOLS_CACHE_DIR"
         }

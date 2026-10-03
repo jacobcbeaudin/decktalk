@@ -163,11 +163,11 @@ def take_index(inputs: Inputs, rows: dict[int, tuple[str, float, float | None, l
     Every span is the take alone, because these projects set `[narration] lead_seconds = 0`, so a
     section starts where the one before it ended and the words sit where the take names them.
     """
-    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
     takes: list[Take] = []
     for number, (chapter, span, speech_end, words) in rows.items():
         digest = f"{number:016x}"
-        Words(words=tuple(words)).write(inputs.workspace.takes_dir / f"{digest}.words.json")
+        Words(words=tuple(words)).write(inputs.workspace.takes / f"{digest}.words.json")
         spoken = " ".join(word.word for word in words)
         takes.append(
             a_take(number, seconds=span, chapter=chapter, voiced=voiced, speech_end_seconds=speech_end, spoken=spoken)

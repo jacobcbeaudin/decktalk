@@ -17,7 +17,7 @@ width = 1920
 # How late a reveal may land.
 cue_offset_max_ms = 120
 
-[soundscape.music]
+[score.music]
 duration_seconds = 120
 
 [[section]]
@@ -30,7 +30,7 @@ title = "one"
     [
         ("video.width", 3),
         ("verify.cue_offset_max_ms", 7),
-        ("soundscape.music.duration_seconds", 10),
+        ("score.music.duration_seconds", 10),
         ("section.title", 13),
     ],
 )
@@ -49,7 +49,7 @@ def test_a_dotted_key_at_the_top_of_the_file_is_the_same_key() -> None:
 
 def test_a_quoted_name_and_spacing_around_the_dot_do_not_hide_a_key() -> None:
     assert locate('[video]\n"width"  =  1920\n', "video.width") == 2
-    assert locate("soundscape . music . duration_seconds = 120\n", "soundscape.music.duration_seconds") == 1
+    assert locate("score . music . duration_seconds = 120\n", "score.music.duration_seconds") == 1
 
 
 def test_a_comment_that_looks_like_an_assignment_is_not_one() -> None:

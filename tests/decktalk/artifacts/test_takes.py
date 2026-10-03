@@ -199,16 +199,12 @@ def test_the_index_round_trips_through_its_own_file(tmp_path: Path) -> None:
     assert Takes.read(path) == INDEX
 
 
-@pytest.mark.parametrize("own_dir", [False, True], ids=["build-index", "takes-dir-index"])
 @pytest.mark.parametrize("written", ["{not json", '{"version": 1, "sections": []}'], ids=["corrupt", "older-shape"])
-def test_a_take_index_that_does_not_read_is_a_cache_its_writer_builds_again(
-    tmp_path: Path, own_dir: bool, written: str
-) -> None:
-    """The take index is a cache over the takes on disk wherever it lives, so narrate counts it as absent."""
-    toml = MINIMAL_TOML + ('\n[narration]\ntakes_dir = "voice"\n' if own_dir else "")
-    inputs = load_project(tmp_path, toml)
+def test_a_take_index_that_does_not_read_is_a_cache_its_writer_builds_again(tmp_path: Path, written: str) -> None:
+    """The take index is a cache over the takes on disk, so narrate counts it as absent."""
+    inputs = load_project(tmp_path, MINIMAL_TOML + '\n[narration]\ntakes_dir = "voice"\n')
     path = inputs.workspace.takes_path
-    assert (path.parent == tmp_path / "voice") is own_dir
+    assert path.parent == inputs.workspace.narrate_dir, "the index is a cache, so it sits under the build"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(written, encoding="utf-8")
     assert not Takes.paid

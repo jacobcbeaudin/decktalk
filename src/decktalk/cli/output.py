@@ -47,8 +47,8 @@ from decktalk.results import (
     NarrateResult,
     RecordResult,
     Result,
+    ScoreResult,
     ServeResult,
-    SoundscapeResult,
     SpendState,
     StatusResult,
     StoryboardResult,
@@ -331,6 +331,8 @@ def _status(result: StatusResult) -> Iterable[RenderableType]:
         yield Text(f"Film   {result.film.as_posix()}, {clock(result.film_seconds or 0)} long")
     for run in result.runs:
         yield Text(f"Live   {run.run} writing {run.events.as_posix()}", style=QUIET_STYLE)
+    if result.unplayed is not None and result.unplayed.sentence is not None:
+        yield Text(f"Takes  {result.unplayed.sentence}")
     if result.next is not None:
         yield Text(f"Next   {result.next}", style=QUIET_STYLE)
 
@@ -389,7 +391,7 @@ def _record(result: RecordResult) -> Iterable[RenderableType]:
     yield table
 
 
-def _soundscape(result: SoundscapeResult) -> Iterable[RenderableType]:
+def _score(result: ScoreResult) -> Iterable[RenderableType]:
     table = _table("Item", "Kind", "Status", "Seconds")
     for item in result.items:
         table.add_row(item.name, item.kind.value, item.status.value, f"{item.seconds or 0:.1f}")
@@ -397,7 +399,7 @@ def _soundscape(result: SoundscapeResult) -> Iterable[RenderableType]:
     # A run that bought nothing still prices what it would have bought, and a bare "Spent" line over
     # that number reads as a charge nobody made.
     charged = result.spend.state is SpendState.CHARGED
-    yield Text(f"{'Spent' if charged else 'Would spend'} {money(result.spend.dollars)} on the soundscape.")
+    yield Text(f"{'Spent' if charged else 'Would spend'} {money(result.spend.dollars)} on the score.")
 
 
 def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
@@ -501,7 +503,7 @@ RENDERERS: dict[type[Result], Callable[[Any], Iterable[RenderableType]]] = {
     NarrateResult: _narrate,
     RecordResult: _record,
     ServeResult: _serve,
-    SoundscapeResult: _soundscape,
+    ScoreResult: _score,
     StatusResult: _status,
     StoryboardResult: _storyboard,
     VerifyResult: _verify,

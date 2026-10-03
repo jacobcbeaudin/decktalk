@@ -39,7 +39,7 @@ from the schema which commands do those things rather than meeting a null on the
 | `run` | string | Every result whose command opens a run, which is every command except the five under `config`. It is the run id, and it names the run's events file. |
 | `written` | array of strings | Every result whose command writes a file, as project-relative POSIX paths in the order they were written. |
 
-`init`, `check`, `storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`, `build`,
+`init`, `check`, `storyboard`, `narrate`, `cue`, `record`, `score`, `assemble`, `build`,
 `clip`, `config set` and `config unset` declare `written`. `doctor`, `install`, `status`, `words`,
 `serve`, `verify`, `config list`, `config get` and `config explain` do not, because they write
 nothing.
@@ -244,7 +244,7 @@ the script does not speak, cut to the keys a build adds.
     {"stage": "narrate", "outcome": "ok", "seconds": 0.308},
     {"stage": "cue", "outcome": "ok", "seconds": 0.004},
     {"stage": "record", "outcome": "skipped", "seconds": 0.0},
-    {"stage": "soundscape", "outcome": "skipped", "seconds": 0.0},
+    {"stage": "score", "outcome": "skipped", "seconds": 0.0},
     {"stage": "assemble", "outcome": "skipped", "seconds": 0.0},
     {"stage": "verify", "outcome": "skipped", "seconds": 0.0}
   ],
@@ -420,7 +420,7 @@ field value by hand.
 | `--fail-on never` | Exit 0 whatever was found. The findings are still in the result. |
 | `--allow CODE` | Carry on past this one code. Repeats. |
 
-Both are on `doctor`, `check`, `storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`,
+Both are on `doctor`, `check`, `storyboard`, `narrate`, `cue`, `record`, `score`, `assemble`,
 `verify` and `build`, which are the commands that can judge something.
 
 ## The nine error codes

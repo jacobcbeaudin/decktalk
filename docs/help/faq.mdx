@@ -14,7 +14,7 @@ price before they start.
 - `narrate` sends each section's text to ElevenLabs and is billed by the character. A section whose
   text has not changed is served from the take on disk, so an edit to one sentence pays for one
   section.
-- `soundscape` generates the music, the ambience bed and the effects the project describes, and is
+- `score` generates the music, the ambience bed and the effects the project describes, and is
   billed by the second of audio. It runs after `record`, so a run that stops at the recorder never
   reaches it.
 - `decktalk check` prices the narration of a voiced run before anything is bought, the way the voice
@@ -95,8 +95,8 @@ other jobs.
 
 ## Is generated music required?
 
-No. Every part of the soundscape is off until the project asks for it. `[soundscape.music]`,
-`[soundscape.ambience]` and `[soundscape.effects.<name>]` describe what `decktalk soundscape`
+No. Every part of the score is off until the project asks for it. `[score.music]`,
+`[score.ambience]` and `[score.effects.<name>]` describe what `decktalk score`
 generates, and `[mix]` names the files that are mixed under the voice. You can point `[mix]` at
 audio files of your own and never run that stage at all. [Sound](/concepts/sound) explains both
 ways.

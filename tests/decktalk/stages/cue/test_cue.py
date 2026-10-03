@@ -49,7 +49,7 @@ def a_project(tmp_path: Path, *, cues: dict | None = None, voiced: bool = True) 
     """A project with one take for section one, and the cue file the case asks for."""
     inputs = load_project(tmp_path, TOML, page=SCENE_ONE, cues=cues)
     write_takes(inputs, a_take(1, seconds=2.0, hash="0123456789abcdef", voiced=voiced, sound_end_seconds=1.7))
-    Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("0123456789abcdef"))
+    Words(words=WORDS).write(inputs.workspace.takes / words_file("0123456789abcdef"))
     return inputs
 
 
@@ -119,7 +119,7 @@ def test_a_project_with_no_take_index_is_told_which_stage_writes_one(tmp_path: P
 def test_a_repeated_phrase_is_a_line_on_the_stream_and_never_a_judgement(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, cues={"1": {"cues": [{"cue": "1.1:a", "on": "Hello"}]}})
     Words(words=(*WORDS, Word(word="Hello", start=2.0, end=2.4))).write(
-        inputs.workspace.takes_dir / words_file("0123456789abcdef")
+        inputs.workspace.takes / words_file("0123456789abcdef")
     )
     run = a_run(tmp_path)
     said = notes(run)

@@ -219,13 +219,13 @@ Serving url11
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
-        "SoundscapeResult": """\
+        "ScoreResult": """\
 
  Item     Kind       Status      Seconds
  ───────────────────────────────────────
  name12   ambience   generated   16.2
 
-Would spend $22.25 on the soundscape.
+Would spend $22.25 on the score.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,
@@ -237,7 +237,9 @@ Found 1 finding, 1 certain.
 
 Film   build/film18, 0:19 long
 Live   run20 writing build/events21
-Next   next23
+Takes  24 takes and 25 aligned words files in build/directory23/ that no section plays (26 bytes). DeckTalk never
+deletes from the takes directory, so remove the ones you no longer want with git rm.
+Next   next28
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 certain.
 """,

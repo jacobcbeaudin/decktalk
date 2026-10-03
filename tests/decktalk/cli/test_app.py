@@ -35,7 +35,7 @@ BUILD_SENTENCES = (
     "Buy what is missing without asking, or buy nothing and play a placeholder where a paid take is missing.",
     "A free voice such as dtsp makes its takes either way.",
     "Unset, a terminal is asked and a run without one is refused.",
-    "Start at this stage: narrate, cue, record, soundscape, assemble or verify.",
+    "Start at this stage: narrate, cue, record, score, assemble or verify.",
     "Stop after this stage, inclusive.",
     "Run every stage but this one. Repeats.",
     "Only these sections: 3, 3,5 or 7-9. Repeats.",
@@ -110,7 +110,7 @@ def test_every_command_help_names_every_field_its_result_carries_and_its_docs(ru
 RATIONALE = {
     "narrate": "It names the transformation",
     "cue": "so the stage is called what everything around it is called",
-    "soundscape": "so that the unpaid draft loop stops at a recording",
+    "score": "so that the unpaid draft loop stops at a recording",
     "assemble": "the editing room's word for joining shots into a cut",
     "verify": "the product's whole claim written as a measurement",
     "clip": "so the command that makes one is called what the file is called",

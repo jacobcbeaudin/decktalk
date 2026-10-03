@@ -11,6 +11,7 @@ the run's own sound table, so the requests a run would send are read here rather
 from __future__ import annotations
 
 import inspect
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,11 +27,12 @@ from decktalk.media import audio
 from decktalk.pipeline import Stage
 from decktalk.results import Billing, Layer, SoundKind, SoundStatus, SpendState
 from decktalk.speech.sound import SoundContext
-from decktalk.stages import soundscape as stage
-from decktalk.stages.soundscape import ledger as ledger_module
-from decktalk.stages.soundscape import soundscape
-from decktalk.stages.soundscape.ledger import LEDGER_FILE, Ledger
+from decktalk.stages import score as stage
+from decktalk.stages.score import ledger as ledger_module
+from decktalk.stages.score import score
+from decktalk.stages.score.ledger import LEDGER_FILE, Ledger
 from support.fakes import FakeVoice
+from support.git import committed_clone, git
 from support.projects import write_project
 from support.runs import a_run, a_sounding_run, a_voiced_run
 
@@ -50,20 +52,20 @@ page = "deck/index.html"
 scene = "2"
 
 [mix]
-music = "build/soundscape/music.mp3"
+music = "build/score/music.mp3"
 
 [[mix.effects]]
-file = "build/soundscape/chime.mp3"
+file = "score/chime.mp3"
 section = 1
 cue = "1.1:open"
 
-[soundscape.ambience]
+[score.ambience]
 text = "a quiet room"
 
-[soundscape.effects.chime]
+[score.effects.chime]
 text = "a bright chime"
 
-[soundscape.music]
+[score.music]
 prompt = "warm strings"
 duration_seconds = 30
 """
@@ -98,6 +100,7 @@ class FakeService:
 
 
 def an_inputs(root: Path, toml: str = TOML) -> Inputs:
+    root.mkdir(parents=True, exist_ok=True)
     write_project(root, toml)
     return Inputs.load(root, environ={})
 
@@ -126,12 +129,12 @@ def joined(monkeypatch: pytest.MonkeyPatch) -> list[tuple[list[Path], Path]]:
 # ---- what the run plans -----------------------------------------------------------------------
 
 
-def test_a_project_with_no_soundscape_generates_nothing_and_says_so(tmp_path: Path) -> None:
+def test_a_project_with_no_score_generates_nothing_and_says_so(tmp_path: Path) -> None:
     inputs = an_inputs(tmp_path, NOTHING_TOML)
     run = a_run(tmp_path)
     said: list[Event] = []
     run.machine.events.subscribe(said.append)
-    result = soundscape(inputs, run)
+    result = score(inputs, run)
     assert result.items == ()
     assert result.spend.characters == 0
     assert any("nothing to generate" in getattr(line, "message", "") for line in said)
@@ -140,7 +143,7 @@ def test_a_project_with_no_soundscape_generates_nothing_and_says_so(tmp_path: Pa
 def test_the_items_are_the_ambience_the_effects_and_the_music_in_the_order_the_table_declares_them(
     tmp_path: Path,
 ) -> None:
-    result = soundscape(an_inputs(tmp_path), a_run(tmp_path))
+    result = score(an_inputs(tmp_path), a_run(tmp_path))
     assert [(item.name, item.kind) for item in result.items] == [
         ("ambience", SoundKind.AMBIENCE),
         ("chime", SoundKind.EFFECT),
@@ -150,34 +153,34 @@ def test_the_items_are_the_ambience_the_effects_and_the_music_in_the_order_the_t
 
 def test_a_run_nobody_approved_plans_every_item_and_writes_nothing(tmp_path: Path) -> None:
     inputs = an_inputs(tmp_path)
-    result = soundscape(inputs, a_run(tmp_path))
+    result = score(inputs, a_run(tmp_path))
     assert {item.status for item in result.items} == {SoundStatus.PLANNED}
     assert result.written == ()
-    assert not (inputs.workspace.soundscape_dir / LEDGER_FILE).exists()
+    assert not (inputs.workspace.score_dir / LEDGER_FILE).exists()
 
 
 def test_an_item_that_is_only_planned_and_has_no_audio_is_an_unbought_sound_that_plays_silence(
     tmp_path: Path,
 ) -> None:
     """An unbought sound is the author's choice not to spend yet, so it warns and never fails the film."""
-    result = soundscape(an_inputs(tmp_path), a_run(tmp_path))
+    result = score(an_inputs(tmp_path), a_run(tmp_path))
     assert {found.code for found in result.findings} == {Code.SOUND_MISSING}
     assert Code.SOUND_MISSING.certainty is Certainty.UNCERTAIN
     assert result.ok
     first = result.findings[0]
     assert first.location.where == "ambience"
-    assert first.location.file == Path("build/soundscape/ambience.mp3")
+    assert first.location.file == Path("score/ambience.mp3")
     assert "25 seconds of audio" in first.message
 
 
 RATED = (
     TOML.replace(
-        "[soundscape.ambience]\n",
-        "[soundscape.ambience]\nprice_per_minute = 0.6\n",
+        "[score.ambience]\n",
+        "[score.ambience]\nprice_per_minute = 0.6\n",
     )
     .replace(
-        "[soundscape.effects.chime]",
-        "[soundscape.effects]\nprice_per_minute = 1.2\n\n[soundscape.effects.chime]",
+        "[score.effects.chime]",
+        "[score.effects]\nprice_per_minute = 1.2\n\n[score.effects.chime]",
     )
     .replace(
         "duration_seconds = 30\n",
@@ -195,10 +198,10 @@ number = 1
 page = "deck/index.html"
 scene = "1"
 
-[soundscape.effects]
+[score.effects]
 price_per_minute = 0.12
 
-[soundscape.effects.whoosh]
+[score.effects.whoosh]
 text = "a whoosh"
 duration_seconds = 10
 """
@@ -211,7 +214,7 @@ def test_a_ten_second_effect_is_priced_per_second_at_the_rate_its_table_states(t
     assert (priced.billing, priced.seconds, priced.characters) == (Billing.PER_SECOND, 10.0, 0)
     assert priced.price_per_second == pytest.approx(0.002)
     assert (priced.price_key, priced.price_layer, priced.averaged) == (
-        "soundscape.effects.price_per_minute",
+        "score.effects.price_per_minute",
         Layer.PROJECT,
         False,
     )
@@ -221,7 +224,7 @@ def test_a_ten_second_effect_is_priced_per_second_at_the_rate_its_table_states(t
 
 def test_kinds_bought_at_different_rates_are_priced_exactly_and_said_to_average(tmp_path: Path) -> None:
     """The sum is exact, and the one rate a price states is what that sum comes to per second, said as an average."""
-    priced = soundscape(an_inputs(tmp_path, RATED), a_run(tmp_path)).spend
+    priced = score(an_inputs(tmp_path, RATED), a_run(tmp_path)).spend
     assert priced.seconds == 55.5
     assert priced.averaged
     assert priced.price_per_second * priced.seconds == pytest.approx(0.41)
@@ -233,13 +236,13 @@ def test_kinds_bought_at_different_rates_are_priced_exactly_and_said_to_average(
 def test_a_cap_over_a_rate_nobody_stated_names_that_rates_key(tmp_path: Path) -> None:
     unstated = RATED.replace("duration_seconds = 30\nprice_per_minute = 0.3\n", "duration_seconds = 30\n")
     with pytest.raises(ApprovalRequired) as refused:
-        soundscape(an_inputs(tmp_path, unstated), a_run(tmp_path, spend=True, max_cost=5.0))
-    assert "soundscape.music.price_per_minute" in (refused.value.hint or "")
+        score(an_inputs(tmp_path, unstated), a_run(tmp_path, spend=True, max_cost=5.0))
+    assert "score.music.price_per_minute" in (refused.value.hint or "")
 
 
 @pytest.mark.usefixtures("fake_ffmpeg")
 def test_sound_is_asked_for_in_its_own_format(tmp_path: Path) -> None:
-    """The format is the soundscape's own key, so a take's format moving never changes what a sound is sent."""
+    """The format is the score's own key, so a take's format moving never changes what a sound is sent."""
     formats: list[str] = []
 
     @dataclass
@@ -248,10 +251,10 @@ def test_sound_is_asked_for_in_its_own_format(tmp_path: Path) -> None:
             formats.append(output_format)
             return super().effect(body, output_format=output_format)
 
-    toml = EFFECT.replace("[soundscape.effects]\n", '[soundscape]\nformat = "mp3_22050_32"\n\n[soundscape.effects]\n')
+    toml = EFFECT.replace("[score.effects]\n", '[score]\nformat = "mp3_22050_32"\n\n[score.effects]\n')
     toml = toml.replace("[project]", '[elevenlabs]\noutput_format = "mp3_44100_192"\n\n[project]', 1)
     fake = Formats()
-    soundscape(an_inputs(tmp_path, toml), a_sounding_run(tmp_path, {"elevenlabs": lambda _context: fake}, spend=True))
+    score(an_inputs(tmp_path, toml), a_sounding_run(tmp_path, {"elevenlabs": lambda _context: fake}, spend=True))
     assert formats == ["mp3_22050_32"]
 
 
@@ -270,7 +273,7 @@ def test_the_format_narration_used_to_hold_is_pointed_at_the_voices_own_key(tmp_
 
 def test_the_price_is_every_requested_second_at_its_own_kinds_rate(tmp_path: Path) -> None:
     """25 s of ambience at a cent, 0.5 s of effect at two cents and 30 s of music at half a cent."""
-    result = soundscape(an_inputs(tmp_path, RATED), a_run(tmp_path))
+    result = score(an_inputs(tmp_path, RATED), a_run(tmp_path))
     assert result.spend.dollars == result.spend.ceiling_dollars == round(0.25 + 0.01 + 0.15, 2)
     assert result.spend.state is SpendState.ESTIMATE
     assert result.spend.sections == (1, 2)
@@ -278,10 +281,8 @@ def test_the_price_is_every_requested_second_at_its_own_kinds_rate(tmp_path: Pat
 
 def test_what_speech_costs_prices_no_sound(tmp_path: Path) -> None:
     """Sound is billed by the second of audio, so the speech rate per character is never read for it."""
-    toml = TOML.replace(
-        "[soundscape.ambience]", "[elevenlabs]\nprice_per_1000_characters = 100.0\n\n[soundscape.ambience]"
-    )
-    result = soundscape(an_inputs(tmp_path, toml), a_run(tmp_path))
+    toml = TOML.replace("[score.ambience]", "[elevenlabs]\nprice_per_1000_characters = 100.0\n\n[score.ambience]")
+    result = score(an_inputs(tmp_path, toml), a_run(tmp_path))
     assert result.spend.dollars == 0
     assert result.spend.price_layer is Layer.DEFAULT
 
@@ -289,8 +290,8 @@ def test_what_speech_costs_prices_no_sound(tmp_path: Path) -> None:
 def test_a_rate_one_kind_leaves_unstated_is_a_price_nobody_stated(tmp_path: Path) -> None:
     """A cap may not guard a run whose every rate is not stated, so one default rate makes the price a default."""
     stated = RATED.replace("price_per_minute = 0.3\n", "")
-    assert soundscape(an_inputs(tmp_path, stated), a_run(tmp_path)).spend.price_layer is Layer.DEFAULT
-    assert soundscape(an_inputs(tmp_path, RATED), a_run(tmp_path)).spend.price_layer is Layer.PROJECT
+    assert score(an_inputs(tmp_path, stated), a_run(tmp_path)).spend.price_layer is Layer.DEFAULT
+    assert score(an_inputs(tmp_path, RATED), a_run(tmp_path)).spend.price_layer is Layer.PROJECT
 
 
 def test_a_price_no_layer_records_is_the_default_price_and_not_a_crash(
@@ -303,7 +304,7 @@ def test_a_price_no_layer_records_is_the_default_price_and_not_a_crash(
         raise KeyError(key)
 
     monkeypatch.setattr(type(inputs.layers), "winner", unstated)
-    assert soundscape(inputs, a_run(tmp_path)).spend.price_layer is Layer.DEFAULT
+    assert score(inputs, a_run(tmp_path)).spend.price_layer is Layer.DEFAULT
 
 
 # ---- what the run buys ------------------------------------------------------------------------
@@ -312,20 +313,20 @@ def test_a_price_no_layer_records_is_the_default_price_and_not_a_crash(
 @pytest.mark.usefixtures("fake_ffmpeg", "joined")
 def test_a_paid_run_buys_every_item_and_writes_it_under_the_workspace(tmp_path: Path, service: FakeService) -> None:
     inputs = an_inputs(tmp_path)
-    result = soundscape(inputs, a_run(tmp_path, spend=True))
+    result = score(inputs, a_run(tmp_path, spend=True))
     assert {item.status for item in result.items} == {SoundStatus.GENERATED}
     assert len(service.sounds) == 2
     assert len(service.music_bodies) == 1
-    assert (inputs.workspace.soundscape_dir / "ambience.mp3").is_file()
-    assert (inputs.workspace.soundscape_dir / "chime.mp3").is_file()
-    assert Path("build/soundscape/ledger.json") in result.written
+    assert (inputs.workspace.score_dir / "ambience.mp3").is_file()
+    assert (inputs.workspace.score_dir / "chime.mp3").is_file()
+    assert Path("score/ledger.json") in result.written
 
 
 @pytest.mark.usefixtures("fake_ffmpeg", "joined")
 def test_a_run_that_may_not_spend_buys_no_sound_whatever_sound_costs(tmp_path: Path, service: FakeService) -> None:
     """Only the run's own spend lets it buy, so a sound somebody stated is free is still not bought without it."""
     free = RATED.replace("0.6", "0").replace("1.2", "0").replace("0.3", "0")
-    result = soundscape(an_inputs(tmp_path, free), a_run(tmp_path))
+    result = score(an_inputs(tmp_path, free), a_run(tmp_path))
     assert {item.status for item in result.items} == {SoundStatus.PLANNED}
     assert service.sounds == []
 
@@ -339,19 +340,19 @@ def test_a_price_opens_no_run_and_builds_no_client(tmp_path: Path, monkeypatch: 
     priced = stage.price(inputs)
     assert priced.buys
     assert priced.sections == (1, 2)
-    assert not inputs.workspace.soundscape_dir.exists()
+    assert not inputs.workspace.score_dir.exists()
 
 
 def test_a_run_with_nothing_left_to_buy_covers_no_section(tmp_path: Path) -> None:
     """A price that covers no section is how a caller learns the run has nothing to ask about."""
     inputs = an_inputs(tmp_path)
-    assert soundscape(inputs, a_run(tmp_path)).spend.buys
+    assert score(inputs, a_run(tmp_path)).spend.buys
     assert not stage.spend_of(inputs, [], None).buys
 
 
 @pytest.mark.usefixtures("fake_ffmpeg", "joined")
 def test_the_ambience_request_asks_for_audio_that_meets_its_own_end(tmp_path: Path, service: FakeService) -> None:
-    soundscape(an_inputs(tmp_path), a_run(tmp_path, spend=True))
+    score(an_inputs(tmp_path), a_run(tmp_path, spend=True))
     assert service.sounds[0]["loop"] is True
     assert "loop" not in service.sounds[1]
 
@@ -359,9 +360,9 @@ def test_the_ambience_request_asks_for_audio_that_meets_its_own_end(tmp_path: Pa
 @pytest.mark.usefixtures("fake_ffmpeg", "joined")
 def test_a_second_run_keeps_every_item_whose_request_has_not_moved(tmp_path: Path, service: FakeService) -> None:
     inputs = an_inputs(tmp_path)
-    soundscape(inputs, a_run(tmp_path, spend=True))
+    score(inputs, a_run(tmp_path, spend=True))
     sent = len(service.sounds) + len(service.music_bodies)
-    again = soundscape(inputs, a_run(tmp_path, spend=True))
+    again = score(inputs, a_run(tmp_path, spend=True))
     assert {item.status for item in again.items} == {SoundStatus.KEPT}
     assert len(service.sounds) + len(service.music_bodies) == sent
 
@@ -369,10 +370,10 @@ def test_a_second_run_keeps_every_item_whose_request_has_not_moved(tmp_path: Pat
 @pytest.mark.usefixtures("fake_ffmpeg", "joined")
 def test_an_item_whose_prompt_moved_is_bought_again_and_the_rest_are_kept(tmp_path: Path, service: FakeService) -> None:
     inputs = an_inputs(tmp_path)
-    soundscape(inputs, a_run(tmp_path, spend=True))
+    score(inputs, a_run(tmp_path, spend=True))
     service.sounds.clear()
     moved = an_inputs(tmp_path, TOML.replace("a bright chime", "a dull chime"))
-    again = soundscape(moved, a_run(tmp_path, spend=True))
+    again = score(moved, a_run(tmp_path, spend=True))
     statuses = {item.name: item.status for item in again.items}
     assert statuses["chime"] is SoundStatus.GENERATED
     assert statuses["ambience"] is SoundStatus.KEPT
@@ -385,7 +386,7 @@ def test_the_stage_takes_no_force_because_every_item_it_makes_is_bought() -> Non
     A `force` here could only buy again what the ledger holds, which is how `build --force` once
     bought every sound of a project again unasked. `replace_score` is the one flag that does.
     """
-    assert "force" not in inspect.signature(soundscape).parameters
+    assert "force" not in inspect.signature(score).parameters
     assert "force" not in inspect.signature(stage.price).parameters
 
 
@@ -395,10 +396,10 @@ def test_replace_score_with_spend_buys_every_held_item_and_every_music_part_agai
 ) -> None:
     toml = TOML.replace("duration_seconds = 30", "duration_seconds = 600")
     inputs = an_inputs(tmp_path, toml)
-    soundscape(inputs, a_run(tmp_path, spend=True))
+    score(inputs, a_run(tmp_path, spend=True))
     sounds, parts = len(service.sounds), len(service.music_bodies)
     priced = stage.price(inputs, replace_score=True)
-    again = soundscape(inputs, a_run(tmp_path, spend=True), replace_score=True)
+    again = score(inputs, a_run(tmp_path, spend=True), replace_score=True)
     assert {item.status for item in again.items} == {SoundStatus.GENERATED}
     assert (len(service.sounds), len(service.music_bodies)) == (2 * sounds, 2 * parts)
     assert priced.seconds == again.spend.seconds
@@ -411,9 +412,9 @@ def test_replace_score_without_spend_buys_nothing_and_keeps_every_held_item(
 ) -> None:
     """Without spend there is nothing to replace a bought sound with, so the one on disk keeps playing."""
     inputs = an_inputs(tmp_path)
-    soundscape(inputs, a_run(tmp_path, spend=True))
+    score(inputs, a_run(tmp_path, spend=True))
     sent = len(service.sounds) + len(service.music_bodies)
-    again = soundscape(inputs, a_run(tmp_path), replace_score=True)
+    again = score(inputs, a_run(tmp_path), replace_score=True)
     assert {item.status for item in again.items} == {SoundStatus.KEPT}
     assert len(service.sounds) + len(service.music_bodies) == sent
     assert again.findings == ()
@@ -422,8 +423,8 @@ def test_replace_score_without_spend_buys_nothing_and_keeps_every_held_item(
 @pytest.mark.usefixtures("fake_ffmpeg", "joined")
 def test_the_ledger_records_what_each_item_was_bought_with(tmp_path: Path, service: FakeService) -> None:
     inputs = an_inputs(tmp_path)
-    soundscape(inputs, a_run(tmp_path, spend=True))
-    ledger = Ledger.read(inputs.workspace.soundscape_dir / LEDGER_FILE)
+    score(inputs, a_run(tmp_path, spend=True))
+    ledger = Ledger.read(inputs.workspace.score_dir / LEDGER_FILE)
     assert ledger is not None
     assert {row.name for row in ledger.items} == {"ambience", "chime", "music"}
     chime = ledger.of("chime")
@@ -438,11 +439,11 @@ def test_the_music_is_asked_for_in_chunks_and_joined_into_one_bed(
     """The service writes at most one chunk in an answer, so a longer bed is bought in parts."""
     toml = TOML.replace("duration_seconds = 30", "duration_seconds = 600")
     inputs = an_inputs(tmp_path, toml)
-    soundscape(inputs, a_run(tmp_path, spend=True))
+    score(inputs, a_run(tmp_path, spend=True))
     assert len(service.music_bodies) > 1
     parts, out = joined[0]
     assert len(parts) == len(service.music_bodies)
-    assert out == inputs.workspace.soundscape_dir / "music.mp3"
+    assert out == inputs.workspace.joined_dir / "music.mp3"
 
 
 @pytest.mark.usefixtures("fake_ffmpeg")
@@ -451,12 +452,110 @@ def test_a_music_part_that_was_already_bought_is_not_bought_again(
 ) -> None:
     toml = TOML.replace("duration_seconds = 30", "duration_seconds = 600")
     inputs = an_inputs(tmp_path, toml)
-    soundscape(inputs, a_run(tmp_path, spend=True))
+    score(inputs, a_run(tmp_path, spend=True))
     sent = len(service.music_bodies)
-    (inputs.workspace.soundscape_dir / "music.mp3").unlink()
-    soundscape(inputs, a_run(tmp_path, spend=True))
+    (inputs.workspace.joined_dir / "music.mp3").unlink()
+    score(inputs, a_run(tmp_path, spend=True))
     assert len(service.music_bodies) == sent
     assert len(joined) == 2
+
+
+# ---- where the score is kept --------------------------------------------------------------------
+
+
+def files_under(directory: Path) -> dict[str, tuple[bytes, int]]:
+    """Every file under one directory, by its relative path, with its bytes and the time it was last written."""
+    found = (path for path in directory.rglob("*") if path.is_file())
+    return {path.relative_to(directory).as_posix(): (path.read_bytes(), path.stat().st_mtime_ns) for path in found}
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_bought_audio_and_the_ledger_are_kept_in_the_score_directory_by_item_name(
+    tmp_path: Path, service: FakeService, joined: list[tuple[list[Path], Path]]
+) -> None:
+    """`rm -rf build` is free, so a sound somebody paid for never lands there, with no setting to remember."""
+    toml = TOML.replace("duration_seconds = 30", "duration_seconds = 600")
+    inputs = an_inputs(tmp_path, toml)
+    result = score(inputs, a_run(tmp_path, spend=True))
+    assert inputs.settings.score.dir == "score"
+    parts = [f"music-part{index + 1}.mp3" for index in range(len(service.music_bodies))]
+    assert sorted(files_under(tmp_path / "score")) == sorted(["ambience.mp3", "chime.mp3", LEDGER_FILE, *parts])
+    assert Path("score") / LEDGER_FILE in result.written
+    [(joined_parts, out)] = joined
+    assert joined_parts == [tmp_path / "score" / part for part in parts]
+    assert out == inputs.workspace.build / "score" / "music.mp3", "the joined music is a cache, made again for free"
+    assert [name for name in files_under(inputs.workspace.build) if name.startswith("score/")] == ["score/music.mp3"]
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_run_after_the_build_directory_is_deleted_buys_no_sound_again(
+    tmp_path: Path, service: FakeService, joined: list[tuple[list[Path], Path]]
+) -> None:
+    """The ledger and the audio survive in the score directory, so only the free join is made again."""
+    inputs = an_inputs(tmp_path)
+    score(inputs, a_run(tmp_path, spend=True))
+    sent = (len(service.sounds), len(service.music_bodies))
+    shutil.rmtree(inputs.workspace.build)
+    again = score(Inputs.load(tmp_path, environ={}), a_run(tmp_path, spend=True))
+    assert (len(service.sounds), len(service.music_bodies)) == sent
+    assert {item.status for item in again.items} == {SoundStatus.KEPT}
+    assert again.spend.seconds == 0 and again.findings == ()
+    assert len(joined) == 2 and joined[-1][1].is_file()
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined")
+def test_a_run_that_may_not_spend_never_writes_the_score_directory(tmp_path: Path, service: FakeService) -> None:
+    """A run without spend reads the paid records and never writes one, whether it has any or not."""
+    fresh = an_inputs(tmp_path / "fresh")
+    score(fresh, a_run(tmp_path / "fresh"))
+    assert not (tmp_path / "fresh" / "score").exists()
+    inputs = an_inputs(tmp_path / "bought")
+    score(inputs, a_run(tmp_path / "bought", spend=True))
+    sent = len(service.sounds) + len(service.music_bodies)
+    kept = files_under(tmp_path / "bought" / "score")
+    shutil.rmtree(inputs.workspace.build)
+    played = score(inputs, a_run(tmp_path / "bought"))
+    assert files_under(tmp_path / "bought" / "score") == kept
+    assert {item.status for item in played.items} == {SoundStatus.KEPT} and played.findings == ()
+    assert len(service.sounds) + len(service.music_bodies) == sent
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined")
+def test_a_run_that_does_not_spend_leaves_a_checkout_that_commits_its_score_clean(
+    tmp_path: Path, service: FakeService
+) -> None:
+    """The Action's case: the score is committed, so playing it buys nothing and changes no tracked file."""
+    bought = an_inputs(tmp_path / "bought")
+    score(bought, a_run(tmp_path / "bought", spend=True))
+    sent = len(service.sounds) + len(service.music_bodies)
+    clone = committed_clone(bought.root, tmp_path / "clone")
+    fresh = Inputs.load(clone, environ={})
+    played = score(fresh, a_run(clone))
+    assert git(clone, "status", "--porcelain") == ""
+    assert {item.status for item in played.items} == {SoundStatus.KEPT}
+    assert len(service.sounds) + len(service.music_bodies) == sent
+
+
+@pytest.mark.parametrize("named", ["", "/tmp/score", "../score", "."])
+def test_a_score_dir_outside_the_project_or_empty_is_refused_at_load(tmp_path: Path, named: str) -> None:
+    """A bought sound must land in a folder the project keeps, which only a directory inside it is."""
+    toml = TOML.replace("[score.ambience]", f'[score]\ndir = "{named}"\n\n[score.ambience]')
+    with pytest.raises(InputError, match=r"score\.dir|\[score\] dir"):
+        an_inputs(tmp_path / "proj", toml)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined")
+def test_replace_score_overwrites_each_bought_file_in_place(tmp_path: Path, service: FakeService) -> None:
+    """A sound is named by its item, so buying it again writes over the one file the project commits."""
+    inputs = an_inputs(tmp_path)
+    score(inputs, a_run(tmp_path, spend=True))
+    first = files_under(tmp_path / "score")
+    assert sorted(first) == sorted(["ambience.mp3", "chime.mp3", LEDGER_FILE, "music-part1.mp3"])
+    service.answer = b"bought again"
+    score(inputs, a_run(tmp_path, spend=True), replace_score=True)
+    again = files_under(tmp_path / "score")
+    assert sorted(again) == sorted(first)
+    assert {name for name, (data, _) in again.items() if data == b"bought again"} == set(first) - {LEDGER_FILE}
 
 
 # ---- the gate and the stream ------------------------------------------------------------------
@@ -467,25 +566,25 @@ def test_a_ceiling_over_a_price_nobody_stated_refuses_the_run_before_it_buys(tmp
     """The rate is still the default, so a cap would be guarding a price DeckTalk invented."""
     inputs = an_inputs(tmp_path)
     with pytest.raises(ApprovalRequired):
-        soundscape(inputs, a_run(tmp_path, spend=True, max_cost=1.0))
-    assert not (inputs.workspace.soundscape_dir / "ambience.mp3").exists()
+        score(inputs, a_run(tmp_path, spend=True, max_cost=1.0))
+    assert not (inputs.workspace.score_dir / "ambience.mp3").exists()
 
 
 def test_a_cancelled_run_stops_before_it_reaches_the_first_item(tmp_path: Path) -> None:
     run = a_run(tmp_path)
     run.cancel.cancel()
     with pytest.raises(Cancelled):
-        soundscape(an_inputs(tmp_path), run)
+        score(an_inputs(tmp_path), run)
 
 
 def test_one_progress_line_is_reported_for_every_asset(tmp_path: Path) -> None:
     run = a_run(tmp_path)
     seen: list[Progress] = []
     run.machine.events.subscribe(lambda line: seen.append(line) if isinstance(line, Progress) else None)
-    soundscape(an_inputs(tmp_path), run)
-    assert [line.label for line in seen] == ["ambience", "chime", "music", "soundscape"]
+    score(an_inputs(tmp_path), run)
+    assert [line.label for line in seen] == ["ambience", "chime", "music", "score"]
     assert {line.unit for line in seen} == {Unit.ASSET}
-    assert {line.stage for line in seen} == {Stage.SOUNDSCAPE}
+    assert {line.stage for line in seen} == {Stage.SCORE}
     assert seen[-1].done == seen[-1].total == 3
 
 
@@ -502,7 +601,7 @@ def test_one_progress_line_is_reported_for_every_asset(tmp_path: Path) -> None:
     ],
 )
 def test_only_keeps_what_the_sections_it_names_ask_for(tmp_path: Path, only: list[int], names: set[str]) -> None:
-    result = soundscape(an_inputs(tmp_path), a_run(tmp_path), only=only)
+    result = score(an_inputs(tmp_path), a_run(tmp_path), only=only)
     assert {item.name for item in result.items} == names
 
 
@@ -510,15 +609,17 @@ def test_only_keeps_what_the_sections_it_names_ask_for(tmp_path: Path, only: lis
 
 
 def test_every_default_path_is_the_workspace(tmp_path: Path) -> None:
-    inputs = an_inputs(tmp_path, TOML.replace('music = "build/soundscape/music.mp3"\n', ""))
+    """What is bought lands in the score directory, and only the music joined from it lands under the build."""
+    inputs = an_inputs(tmp_path, TOML.replace('music = "build/score/music.mp3"\n', ""))
     planned = stage.plan_items(inputs)
-    assert {item.out.parent for item in planned} == {inputs.workspace.soundscape_dir}
+    assert {path.parent for item in planned for path in item.bought} == {inputs.workspace.score_dir}
+    assert {item.out.parent for item in planned if item.parts} == {inputs.workspace.joined_dir}
 
 
 def test_an_item_that_names_its_own_file_is_written_where_the_project_says(tmp_path: Path) -> None:
     toml = TOML.replace(
-        '[soundscape.effects.chime]\ntext = "a bright chime"',
-        '[soundscape.effects.chime]\ntext = "a bright chime"\nout = "media/chime.mp3"',
+        '[score.effects.chime]\ntext = "a bright chime"',
+        '[score.effects.chime]\ntext = "a bright chime"\nout = "media/chime.mp3"',
     )
     inputs = an_inputs(tmp_path, toml)
     chime = next(item for item in stage.plan_items(inputs) if item.name == "chime")
@@ -538,11 +639,11 @@ def test_a_ledger_that_does_not_read_is_refused_with_a_sentence_and_left_on_disk
 ) -> None:
     """The ledger is what this project paid for, so neither a rebuild nor a delete may decide to buy it again."""
     inputs = an_inputs(tmp_path)
-    path = inputs.workspace.soundscape_dir / LEDGER_FILE
+    path = inputs.workspace.score_dir / LEDGER_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(written, encoding="utf-8")
     with pytest.raises(InputError) as refused:
-        soundscape(inputs, a_run(tmp_path, spend=True))
+        score(inputs, a_run(tmp_path, spend=True))
     assert "ledger.json" in str(refused.value) and "Only buying every item it lists again" in str(refused.value)
     hint = refused.value.hint or ""
     assert not hint.startswith("Delete") and "costs money on a paid provider" in hint
@@ -574,14 +675,14 @@ def test_a_paid_run_buys_through_the_sound_provider_its_machine_holds(tmp_path: 
     """No class is checked: whatever the table answers with is asked for the effects and the music."""
     fake = FakeService()
     run = a_sounding_run(tmp_path, {"elevenlabs": lambda _context: fake}, spend=True)
-    result = soundscape(an_inputs(tmp_path), run)
+    result = score(an_inputs(tmp_path), run)
     assert {item.status for item in result.items} == {SoundStatus.GENERATED}
     assert [body["text"] for body in fake.sounds] == ["a quiet room", "a bright chime"]
     assert [body["prompt"] for body in fake.music_bodies] == ["warm strings"]
 
 
-def test_the_sound_provider_is_the_one_the_soundscape_table_names(tmp_path: Path) -> None:
-    toml = TOML.replace("[soundscape.ambience]", '[soundscape]\nprovider = "house"\n\n[soundscape.ambience]')
+def test_the_sound_provider_is_the_one_the_score_table_names(tmp_path: Path) -> None:
+    toml = TOML.replace("[score.ambience]", '[score]\nprovider = "house"\n\n[score.ambience]')
     fake = FakeService()
     run = a_sounding_run(tmp_path, {"house": lambda _context: fake}, spend=True)
     assert stage.client_for(run, an_inputs(tmp_path, toml)) is fake
@@ -608,7 +709,7 @@ def test_the_stage_names_no_vendor_and_checks_no_class() -> None:
 @pytest.mark.usefixtures("fake_ffmpeg", "joined", "service")
 def test_every_item_bought_is_charged_as_its_own_event_and_the_spend_is_marked_charged(tmp_path: Path) -> None:
     lines: list[Event] = []
-    result = soundscape(an_inputs(tmp_path, RATED), a_run(tmp_path, spend=True, lines=lines))
+    result = score(an_inputs(tmp_path, RATED), a_run(tmp_path, spend=True, lines=lines))
     charged = [line for line in lines if isinstance(line, SoundCharged)]
     assert [(line.item, line.sound, line.seconds) for line in charged] == [
         ("ambience", SoundKind.AMBIENCE, 25.0),
@@ -623,9 +724,9 @@ def test_every_item_bought_is_charged_as_its_own_event_and_the_spend_is_marked_c
 @pytest.mark.usefixtures("fake_ffmpeg", "joined", "service")
 def test_a_run_that_keeps_every_item_charges_nothing(tmp_path: Path) -> None:
     inputs = an_inputs(tmp_path, RATED)
-    soundscape(inputs, a_run(tmp_path, spend=True))
+    score(inputs, a_run(tmp_path, spend=True))
     lines: list[Event] = []
-    again = soundscape(inputs, a_run(tmp_path, spend=True, lines=lines))
+    again = score(inputs, a_run(tmp_path, spend=True, lines=lines))
     assert [line for line in lines if isinstance(line, SoundCharged)] == []
     assert again.spend.state is SpendState.ESTIMATE
     assert again.spend.dollars == 0
@@ -638,7 +739,7 @@ def test_each_music_part_is_charged_as_it_is_bought(
     """A part is paid for the moment the service answers, so a run stopped half way has charged each part it bought."""
     lines: list[Event] = []
     toml = RATED.replace("duration_seconds = 30", "duration_seconds = 600")
-    soundscape(an_inputs(tmp_path, toml), a_run(tmp_path, spend=True, lines=lines))
+    score(an_inputs(tmp_path, toml), a_run(tmp_path, spend=True, lines=lines))
     parts = [line for line in lines if isinstance(line, SoundCharged) and line.sound is SoundKind.MUSIC]
     assert len(parts) == len(service.music_bodies) == len(joined[0][0]) == 2
     assert sum(line.seconds for line in parts) == 600
@@ -647,12 +748,12 @@ def test_each_music_part_is_charged_as_it_is_bought(
 # ---- where each request's settings come from -------------------------------------------------
 
 TUNED = TOML.replace(
-    '[soundscape.effects.chime]\ntext = "a bright chime"\n',
-    '[soundscape.effects]\nduration_seconds = 1.5\n\n[soundscape.effects.chime]\ntext = "a bright chime"\n\n'
-    '[soundscape.effects.tap]\ntext = "a tap"\nduration_seconds = 0.2\nmodel = "taps_v1"\n',
+    '[score.effects.chime]\ntext = "a bright chime"\n',
+    '[score.effects]\nduration_seconds = 1.5\n\n[score.effects.chime]\ntext = "a bright chime"\n\n'
+    '[score.effects.tap]\ntext = "a tap"\nduration_seconds = 0.2\nmodel = "taps_v1"\n',
 ).replace(
-    '[soundscape.ambience]\ntext = "a quiet room"\n',
-    '[soundscape.ambience]\ntext = "a quiet room"\nmodel = "rooms_v1"\n',
+    '[score.ambience]\ntext = "a quiet room"\n',
+    '[score.ambience]\ntext = "a quiet room"\nmodel = "rooms_v1"\n',
 )
 """The test project with the effects' own default, one effect that sets its own, and the bed's model."""
 
@@ -673,22 +774,22 @@ def test_each_item_is_asked_for_with_the_settings_of_its_own_table(tmp_path: Pat
 def test_an_override_reaches_the_bed_whose_table_also_holds_its_prompt(tmp_path: Path) -> None:
     """The bed's settings are read once, by the settings layer, so the environment and --set reach them."""
     write_project(tmp_path, TUNED)
-    environ = {"DECKTALK_SOUNDSCAPE_AMBIENCE_MODEL": "rooms_v2", "DECKTALK_SOUNDSCAPE_MUSIC_DURATION_SECONDS": "60"}
+    environ = {"DECKTALK_SCORE_AMBIENCE_MODEL": "rooms_v2", "DECKTALK_SCORE_MUSIC_DURATION_SECONDS": "60"}
     sent = bodies(Inputs.load(tmp_path, environ=environ))
     assert sent["ambience"]["model_id"] == "rooms_v2"
     assert sent["music"]["music_length_ms"] == 60_000
 
 
 def test_the_ledger_digests_of_the_regrouped_defaults_are_the_ones_bought_before(tmp_path: Path) -> None:
-    """A soundscape bought under the old tables is not bought again: the defaults ask for the same request."""
+    """A score bought under the old tables is not bought again: the defaults ask for the same request."""
     assert {item.name: item.digest for item in stage.plan_items(an_inputs(tmp_path))} == LEDGER_DIGESTS
 
 
 def test_moving_the_api_base_moves_no_digest(tmp_path: Path) -> None:
     """Another host of the same service, or a local mock, is sent the same request, so nothing is bought again."""
     moved = TOML.replace(
-        "[soundscape.ambience]",
-        '[elevenlabs]\napi_base = "https://api.eu.residency.elevenlabs.io/v1"\n\n[soundscape.ambience]',
+        "[score.ambience]",
+        '[elevenlabs]\napi_base = "https://api.eu.residency.elevenlabs.io/v1"\n\n[score.ambience]',
     )
     assert {item.name: item.digest for item in stage.plan_items(an_inputs(tmp_path, moved))} == LEDGER_DIGESTS
 
@@ -707,18 +808,14 @@ it, which at the default base is the same text the digest was always taken over,
 
 @pytest.mark.parametrize("name", ["model", "duration_seconds", "prompt_influence"])
 def test_an_effect_named_after_a_shared_setting_is_refused_by_name(tmp_path: Path, name: str) -> None:
-    toml = TOML.replace("[soundscape.effects.chime]", f"[soundscape.effects.{name}]")
-    with pytest.raises(InputError, match=rf"\[soundscape.effects.{name}\] is named after a setting"):
+    toml = TOML.replace("[score.effects.chime]", f"[score.effects.{name}]")
+    with pytest.raises(InputError, match=rf"\[score.effects.{name}\] is named after a setting"):
         an_inputs(tmp_path, toml)
 
 
 def test_a_misspelt_setting_among_the_effects_is_a_note_and_not_a_refusal(tmp_path: Path) -> None:
-    toml = TOML.replace(
-        "[soundscape.effects.chime]", "[soundscape.effects]\nduraton_seconds = 1.0\n\n[soundscape.effects.chime]"
-    )
+    toml = TOML.replace("[score.effects.chime]", "[score.effects]\nduraton_seconds = 1.0\n\n[score.effects.chime]")
     inputs = an_inputs(tmp_path, toml)
     (said,) = inputs.notes
-    assert said.endswith(
-        "[soundscape.effects]: ignoring unknown key 'duraton_seconds' (did you mean 'duration_seconds'?)."
-    )
-    assert set(inputs.document.soundscape.effects) == {"chime"}
+    assert said.endswith("[score.effects]: ignoring unknown key 'duraton_seconds' (did you mean 'duration_seconds'?).")
+    assert set(inputs.document.score.effects) == {"chime"}

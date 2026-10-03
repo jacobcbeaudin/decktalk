@@ -6,9 +6,10 @@
 The suffix is the one the voice's adapter declares for its output format, so a take asked for in
 `mp3_44100_128` is `<hash>.mp3`, and a placeholder, which DeckTalk writes itself, is always `.mp3`.
 
-Both sit in the project's `[narration] takes_dir` instead when it names one, so the index travels
-with the takes it lists. The index is a cache over those takes, which narrate builds again from them
-when it does not read, and the takes are what a project paid for.
+A take sits in the project's `[narration] takes_dir` instead when it names one, and the index stays
+under the build either way. The index is a cache over the takes, which narrate builds again from them
+when it does not read, so a checkout that commits its takes never sees it change, and the takes are
+what a project paid for.
 
 A take is identified by its content hash and by nothing else, so the index maps a section to a piece
 of content and never the other way round. Renumbering a section rewrites one row and moves no file,

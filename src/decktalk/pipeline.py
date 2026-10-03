@@ -35,7 +35,7 @@ class Stage(Enum):
     NARRATE = "narrate"
     CUE = "cue"
     RECORD = "record"
-    SOUNDSCAPE = "soundscape"
+    SCORE = "score"
     ASSEMBLE = "assemble"
     VERIFY = "verify"
 
@@ -91,7 +91,7 @@ class Artifact(Enum):
     TAKES = "build/narrate/takes.json"
     CUE_TIMES = "build/cue-times.json"
     RECORDINGS = "build/recordings"
-    SOUNDSCAPE = "build/soundscape"
+    SCORE = "build/score"
     FINAL = "build/final"
 
     @property
@@ -158,9 +158,9 @@ PIPELINE: tuple[StageSpec, ...] = (
         why="The pages are recorded against those seconds, so the picture lands on its word.",
     ),
     StageSpec(
-        stage=Stage.SOUNDSCAPE,
+        stage=Stage.SCORE,
         reads=(),
-        writes=(Artifact.SOUNDSCAPE,),
+        writes=(Artifact.SCORE,),
         holds_key=True,
         opens_pages=False,
         why="The music, the ambience and the effects are generated last of the paid work, so the unpaid "
@@ -168,11 +168,11 @@ PIPELINE: tuple[StageSpec, ...] = (
     ),
     StageSpec(
         stage=Stage.ASSEMBLE,
-        reads=(Artifact.TAKES, Artifact.RECORDINGS, Artifact.SOUNDSCAPE),
+        reads=(Artifact.TAKES, Artifact.RECORDINGS, Artifact.SCORE),
         writes=(Artifact.FINAL,),
         holds_key=False,
         opens_pages=True,
-        why="The recordings, the narration and the soundscape are cut, mixed and encoded into one film.",
+        why="The recordings, the narration and the score are cut, mixed and encoded into one film.",
     ),
     StageSpec(
         stage=Stage.VERIFY,
@@ -195,7 +195,7 @@ NEEDS: dict[Stage, frozenset[Stage]] = {
 }
 """Each stage against the stages whose artifacts it reads, which is the table above read as a graph.
 
-The declared order is one the graph admits and not the only one, because `soundscape` reads nothing
+The declared order is one the graph admits and not the only one, because `score` reads nothing
 another stage writes and runs after `record` only so the unpaid draft loop stops there.
 """
 

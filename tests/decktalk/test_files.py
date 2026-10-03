@@ -28,8 +28,8 @@ from decktalk.results import SoundKind
 from decktalk.settings import Settings
 from decktalk.stages import status
 from decktalk.stages.assemble import cut
-from decktalk.stages.soundscape import Planned
-from decktalk.stages.soundscape.ledger import DIGEST_DIGITS, request_digest
+from decktalk.stages.score import Planned
+from decktalk.stages.score.ledger import DIGEST_DIGITS, request_digest
 from support.links import link
 
 

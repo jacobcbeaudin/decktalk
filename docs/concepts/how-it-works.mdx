@@ -9,11 +9,11 @@ first video, follow the [Quickstart](/quickstart).
 <Frame caption="Each panel names the stages it runs, in order.">
   <picture className="block dark:hidden">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-light-stacked.svg" />
-    <img src="/images/how-it-works-light.svg" alt="Four panels. Write shows a markdown script, where one heading starts one section. Narrate runs narrate and cue, and shows a tick for every word with 1.25 over one of them. Record runs record and soundscape, and shows a slide whose parts appear on their words. Assemble runs assemble and verify, and shows one mp4 cut to the frame." />
+    <img src="/images/how-it-works-light.svg" alt="Four panels. Write shows a markdown script, where one heading starts one section. Narrate runs narrate and cue, and shows a tick for every word with 1.25 over one of them. Record runs record and score, and shows a slide whose parts appear on their words. Assemble runs assemble and verify, and shows one mp4 cut to the frame." />
   </picture>
   <picture className="hidden dark:block">
     <source media="(max-width: 640px)" srcSet="/images/how-it-works-dark-stacked.svg" />
-    <img src="/images/how-it-works-dark.svg" alt="Four panels. Write shows a markdown script, where one heading starts one section. Narrate runs narrate and cue, and shows a tick for every word with 1.25 over one of them. Record runs record and soundscape, and shows a slide whose parts appear on their words. Assemble runs assemble and verify, and shows one mp4 cut to the frame." />
+    <img src="/images/how-it-works-dark.svg" alt="Four panels. Write shows a markdown script, where one heading starts one section. Narrate runs narrate and cue, and shows a tick for every word with 1.25 over one of them. Record runs record and score, and shows a slide whose parts appear on their words. Assemble runs assemble and verify, and shows one mp4 cut to the frame." />
   </picture>
 </Frame>
 
@@ -39,15 +39,15 @@ one is also a command of its own with the same name.
 | `narrate` | `decktalk narrate` | `script.md` | `build/narrate/takes.json`, one take and one words file per section, and `build/narrate/narration.mp3` |
 | `cue` | `decktalk cue` | `build/narrate/takes.json` | `build/cue-times.json` |
 | `record` | `decktalk record` | `build/narrate/takes.json`, `build/cue-times.json` | `build/recordings/` |
-| `soundscape` | `decktalk soundscape` | `[soundscape]` in `decktalk.toml` | `build/soundscape/` |
-| `assemble` | `decktalk assemble` | `build/narrate/takes.json`, `build/recordings/`, `build/soundscape/` | `build/sections/`, then `build/final/` |
+| `score` | `decktalk score` | `[score]` in `decktalk.toml` | `score/`, the bought sounds and their ledger, and `build/score/` |
+| `assemble` | `decktalk assemble` | `build/narrate/takes.json`, `build/recordings/`, `score/`, `build/score/` | `build/sections/`, then `build/final/` |
 | `verify` | `decktalk verify` | `build/cue-times.json`, `build/final/` | nothing |
 
 - `narrate` turns the script into one spoken take per section and a start and an end for every word
   in it. A take is found by content alone, so renumbering a section or retitling one voices nothing.
 - `cue` turns each cue phrase in `cues.json` into a second on its own section's clock.
 - `record` records each page section in headless Chromium, playing the page against those seconds.
-- `soundscape` generates the music, the ambience bed and the effects the project describes.
+- `score` generates the music, the ambience bed and the effects the project describes.
 - `assemble` cuts each section to its span, joins them, mixes the whole soundtrack and encodes one
   film, with captions, chapters, a cut list, a transcript page and a poster beside it.
 - `verify` measures the finished film: every section start, every cut, every seam and every landing.
@@ -64,18 +64,18 @@ stages that can spend money sit as late as they can.
 - `cue` is second because a phrase becomes a second only once there are words with times on them.
 - `record` is third because the recorder plays the page to those seconds, so the picture lands on
   its word before anything is cut.
-- `soundscape` is fourth because it is the last stage that can buy anything. Running it after
+- `score` is fourth because it is the last stage that can buy anything. Running it after
   `record` means that `decktalk build --to record` stops before it. A draft loop of
   `decktalk build --no-spend --to record` therefore spends nothing and still exercises the cues, the
   pages, the recording and the checks.
 - `assemble` is fifth because it consumes what all four stages before it wrote. It needs the take
-  index for the lengths, the recordings for the picture, the soundscape for the mix and the narration
+  index for the lengths, the recordings for the picture, the score for the mix and the narration
   for the voice.
 - `verify` is last because it measures the film, and there is no film until `assemble` has written
   one.
 
 `--from STAGE` and `--to STAGE` run a span of the six, and `--skip STAGE` runs every stage but one.
-`decktalk assemble --skip soundscape` mixes the narration and the clip audio and leaves the generated
+`decktalk assemble --skip score` mixes the narration and the clip audio and leaves the generated
 sound out.
 
 ## What judges, and what produces
@@ -84,7 +84,7 @@ Two commands exist to be run before the pipeline, and neither one makes a film.
 
 `decktalk check` judges `script.md`, `cues.json` and the pages, and prices the narration a voiced
 build would buy. It produces nothing a viewer receives, so an agent that wants the price of the
-voice makes this one call, and `decktalk soundscape --no-spend` prices the sound. `check --no-pages`
+voice makes this one call, and `decktalk score --no-spend` prices the sound. `check --no-pages`
 judges the written files with no browser at all and says which judgements it could not reach.
 `check --no-frames` keeps the browser and drops the freeze comparison. `check --fix` applies every
 safe fix, and an unsafe fix is printed either way and never applied.
@@ -135,7 +135,7 @@ take. It is uncertain, so the default threshold still builds the film.
 - `cue` marks a section whose words are estimated, because its seconds are placeholders too.
 - The clicks are what lets `verify` compare the picture with the sound, so `CUE_OFF` still reports a
   reveal that misses its word.
-- A sound the soundscape describes and has not bought plays as silence, reported once as
+- A sound the score describes and has not bought plays as silence, reported once as
   [`SOUND_MISSING`](/reference/findings/SOUND_MISSING). It is uncertain too, so the film is still
   made.
 - `assemble` skips the loudness pass, because a click track has no programme loudness worth matching
@@ -154,9 +154,9 @@ A stage whose inputs have not changed is skipped, so an edit to one sentence reb
 
 `narrate` names each take by a hash of the content that produced it, which is the section's words
 and every `[voice]` key that changes how it is read. A section whose hash has not moved plays the
-take it already has. `narration.takes_dir` keeps the takes and the take index in a directory inside
-the project that you commit, so a fresh clone finds them, and `narration.cache_dir` is a store on
-this machine that every project looks in second.
+take it already has. Every take a voice spoke lives in the takes directory, `takes/` inside the
+project, which you commit, so a fresh clone finds them. `narration.store_dir` is the take store, a
+second copy of every take this machine bought, which every project looks in second.
 
 `record` keys each recording on the URL it would open, which already carries the scene, the resolved
 cues and the spoken words with their seconds, on the frame geometry, the colour scheme and the motion

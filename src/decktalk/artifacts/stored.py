@@ -188,9 +188,13 @@ class Stored(Model):
 
     def write(self, path: Path) -> Path:
         """Write this artifact over `path` in one step, and give back the path it was written to."""
-        text = json.dumps(self.model_dump(mode="json"), indent=INDENT, allow_nan=False)
-        replace_all({path: text + "\n"})
+        replace_all({path: self.text})
         return path
+
+    @property
+    def text(self) -> str:
+        """This artifact as the file holds it, for a writer that replaces it together with another file."""
+        return json.dumps(self.model_dump(mode="json"), indent=INDENT, allow_nan=False) + "\n"
 
 
 _WRONG = {

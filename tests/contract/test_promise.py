@@ -19,7 +19,8 @@ from decktalk.cli.session import FOUND_SOMETHING
 from decktalk.errors import ErrorCode
 from decktalk.inputs.workspace import EVENTS_SUFFIX
 from decktalk.results import SCHEMA
-from decktalk.stages.soundscape.ledger import LEDGER_FILE, Ledger
+from decktalk.settings import BY_ID
+from decktalk.stages.score.ledger import LEDGER_FILE, Ledger
 from support.paths import REPO
 from support.projects import load_project
 
@@ -59,12 +60,34 @@ def paid_records() -> str:
     return page().split("## The paid records", 1)[1].split("\n## ", 1)[0]
 
 
+def paid_rows() -> dict[str, tuple[str, str]]:
+    """The table of paid records, as each kind against the file it is and the folder it lives in."""
+    rows = re.findall(r"^\| ([^|]+?) \| ([^|]+?) \| ([^|]+?) \|$", paid_records(), re.MULTILINE)
+    return {kind: (file, folder) for kind, file, folder in rows if kind not in {"Kind", "---"}}
+
+
 def test_the_page_names_the_events_file_and_every_paid_record() -> None:
     assert f"build/events/<run>{EVENTS_SUFFIX}" in page()
     paid = paid_records()
-    assert f"build/soundscape/{LEDGER_FILE}" in paid and Ledger.paid
-    assert f"`<hash>{WORDS_SUFFIX}`" in paid and ProviderWords.paid
     assert "never deleted by DeckTalk" in paid, "the take audio is not a stored model, so the page says how it is kept"
     assert "`takes.json`" in paid and "cache" in paid, "the page says the take index is rebuilt rather than refused"
-    assert "- `build/narrate/takes.json`" not in paid and not Takes.paid, "the take index is a cache, not a paid record"
+    assert not Takes.paid, "the take index is a cache, not a paid record"
     assert not Stored.paid, "a cache is the default, and a paid record says so"
+
+
+def test_the_paid_records_are_listed_by_kind_and_by_the_folder_the_code_keeps_them_in(tmp_path: Path) -> None:
+    workspace = load_project(tmp_path).workspace
+    rows = paid_rows()
+    assert set(rows) == {"Take audio", "Provider words", "Score audio", "Ledger"}
+    takes = f"`{workspace.takes.relative_to(workspace.root).as_posix()}/`"
+    store = f"`[{BY_ID['narration.store_dir'].table}] {BY_ID['narration.store_dir'].name}`"
+    score = f"`{workspace.score_dir.relative_to(workspace.root).as_posix()}/`"
+    for kind in ("Take audio", "Provider words"):
+        assert takes in rows[kind][1] and store in rows[kind][1], kind
+    kept = f"`[{BY_ID['score.dir'].table}] {BY_ID['score.dir'].name}`"
+    for kind in ("Score audio", "Ledger"):
+        assert score in rows[kind][1] and "build/" not in " ".join(rows[kind]), kind
+    assert kept in rows["Score audio"][1]
+    assert f"`<hash>{WORDS_SUFFIX}`" in rows["Provider words"][0] and ProviderWords.paid
+    assert f"`{LEDGER_FILE}`" in rows["Ledger"][0] and Ledger.paid
+    assert not [kind for kind, row in rows.items() if "takes.json" in " ".join(row)], "the take index is a cache"

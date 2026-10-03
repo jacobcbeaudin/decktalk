@@ -73,6 +73,9 @@ COLOR_SCHEMES = ("light", "dark", "no-preference")
 VOICE_ID = r"^[A-Za-z0-9_-]*$"
 """Truth: the letters a provider's voice id is spelled in, and nothing that could leave a path segment."""
 
+SOME_PATH = r"^.+$"
+"""Truth: a path with at least one character in it, which is what a folder that must exist is named by."""
+
 HEX_COLOR = r"^(#|0[xX])[0-9A-Fa-f]{6}$"
 """Truth: a colour written as six hex digits after the prefix a stylesheet or ffmpeg reads, and nothing else."""
 
@@ -207,27 +210,38 @@ class NarrationConfig:
         decides=(Code.CUT_SPEECH,),
     )
     takes_dir: str = tune(
-        "",
-        "Directory inside the project that holds its takes, their words files and the take index, so a "
-        "committed copy builds the film on a fresh clone with no key. It is empty for `build/narrate/`. A take "
-        "is looked for here first and in `cache_dir` second, and a take this project buys or finds elsewhere "
-        "is written here.",
+        "takes",
+        "Directory inside the project that holds every take the film plays and the words its voice sent with "
+        "each, which you commit so a fresh clone builds the film with no key. The take index stays under the "
+        "build, because it is a cache built again from the takes. A take is looked for here first and in the "
+        "machine's take store, `store_dir`, second, and a take this project buys or finds there is written here.",
         unit="path",
+        bounds=Bounds(pattern=SOME_PATH),
         hazard=(
-            "A directory outside the project, an absolute path or the project directory itself is refused when "
-            "the project loads, because a project someone else wrote would otherwise choose where this machine "
-            "reads and writes its takes."
+            "An empty value, a directory outside the project, an absolute path, the project directory itself, a "
+            "directory inside the build directory or one that holds it is refused when the project loads, "
+            "because a bought take must land in a folder the project keeps, and a project someone else wrote "
+            "would otherwise choose where this machine reads and writes its takes."
         ),
-        see_also=("narration.cache_dir",),
+        see_also=("narration.store_dir",),
     )
-    cache_dir: str = tune(
+    store_dir: str = tune(
         "",
-        "Directory this machine keeps takes and their words files in, each named by its content hash, so many "
-        "projects share one store and a deleted `build/` keeps them. A take is looked for here after the "
-        "project's `takes_dir`, and a bought take is written here only when the project names no `takes_dir`.",
+        "The take store: a folder outside every project where this machine keeps a second copy of every take "
+        "it buys and the words its voice sent with it, each named by its content hash. A take is looked for "
+        "here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the "
+        "same words as another plays it without buying it, and a purchase nobody committed yet survives a "
+        "`git clean`. Each take is written here once, and a store that already holds a good copy keeps it. "
+        "It is empty for the `takes` folder in the per-user data folder, such as "
+        "`~/Library/Application Support/decktalk/takes` on macOS.",
         unit="path",
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
+        hazard=(
+            "It holds the spoken words of every script voiced on this machine, so keep it out of a synced or "
+            "shared folder. A relative path, a folder inside the project or one inside the tool cache is "
+            "refused when the project loads. Write an absolute path or one that starts with ~."
+        ),
         see_also=("narration.takes_dir", "tools.cache_dir"),
     )
     context_chars: int = tune(
@@ -739,7 +753,7 @@ class ElevenLabsConfig:
     """These keys are ElevenLabs's own: its speech fields, its default model, its rate, its output format and its API.
 
     The key it is bought with is `ELEVENLABS_API_KEY`, and `api_base` may name only an https host on
-    elevenlabs.io unless the machine allows any. The soundscape buys from the same API with the same key.
+    elevenlabs.io unless the machine allows any. The score stage buys from the same API with the same key.
     """
 
     model: str = tune(
@@ -813,7 +827,7 @@ class DtspConfig:
 
 
 SOUND_PRICE_HAZARD = (
-    "It is zero until somebody states it, and a spend cap refuses a soundscape while any rate it buys at is "
+    "It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is "
     "still the default, because DeckTalk would otherwise be capping a spend against a number it invented."
 )
 """Why a sound rate nobody stated refuses a cap, said once for the three tables that state one."""
@@ -821,7 +835,7 @@ SOUND_PRICE_HAZARD = (
 
 @dataclass(frozen=True)
 class AmbienceConfig:
-    """The settings half of `[soundscape.ambience]`: how the bed is asked for. Its prompt and file are content."""
+    """The settings half of `[score.ambience]`: how the bed is asked for. Its prompt and file are content."""
 
     model: str = tune("eleven_text_to_sound_v2", "Model the ambience bed is asked for from.")
     duration_seconds: float = tune(
@@ -844,13 +858,13 @@ class AmbienceConfig:
         source=Source.STATED,
         evidence="the plan page of the account whose key buys the sound",
         hazard=SOUND_PRICE_HAZARD,
-        see_also=("soundscape.provider",),
+        see_also=("score.provider",),
     )
 
 
 @dataclass(frozen=True)
 class EffectsConfig:
-    """The settings half of `[soundscape.effects]`: how each effect is asked for unless its own table says."""
+    """The settings half of `[score.effects]`: how each effect is asked for unless its own table says."""
 
     model: str = tune(
         "eleven_text_to_sound_v2", "Model every effect is asked for from, unless its own table names one."
@@ -875,13 +889,13 @@ class EffectsConfig:
         source=Source.STATED,
         evidence="the plan page of the account whose key buys the sound",
         hazard=SOUND_PRICE_HAZARD,
-        see_also=("soundscape.provider",),
+        see_also=("score.provider",),
     )
 
 
 @dataclass(frozen=True)
 class MusicConfig:
-    """The settings half of `[soundscape.music]`: how the bed is asked for and joined. Its prompt is content."""
+    """The settings half of `[score.music]`: how the bed is asked for and joined. Its prompt is content."""
 
     model: str = tune("music_v2", "Model the music is asked for from.")
     duration_seconds: int = tune(
@@ -892,7 +906,7 @@ class MusicConfig:
     )
     bitrate: str = tune(
         "192k",
-        "Bitrate of the music file that `soundscape` joins from its chunks.",
+        "Bitrate of the music file that `score` joins from its chunks.",
         bounds=Bounds(enum=("96k", "128k", "160k", "192k", "256k", "320k")),
     )
     max_chunk_seconds: int = tune(
@@ -917,18 +931,33 @@ class MusicConfig:
         source=Source.STATED,
         evidence="the plan page of the account whose key buys the sound",
         hazard=SOUND_PRICE_HAZARD,
-        see_also=("soundscape.provider",),
+        see_also=("score.provider",),
     )
 
 
 @dataclass(frozen=True)
-class SoundscapeConfig:
-    """The settings half of `[soundscape]`: how the music, the ambience and the effects are asked for.
+class ScoreConfig:
+    """The settings half of `[score]`: how the music, the ambience and the effects are asked for.
 
     Each item's own table holds its prompt and its file, which are project content, beside the
     settings that size its request, so a key is spelled the same way the item it sizes spells it.
     """
 
+    dir: str = tune(
+        "score",
+        "Directory inside the project that holds every sound the score bought and the ledger that records "
+        "them, each named by its item, which you commit so a fresh clone mixes the film with no key. Music "
+        "bought in parts keeps its parts here, and the piece joined from them is a cache under the build.",
+        unit="path",
+        bounds=Bounds(pattern=SOME_PATH),
+        hazard=(
+            "An empty value, a directory outside the project, an absolute path, the project directory itself, a "
+            "directory inside the build directory or one that holds it is refused when the project loads, "
+            "because a bought sound must land in a folder the project keeps, and a project someone else wrote "
+            "would otherwise choose where this machine writes what it buys."
+        ),
+        see_also=("narration.takes_dir",),
+    )
     provider: str = tune(
         "elevenlabs",
         "The sound provider the music, the ambience and the effects are bought from, which is a name the "
@@ -1020,7 +1049,8 @@ class ToolsConfig:
         unit="path",
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
-        see_also=("narration.cache_dir",),
+        hazard="A relative path is refused when the machine loads. Write an absolute path or one that starts with ~.",
+        see_also=("narration.store_dir",),
     )
 
 
@@ -1038,7 +1068,7 @@ class Settings:
     motion: MotionConfig = field(default_factory=MotionConfig)
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
     dtsp: DtspConfig = field(default_factory=DtspConfig)
-    soundscape: SoundscapeConfig = field(default_factory=SoundscapeConfig)
+    score: ScoreConfig = field(default_factory=ScoreConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
 
@@ -1049,7 +1079,7 @@ KEYS: tuple[Key, ...] = registry(Settings)
 BY_ID: dict[str, Key] = {key.id: key for key in KEYS}
 """Every key by the dotted name a diagnostic prints, `config set` takes and `--set` spells."""
 
-SHARED_TABLES = frozenset(("mix", "soundscape", "soundscape.ambience", "soundscape.effects", "soundscape.music"))
+SHARED_TABLES = frozenset(("mix", "score", "score.ambience", "score.effects", "score.music"))
 """The tables that hold settings beside project content, so the settings loader warns for neither.
 
 The document parser owns these tables' unknown keys, because only it knows the content half.
@@ -1058,7 +1088,7 @@ The document parser owns these tables' unknown keys, because only it knows the c
 DOCUMENT_TABLES = ("project", "section", "transition")
 """The tables of `decktalk.toml` that are project content rather than tuning, named so a refusal can say so.
 
-`mix` and `soundscape` are missing on purpose: each holds settings declared above beside content
+`mix` and `score` are missing on purpose: each holds settings declared above beside content
 keys the document owns, so neither is wholly one thing.
 """
 
@@ -1575,6 +1605,48 @@ json_value: Callable[[object], JsonValue] = functools.partial(to_jsonable_python
 """One value as JSON carries it: a tuple as a list, an enum as its value, and anything else unknown as its text."""
 
 
+HOME_VARIABLES = ("HOME", "USERPROFILE")
+"""Where a machine's environment names its home directory, which a folder that starts with `~` is under."""
+
+
+def machine_folder(loaded: Loaded, key: str, environ: Mapping[str, str]) -> Path | None:
+    """The folder a machine key names, with `~` expanded to the machine's home, or None when it names none.
+
+    A machine folder belongs to no project, so a relative one has nothing sensible to be relative to:
+    read against each project it would put one folder inside every project, and read against the
+    working directory it would move with the shell. Only an absolute path or one under `~` is read, and
+    any other is refused naming the layer that set it, which for a machine file is the file itself.
+    """
+    named = str(value_of(loaded.settings, key))
+    if not named:
+        return None
+    said = loaded.layers.winner(key)
+    if said.layer is Layer.ENVIRONMENT:
+        source = BY_ID[key].environment
+    else:
+        source = str(said.file) if said.file is not None else f"the {said.layer.value} layer"
+    table, name = key.rsplit(".", 1)
+    spelled = f"[{table}] {name} is {named!r} in {source}"
+    location = Location(where=f"[{table}] {name}", file=said.file, line=said.line)
+    if named == "~" or named.startswith(("~/", "~\\")):
+        home = next((environ[variable] for variable in HOME_VARIABLES if environ.get(variable)), None)
+        if home is None:
+            raise InputError(
+                f"{spelled}, which starts with ~, and this machine names no home directory to read it under.",
+                hint="Write the folder as an absolute path.",
+                location=location,
+            )
+        return Path(home, named[2:])
+    if not Path(named).is_absolute():
+        raise InputError(
+            f"{spelled}, which is relative, so it would name a different folder for every project and every "
+            "working directory.",
+            hint=f"Write an absolute path or one that starts with ~, such as ~/{name.removesuffix('_dir')}.",
+            location=location,
+        )
+    return Path(named)
+
+
 def value_of(settings: Settings, dotted: str) -> object:
     """The value one dotted key holds in a settings tree."""
     return operator.attrgetter(dotted)(settings)
@@ -1877,7 +1949,7 @@ __all__ = [
     "ProviderTable",
     "RecordConfig",
     "Settings",
-    "SoundscapeConfig",
+    "ScoreConfig",
     "ToolsConfig",
     "VerifyConfig",
     "VideoConfig",

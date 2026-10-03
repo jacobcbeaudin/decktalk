@@ -25,16 +25,16 @@ note = "Rebuilding one section still sends that section's neighbours, because th
 [[service]]
 host = "api.elevenlabs.io"
 name = "Sound effects and ambience"
-sent_by = "`decktalk soundscape`"
-body = "The prompt string written in the `[soundscape.ambience]` or a `[soundscape.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent."
+sent_by = "`decktalk score`"
+body = "The prompt string written in the `[score.ambience]` or a `[score.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent."
 credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header."
 note = "The prompt is text you wrote in `decktalk.toml`, so you decide what it describes."
 
 [[service]]
 host = "api.elevenlabs.io"
 name = "Music"
-sent_by = "`decktalk soundscape`"
-body = "The prompt string written in the `[soundscape.music]` table, the length you asked for and the audio format. No part of `script.md` is sent."
+sent_by = "`decktalk score`"
+body = "The prompt string written in the `[score.music]` table, the length you asked for and the audio format. No part of `script.md` is sent."
 credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header."
 note = "The music file is generated once and then reused from `build/`."
 

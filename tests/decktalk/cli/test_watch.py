@@ -89,7 +89,7 @@ def test_a_build_folder_the_project_names_is_never_watched(tmp_path) -> None:
     assert set(watched) == {tmp_path / "script.md"}
 
 
-def _place(project: Fake, root: Path, *, build: str = "build", takes: str | None = None) -> Fake:
+def _place(project: Fake, root: Path, *, build: str = "build", takes: str = "takes") -> Fake:
     """Put a fake project at a root, with its build and take folders where a test's settings put them."""
     project.root = root
     project._inputs = SimpleNamespace(
@@ -98,7 +98,8 @@ def _place(project: Fake, root: Path, *, build: str = "build", takes: str | None
             build=root / build,
             name="demo",
             suffix=TAKE_SUFFIX,
-            takes=None if takes is None else root / takes,
+            takes=root / takes,
+            score_dir=root / "score",
         )
     )
     return project

@@ -5,7 +5,7 @@ Every path DeckTalk publishes is relative to the project root and spelled with f
 Paths are made relative the moment a stage fills them rather than at serialisation time, which is
 why this sits at the bottom of the input layer where every filler can reach it.
 
-A path outside the project, such as a take found in the machine's `[narration] cache_dir`, is
+A path outside the project, such as a take found in the machine's `[narration] store_dir`, is
 published as it is, because a relative path with `..` in it names nothing a reader can open.
 
 Every file the project itself names is read through `contained`, which is the one rule that says a

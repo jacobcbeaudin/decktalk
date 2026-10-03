@@ -732,7 +732,7 @@
     },
     "Progress": {
       "additionalProperties": false,
-      "description": "How far through its own work one stage is, counted in the thing it is working on.\n\nNarrate emits one per take, record one per section, soundscape one per asset, assemble one per\nencoding pass and verify one per probe, so every stage that takes time reports the same shape.",
+      "description": "How far through its own work one stage is, counted in the thing it is working on.\n\nNarrate emits one per take, record one per section, score one per asset, assemble one per\nencoding pass and verify one per probe, so every stage that takes time reports the same shape.",
       "properties": {
         "event": {
           "const": "progress",
@@ -1095,7 +1095,7 @@
     },
     "SoundCharged": {
       "additionalProperties": false,
-      "description": "The sound provider was paid for one request, which is a soundscape item or one part of its music.\n\nIt is written the moment the provider answers, once per paid request, so a host that keeps its\nown ledger records every sound it paid for and can tell by the digest that a retried run did not\nbuy the same request twice.",
+      "description": "The sound provider was paid for one request, which is a score item or one part of its music.\n\nIt is written the moment the provider answers, once per paid request, so a host that keeps its\nown ledger records every sound it paid for and can tell by the digest that a retried run did not\nbuy the same request twice.",
       "properties": {
         "event": {
           "const": "sound.charged",
@@ -1165,7 +1165,7 @@
       "type": "object"
     },
     "SoundKind": {
-      "description": "What one soundscape item is, which decides where it sits in the mix.",
+      "description": "What one score item is, which decides where it sits in the mix.",
       "enum": [
         "music",
         "ambience",
@@ -1330,7 +1330,7 @@
         "narrate",
         "cue",
         "record",
-        "soundscape",
+        "score",
         "assemble",
         "verify"
       ],

@@ -46,7 +46,7 @@ THREE_PAGES = {1: 2.0, 2: 2.5, 3: 1.5}
 """Three page sections of the lengths the take index below gives them."""
 
 
-def three_page_plan(inputs, opened, *, soundscape: bool = True) -> MixPlan:
+def three_page_plan(inputs, opened, *, score: bool = True) -> MixPlan:
     takes = take_index(
         inputs,
         {
@@ -55,7 +55,7 @@ def three_page_plan(inputs, opened, *, soundscape: bool = True) -> MixPlan:
             3: ("C", 1.5, 1.3, spoken("epsilon")),
         },
     )
-    return plan_mix(inputs, opened.run, rendered(inputs, THREE_PAGES), takes, soundscape=soundscape)
+    return plan_mix(inputs, opened.run, rendered(inputs, THREE_PAGES), takes, score=score)
 
 
 def test_a_second_becomes_the_milliseconds_adelay_reads():
@@ -156,7 +156,7 @@ def test_the_music_and_the_ambience_are_shaped_by_the_search_tree(tmp_path):
         (tmp_path / "media" / name).write_bytes(b"")
     opened = open_run(tmp_path)
     takes = take_index(inputs, {n: (f"S{n}", 2.0, 1.5, spoken("a b")) for n in range(1, 121)})
-    plan = plan_mix(inputs, opened.run, rendered(inputs, dict.fromkeys(range(1, 121), 2.0)), takes, soundscape=True)
+    plan = plan_mix(inputs, opened.run, rendered(inputs, dict.fromkeys(range(1, 121), 2.0)), takes, score=True)
     music = next(part for part in plan.filter.split(";") if part.endswith("[music]"))
     ambience = next(part for part in plan.filter.split(";") if part.endswith("[amb]"))
     assert nesting(music, "if") == math.ceil(math.log2(120))
@@ -177,7 +177,7 @@ def test_the_graph_reaches_ffmpeg_as_a_file_and_never_as_one_argument(tmp_path, 
 
     monkeypatch.setattr(ffmpeg, "run", run)
     work = inputs.workspace.final_dir / ".film.mix.mov"
-    plan = mix_soundtrack(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, work, soundscape=True)
+    plan = mix_soundtrack(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, work, score=True)
     [(args, graph)] = seen
     assert "-filter_complex" not in args
     assert plan.filter not in args
@@ -218,7 +218,7 @@ def test_a_clip_between_two_pages_splits_the_narration_into_its_own_runs(tmp_pat
         },
     )
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}, audio={2: tmp_path / "media" / "broll.mp4"})
-    plan = plan_mix(inputs, opened.run, rows, takes, soundscape=True)
+    plan = plan_mix(inputs, opened.run, rows, takes, score=True)
     assert "[narr0]" in plan.filter
     assert "[narr1]" in plan.filter
     assert "atrim=start=0.000:end=2.000" in plan.filter
@@ -231,7 +231,7 @@ def test_a_clips_own_audio_lands_at_its_section_start_and_fades_at_both_ends(tmp
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
     rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "broll.mp4"})
-    plan = plan_mix(inputs, opened.run, rows, takes, soundscape=True)
+    plan = plan_mix(inputs, opened.run, rows, takes, score=True)
     assert "[clip02]" in plan.filter
     assert "afade=t=in:d=0.02" in plan.filter
     assert "afade=t=out:st=2.980:d=0.02" in plan.filter
@@ -244,7 +244,7 @@ def test_a_music_bed_the_project_names_and_has_not_got_is_a_certain_finding(tmp_
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
-    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, soundscape=True)
+    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, score=True)
     assert opened.codes() == ["FILE_MISSING"]
     said = next(line.finding for line in opened.of(FindingEvent))
     assert "media/bed.mp3" in said.message
@@ -254,11 +254,11 @@ def test_a_music_bed_the_project_names_and_has_not_got_is_a_certain_finding(tmp_
 
 def test_a_music_bed_the_score_has_not_bought_yet_plays_silence_under_a_warning(tmp_path):
     """The bed is still the score's to buy, so a run without spend mixes silence and is not refused."""
-    toml = MID_CLIP_TOML + '\n[mix]\nmusic = "media/bed.mp3"\n\n[soundscape.music]\nprompt = "warm strings"\n'
+    toml = MID_CLIP_TOML + '\n[mix]\nmusic = "media/bed.mp3"\n\n[score.music]\nprompt = "warm strings"\n'
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
-    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, soundscape=True)
+    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, score=True)
     assert opened.codes() == [Code.SOUND_MISSING.value]
     said = next(line.finding for line in opened.of(FindingEvent))
     assert said.location.where == "media/bed.mp3"
@@ -266,12 +266,12 @@ def test_a_music_bed_the_score_has_not_bought_yet_plays_silence_under_a_warning(
     assert "[music]" not in plan.filter
 
 
-def test_a_run_that_asks_for_no_soundscape_lays_no_bed_and_judges_nothing(tmp_path):
+def test_a_run_that_asks_for_no_score_lays_no_bed_and_judges_nothing(tmp_path):
     toml = MID_CLIP_TOML + '\n[mix]\nmusic = "media/bed.mp3"\n'
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta"))})
-    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, soundscape=False)
+    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, score=False)
     assert opened.codes() == []
     assert "[music]" not in plan.filter
 
@@ -289,7 +289,7 @@ def test_an_effect_lands_at_the_second_its_own_cue_resolved_to(tmp_path):
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("a b")), 2: ("B", 2.0, 1.6, spoken("c d"))})
     cue_times(inputs, {2: {"2.1:ping": 0.5}})
-    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0, 2: 2.0}), takes, soundscape=True)
+    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0, 2: 2.0}), takes, score=True)
     assert "[effect0]" in plan.filter
     # Section 2 opens at 2.0 s and the cue sits half a second into it.
     assert "adelay=2500:all=1" in plan.filter
@@ -306,7 +306,7 @@ def test_an_effect_whose_cue_is_unresolved_is_said_and_never_played(tmp_path):
     (tmp_path / "media" / "ping.mp3").write_bytes(b"")
     opened = open_run(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("a b"))})
-    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, soundscape=True)
+    plan = plan_mix(inputs, opened.run, rendered(inputs, {1: 2.0}), takes, score=True)
     assert "[effect0]" not in plan.filter
     assert any("is unresolved" in note for note in opened.notes())
 
@@ -480,6 +480,6 @@ def test_a_film_with_music_and_more_spoken_spans_than_ffmpeg_nests_assembles(tmp
         shutil.copyfile(card, row.path)
     inputs.workspace.final_dir.mkdir(parents=True, exist_ok=True)
     work = inputs.workspace.final_dir / ".t.mix.mov"
-    plan = mix_soundtrack(inputs, opened.run, rows, takes, work, soundscape=True)
+    plan = mix_soundtrack(inputs, opened.run, rows, takes, work, score=True)
     assert plan.filter.count("min(1,max(0,(t-") == 2 * SECTIONS
     assert ffmpeg.probe_duration(work) == pytest.approx(SECTIONS * SECTION_SECONDS, abs=0.1)

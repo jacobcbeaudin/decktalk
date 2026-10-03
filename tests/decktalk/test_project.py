@@ -252,7 +252,7 @@ page = "deck/index.html"
 scene = "1"
 ambience = true
 
-[soundscape.ambience]
+[score.ambience]
 text = "a quiet room"
 """
 """One spoken page section with an ambience bed, so the project holds one take and one bought sound."""
@@ -306,7 +306,7 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
     )
     project = decktalk.open(tmp_path, machine=machine)
     project.narrate(spend=True)
-    project.soundscape(spend=True)
+    project.score(spend=True)
     assert bought.counts == (1, 1)
     project.narrate(spend=True, force=True)
     assert bought.counts == (1, 1), "a forced narrate bought a take again"
@@ -315,13 +315,13 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
     assert bought.counts == (1, 1), "a forced build bought a take or a sound again"
     project.narrate(spend=True, replace_voiced=True)
     assert bought.counts == (2, 1)
-    project.soundscape(spend=True, replace_score=True)
+    project.score(spend=True, replace_score=True)
     assert bought.counts == (2, 2)
     project.build(spend=False, replace_voiced=True, replace_score=True, skip=besides, stop_on=None)
     assert bought.counts == (2, 2), "a replace flag bought something without spend"
     project.build(spend=True, replace_score=True, skip=besides, stop_on=None)
     assert bought.counts == (2, 3)
-    assert "force" not in inspect.signature(Project.soundscape).parameters, "a force there could only buy again"
+    assert "force" not in inspect.signature(Project.score).parameters, "a force there could only buy again"
 
 
 def test_a_result_that_is_not_the_one_the_command_is_named_after_is_a_bug(

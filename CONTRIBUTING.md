@@ -209,7 +209,7 @@ src/decktalk/
     toolchain/           What DeckTalk fetches or ships for one machine, and where it keeps it.
       announce.py        How a download says it is happening, so a run that stops for the network says so as it happens.
       assets.py          What ships inside the wheel: the page runtime, the pinned KaTeX release, and the projects.
-      cache.py           The per-user cache directory, which is where every tool DeckTalk fetches for a machine lives.
+      cache.py           The per-user cache and data directories, where every tool DeckTalk fetches and its take store live.
       chromium_fetch.py  The headless Chromium Playwright manages: where it lives, whether this machine has it, and fetching it.
       ffmpeg_fetch.py    The pinned ffmpeg build: one fixed URL per platform, verified against its SHA-256 before it is opened.
     captions/            Captions, chapters and the files they are written to.
@@ -259,7 +259,7 @@ src/decktalk/
       status.py          What the project's files say, what is built from them, what has gone stale, and what to do next.
       storyboard.py      Every slide at every cue, frozen onto one page, which is the checkpoint before credits are spent.
       words.py           Every spoken word with its span, which is how a cue phrase is written.
-      assemble/          Stage 5: the recordings, the narration, the clips and the soundscape become one film.
+      assemble/          Stage 5: the recordings, the narration, the clips and the score become one film.
         cut.py           Every section becomes one silent mp4, and the cut list records where each one plays.
         loudness.py      EBU R128 loudness: measure, apply one gain, limit the true peaks, and measure again.
         mix.py           The whole soundtrack as one ffmpeg filter graph, one `MixInput` per layer.
@@ -280,7 +280,7 @@ src/decktalk/
         checks.py        What one finished recording is judged on, before anything is assembled from it.
         pool.py          How many page sections record at once, which is the size of the pool `record` hands them to.
         start.py         Where narration t=0 sits in a recording.
-      soundscape/        Stage 4: the music, the ambience bed and the effects this project describes are generated.
+      score/             Stage 4: the music, the ambience bed and the effects this project describes are generated.
         ledger.py        What this project has already bought from the sound service, as one typed file it reads and writes.
       verify/            Stage six: the one read-only stage, over the finished film and the logs that made it.
         measure.py       The measurements behind the cue plan: the probes, the onset scan and the click search.
@@ -365,7 +365,7 @@ rather than assumed.
   stale silently. The code says what.
 - **Dead code is a reading.** `ruff` and a call-graph test with an allow-list catch most of it, and
   whether an uncalled function is dead or a deliberate export is a judgement a reviewer makes.
-- **A rebuilt module reads like its siblings.** Whether `soundscape` reads like the five stages
+- **A rebuilt module reads like its siblings.** Whether `score` reads like the five stages
   beside it is not testable, and it is the thing that makes the package read as designed.
 - **A deploy note does not belong in a public repository.** Hosting configuration, a dashboard
   setting and an account name are given in review rather than committed.
