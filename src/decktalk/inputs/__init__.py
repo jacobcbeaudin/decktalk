@@ -30,12 +30,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from decktalk.artifacts import (
+    ClipWords,
     CueTimes,
     Cuts,
     EstimatedWords,
     ProviderWords,
     RecordingLog,
     Takes,
+    Unreadable,
     Words,
     content_digest,
     file_digest,
@@ -269,6 +271,26 @@ class Inputs:
         """`cues.json` as it is written, which a fix that rewrites one row is worked out on, or nothing."""
         return current_text(self.cues_path)
 
+    def clip_words(self, section: ClipSection) -> ClipWords | None:
+        """The words file a clip section's `words` key names, or None when it names none or it is not there.
+
+        The author wrote that file, or kept the one `decktalk clip` wrote, so DeckTalk cannot build it
+        again. One that does not read is refused as `INPUT`, naming the key that named it, and nothing
+        here deletes it.
+        """
+        if not section.words:
+            return None
+        path = self.path(section.words)
+        try:
+            return ClipWords.parse(path)
+        except Unreadable as unread:
+            raise InputError(
+                f"{PROJECT_FILE}: [[section]] number={section.number} words names {section.words}, and {unread}",
+                hint=f"Fix {section.words}, write it again with decktalk clip, or take the words key off "
+                f"section {section.number} in {PROJECT_FILE}.",
+                location=at(path, self.root, section=section.number),
+            ) from unread
+
     def markers(self) -> Markers | None:
         """The parsed `[mix] music_markers` file, or None when the project names none."""
         if not self.document.mix.music_markers:
@@ -326,7 +348,14 @@ class Inputs:
         return model.read(self.workspace.words_path(digest))
 
     def takes(self) -> Takes | None:
-        return Takes.read(self.workspace.takes_path)
+        """The take index as narrate last wrote it, or None when there is none that reads.
+
+        The index is a cache over the takes on disk: every row is read again off the script, the
+        settings and the take and words files its digest names, so narrate builds an index that does
+        not read again for nothing and never buys a take for it. A stage that cannot run without the
+        index asks `Takes.require`, which refuses one that does not read as never built.
+        """
+        return Takes.previous(self.workspace.takes_path)
 
     def cue_times(self) -> CueTimes | None:
         return CueTimes.read(self.workspace.cue_times_path)

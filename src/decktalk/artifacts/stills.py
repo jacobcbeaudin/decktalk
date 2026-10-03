@@ -28,6 +28,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import Field
 
@@ -54,6 +55,8 @@ def still_key(parts: Sequence[str]) -> str:
 
 class StillManifest(Stored):
     """The project files a page had loaded when one frame of it was drawn, each with its digest then."""
+
+    label: ClassVar[str] = "the list of files one frame was drawn from"
 
     files: dict[str, str] = Field(description="Each project-relative file against the digest it had when drawn.")
 

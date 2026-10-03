@@ -8,7 +8,7 @@ the product uses.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,6 +19,7 @@ from decktalk.events import Log, StageDone, StageStart
 from decktalk.findings import Certainty, Code, Finding, Location
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
+from decktalk.media import audio
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
@@ -39,6 +40,7 @@ from decktalk.stages import build as build_module
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.build import build
 from decktalk.stages.status import read_kept
+from support.fakes import FakeVoice
 from support.logs import decisions
 from support.projects import load_project
 from support.runs import RUN_ID, Watched
@@ -72,6 +74,10 @@ A bowl.
 
 A ball.
 """
+
+
+VOICED = {"DECKTALK_VOICE_ID": "voice-under-test"}
+"""What a machine that names the voice hands a project, so a take on disk can be matched to it."""
 
 
 def price(dollars: float = 0.0, *, state: SpendState = SpendState.ESTIMATE) -> Spend:
@@ -385,10 +391,122 @@ def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: W
     """A stage handed a flag it does not read would accept a knob that changes nothing."""
     build(inputs, watched.run, only=[1], force=True, strict=True, loudness=False, allow=[Code.CUE_UNKNOWN])
     assert calls.options("narrate") == {"only": [1], "force": True, "replace_voiced": False}
-    assert calls.options("cue") == {"only": [1], "allow_unknown": True}
+    assert calls.options("cue") == {"only": [1]}, "the cue stage was told what the caller allows"
     assert calls.options("record") == {"only": [1], "force": True}
+    assert calls.options("soundscape") == {"only": [1], "replace_score": False}, (
+        "force reached the stage that buys sound"
+    )
     assert calls.options("assemble") == {"only": [1], "soundscape": True, "loudness": False, "strict": True}
     assert calls.options("verify") == {"only": [1]}
+
+
+PAYING_TOML = (
+    TOML.replace('scene = "1"', 'scene = "1"\nambience = true', 1)
+    + """
+[soundscape.ambience]
+text = "a quiet room"
+"""
+)
+"""The two-section project with one bought sound beside its two takes, so a build buys from both stages."""
+
+
+@dataclass
+class Purchases:
+    """Every take and every sound a build bought, counted at the two seams that are paid."""
+
+    voice: FakeVoice
+    sounds: list[dict[str, object]] = field(default_factory=list)
+
+    def effect(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(dict(body))
+        return b"sound"
+
+    def music(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(dict(body))
+        return b"music"
+
+    @property
+    def counts(self) -> tuple[int, int]:
+        """(takes bought, sounds bought), which is what a run cost read as two numbers."""
+        return len(self.voice.requests), len(self.sounds)
+
+
+@pytest.fixture
+def purchases(monkeypatch: pytest.MonkeyPatch, fake_voice: FakeVoice, answers: Answers) -> Purchases:
+    """A build whose two paying stages are real and buy from fakes, with every other stage faked.
+
+    The voice and the sound service are the paid seams, so they are what is counted, and the stages
+    between them are replaced because no test of what is bought needs a browser or an encoder.
+    """
+    bought = Purchases(voice=fake_voice)
+    monkeypatch.setattr(soundscape_stage, "client_for", lambda _run, _inputs: bought)
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
+    made = _results(answers)
+    for name, module in {"cue": cue, "record": record, "assemble": assemble, "verify": verify}.items():
+        monkeypatch.setattr(module, name, lambda _inputs, _run, _name=name, **_options: made[_name]())
+    monkeypatch.setattr(storyboard, "storyboard", lambda _inputs, _run, **_options: made["storyboard"]())
+    return bought
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_forced_build_that_may_spend_buys_no_take_and_no_sound_again(
+    tmp_path: Path, make_run: Callable[..., Watched], purchases: Purchases
+) -> None:
+    """`force` rebuilds what is free, so it never buys again what a take or the sound ledger holds."""
+    paying = load_project(tmp_path / "paying", PAYING_TOML, script=SCRIPT, environ=VOICED)
+    build(paying, make_run(paying, spend=True).run)
+    assert purchases.counts == (2, 1)
+    build(paying, make_run(paying, spend=True).run, force=True)
+    assert purchases.counts == (2, 1), "a forced build bought again what the project already held"
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_build_told_to_replace_voiced_takes_still_buys_them_and_no_sound(
+    tmp_path: Path, make_run: Callable[..., Watched], purchases: Purchases
+) -> None:
+    """`replace_voiced` is the one way a take is bought again, and it reaches no sound."""
+    paying = load_project(tmp_path / "paying", PAYING_TOML, script=SCRIPT, environ=VOICED)
+    build(paying, make_run(paying, spend=True).run)
+    build(paying, make_run(paying, spend=True).run, force=True, replace_voiced=True)
+    assert purchases.counts == (4, 1)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_build_that_may_not_spend_makes_the_film_with_silence_where_an_unbought_sound_would_be(
+    tmp_path: Path, make_run: Callable[..., Watched], purchases: Purchases
+) -> None:
+    """An unbought sound warns and never fails the film, and a caller that fails on any finding stops on it."""
+    paying = load_project(tmp_path / "paying", PAYING_TOML, script=SCRIPT, environ=VOICED)
+    result = build(paying, make_run(paying, spend=False).run)
+    assert purchases.counts == (0, 0)
+    assert result.stopped_at is None
+    assert result.ok
+    assert Code.SOUND_MISSING in {found.code for found in result.findings}
+    strict = build(paying, make_run(paying, spend=False).run, stop_on=Certainty.UNCERTAIN, allow={Code.TAKE_MISSING})
+    assert strict.stopped_at is Stage.SOUNDSCAPE
+    assert not strict.ok
+    assert purchases.counts == (0, 0)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_build_told_to_replace_the_score_buys_each_sound_again_and_no_take(
+    tmp_path: Path, make_run: Callable[..., Watched], purchases: Purchases
+) -> None:
+    """`replace_score` is the one way a bought sound is bought again, and it reaches no take."""
+    paying = load_project(tmp_path / "paying", PAYING_TOML, script=SCRIPT, environ=VOICED)
+    build(paying, make_run(paying, spend=True).run)
+    build(paying, make_run(paying, spend=True).run, force=True, replace_score=True)
+    assert purchases.counts == (2, 2)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_neither_replace_flag_buys_anything_without_spend(
+    tmp_path: Path, make_run: Callable[..., Watched], purchases: Purchases
+) -> None:
+    paying = load_project(tmp_path / "paying", PAYING_TOML, script=SCRIPT, environ=VOICED)
+    build(paying, make_run(paying, spend=True).run)
+    build(paying, make_run(paying, spend=False).run, replace_voiced=True, replace_score=True)
+    assert purchases.counts == (2, 1)
 
 
 def test_a_certain_finding_stops_the_run_where_it_was_found(
@@ -496,7 +614,7 @@ def test_an_allowed_code_lets_a_cue_no_page_declares_through(
     answers.cue.append(judged(Code.CUE_UNKNOWN, Stage.CUE))
     build(inputs, watched.run, allow=[Code.CUE_UNKNOWN])
     assert calls.names[-1] == "verify"
-    assert calls.options("cue")["allow_unknown"] is True
+    assert "allow_unknown" not in calls.options("cue")
 
 
 def test_any_allowed_code_is_forgiven_the_same_way(

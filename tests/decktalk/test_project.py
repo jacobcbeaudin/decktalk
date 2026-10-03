@@ -7,14 +7,16 @@ the lock it holds, the arguments it hands down and the result it insists on.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import subprocess
 import sys
 import types
 import urllib.request
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,7 @@ from decktalk.files import replace_all
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs import Inputs
 from decktalk.machine import Machine, Run, Toolchain
+from decktalk.media import audio
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
 from decktalk.project import LOCK_FILE, OWNER_FILE, Origin, Project, section_numbers, stage_call
@@ -39,13 +42,15 @@ from decktalk.results import (
     RecordResult,
     Result,
     StatusResult,
+    StoryboardResult,
 )
 from decktalk.results import Layer as SettingLayer
 from decktalk.settings import ToolsConfig
 from decktalk.stages import narrate as narrate_stage
-from support.fakes import FakeChromium
+from decktalk.stages import storyboard as storyboard_stage
+from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice
 from support.links import link
-from support.projects import MINIMAL_TOML, write_project
+from support.projects import MINIMAL_TOML, load_project, write_project
 from support.runs import a_machine
 from support.spends import a_spend
 
@@ -235,6 +240,88 @@ def test_a_stage_is_handed_the_inputs_the_run_and_its_own_options(
     assert inputs is project._inputs
     assert run.id and run.root == project.root
     assert options["only"] == (1, 2) and options["force"] is True
+
+
+PAYING_TOML = """
+[project]
+name = "t"
+
+[[section]]
+number = 1
+page = "deck/index.html"
+scene = "1"
+ambience = true
+
+[soundscape.ambience]
+text = "a quiet room"
+"""
+"""One spoken page section with an ambience bed, so the project holds one take and one bought sound."""
+
+
+@dataclass
+class Bought:
+    """Every take and every sound the paid seams were asked for, counted rather than paid."""
+
+    name: str = "house"
+    voice: FakeVoice = field(default_factory=FakeVoice)
+    sounds: list[dict[str, object]] = field(default_factory=list)
+
+    def effect(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(dict(body))
+        return b"sound"
+
+    def music(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(dict(body))
+        return b"music"
+
+    @property
+    def counts(self) -> tuple[int, int]:
+        """(takes bought, sounds bought), which is what the runs cost read as two numbers."""
+        return len(self.voice.requests), len(self.sounds)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`force` rebuilds what is free, so a project that holds its take and its sound buys neither again.
+
+    The two paying stages run for real against counting fakes on the machine's own tables, and the
+    stages between them are left out of the build, because what is bought needs no browser.
+    """
+    load_project(tmp_path, PAYING_TOML, script="## 1. Open\n\nA bowl.\n")
+    bought = Bought()
+    machine = Machine(
+        environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+        tables={},
+        config_path=tmp_path / "config.toml",
+        cwd=tmp_path,
+        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
+        providers={FAKE_VOICE_NAME: lambda _context: bought.voice},
+        sound_providers={"elevenlabs": lambda _context: bought},
+    )
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
+    monkeypatch.setattr(
+        storyboard_stage, "storyboard", lambda _inputs, run, **_options: run.result(StoryboardResult, panels=())
+    )
+    project = decktalk.open(tmp_path, machine=machine)
+    project.narrate(spend=True)
+    project.soundscape(spend=True)
+    assert bought.counts == (1, 1)
+    project.narrate(spend=True, force=True)
+    assert bought.counts == (1, 1), "a forced narrate bought a take again"
+    besides = (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)
+    project.build(spend=True, force=True, skip=besides, stop_on=None)
+    assert bought.counts == (1, 1), "a forced build bought a take or a sound again"
+    project.narrate(spend=True, replace_voiced=True)
+    assert bought.counts == (2, 1)
+    project.soundscape(spend=True, replace_score=True)
+    assert bought.counts == (2, 2)
+    project.build(spend=False, replace_voiced=True, replace_score=True, skip=besides, stop_on=None)
+    assert bought.counts == (2, 2), "a replace flag bought something without spend"
+    project.build(spend=True, replace_score=True, skip=besides, stop_on=None)
+    assert bought.counts == (2, 3)
+    assert "force" not in inspect.signature(Project.soundscape).parameters, "a force there could only buy again"
 
 
 def test_a_result_that_is_not_the_one_the_command_is_named_after_is_a_bug(

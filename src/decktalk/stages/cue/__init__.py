@@ -40,12 +40,12 @@ from decktalk.stages.cue.resolve import ambiguity, resolve_sections, short_secti
 __all__ = ["cue"]
 
 
-def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None, allow_unknown: bool = False) -> CueResult:
+def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> CueResult:
     """Resolve every cue phrase against the narration and write `build/cue-times.json`.
 
     `only` resolves those sections and leaves every other section's rows in the file as they were,
-    so a run aimed at one section never drops the cues of the rest. `allow_unknown` keeps a row no
-    page declares out of the findings, which is the author saying they know about it.
+    so a run aimed at one section never drops the cues of the rest. A row no page declares is always
+    reported, and whether it fails the run is the caller's threshold to decide.
     """
     wanted = selects(only)
     takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
@@ -67,7 +67,7 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None, allow_un
             _say_what_was_chosen(run, block, words.get(block.number, ()))
     for found in judged:
         run.found(found)
-    for found in _catalog_findings(inputs, only, allow_unknown):
+    for found in _catalog_findings(inputs, only):
         run.found(found)
     for found in _overlap_findings(inputs, sections):
         run.found(found)
@@ -98,7 +98,7 @@ def _say_what_was_chosen(run: Run, block: CuedSection, words: Sequence[Word]) ->
         run.note(short, level=Level.WARNING)
 
 
-def _catalog_findings(inputs: Inputs, only: Sequence[int] | None, allow_unknown: bool) -> list[Finding]:
+def _catalog_findings(inputs: Inputs, only: Sequence[int] | None) -> list[Finding]:
     """Every moment with no row and every row no page declares, judged from what the pages published."""
     wanted = selects(only)
     sections = [section for section in inputs.document.page_sections if wanted(section.number)]
@@ -110,7 +110,6 @@ def _catalog_findings(inputs: Inputs, only: Sequence[int] | None, allow_unknown:
         cues_path=inputs.cues_path,
         root=inputs.root,
         stage=Stage.CUE,
-        allow_unknown=allow_unknown,
     )
 
 

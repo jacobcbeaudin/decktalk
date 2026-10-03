@@ -73,7 +73,6 @@ def cue_findings(
     cues_path: Path,
     root: Path,
     stage: Stage | None = None,
-    allow_unknown: bool = False,
 ) -> list[Finding]:
     """Every moment with no row and every row no page declares, each with the fix that reconciles it.
 
@@ -96,8 +95,6 @@ def cue_findings(
             continue
         fix, text = _scaffold_fix(text, number, scaffold, where=where)
         found.append(_missing_finding(number, missing, renames.get(number, {}), where=where, stage=stage, fix=fix))
-    if allow_unknown:
-        return found
     for number in sorted(listed):
         if number not in declared:
             continue

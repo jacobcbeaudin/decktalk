@@ -277,6 +277,8 @@ class Declared:
     """The key in its own table that holds its base URL, such as `api_base` or `url`."""
     factory: ProviderFactory
     """How it is built from a context, which imports the adapter only when one is asked for."""
+    server: str | None = None
+    """The local server that answers for it, which a run that cannot reach it tells the author to start, or None."""
 
 
 def _elevenlabs_renders_pauses(model: str) -> bool:
@@ -351,6 +353,7 @@ DECLARED: dict[str, Declared] = {
         hosts=DTSP_HOSTS,
         base="url",
         factory=_dtsp,
+        server="decktalk-voice",
     ),
 }
 """The closed set: every speech adapter DeckTalk ships, and what each declares about itself, in one place.
@@ -392,6 +395,19 @@ def billing_of(provider: str) -> Bill:
     """How `provider` bills, which a provider a host registered leaves undeclared."""
     declared = DECLARED.get(provider)
     return declared.billing if declared is not None else UNDECLARED
+
+
+def is_free(provider: str) -> bool:
+    """Whether `provider` declares that it bills nothing, which is what lets a run that may not spend call it."""
+    return billing_of(provider).by is Billing.FREE
+
+
+def start_hint(provider: str) -> str:
+    """What starts `provider` when nothing answered it, naming its server and the setting that says where it listens."""
+    declared = DECLARED.get(provider)
+    if declared is None:
+        return f"Start the voice [voice] provider = {provider!r} answers from"
+    return f"Start {declared.server or 'the voice server'} at the address [{declared.table}] {declared.base} names"
 
 
 def output_of(settings: Settings, provider: str) -> Output:

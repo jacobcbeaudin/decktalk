@@ -367,7 +367,7 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
     for mode in (["--json"], ["--events"], ["-v"], []):
         voice.script = ["refuse"]
         capsys.readouterr()
-        code = main(["-p", str(root), *mode, "narrate", "--spend", "--force"])
+        code = main(["-p", str(root), *mode, "narrate", "--spend", "--replace-voiced"])
         out, err = capsys.readouterr()
         assert code == ErrorCode.PROVIDER.exit_code, (mode, out, err)
         printed.append(out + err)

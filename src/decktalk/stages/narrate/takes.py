@@ -30,7 +30,7 @@ from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
 from decktalk.results import Word
-from decktalk.speech import PUNCT, SpeechProvider, SpeechRequest, canonical_text
+from decktalk.speech import PUNCT, SpeechProvider, SpeechRequest, canonical_text, is_free
 from decktalk.stages import billed, dollars_for
 from decktalk.stages.narrate.plan import TakePlan, is_cached
 
@@ -142,24 +142,27 @@ def write_voiced_take(
 ) -> tuple[Take, list[Path]]:
     """Send one request, write the audio and its words as they came, and give back the row and the files.
 
-    The provider is paid the moment it answers, so the charge goes on the stream before anything
-    that could fail writes the take. A host that keeps its own ledger then records every take it
-    paid for, even one whose file never reached the disk. The charge is the bill the provider
+    A provider that bills is paid the moment it answers, so the charge goes on the stream before
+    anything that could fail writes the take. A host that keeps its own ledger then records every
+    take it paid for, even one whose file never reached the disk. The charge is the bill the provider
     declares, and a per-second bill is charged on the length the script gave the take, which is the
-    figure the run was approved at.
+    figure the run was approved at. A provider that declares it bills nothing is paid nothing, so its
+    take puts no charge on the stream, and every charge line is money paid, as `sound.charged` is.
     """
     home = inputs.workspace.home_of(digest)
     out = home / inputs.workspace.take_file(digest)
     spoken, words = provider.speak(request)
-    characters = len(canonical_text(request.pieces))
-    seconds = segment.estimated_seconds(inputs.settings.narration)
-    run.emit(
-        TakeCharged,
-        section=segment.index,
-        take=digest,
-        characters=characters,
-        dollars=dollars_for(billed(characters, seconds, inputs.settings.voice.provider), inputs),
-    )
+    voice = inputs.settings.voice.provider
+    if not is_free(voice):
+        characters = len(canonical_text(request.pieces))
+        seconds = segment.estimated_seconds(inputs.settings.narration)
+        run.emit(
+            TakeCharged,
+            section=segment.index,
+            take=digest,
+            characters=characters,
+            dollars=dollars_for(billed(characters, seconds, voice), inputs),
+        )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(spoken)
     written = home / words_file(digest)

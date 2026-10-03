@@ -5,9 +5,10 @@ description: Every file DeckTalk keeps under build/ today, what each one is for,
 
 Everything a run generates lives under one directory. `[project] build` names it, and it is `build/`
 unless the project says otherwise. Nothing under it is written by hand, and deleting the whole of it
-costs only the time to make it again, except for the paid records: the takes and the sound ledger
-record money spent. `[narration] takes_dir`, committed with the project, and then the machine's
-`[narration] cache_dir` move the takes somewhere a `build/` that is deleted cannot take them.
+costs only the time to make it again, except for the paid records: the voiced takes, the words their
+voice sent back, the sound ledger and the sound it lists record money spent. `[narration] takes_dir`,
+committed with the project, and then the machine's `[narration] cache_dir` move the takes somewhere
+a `build/` that is deleted cannot take them.
 
 This page describes the engine as it is, and most of it is a private cache. What DeckTalk promises a
 caller is [the contract](/reference/contract): the `--json` results, the events file, `build/final/`
@@ -20,7 +21,8 @@ directory and renamed over the target, which is atomic on every platform DeckTal
 reader never opens a half-written artifact and an interrupted run leaves the previous file whole. A
 cache file that is there and will not parse, including one an older release wrote, is built again by
 the stage that writes it. A paid record that will not parse is refused with a sentence and left
-where it is, because building it again would buy it again.
+where it is, because building it again would buy it again. The take index is not a paid record,
+because it is read again off the takes on disk.
 
 ## Finding an artifact without knowing a path
 
@@ -101,6 +103,10 @@ while it ran, appended by a subscriber to the event stream rather than written b
 The take index is the time base every later stage measures against. It says which section plays
 which take, and the rows are enough to work out where each section sits in the joined narration, so
 the file cannot hold a total that disagrees with what it lists.
+
+It is a cache, not a paid record. Every field of a row is read again off the script, the settings and
+the take and words files its digest names, so `narrate` builds an index that will not parse again
+from the takes on disk, keeps every take it finds and buys nothing for it.
 
 ```json build/narrate/takes.json
 {

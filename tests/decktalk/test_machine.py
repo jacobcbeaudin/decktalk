@@ -419,13 +419,23 @@ def test_nothing_is_bought_unless_the_run_may_spend(tmp_path: Path) -> None:
     assert "--no-spend" in (refused.value.hint or "")
 
 
-def test_a_run_that_may_not_spend_refuses_even_a_price_of_zero(tmp_path: Path) -> None:
-    """Whether a voice bills nothing is the command line's question, so the gate holds to `spend` alone."""
+@pytest.mark.parametrize("max_cost", [None, 0.0])
+def test_a_free_voice_is_never_asked_for_approval_even_by_a_run_that_may_not_spend(
+    tmp_path: Path, max_cost: float | None
+) -> None:
+    """Spend gates money, so a voice that declares it bills nothing passes the gate whatever the run may spend."""
     here = a_machine(tmp_path)
     free = a_spend(0.0, 0.0, billing=Billing.FREE)
     assert free.free
+    with here._run(spend=False, max_cost=max_cost) as run:
+        assert run.approve(free) == free
+
+
+def test_a_run_that_may_not_spend_refuses_a_price_of_zero_from_a_voice_that_bills(tmp_path: Path) -> None:
+    """A zero price on a voice that bills is an estimate, and money is the gate's question."""
+    here = a_machine(tmp_path)
     with here._run() as run, pytest.raises(ApprovalRequired):
-        run.approve(free)
+        run.approve(a_spend(0.0, 0.0))
 
 
 def test_free_is_what_the_voice_declares_and_never_a_rate_of_zero() -> None:

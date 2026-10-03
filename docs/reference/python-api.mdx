@@ -117,16 +117,16 @@ Every one of these opens a run, takes `cancel`, and returns the frozen result na
 ```python
 project.narrate(*, only=None, spend=False, max_cost=None,
                 force=False, replace_voiced=False, cancel=None) -> NarrateResult
-project.cue(*, only=None, allow_unknown=False, cancel=None) -> CueResult
+project.cue(*, only=None, cancel=None) -> CueResult
 project.record(*, only=None, force=False, cancel=None) -> RecordResult
 project.soundscape(*, only=None, spend=False, max_cost=None,
-                   force=False, cancel=None) -> SoundscapeResult
+                   replace_score=False, cancel=None) -> SoundscapeResult
 project.assemble(*, only=None, soundscape=True, loudness=True, strict=False,
                  cancel=None) -> AssembleResult
 project.verify(*, only=None, cancel=None) -> VerifyResult
 project.build(*, stages=None, skip=(), only=None, spend=False, max_cost=None,
-              force=False, replace_voiced=False, loudness=True, strict=False,
-              allow=(), stop_on=Certainty.CERTAIN, cancel=None) -> BuildResult
+              force=False, replace_voiced=False, replace_score=False, loudness=True,
+              strict=False, allow=(), stop_on=Certainty.CERTAIN, cancel=None) -> BuildResult
 project.status(*, cancel=None) -> StatusResult
 project.check(*paths, only=None, pages=True, frames=True, cancel=None) -> CheckResult
 project.words(*, only=None, cancel=None) -> WordsResult
@@ -158,16 +158,16 @@ stages are members of, in run order: `NARRATE`, `CUE`, `RECORD`, `SOUNDSCAPE`, `
 
 | Parameter | Calls | What it does |
 |---|---|---|
-| `spend` | `narrate`, `soundscape`, `build` | True buys what is missing. False, the default, buys nothing: `narrate` plays every take on disk and a click track with a word clock for each missing one, reported as `TAKE_MISSING`, and `soundscape` reports its plan. The library buys nothing without `spend=True`, whatever the price. |
+| `spend` | `narrate`, `soundscape`, `build` | True buys what is missing. False, the default, buys nothing: `narrate` plays every take on disk and a click track with a word clock for each missing one, reported as `TAKE_MISSING`, and `soundscape` reports its plan with each unbought item as `SOUND_MISSING`, which the film plays as silence. The library buys nothing without `spend=True`, whatever the price. |
 | `max_cost` | `narrate`, `soundscape`, `build` | A ceiling in US dollars on the most the run can cost, checked before the first paid request. A run over it raises `ApprovalRequired`. |
 | `only` | every call but `status` and `clip` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. |
-| `force` | `narrate`, `record`, `soundscape`, `build` | Does the work again where what is on disk still matches. A run that does not spend keeps every paid take unless `replace_voiced` is true as well, and on `soundscape` every item is bought again, which spends again. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
-| `replace_voiced` | `narrate`, `build` | Sets aside the paid take a section holds. A run that spends voices the section again and plays the new take. One that does not plays a placeholder in its place for that run, and the paid take stays on disk. Without it, a run that does not spend plays every paid take on disk. |
+| `force` | `narrate`, `record`, `build` | Does the free work again where what is on disk still matches, and never spends. `narrate` makes each placeholder again and keeps every paid take, and `build` keeps every paid take and every item of the soundscape. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
+| `replace_voiced` | `narrate`, `build` | Sets aside the voiced take a section holds. A run that spends voices the section again and plays the new take. One that does not plays a placeholder in its place for that run, and the voiced take stays on disk. Without it, a run that does not spend plays every voiced take on disk. It never buys a sound. |
+| `replace_score` | `soundscape`, `build` | Buys every bought sound the run selects again, each music part included. A run that does not spend ignores it and keeps every bought sound on disk. It never buys a take. |
 | `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it, and a build whose `skip` names `Stage.SOUNDSCAPE` also leaves the soundscape's audio out of the mix. |
 | `soundscape` | `assemble` | False leaves the soundscape's audio out of the mix. |
 | `loudness` | `assemble`, `build` | False skips the loudness pass, so the soundtrack is encoded as it was mixed. A placeholder narration skips it in any case. |
 | `strict` | `assemble`, `build` | True raises `ToolError` when the mix misses the loudness it was mastered to, rather than reporting `MIX_LOUDNESS` and writing the film. |
-| `allow_unknown` | `cue` | True keeps a cue that no page declares out of the findings. |
 | `stop_on` | `build` | The least certain finding that stops the run: `Certainty.CERTAIN`, the default, stops on a certain one, `Certainty.UNCERTAIN` on any, and None never stops. |
 | `allow` | `build` | Codes that never stop the run, whatever their certainty. They are still reported. |
 
@@ -812,7 +812,8 @@ A `spend` line prices a whole run, before or after it. A `take.charged` line is 
 the provider is paid for one take, once per take, after the provider answered and before anything
 that could fail writes the take. So a host that keeps its own ledger records every take it paid for,
 including one whose file never reached the disk, and a run that fails on its fourth take still leaves
-three lines.
+three lines. A voice that declares it bills nothing, such as `dtsp`, is paid nothing, so its takes
+write no `take.charged` line.
 
 | Field | Meaning |
 |---|---|

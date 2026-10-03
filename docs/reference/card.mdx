@@ -199,19 +199,21 @@ credits are spent.
 | `decktalk narrate` | Voice each section of `script.md` and time every word. | `--section N`, `--force`, `--replace-voiced`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk cue` | Turn each cue phrase into a second on its section clock. | `--section N` |
 | `decktalk record` | Record each page section in headless Chromium. | `--section N`, `--force` |
-| `decktalk soundscape` | Generate the music, the ambience bed and the effects. | `--section N`, `--force`, `--no-spend`, `--spend`, `--max-cost N` |
+| `decktalk soundscape` | Generate the music, the ambience bed and the effects. | `--section N`, `--replace-score`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk assemble` | Cut, mix and encode the sections into one mp4. | `--section N`, `--skip STAGE` |
 | `decktalk verify` | Measure the finished mp4: every start, cut, seam and landing. | `--section N` |
 
-`--replace-voiced` is the one flag here that buys words you already own: with `--spend` it voices
-each named section again, and with `--no-spend` it plays a placeholder in place of the paid take. `--force` builds again from nothing and keeps every voiced take. A build that finds nothing
+`--replace-voiced` and `--replace-score` are the two flags here that buy what you already own. With
+`--spend`, `--replace-voiced` voices each named section again and `--replace-score` buys each bought
+sound again. With `--no-spend`, `--replace-voiced` plays a placeholder in place of the voiced take
+and `--replace-score` keeps every bought sound. `--force` builds again from nothing and never spends, so it keeps every voiced take and every bought sound. A build that finds nothing
 moved keeps `assemble` and `verify` and reports them as `kept`, and `--force` measures again.
 
 ### Run them all, or cut one piece out
 
 | Command | What it does | Flags that matter |
 |---|---|---|
-| `decktalk build` | Run every stage in order, or a span of them. | `--from STAGE`, `--to STAGE`, `--skip STAGE`, `--section N`, `--fix`, `--no-fix`, `--force`, `--replace-voiced`, `--watch`, `--no-spend`, `--spend`, `--max-cost N` |
+| `decktalk build` | Run every stage in order, or a span of them. | `--from STAGE`, `--to STAGE`, `--skip STAGE`, `--section N`, `--fix`, `--no-fix`, `--force`, `--replace-voiced`, `--replace-score`, `--watch`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk clip` | Cut a span of a built section into its own file. | `--section N`, `--start SECONDS`, `--end SECONDS`, `--out FILE`, `--gain-db DB`, `--hold-seconds SECONDS` |
 
 `build --watch` stays running, rebuilds the changed section and never spends.
@@ -245,9 +247,9 @@ repeats, and it is on `check`, `words`, `storyboard`, `build`, `clip` and every 
 project's own.
 
 **The spend flags** are on the three commands that can buy something, which are `narrate`,
-`soundscape` and `build`. `--no-spend` plays every take on disk, puts a placeholder where a take is
-missing and reports it as `TAKE_MISSING`, and needs no API key. `--spend` buys what is missing without
-asking first. `--max-cost N` refuses before the first call if the most the run can cost is over N US
+`soundscape` and `build`. `--no-spend` plays every take on disk, puts a placeholder where a paid
+take is missing and reports it as `TAKE_MISSING`, and needs no API key. A free voice such as `dtsp`
+makes its takes either way. `--spend` buys what is missing without asking first. `--max-cost N` refuses before the first call if the most the run can cost is over N US
 dollars, and it is compared against the spend object's `ceiling_dollars`. With neither flag, a run
 with something to buy prices it and asks on a terminal, and without a terminal it refuses with the
 error code `APPROVAL`. A run with nothing to buy is not asked, and neither is one whose voice

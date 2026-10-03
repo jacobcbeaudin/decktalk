@@ -32,7 +32,8 @@ from decktalk.media import ffmpeg
 from decktalk.media.audio import gain
 from decktalk.media.encode import Encoder
 from decktalk.page import MILLISECONDS, SECOND_DIGITS
-from decktalk.pipeline import Artifact, Stage
+from decktalk.pipeline import Stage
+from decktalk.stages import soundscape
 from decktalk.stages.assemble.cut import Rendered, concat, rendered_starts
 
 CLIP_FADE_SECONDS = 0.02
@@ -312,7 +313,7 @@ def _music(chain: Chain, inputs: Inputs, run: Run, takes: Takes, starts: Mapping
         return
     path = inputs.path(mix.music)
     if not path.exists():
-        _missing_sound(inputs, run, mix.music, "music", Artifact.SOUNDSCAPE.next_step)
+        _missing_sound(inputs, run, mix.music, "music")
         return
     volume = f"{gain(mix.music_db):.5f}*" + "*".join(_music_shape(inputs, run, takes, starts, speech))
     chain.layer(
@@ -333,7 +334,7 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
         return
     path = inputs.path(mix.ambience)
     if not path.exists():
-        _missing_sound(inputs, run, mix.ambience, "ambience", Artifact.SOUNDSCAPE.next_step)
+        _missing_sound(inputs, run, mix.ambience, "ambience")
         return
     ramps = inputs.settings.mix
     pad = ramps.ambience_pad_seconds
@@ -358,7 +359,7 @@ def _effects(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float]
     for number, effect in enumerate(inputs.document.mix.effects):
         path = inputs.path(effect.file)
         if not path.exists():
-            _missing_sound(inputs, run, effect.file, f"the effect cued at {effect.cue}", "", section=effect.section)
+            _missing_sound(inputs, run, effect.file, f"the effect cued at {effect.cue}", section=effect.section)
             continue
         where = effect_second(effect, cue_times, starts)
         if where is None:
@@ -370,14 +371,26 @@ def _effects(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float]
         chain.layer(chain.add(ONCE, str(path)), f",volume={gain(effect.db):.5f},{delay(where)}", f"effect{number}")
 
 
-def _missing_sound(inputs: Inputs, run: Run, named: str, what: str, hint: str, *, section: int | None = None) -> None:
-    """One judgement for a sound file the project names and has not got, which plays as silence."""
+def _missing_sound(inputs: Inputs, run: Run, named: str, what: str, *, section: int | None = None) -> None:
+    """One judgement for a sound file the project names and has not got, which plays as silence.
+
+    A file the soundscape writes is only unbought, which is the author's choice not to spend yet, so
+    it is an uncertain `SOUND_MISSING` and the film is still made. A file nothing writes is the
+    author's own and is gone, which is a certain `FILE_MISSING`.
+    """
+    path = inputs.path(named)
+    unbought = path in soundscape.score_files(inputs)
     run.found(
         judge(
-            Code.FILE_MISSING,
-            f"the project names {named} as {what} and it is not on disk, so that layer plays as "
-            f"silence. {hint}".strip(),
-            Location(where=named, file=inputs.relative(inputs.path(named)), section=section),
+            Code.SOUND_MISSING if unbought else Code.FILE_MISSING,
+            f"the project names {named} as {what} and "
+            + (
+                "the soundscape has not bought it yet, so that layer plays as silence. "
+                "Run `decktalk soundscape --spend` to buy it."
+                if unbought
+                else "it is not on disk, so that layer plays as silence."
+            ),
+            Location(where=named, file=inputs.relative(path), section=section),
             stage=Stage.ASSEMBLE,
         )
     )

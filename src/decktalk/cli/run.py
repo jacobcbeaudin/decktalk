@@ -24,13 +24,13 @@ from decktalk.cli.options import (
     Group,
     Overrides,
     Panel,
+    ReplaceScore,
     ReplaceVoiced,
     Sections,
     Skip,
     one_section,
     sections_of,
 )
-from decktalk.findings import Code
 from decktalk.pipeline import Stage
 from decktalk.project import Project
 from decktalk.results import (
@@ -84,14 +84,15 @@ OneSection = Annotated[
 ]
 SOUNDSCAPE_SPENDING = {
     "spend": "Buy what needs it without asking first, or buy nothing: report the plan and write nothing.",
-    "force": "Buy every item again, even one the ledger already holds, which spends again.",
 }
 """The spending flags as `soundscape` means them, where the thing bought is sound rather than a voice."""
 
 RECORD_AGAIN = {"force": "Record every section again, even one whose recording still matches its page."}
 """What `--force` redoes on `record`, which is the capture rather than the whole build."""
 
-BUILD_AGAIN = {"force": "Build again from nothing, keeping every voiced take, and measure the film again."}
+BUILD_AGAIN = {
+    "force": "Build again from nothing, keeping every voiced take and every bought sound, and measure the film again."
+}
 """What `--force` redoes on `build`, which also measures the film again."""
 
 Watch = Annotated[
@@ -121,7 +122,7 @@ def narrate(
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
-    spend = session.spends(project, price=lambda: session.price(project, only=only), forced=force or replace_voiced)
+    spend = session.spends(project, price=lambda: session.price(project, only=only), replacing=replace_voiced)
     with session.watching(project.events):
         return project.narrate(
             only=only,
@@ -145,11 +146,7 @@ def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueRe
     session = sessions.of(ctx)
     project = session.opened(set_)
     with session.watching(project.events):
-        return project.cue(
-            only=sections_of(section),
-            allow_unknown=Code.CUE_UNKNOWN in session.allowed,
-            cancel=session.cancel,
-        )
+        return project.cue(only=sections_of(section), cancel=session.cancel)
 
 
 @command(
@@ -173,7 +170,7 @@ def record(ctx: Context, section: Sections = None, force: Force = False, set_: O
     helps=SOUNDSCAPE_SPENDING,
 )
 def soundscape(
-    ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None
+    ctx: Context, section: Sections = None, replace_score: ReplaceScore = False, set_: Overrides = None
 ) -> SoundscapeResult:
     """Generate the music, the ambience bed and the effects.
 
@@ -184,13 +181,17 @@ def soundscape(
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
-    spend = session.spends(project, price=lambda: session.sound_price(project, only=only, force=force), forced=force)
+    spend = session.spends(
+        project,
+        price=lambda: session.sound_price(project, only=only, replace_score=replace_score),
+        replacing=replace_score,
+    )
     with session.watching(project.events):
         return project.soundscape(
             only=only,
             spend=spend,
             max_cost=session.max_cost,
-            force=force,
+            replace_score=_replacing_score(session, replace_score, spend=spend),
             cancel=session.cancel,
         )
 
@@ -254,6 +255,7 @@ def build(
     fix: Fix = None,
     force: Force = False,
     replace_voiced: ReplaceVoiced = False,
+    replace_score: ReplaceScore = False,
     set_: Overrides = None,
     watch: Watch = False,
 ) -> BuildResult:
@@ -272,8 +274,8 @@ def build(
     spend = (
         session.spends(
             project,
-            price=_build_price(session, project, planned, only, force),
-            forced=force or replace_voiced,
+            price=_build_price(session, project, planned, only, replace_score=replace_score),
+            replacing=replace_voiced or replace_score,
             storyboard=True,
         )
         if planned & {Stage.NARRATE, Stage.SOUNDSCAPE}
@@ -288,6 +290,7 @@ def build(
             max_cost=session.max_cost,
             force=force,
             replace_voiced=_replacing(session, replace_voiced),
+            replace_score=_replacing_score(session, replace_score, spend=spend),
             allow=session.allowed,
             stop_on=session.fail_on.stops_on,
             cancel=session.cancel,
@@ -312,7 +315,8 @@ def _build_price(
     project: Project,
     planned: set[Stage],
     only: Sequence[int] | None,
-    force: bool,
+    *,
+    replace_score: bool = False,
 ) -> Callable[[], Spend | None]:
     """How a build is priced before it is asked about: the narration, else the soundscape it would buy.
 
@@ -328,7 +332,7 @@ def _build_price(
         voiced = session.price(project, only=only) if Stage.NARRATE in planned else None
         if Stage.SOUNDSCAPE not in planned or (voiced is not None and voiced.buys and not voiced.free):
             return voiced
-        sounds = session.sound_price(project, only=only, force=force)
+        sounds = session.sound_price(project, only=only, replace_score=replace_score)
         if voiced is not None and voiced.free:
             return sounds if sounds is None or sounds.buys else voiced
         if sounds is not None and (sounds.buys or voiced is None):
@@ -391,12 +395,22 @@ def clip(
 
 
 def _replacing(session: sessions.Session, asked: bool) -> bool:
-    """Whether paid takes are set aside, confirmed once on a terminal because the answer can buy them again.
+    """Whether voiced takes are set aside, confirmed once on a terminal because the answer can buy them again.
 
     Without a terminal the flag is the authorisation, because a run that was told to replace a take
     was told so on purpose and the safe default without the flag is to keep every take.
     """
-    return asked and (not session.asks or session.confirm("This sets aside every paid take it replaces. Carry on?"))
+    return asked and (not session.asks or session.confirm("This sets aside every voiced take it replaces. Carry on?"))
+
+
+def _replacing_score(session: sessions.Session, asked: bool, *, spend: bool) -> bool:
+    """Whether every bought sound is bought again, confirmed once on a terminal because the answer spends.
+
+    A run that may not spend has nothing to replace a bought sound with, so it is asked nothing and
+    keeps every one. Without a terminal the flag is the authorisation, as it is for a voiced take.
+    """
+    question = "This buys every bought sound it replaces again. Carry on?"
+    return asked and spend and (not session.asks or session.confirm(question))
 
 
 __all__ = ["assemble", "build", "clip", "cue", "narrate", "record", "soundscape", "verify"]

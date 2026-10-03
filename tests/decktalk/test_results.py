@@ -153,3 +153,16 @@ def test_a_charged_price_is_stated_as_spent() -> None:
 
 def test_a_price_of_nothing_says_the_run_buys_nothing() -> None:
     assert a_spend(0.0, 0.0).sentence == "This run buys nothing."
+
+
+def test_a_price_for_seconds_of_sound_alone_buys_something() -> None:
+    """A sound-only price covers no section and no character, so its seconds are what it buys."""
+    sound = a_spend(0.0, 0.0, sections=(), billing=results.Billing.UNDECLARED).model_copy(update={"seconds": 12.0})
+    assert sound.characters == 0 and sound.buys
+    assert sound.sentence == (
+        "This run makes about 12 seconds of audio on a voice that declares no bill, so DeckTalk cannot price it."
+    )
+
+
+def test_a_price_that_covers_nothing_buys_nothing() -> None:
+    assert not a_spend(0.0, 0.0, sections=()).buys

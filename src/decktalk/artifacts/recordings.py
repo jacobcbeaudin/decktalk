@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import Field
 
@@ -78,6 +79,8 @@ class Start(Model):
 
 class RecordingLog(Stored):
     """What `record` did for one section, where narration t=0 sits in the webm, and how it checked out."""
+
+    label: ClassVar[str] = "the log of one section's recording"
 
     section: int = Field(ge=1, description="The section this recording plays.")
     input_hash: str = Field(description="The digest of what this section was recorded from, which keys a skip.")

@@ -17,7 +17,7 @@ the origin answers from this file and which is never itself a project file.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import Field
 
@@ -28,6 +28,8 @@ from decktalk.results import CueTime, SectionCues
 
 class CueTimes(Stored):
     """Every section's cues, each resolved against the words that section speaks."""
+
+    label: ClassVar[str] = "the second each cue lands on"
 
     sections: tuple[SectionCues, ...] = Field((), description="Every section that declares a cue, in section order.")
 

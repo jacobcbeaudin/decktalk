@@ -134,12 +134,9 @@ def test_a_row_no_page_declares_is_named_and_never_deleted(tmp_path: Path) -> No
     assert json.loads(path.read_text(encoding="utf-8"))["sections"]["1"]["cues"][1]["cue"] == "9.9:x"
 
 
-def test_allow_unknown_keeps_the_row_out_of_the_findings(tmp_path: Path) -> None:
+def test_a_missing_moment_and_an_unknown_row_are_both_reported(tmp_path: Path) -> None:
     path = write_cues(tmp_path, {"1": {"cues": [{"cue": "9.9:x", "on": "there"}]}})
     cued = _cued(1, [("9.9:x", "there")])
-    assert cue_findings({1: ("1.1:a",)}, cued, cues_path=path, root=tmp_path, allow_unknown=True)[0].code is (
-        Code.CUE_MISSING
-    )
     codes = {one.code for one in cue_findings({1: ("1.1:a",)}, cued, cues_path=path, root=tmp_path)}
     assert codes == {Code.CUE_MISSING, Code.CUE_UNKNOWN}
 

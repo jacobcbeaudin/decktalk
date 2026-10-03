@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
+import socket
 import sys
 import urllib.request
 from pathlib import Path
@@ -22,6 +23,7 @@ import decktalk
 from decktalk.artifacts.takes import TakeInputs
 from decktalk.cli import main
 from decktalk.errors import InputError, ProviderError
+from decktalk.findings import Code
 from decktalk.machine import Machine
 from decktalk.media import audio
 from decktalk.results import Billing, TakeStatus, Word
@@ -297,6 +299,47 @@ def test_narrate_voices_a_lesson_through_the_local_server_with_no_key_and_no_spe
     opening = next(body for body, _ in server.requests if body["pieces"][0]["text"] == "A bowl and a ball.")
     assert [piece["pause"] for piece in opening["pieces"]] == [0.5, None]
     assert {body["voice"] for body, _ in server.requests} == {VOICE}
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "machine_without_a_key")
+def test_a_run_with_no_spend_still_voices_every_missing_take_through_the_local_server(
+    tmp_path: Path, service: Service, server: LocalServer, monkeypatch: pytest.MonkeyPatch
+):
+    """`--no-spend` gates money, which a free voice never asks for, so the Action and `--watch` voice with it."""
+    monkeypatch.chdir(lesson(tmp_path / "local", service.url_for("")))
+    code, out, err = command("narrate", "--no-spend", "--json")
+    assert code == 0, err
+    result = json.loads(out)
+    assert result["spending"] is False
+    assert [row["status"] for row in result["sections"]] == [TakeStatus.VOICED.value] * 2
+    assert [found["code"] for found in result["findings"]] == []
+    assert len(server.requests) == 2
+
+
+def closed_port() -> str:
+    """A loopback address nothing listens on, found by binding a port and letting it go."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as held:
+        held.bind(("127.0.0.1", 0))
+        port = held.getsockname()[1]
+    return f"http://127.0.0.1:{port}"
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "machine_without_a_key", "waits")
+@pytest.mark.parametrize("spending", ["--no-spend", "--spend"])
+def test_a_local_server_that_is_not_running_plays_placeholders_and_says_to_start_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spending: str
+):
+    """A free voice that is down never fails the run: each section plays a placeholder whose hint starts the server."""
+    monkeypatch.chdir(lesson(tmp_path / "down", closed_port()))
+    code, out, err = command("narrate", spending, "--json")
+    assert code == 0, err
+    result = json.loads(out)
+    assert [row["status"] for row in result["sections"]] == [TakeStatus.PLACEHOLDER.value] * 2
+    assert [found["code"] for found in result["findings"]] == [Code.TAKE_MISSING.value] * 2
+    for found in result["findings"]:
+        assert "Start decktalk-voice" in found["message"]
+        assert "[dtsp] url" in found["message"]
+        assert "--spend" not in found["message"]
 
 
 @pytest.mark.usefixtures("machine_without_a_key")

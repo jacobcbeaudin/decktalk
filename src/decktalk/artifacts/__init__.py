@@ -27,7 +27,7 @@ from decktalk.artifacts.recordings import (
     Start,
     input_hash,
 )
-from decktalk.artifacts.stored import Stored, content_digest, file_digest
+from decktalk.artifacts.stored import Stored, Unreadable, content_digest, file_digest
 from decktalk.artifacts.takes import (
     PLACEHOLDER_PREFIX,
     PLACEHOLDER_SUFFIX,
@@ -58,6 +58,7 @@ __all__ = [
     "RecordingLog",
     "Start",
     "Stored",
+    "Unreadable",
     "Take",
     "TakeInputs",
     "Takes",

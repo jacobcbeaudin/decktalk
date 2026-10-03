@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from decktalk.artifacts.words import WORDS_SUFFIX, Words, words_file
+import pytest
+
+from decktalk.artifacts.words import WORDS_SUFFIX, ProviderWords, Words, words_file
+from decktalk.errors import InputError
 from decktalk.results import Word
 
 SPOKEN = Words(words=(Word(word="two", start=0.0, end=0.4), Word(word="friends", start=0.4, end=0.9)))
@@ -42,3 +45,14 @@ def test_every_words_file_is_named_by_who_timed_it_and_only_a_provider_s_words_a
     """
     timers = {kind.__name__: kind.paid for kind in Words.__subclasses__()}
     assert timers == {"ProviderWords": True, "EstimatedWords": False, "ClipWords": False}
+
+
+def test_a_providers_words_that_do_not_read_say_only_voicing_the_take_again_gives_them_back(tmp_path: Path) -> None:
+    """The sentence is true for a free voice too, which charged nothing, so it names the remedy and never a payment."""
+    path = tmp_path / words_file("abc123")
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(InputError) as refused:
+        ProviderWords.read(path)
+    assert "Only voicing this take again gives these words back" in str(refused.value)
+    assert "paid for" not in str(refused.value)
+    assert "costs money on a paid provider" in (refused.value.hint or "")

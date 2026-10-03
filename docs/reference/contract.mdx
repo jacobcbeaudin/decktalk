@@ -69,19 +69,22 @@ The deliverables, named after `[project] name`, which is `<name>` below.
 
 ## The paid records
 
-Four things under `build/` record money spent, so they are never treated as a cache.
+Four things record money spent, so they are never treated as a cache.
 
-- `build/narrate/takes.json`, the take index.
-- The take audio, one file per take, named by the digest of what was sent.
+- The take audio, one file per voiced take, named by the digest of what was sent. It is not a file
+  DeckTalk parses, so it is kept, never deleted by DeckTalk.
 - Each voiced take's `<hash>.words.json`, the words the speech provider sent back with it.
 - `build/soundscape/ledger.json`, what the soundscape has bought.
+- The audio each soundscape item bought, which the ledger lists. It is kept, never deleted by DeckTalk.
 
-When `[narration] takes_dir` is set, the take audio, its words files and `takes.json` live there
-instead.
+When `[narration] takes_dir` is set, the take audio and its words files live there instead.
 
-A newer release reads these or refuses them with a sentence. It never builds one again and never
-deletes one, because counting a paid record as absent would buy what it records again. The refusal
-says so, and leaves the file where it is for the person whose money it is.
+A newer release reads the words files and the ledger or refuses them with a sentence. It never
+builds one again and never deletes one, because counting a paid record as absent would buy what it
+records again. The refusal says so, and leaves the file where it is for the person whose money it is.
+
+The take index, `takes.json`, is not one of them. It is a cache over the takes on disk, which
+`narrate` builds again from them when it does not read, so a broken index buys nothing.
 
 ## Related
 

@@ -54,8 +54,7 @@ MOVING = {
     ("argv", "keyword", "expected"),
     [
         (("narrate", "--no-spend"), "spend", False),  # never buys
-        # cue reads the allowed codes rather than a flag of its own
-        (("cue", "--allow", Code.CUE_UNKNOWN.value), "allow_unknown", True),
+        (("cue", "--section", "2"), "only", (2,)),
         (("record", "--section", "1,3-4"), "only", (1, 3, 4)),
         (("soundscape", "--no-spend"), "spend", False),  # the spending flags are shared
         (("assemble", "--skip", "soundscape"), "soundscape", False),  # the one stage it can leave out
@@ -139,10 +138,72 @@ def test_an_unset_soundscape_with_sounds_to_buy_and_no_terminal_refuses(run, pro
     assert made.calls == []
 
 
-def test_an_unset_narrate_told_to_make_its_takes_again_asks_even_with_every_take_on_disk(run, project) -> None:
-    made = project(narrate=NARRATE, check=_priced(a_spend(0.0, 0.0, sections=())))
-    assert run("narrate", "--force").exit_code == ErrorCode.APPROVAL.exit_code
-    assert [name for name, _, _ in made.calls if name == "narrate"] == []
+@pytest.mark.parametrize("command", ["narrate", "build"])
+def test_an_unset_run_told_to_rebuild_with_nothing_to_buy_asks_nothing_and_buys_nothing(
+    run, project, monkeypatch, command: str
+) -> None:
+    """`--force` rebuilds what is free, so with every take and sound held there is nothing to approve."""
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
+    made = project(**{command: MOVING[command]}, check=_priced(a_spend(0.0, 0.0, sections=())))
+    ran = run(command, "--force")
+    assert ran.exit_code == 0, ran.err
+    assert made.called(command)["spend"] is False
+    assert made.called(command)["force"] is True
+
+
+@pytest.mark.parametrize("command", ["narrate", "build"])
+def test_an_unset_run_told_to_replace_voiced_takes_asks_even_with_every_take_on_disk(
+    run, project, monkeypatch, command: str
+) -> None:
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
+    made = project(**{command: MOVING[command]}, check=_priced(a_spend(0.0, 0.0, sections=())))
+    assert run(command, "--replace-voiced").exit_code == ErrorCode.APPROVAL.exit_code
+    assert [name for name, _, _ in made.calls if name == command] == []
+
+
+@pytest.mark.parametrize("command", ["soundscape", "build"])
+def test_an_unset_run_told_to_replace_the_score_asks_even_with_every_sound_on_disk(
+    run, project, monkeypatch, command: str
+) -> None:
+    monkeypatch.setattr(Session, "sound_price", lambda *_a, **_k: a_spend(0.0, 0.0, sections=()))
+    made = project(**{command: MOVING[command]}, check=_priced(a_spend(0.0, 0.0, sections=())))
+    refused = run(command, "--replace-score")
+    assert refused.exit_code == ErrorCode.APPROVAL.exit_code
+    assert f"decktalk {command} --spend" in refused.err, refused.err
+    assert [name for name, _, _ in made.calls if name == command] == []
+
+
+@pytest.mark.parametrize("command", ["soundscape", "build"])
+def test_replace_score_reaches_the_library_with_spend_and_is_confirmed_on_a_terminal(
+    run, project, command: str
+) -> None:
+    made = project(**{command: MOVING[command]})
+    run(command, "--spend")
+    assert made.calls[-1][2]["replace_score"] is False
+    run(command, "--spend", "--replace-score")
+    assert made.calls[-1][2]["replace_score"] is True, "without a terminal the flag is the authorisation"
+    declined = run(command, "--spend", "--replace-score", tty=True, stdin="n\n")
+    assert "every bought sound" in declined.err
+    assert made.calls[-1][2]["replace_score"] is False
+    quiet = run(command, "--no-spend", "--replace-score", tty=True)
+    assert "every bought sound" not in quiet.err, "a run that may not spend has nothing to confirm"
+    assert made.calls[-1][2]["replace_score"] is False
+
+
+def test_each_replace_flag_names_what_it_replaces(run) -> None:
+    """A free voice's take is not paid, so the help says voiced take, and a bought sound is its own flag."""
+    for command in ("narrate", "build"):
+        said = " ".join(run(command, "--help").out.split())
+        assert "--replace-voiced Set aside each voiced take" in said
+        assert "each paid take" not in said
+    for command in ("soundscape", "build"):
+        said = " ".join(run(command, "--help").out.split())
+        assert "--replace-score Buy each bought sound again" in said
+
+
+def test_soundscape_takes_no_force_because_every_sound_it_makes_is_bought(run, project) -> None:
+    project(soundscape=SOUNDSCAPE)
+    assert run("soundscape", "--no-spend", "--force").exit_code == ErrorCode.USAGE.exit_code
 
 
 def test_an_unset_narrate_is_priced_for_the_sections_it_runs(run, project) -> None:
@@ -217,6 +278,18 @@ def test_a_missing_take_fails_a_build_only_at_the_threshold_that_names_it(
     ran = run("build", "--no-spend", "--json", *flags)
     assert ran.exit_code == code, ran.err
     assert json.loads(ran.out)["ok"] is (code == 0)
+
+
+def test_an_allowed_code_is_still_reported_and_only_stops_failing_the_run(run, project) -> None:
+    """`--allow` decides whether a finding fails the run, never whether the run reports it."""
+    unknown = CUE.model_copy(update={"ok": False, "findings": (finding(Code.CUE_UNKNOWN),)})
+    made = project(cue=unknown)
+    ran = run("cue", "--json", "--allow", Code.CUE_UNKNOWN.value)
+    assert ran.exit_code == 0, ran.err
+    written = json.loads(ran.out)
+    assert written["ok"] is True
+    assert [one["code"] for one in written["findings"]] == [Code.CUE_UNKNOWN.value]
+    assert set(made.called("cue")) == {"only", "cancel"}, "the stage was told what the caller allows"
 
 
 @pytest.mark.parametrize("command", ["narrate", "soundscape", "build"])

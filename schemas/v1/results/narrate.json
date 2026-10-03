@@ -88,6 +88,7 @@
         "CUT_SPEECH",
         "CUT_POP",
         "MIX_LOUDNESS",
+        "SOUND_MISSING",
         "FILE_MISSING"
       ],
       "title": "Code",
@@ -766,7 +767,7 @@
       "type": "array"
     },
     "spending": {
-      "description": "True when the caller let this run buy what is missing, which spend=True and --spend do. A run that may not plays every take on disk and a placeholder for each missing one.",
+      "description": "True when the caller let this run buy what is missing, which spend=True and --spend do. A run that may not buys nothing: a free voice still makes each missing take, and a voice that bills leaves a placeholder in its place.",
       "title": "Spending",
       "type": "boolean"
     },

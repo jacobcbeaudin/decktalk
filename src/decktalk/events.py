@@ -170,7 +170,8 @@ class TakeCharged(Event):
 
     A spend event prices a whole run, before or after it. This one is written at the moment a take
     is bought, once per take, so a host that keeps its own ledger can record every charge as it
-    happens and can tell by the take's hash that a retried run did not buy the same take twice.
+    happens and can tell by the take's hash that a retried run did not buy the same take twice. A
+    voice that declares it bills nothing is paid nothing, so its takes write no line.
     """
 
     event: Literal["take.charged"] = Field("take.charged", description=MOMENT)

@@ -18,8 +18,11 @@ craft of a build is knowing which half you are in.
    recordings no longer match the project and why, whether the takes are placeholders or paid, and
    whether a run is already going. Follow a run that is already going rather than starting a second.
 2. **Rehearse without spending.** A build told not to spend costs nothing: it plays every take on
-   disk and a placeholder for each section whose take is missing, and reports each of those as
-   `TAKE_MISSING`. A film with placeholders has estimated timing. Say so whenever you show it.
+   disk, a free voice such as `dtsp` still makes each missing take, and a voice that bills leaves a
+   placeholder for each section whose take is missing. Each placeholder is reported as
+   `TAKE_MISSING`, which names what makes the take: `--spend` for a paid voice, or starting the
+   local server for a free one that is not running. A film with placeholders has estimated timing.
+   Say so whenever you show it.
 3. **Never replace a paid take.** A build that does not spend keeps and plays every paid take, and
    only the flag that discards a take throws one away. Never pass it without an answer from the author.
 4. **Judge before you spend.** `decktalk check` measures the project without producing anything and

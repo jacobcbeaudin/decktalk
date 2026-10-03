@@ -223,16 +223,19 @@ class Session:
         project: Project,
         *,
         price: Callable[[], Spend | None] | None = None,
-        forced: bool = False,
+        replacing: bool = False,
         storyboard: bool = False,
     ) -> bool:
         """Whether this run may buy what is missing, asked once before anything is bought.
 
         `--spend` and `--no-spend` answer it outright. Unset, the run is priced first, by `price` or
         else by the check that prices a voiced build. A run with nothing to buy is asked nothing and
-        buys nothing, unless `forced` says it was told to make what it holds again. A run whose voice
-        declares itself free is asked nothing either, and is let buy, because buying from it costs
-        nothing. Otherwise, on a terminal the checkpoint is the storyboard and the price: the run
+        buys nothing, unless `replacing` says it was told to replace a voiced take or a bought sound,
+        which buys it again.
+        `--force` never reaches here, because it rebuilds what is free and so buys nothing. A run
+        whose voice declares itself free is asked nothing either, and is let buy, because buying from
+        it costs nothing. Spend gates money alone, so `--no-spend` still lets a free voice make its
+        takes. Otherwise, on a terminal the checkpoint is the storyboard and the price: the run
         says what it will cost and where to look at what it is about to narrate, and then it asks.
         Without a terminal there is nobody to ask, so the run refuses and names the two flags that
         answer, and the refusal carries the price so that one call prices the run.
@@ -242,7 +245,7 @@ class Session:
         priced = (price or (lambda: self.price(project)))()
         if priced is not None and priced.free:
             return True
-        if priced is not None and not priced.buys and not forced:
+        if priced is not None and not priced.buys and not replacing:
             return False
         if not self.asks:
             raise ApprovalRequired(_spend_sentence(priced), hint=_spend_hint(self.command))
@@ -264,16 +267,16 @@ class Session:
             # silent: the check run's own run.done line carries why it could not price.
             return None
 
-    def sound_price(self, project: Project, *, only: Sequence[int] | None, force: bool) -> Spend | None:
+    def sound_price(self, project: Project, *, only: Sequence[int] | None, replace_score: bool = False) -> Spend | None:
         """What buying this project's soundscape would cost, read from its plan and its ledger.
 
         No run is opened and no client is built, so pricing takes no lock, writes no events file and
-        can never buy anything.
+        can never buy anything. A run told to replace the score is priced at every item it selects.
         """
         from decktalk.stages import soundscape  # noqa: PLC0415  (a stage is loaded by the call that needs it)
 
         try:
-            return soundscape.price(project._inputs, only=only, force=force)
+            return soundscape.price(project._inputs, only=only, replace_score=replace_score)
         except DeckTalkError:
             # silent: the run that follows meets the same refusal and reports it.
             return None

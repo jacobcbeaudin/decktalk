@@ -105,11 +105,29 @@ def file_digest(path: Path) -> str:
     return blake3(max_threads=threads).update_mmap(path).hexdigest(length=DIGEST_BYTES)
 
 
+class Unreadable(Exception):
+    """A file that is there and does not read as its model, which says the file, its role and the fault.
+
+    It is no refusal by itself, because what a bad file costs depends on who wrote it, and the reader
+    that knows turns it into one.
+    """
+
+
 class Stored(Model):
     """One file under `build/`, which knows how to read itself and how to write itself."""
 
+    label: ClassVar[str] = "a DeckTalk file"
+    """What this file is, in the words a refusal names it by, such as "the take index".
+
+    Every model names its own, so a person reads the file's role and never a class name.
+    """
     paid: ClassVar[bool] = False
-    """True on a record of something bought, which is refused rather than built again when it does not read."""
+    """True on a record only remaking can replace, which costs money on a paid provider.
+
+    Such a record is refused rather than built again when it does not read.
+    """
+    regained: ClassVar[str] = ""
+    """What alone gives a paid record back, as its refusal says it, such as voicing its take again."""
 
     @classmethod
     def read(cls, path: Path) -> Self | None:
@@ -117,22 +135,34 @@ class Stored(Model):
 
         A file that is there and cannot be read as this shape is refused. A cache file is refused as
         `NOT_BUILT`, which its writer builds again. A paid record is refused as `INPUT`, with a sentence
-        that says what reading it again would cost, and nothing here deletes it.
+        that says what alone gives it back, and nothing here deletes it.
+        """
+        try:
+            return cls.parse(path)
+        except Unreadable as exc:
+            if cls.paid:
+                raise InputError(
+                    f"{exc} {cls.regained[:1].upper()}{cls.regained[1:]}, so DeckTalk neither builds it "
+                    "again nor deletes it.",
+                    hint=f"Run the DeckTalk release that wrote {path.name}, or move it aside knowing that "
+                    "making again what it records costs money on a paid provider.",
+                ) from exc
+            raise NotBuiltError(str(exc), hint=f"Delete {path.name} and build it again.") from exc
+
+    @classmethod
+    def parse(cls, path: Path) -> Self | None:
+        """The model at `path`, or None when there is no file there, with no say about what a bad one costs.
+
+        A file that does not read raises `Unreadable`, which names the file, this model's label and the
+        fault. `read` decides the cost for a file under `build/`, and a reader of a file the author names
+        refuses it as the author's own input instead.
         """
         if not path.is_file():
             return None
         try:
             return cls.model_validate_json(path.read_bytes())
         except (ValidationError, ValueError, OSError) as exc:
-            unread = f"{path.name} is there and cannot be read as {cls.__name__.lower()} ({_first_line(exc)})."
-            if cls.paid:
-                raise InputError(
-                    f"{unread} It records what this project paid for, so DeckTalk neither builds it again "
-                    "nor deletes it.",
-                    hint=f"Run the DeckTalk release that wrote {path.name}, or move it aside knowing that the "
-                    "next run that may spend buys again everything it records.",
-                ) from exc
-            raise NotBuiltError(unread, hint=f"Delete {path.name} and build it again.") from exc
+            raise Unreadable(f"{path.name} is there and cannot be read as {cls.label}: {_why_unread(exc)}.") from exc
 
     @classmethod
     def previous(cls, path: Path) -> Self | None:
@@ -163,9 +193,62 @@ class Stored(Model):
         return path
 
 
-def _first_line(error: Exception) -> str:
-    """The first line of a parser's complaint, because a reader relays this to a person."""
-    return next((line.strip() for line in str(error).splitlines() if line.strip()), type(error).__name__)
+_WRONG = {
+    "json_invalid": "is not JSON",
+    "json_type": "is not JSON",
+    "missing": "is missing",
+    "extra_forbidden": "is not a field it has",
+    "model_type": "is not a JSON object",
+    "model_attributes_type": "is not a JSON object",
+    "dict_type": "is not a JSON object",
+    "int_type": "is not a whole number",
+    "int_parsing": "is not a whole number",
+    "int_from_float": "is not a whole number",
+    "float_type": "is not a number",
+    "float_parsing": "is not a number",
+    "string_type": "is not text",
+    "bool_type": "is not true or false",
+    "bool_parsing": "is not true or false",
+    "list_type": "is not a list",
+    "tuple_type": "is not a list",
+    "enum": "is not one of the values it may take",
+    "literal_error": "is not one of the values it may take",
+}
+"""What a parser's error type says is wrong, in the words a refusal relays to a person."""
 
 
-__all__ = ["ENGINE_VERSION", "GONE", "Stored", "content_digest", "engine_digest", "engine_version", "file_digest"]
+def _why_unread(error: Exception) -> str:
+    """What is wrong with a file that did not read, in plain words: the field and its fault, or not JSON.
+
+    Only the first fault is named, because one fixed field is how a person learns the next one.
+    """
+    if isinstance(error, ValidationError) and error.errors():
+        first = error.errors()[0]
+        place = _place(first["loc"]) if first["type"] not in ("json_invalid", "json_type") else ""
+        wrong = _WRONG.get(first["type"])
+        if wrong is None:
+            wrong = f"is wrong: {first['msg'][:1].lower()}{first['msg'][1:]}"
+        return f"{place or 'it'} {wrong}"
+    if isinstance(error, OSError):
+        return f"it could not be opened ({error.strerror or type(error).__name__})"
+    return f"it is wrong: {error}"
+
+
+def _place(loc: tuple[int | str, ...]) -> str:
+    """A field's path as a person writes it, such as `words[1].start`, or nothing for the file itself."""
+    out = ""
+    for part in loc:
+        out += f"[{part}]" if isinstance(part, int) else f"{'.' if out else ''}{part}"
+    return out
+
+
+__all__ = [
+    "ENGINE_VERSION",
+    "GONE",
+    "Stored",
+    "Unreadable",
+    "content_digest",
+    "engine_digest",
+    "engine_version",
+    "file_digest",
+]

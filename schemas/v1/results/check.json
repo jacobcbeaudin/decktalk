@@ -88,6 +88,7 @@
         "CUT_SPEECH",
         "CUT_POP",
         "MIX_LOUDNESS",
+        "SOUND_MISSING",
         "FILE_MISSING"
       ],
       "title": "Code",

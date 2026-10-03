@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from decktalk.artifacts.stored import Stored
+from decktalk.artifacts.takes import Takes
 from decktalk.artifacts.words import WORDS_SUFFIX, ProviderWords
 from decktalk.cli.session import FOUND_SOMETHING
 from decktalk.errors import ErrorCode
@@ -53,10 +54,17 @@ def test_the_page_names_every_file_in_the_final_directory(tmp_path: Path) -> Non
         assert f"`{name}`" in page(), name
 
 
+def paid_records() -> str:
+    """The page's section that lists the paid records, up to the next heading."""
+    return page().split("## The paid records", 1)[1].split("\n## ", 1)[0]
+
+
 def test_the_page_names_the_events_file_and_every_paid_record() -> None:
-    text = page()
-    assert f"build/events/<run>{EVENTS_SUFFIX}" in text
-    assert f"build/soundscape/{LEDGER_FILE}" in text and Ledger.paid
-    assert "build/narrate/takes.json" in text
-    assert f"`<hash>{WORDS_SUFFIX}`" in text and ProviderWords.paid
+    assert f"build/events/<run>{EVENTS_SUFFIX}" in page()
+    paid = paid_records()
+    assert f"build/soundscape/{LEDGER_FILE}" in paid and Ledger.paid
+    assert f"`<hash>{WORDS_SUFFIX}`" in paid and ProviderWords.paid
+    assert "never deleted by DeckTalk" in paid, "the take audio is not a stored model, so the page says how it is kept"
+    assert "`takes.json`" in paid and "cache" in paid, "the page says the take index is rebuilt rather than refused"
+    assert "- `build/narrate/takes.json`" not in paid and not Takes.paid, "the take index is a cache, not a paid record"
     assert not Stored.paid, "a cache is the default, and a paid record says so"

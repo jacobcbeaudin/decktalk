@@ -227,7 +227,7 @@ def plan_takes(
     *,
     requests: dict[int, SpeechRequest] | None = None,
     voiced: bool = True,
-    force: bool = False,
+    again: bool = False,
 ) -> list[TakePlan]:
     """What a run would do with each target section, sending nothing and writing nothing.
 
@@ -236,7 +236,8 @@ def plan_takes(
     every plan either way, so a run that cannot check the cache still prices what it would send.
 
     Two sections with the same words come to one digest, so the second of them is already covered by
-    the first and is planned as kept rather than sent and paid for twice.
+    the first and is planned as kept rather than sent and paid for twice. `again` makes each section
+    whatever its cache holds, and its callers decide it, because making a voiced take again buys it.
     """
     previous = inputs.takes()
     chapters = inputs.chapters()
@@ -253,7 +254,7 @@ def plan_takes(
         if digest in planned:
             shared = "another section of this run voices these words"
             plans.append(TakePlan(segment, TakeStatus.KEPT, shared, chapter, digest, request))
-        elif force:
+        elif again:
             plans.append(TakePlan(segment, wanted, "this run was told to make it again", chapter, digest, request))
             planned.add(digest)
         elif is_cached(digest, inputs.workspace):
@@ -281,30 +282,34 @@ def _unchecked_plan(previous: Takes | None, segment: Segment, chapter: str, requ
 
 
 def voiced_plan(
-    inputs: Inputs, targets: list[Segment], *, model: str, voice_id: str | None, force: bool = False
+    inputs: Inputs, targets: list[Segment], *, model: str, voice_id: str | None, replace: bool = False
 ) -> tuple[list[TakePlan], str | None]:
     """(what a voiced run would do, why the cache could not be checked), spending nothing.
 
     The provider is named by `[voice] provider` and is never built here, because building one needs
     the credential and a price does not. The one input a plan cannot do without is the voice id, and
-    a project that names none is planned with every section it has paid for unchecked.
+    a project that names none is planned with every section it has paid for unchecked. `replace`
+    plans every take again, which buys it again, so it is the run's `replace_voiced` and never `force`.
     """
     requests = requests_for(inputs, targets, model=model, voice_id=voice_id or "")
     if not voice_id:
         why = f"{WITHOUT_A_VOICE.capitalize()}, because {UNNAMED}."
-        return plan_takes(inputs, targets, None, requests=requests, force=force), why
+        return plan_takes(inputs, targets, None, requests=requests, again=replace), why
     provider = inputs.settings.voice.provider
     digests = {
         segment.index: take_inputs(inputs, segment, provider=provider, voice_id=voice_id, model=model).digest
         for segment in targets
     }
-    return plan_takes(inputs, targets, digests, requests=requests, force=force), None
+    return plan_takes(inputs, targets, digests, requests=requests, again=replace), None
 
 
 def placeholder_plan(inputs: Inputs, targets: list[Segment], *, force: bool = False) -> list[TakePlan]:
-    """The placeholder each of these sections plays in place of a missing take, cached by content too."""
+    """The placeholder each of these sections plays in place of a missing take, cached by content too.
+
+    A placeholder costs nothing, so it is the one take `force` makes again.
+    """
     digests = {segment.index: placeholder_inputs(inputs, segment).digest for segment in targets}
-    return plan_takes(inputs, targets, digests, voiced=False, force=force)
+    return plan_takes(inputs, targets, digests, voiced=False, again=force)
 
 
 def seconds_of(inputs: Inputs, plan: TakePlan) -> float:

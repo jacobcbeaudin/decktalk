@@ -183,6 +183,7 @@
               "reference/findings/CUT_SPEECH",
               "reference/findings/CUT_POP",
               "reference/findings/MIX_LOUDNESS",
+              "reference/findings/SOUND_MISSING",
               "reference/findings/FILE_MISSING"
             ]
           }

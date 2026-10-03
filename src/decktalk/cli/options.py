@@ -174,8 +174,9 @@ Spend = Annotated[
         "--spend/--no-spend",
         rich_help_panel=Panel.SPENDING.value,
         help=(
-            "Buy what is missing without asking, or buy nothing and play a placeholder where a take is missing. "
-            "Unset, a terminal is asked and a run without one is refused."
+            "Buy what is missing without asking, or buy nothing and play a placeholder where a paid take is missing. "
+            "A free voice such as dtsp makes its takes either way. Unset, a terminal is asked and a run without one "
+            "is refused."
         ),
     ),
 ]
@@ -219,7 +220,15 @@ ReplaceVoiced = Annotated[
     typer.Option(
         "--replace-voiced",
         rich_help_panel=Panel.REDOING.value,
-        help="Set aside each paid take: voice it again with --spend, or play a placeholder with --no-spend.",
+        help="Set aside each voiced take: voice it again with --spend, or play a placeholder with --no-spend.",
+    ),
+]
+ReplaceScore = Annotated[
+    bool,
+    typer.Option(
+        "--replace-score",
+        rich_help_panel=Panel.REDOING.value,
+        help="Buy each bought sound again with --spend. Without --spend it keeps every bought sound.",
     ),
 ]
 
@@ -331,6 +340,7 @@ __all__ = [
     "Panel",
     "Project",
     "Quiet",
+    "ReplaceScore",
     "ReplaceVoiced",
     "Sections",
     "Skip",

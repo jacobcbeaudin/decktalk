@@ -113,6 +113,7 @@ A finding carries its code, its sentence, its certainty and often a fix an agent
 | `CUT_SPEECH` | certain | Speech is still sounding at a section cut, so the film slices a word in two. |
 | `CUT_POP` | certain | The picture steps at a section cut, so the film pops on the seam. |
 | `MIX_LOUDNESS` | uncertain | The mixed film misses the loudness it was mastered to. |
+| `SOUND_MISSING` | uncertain | A sound the soundscape declares has not been bought, so silence plays where it would until a run with --spend buys it. |
 | `FILE_MISSING` | certain | A file the project names is not on disk. |
 
 ## Commands
@@ -354,9 +355,9 @@ It answers with the `narrate` result: `decktalk schema narrate`.
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
 | `--force` | Build again from nothing, keeping every voiced take. |
-| `--replace-voiced` | Set aside each paid take: voice it again with --spend, or play a placeholder with --no-spend. |
+| `--replace-voiced` | Set aside each voiced take: voice it again with --spend, or play a placeholder with --no-spend. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
-| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a take is missing. Unset, a terminal is asked and a run without one is refused. |
+| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a paid take is missing. A free voice such as dtsp makes its takes either way. Unset, a terminal is asked and a run without one is refused. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -409,7 +410,7 @@ It answers with the `soundscape` result: `decktalk schema soundscape`.
 | Option | Meaning |
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
-| `--force` | Buy every item again, even one the ledger already holds, which spends again. |
+| `--replace-score` | Buy each bought sound again with --spend. Without --spend it keeps every bought sound. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--spend`, `--no-spend` | Buy what needs it without asking first, or buy nothing: report the plan and write nothing. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
@@ -470,11 +471,12 @@ It answers with the `build` result: `decktalk schema build`.
 | `--skip` `STAGE` | Run every stage but this one. Repeats. |
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
 | `--fix`, `--no-fix` | Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied. |
-| `--force` | Build again from nothing, keeping every voiced take, and measure the film again. |
-| `--replace-voiced` | Set aside each paid take: voice it again with --spend, or play a placeholder with --no-spend. |
+| `--force` | Build again from nothing, keeping every voiced take and every bought sound, and measure the film again. |
+| `--replace-voiced` | Set aside each voiced take: voice it again with --spend, or play a placeholder with --no-spend. |
+| `--replace-score` | Buy each bought sound again with --spend. Without --spend it keeps every bought sound. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--watch` | Stay running, rebuild the changed section, never spend. |
-| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a take is missing. Unset, a terminal is asked and a run without one is refused. |
+| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a paid take is missing. A free voice such as dtsp makes its takes either way. Unset, a terminal is asked and a run without one is refused. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |

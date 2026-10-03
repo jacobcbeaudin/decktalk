@@ -275,15 +275,19 @@ class Project:
         """Speak each section of the script and time every word in it.
 
         Every take already on disk is played, paid or placeholder, and the voice is built only when
-        a take must be bought, so a run that buys nothing reads no key. `spend` set to true buys the
-        takes that are missing. The default buys nothing: each missing take is a click track with a
-        word clock, and each such section is a `TAKE_MISSING` finding. `max_cost` is a ceiling in US
-        dollars, checked before the first paid request. `force` makes each take again, and a run
-        that does not spend keeps a paid take unless `replace_voiced` is true as well. A run that
-        spends with `replace_voiced` buys each targeted take again.
+        a take must be made, so a run that makes nothing reads no key. `spend` gates money and nothing
+        else: set to true it buys the takes that are missing, and the default buys nothing, so each
+        take a voice that bills would sell is a click track with a word clock and a `TAKE_MISSING`
+        finding. A voice that declares it bills nothing, such as `dtsp`, makes every missing take
+        either way, and one that cannot be reached plays a placeholder with a `TAKE_MISSING` finding
+        that says to start it. `max_cost` is a ceiling in US dollars, checked before the first paid
+        request. `force` makes each placeholder again and never buys: every paid take on disk is kept.
+        `replace_voiced` is the one way a voiced take is made again. A run that may call the voice
+        makes each targeted take again, and one that may not plays a placeholder in its place and
+        keeps the voiced take on disk.
 
         Raises `ApprovalRequired` when the run would spend over `max_cost`, and `ProviderError` when
-        the voice service fails on a paid run.
+        a voice that bills fails, or when a free voice answers and fails.
         """
         return self._call(Stage.NARRATE, NarrateResult, cancel=cancel, spend=spend, max_cost=max_cost,
                           only=only, force=force, replace_voiced=replace_voiced)  # fmt: skip
@@ -292,11 +296,10 @@ class Project:
         self,
         *,
         only: Sequence[int] | None = None,
-        allow_unknown: bool = False,
         cancel: Cancel | None = None,
     ) -> CueResult:
         """Turn each cue phrase into a second on its own section's clock."""
-        return self._call(Stage.CUE, CueResult, cancel=cancel, only=only, allow_unknown=allow_unknown)
+        return self._call(Stage.CUE, CueResult, cancel=cancel, only=only)
 
     def record(
         self,
@@ -314,20 +317,22 @@ class Project:
         only: Sequence[int] | None = None,
         spend: bool = False,
         max_cost: float | None = None,
-        force: bool = False,
+        replace_score: bool = False,
         cancel: Cancel | None = None,
     ) -> SoundscapeResult:
         """Generate the music, the ambience bed and the effects this project describes.
 
         `spend` set to true buys what needs buying, and the default reports the plan and buys
-        nothing. `max_cost` is a ceiling in US dollars, checked
-        before the first paid request. `force` buys every item again, which spends again.
+        nothing. `max_cost` is a ceiling in US dollars, checked before the first paid request. An
+        item the ledger holds is never bought again while its request is unchanged and its audio is
+        on disk, unless `replace_score` says to buy every bought sound again. A run that may not
+        spend ignores it and keeps every bought sound on disk.
 
         Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`, and
         `ProviderError` when the sound service fails on a paid run.
         """
         return self._call(Stage.SOUNDSCAPE, SoundscapeResult, cancel=cancel, spend=spend,
-                          max_cost=max_cost, only=only, force=force)  # fmt: skip
+                          max_cost=max_cost, only=only, replace_score=replace_score)  # fmt: skip
 
     def assemble(
         self,
@@ -358,6 +363,7 @@ class Project:
         max_cost: float | None = None,
         force: bool = False,
         replace_voiced: bool = False,
+        replace_score: bool = False,
         loudness: bool = True,
         strict: bool = False,
         allow: Collection[Code] = (),
@@ -370,10 +376,13 @@ class Project:
         findings reach `stop_on` stops the run, unless their code is in `allow`, and the result still
         comes back with its findings, its spend and the stage it stopped after in `stopped_at`. None
         as `stop_on` runs every stage whatever it finds. The film carries the soundscape unless
-        `skip` names that stage, which is the one knob for that decision. `spend`, `max_cost`,
-        `force` and `replace_voiced` mean what they mean to `narrate` and `soundscape`, and `force`
-        also measures a film that nothing changed again. `loudness` and `strict` mean what they mean
-        to `assemble`.
+        `skip` names that stage, which is the one knob for that decision. `spend` and `max_cost` mean
+        what they mean to `narrate` and `soundscape`. `replace_voiced` means what it means to
+        `narrate` and `replace_score` means what it means to `soundscape`, so each buys again only
+        what its own stage bought. `force` means what it means to `narrate` and `record`, and it also
+        cuts and measures a film that nothing changed again. It never buys, so every paid take and
+        every item of the soundscape is kept. `loudness` and `strict` mean what they mean to
+        `assemble`.
 
         Raises `ApprovalRequired` and `ProviderError` as `narrate` does, and `ToolError`
         when `strict` is true and the mix misses its loudness. Under the untrusted page policy a run
@@ -381,7 +390,8 @@ class Project:
         `spend`.
         """
         return self._call("build", BuildResult, cancel=cancel, spend=spend, max_cost=max_cost, stages=stages, skip=skip,
-                          only=only, force=force, replace_voiced=replace_voiced, loudness=loudness, strict=strict,
+                          only=only, force=force, replace_voiced=replace_voiced, replace_score=replace_score,
+                          loudness=loudness, strict=strict,
                           allow=frozenset(allow), stop_on=stop_on)  # fmt: skip
 
     # ---- the six that report or cut ---------------------------------------------------------

@@ -393,19 +393,21 @@ class Run:
     def approve(self, spend: Spend) -> Spend:
         """Let a priced request through, or refuse it before anything is bought.
 
-        Every paid call passes through here, so no stage can spend without its caller's approval and no
-        ceiling can be passed halfway. `--max-cost` is compared against the most the run can cost
-        and never against the estimate, because credits are consumed one request at a time.
+        Every call to a provider passes through here, so no stage can spend without its caller's
+        approval and no ceiling can be passed halfway. Spend gates money and nothing else, so a price
+        whose provider declares it bills nothing passes whatever the run may spend, and is never asked
+        about. `--max-cost` is compared against the most the run can cost and never against the
+        estimate, because credits are consumed one request at a time.
         """
         self.emit(SpendLine, spend=spend)
+        if spend.free:
+            return spend
         if not self.spend:
             raise ApprovalRequired(
                 f"{spend.sentence} Nothing approved it.",
                 hint="Pass --spend to approve it, or --no-spend to play placeholders where a take is missing.",
             )
         if self.max_cost is None:
-            return spend
-        if spend.free:
             return spend
         if spend.billing is Billing.UNDECLARED:
             raise ApprovalRequired(

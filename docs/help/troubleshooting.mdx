@@ -154,6 +154,7 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | A command said ffmpeg or Chromium is missing or failed | [TOOL](/reference/errors/TOOL) | [A missing toolchain](#a-missing-toolchain) |
 | `doctor` listed a component with no version and no path | [FILE_MISSING](/reference/findings/FILE_MISSING) | [A missing toolchain](#a-missing-toolchain) |
 | A file the project names is not on disk | [FILE_MISSING](/reference/findings/FILE_MISSING) | [A missing toolchain](#a-missing-toolchain) |
+| A sound the soundscape describes plays as silence | [SOUND_MISSING](/reference/findings/SOUND_MISSING) | [A missing toolchain](#a-missing-toolchain) |
 | The command exited 2 without doing anything | [USAGE](/reference/errors/USAGE) | [A refused command line](#a-refused-command-line) |
 | A run refused because it would have spent money | [APPROVAL](/reference/errors/APPROVAL) | [A refused command line](#a-refused-command-line) |
 | A stage said a file it reads has not been built | [NOT_BUILT](/reference/errors/NOT_BUILT) | [A stage run before the one it reads](#a-stage-run-before-the-one-it-reads) |
@@ -213,8 +214,10 @@ refused. Set
 `[tools] cache_dir` when the home directory is read-only or the browser is shared.
 
 `FILE_MISSING` is also what a stage raises when a file the project names is not on disk, such as an
-effect a `[[mix.effects]]` row cues or a clip a section names. There the fix is to write the file or
-correct the path, and `decktalk soundscape` is what generates the sound files the project describes.
+audio file of your own that a `[[mix.effects]]` row cues or a clip a section names. There the fix is
+to write the file or correct the path. A sound the soundscape describes and has not bought yet is
+[`SOUND_MISSING`](/reference/findings/SOUND_MISSING) instead, a warning that plays silence in its
+place, and `decktalk soundscape --spend` buys it.
 
 ## A refused command line
 

@@ -17,11 +17,15 @@ is set. A placeholder and the joined track stay under `build/narrate/`, because 
 again for nothing.
 
 Every take on disk is played, paid or placeholder, and the voice is built only when a take must be
-bought, so a run that buys nothing reads no key. A run that may not buy plays a placeholder for each
-section whose take is missing: a click track sized at `silent_words_per_minute` plus the declared
-pauses, with evenly spaced estimated words, so the whole pipeline runs offline. Each such section is
-one `TAKE_MISSING` finding, which names the command that buys its take. A project that has paid for
-eight sections therefore builds its film with no key, and rehearses its ninth for nothing.
+made, so a run that makes nothing reads no key. Spend gates money and nothing else. A voice that
+declares it bills nothing makes every missing take whether or not the run may spend, and a run that
+may not spend never calls a voice that bills. Such a run plays a placeholder for each section whose
+take is missing: a click track sized at `silent_words_per_minute` plus the declared pauses, with
+evenly spaced estimated words, so the whole pipeline runs offline. Each such section is one
+`TAKE_MISSING` finding, which names the command that buys its take. A project that has paid for
+eight sections therefore builds its film with no key, and rehearses its ninth for nothing. A free
+voice that nothing answers is a server that is not running, so its sections play placeholders too,
+and their findings say to start it rather than to buy anything.
 
 `TAKE_MISSING` is the one judgement this stage makes. What a script says badly is `check`'s to
 report, because a judgement belongs where an author can act on it before any credit is spent, and
@@ -33,10 +37,10 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from decktalk.artifacts import Take, Takes, is_placeholder
-from decktalk.errors import InputError
+from decktalk.errors import InputError, ProviderError
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
@@ -46,7 +50,7 @@ from decktalk.logs import cache_decision
 from decktalk.machine import Run
 from decktalk.pipeline import Stage
 from decktalk.results import NarrateResult, SectionTake, Spend, SpendState, TakeStatus
-from decktalk.speech import SpeechProvider, output_of
+from decktalk.speech import SpeechProvider, is_free, output_of, start_hint
 from decktalk.stages import selects, voice_model
 from decktalk.stages.narrate.plan import (
     VOICE_ID_VARIABLE,
@@ -93,19 +97,25 @@ def narrate(
     """Speak every targeted section of the script, and time every word in it.
 
     Whether the run may buy is the run's own and never a parameter here, so one gate decides it for
-    the library, the command line and a service alike. A run that may buy buys each missing take, and
-    nothing is bought until `run.approve` has seen the price. One that may not plays every take on
-    disk, and a placeholder with a `TAKE_MISSING` finding for each take that is missing. The voice is
-    built only once a take must be bought, and the index is written again after every take, so a run
+    the library, the command line and a service alike. A run that may buy, or whose voice bills
+    nothing, makes each missing take, and nothing is sent until `run.approve` has seen the price. One
+    that may not buy from a voice that bills plays every take on disk, and a placeholder with a
+    `TAKE_MISSING` finding for each take that is missing. `force` makes each placeholder again and
+    never buys a take, and `replace_voiced` is the one way a take on disk is made again. The voice is
+    built only once a take must be made, and the index is written again after every take, so a run
     that is stopped keeps everything it has already paid for.
     """
     targets = _targets(inputs, only)
     model = voice_model(inputs)
-    buying = run.spend
-    # A run that buys makes a replaced take again, and one that does not keeps every paid take on
-    # disk unless it was told to replace them, so `force` alone never discards a paid take there.
-    remake = force or replace_voiced if buying else False
-    plans, why = voiced_plan(inputs, targets, model=model, voice_id=named_voice(inputs), force=remake)
+    free = is_free(inputs.settings.voice.provider)
+    # A take is made again only when a run that may call the voice was told to replace it. `force`
+    # never feeds this, because it rebuilds what DeckTalk makes itself, and a voice's take is not.
+    plans, why = voiced_plan(
+        inputs, targets, model=model, voice_id=named_voice(inputs), replace=(run.spend or free) and replace_voiced
+    )
+    # Spend gates money and nothing else, so a voice that bills nothing makes every missing take
+    # whether or not the run may spend, once a voice is named to make them in.
+    buying = run.spend or (free and why is None)
     missing: list[Finding] = []
     if not buying:
         previous = inputs.takes()
@@ -125,12 +135,19 @@ def narrate(
         refuse_dropped_pauses(inputs, [plan.segment for plan in plans if plan.status is TakeStatus.VOICED], model=model)
         run.approve(estimate)
         provider = speech_provider(run, inputs)
-    rows, made = _write_takes(inputs, run, plans, provider, model=model)
+    rows, made, unreached = _write_takes(inputs, run, plans, provider, model=model, free=free)
     index = _index(inputs, rows, model=model)
     run.wrote(index.write(inputs.workspace.takes_path))
     run.wrote(join_takes(inputs, index))
     _note_what_is_missing(inputs, run, index)
-    for found in missing:
+    if unreached:
+        run.note(
+            f"The voice could not be reached, so section(s) {[segment.index for segment in unreached]} play a "
+            f"placeholder. {start_hint(inputs.settings.voice.provider)}, then run decktalk narrate again.",
+            level=Level.WARNING,
+        )
+    missing += [_take_missing(inputs, segment, unreached=True) for segment in unreached]
+    for found in sorted(missing, key=lambda found: found.location.section or 0):
         run.found(found)
     return run.result(
         NarrateResult,
@@ -164,19 +181,34 @@ def _without_buying(
     ]
 
 
-def _take_missing(inputs: Inputs, segment: Segment, *, replaced: bool, unmatched: bool) -> Finding:
-    """The finding for one section that plays a placeholder, saying why its paid take did not play."""
+def _take_missing(
+    inputs: Inputs, segment: Segment, *, replaced: bool = False, unmatched: bool = False, unreached: bool = False
+) -> Finding:
+    """The finding for one section that plays a placeholder, saying why its take did not play and what makes it.
+
+    What makes the take is the voice's bill: a voice that bills is bought from with `--spend`, and a
+    free one that could not be reached is started.
+    """
     number = segment.index
-    if replaced:
+    provider = inputs.settings.voice.provider
+    if unreached:
+        why = "its voice could not be reached"
+    elif replaced:
         why = "this run was told to replace its paid take, which stays on disk for a run without that flag"
     elif unmatched:
         why = f"no take on disk can be matched to it until [voice] id or {VOICE_ID_VARIABLE} names the voice"
     else:
         why = "it has no take of its current text on disk"
+    if unreached:
+        action = f"{start_hint(provider)}, then run decktalk narrate --section {number}."
+    elif is_free(provider):
+        # A free voice is called whenever a voice is named, so a free section plays a placeholder only for want of one.
+        action = f"Name the voice, then run decktalk narrate --section {number} to make its take for nothing."
+    else:
+        action = f"Run decktalk narrate --section {number} --spend to buy its take."
     return judge(
         Code.TAKE_MISSING,
-        f"Section {number} plays a placeholder, because {why}. "
-        f"Run decktalk narrate --section {number} --spend to buy its take.",
+        f"Section {number} plays a placeholder, because {why}. {action}",
         Location(where=f"section {number}", file=inputs.relative(inputs.script_path), section=number),
         stage=Stage.NARRATE,
     )
@@ -214,11 +246,15 @@ def _write_takes(
     provider: SpeechProvider | None,
     *,
     model: str,
-) -> tuple[dict[int, Take], list[SectionTake]]:
+    free: bool,
+) -> tuple[dict[int, Take], list[SectionTake], list[Segment]]:
     """Make every take this run plans, `[narration] concurrency` at a time, checkpointing after each.
 
     The takes a plan found on disk are indexed after the pool has finished, because a section kept
-    for sharing another section's words reads the take that section is still making.
+    for sharing another section's words reads the take that section is still making. A `free` voice
+    that nothing answers is a voice that is not running, so each section it would have made plays a
+    placeholder and is given back last, and no section after the first asks it again. A voice that
+    bills is not stood in for, because a take the author paid to buy is not optional.
     """
     inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.takes_path.parent.mkdir(parents=True, exist_ok=True)
@@ -228,7 +264,7 @@ def _write_takes(
     def one(plan: TakePlan) -> None:
         number = plan.segment.index
         with run.section(Stage.NARRATE, number):
-            row, status = _one_take(inputs, run, plan, provider)
+            row, status = _one_take(inputs, run, plan, provider, progress.down if free else None)
             made = SectionTake(
                 section=number,
                 key=plan.segment.key,
@@ -281,7 +317,13 @@ def _write_takes(
         if plan.cached:
             one(plan)
     made = [progress.made[plan.segment.index] for plan in plans]
-    return _placed(inputs, progress.rows, set(progress.made)), made
+    unreached = [
+        plan.segment
+        for plan in plans
+        if plan.status is not TakeStatus.PLACEHOLDER
+        and progress.made[plan.segment.index].status is TakeStatus.PLACEHOLDER
+    ]
+    return _placed(inputs, progress.rows, set(progress.made)), made, unreached
 
 
 @dataclass
@@ -292,10 +334,18 @@ class _Progress:
     made: dict[int, SectionTake] = field(default_factory=dict)
     done: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock)
+    down: threading.Event = field(default_factory=threading.Event)
+    """Set once a free voice did not answer, so no section after it waits on the same voice again."""
 
 
-def _one_take(inputs: Inputs, run: Run, plan: TakePlan, provider: SpeechProvider | None) -> tuple[Take, TakeStatus]:
-    """One section's take, made or found, with what this run did about it."""
+def _one_take(
+    inputs: Inputs, run: Run, plan: TakePlan, provider: SpeechProvider | None, down: threading.Event | None
+) -> tuple[Take, TakeStatus]:
+    """One section's take, made or found, with what this run did about it.
+
+    `down` is given for a free voice alone. Once it is set, or once this section's request finds
+    nothing answering, the section plays its placeholder instead of failing the run.
+    """
     digest = plan.digest
     if digest is None:
         raise InputError(
@@ -314,6 +364,9 @@ def _one_take(inputs: Inputs, run: Run, plan: TakePlan, provider: SpeechProvider
             run.wrote(path)
         voiced = not is_placeholder(digest)
         return take_row(inputs, plan.segment, plan.chapter, digest, voiced=voiced), TakeStatus.KEPT
+    if down is not None and down.is_set() and plan.status is not TakeStatus.PLACEHOLDER:
+        # A take the voice would make, or one another section was making, cannot come from a voice that is down.
+        return _stand_in(inputs, run, plan)
     if plan.status is TakeStatus.VOICED:
         if provider is None or plan.request is None:
             raise InputError(
@@ -321,7 +374,13 @@ def _one_take(inputs: Inputs, run: Run, plan: TakePlan, provider: SpeechProvider
                 hint="Run `decktalk narrate` again, or run with --no-spend.",
                 location=at(inputs.workspace.takes_path, inputs.root),
             )
-        row, files = write_voiced_take(inputs, run, provider, plan.segment, plan.chapter, digest, plan.request)
+        try:
+            row, files = write_voiced_take(inputs, run, provider, plan.segment, plan.chapter, digest, plan.request)
+        except ProviderError as failure:
+            if down is None or failure.reached:
+                raise
+            down.set()
+            return _stand_in(inputs, run, plan)
         status = TakeStatus.VOICED
     else:
         row, files = write_placeholder_take(inputs, plan.segment, plan.chapter, digest)
@@ -329,6 +388,13 @@ def _one_take(inputs: Inputs, run: Run, plan: TakePlan, provider: SpeechProvider
     for path in files:
         run.wrote(path)
     return row, status
+
+
+def _stand_in(inputs: Inputs, run: Run, plan: TakePlan) -> tuple[Take, TakeStatus]:
+    """The placeholder one section plays because its free voice did not answer, found on disk or made now."""
+    (stand_in,) = placeholder_plan(inputs, [plan.segment])
+    row, _kept = _one_take(inputs, run, replace(stand_in, chapter=plan.chapter), None, None)
+    return row, TakeStatus.PLACEHOLDER
 
 
 def _placed(inputs: Inputs, rows: dict[int, Take], touched: set[int]) -> dict[int, Take]:

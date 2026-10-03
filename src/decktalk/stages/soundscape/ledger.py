@@ -74,7 +74,10 @@ class SoundEntry(Model):
 class Ledger(Stored):
     """Every item this project has bought, which is what tells a kept item from one to buy again."""
 
+    label: ClassVar[str] = "the ledger of every sound this project bought"
+
     paid: ClassVar[bool] = True
+    regained: ClassVar[str] = "only buying every item it lists again gives this record back"
 
     items: tuple[SoundEntry, ...] = Field((), description="One row per generated item, in the order it was written.")
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import Field
 
@@ -38,6 +39,8 @@ class Cut(Model):
 class Cuts(Stored):
     """The cut list of one finished film."""
 
+    label: ClassVar[str] = "the cut list of the film"
+
     fps: int = Field(gt=0, description="The rate the film was encoded at.")
     sections: tuple[Cut, ...] = Field((), description="Every section, in the order they play.")
 
@@ -56,6 +59,8 @@ class CutKey(Stored):
     picture, which is why nothing here chooses which arguments count. The engine joins the key as
     well, because a newer engine may encode the same arguments differently.
     """
+
+    label: ClassVar[str] = "the key one section's cut was encoded from"
 
     digest: str = Field(description="The sha256 of the encode's arguments, its inputs' content digests and the engine.")
 

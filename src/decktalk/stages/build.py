@@ -110,6 +110,7 @@ def build(
     only: Sequence[int] | None = None,
     force: bool = False,
     replace_voiced: bool = False,
+    replace_score: bool = False,
     loudness: bool = True,
     strict: bool = False,
     allow: Collection[Code] = (),
@@ -143,10 +144,10 @@ def build(
         "only": only,
         "force": force,
         "replace_voiced": replace_voiced,
+        "replace_score": replace_score,
         "soundscape": soundscape,
         "loudness": loudness,
         "strict": strict,
-        "allow_unknown": Code.CUE_UNKNOWN in allow,
     }
     board = _storyboard(inputs, run, only=only)
     kept = read_kept(inputs)

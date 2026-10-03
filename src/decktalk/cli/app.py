@@ -91,6 +91,7 @@ PROMPT_FLAGS = frozenset(
         "--no-skills",
         "--no-spend",
         "--overwrite",
+        "--replace-score",
         "--replace-voiced",
         "--spend",
     }

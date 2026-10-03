@@ -77,6 +77,7 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.check", "stages.verify"): "by design",
     # The storyboard owns how a frozen page is opened, so the poster is drawn from a page opened the same way.
     ("stages.assemble", "stages.storyboard"): "the one way a frozen page is opened",
+    ("stages.assemble", "stages.soundscape"): "which sound files are the score's to buy, so an absent one is a warning",
     # The recorder owns the query a page section is opened at, so the storyboard opens the same page
     # by reading that one rule rather than spelling it a second time.
     ("stages.storyboard", "stages.record"): "the page URL the recorder owns",

@@ -71,13 +71,15 @@ and `decktalk soundscape` runs it alone.
 decktalk soundscape --no-spend     # report the whole plan, send nothing and write nothing
 decktalk soundscape --spend        # generate what is missing or has changed, without asking first
 decktalk soundscape --section 3    # only what section 3 needs
-decktalk soundscape --force        # generate again, even where the request has not changed
+decktalk soundscape --replace-score --spend   # buy every bought sound again
 ```
 
 A run with `--no-spend` reports what it would ask for and buys nothing, which is the plan an author
 reads before approving a spend. With neither flag, a run that would buy something prices it and asks
 on a terminal, and a run with nothing left to buy asks nothing. `--max-cost N` refuses before the
-first call when the most the run can cost is over N dollars.
+first call when the most the run can cost is over N dollars. `--replace-score` is the one way to buy
+again a sound the ledger holds. It acts only with `--spend`, is confirmed once on a terminal, and
+never buys a take, while `--force` never buys a sound.
 
 A sound is priced per second of audio, at the rate in the sound provider's own table. Each kind
 states its rate per minute of audio as `price_per_minute` in its own table, `[soundscape.ambience]`,
@@ -156,10 +158,13 @@ that bought it: the endpoint as the sound provider publishes it and the request 
 rather than bought again, and the ledger is written after every paid call, so a run stopped half way
 through a long piece keeps what it has and asks only for the rest.
 
-A planned item nobody has bought is [`FILE_MISSING`](/reference/findings/FILE_MISSING) against the
-path a mix would look for. `assemble` reports the same code for a music file, an ambience file or an
-effect file the project names and has not got, and mixes that layer as silence rather than failing
-the film. An effect whose cue did not resolve is a sentence on the stream, and the sound is left out
+A planned item nobody has bought is an uncertain [`SOUND_MISSING`](/reference/findings/SOUND_MISSING)
+against the path a mix would look for, and `assemble` reports the same code when it meets that path
+empty. The layer plays as silence and the film is still made, so `decktalk build --no-spend` on a
+project with a soundscape exits 0, and `--fail-on any` makes it fail. A music file, an ambience file
+or an effect file the project names and that no soundscape item writes is the author's own, so its
+absence is a certain [`FILE_MISSING`](/reference/findings/FILE_MISSING). That layer plays as silence
+too, and the build stops after `assemble`. An effect whose cue did not resolve is a sentence on the stream, and the sound is left out
 of the mix and out of the captions.
 
 ## Ducking

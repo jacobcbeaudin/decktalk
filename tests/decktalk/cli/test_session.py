@@ -220,12 +220,12 @@ def test_a_voice_that_bills_nothing_is_never_asked_and_is_bought_from(
     assert made.spends(Fake().project(), price=lambda: free) is True
 
 
-def test_a_run_told_to_make_its_takes_again_is_asked_even_with_nothing_missing() -> None:
+def test_a_run_told_to_replace_its_paid_takes_is_asked_even_with_nothing_missing() -> None:
     made = session()
     made.terminal = terminal(is_terminal=False)
     made.spending(spend=None, max_cost=None)
     with pytest.raises(ApprovalRequired):
-        made.spends(Fake().project(), price=lambda: a_spend(0.0, 0.0, sections=()), forced=True)
+        made.spends(Fake().project(), price=lambda: a_spend(0.0, 0.0, sections=()), replacing=True)
 
 
 def test_no_spend_never_buys_from_a_voice_that_bills_nothing() -> None:

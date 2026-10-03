@@ -247,33 +247,41 @@ section again and keeps the others.
 
 ## Ask for work you were not offered
 
-Two flags redo work, and only one of them can cost you anything you cannot get back.
+Three flags redo work. `--force` costs nothing, and the two replace flags buy again what you already
+own.
 
-`--force` builds again from nothing and keeps every voiced take. It ignores each stage's own cache,
-so `narrate` plans every section it was given as one to make, `record` records every section it
-planned, `soundscape` asks for every item again, and `assemble` and `verify` run and measure again
-even when nothing they read has moved. On a run with `--spend`, forcing therefore buys the speech
-again, and it buys the same words, so the take that lands is the take that was there. On a run with
-`--no-spend` it remakes the placeholders and plays every paid take as it was.
+`--force` builds again from nothing and never spends. It keeps every voiced take and every sound the
+soundscape bought, and makes again everything that costs nothing. `narrate` remakes the placeholders,
+`record` records every section it planned, and `assemble` and `verify` run and measure again even when
+nothing they read has moved. With `--spend` or `--no-spend`, a forced run buys only what is missing,
+as an unforced run does.
 
 ```console
 decktalk build --force --no-spend
 ```
 
-`--replace-voiced` is the one flag here that spends money on words you already paid for. With
+`--replace-voiced` spends money on words you already paid for. With
 `--spend` it voices each section it names again and plays the new take. Without it, a run that does
-not spend plays every paid take on disk and puts a placeholder only where a take is missing, reporting
+not spend plays every voiced take on disk and puts a placeholder only where a take is missing, reporting
 each such section as [`TAKE_MISSING`](/reference/findings/TAKE_MISSING), so a film you have already
 voiced rehearses its new section for nothing. `--replace-voiced --no-spend` plays placeholders in
-place of the paid takes for that one run, and the paid takes stay on disk for the next.
+place of the voiced takes for that one run, and the voiced takes stay on disk for the next.
 
 ```text
 script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take of its current text on disk. Run decktalk narrate --section 2 --spend to buy its take.
 ```
 
-On a terminal, `--replace-voiced` is confirmed once before anything is replaced. Without a terminal
-the flag is the authorisation, because a run that was told to replace a take was told so on purpose.
-The safe default, in every other case, is to keep every take.
+`--replace-score` is the same for the soundscape. With `--spend` it buys every bought sound again,
+each part of the music included, and it never buys a take. `--replace-voiced` never buys a sound.
+Without `--spend`, `--replace-score` keeps every bought sound on disk, so it never acts on its own.
+
+```console
+decktalk soundscape --replace-score --spend
+```
+
+On a terminal, each replace flag is confirmed once before anything is replaced. Without a terminal
+the flag is the authorisation, because a run that was told to replace a take or a sound was told so
+on purpose. The safe default, in every other case, is to keep every take and every sound.
 
 `--max-cost N` refuses before the first call when the most a run can cost is over N dollars, and
 `--spend` approves the price without asking. Neither of them is a way to redo work: they only decide
@@ -291,7 +299,7 @@ decktalk build --watch
 {/* sample: the two lines decktalk build --watch prints before its first build */}
 ```text
 Serving http://127.0.0.1:53017
-Watching for saves. Nothing here spends, so a voiced take goes stale rather than being replaced.
+Watching for saves. Nothing here spends: a free voice reads each change, and a paid take goes stale rather than being bought again.
 ```
 
 The origin listens on this machine alone and takes whichever port was free, so the number changes
@@ -299,8 +307,9 @@ from run to run and the line is the one place it is printed.
 
 Four things are worth knowing about it.
 
-- It never voices, whatever the settings say. The explicit spend is a different command, because the
-  safe default is the rule and the named escape is a separate act.
+- It never spends, whatever the settings say. A free voice such as `dtsp` still voices each change,
+  because spend gates money and nothing else. Buying from a voice that bills is a different command,
+  because the safe default is the rule and the named escape is a separate act.
 - It rebuilds the sections the saved file touches. A page belongs to the sections that play it, a
   clip to the section that plays it, and `script.md`, `cues.json` and `decktalk.toml` each belong to
   every section at once. A file that belongs to no section, such as a stylesheet, rebuilds all of

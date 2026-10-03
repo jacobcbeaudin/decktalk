@@ -246,6 +246,7 @@ def _unreachable(url: str, exc: urllib.error.URLError, carried: Collection[str])
     return ProviderError(
         f"could not reach {shown(url)}: {scrub(str(exc.reason), carried)}",
         retryable=isinstance(exc.reason, UNCONNECTED),
+        reached=False,
     )
 
 

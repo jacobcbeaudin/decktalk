@@ -55,12 +55,12 @@ the closing band lands.
     ```json
     {
       "schema": 2,
-      "ok": false,
+      "ok": true,
       "findings": [
         {
-          "code": "FILE_MISSING",
-          "message": "the effect tick is planned and its audio is not on disk, so a mix would play without it. Generating it would ask for 0.5 seconds of audio.",
-          "certainty": "certain",
+          "code": "SOUND_MISSING",
+          "message": "the effect tick is not bought yet, so the film plays silence where it would be. Buying it with `decktalk soundscape --spend` asks for 0.5 seconds of audio.",
+          "certainty": "uncertain",
           "location": {
             "where": "tick",
             "file": "build/soundscape/tick.mp3",
@@ -70,11 +70,11 @@ the closing band lands.
           },
           "stage": "soundscape",
           "fix": null,
-          "url": "https://docs.decktalk.ai/reference/findings/FILE_MISSING"
+          "url": "https://docs.decktalk.ai/reference/findings/SOUND_MISSING"
         }
       ],
       "error": null,
-      "run": "aad1d3514574",
+      "run": "85f631ca16b2",
       "written": [],
       "items": [
         {
@@ -100,15 +100,16 @@ the closing band lands.
         "averaged": false,
         "price_layer": "default"
       },
-      "seconds": 0.0
+      "seconds": 0.004
     }
     ```
 
     `items[0].status` is `planned`, which is the word for an item this run would buy and did not.
     The price is zero, from the `default` layer, until `[soundscape.effects] price_per_minute` states
     what your plan charges per minute of audio, and `--max-cost` refuses a run priced that way.
-    The one judgement the stage makes is [`FILE_MISSING`](/reference/findings/FILE_MISSING), for an
-    item whose audio a mix would look for and not find, so the run exits 1 until the file exists.
+    The one judgement the stage makes is [`SOUND_MISSING`](/reference/findings/SOUND_MISSING), for an
+    item nobody has bought yet. It is uncertain, so the run exits 0 and a build still makes the film,
+    with silence where the sound would play. `--fail-on any` makes it fail instead.
   </Step>
 
   <Step title="Generate it">
@@ -119,8 +120,8 @@ the closing band lands.
     The file lands at the path the plan named. What was bought is recorded in
     `build/soundscape/ledger.json`, keyed by the request itself, so a second run that would send the
     same request keeps the file it has and sends nothing. Change the prompt and the next run buys the
-    sound again, because the request no longer matches the row. `--force` buys every item of the run
-    again whether the request moved or not.
+    sound again, because the request no longer matches the row. `--force` never buys a sound again,
+    so a sound whose request has not moved is bought again only once its file is deleted.
   </Step>
 
   <Step title="Cue the sound">
@@ -162,8 +163,9 @@ the closing band lands.
     `assemble` mixes the soundtrack again and records nothing, so a level or a cue you changed here
     costs one stage rather than a build.
 
-    A file the row names and the project has not got is a certain `FILE_MISSING`, and that layer
-    plays as silence. A cue that did not resolve is one sentence on the stream, and the sound does
+    A file the row names that the soundscape has not bought yet is an uncertain `SOUND_MISSING`, and
+    one that nothing generates and the project has not got is a certain `FILE_MISSING`. Either way
+    that layer plays as silence. A cue that did not resolve is one sentence on the stream, and the sound does
     not play. The film is still written either way.
   </Step>
 </Steps>

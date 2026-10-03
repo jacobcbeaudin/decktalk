@@ -98,10 +98,15 @@ share a payload and no existing digest moves.
 A paid request whose reply broke after it was sent is never sent again, and it is reported as
 possibly charged. A request is retried only when nothing connected, or on a 408, a 429 or a 5xx.
 
-A run either may spend or may not, which is `spend: bool`. The voice is built only when a take must
-be bought, so a run that plays what is on disk reads no key. A run that may not spend plays every
-take on disk and gives each missing section a placeholder and a `TAKE_MISSING` finding. A free
-adapter never asks for approval and needs no `--spend`.
+A run either may spend or may not, which is `spend: bool`, and spend gates money and nothing else.
+The voice is built only when a take must be made, so a run that plays what is on disk reads no key.
+A free adapter never asks for approval and needs no `--spend`: it makes every missing take whether or
+not the run may spend, so `--no-spend`, the Action and `--watch` all voice with `dtsp`. A run that
+may not spend never calls an adapter that bills. It plays every take on disk and gives each missing
+section a placeholder and a `TAKE_MISSING` finding whose hint is `--spend`. A free adapter that
+nothing answers is a server that is not running, so it degrades the same way rather than failing the
+run: each section plays a placeholder, its `TAKE_MISSING` hint says to start `decktalk-voice`, and
+the run exits 0.
 
 ### The voice id
 

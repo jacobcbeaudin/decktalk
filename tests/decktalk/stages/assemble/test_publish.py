@@ -11,7 +11,7 @@ import pytest
 
 from decktalk.artifacts import Cut, Cuts, Words
 from decktalk.captions import CaptionCue
-from decktalk.errors import ToolError
+from decktalk.errors import ErrorCode, InputError, ToolError
 from decktalk.inputs import Inputs
 from decktalk.media import browser
 from decktalk.media.pagereport import CueRow, MeasuredScene, PageReport
@@ -101,6 +101,28 @@ def test_a_clip_that_names_a_words_file_is_read_into_the_transcript(tmp_path):
     Words(words=(Word(word="spoken", start=0.0, end=0.4),)).write(tmp_path / "media" / "before.words.json")
     assert clip_speech(inputs, 2) == "spoken"
     assert clip_speech(inputs, 1) == ""
+
+
+@pytest.mark.parametrize("reading", ["transcript", "captions"])
+def test_a_clip_words_file_that_does_not_read_is_the_authors_input_and_is_never_deleted(tmp_path, reading):
+    """The author named the file in decktalk.toml, so DeckTalk cannot build it again and never says to delete it."""
+    inputs = write_project(tmp_path, TITLED_TOML)
+    (tmp_path / "media").mkdir()
+    path = tmp_path / "media" / "before.words.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(InputError) as refused:
+        if reading == "transcript":
+            clip_speech(inputs, 2)
+        else:
+            rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
+            clip_captions(inputs, open_run(tmp_path).run, rows)
+    said = f"{refused.value} {refused.value.hint}"
+    assert refused.value.code is ErrorCode.INPUT
+    assert str(refused.value).startswith("decktalk.toml: [[section]] number=2 words names media/before.words.json")
+    assert "the words of one clip: it is not JSON" in str(refused.value)
+    assert "elete" not in said
+    assert refused.value.location is not None and refused.value.location.file == Path("media/before.words.json")
+    assert path.read_text(encoding="utf-8") == "{not json"
 
 
 # ---- chapters ---------------------------------------------------------------------------------

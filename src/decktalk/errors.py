@@ -111,10 +111,13 @@ class ProviderError(DeckTalkError):
         hint: str | None = None,
         location: Location | None = None,
         retryable: bool = False,
+        reached: bool = True,
     ) -> None:
         super().__init__(message, hint=hint, location=location)
         self.retryable = retryable
         """True when the same request may succeed later, which is what decides whether a caller waits."""
+        self.reached = reached
+        """False when nothing answered at all, so the request was never received and nothing was billed."""
 
 
 class ToolError(DeckTalkError):

@@ -1,11 +1,12 @@
 """One terminal that serves the deck and rebuilds the section a save changed.
 
 The loop is the draft loop. It starts the local origin itself and prints the URL, builds once
-without spending, playing every take on disk and a placeholder for each missing one, and on every
-save rebuilds only the sections the changed file touches. It never spends, whatever the settings
-say, and it says so when a save leaves a paid take behind. The explicit spend is a different
-command, `decktalk narrate --section 3 --spend`, because the safe default is the rule and the named
-escape is a separate act.
+without spending, playing every take on disk, making each missing one with a voice that bills
+nothing, and playing a placeholder for each one a voice that bills would sell, and on every save
+rebuilds only the sections the changed file touches. It never spends, whatever the settings say,
+and it says so when a save leaves a paid take behind. The explicit spend is a different command,
+`decktalk narrate --section 3 --spend`, because the safe default is the rule and the named escape
+is a separate act.
 
 Files are watched by their modification times rather than by an operating-system channel, because a
 poll a tenth of a second long is indistinguishable to an author and costs no dependency that three
@@ -47,7 +48,10 @@ def loop(
     """
     origin = project.serve()
     session.say(f"Serving {origin.result.url}")
-    session.say("Watching for saves. Nothing here spends, so a voiced take goes stale rather than being replaced.")
+    session.say(
+        "Watching for saves. Nothing here spends: a free voice reads each change, and a paid take goes stale "
+        "rather than being bought again."
+    )
     built = _once(session, project, skip=skip, only=only, force=force)
     seen = _stamps(project)
     try:

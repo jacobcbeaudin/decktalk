@@ -28,7 +28,7 @@ from decktalk.artifacts.takes import (
     is_placeholder,
     take_file,
 )
-from decktalk.errors import ErrorCode, InputError
+from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from support.paths import DATA
 from support.projects import MINIMAL_TOML, load_project
 from support.takes import a_take
@@ -142,8 +142,9 @@ def test_a_take_index_that_names_a_file_by_anything_but_a_digest_is_refused(tmp_
     index = INDEX.model_dump(mode="json") | {"sections": [row]}
     path = tmp_path / "takes.json"
     path.write_text(json.dumps(index), encoding="utf-8")
-    with pytest.raises(InputError, match="cannot be read"):
+    with pytest.raises(NotBuiltError, match="cannot be read"):
         Takes.read(path)
+    assert Takes.previous(path) is None, "narrate counts it as absent and never follows the name"
 
 
 def test_both_kinds_of_digest_name_a_take() -> None:
@@ -200,20 +201,20 @@ def test_the_index_round_trips_through_its_own_file(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("own_dir", [False, True], ids=["build-index", "takes-dir-index"])
 @pytest.mark.parametrize("written", ["{not json", '{"version": 1, "sections": []}'], ids=["corrupt", "older-shape"])
-def test_a_take_index_that_does_not_read_is_refused_with_a_sentence_and_left_on_disk(
+def test_a_take_index_that_does_not_read_is_a_cache_its_writer_builds_again(
     tmp_path: Path, own_dir: bool, written: str
 ) -> None:
-    """The take index is a paid record wherever it lives, so a reader never counts it as absent and never deletes it."""
+    """The take index is a cache over the takes on disk wherever it lives, so narrate counts it as absent."""
     toml = MINIMAL_TOML + ('\n[narration]\ntakes_dir = "voice"\n' if own_dir else "")
     inputs = load_project(tmp_path, toml)
     path = inputs.workspace.takes_path
     assert (path.parent == tmp_path / "voice") is own_dir
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(written, encoding="utf-8")
-    for reading in (inputs.takes, lambda: Takes.previous(path)):
-        with pytest.raises(InputError) as refused:
-            reading()
-        assert refused.value.code is ErrorCode.INPUT
-        assert "takes.json" in str(refused.value) and "paid for" in str(refused.value)
-        assert "buys again" in (refused.value.hint or "")
-    assert path.read_text(encoding="utf-8") == written
+    assert not Takes.paid
+    assert inputs.takes() is None
+    assert Takes.previous(path) is None
+    with pytest.raises(NotBuiltError) as refused:
+        Takes.read(path)
+    assert refused.value.code is ErrorCode.NOT_BUILT
+    assert "takes.json" in str(refused.value) and "paid for" not in str(refused.value)

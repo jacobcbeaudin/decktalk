@@ -7,7 +7,8 @@ The suffix is the one the voice's adapter declares for its output format, so a t
 `mp3_44100_128` is `<hash>.mp3`, and a placeholder, which DeckTalk writes itself, is always `.mp3`.
 
 Both sit in the project's `[narration] takes_dir` instead when it names one, so the index travels
-with the takes it lists.
+with the takes it lists. The index is a cache over those takes, which narrate builds again from them
+when it does not read, and the takes are what a project paid for.
 
 A take is identified by its content hash and by nothing else, so the index maps a section to a piece
 of content and never the other way round. Renumbering a section rewrites one row and moves no file,
@@ -202,10 +203,12 @@ class Takes(Stored):
 
     Nothing here is stored that the rows already say. How long the narration runs and whether any of
     it is a placeholder are read off the rows, so the file cannot hold a total that disagrees with
-    what it lists. It is a paid record, so one that does not read is refused and never built again.
+    what it lists. It is a cache rather than a paid record: every row is read again off the script,
+    the settings and the take files its digest names, so narrate builds an index that does not read
+    again and buys nothing for it. The paid records are the take audio and the words its voice sent.
     """
 
-    paid: ClassVar[bool] = True
+    label: ClassVar[str] = "the take index"
 
     script: str = Field(description="The script these takes were made from, project-relative.")
     model: str = Field(description="The provider model every voiced row was spoken by.")

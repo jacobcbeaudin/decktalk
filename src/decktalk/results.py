@@ -68,7 +68,8 @@ clocks the same way and no emitter rounds for itself.
 
 SPENDING = (
     "True when the caller let this run buy what is missing, which spend=True and --spend do. A run that may "
-    "not plays every take on disk and a placeholder for each missing one."
+    "not buys nothing: a free voice still makes each missing take, and a voice that bills leaves a placeholder "
+    "in its place."
 )
 """What the `spending` field of a result that can buy says, written once for the two results that carry it."""
 
@@ -256,8 +257,11 @@ class Spend(Model):
 
     @property
     def buys(self) -> bool:
-        """True when this price covers something to buy, which a run whose every take is on disk does not."""
-        return bool(self.sections) or self.characters > 0
+        """True when this price covers something to buy, which a run whose every take is on disk does not.
+
+        A sound is priced on its seconds and covers no section and no character, so seconds count too.
+        """
+        return bool(self.sections) or self.characters > 0 or self.seconds > 0
 
     @property
     def free(self) -> bool:
@@ -283,11 +287,19 @@ class Spend(Model):
         """What the bill is counted in, which is seconds of audio for a per-second bill and characters otherwise."""
         # A sound shorter than a second still costs something, so it is never said to be none.
         audio = f"about {counted(max(round(self.seconds), 1) if self.seconds > 0 else 0, 'second')} of audio"
-        if self.billing is Billing.PER_SECOND:
+        if self.billing is Billing.PER_SECOND or (self.seconds > 0 and self.characters == 0):
             return audio
         if self.billing is Billing.MIXED:
             return f"{counted(self.characters, 'character')} and {audio}"
         return counted(self.characters, "character")
+
+    @property
+    def _made(self) -> str:
+        """The verb a price that is not money says what the run does with, which is voicing speech and making sound."""
+        charged = self.state is SpendState.CHARGED
+        if self.characters > 0:
+            return "voiced" if charged else "voices"
+        return "made" if charged else "makes"
 
     @property
     def sentence(self) -> str:
@@ -299,12 +311,11 @@ class Spend(Model):
         Every surface that states a price states this sentence, so the rule is written once.
         """
         rate = self.rate
+        made = self._made
         if self.free and self.buys and self.ceiling_dollars == 0:
-            voiced = "voiced" if self.state is SpendState.CHARGED else "voices"
-            return f"This run {voiced} {self.amount} for nothing, because the voice is free."
+            return f"This run {made} {self.amount} for nothing, because the voice is free."
         if self.billing is Billing.UNDECLARED and self.buys:
-            voiced = "voiced" if self.state is SpendState.CHARGED else "voices"
-            return f"This run {voiced} {self.amount} on a voice that declares no bill, so DeckTalk cannot price it."
+            return f"This run {made} {self.amount} on a voice that declares no bill, so DeckTalk cannot price it."
         if self.state is SpendState.CHARGED:
             if self.dollars == self.ceiling_dollars == 0:
                 return "This run bought nothing."

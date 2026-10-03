@@ -360,6 +360,13 @@ class Code(Enum):
         RaisedBy.PYTHON,
         Certainty.UNCERTAIN,
     )
+    SOUND_MISSING = (
+        "SOUND_MISSING",
+        "A sound the soundscape declares has not been bought, so silence plays where it would until a run "
+        "with --spend buys it.",
+        RaisedBy.PYTHON,
+        Certainty.UNCERTAIN,
+    )
     FILE_MISSING = (
         "FILE_MISSING",
         "A file the project names is not on disk.",

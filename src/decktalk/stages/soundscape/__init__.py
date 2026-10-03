@@ -18,7 +18,10 @@ of its own beside the voices, so this stage names no vendor and never asks what 
 Every path this stage writes comes from `Workspace`, so no build directory is spelled here and a
 project that moves its build directory moves its soundscape with it. What has already been bought
 is `ledger.py`, one typed file rather than a cache beside every output, and an item whose request
-still matches its row is kept rather than bought again.
+still matches its row is kept rather than bought again. Every item here is bought, so this stage has
+nothing free to make again and takes no `force`, which never spends. An item is bought again only
+once its request moves or its audio is gone, or when `replace_score` says to buy every item again,
+which a run that may not spend ignores because it has nothing to replace a bought sound with.
 
 Nothing is bought without `run.approve`, so a run that may not spend reports the plan and writes
 nothing at all. The run's own `spend` is the only thing that says so, because a second flag beside
@@ -311,16 +314,17 @@ def spend_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | Non
     )
 
 
-def price(inputs: Inputs, *, only: Sequence[int] | None = None, force: bool = False) -> Spend:
+def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_score: bool = False) -> Spend:
     """What a run of this stage with these options would buy, read from the plan and the ledger alone.
 
     It opens no run and builds no client, so a caller prices a soundscape without touching the
-    project's lock, its events or the service.
+    project's lock, its events or the service. A run told to replace the score buys every item it
+    selects, so that is what it is priced at.
     """
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
     ledger = Ledger.read(inputs.workspace.soundscape_dir / LEDGER_FILE) or Ledger()
-    return spend_of(inputs, [item for item in planned if force or stale(ledger, item)], only)
+    return spend_of(inputs, [item for item in planned if replace_score or stale(ledger, item)], only)
 
 
 def sound_context(inputs: Inputs) -> SoundContext:
@@ -392,16 +396,17 @@ def _entry(inputs: Inputs, item: Planned, digest: str, parts: Sequence[str] = ()
 
 
 def _buy_music(
-    run: Run, inputs: Inputs, client: SoundProvider, item: Planned, ledger: Ledger, path: Path
+    run: Run, inputs: Inputs, client: SoundProvider, item: Planned, ledger: Ledger, path: Path, *, replace: bool
 ) -> tuple[Ledger, float]:
     """Buy every part of the music, join them, and record each part as soon as it is paid for.
 
     The ledger is written after every part, so a run that is stopped half way through a long piece
-    keeps what it has already bought and asks only for the rest. Only the parts bought by this run
-    are charged.
+    keeps what it has already bought and asks only for the rest. A run told to replace the score
+    keeps no part, because a part kept from the old piece would be joined into the new one. Only the
+    parts bought by this run are charged.
     """
     cfg = inputs.settings.soundscape.music
-    previous = ledger.of(item.name)
+    previous = None if replace else ledger.of(item.name)
     known = previous.parts if previous is not None else ()
     item.out.parent.mkdir(parents=True, exist_ok=True)
     parts: list[Path] = []
@@ -439,6 +444,20 @@ def _row(inputs: Inputs, item: Planned, status: SoundStatus, seconds: float | No
     )
 
 
+def _named(item: Planned) -> str:
+    """How a sentence names one item, which is its kind alone when the kind is also its name."""
+    return f"the {item.kind.value}" if item.name == item.kind.value else f"the {item.kind.value} {item.name}"
+
+
+def score_files(inputs: Inputs) -> frozenset[Path]:
+    """Every file this stage would write, which is what a mix that finds one absent knows it has not bought yet.
+
+    A file the project names and this stage never writes is the author's own, so its absence is a
+    certain `FILE_MISSING`, while one of these is only unbought and plays silence under `SOUND_MISSING`.
+    """
+    return frozenset(item.out for item in plan_items(inputs))
+
+
 def _missing(inputs: Inputs, item: Planned) -> Location:
     """Where a planned item that nobody has bought sits, which is the file a mix would look for."""
     return Location(where=item.name, file=inputs.relative(item.out))
@@ -449,21 +468,25 @@ def soundscape(
     run: Run,
     *,
     only: Sequence[int] | None = None,
-    force: bool = False,
+    replace_score: bool = False,
 ) -> SoundscapeResult:
     """Generate the music, the ambience bed and the effects this project describes.
 
     A run that may not spend reports what it would ask for and buys nothing, which is the plan an
-    author reads before approving a spend. The one judgement this stage makes is
-    `FILE_MISSING`, for an item that is still only planned and whose audio a mix would look for and
-    not find. A request the service refuses raises `PROVIDER`, so a run that returns has nothing
-    else to judge.
+    author reads before approving a spend. `replace_score` is the one way a bought sound is bought
+    again: a run that may spend buys every item it selects again, and one that may not keeps every
+    item on disk, because it has nothing to replace a bought sound with.
+
+    The one judgement this stage makes is `SOUND_MISSING`, for an item that is still only planned,
+    which is a warning because the film is still made with silence where the item would play. A
+    request the service refuses raises `PROVIDER`, so a run that returns has nothing else to judge.
     """
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
     path = inputs.workspace.soundscape_dir / LEDGER_FILE
     ledger = Ledger.read(path) or Ledger()
-    fresh = {item.name for item in planned if force or stale(ledger, item)}
+    replace = run.spend and replace_score
+    fresh = {item.name for item in planned if replace or stale(ledger, item)}
     spend = spend_of(inputs, [item for item in planned if item.name in fresh], only)
     buying = bool(fresh) and run.spend
     if buying:
@@ -482,8 +505,10 @@ def soundscape(
         if client is None:
             rows.append(_row(inputs, item, SoundStatus.PLANNED, None))
             continue
-        buy = _buy_music if item.kind is SoundKind.MUSIC else _buy_sound
-        ledger, dollars = buy(run, inputs, client, item, ledger, path)
+        if item.kind is SoundKind.MUSIC:
+            ledger, dollars = _buy_music(run, inputs, client, item, ledger, path, replace=replace)
+        else:
+            ledger, dollars = _buy_sound(run, inputs, client, item, ledger, path)
         charged += dollars
         bought_any = True
         bought = ledger.of(item.name)
@@ -495,9 +520,9 @@ def soundscape(
         if row.status is SoundStatus.PLANNED and not item.out.is_file():
             run.found(
                 judge(
-                    Code.FILE_MISSING,
-                    f"the {item.kind.value} {item.name} is planned and its audio is not on disk, so a mix would "
-                    f"play without it. Generating it would ask for {item.seconds:g} seconds of audio.",
+                    Code.SOUND_MISSING,
+                    f"{_named(item)} is not bought yet, so the film plays silence where it would be. Buying it "
+                    f"with `decktalk soundscape --spend` asks for {item.seconds:g} seconds of audio.",
                     _missing(inputs, item),
                     stage=Stage.SOUNDSCAPE,
                 )
@@ -516,6 +541,7 @@ __all__ = [
     "plan_items",
     "price",
     "requested_seconds",
+    "score_files",
     "sound_context",
     "sound_body",
     "soundscape",

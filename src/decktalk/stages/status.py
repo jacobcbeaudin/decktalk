@@ -34,6 +34,7 @@ import json
 import logging
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 
@@ -106,6 +107,8 @@ class KeptStage(Model):
 
 class Kept(Stored):
     """The record a build leaves of the two stages it can keep, read by the next build and by status."""
+
+    label: ClassVar[str] = "the record of what the last build kept"
 
     assemble: KeptStage | None = None
     verify: KeptStage | None = None

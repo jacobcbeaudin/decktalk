@@ -29,7 +29,8 @@ there and fetches nothing, so it is safe to leave in a job forever.
   `cache` field is the directory to cache, read from the machine rather than guessed.
 
 After `install`, DeckTalk itself reaches the network only to buy speech or sound, and a build with
-`--no-spend` never does. A page that loads a font or a library from another host still reaches for
+`--no-spend` never does. A free local voice such as `dtsp` is still called under `--no-spend`, on a
+loopback address, because spend gates money and nothing else. A page that loads a font or a library from another host still reaches for
 it, as [What leaves your machine](/reference/what-leaves-your-machine#requests-a-page-makes) explains.
 
 ## Never prompt
@@ -43,6 +44,7 @@ agent cannot answer and a flag that does not exist are the same failure.
 | Spend on the voice? | Refused as `APPROVAL`, with the price in the message and `--spend` and `--no-spend` in the hint. A run with nothing to buy is not asked, and neither is one whose voice declares itself free. |
 | Apply the fixes this run offered? | None are applied. `--fix` applies every safe one and `--no-fix` applies none. |
 | Discard the takes this run replaces? | Not asked. `--replace-voiced` is itself the authorisation, because a run told to replace a take was told so on purpose. |
+| Buy again the sounds this run replaces? | Not asked. `--replace-score` with `--spend` is itself the authorisation, and without `--spend` it buys nothing. |
 | Fetch what `doctor` found missing? | Nothing is fetched. `--fix` fetches it. |
 | The project name and example for `init` | The defaults are taken, and the result says what was chosen. |
 | Install Chromium's system libraries on Linux? | Not asked, and `install` goes ahead. |
@@ -256,9 +258,10 @@ set to false, so it is a single file that plays in the browser, and it takes its
 the same run that made it and its findings already decide the build's exit code. A job does not need
 a second command to gate on the film.
 
-`--no-spend` plays every take the repository holds and a click track for each section whose take is
-missing, so the measurement covers the recording, the cut and the mix and not only the cue times, on
-a job that spends nothing and holds no key.
+`--no-spend` plays every take the repository holds and a click track for each section whose take a
+paid voice would sell, so the measurement covers the recording, the cut and the mix and not only the
+cue times, on a job that spends nothing and holds no key. A job whose voice is the free `dtsp` and
+that runs `decktalk-voice` beside it gets every missing take voiced under the same flag.
 
 ### Build with the takes you committed
 
@@ -279,10 +282,11 @@ The voice id is a published name rather than a secret, so it is committed beside
 job is handed nothing at all. A project that keeps the id out of the file hands the job
 `DECKTALK_VOICE_ID` instead, and still leaves the key out.
 
-A run without `--spend` plays every take on disk and never builds the voice, so it reads no key. Each
-section whose take is missing plays a placeholder and is reported as
+A run without `--spend` plays every take on disk and never builds a voice that bills, so it reads no
+key. Each section whose take is missing plays a placeholder and is reported as
 [`TAKE_MISSING`](/reference/findings/TAKE_MISSING), once per section, with the command that buys its
-take. That finding is uncertain, because the film is still a whole film with estimated timing in that
+take. A free voice is the exception: it makes the missing takes, and when its server is not running
+each section plays a placeholder whose finding says to start it rather than to buy anything. That finding is uncertain, because the film is still a whole film with estimated timing in that
 section, so the default `--fail-on certain` builds it and exits 0 and the finding sits in
 `build.json` for the job summary. A job that must fail on a missing take passes `--fail-on any`, and
 `--allow` carries on past any other uncertain code it accepts.

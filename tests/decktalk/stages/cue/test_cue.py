@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from pathlib import Path
 
@@ -150,14 +151,14 @@ def test_a_moment_the_cue_file_does_not_list_is_missing_with_a_fix(tmp_path: Pat
     assert judged.stage is Stage.CUE
 
 
-def test_a_row_no_page_declares_is_unknown_unless_the_caller_allows_it(tmp_path: Path) -> None:
+def test_a_row_no_page_declares_is_always_reported(tmp_path: Path) -> None:
+    """Whether the finding fails the run is the caller's threshold, so the stage reports it every time."""
     inputs = a_project(tmp_path, cues={"1": {"cues": [{"cue": "1.1:a", "on": "there"},
                                                      {"cue": "1.9:gone", "on": "again"}]}})  # fmt: skip
     a_recording(inputs, 1, "1", {"1.1": ["1.1:a"]})
     codes = {one.code for one in cue(inputs, a_run(tmp_path)).findings}
     assert Code.CUE_UNKNOWN in codes
-    allowed = {one.code for one in cue(inputs, a_run(tmp_path), allow_unknown=True).findings}
-    assert Code.CUE_UNKNOWN not in allowed
+    assert "allow_unknown" not in inspect.signature(cue).parameters
 
 
 def test_a_page_nothing_has_recorded_is_left_unjudged(tmp_path: Path) -> None:
