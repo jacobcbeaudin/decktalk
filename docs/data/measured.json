@@ -1,0 +1,199 @@
+{
+  "schema": 1,
+  "runs": {
+    "measure": {
+      "what": "the starter `decktalk init` writes, built with the placeholder voice",
+      "command": "uv run python scripts/measure.py",
+      "commit": "b649b8089e5ec61ef453564771bfc069da656ebd",
+      "source_changed": false,
+      "machine": {
+        "platform": "macOS 26.6.2 arm64",
+        "cpu": "Apple M5 Pro",
+        "cores": 18
+      },
+      "versions": {
+        "decktalk": "0.5.0",
+        "python": "3.13.1",
+        "chromium": "153.0.8010.12",
+        "ffmpeg": "8.1.2"
+      },
+      "repeats": 3,
+      "load": 6.63
+    }
+  },
+  "landing": [
+    {
+      "run": "measure",
+      "voice": "placeholder",
+      "limit_ms": 80.0,
+      "reveals": 36,
+      "skipped": 0,
+      "over_limit": 0,
+      "worst_ms": 59.0,
+      "median_ms": 43.0,
+      "cues": [
+        {
+          "cue": "1.1:title",
+          "offsets_ms": [
+            56.0,
+            56.0,
+            16.0
+          ]
+        },
+        {
+          "cue": "1.1:files",
+          "offsets_ms": [
+            35.0,
+            35.0,
+            -5.0
+          ]
+        },
+        {
+          "cue": "1.2:script",
+          "offsets_ms": [
+            43.0,
+            43.0,
+            43.0
+          ]
+        },
+        {
+          "cue": "1.2:deck",
+          "offsets_ms": [
+            48.0,
+            48.0,
+            8.0
+          ]
+        },
+        {
+          "cue": "1.2:word",
+          "offsets_ms": [
+            37.0,
+            37.0,
+            -3.0
+          ]
+        },
+        {
+          "cue": "2.1:average",
+          "offsets_ms": [
+            49.0,
+            49.0,
+            49.0
+          ]
+        },
+        {
+          "cue": "2.1:formula",
+          "offsets_ms": [
+            59.0,
+            59.0,
+            59.0
+          ]
+        },
+        {
+          "cue": "2.1:code",
+          "offsets_ms": [
+            19.0,
+            19.0,
+            19.0
+          ]
+        },
+        {
+          "cue": "2.1:waited",
+          "offsets_ms": [
+            59.0,
+            59.0,
+            59.0
+          ]
+        },
+        {
+          "cue": "3.1:idea",
+          "offsets_ms": [
+            30.0,
+            30.0,
+            -10.0
+          ]
+        },
+        {
+          "cue": "3.1:again",
+          "offsets_ms": [
+            46.0,
+            46.0,
+            6.0
+          ]
+        },
+        {
+          "cue": "3.1:make",
+          "offsets_ms": [
+            54.0,
+            54.0,
+            14.0
+          ]
+        }
+      ]
+    }
+  ],
+  "builds": {
+    "run": "measure",
+    "project": "starter",
+    "film_seconds": 50.4,
+    "sections": 3,
+    "edit": {
+      "section": 3,
+      "from": "Change a word",
+      "to": "Change one word"
+    },
+    "rows": [
+      {
+        "build": "cold",
+        "seconds": [
+          27.05,
+          27.27,
+          27.07
+        ],
+        "recorded": [
+          3,
+          3,
+          3
+        ]
+      },
+      {
+        "build": "unchanged",
+        "seconds": [
+          1.21,
+          0.62,
+          0.51
+        ],
+        "recorded": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "build": "one section changed",
+        "seconds": [
+          19.1,
+          19.06,
+          18.87
+        ],
+        "recorded": [
+          1,
+          1,
+          1
+        ]
+      }
+    ]
+  },
+  "coverage": {
+    "run": "measure",
+    "command": "uv run python scripts/check.py --group unit,browser,media,e2e,coverage",
+    "percent": 98.1,
+    "statements": 12177,
+    "covered": 11943,
+    "suites": [
+      "browser",
+      "e2e",
+      "media",
+      "unit"
+    ]
+  }
+}

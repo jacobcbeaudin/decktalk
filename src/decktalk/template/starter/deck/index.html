@@ -5,11 +5,11 @@
 <title>__TITLE__</title>
 
 <!-- KaTeX typesets every [data-tex] element, and it has to be loaded before the runtime so the
-     first slide is already typeset when the recorder starts the clock. `decktalk init` copied
-     this release into deck/katex/, so the page loads nothing from the network. -->
-<link rel="stylesheet" href="./katex/katex.min.css">
-<script src="./katex/katex.min.js"></script>
-<script src="./decktalk-runtime.js"></script>
+     first slide is already typeset when the recorder starts the clock. DeckTalk serves both from
+     /__decktalk/ on the origin it opens the page at, so the page loads nothing from the network. -->
+<link rel="stylesheet" href="/__decktalk/katex/katex.min.css">
+<script src="/__decktalk/katex/katex.min.js"></script>
+<script src="/__decktalk/decktalk-runtime.js"></script>
 
 <style>
   /* Tokens. The accent belongs to the thing being revealed right now, and to nothing else. */

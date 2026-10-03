@@ -71,14 +71,13 @@ half when you only want the reading of the files and the page.
 
 ## Apply the fix a finding carries
 
-A finding may carry a `fix`. It is one of four kinds, and it declares how far it may be trusted.
+A finding may carry a `fix`. It is one of three kinds, and it declares how far it may be trusted.
 
 | Kind | What it is |
 |---|---|
 | `edit` | One or more changes to files, each naming exactly one of a JSON pointer, a TOML key or a line. |
 | `setting` | A settings key and the value that clears the judgement. |
 | `command` | The whole command line to run, one argument per element. |
-| `runtime` | A project's copy of the runtime, which is replaced with the one this engine ships. |
 
 | Applicability | What happens |
 |---|---|
@@ -532,8 +531,9 @@ It is certain and it carries no fix, because only you can decide what the local 
 
 1. Download the asset into `deck/` and point the page at the local copy. A font, a stylesheet, a
    script and an image are all the same answer.
-2. For equations there is nothing to download. `decktalk init` copies the packaged KaTeX into
-   `deck/katex/`, so a page that links those two files loads nothing from a network.
+2. For equations there is nothing to download. DeckTalk serves the packaged KaTeX at
+   `/__decktalk/katex/` on the page's own origin, so a page that links those two files loads nothing
+   from a network.
 3. Run `decktalk serve` and open the page. That origin serves the deck directory and the files
    `decktalk.toml` declares and nothing else, so anything the page still fetches from elsewhere is
    visible in the browser's network panel.
@@ -588,7 +588,7 @@ contract either declares a thing or it does not.
 | [PAGE_PREVIEW_AMBIGUOUS](/reference/findings/PAGE_PREVIEW_AMBIGUOUS) | Give the two sections different scenes. |
 | [PAGE_STAGGER_EMPTY](/reference/findings/PAGE_STAGGER_EMPTY) | Give the container children, or take `data-stagger` off it. |
 | [PAGE_WORDS_NOT_FOUND](/reference/findings/PAGE_WORDS_NOT_FOUND) | Make the element's text words the script really speaks in that section. |
-| [PAGE_KATEX_MISSING](/reference/findings/PAGE_KATEX_MISSING) | Link `deck/katex/katex.min.css` and `deck/katex/katex.min.js`, which `decktalk init` copied in. |
+| [PAGE_KATEX_MISSING](/reference/findings/PAGE_KATEX_MISSING) | Link `/__decktalk/katex/katex.min.css` and `/__decktalk/katex/katex.min.js`, which DeckTalk serves on the page's origin. |
 | [PAGE_KATEX_ERROR](/reference/findings/PAGE_KATEX_ERROR) | Correct the TeX the message quotes. The element's own text is the fallback a reader sees meanwhile. |
 | [PAGE_FREEZE_CUE_UNKNOWN](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN) | Name a cue the slide declares in `--after` or `--before`. |
 | [PAGE_CLASS_UNDESCRIBED](/reference/findings/PAGE_CLASS_UNDESCRIBED) | Add the matching pair to `data-describe-class`. |

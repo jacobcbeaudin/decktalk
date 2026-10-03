@@ -165,9 +165,9 @@ def test_a_cache_file_that_does_not_read_is_built_again_and_a_paid_one_is_not(tm
         assert path.is_file()
 
 
-def test_the_ledger_and_the_take_index_are_the_paid_records_and_the_caches_are_not() -> None:
-    """Only a record of what was bought may be paid, which is the ledger and the take index."""
-    assert {model.__name__ for model in every_stored() if model.paid} == {"Ledger", "Takes"}
+def test_the_ledger_the_take_index_and_the_provider_words_are_the_paid_records_and_the_caches_are_not() -> None:
+    """Only a record of what was bought may be paid: the ledger, the take index and the words a provider sent back."""
+    assert {model.__name__ for model in every_stored() if model.paid} == {"Ledger", "Takes", "ProviderWords"}
 
 
 def every_stored() -> list[type[Stored]]:

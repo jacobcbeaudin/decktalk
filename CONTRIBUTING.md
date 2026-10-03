@@ -82,8 +82,8 @@ command that reproduces it, because a job name scrolls away and the first line o
 | `media-platforms` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml --timing=report` | ffmpeg | macOS, Windows | main |
 | `e2e-platforms` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report` | chromium, ffmpeg | macOS, Windows | main |
 | `platform` | `uv run pytest -q -rs -m platform`, and 1 more | chromium, ffmpeg | Linux, macOS, Windows | pr, main |
-| `generated` | `uv run python scripts/build_runtime.py --check`, and 13 more | npm, chromium | Linux | pr, main |
-| `rehearsal` | `uv run python scripts/rehearse_release.py` | npm, chromium, history | Linux | pr, main |
+| `generated` | `uv run python scripts/build_runtime.py --check`, and 13 more | npm | Linux | pr, main |
+| `rehearsal` | `uv run python scripts/rehearse_release.py` | npm, history | Linux | pr, main |
 | `coverage` | `uv run coverage combine --keep`, and 2 more | nothing beyond uv | Linux | pr, main |
 | `wheel` | `uv build`, and 2 more | nothing beyond uv | Linux, macOS, Windows | pr, main |
 | `scaffold` | `uv run pytest -q -rs -m scaffold --timing=report` | chromium, ffmpeg | Linux | schedule |
@@ -303,7 +303,7 @@ src/decktalk/
     __init__.py          DeckTalk: narrated presentation videos, cut to the word.
     __main__.py          `python -m decktalk` runs the CLI.
   packaged data          what ships in the wheel and holds no Python
-    katex/               The pinned KaTeX release the pages typeset with, copied into a project by `decktalk init`
+    katex/               The pinned KaTeX release the pages typeset with, which the origin serves beside the runtime
     runtime/             decktalk-runtime.js, the page contract every deck loads, decktalk-probe.js and contract.json
     skills/              The six packaged skills a project keeps in .agents/skills/
     template/            The starter, the lesson example and the AGENTS.md that `decktalk init` writes
@@ -318,15 +318,16 @@ tests/contract/   the rules that belong to no module, as a closed allow-list
 tests/platform/   what exists only because there are three platforms
 tests/e2e/        the pipeline sample and the scaffold build
 tests/support/    what several modules share, and which collects nothing
-scripts/          check.py, the generators and the asset generator
+scripts/          check.py and the generators
 docs/             the Mintlify site at docs.decktalk.ai
-docs/decisions/   one note per choice the code cannot explain, for readers of the tree
-assets/           the generated graphics the README and the site use
+docs/decisions/   one note per choice the code cannot explain, the site's Design decisions group
+assets/           the graphics the README and the site use
 ```
 
-`docs/decisions/` holds plain Markdown and sits outside `docs/docs.json`, so it is read on GitHub
-and never published to the site. [ARCHITECTURE.md](ARCHITECTURE.md) is the overview those notes hang
-from, and it is where to start if you are changing the shape of the package rather than one module.
+`docs/decisions/` is the "Design decisions" group of the site, and a new note is a page like any
+other: front matter, links from the site root, and a line in that group of `docs/docs.json`, which
+`scripts/check_docs_links.py` holds. [ARCHITECTURE.md](ARCHITECTURE.md) is the overview those notes
+hang from, and it is where to start if you are changing the shape of the package rather than one module.
 
 The test for `src/decktalk/stages/verify/plan.py` is `tests/decktalk/stages/verify/test_plan.py`,
 and `tests/contract/test_layout.py` fails on a module that has no mirrored file. A test that belongs
@@ -410,10 +411,10 @@ stale, and fails with the same sentence naming the file, why it is stale and the
 | `docs/reference/errors/*.mdx` and `findings/*.mdx` | `ErrorCode` and `Code` | `uv run scripts/build_code_pages.py --write` |
 | The generated section of `AGENTS.md` | The command table | `uv run scripts/build_agents_doc.py --write` |
 | `docs/reference/what-leaves-your-machine.mdx` | `docs/data/outbound.toml` | `uv run scripts/build_outbound_reference.py --write` |
+| `docs/reference/measured.mdx` and the measured block in `README.md` | `docs/data/measured.json`, which `uv run python scripts/measure.py` writes from real runs | `uv run scripts/build_measured.py --write` |
 | The table in `docs/agents/skills.mdx` | The front matter of each packaged skill | `uv run scripts/build_skills_list.py --write` |
 | The two blocks in `CONTRIBUTING.md` | `src/decktalk` and the `GROUPS` table | `uv run scripts/build_contributing.py --write` |
 | `docs/changelog.mdx` | `CHANGELOG.md`, which release-please writes | `uv run scripts/build_changelog.py --write` |
-| `assets/*.svg`, `assets/tokens.css` and `docs/images/` | `scripts/figure-data/` and the palette maps | `uv run scripts/build_assets.py --write` |
 | The coverage floor | A real run on Linux | `uv run scripts/check_coverage.py --write` |
 
 `uv run scripts/check_docs_links.py` checks the rest of the site: every page opens with

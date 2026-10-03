@@ -2,7 +2,7 @@
  *
  * Include it and declare a scene in markup. Nothing here needs JavaScript:
  *
- *   <script src="decktalk-runtime.js"></script>
+ *   <script src="/__decktalk/decktalk-runtime.js"></script>
  *   <div data-scene="pitch" data-name="How often">
  *     <template data-slide="pitch.listing">
  *       <h1>Value still listed</h1>

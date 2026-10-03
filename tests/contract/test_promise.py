@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from decktalk.artifacts.stored import Stored
+from decktalk.artifacts.words import WORDS_SUFFIX, ProviderWords
 from decktalk.cli.session import FOUND_SOMETHING
 from decktalk.errors import ErrorCode
 from decktalk.inputs.workspace import EVENTS_SUFFIX
@@ -57,4 +58,5 @@ def test_the_page_names_the_events_file_and_every_paid_record() -> None:
     assert f"build/events/<run>{EVENTS_SUFFIX}" in text
     assert f"build/soundscape/{LEDGER_FILE}" in text and Ledger.paid
     assert "build/narrate/takes.json" in text
+    assert f"`<hash>{WORDS_SUFFIX}`" in text and ProviderWords.paid
     assert not Stored.paid, "a cache is the default, and a paid record says so"

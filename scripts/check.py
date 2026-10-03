@@ -299,7 +299,7 @@ NEEDS: dict[str, Need] = {
         workflow=True,
     ),
     "chromium": Need(
-        why="The headless Chromium the recorder drives and `build_assets.py` measures the hero in.",
+        why="The headless Chromium the recorder drives.",
         prepare=INSTALL,
         cached=True,
     ),
@@ -631,17 +631,15 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="generated",
         why="Every generated file held to the source it is generated from, and every link in them.",
-        # The runtime bundles are compiled by the pinned TypeScript, so the row needs npm.
-        # `build_assets.py` measures the hero's word widths in the real Chromium with the real font,
-        # and a generator that launches Playwright directly reaches nothing that would fetch it, so
-        # the row needs Chromium as much as the browser group does.
+        # The runtime bundles are compiled by the pinned TypeScript, so the row needs npm. No
+        # generator launches a browser, so the row fetches none.
         commands=(
             *(generator(name) for name in GENERATORS),
             (*UV, "python", "scripts/check_docs_links.py"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("npm", "chromium"),
+        tools=("npm",),
         timeout=20,
         when=("pr", "main"),
     ),
@@ -657,7 +655,7 @@ GROUPS: tuple[Group, ...] = (
         commands=((*UV, "python", "scripts/rehearse_release.py"),),
         runners=(LINUX,),
         pythons=(FLOOR,),
-        tools=("npm", "chromium", "history"),
+        tools=("npm", "history"),
         timeout=20,
         when=("pr", "main"),
     ),

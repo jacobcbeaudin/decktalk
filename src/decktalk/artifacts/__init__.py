@@ -39,18 +39,21 @@ from decktalk.artifacts.takes import (
     is_placeholder,
     take_file,
 )
-from decktalk.artifacts.words import WORDS_SUFFIX, Words, words_file
+from decktalk.artifacts.words import WORDS_SUFFIX, ClipWords, EstimatedWords, ProviderWords, Words, words_file
 
 __all__ = [
     "PLACEHOLDER_PREFIX",
     "PLACEHOLDER_SUFFIX",
     "TAKE_DIGITS",
     "WORDS_SUFFIX",
+    "ClipWords",
     "Cut",
     "CueTimes",
     "Cuts",
+    "EstimatedWords",
     "Luma",
     "PlaceholderInputs",
+    "ProviderWords",
     "RecordingChecks",
     "RecordingLog",
     "Start",

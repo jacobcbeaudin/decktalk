@@ -84,8 +84,8 @@ Full rules: [cues.json](/reference/cues-json) and [Cues](/concepts/cues).
 
 One HTML file under `deck/` that a `[[section]]` names. A `[data-scene]` wrapper is one scene, each
 `<template data-slide>` inside it is one slide, and the runtime clones a slide when it mounts. The
-runtime is `deck/decktalk-runtime.js`, which `decktalk init` copies in beside KaTeX so the page
-loads nothing from the network.
+runtime is `/__decktalk/decktalk-runtime.js` and KaTeX is under `/__decktalk/katex/`, which DeckTalk
+serves on the origin it opens the page at, so the page loads nothing from the network.
 
 Full rules: [The page contract](/concepts/page-contract) and [Runtime](/reference/runtime).
 

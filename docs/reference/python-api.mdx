@@ -48,7 +48,7 @@ Every other public type lives in the module that defines its kind:
 |---|---|
 | `decktalk.results` | Every result and every row a result carries, with `Billing`, `Layer`, `Scope`, `Outcome` and `ErrorInfo`. |
 | `decktalk.events` | Every event line, `Line`, `Level`, `Unit` and `Subscription`. |
-| `decktalk.findings` | The fix and location types: `Location`, `Fix`, `EditFix`, `Edit`, `SettingFix`, `CommandFix`, `RuntimeFix`, `Applicability` and `RaisedBy`. |
+| `decktalk.findings` | The fix and location types: `Location`, `Fix`, `EditFix`, `Edit`, `SettingFix`, `CommandFix`, `Applicability` and `RaisedBy`. |
 | `decktalk.settings` | `Settings`, one `*Config` class per table, `ProviderTable` and `Layers`. |
 | `decktalk.speech` | The voice protocol: `SpeechProvider`, `SpeechRequest`, `Piece`, `ProviderFactory`, `VoiceContext`, `Secrets`, `Secret`, `Voices`, `Bill`, `Output`, `Hosts` and `BEAT`. |
 | `decktalk.speech.sound` | The sound protocol: `SoundProvider`, `SoundContext`, `SoundFactory` and `Sounds`. |
@@ -415,7 +415,7 @@ for finding in project.check(pages=False).findings:
     print("  read more:", code.url)
 ```
 
-A fix is one of four shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
+A fix is one of three shapes, discriminated by `kind`. Each carries a `title`, which is one sentence
 saying what applying it does, and an `applicability`.
 
 | `kind` | Class | What it changes |
@@ -423,7 +423,6 @@ saying what applying it does, and an `applicability`.
 | `edit` | `EditFix` | `edits`, a run of `Edit` objects applied together or not at all. Each names exactly one of `pointer`, `key` or `line`. |
 | `setting` | `SettingFix` | `key` and `value`, in the same key space `config set` takes. |
 | `command` | `CommandFix` | `command`, the whole argv a caller may hand to a subprocess. |
-| `runtime` | `RuntimeFix` | `file`, a project's copy of the runtime, which becomes the engine's own. |
 
 `Applicability.SAFE` cannot lose the author's work. `Applicability.UNSAFE` can, so it is applied only
 when the caller asked for that. `Applicability.DISPLAY` is a change only a person can make, so it is

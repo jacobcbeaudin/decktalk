@@ -60,7 +60,6 @@
         "PAGE_BLACK",
         "PAGE_TRUNCATED",
         "PAGE_CDN_ASSET",
-        "PAGE_RUNTIME_STALE",
         "CUE_MISSING",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
@@ -341,7 +340,6 @@
                 "mapping": {
                   "command": "#/$defs/CommandFix",
                   "edit": "#/$defs/EditFix",
-                  "runtime": "#/$defs/RuntimeFix",
                   "setting": "#/$defs/SettingFix"
                 },
                 "propertyName": "kind"
@@ -355,9 +353,6 @@
                 },
                 {
                   "$ref": "#/$defs/CommandFix"
-                },
-                {
-                  "$ref": "#/$defs/RuntimeFix"
                 }
               ]
             },
@@ -497,41 +492,6 @@
         "where"
       ],
       "title": "Location",
-      "type": "object"
-    },
-    "RuntimeFix": {
-      "additionalProperties": false,
-      "description": "A fix that replaces a project's copy of the runtime with the one this engine ships.\n\nA copy some release shipped holds none of the author's work, so its fix is safe. A copy that\nmatches no shipped runtime holds edits that replacing it would lose, so its fix is unsafe. The\nfix names only where the copy is, because what goes there is always the engine's runtime.",
-      "properties": {
-        "kind": {
-          "const": "runtime",
-          "default": "runtime",
-          "description": "The kind of fix, which is how a reader dispatches on it.",
-          "title": "Kind",
-          "type": "string"
-        },
-        "title": {
-          "description": "One sentence saying what applying this fix does.",
-          "title": "Title",
-          "type": "string"
-        },
-        "applicability": {
-          "$ref": "#/$defs/Applicability",
-          "description": "Whether this fix may be applied without asking."
-        },
-        "file": {
-          "description": "The project's copy of the runtime to replace, project-relative.",
-          "format": "path",
-          "title": "File",
-          "type": "string"
-        }
-      },
-      "required": [
-        "title",
-        "applicability",
-        "file"
-      ],
-      "title": "RuntimeFix",
       "type": "object"
     },
     "SectionKind": {

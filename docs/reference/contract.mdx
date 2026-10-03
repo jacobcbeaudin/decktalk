@@ -69,13 +69,15 @@ The deliverables, named after `[project] name`, which is `<name>` below.
 
 ## The paid records
 
-Three things under `build/` record money spent, so they are never treated as a cache.
+Four things under `build/` record money spent, so they are never treated as a cache.
 
 - `build/narrate/takes.json`, the take index.
 - The take audio, one file per take, named by the digest of what was sent.
-
-When `[narration] takes_dir` is set, the take audio and `takes.json` live there instead.
+- Each voiced take's `<hash>.words.json`, the words the speech provider sent back with it.
 - `build/soundscape/ledger.json`, what the soundscape has bought.
+
+When `[narration] takes_dir` is set, the take audio, its words files and `takes.json` live there
+instead.
 
 A newer release reads these or refuses them with a sentence. It never builds one again and never
 deletes one, because counting a paid record as absent would buy what it records again. The refusal

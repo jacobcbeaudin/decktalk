@@ -73,6 +73,18 @@
         ]
       },
       {
+        "group": "Design decisions",
+        "pages": [
+          "decisions/overview",
+          "decisions/timing-from-the-spoken-words",
+          "decisions/the-magenta-cover",
+          "decisions/the-six-stages",
+          "decisions/the-provider-interface",
+          "decisions/the-skills-contract",
+          "decisions/no-compatibility-while-alpha"
+        ]
+      },
+      {
         "group": "Guides",
         "pages": [
           "guides/writing-for-the-ear",
@@ -91,6 +103,7 @@
         "pages": [
           "reference/cli",
           "reference/verify",
+          "reference/measured",
           "reference/script-md",
           "reference/decktalk-toml",
           "reference/cues-json",
@@ -154,7 +167,6 @@
               "reference/findings/PAGE_BLACK",
               "reference/findings/PAGE_TRUNCATED",
               "reference/findings/PAGE_CDN_ASSET",
-              "reference/findings/PAGE_RUNTIME_STALE",
               "reference/findings/CUE_MISSING",
               "reference/findings/CUE_UNKNOWN",
               "reference/findings/CUE_UNRESOLVED",

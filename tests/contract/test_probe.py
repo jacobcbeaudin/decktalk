@@ -17,16 +17,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from contract.test_runtime import MARKUP_SCENE, deck
+from decktalk.media.origin import Allowed, page_url, route_pages
 from decktalk.page import REPORT
-from decktalk.toolchain.assets import (
-    KATEX_DIR,
-    PROBE_FILE,
-    RUNTIME_FILE,
-    katex_dir,
-    package_file,
-    probe_path,
-    runtime_path,
-)
+from decktalk.toolchain.assets import PROBE_FILE, package_file, probe_path
 from support.browser_pages import Tab, chromium_tab, opened, settled, write_page
 
 if TYPE_CHECKING:
@@ -260,13 +253,11 @@ def test_freeze_at_and_before_one_cue(page, errors, tmp_path):
     assert not errors
 
 
-def starter_deck(tmp_path: Path) -> str:
-    """The deck `decktalk init` writes, laid out beside the runtime and the KaTeX release it loads."""
-    root = tmp_path / "deck"
-    shutil.copytree(package_file("template") / "starter" / "deck", root)
-    shutil.copyfile(runtime_path(), root / RUNTIME_FILE)
-    shutil.copytree(katex_dir(), root / KATEX_DIR)
-    return (root / "index.html").resolve().as_uri()
+def starter_deck(page: Page, tmp_path: Path) -> str:
+    """The deck `decktalk init` writes, opened at the origin that serves it the runtime and KaTeX."""
+    shutil.copytree(package_file("template") / "starter" / "deck", tmp_path / "deck")
+    route_pages(page, Allowed.of(tmp_path, ["deck"]), trusted=True)
+    return page_url("deck/index.html")
 
 
 def test_the_frame_before_a_cue_and_the_frame_at_it_are_two_pictures(page, errors, tmp_path):
@@ -277,7 +268,7 @@ def test_the_frame_before_a_cue_and_the_frame_at_it_are_two_pictures(page, error
     would answer every cue of every project with CUE_NO_CHANGE while the film played the reveal
     perfectly, so the two files are compared here as bytes rather than as classes alone.
     """
-    url = starter_deck(tmp_path)
+    url = starter_deck(page, tmp_path)
     shown = "() => getComputedStyle(document.querySelector('.end')).opacity"
     settled(page, f"{url}?slide=3.1&before=3.1:make")
     assert page.evaluate("() => window.__decktalk.fired") == ["3.1:idea", "3.1:again"]

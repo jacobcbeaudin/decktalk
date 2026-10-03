@@ -329,7 +329,8 @@ A build that does not spend runs with no network at all after these three steps.
     decktalk init my-lesson
     ```
 
-    `init` copies the packaged KaTeX into `deck/katex/`, so the equations render with nothing fetched.
+    DeckTalk serves the packaged KaTeX on the page's own origin, so the equations render with nothing
+    fetched.
   </Step>
   <Step title="Build without spending">
     ```console
@@ -338,13 +339,13 @@ A build that does not spend runs with no network at all after these three steps.
   </Step>
 </Steps>
 
-The starter's page points its KaTeX tags at the copy beside it. A page of your own that points them
+The starter's page points its KaTeX tags at the engine's path. A page of your own that points them
 anywhere else leaves its equations as plain text offline, and the run reports
 [`PAGE_KATEX_MISSING`](/reference/findings/PAGE_KATEX_MISSING).
 
 ```html deck/index.html
-<link rel="stylesheet" href="./katex/katex.min.css">
-<script src="./katex/katex.min.js"></script>
+<link rel="stylesheet" href="/__decktalk/katex/katex.min.css">
+<script src="/__decktalk/katex/katex.min.js"></script>
 ```
 
 Anything else a page loads from another origin is reported as

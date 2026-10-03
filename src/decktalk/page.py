@@ -32,6 +32,7 @@ __all__ = [
     "BACK_OPACITY",
     "CAPTURE_FPS",
     "COUNTS",
+    "ENGINE_PATH",
     "ENTRANCES",
     "EXEMPT",
     "EXITS",
@@ -105,6 +106,9 @@ TIME_MARK = "@"
 
 LIST_SEPARATOR = ","
 """What separates two entries of that query."""
+
+ENGINE_PATH = "/__decktalk/"
+"""The path the engine answers itself under every origin, which holds the runtime and KaTeX."""
 
 PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json"
 """The path a previewed page asks its origin for, which answers with the last run's cue times."""

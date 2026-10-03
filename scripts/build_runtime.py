@@ -50,12 +50,12 @@ BUNDLES: dict[str, Path] = {
     "decktalk-probe.js": SOURCE / "probe" / "probe.ts",
 }
 
-# The bundle a project copies, which is the one that opens with the banner naming its version. The
-# probe is injected by the engine that recorded the page, so its version is never in question.
+# The bundle a page loads, which is the one that opens with the banner naming its version. The probe
+# is injected by the engine that recorded the page, so its version is never in question.
 BANNERED = "decktalk-runtime.js"
 
-# The first line of the copied bundle, filled from the contract's mark and the engine version, so a
-# person who opens a project's copy can read which engine shipped it.
+# The first line of the page's bundle, filled from the contract's mark and the engine version, so a
+# person who opens the file the origin served can read which engine shipped it.
 BANNER = "/*! {mark} {version} */"
 
 # The browsers a bundle must run in are the ones Playwright drives and the ones an author previews
@@ -82,7 +82,7 @@ def engine_version() -> str:
 
 
 def banner(data: dict[str, Any]) -> str:
-    """The first line of the copied bundle, which names the engine version that shipped it."""
+    """The first line of the page's bundle, which names the engine version that shipped it."""
     return BANNER.format(mark=data["runtimeMark"], version=engine_version())
 
 
@@ -323,6 +323,7 @@ def page_module(data: dict[str, Any]) -> str:
         "COUNTS",
         "ENTRANCES",
         "EXEMPT",
+        "ENGINE_PATH",
         "EXITS",
         "Effect",
         "FRAME_STEP_MS",
@@ -380,6 +381,8 @@ def page_module(data: dict[str, Any]) -> str:
         f"TIME_MARK = {data['timeMark']!r}\n"
         '"""What joins a cue\'s wire id, or a spoken word, to its second in the query a recorded page reads."""\n',
         f'LIST_SEPARATOR = {data["listSeparator"]!r}\n"""What separates two entries of that query."""\n',
+        f"ENGINE_PATH = {data['enginePath']!r}\n"
+        '"""The path the engine answers itself under every origin, which holds the runtime and KaTeX."""\n',
         f"PREVIEW_CUE_TIMES = {data['previewCueTimes']!r}\n"
         '"""The path a previewed page asks its origin for, which answers with the last run\'s cue times."""\n',
         f"MOTION_SCALE_PROPERTY = {data['motionScaleProperty']!r}\n"

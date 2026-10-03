@@ -8,7 +8,8 @@ moments, and each of them is the local name of a cue. Everything else is either 
 which is a closed word the contract owns, or what a moment means, which is a sentence for the
 transcript. Seconds are never written on the page, because `cues.json` owns them.
 
-1. `decktalk-runtime.js` implements the contract, and a page that would rather
+1. `decktalk-runtime.js` implements the contract. DeckTalk serves it at
+   `/__decktalk/decktalk-runtime.js` on the origin it opens the page at, and a page that would rather
    [follow it by hand](/guides/page-by-hand) can.
 2. A scene is markup: a `[data-scene]` wrapper holding one `<template data-slide>` per slide.
    Attributes do the work, so a page needs no JavaScript of its own.

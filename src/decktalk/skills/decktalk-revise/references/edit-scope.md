@@ -26,8 +26,8 @@ When a rebuild is limited to some sections, name every section on this list and 
 touched.
 
 1. Every section whose table names the scene you changed, because a recording is kept only while that
-   section's own scene markup is unchanged. An edit outside every scene, to the head, a stylesheet, a
-   script or the runtime file, reaches every scene, so it stales every section of that page. A
+   section's own scene markup is unchanged. An edit outside every scene, to the head, a stylesheet or
+   a script of the page's own, reaches every scene, so it stales every section of that page. A
    section left out is reported as inconsistent and the film keeps the older recording.
 2. The section after any section you changed, when its page reads the previous section's spoken words
    or opens on the previous section's last frame.

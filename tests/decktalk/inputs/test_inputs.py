@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import CueTimes, Words
+from decktalk.artifacts import PLACEHOLDER_PREFIX, CueTimes, Words
 from decktalk.artifacts.words import words_file
-from decktalk.errors import ErrorCode, InputError
+from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import ClipSection
 from decktalk.inputs.env import reading_dotenv
@@ -335,6 +335,22 @@ def test_a_take_words_are_shifted_by_their_own_section_lead(tmp_path):
     assert inputs.words(1, "abc") == (Word(word="hello", start=0.5, end=0.9),)
     assert inputs.words(0, "abc") == (Word(word="hello", start=0.0, end=0.4),)  # a clip has no lead
     assert inputs.words(1, "nothing") == ()
+
+
+@pytest.mark.parametrize(
+    ("digest", "refusal", "code"),
+    [("abc", InputError, ErrorCode.INPUT), (f"{PLACEHOLDER_PREFIX}abc", NotBuiltError, ErrorCode.NOT_BUILT)],
+)
+def test_a_take_words_that_do_not_read_are_paid_exactly_when_the_take_is(tmp_path, digest, refusal, code):
+    """Only voicing a take again gives its words back, and nobody paid for a placeholder's."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    path = inputs.workspace.words_path(digest)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(refusal) as refused:
+        inputs.words(1, digest)
+    assert refused.value.code is code
+    assert path.read_text(encoding="utf-8") == "{not json"
 
 
 def test_a_path_is_published_relative_to_the_project(tmp_path):

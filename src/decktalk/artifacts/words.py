@@ -6,9 +6,22 @@ Every cut DeckTalk makes is made on a word, so this is the smallest artifact and
 other reads: a cue resolves against it, the captions are built from it, and the clicks of a
 placeholder take sit at each `start`. The rows are the same `Word` a result carries, so the file a
 stage writes and the JSON a caller reads are one shape.
+
+`Words` is the shape every words file shares, and each file is a kind named by who timed the words,
+because that decides what a broken file costs:
+
+    ProviderWords   the speech provider sent them back with its take, so only voicing it again gives them back
+    EstimatedWords  DeckTalk estimated them from the script's pace, and estimates them again for nothing
+    ClipWords       `decktalk clip` cut them from a take for one clip, and cuts them again for nothing
+
+Only `ProviderWords` is a paid record, refused rather than built again when it does not read. Words
+DeckTalk can time again for nothing, such as an aligner reading a take's audio, are a cache of their
+own kind, kept under a key of their own and never at a take's `<hash>.words.json`.
 """
 
 from __future__ import annotations
+
+from typing import ClassVar
 
 from pydantic import Field
 
@@ -20,7 +33,7 @@ WORDS_SUFFIX = ".words.json"
 
 
 class Words(Stored):
-    """Every word of one take, in the order the voice speaks them."""
+    """Every word of one take or one clip, in the order they are spoken."""
 
     words: tuple[Word, ...] = Field((), description="Every spoken word with its span, in speaking order.")
 
@@ -34,9 +47,23 @@ class Words(Stored):
         return tuple(Word(word=w.word, start=round(w.start + by, 3), end=round(w.end + by, 3)) for w in self.words)
 
 
+class ProviderWords(Words):
+    """Every word the speech provider sent back with a take it spoke, which only voicing the take again gives back."""
+
+    paid: ClassVar[bool] = True
+
+
+class EstimatedWords(Words):
+    """Every word of a placeholder take, at the times DeckTalk estimated from the script's pace."""
+
+
+class ClipWords(Words):
+    """Every word inside one clip, on the clip's own clock, cut from the words of the take it plays."""
+
+
 def words_file(digest: str) -> str:
     """The name of the words file of the take with this digest."""
     return f"{digest}{WORDS_SUFFIX}"
 
 
-__all__ = ["WORDS_SUFFIX", "Words", "words_file"]
+__all__ = ["WORDS_SUFFIX", "ClipWords", "EstimatedWords", "ProviderWords", "Words", "words_file"]

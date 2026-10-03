@@ -33,8 +33,8 @@ machine, so that one is where the floor bites.
 
 Seven packages come with DeckTalk: blake3, filelock, Playwright, Pydantic, Rich, tomlkit and Typer. Playwright ships
 its own browser driver, so Node is not needed. KaTeX is not a dependency at all: the pinned release
-ships inside the wheel, and `decktalk init` copies it into `deck/katex/`, so a project typesets its
-equations with no network and no content delivery network.
+ships inside the wheel, and DeckTalk serves it at `/__decktalk/katex/` on the page's own origin, so a
+project typesets its equations with no network and no content delivery network.
 
 ## What DeckTalk downloads
 

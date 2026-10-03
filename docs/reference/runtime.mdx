@@ -6,13 +6,33 @@ description: The TypeScript runtime a deck page loads, the contract it is genera
 A DeckTalk deck is an ordinary web page that includes one script.
 
 ```html deck/index.html
-<script src="decktalk-runtime.js"></script>
+<script src="/__decktalk/decktalk-runtime.js"></script>
 ```
 
 `decktalk-runtime.js` is that script. It reads the markup, mounts the slides of a scene, and makes
-each element arrive on the second its cue was given. `decktalk init` writes a copy of it into the
-project's `deck/` directory, so a project carries the runtime it was made with and a build needs no
-network to draw a page.
+each element arrive on the second its cue was given.
+
+## Where a page gets it
+
+DeckTalk opens every page at a local origin, and the engine answers every path under `/__decktalk/`
+on that origin itself, from the installed package. Two things live there:
+
+| Path | What it is |
+|---|---|
+| `/__decktalk/decktalk-runtime.js` | The runtime of the engine that opened the page. |
+| `/__decktalk/katex/katex.min.css` and `/__decktalk/katex/katex.min.js` | The pinned KaTeX release, with the fonts its stylesheet loads under `/__decktalk/katex/fonts/`. |
+
+`record`, `check`, `storyboard`, the poster `assemble` draws and `decktalk serve` all open the page
+at that origin, so every one of them plays the runtime of the engine that is running, and a project
+holds no copy that could fall behind it. A build needs no network to draw a page.
+
+The path is a closed list. A name under `/__decktalk/` that is not one of those files is refused, the
+probe a command injects is never on it, and no file of the project is ever served under it, so
+nothing an author writes can shadow the engine's files.
+
+A page opened from a `file://` URL resolves `/__decktalk/` against the root of the disk and finds
+nothing there, so it draws no slide. [Open it with `decktalk serve`](/guides/page-by-hand#open-the-page-yourself)
+instead.
 
 The runtime is written in TypeScript under `src/decktalk/runtime/src/` and compiled by esbuild into
 one bundle. The page contract it is written against lives in exactly one file, and Python reads that
@@ -80,7 +100,7 @@ Four artifacts are committed and held to their source by `--check`.
 
 | Artifact | What it is |
 |---|---|
-| `src/decktalk/runtime/decktalk-runtime.js` | The bundle a deck loads. |
+| `src/decktalk/runtime/decktalk-runtime.js` | The bundle a deck loads, which the origin serves at `/__decktalk/decktalk-runtime.js`. |
 | `src/decktalk/runtime/decktalk-probe.js` | The bundle a command injects into every page it opens. |
 | `src/decktalk/runtime/contract.json` | The intermediate, committed so everything after it is pure Python. |
 | `src/decktalk/page.py` | The vocabulary the library and the command line read. |

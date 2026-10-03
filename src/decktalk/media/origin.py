@@ -15,8 +15,15 @@ is the change this release makes: the script, the cues, the build directory and 
 the speech key are beside the deck and are not part of it, and a page that could fetch them could
 put them on screen or send them to whoever it liked.
 
+The origin is also where a page gets the runtime and KaTeX. Every path under `ENGINE_PATH` is the
+engine's own: the runtime and the pinned KaTeX release are answered from the installed package, by
+looking the name up in the closed list `engine_files` declares, and every other name there is
+refused. No project file is ever served under that path, so nothing an author writes can shadow the
+engine's files.
+
 The router also keeps the project-relative path of every file it served, which is what lets `record`
-key a section on the assets its page actually loaded rather than on the page file alone.
+key a section on the assets its page actually loaded rather than on the page file alone. The
+engine's files are not among them, because the engine's version is already in every key.
 
 A request for another origin is where the two page policies part. A trusted page is the author's own
 work, so its request goes to the network the way it would in the author's browser and the recording
@@ -48,7 +55,8 @@ from urllib.parse import quote, unquote, urlencode, urlsplit
 from playwright.sync_api import BrowserContext, Page, Request, Route
 
 from ..errors import ToolError
-from ..page import Q
+from ..page import ENGINE_PATH, Q
+from ..toolchain.assets import engine_files
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +68,9 @@ OUTSIDE = "that path is outside the project directory"
 HIDDEN = "a name beginning with a dot is never served"
 UNUSABLE = "that path is not a usable file name"
 UNDECLARED = "that path is not in the deck directory and the project declares no such asset"
+RESERVED = f"that path is the engine's own, and the engine serves only its runtime and KaTeX under {ENGINE_PATH}"
+ENGINE_DIR = ENGINE_PATH.strip("/")
+"""The first name of every path the engine answers itself, which no project file is ever served under."""
 TEXT = "text/plain; charset=utf-8"
 
 QUERY = re.compile(r"\?[^\s\"]*")
@@ -148,6 +159,7 @@ class Target:
 
     path: Path | None = None
     refused: str = ""
+    engine: bool = False  # the file is the engine's own, from the installed package, and not the project's
 
     @property
     def mine(self) -> bool:
@@ -209,14 +221,19 @@ class Allowed:
     def target(self, rel: str) -> Target:
         """The file a project-relative request path is answered from, or the reason it is refused.
 
-        The declaration is answered over the names the request asks for, so a spelling nobody
-        declared is refused on a folding filesystem exactly as it is on a case-sensitive one. The
-        other three refusals are about the file that is opened rather than about the name that was
-        asked for, so the path is resolved and a directory's `index.html` is appended before they run.
+        A path under the engine's own is answered from the package before the project is consulted,
+        so it does not depend on what the project declared. The declaration is answered over the
+        names the request asks for, so a spelling nobody declared is refused on a folding filesystem
+        exactly as it is on a case-sensitive one. The other three refusals are about the file that is opened rather than
+        about the name that was asked for, so the path is resolved and a directory's `index.html` is
+        appended before they run.
         """
         asked = project_path(rel)
         if asked is None:
             return Target(refused=OUTSIDE)
+        names = path_names(asked)
+        if names[:1] == [ENGINE_DIR]:
+            return engine_target(asked)
         try:
             named = (self.root / asked).resolve() if asked else self.root
             directory = named.is_dir()
@@ -234,6 +251,16 @@ class Allowed:
         if not self.declares(f"{asked}/{INDEX}".lstrip("/") if directory else asked):
             return Target(refused=UNDECLARED)
         return Target(path=opened)
+
+
+def engine_target(asked: str) -> Target:
+    """The packaged file one folded request path names under the engine's path, or the refusal.
+
+    The name is looked up in the closed list the package declares and never joined onto a directory,
+    so the only files this can answer with are the runtime and the KaTeX release.
+    """
+    found = engine_files().get(asked.removeprefix(f"{ENGINE_DIR}/"))
+    return Target(path=found, engine=True) if found is not None else Target(refused=RESERVED)
 
 
 def local_target(allowed: Allowed, url: str) -> Target:
@@ -337,7 +364,8 @@ def route_pages(
                 body = f"no such file: {wanted.path.name}"
                 route.fulfill(status=HTTPStatus.NOT_FOUND, content_type=TEXT, body=body)
                 return
-            assets.record(wanted.path, found=True)
+            if not wanted.engine:
+                assets.record(wanted.path, found=True)
             route.fulfill(status=HTTPStatus.OK, content_type=content_type(wanted.path), body=wanted.path.read_bytes())
         except Exception as exc:  # the page must learn its request failed rather than wait for it
             # The query is left out, because it is where a page puts what it means to send somewhere.
@@ -402,16 +430,22 @@ class _Handler(SimpleHTTPRequestHandler):
         asked = unquote(urlsplit(self.path).path)
         body = self.documents.get(asked)
         if body is not None:
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", EXTRA_TYPES[".json"])
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            return io.BytesIO(body)
+            return self._answer(body, EXTRA_TYPES[".json"])
         wanted = self.allowed.target(asked.lstrip("/"))
         if wanted.path is None:
             self.send_error(HTTPStatus.FORBIDDEN, wanted.refused or OUTSIDE)
             return None
+        if wanted.engine:
+            return self._answer(wanted.path.read_bytes(), content_type(wanted.path))
         return super().send_head()
+
+    def _answer(self, body: bytes, kind: str) -> io.BytesIO:
+        """Send the headers of a body held in memory, and hand the body back for the base class to copy."""
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        return io.BytesIO(body)
 
 
 def open_server(

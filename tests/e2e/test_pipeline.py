@@ -45,7 +45,7 @@ from decktalk.media import audio, ffmpeg, frames
 from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import Layer, SectionKind, SpendState, Substitute, Word
-from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
+from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing
 from support.commands import (
     FOUND_NOTHING,
     FOUND_SOMETHING,
@@ -313,7 +313,7 @@ def hold(path: Path) -> IO[str] | None:
 
 @pytest.fixture(scope="session")
 def built(pytestconfig: pytest.Config) -> Iterator[Project]:
-    """Copy the fixture, add the runtime and KaTeX, generate the media, and build it with no voice."""
+    """Copy the fixture, generate the media, and build it with no voice, with the runtime and KaTeX the engine's."""
     assert katex_missing() == [], "the packaged KaTeX copy is incomplete"
     OUT.mkdir(parents=True, exist_ok=True)
     lock = hold(OUT / "pipeline.lock")
@@ -326,8 +326,7 @@ def built(pytestconfig: pytest.Config) -> Iterator[Project]:
     shim.mkdir(parents=True)
     (shim / "sitecustomize.py").write_text(BLOCK_THE_NETWORK, encoding="utf-8")
     shutil.copytree(FIXTURE, root)
-    shutil.copyfile(runtime_path(), root / "deck" / RUNTIME_FILE)
-    vendor_katex(root / "deck")
+    assert not list(root.rglob(RUNTIME_FILE)) and not list(root.rglob("katex.min.js")), "the fixture holds a copy"
     generate_media(root)
 
     project = Project(root=root, shim=shim, attempts=shim / "attempts.txt", config=pytestconfig)
@@ -425,10 +424,12 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
     assert all(log.checks is not None for log in logs.values())
     assert all(log.start is not None and not log.start.guessed for log in logs.values())
     assert all(log.recording.url.startswith("http://") for log in logs.values())
-    # Every project file the page loaded is named, which is what the next run keys its skip on.
+    # Every project file the page loaded is named, which is what the next run keys its skip on. The
+    # runtime is the engine's and no file of the project, so it is not one of them, and the page ran it.
     loaded = set(logs["01"].recording.assets)
     assert "deck/index.html" in loaded
-    assert f"deck/{RUNTIME_FILE}" in loaded
+    assert not any(RUNTIME_FILE in name for name in loaded), loaded
+    assert all(log.recording.page_errors == () and log.recording.report.version for log in logs.values())
 
 
 def test_no_page_loaded_anything_from_another_origin(built: Project) -> None:
@@ -706,11 +707,11 @@ def test_the_storyboard_narrows_to_one_slide(built: Project) -> None:
     assert {panel["slide"] for panel in doc["panels"]} == {"3.1"}
 
 
-def test_the_equation_typesets_from_the_deck_and_not_from_a_cdn(built: Project) -> None:
-    """KaTeX is vendored into deck/katex, so section 4 records with no finding and loads no host."""
+def test_the_equation_typesets_from_the_engine_and_not_from_a_cdn(built: Project) -> None:
+    """The engine serves KaTeX on the page's own origin, so section 4 records with no finding and loads no host."""
     log = built.recording_log("04")
     assert list(log.findings) == [] and list(log.recording.external) == []
-    assert any(name.startswith("deck/katex/") for name in log.recording.assets), log.recording.assets
+    assert not any("katex" in name for name in log.recording.assets), log.recording.assets
 
 
 def test_the_take_index_and_the_cue_times_agree_with_what_was_built(built: Project) -> None:

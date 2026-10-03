@@ -29,7 +29,18 @@ from functools import cached_property
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words, content_digest, file_digest
+from decktalk.artifacts import (
+    CueTimes,
+    Cuts,
+    EstimatedWords,
+    ProviderWords,
+    RecordingLog,
+    Takes,
+    Words,
+    content_digest,
+    file_digest,
+    is_placeholder,
+)
 from decktalk.artifacts.stills import Stills, still_key
 from decktalk.errors import InputError
 from decktalk.files import current_text
@@ -296,13 +307,23 @@ class Inputs:
 
     def words(self, section: int, digest: str) -> tuple[Word, ...]:
         """One take's words in seconds after its section starts, which is after that section's lead."""
-        found = Words.read(self.workspace.words_path(digest))
+        found = self.take_words(digest)
         if found is None:
             return ()
         lead = self.lead_seconds(section)
         return found.shifted(lead) if lead else found.words
 
     # ---- the artifacts under build/ ---------------------------------------------------------
+
+    def take_words(self, digest: str) -> Words | None:
+        """One take's words on the take's own clock, or None when it has none yet.
+
+        Every reader of a take's words comes here, because the digest says who timed them: the speech
+        provider sent back the words of a voiced take, which are a paid record refused rather than built
+        again when they do not read, and DeckTalk estimated a placeholder's, which are a cache.
+        """
+        model = EstimatedWords if is_placeholder(digest) else ProviderWords
+        return model.read(self.workspace.words_path(digest))
 
     def takes(self) -> Takes | None:
         return Takes.read(self.workspace.takes_path)

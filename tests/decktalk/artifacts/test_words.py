@@ -31,3 +31,14 @@ def test_shifting_moves_every_word_and_keeps_its_length() -> None:
 def test_words_round_trip_through_their_own_file(tmp_path: Path) -> None:
     path = SPOKEN.write(tmp_path / words_file("abc123"))
     assert Words.read(path) == SPOKEN
+
+
+def test_every_words_file_is_named_by_who_timed_it_and_only_a_provider_s_words_are_paid() -> None:
+    """Who timed the words decides what a broken file costs, so each timer is its own kind.
+
+    A provider's words come back only by voicing the take again. DeckTalk estimates a placeholder's again
+    for nothing, and a clip's are cut again from its take. A new timer, such as an aligner, adds its
+    row here and says which it is.
+    """
+    timers = {kind.__name__: kind.paid for kind in Words.__subclasses__()}
+    assert timers == {"ProviderWords": True, "EstimatedWords": False, "ClipWords": False}

@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import WORDS_SUFFIX, Take, Takes, Words
+from decktalk.artifacts import WORDS_SUFFIX, ClipWords, Take, Takes
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
 from decktalk.inputs import Inputs, PageSection
@@ -99,7 +99,7 @@ def clip(
             level=Level.WARNING,
         )
     run.wrote(film)
-    run.wrote(Words(words=inside).write(words_file))
+    run.wrote(ClipWords(words=inside).write(words_file))
     return run.result(
         ClipResult,
         section=section,

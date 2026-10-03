@@ -155,7 +155,7 @@ sizes and the cache paths.
     | `script.md` | The narration. Each `## N. Title` heading opens section N. |
     | `decktalk.toml` | The project file: one `[[section]]` per script section, plus the voice, the mix and the soundscape. |
     | `cues.json` | One row per moment on a page, naming the spoken phrase it lands on. |
-    | `deck/index.html` | The slides, with `deck/decktalk-runtime.js` and `deck/katex/` beside them. |
+    | `deck/index.html` | The slides. They load the runtime and KaTeX from `/__decktalk/`, which DeckTalk serves, so the project holds no copy of either. |
     | `.env.example` | The two ElevenLabs variables a voiced run reads, as placeholders. |
     | `AGENTS.md` | The rules an agent working in this project follows, written when the directory has none. |
     | `.agents/skills/` | Six packaged skills, with `.claude/skills` beside them. |

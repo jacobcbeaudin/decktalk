@@ -193,6 +193,10 @@ Beside every take sits its words file, under the same digest. This is the smalle
 one every other reads: a cue resolves against it, the captions are built from it, and the clicks of
 a placeholder take sit at each `start`.
 
+The words the speech provider sends back with a voiced take are a paid record, because only voicing the take
+again gives them back. One that does not read is refused with a sentence and left where it is, never
+built again. Words DeckTalk estimated for a placeholder take are a cache like the rest of `build/`.
+
 ```json build/narrate/9f2c1ab7d4e60518.words.json
 {
   "words": [
@@ -255,7 +259,7 @@ log as soon as that section is done and a measurement always belongs to the reco
   "input_hash": "4b1d90a7c3e2f085",
   "recording": {
     "url": "http://project.localhost/deck/index.html?scene=1&cues=1.1%3Atitle%400.5&t0=signal",
-    "assets": ["deck/index.html", "deck/decktalk-runtime.js"],
+    "assets": ["deck/index.html"],
     "external": [],
     "missing": [],
     "requested_seconds": 17.67,

@@ -15,7 +15,6 @@ from decktalk.findings import (
     Finding,
     Location,
     RaisedBy,
-    RuntimeFix,
     SettingFix,
     judge,
 )
@@ -61,7 +60,6 @@ PYTHON_PAGE_CODES = (
     "PAGE_BLACK",
     "PAGE_TRUNCATED",
     "PAGE_CDN_ASSET",
-    "PAGE_RUNTIME_STALE",
 )
 PYTHON_OTHER_CODES = (
     "CUE_MISSING",
@@ -171,14 +169,13 @@ def test_an_edit_names_exactly_one_place() -> None:
         Edit(file="cues.json", pointer="/a", line=3, new="x")
 
 
-def test_the_four_fixes_are_told_apart_by_their_kind() -> None:
+def test_the_three_fixes_are_told_apart_by_their_kind() -> None:
     kinds = {
         EditFix(title="t", applicability=Applicability.SAFE, edits=(Edit(file="a.json", pointer="/a", new="x"),)).kind,
         SettingFix(title="t", applicability=Applicability.SAFE, key="verify.cue_offset_max_ms", value="250").kind,
         CommandFix(title="t", applicability=Applicability.UNSAFE, command=("decktalk", "install")).kind,
-        RuntimeFix(title="t", applicability=Applicability.SAFE, file="deck/decktalk-runtime.js").kind,
     }
-    assert kinds == {"edit", "setting", "command", "runtime"}
+    assert kinds == {"edit", "setting", "command"}
 
 
 def test_a_display_fix_is_never_applied_and_says_so_in_its_own_word() -> None:

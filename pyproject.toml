@@ -88,9 +88,6 @@ dev = [
     # A property test states a rule over every input and draws the examples, where a list of cases
     # names the ones its author thought of. `tests/conftest.py` fixes the seed, so every run agrees.
     "hypothesis>=6.168",
-    # `scripts/build_assets.py` traces the wordmark's letters out of a WOFF2 face, and fontTools reads
-    # WOFF2 only with the Brotli decoder its `woff` extra brings.
-    "fonttools[woff]>=4.50",
     # What a renderer writes is held as the literal text in the test. CI only ever compares: the `CI`
     # variable turns the plugin's writing off, and under `-n auto` asking it to write is refused.
     # `pytest -p no:xdist --inline-snapshot=create,fix <file>` is how a person writes one.

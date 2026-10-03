@@ -337,12 +337,6 @@ export const CODES = {
     certainty: "certain",
     raisedBy: "python",
   },
-  PAGE_RUNTIME_STALE: {
-    message:
-      "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
-    certainty: "certain",
-    raisedBy: "python",
-  },
 } as const satisfies Record<string, CodeRow>;
 
 export type Code = keyof typeof CODES;
@@ -781,12 +775,21 @@ export const TIME_MARK = "@";
 export const LIST_SEPARATOR = ",";
 
 /**
+ * The path under every origin DeckTalk opens a page at that the engine answers itself.
+ *
+ * The runtime is `/__decktalk/decktalk-runtime.js` and the pinned KaTeX release is under
+ * `/__decktalk/katex/`, both read from the installed engine, so a project holds no copy of either.
+ * The origin never serves a project file under this path, so nothing an author writes can shadow it.
+ */
+export const ENGINE_PATH = "/__decktalk/";
+
+/**
  * The path a previewed page asks its own origin for, which answers with the cue times the last run resolved.
  *
  * A recorded page is handed its seconds in its URL, and an author previewing in a browser is not, so
  * the origin answers this one alias from the build directory and the page plays the film's timing.
  */
-export const PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json";
+export const PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
 
 /** The custom property on the root element that carries `motion.scale` into a page, from the recorder or the author. */
 export const MOTION_SCALE_PROPERTY = "--dt-motion-scale";
@@ -794,9 +797,8 @@ export const MOTION_SCALE_PROPERTY = "--dt-motion-scale";
 /**
  * The name the runtime bundle's first line gives, followed by the engine version that shipped it.
  *
- * `decktalk init` copies the runtime into a project, and a copy an older engine wrote keeps playing
- * with the older contract. The line is a legal comment every minifier keeps, so a reader holding the
- * file can tell which engine wrote it without opening a browser.
+ * The line is a legal comment every minifier keeps, so a reader holding the file the origin served
+ * can tell which engine wrote it without opening a browser.
  */
 export const RUNTIME_MARK = "decktalk-runtime";
 
@@ -904,6 +906,7 @@ export const CONTRACT = {
   wireMark: WIRE_MARK,
   timeMark: TIME_MARK,
   listSeparator: LIST_SEPARATOR,
+  enginePath: ENGINE_PATH,
   previewCueTimes: PREVIEW_CUE_TIMES,
   motionScaleProperty: MOTION_SCALE_PROPERTY,
   runtimeMark: RUNTIME_MARK,

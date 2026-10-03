@@ -239,12 +239,6 @@
       certainty: "certain",
       raisedBy: "python",
     },
-    PAGE_RUNTIME_STALE: {
-      message:
-        "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
   };
   var READ_FROM_THE_PAGE = null;
   var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
@@ -548,7 +542,8 @@
   var WIRE_MARK = ":";
   var TIME_MARK = "@";
   var LIST_SEPARATOR = ",";
-  var PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json";
+  var ENGINE_PATH = "/__decktalk/";
+  var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
   var MOTION_SCALE_PROPERTY = "--dt-motion-scale";
   function wireId(slide, local) {
     return `${slide}${WIRE_MARK}${local}`;
@@ -2014,7 +2009,7 @@
    *
    * Include it and declare a scene in markup. Nothing here needs JavaScript:
    *
-   *   <script src="decktalk-runtime.js"><\/script>
+   *   <script src="/__decktalk/decktalk-runtime.js"><\/script>
    *   <div data-scene="pitch" data-name="How often">
    *     <template data-slide="pitch.listing">
    *       <h1>Value still listed</h1>

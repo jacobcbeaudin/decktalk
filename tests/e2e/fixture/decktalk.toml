@@ -1,6 +1,7 @@
 #:schema https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1/decktalk.json
-# The pipeline fixture. tests/e2e/test_pipeline.py copies it to tests/out/e2e/pipeline, adds the runtime and
-# KaTeX, generates the clip and the beds with ffmpeg, and builds it without voice in about twenty seconds of video.
+# The pipeline fixture. tests/e2e/test_pipeline.py copies it to tests/out/e2e/pipeline, generates the clip and
+# the beds with ffmpeg, and builds it without voice in about twenty seconds of video. The engine serves the
+# runtime and KaTeX, so the fixture holds neither.
 # Every page is still, and every reveal is a solid block that snaps in on its frame, so a hosted runner
 # has almost nothing to draw while a cue lands. The five sections cover a shared chapter, a seam, a
 # B-roll clip with dips, a held page with an ambience bed and an equation, and a missing optional clip.

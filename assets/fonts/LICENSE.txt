@@ -1,18 +1,19 @@
+The graphics under assets/, docs/images/, docs/logo/ and docs/favicon.svg carry subsets of the faces below, embedded as base64 WOFF2 or traced into outline paths. The fonts themselves and the generator that embeds them live with the site's sources, not in this repository.
+
 Instrument Sans, Copyright 2022 The Instrument Sans Project Authors.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
-InstrumentSans.woff2 is the variable font (weight axis 400-700) cut to the printable ASCII range plus a few punctuation marks with fontTools' subsetter; scripts/build_assets.py embeds it in the diagrams.
+The variable font (weight axis 400-700), cut to the printable ASCII range plus a few punctuation marks, is embedded in the diagrams.
 
 IBM Plex Mono, Copyright 2017 IBM Corp.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
-PlexMono.woff2 is the Medium (500) face cut the same way; scripts/build_assets.py embeds it in the diagrams.
+The Medium (500) face, cut the same way, is embedded in the diagrams.
 
 Instrument Serif, Copyright 2022 The Instrument Serif Project Authors.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
-InstrumentSerif.woff2 is the regular face cut the same way. scripts/build_assets.py embeds it in the
-two diagrams that carry a headline, and the homepage serves the same cut from its own repository.
+The regular face, cut the same way, is embedded in the pipeline diagrams and the social card.
 
 Bricolage Grotesque, Copyright 2023 The Bricolage Grotesque Project Authors.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org
-BricolageGrotesque.woff2 is a static instance (optical size 96, weight 500) cut the same way; scripts/build_assets.py traces the wordmark's letters from it, so it is never embedded as a face.
+A static instance (optical size 96, weight 500), cut the same way, is traced into the wordmark's letters and embedded in the social card.
 
 All four were fetched from Google Fonts as latin subsets and cut with fontTools' subsetter (pyftsubset).

@@ -44,11 +44,13 @@ MD_LINK = re.compile(r"(?<!\\)\[[^\]]*\]\(\s*(?P<target>[^)\s]+)")
 ATTR_LINK = re.compile(r"\b(?:href|src)\s*=\s*\"(?P<target>[^\"]+)\"")
 HEADING = re.compile(r"^#{1,6}\s+(?P<text>.+?)\s*#*\s*$", re.MULTILINE)
 EXTERNAL = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//)")
+PAGE_SUFFIXES = (".mdx", ".md")
+"""The files the docs host serves as pages, so a plain .md under docs/ is held to every rule an .mdx is."""
 
 
 @dataclass
 class Page:
-    """One .mdx file: the slug the site serves it at, its text, and the anchors it offers."""
+    """One page file: the slug the site serves it at, its text, and the anchors it offers."""
 
     slug: str
     path: Path
@@ -80,7 +82,7 @@ def prose(text: str) -> str:
 def read_pages() -> dict[str, Page]:
     """Every page under docs/, keyed by the slug the site serves it at."""
     pages: dict[str, Page] = {}
-    for path in sorted(DOCS.rglob("*.mdx")):
+    for path in sorted(p for p in DOCS.rglob("*") if p.suffix in PAGE_SUFFIXES):
         slug = path.relative_to(DOCS).with_suffix("").as_posix()
         text = path.read_text(encoding="utf-8")
         body = prose(text)
@@ -152,7 +154,7 @@ def navigation_problems(pages: dict[str, Page], listed: list[str]) -> list[str]:
         f"docs/docs.json: {slug} is a page and is in no navigation group" for slug in sorted(set(pages) - set(listed))
     ]
     found += [
-        f"docs/docs.json: navigation names {slug}, and docs/{slug}.mdx is not there"
+        f"docs/docs.json: navigation names {slug}, and there is no docs/{slug}.mdx or .md"
         for slug in listed
         if slug not in pages
     ]

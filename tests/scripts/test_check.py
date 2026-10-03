@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -45,11 +46,11 @@ def test_a_write_keeps_what_prepares_the_machine_in_its_place() -> None:
     group = check.BY_NAME["generated"]
     written = check.writer(group).steps
     assert written[: len(group.preparations)] == group.preparations
-    assert check.NPM_CI in group.preparations and check.INSTALL in group.preparations
+    assert check.NPM_CI in group.preparations
 
 
 def test_a_generator_that_needs_more_to_check_needs_the_same_to_write() -> None:
-    command = ("uv", "run", "--with", "fonttools", "python", "scripts/build_assets.py", "--check")
+    command = ("uv", "run", "--with", "jinja2", "python", "scripts/build_example.py", "--check")
     assert check.writing(command) == (*command[:-1], "--write")
 
 
@@ -80,6 +81,17 @@ def test_the_rehearsal_row_has_the_node_packages_and_the_history_it_reads() -> N
     assert "history" in rehearsal.tools
 
 
+@pytest.mark.parametrize(
+    "group", [check.BY_NAME["generated"], check.BY_NAME["rehearsal"]], ids=lambda group: group.name
+)
+def test_a_row_that_runs_the_generators_fetches_chromium_only_when_one_launches_it(group) -> None:
+    # Both rows run every generator, and the rehearsal through `--group generated` itself. Fetching a
+    # browser no generator launches costs every pull request the download, and leaving out one a
+    # generator launches fails the row on a fresh runner.
+    launches = any("playwright" in (check.ROOT / "scripts" / f"{g}.py").read_text() for g in check.GENERATORS)
+    assert ("chromium" in group.tools) == launches
+
+
 # ---- every need a row declares has something behind it ------------------------------------------
 
 
@@ -97,7 +109,8 @@ def test_a_preparation_fetches_only_what_the_tools_cache_keeps(monkeypatch: pyte
     """The row's own run installs the Node packages, so a preparation that did too installed them twice."""
     ran: list[tuple[str, ...]] = []
     monkeypatch.setattr(check, "run", lambda command, _env: ran.append(command) or True)
-    assert check.run_preparations((check.BY_NAME["generated"],)) == 0
+    both = replace(check.BY_NAME["generated"], tools=("npm", "chromium"))
+    assert check.run_preparations((both,)) == 0
     assert ran == [check.INSTALL]
 
 

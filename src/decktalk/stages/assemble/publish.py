@@ -20,7 +20,7 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 
-from decktalk.artifacts import Cut, Cuts, Takes, Words
+from decktalk.artifacts import ClipWords, Cut, Cuts, Takes, Words
 from decktalk.captions import (
     CaptionCue,
     Chapter,
@@ -97,7 +97,7 @@ def clip_captions(inputs: Inputs, run: Run, rows: list[Rendered]) -> list[Captio
         if not isinstance(section, ClipSection) or not section.words or row.audio is None:
             continue
         path = inputs.path(section.words)
-        found = Words.read(path)
+        found = ClipWords.read(path)
         if found is None:
             run.note(
                 f"{section.words} is not there, so section {section.number} plays with no captions.",
@@ -278,7 +278,7 @@ def clip_speech(inputs: Inputs, section: int) -> str:
     )
     if found is None or not found.words:
         return ""
-    words = Words.read(inputs.path(found.words))
+    words = ClipWords.read(inputs.path(found.words))
     return "" if words is None else " ".join(word.word for word in words.words)
 
 

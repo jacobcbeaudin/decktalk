@@ -339,6 +339,8 @@
   var MOMENTS = Object.keys(ATTRS).filter((name) => ATTRS[name].kind === "moment");
   var MOMENT_SELECTOR = MOMENTS.map((name) => `[${name}]`).join(",");
   var WIRE_MARK = ":";
+  var ENGINE_PATH = "/__decktalk/";
+  var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
   function wireId(slide, local) {
     return `${slide}${WIRE_MARK}${local}`;
   }

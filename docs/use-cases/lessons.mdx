@@ -30,7 +30,7 @@ voice reaches the word for it, so attention has nowhere else to go.
 | `cues.json` | The phrase each part of the diagram waits for. |
 | The deck page | The diagram, the equations and the chapter cards. |
 
-KaTeX ships inside the wheel and `decktalk init` copies it into `deck/katex/`, so an equation needs
+KaTeX ships inside the wheel and DeckTalk serves it on the page's own origin, so an equation needs
 no download and no network origin. A diagram is plain HTML and CSS with a moment attribute on each
 part that appears, and `data-describe` gives each of those parts one subject that the transcript
 prints and the runtime gives a verb to. An element that changes the picture and describes nothing is

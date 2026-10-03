@@ -22,7 +22,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from decktalk.artifacts import Take, Takes, Words, is_placeholder, words_file
+from decktalk.artifacts import EstimatedWords, ProviderWords, Take, Takes, Words, is_placeholder, words_file
 from decktalk.events import TakeCharged
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import Segment
@@ -94,7 +94,7 @@ def estimated_words(segment: Segment, duration: float) -> list[Word]:
 def take_row(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voiced: bool) -> Take:
     """The take index row for one section, placed, with the fields every kind of take shares."""
     workspace = inputs.workspace
-    written = Words.read(workspace.words_path(digest))
+    written = inputs.take_words(digest)
     row = Take(
         section=segment.index,
         key=segment.key,
@@ -127,7 +127,7 @@ def write_placeholder_take(inputs: Inputs, segment: Segment, chapter: str, diges
         bitrate=cfg.mp3_bitrate,
     )
     written = home / words_file(digest)
-    Words(words=tuple(words)).write(written)
+    EstimatedWords(words=tuple(words)).write(written)
     return take_row(inputs, segment, chapter, digest, voiced=False), [out, written]
 
 
@@ -163,7 +163,7 @@ def write_voiced_take(
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(spoken)
     written = home / words_file(digest)
-    Words(words=tuple(words)).write(written)
+    ProviderWords(words=tuple(words)).write(written)
     return take_row(inputs, segment, chapter, digest, voiced=True), [out, written]
 
 

@@ -1,4 +1,7 @@
-# Providers, local voices and forced alignment
+---
+title: Providers, local voices and forced alignment
+description: The closed set of voices, what each one declares, and where word times come from.
+---
 
 ## Decision
 
@@ -202,4 +205,4 @@ layering test holds, and lets a test build one from a few numbers and a source o
 A model that has to run in DeckTalk's own process, with no way to serve it on loopback, would reopen
 how local voices load. A vendor whose only timing path is a websocket would add a transport to
 `http.py`. A source of phoneme or character times that cues should name directly would widen what a
-word is, which [the timing note](timing-from-the-spoken-words.md) covers.
+word is, which [the timing note](/decisions/timing-from-the-spoken-words) covers.

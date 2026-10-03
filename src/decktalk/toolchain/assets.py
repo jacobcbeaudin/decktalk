@@ -8,41 +8,27 @@
     decktalk/template/AGENTS.md           written into a project that has none
     decktalk/skills/                      the six skills a project keeps in .agents/skills/
 
-`decktalk init` copies the runtime and KaTeX beside a project's pages, so a project renders
-equations with no network and no CDN tag. The probe is never copied, because a command injects it
-into the page it opens. `scaffold/` decides what a project is made of, and this module only says
-where each packaged thing lives.
+The origin every page is opened at serves the runtime and KaTeX from here, so a project holds no
+copy of either, renders equations with no network and no CDN tag, and always plays the contract of
+the engine that opens it. `engine_files` is the closed list of what it serves. The probe is never
+on that list, because a command injects it into the page it opens. `scaffold/` decides what a
+project is made of, and this module only says where each packaged thing lives.
 """
 
 from __future__ import annotations
 
 import re
-import shutil
+from collections.abc import Mapping
+from functools import cache
 from importlib import resources
 from pathlib import Path
 
 RUNTIME_FILE = "decktalk-runtime.js"
 PROBE_FILE = "decktalk-probe.js"
 
-SHIPPED_RUNTIMES = (
-    "98519ba8be6e4560790322fc526aa6167098676ce0bfa9de11145d3b05faca22",  # v0.1.0
-    "9ea4d183d3ee57a718b2c1238af72e8ddba855abb7143a5f8fb621c7a63b3458",  # v0.2.0 and v0.2.1
-    "01e901c20434acbe0db729532a4ce57334979c8a9392f73af0e93c708779ce43",  # v0.3.0
-    "095fd5df5efba829eb8e44d4bbdc3c79b1ef590c9bc2773897b2ffba55ffe4fc",  # v0.4.0
-    "962e1d85c71590c22e22f0fd4b4012a3355fbf56089939029331d802e737c034",  # v0.4.1
-    "8e56d23fcd755174405f7effbb331b73d3968e824c97041aed19da22673a5602",  # v0.5.0-rc1
-    "9c5a49e0dfe6fe8a176809606459417f44c1124218b2b946563cba753e300f7a",  # v0.5.0-rc2
-    "f362f904f6dfa8bf06bf2e5063f37dcb1dcd4299c0014b5cf7b6b2c0adc5034a",  # v0.5.0
-)
-"""The sha256 of the runtime each release tag shipped, which is how a copy nobody edited is told apart.
-
-A copy with one of these digests is an engine's own bytes and holds none of the author's work, so
-replacing it is safe. Each release adds its own digest once it is tagged.
-"""
-
 # KaTeX typesets the [data-tex] elements. The pinned release ships inside the wheel under
-# decktalk/katex with its licence, and `decktalk init` copies it into deck/katex/, so a project
-# renders equations with no network and no CDN tag. Every packaged page loads it from there.
+# decktalk/katex with its licence, and the origin serves it beside the runtime, so a project renders
+# equations with no network and no CDN tag. Every packaged page loads it from there.
 KATEX_VERSION = "0.18.7"
 KATEX_DIR = "katex"
 KATEX_FILES = ("katex.min.js", "katex.min.css", "LICENSE")
@@ -86,11 +72,15 @@ def katex_missing(root: Path | None = None) -> list[str]:
     return missing
 
 
-def vendor_katex(deck_dir: Path) -> Path:
-    """Copy the packaged KaTeX into deck/katex/, replacing whatever was there. Returns that directory."""
-    src, dst = katex_dir(), deck_dir / KATEX_DIR
-    shutil.rmtree(dst, ignore_errors=True)
-    # The packaged folder holds exactly the release files, which tests/contract/test_wheel.py holds
-    # against what git tracks, so the whole tree is the copy. copyfile leaves the package's modes behind.
-    shutil.copytree(src, dst, copy_function=shutil.copyfile)
-    return dst
+@cache
+def engine_files() -> Mapping[str, Path]:
+    """Every file the origin answers from the engine, keyed by its name under the engine's path.
+
+    The list is closed and built from the package alone, so a request is answered by looking its
+    name up here and never by joining it onto a directory, and no spelling of a name reaches a file
+    that is not on it. The KaTeX fonts are the ones its stylesheet loads, which are the ones shipped.
+    """
+    katex = katex_dir()
+    css = (katex / "katex.min.css").read_text(encoding="utf-8")
+    names = (*KATEX_FILES, *katex_fonts(css))
+    return {RUNTIME_FILE: runtime_path(), **{f"{KATEX_DIR}/{name}": katex / name for name in names}}

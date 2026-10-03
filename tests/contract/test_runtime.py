@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -29,15 +28,17 @@ from decktalk.page import (
     ATTENTION,
     BACK_OPACITY,
     COUNTS,
+    ENGINE_PATH,
     ENTRANCES,
     EXITS,
     FRAME_STEP_MS,
     MEASURABLE_SPAN_SECONDS,
     ONSET_FIRST_FRAME_PERCENT,
+    PREVIEW_CUE_TIMES,
     SLIDE_ENTRANCES,
     WORD_STYLES,
 )
-from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
+from decktalk.toolchain.assets import RUNTIME_FILE, engine_files
 from support.browser_pages import KATEX, Tab, chromium_tab, opened, script_page, settled, write_page
 
 if TYPE_CHECKING:
@@ -116,7 +117,7 @@ def opacity_one_frame_in(page: Page, selector: str) -> float:
     )
 
 
-ALIAS = "/__decktalk/cue-times.json"
+ALIAS = PREVIEW_CUE_TIMES
 """The one router alias a preview asks its origin for, which the served directory does not hold."""
 
 
@@ -126,9 +127,15 @@ def origin(tmp_path: Path, httpserver: HTTPServer) -> Iterator[Any]:
     published: list[dict[str, Any]] = []
 
     def serve(request: Request) -> Response:
-        if request.path != ALIAS:
-            return send_from_directory(tmp_path, request.path.lstrip("/"), request.environ)
-        return Response(json.dumps(published[-1]), mimetype="application/json") if published else Response(status=404)
+        if request.path == ALIAS:
+            if not published:
+                return Response(status=404)
+            return Response(json.dumps(published[-1]), mimetype="application/json")
+        if request.path.startswith(ENGINE_PATH):
+            # The engine's own files, answered from the package as DeckTalk's origin answers them.
+            found = engine_files()[request.path.removeprefix(ENGINE_PATH)]
+            return send_from_directory(found.parent, found.name, request.environ)
+        return send_from_directory(tmp_path, request.path.lstrip("/"), request.environ)
 
     httpserver.expect_request(re.compile(".*")).respond_with_handler(serve)
 
@@ -137,13 +144,12 @@ def origin(tmp_path: Path, httpserver: HTTPServer) -> Iterator[Any]:
             published[:] = [] if document is None else [document]
 
         def write(self, name: str, body: str) -> str:
-            """A page beside its own copy of the runtime and the typesetter, as a project is served."""
-            (tmp_path / RUNTIME_FILE).write_bytes(runtime_path().read_bytes())
-            shutil.copytree(katex_dir(), tmp_path / "katex", dirs_exist_ok=True)
+            """A page that loads the runtime and the typesetter from the engine's path, as a project is served."""
             (tmp_path / name).write_text(
                 f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{name}</title>'
-                f'<link rel="stylesheet" href="katex/katex.min.css"><script src="katex/katex.min.js"></script>'
-                f'<script src="{RUNTIME_FILE}"></script></head><body>{body}</body></html>',
+                f'<link rel="stylesheet" href="{ENGINE_PATH}katex/katex.min.css">'
+                f'<script src="{ENGINE_PATH}katex/katex.min.js"></script>'
+                f'<script src="{ENGINE_PATH}{RUNTIME_FILE}"></script></head><body>{body}</body></html>',
                 encoding="utf-8",
             )
             return httpserver.url_for(name)

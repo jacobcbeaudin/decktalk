@@ -66,7 +66,6 @@ from decktalk.findings import (
     Edit,
     Finding,
     Location,
-    RuntimeFix,
     SettingFix,
     judge,
 )
@@ -891,8 +890,6 @@ def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, .
     if isinstance(fix, CommandFix):
         _run_command(run, fix, root=root)
         return ()
-    if isinstance(fix, RuntimeFix):
-        return (_replace_runtime(root, fix.file),)
     settings_file = _settings_file(run, root, scope)
     staged: dict[Path, str] = {}
     for one in fix.edits:
@@ -908,23 +905,6 @@ def _carry_out(run: Run, fix: Fix, *, root: Path, scope: Scope) -> tuple[Path, .
             validate(staged[path], path, holds)
     replace_all(staged)
     return tuple(staged)
-
-
-def _replace_runtime(root: Path, named: Path) -> Path:
-    """Replace the project's copy of the runtime at `named` with the engine's, byte for byte.
-
-    The fix arrives as JSON, so the path is held to the project and must name a runtime copy once
-    every link is followed, which keeps a runtime fix from overwriting any other file of the project.
-    """
-    path = _inside(root, named)
-    if path.name != assets.RUNTIME_FILE:
-        raise InputError(
-            f"{Path(named).as_posix()} is not a copy of the runtime, so a runtime fix may not replace it.",
-            hint=f"A runtime fix only ever replaces a file called {assets.RUNTIME_FILE}.",
-            location=Location(where=Path(named).as_posix()),
-        )
-    replace_all({path: assets.runtime_path().read_bytes()})
-    return path
 
 
 def _run_command(run: Run, fix: CommandFix, *, root: Path) -> None:

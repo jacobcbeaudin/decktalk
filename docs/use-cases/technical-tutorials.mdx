@@ -33,8 +33,8 @@ Four files hold the whole tutorial.
 | `cues.json` | One row per moment, naming the phrase the reveal waits for. |
 | `deck/index.html` | The slides, as HTML with `data-scene`, `data-slide` and the moment attributes. |
 
-A code slide is markup. An equation is a `data-tex` attribute typeset by the KaTeX files
-`decktalk init` copies into `deck/katex/`, so no equation needs a download. A reveal is a moment
+A code slide is markup. An equation is a `data-tex` attribute typeset by the KaTeX release DeckTalk
+serves on the page's own origin, so no equation needs a download. A reveal is a moment
 attribute naming a cue local to its slide, so `data-in="expand"` inside
 `<template data-slide="4.1">` waits for the cue `4.1:expand`, and `cues.json` is where that cue gets
 a phrase. `decktalk schema page` prints all twenty-four attributes with their values and ranges.

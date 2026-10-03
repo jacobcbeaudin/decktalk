@@ -270,12 +270,6 @@ class Code(Enum):
         "The page loads an asset from a network origin, so the film depends on somebody else's server.",
         RaisedBy.PYTHON,
     )
-    PAGE_RUNTIME_STALE = (
-        "PAGE_RUNTIME_STALE",
-        "The project's copy of the runtime is not the one this engine ships, so its pages play a contract "
-        "this engine does not measure.",
-        RaisedBy.PYTHON,
-    )
 
     # Measured in Python, about the script, the cues, the cut and the files.
     CUE_MISSING = (
@@ -481,22 +475,8 @@ class CommandFix(Model):
         return command
 
 
-class RuntimeFix(Model):
-    """A fix that replaces a project's copy of the runtime with the one this engine ships.
-
-    A copy some release shipped holds none of the author's work, so its fix is safe. A copy that
-    matches no shipped runtime holds edits that replacing it would lose, so its fix is unsafe. The
-    fix names only where the copy is, because what goes there is always the engine's runtime.
-    """
-
-    kind: Literal["runtime"] = Field("runtime", description="The kind of fix, which is how a reader dispatches on it.")
-    title: str = Field(description="One sentence saying what applying this fix does.")
-    applicability: Applicability = Field(description="Whether this fix may be applied without asking.")
-    file: ProjectPath = Field(description="The project's copy of the runtime to replace, project-relative.")
-
-
-Fix = Annotated[EditFix | SettingFix | CommandFix | RuntimeFix, Field(discriminator="kind")]
-"""The four moves an agent can make: editing a file, turning a knob, running a command and replacing the runtime."""
+Fix = Annotated[EditFix | SettingFix | CommandFix, Field(discriminator="kind")]
+"""The three moves an agent can make: editing a file, turning a knob and running a command."""
 
 
 class Finding(Model):
@@ -565,6 +545,5 @@ __all__ = [
     "Fix",
     "Location",
     "RaisedBy",
-    "RuntimeFix",
     "SettingFix",
 ]

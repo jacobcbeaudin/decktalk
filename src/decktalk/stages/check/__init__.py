@@ -23,7 +23,6 @@ and `cue` still owns `build/cue-times.json`.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
@@ -33,10 +32,9 @@ from playwright.sync_api import Page
 
 from decktalk.errors import InputError
 from decktalk.files import current_text
-from decktalk.findings import Applicability, Code, Finding, Location, ProjectPath, RuntimeFix, judge
+from decktalk.findings import Code, Finding, Location, ProjectPath, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
-from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
 from decktalk.machine import Run
 from decktalk.media.browser import chromium
@@ -60,9 +58,6 @@ from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_pl
 from decktalk.stages.narrate.plan import dropped_pauses, named_voice
 from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
 from decktalk.stages.verify import opted_out
-from decktalk.template import stale_runtime
-from decktalk.toolchain import assets
-from decktalk.toolchain.assets import RUNTIME_FILE
 
 NEEDS_A_PAGE: tuple[Code, ...] = (
     Code.CUE_MISSING,
@@ -117,7 +112,6 @@ def check(
         run.found(found)
 
     extra = _named_pages(inputs, paths)
-    _runtime_copies(inputs, run, extra)
     plans = _plan(inputs, run, spoken)
     spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
     resolved, times = _resolve(inputs, run, plans, wanted)
@@ -143,41 +137,6 @@ def check(
 
 
 # ---- the files the author writes ---------------------------------------------------------------
-
-
-def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
-    """Judge each of the project's copies of the runtime that is not the one this engine ships.
-
-    `decktalk init` copies the runtime beside the pages, and a copy an older engine wrote keeps
-    playing the older contract, so a reveal can pass on the author's machine and read differently to
-    this engine's recorder and verify. The copy that matters is the one beside each page, which is
-    the one a page loads.
-    """
-    pages = [*inputs.document.page_files, *extra]
-    for folder in dict.fromkeys(Path(page).parent for page in pages):
-        named = folder / RUNTIME_FILE
-        copy = inputs.path(named)
-        if stale_runtime(copy):
-            where = named.as_posix()
-            # Only a copy some release shipped is known to hold none of the author's work. Any other
-            # copy was edited, so replacing it is left to a caller who accepts losing the edits.
-            if hashlib.sha256(copy.read_bytes()).hexdigest() in assets.SHIPPED_RUNTIMES:
-                message = (
-                    f"{where} is not the runtime this engine ships, so its pages play a contract this engine does "
-                    "not measure. Run `decktalk check --fix` to replace it with the engine's."
-                )
-                title = f"Replace {where} with the runtime this engine ships."
-                fix = RuntimeFix(title=title, applicability=Applicability.SAFE, file=named)
-            else:
-                message = (
-                    f"{where} is not the runtime this engine ships, so its pages play a contract this engine does "
-                    "not measure. It matches no runtime a release shipped, so it holds edits that replacing it "
-                    "would lose, and `decktalk check --fix` leaves it as it is. Keep the edits somewhere else "
-                    "and apply the unsafe fix, which replaces it with the engine's."
-                )
-                title = f"Replace {where} with the runtime this engine ships, and lose the edits it holds."
-                fix = RuntimeFix(title=title, applicability=Applicability.UNSAFE, file=named)
-            run.found(judge(Code.PAGE_RUNTIME_STALE, message, at(copy, inputs.root), fix=fix))
 
 
 def _segments(inputs: Inputs, run: Run) -> list[Segment]:

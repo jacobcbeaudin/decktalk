@@ -9,14 +9,13 @@ import pytest
 from decktalk import template
 from decktalk.errors import ErrorCode, InputError
 from decktalk.inputs import Inputs
+from decktalk.page import ENGINE_PATH
 from decktalk.template import (
-    DECK_DIR,
     EXAMPLES,
     SKILL_NAMES,
     STARTER,
     example,
     listed_names,
-    stale_runtime,
     title_from,
     write_project,
 )
@@ -71,7 +70,6 @@ def test_the_starter_writes_a_project_that_already_builds(tmp_path: Path) -> Non
     assert (tmp_path / "decktalk.toml").exists()
     assert (tmp_path / "script.md").exists()
     assert (tmp_path / "cues.json").exists()
-    assert (tmp_path / template.DECK_DIR / "decktalk-runtime.js").exists()
     assert len(written) == len(set(written))  # every path is reported once
 
 
@@ -124,29 +122,22 @@ def test_the_starter_is_the_default_and_is_not_itself_an_example() -> None:
     assert STARTER not in {found.name for found in EXAMPLES}
 
 
-# ---- a project's copy of the runtime ------------------------------------------------------------
+# ---- the runtime and KaTeX are the engine's -----------------------------------------------------
 
 
-def test_the_copy_init_writes_is_the_runtime_this_engine_ships(tmp_path: Path) -> None:
-    write_project(tmp_path, name="demo", example_name=None, skills=False, force=False)
-    assert not stale_runtime(tmp_path / DECK_DIR / assets.RUNTIME_FILE)
-
-
-def test_a_copy_an_older_engine_wrote_is_stale(tmp_path: Path) -> None:
-    copy = tmp_path / assets.RUNTIME_FILE
-    copy.write_text('(() => {\n  var VERSION = "0.4.0";\n})();\n', encoding="utf-8")
-    assert stale_runtime(copy)
-
-
-def test_an_edited_copy_is_stale_although_it_names_the_same_version(tmp_path: Path) -> None:
-    """An engine built between two releases ships a runtime that still carries the last release's version."""
-    copy = tmp_path / assets.RUNTIME_FILE
-    copy.write_bytes(assets.runtime_path().read_bytes() + b"\n// edited\n")
-    assert stale_runtime(copy)
-
-
-def test_a_project_with_no_copy_has_nothing_stale(tmp_path: Path) -> None:
-    assert not stale_runtime(tmp_path / assets.RUNTIME_FILE)
+@pytest.mark.parametrize("example_name", [None, "lesson"])
+def test_init_writes_no_copy_of_the_runtime_or_katex(tmp_path: Path, example_name: str | None) -> None:
+    """The origin serves both from the installed engine, so a project never holds a copy to go stale."""
+    written = write_project(tmp_path, name="demo", example_name=example_name, skills=False, force=False)
+    assert not [path for path in written if path.name in (assets.RUNTIME_FILE, assets.KATEX_DIR)]
+    assert not list(tmp_path.rglob(assets.RUNTIME_FILE))
+    assert not list(tmp_path.rglob("katex.min.js"))
+    pages = sorted((tmp_path / "deck").glob("*.html"))
+    assert pages
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        assert f'<script src="{ENGINE_PATH}{assets.RUNTIME_FILE}"></script>' in text, page.name
+        assert "./katex/" not in text and './decktalk-runtime.js"' not in text, page.name
 
 
 def test_a_harness_folder_that_could_not_be_a_link_is_a_copy_and_says_so(

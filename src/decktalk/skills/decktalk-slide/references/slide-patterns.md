@@ -5,14 +5,15 @@ A scene is markup. Write attributes, not JavaScript. Every pattern here goes ins
 
 ## The page
 
-The head loads the typesetter from the copies in `deck/katex/` and then the runtime, in that order,
-so the first slide is already typeset when the recorder starts the clock. A page with no equation on
-it needs the runtime alone.
+The head loads the typesetter and then the runtime, in that order, so the first slide is already
+typeset when the recorder starts the clock. DeckTalk serves both from `/__decktalk/` on the origin it
+opens the page at, so the project holds no copy of either. A page with no equation on it needs the
+runtime alone.
 
 ```html
-<link rel="stylesheet" href="./katex/katex.min.css">
-<script src="./katex/katex.min.js"></script>
-<script src="./decktalk-runtime.js"></script>
+<link rel="stylesheet" href="/__decktalk/katex/katex.min.css">
+<script src="/__decktalk/katex/katex.min.js"></script>
+<script src="/__decktalk/decktalk-runtime.js"></script>
 ```
 
 ## The scene wrapper

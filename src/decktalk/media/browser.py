@@ -48,10 +48,10 @@ from playwright.sync_api import Browser, BrowserContext, Page, Playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import ApprovalRequired, InputError, ToolError
-from ..page import MILLISECONDS, MOTION_SCALE_PROPERTY
+from ..page import ENGINE_PATH, MILLISECONDS, MOTION_SCALE_PROPERTY
 from ..settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 from ..toolchain import chromium_fetch
-from ..toolchain.assets import probe_path
+from ..toolchain.assets import RUNTIME_FILE, probe_path
 from . import pagereport
 from .encode import css_color
 from .environment import child_environment, may_spend
@@ -97,7 +97,9 @@ PAINTED_JS = "() => new Promise((done) => requestAnimationFrame(() => requestAni
 REPORT_JS = "() => window.__dtprobe.report()"
 # Whether the runtime is present and the page registered at least one scene.
 HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
-NO_CATALOG = "no window.__decktalk.catalog (is decktalk-runtime.js included, and does the page register a scene?)"
+NO_CATALOG = (
+    f"no window.__decktalk.catalog (does the page load {ENGINE_PATH}{RUNTIME_FILE}, and does it register a scene?)"
+)
 
 CHECK_SECONDS = 1.0
 """Calibration: how often a recording asks whether it should stop, which is as long as a person waits on a stop."""

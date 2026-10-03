@@ -13,7 +13,7 @@ DeckTalk is licensed under Apache-2.0 (see LICENSE). This file lists the third-p
 | [Inter Tight](https://rsms.me/inter/) | The scaffold deck bundles the latin and greek woff2 subsets in `deck/fonts/`, with `InterTight-OFL.txt`. A subset is also embedded in the README graphics under `assets/`. | SIL Open Font License 1.1 |
 | [Inter](https://rsms.me/inter/) | The scaffold deck bundles the latin and greek woff2 subsets in `deck/fonts/`, with `Inter-OFL.txt`. | SIL Open Font License 1.1 |
 | [JetBrains Mono](https://www.jetbrains.com/lp/mono/) | The scaffold deck bundles the latin and greek woff2 subsets in `deck/fonts/`, with `JetBrainsMono-OFL.txt`. | SIL Open Font License 1.1 |
-| [KaTeX](https://katex.org/) | KaTeX typesets equations in the scaffold deck. The wheel ships one release (`katex.min.js`, `katex.min.css` and the woff2 fonts) under `decktalk/katex/` with its licence file, and `decktalk init` copies it into `deck/katex/`, so no page loads it from a CDN. | MIT |
+| [KaTeX](https://katex.org/) | KaTeX typesets equations in the scaffold deck. The wheel ships one release (`katex.min.js`, `katex.min.css` and the woff2 fonts) under `decktalk/katex/` with its licence file, and DeckTalk serves it at `/__decktalk/katex/` on the origin it opens a page at, so no page loads it from a CDN. | MIT |
 | [ElevenLabs](https://elevenlabs.io/) | ElevenLabs is a web API for speech, sound effects, and music. DeckTalk calls it with your own key, under your own account terms. | ElevenLabs terms of service |
 
 Notes:

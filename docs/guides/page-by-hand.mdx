@@ -20,9 +20,9 @@ local name of a cue. No attribute ever writes a second, because `cues.json` owns
 <meta charset="utf-8">
 <title>My lesson</title>
 
-<link rel="stylesheet" href="./katex/katex.min.css">
-<script src="./katex/katex.min.js"></script>
-<script src="./decktalk-runtime.js"></script>
+<link rel="stylesheet" href="/__decktalk/katex/katex.min.css">
+<script src="/__decktalk/katex/katex.min.js"></script>
+<script src="/__decktalk/decktalk-runtime.js"></script>
 
 <style>
   :root { --ground: #ffffff; --ink: #0f0f12; --accent: #2c1fea;
@@ -50,9 +50,10 @@ records under the cue times a run resolves.
 
 ### Loading the runtime and KaTeX
 
-`decktalk init` copies two things into `deck/` beside the page: `decktalk-runtime.js`, the compiled
-runtime, and `katex/`, a pinned KaTeX release with its stylesheet, its licence and its font files.
-Load them with relative paths, as above.
+DeckTalk serves two things itself, under `/__decktalk/` on the origin it opens every page at:
+`decktalk-runtime.js`, the compiled runtime, and `katex/`, a pinned KaTeX release with its stylesheet
+and its font files. Both come from the installed engine, so the project holds no copy of either.
+Load them with the absolute paths above, which resolve the same from any directory a page sits in.
 
 KaTeX goes before the runtime, so the first slide is already typeset when the recorder starts the
 clock. The runtime waits for a typesetter a page asks for, and a page with `data-tex` on it and no
@@ -239,11 +240,16 @@ cues fired, and a cue those two keys name that the slide does not declare is
 
 ## Open the page yourself
 
-The recorder opens every page over http, so open yours the same way rather than from a `file://` URL.
+The recorder opens every page over http, and `decktalk serve` is the one supported way to open it
+yourself.
 
 ```console
-decktalk serve
+$ decktalk serve
+Serving http://127.0.0.1:56257
 ```
+
+A page opened from a `file://` URL draws nothing. The browser resolves `/__decktalk/decktalk-runtime.js`
+against the root of the disk, finds no file there, and the page has no runtime to mount its slides.
 
 It serves the deck directory and the files `decktalk.toml` declares, and nothing else. It prints
 where the deck is served and then closes its output, so a caller that captured it reads one object

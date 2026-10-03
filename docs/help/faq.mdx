@@ -120,7 +120,7 @@ Yes. A page can be any HTML that follows the [page contract](/concepts/page-cont
 - [Write a page by hand](/guides/page-by-hand) shows the smallest page that records.
 - The runtime is one file with no dependencies, and it adds only its own stage element to your
   markup.
-- KaTeX is optional. `decktalk init` copies the packaged KaTeX into `deck/katex/`, and a page that
+- KaTeX is optional. DeckTalk serves the packaged KaTeX at `/__decktalk/katex/`, and a page that
   needs no equations can drop its two tags.
 
 A page that loads an asset from another origin still records, and `PAGE_CDN_ASSET` reports each
