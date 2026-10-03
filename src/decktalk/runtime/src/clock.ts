@@ -26,7 +26,7 @@ export type Task = {
 /**
  * A mount comes before anything else due at the same second.
  *
- * A cue and a timed reveal both need the slide that carries them to be on the stage already, so the
+ * A cue and a timed reveal both need the slide that carries them to be on the canvas already, so the
  * two ranks below are the whole of the tie-breaking rule.
  */
 const MOUNT_FIRST = 0;

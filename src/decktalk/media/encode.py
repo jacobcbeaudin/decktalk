@@ -67,10 +67,10 @@ class Encoder:
         self.v = video
         self.fit = (
             f"scale={video.width}:{video.height}:force_original_aspect_ratio=decrease,"
-            f"pad={video.width}:{video.height}:(ow-iw)/2:(oh-ih)/2:color=black,fps={video.output_fps},format=yuv420p,"
+            f"pad={video.width}:{video.height}:(ow-iw)/2:(oh-ih)/2:color=black,fps={video.fps},format=yuv420p,"
             "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
         )
-        gop = str(KEYFRAME_SECONDS * video.output_fps)
+        gop = str(KEYFRAME_SECONDS * video.fps)
         self.venc = [
             "-c:v", "libx264",
             "-preset", video.preset,
@@ -100,4 +100,4 @@ class Encoder:
 
     def color_source(self, color: str, seconds: float) -> list[str]:
         size = f"{self.v.width}x{self.v.height}"
-        return ["-f", "lavfi", "-t", f"{seconds}", "-i", f"color=c={color}:s={size}:r={self.v.output_fps}"]
+        return ["-f", "lavfi", "-t", f"{seconds}", "-i", f"color=c={color}:s={size}:r={self.v.fps}"]

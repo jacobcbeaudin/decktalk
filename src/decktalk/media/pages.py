@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
-from playwright.sync_api import Browser, BrowserContext, Page
+from playwright.sync_api import BrowserContext, Page
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import ToolError
@@ -27,7 +27,7 @@ from ..page import ENGINE_PATH, MOTION_SCALE_PROPERTY
 from ..settings import COLOR_SCHEMES, MotionConfig
 from ..toolchain.assets import RUNTIME_FILE, probe_path
 from . import pagereport
-from .browser import choice_of, trusts
+from .browser import Chromium, choice_of
 from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport
 
@@ -42,13 +42,13 @@ PROBE_JS = probe_path().read_text(encoding="utf-8")
 # The probe is the recorder's own instrument, so a deck cannot take its name once it is on the
 # window. This runs as the init script after the probe's own and before any script of the page.
 SEAL_JS = """(() => {
-  const probe = window.__dtprobe;
-  const own = Object.getOwnPropertyDescriptor(window, "__dtprobe");
+  const probe = window.__decktalkProbe;
+  const own = Object.getOwnPropertyDescriptor(window, "__decktalkProbe");
   if (!probe || (own && own.writable === false)) return;
   Object.freeze(probe);
-  Object.defineProperty(window, "__dtprobe", { value: probe, writable: false, configurable: false });
+  Object.defineProperty(window, "__decktalkProbe", { value: probe, writable: false, configurable: false });
 })()"""
-COVER_JS = "() => window.__dtprobe.cover()"
+COVER_JS = "() => window.__decktalkProbe.cover()"
 # How much this render slows every declared length down, which the runtime reads off the root. The
 # tag is appended once the page's own sheets are in the head, so the setting decides and not a deck.
 MOTION_JS = """(() => {
@@ -62,12 +62,12 @@ MOTION_JS = """(() => {
   else add();
 })()"""
 # Remove the cover, then start the page clock on the next animation frame.
-START_JS = "() => window.__dtprobe.lift()"
-READY_JS = "() => window.__dtprobe.ready()"
+START_JS = "() => window.__decktalkProbe.lift()"
+READY_JS = "() => window.__decktalkProbe.ready()"
 # Two animation frames after the page is ready, so what the page drew in answer to ready() has been
 # through layout and paint before a frozen frame is taken.
 PAINTED_JS = "() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))"
-REPORT_JS = "() => window.__dtprobe.report()"
+REPORT_JS = "() => window.__decktalkProbe.report()"
 # Whether the runtime is present and the page registered at least one scene.
 HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
 NO_CATALOG = (
@@ -159,7 +159,7 @@ def view(width: int, height: int, color_scheme: str, motion: MotionConfig) -> di
 
 
 def open_page(
-    browser: Browser,
+    chromium: Chromium,
     allowed: Allowed,
     *,
     width: int,
@@ -176,9 +176,34 @@ def open_page(
     """
     motion = motion or MotionConfig()
     with driving("could not open a page"):
-        page = browser.new_page(**view(width, height, color_scheme, motion))
+        page = chromium.browser.new_page(**view(width, height, color_scheme, motion))
     instrument(page, *motion_scripts(motion))
-    return page, route_pages(page, allowed, documents, trusted=trusts(browser))
+    return page, route_pages(page, allowed, documents, trusted=chromium.trusted)
+
+
+def open_document(chromium: Chromium, html: str, **options: Any) -> Page:
+    """A page of DeckTalk's own showing `html`, opened with Playwright's page `options`.
+
+    The document is set rather than served, so it loads nothing from any origin and carries no probe.
+    It is for a frame DeckTalk draws itself, such as a slate or the bias measurement.
+    """
+    with driving("could not open a page"):
+        page = chromium.browser.new_page(**options)
+        page.set_content(html)
+    return page
+
+
+def load(page: Page, url: str) -> None:
+    """Point `page` at `url` and wait for it to load."""
+    with driving(f"could not load {url}"):
+        page.goto(url)
+
+
+def write_frame(page: Page, out: Path) -> None:
+    """Write what `page` shows now to `out` as a PNG."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with driving(f"could not write {out.name}"):
+        page.screenshot(path=str(out))
 
 
 def await_ready(page: Page) -> None:
@@ -186,16 +211,15 @@ def await_ready(page: Page) -> None:
     try:
         evaluate(page, READY_JS)
     except ToolError:
-        log.debug("the page did not answer __dtprobe.ready(), so it is taken as ready")
+        log.debug("the page did not answer __decktalkProbe.ready(), so it is taken as ready")
 
 
 def await_painted(page: Page) -> None:
     """Wait until the page is ready and has painted two frames since, which is when a frozen frame is final.
 
     `ready()` is the contract for a frozen frame: a page that is ready has its fonts, its scene and its
-    freeze in place, and the two frames after it carry what that state drew to the screen. A fixed
-    settle of 400 ms was six of every eight seconds `check` took, and the frames it waited for were
-    byte for byte the frames this takes without it.
+    freeze in place, and the two frames after it carry what that state drew to the screen, so no
+    fixed settle is waited on top of it.
     """
     await_ready(page)
     try:
@@ -259,9 +283,7 @@ def screenshot(page: Page, url: str, out: Path) -> PageReport:
     The frame is taken once the page says it is ready and two frames have painted after that, which
     is everything a page that keeps the contract draws, so no fixed wait is spent on top of it.
     """
-    with driving(f"could not load {url}"):
-        page.goto(url)
+    load(page, url)
     await_painted(page)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    page.screenshot(path=str(out))
+    write_frame(page, out)
     return read_report(page, out.stem)

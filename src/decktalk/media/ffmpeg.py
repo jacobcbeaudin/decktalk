@@ -411,7 +411,7 @@ def concat_list(paths: Iterable[Path | str]) -> str:
 
 
 JOINED_FORMATS = ("concat", "mov")
-"""The demuxers a join may open, which are the concat list itself and the mp4 every section cut is written as."""
+"""The demuxers a join may open, which are the concat list itself and the mp4 every section video is written as."""
 
 
 def concat_source(listing: Path | str) -> list[str]:

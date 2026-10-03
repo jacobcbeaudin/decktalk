@@ -115,7 +115,7 @@ def landing_findings(
     strokes = drawn_cues(entry)
     declared = element_cues(entry)
     found: list[Finding] = []
-    for pair in plan_frames(slides, times, settings.video.output_fps):
+    for pair in plan_frames(slides, times, settings.video.fps):
         if (section.number, pair.cue) in skipped:
             continue
         if pair.cue not in declared:
@@ -190,7 +190,7 @@ def seam_findings(
         sheet.run.note(f"section {section.number} declares seamless and a side of its cut published no catalog.")
         return []
     last = last_state(ending, times.get(previous.number, {}))
-    first = first_state(opening, times.get(section.number, {}), settings.video.output_fps)
+    first = first_state(opening, times.get(section.number, {}), settings.video.fps)
     if last is None or first is None:
         sheet.run.note(f"section {section.number} declares seamless and a side of its cut has no resolved cue.")
         return []

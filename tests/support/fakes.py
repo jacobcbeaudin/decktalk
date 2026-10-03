@@ -21,8 +21,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
-from playwright.sync_api import Browser, Page, Playwright
 from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import Page, Playwright
 
 from decktalk.media import pages
 from decktalk.results import Word
@@ -56,7 +56,7 @@ class FakeFfmpeg:
 
 NOTHING_REPORTED: dict[str, object] = {
     "version": "0.5.0",
-    "mode": "cue",
+    "mode": "record",
     "scene": None,
     "slide": None,
     "warnings": [],
@@ -131,10 +131,6 @@ class BareBrowser:
 
     def __init__(self) -> None:
         self.closed = False
-
-    def browser(self) -> Browser:
-        """This browser as the Playwright browser it stands in for."""
-        return cast("Browser", self)
 
     def new_page(self, **_kwargs: object) -> object:
         return object()

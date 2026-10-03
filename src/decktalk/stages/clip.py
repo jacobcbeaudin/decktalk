@@ -80,7 +80,7 @@ def clip(
     video = _section_video(inputs, played)
     take, source = _take_of(inputs, section)
     settings = inputs.settings.video
-    fps = settings.output_fps
+    fps = settings.fps
     span = _span(inputs, video, start=start, end=end, hold_seconds=hold_seconds, fps=fps)
     film = _out_path(inputs, out, video)
     words_file = film.with_name(film.stem + WORDS_SUFFIX)
@@ -104,9 +104,9 @@ def clip(
         ClipResult,
         section=section,
         file=inputs.relative(film),
-        words=inputs.relative(words_file),
-        start=span.first_seconds,
-        end=span.last_seconds,
+        words_file=inputs.relative(words_file),
+        start_seconds=span.first_seconds,
+        end_seconds=span.last_seconds,
         seconds=span.total_seconds,
         hold_seconds=span.hold_seconds,
         gain_db=gain_db,
@@ -161,11 +161,11 @@ def _page_section(inputs: Inputs, number: int) -> PageSection:
 
 
 def _section_video(inputs: Inputs, section: PageSection) -> Path:
-    """The cut of one section, or a refusal naming the command that makes it."""
+    """The video of one section, or a refusal naming the command that makes it."""
     video = inputs.workspace.section_video(section.key)
     if not video.is_file():
         raise NotBuiltError(
-            f"section {section.number} has no cut at {inputs.relative(video)}.",
+            f"section {section.number} has no section video at {inputs.relative(video)}.",
             hint=Artifact.FINAL.next_step,
             location=at(video, inputs.root, section=section.number),
         )

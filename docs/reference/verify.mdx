@@ -39,6 +39,7 @@ that carries no placements file and has no section files to read a shape from. B
 
 ## What it prints
 
+{/* sample: decktalk verify, a --no-spend build of a fresh starter */}
 ```text
 Verifying build/final/my-lesson.mp4, 0:50 long.
 
@@ -46,8 +47,16 @@ Verifying build/final/my-lesson.mp4, 0:50 long.
  ───────────────────────────────────────────────
  1         1.1:title     0.50     0.52    +0.02
  1         1.1:files     1.93     1.96    +0.04
- 2         2.1:average   21.23    21.24   +0.01
- 3         3.1:make      44.39    44.40   +0.01
+ 1         1.2:script    8.56     8.64    +0.08
+ 1         1.2:deck      11.87    11.92   +0.05
+ 1         1.2:word      17.08    17.12   +0.04
+ 2         2.1:average   21.23    21.28   +0.05
+ 2         2.1:formula   25.46    25.52   +0.06
+ 2         2.1:code      29.22    29.24   +0.02
+ 2         2.1:waited    31.10    31.16   +0.06
+ 3         3.1:idea      37.09    37.12   +0.03
+ 3         3.1:again     43.47    43.52   +0.05
+ 3         3.1:make      44.39    44.44   +0.05
 ```
 
 The table holds one row per cue that was measured all the way to an onset. A cue that was skipped has
@@ -352,8 +361,8 @@ of its own.
   "run": "2b7560312c73",
   "film": "build/final/my-lesson.mp4",
   "film_seconds": 50.4,
-  "starts": [{ "section": 1, "at": 0.2, "luma": 242.0 }],
-  "cuts": [{ "section": 1, "at": 19.787, "speech_dbfs": -120.0, "step_dbfs": 0.0 }],
+  "starts": [{ "section": 1, "at_seconds": 0.2, "luma": 242.0 }],
+  "cuts": [{ "section": 1, "at_seconds": 19.787, "speech_dbfs": -120.0, "step_dbfs": 0.0 }],
   "seams": [],
   "cues": [
     {

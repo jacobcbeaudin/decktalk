@@ -9,7 +9,8 @@ import pytest
 from decktalk.errors import InputError
 from decktalk.results import Layer, Scope
 from decktalk.settings import BY_ID
-from decktalk.settings.edit import unset, write
+from decktalk.settings.edit import key_or_table, rows, stating, under, unset, write
+from decktalk.settings.layers import load
 from support.links import link
 
 
@@ -167,3 +168,37 @@ class TestTheRemover:
             unset(tmp_path / "decktalk.toml", "tools.ffmpeg", scope=Scope.PROJECT, environ={})
         assert caught.value.hint is not None
         assert "--scope machine" in caught.value.hint
+
+
+class TestTheNames:
+    """A caller names one key or one table, and each listing reads the same membership rule."""
+
+    @pytest.mark.parametrize(
+        ("published", "named", "expected"),
+        [("video.crf", "video.crf", True), ("video.crf", "video", True), ("video.crf", "vid", False)],
+    )
+    def test_a_key_is_under_its_own_name_and_its_table_and_never_a_prefix_of_a_word(
+        self, published: str, named: str, expected: bool
+    ) -> None:
+        assert under(published, named) is expected
+
+    def test_a_name_that_is_neither_a_key_nor_a_table_is_refused_with_the_nearest(self) -> None:
+        key_or_table("video")
+        with pytest.raises(InputError, match="video.crf"):
+            key_or_table("video.crff")
+
+    def test_a_listing_of_a_table_nothing_publishes_is_refused(self) -> None:
+        loaded = load(None, environ={})
+        assert {row.key for row in rows(loaded, "video", defaults=True, changed=False)} == {
+            key for key in BY_ID if key.startswith("video.")
+        }
+        with pytest.raises(InputError, match="not a table"):
+            rows(loaded, "vidoe", defaults=True, changed=False)
+
+    def test_a_table_is_taken_out_whole_only_when_the_caller_says_so(self, tmp_path: Path) -> None:
+        path = tmp_path / "decktalk.toml"
+        path.write_text("[video]\ncrf = 20\npreset = 'fast'\n", encoding="utf-8")
+        assert stating(path, "video.crf", whole_table=False) == ("video.crf",)
+        with pytest.raises(InputError, match="a whole table"):
+            stating(path, "video", whole_table=False)
+        assert set(stating(path, "video", whole_table=True)) == {"video.crf", "video.preset"}

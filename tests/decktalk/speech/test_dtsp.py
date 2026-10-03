@@ -24,7 +24,7 @@ from decktalk.cli import main
 from decktalk.errors import ProviderError
 from decktalk.findings import Code
 from decktalk.media import audio
-from decktalk.results import Billing, TakeStatus
+from decktalk.results import BillingBasis, TakeStatus
 from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, DtspConfig, Settings
 from decktalk.speech import (
     DECLARED,
@@ -52,7 +52,7 @@ def context(base: str, **over: Any) -> SpeechContext:
     fields: dict[str, Any] = {
         "secrets": NoSecrets(),
         "base_url": base,
-        "context_chars": 0,
+        "context_characters": 0,
         "speech_timeout_seconds": 5,
         **over,
     }
@@ -105,7 +105,7 @@ def request(**over: Any) -> SpeechRequest:
 
 def test_it_is_in_the_closed_set_free_keyless_and_renders_every_pause():
     assert sorted(PROVIDERS) == sorted(DECLARED) == ["dtsp", "elevenlabs"]
-    assert billing_of("dtsp").by is Billing.FREE
+    assert billing_of("dtsp").by is BillingBasis.FREE
     assert key_variable("dtsp") is None
     assert renders_pauses("dtsp", "any-model-the-server-has")
     assert output_of(Settings(), "dtsp") == OUTPUT
@@ -159,6 +159,16 @@ def test_a_reply_that_is_not_a_take_is_a_provider_error(
     server.reply = reply
     with pytest.raises(ProviderError, match=said):
         Dtsp(context(service.url_for(""))).speak(request())
+
+
+def test_a_failure_of_a_voice_that_bills_nothing_never_says_the_request_was_charged(service: Service) -> None:
+    """A free voice charges nothing, so its refusal neither warns of a bill nor sends the author to one."""
+    service.expect_request(SPEECH_PATH, method="POST").respond_with_data("not json", content_type="text/plain")
+    with pytest.raises(ProviderError) as caught:
+        Dtsp(context(service.url_for(""))).speak(request())
+    said = f"{caught.value} {caught.value.hint}"
+    assert "charged" not in said, said
+    assert "usage" not in said, said
 
 
 def test_a_request_to_this_machine_never_goes_through_a_proxy(
@@ -245,7 +255,7 @@ def test_narrate_voices_a_lesson_through_the_local_server_with_no_key_and_no_spe
     result = json.loads(out)
     assert [row["status"] for row in result["sections"]] == [TakeStatus.VOICED.value] * 2
     assert result["spend"] is True
-    assert result["cost"]["billing"] == Billing.FREE.value and result["cost"]["dollars"] == 0
+    assert result["cost"]["billing"] == BillingBasis.FREE.value and result["cost"]["dollars"] == 0
     assert len(server.requests) == 2
     # The two sections are voiced at once, so the opening one is found by its words.
     opening = next(body for body, _ in server.requests if body["pieces"][0]["text"] == "A bowl and a ball.")

@@ -179,6 +179,15 @@ def test_a_take_of_older_words_does_not_make_a_section_voiced(tmp_path: Path) ->
     take_on_disk(inputs, spoken="Something else entirely.")
     result = status(inputs, a_run(tmp_path))
     assert result.sections[0].voiced is False
+    assert result.sections[0].voiced_stale is True, "a voiced take of older words is reported as stale"
+
+
+@pytest.mark.parametrize(("spoken", "bought"), [("Hello there again.", True), ("Something else.", False)])
+def test_a_take_that_is_current_or_never_voiced_is_not_voiced_stale(tmp_path: Path, spoken: str, bought: bool) -> None:
+    """A placeholder of older words was never bought, so there is nothing to voice again."""
+    inputs = a_project(tmp_path)
+    take_on_disk(inputs, spoken=spoken, voiced=bought)
+    assert status(inputs, a_run(tmp_path)).sections[0].voiced_stale is False
 
 
 def test_a_recorded_section_says_so_and_a_cut_one_says_so(tmp_path: Path) -> None:
@@ -261,7 +270,7 @@ def an_events_file(inputs: Inputs, name: str, lines: list[dict]) -> Path:
 
 
 def opened(run: str, seq: int = 0) -> dict:
-    return {"event": "run.start", "time": "2026-09-24T01:00:00Z", "seq": seq, "run": run, "events_path": None}
+    return {"event": "run.start", "time": "2026-09-24T01:00:00Z", "seq": seq, "run": run, "events_file": None}
 
 
 def test_a_run_that_has_not_closed_is_listed_with_the_stage_it_opened(tmp_path: Path) -> None:
@@ -278,7 +287,7 @@ def test_a_run_that_has_not_closed_is_listed_with_the_stage_it_opened(tmp_path: 
     result = status(inputs, a_run(tmp_path))
     assert [row.run for row in result.runs] == ["other"]
     assert result.runs[0].stage is Stage.RECORD
-    assert result.runs[0].events == Path("build/events/other.jsonl")
+    assert result.runs[0].events_file == Path("build/events/other.jsonl")
 
 
 def test_a_run_that_has_closed_is_not_listed(tmp_path: Path) -> None:
@@ -337,7 +346,7 @@ def test_the_report_writes_nothing(tmp_path: Path) -> None:
 def test_the_report_names_the_two_files_the_author_writes(tmp_path: Path) -> None:
     result = status(a_project(tmp_path), a_run(tmp_path))
     assert result.script == Path("script.md")
-    assert result.cues == Path("cues.json")
+    assert result.cues_file == Path("cues.json")
     assert result.name == "demo"
 
 
@@ -359,9 +368,9 @@ VOICED = TOML.replace("[[section]]", '[voice]\nid = "voice-under-test"\n\n[[sect
 
 def played_digest(inputs: Inputs) -> str:
     """The digest of the take section one plays, taken the one way narrate takes it."""
-    [segment] = inputs.spoken()
+    [section] = inputs.spoken()
     voice = inputs.settings.voice
-    return take_inputs(inputs, segment, provider=voice.provider, voice_id=voice.id, model=voice_model(inputs)).digest
+    return take_inputs(inputs, section, provider=voice.provider, voice_id=voice.id, model=voice_model(inputs)).digest
 
 
 def a_take_pair(inputs: Inputs, digest: str, *, audio: bytes = b"audio", words: bytes = b"{}") -> list[Path]:

@@ -90,6 +90,16 @@ def test_a_second_run_keeps_every_take_it_already_has(inputs: Inputs, watched: W
     assert {row.status for row in again.sections} == {TakeStatus.KEPT}
 
 
+def test_a_first_run_says_each_take_was_made_and_not_made_again(
+    inputs: Inputs, watched: Watched, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Nothing was made before a first run, so its decision lines say made and leave "again" to no one."""
+    with caplog.at_level("DEBUG", logger="decktalk"):
+        placeholder(inputs, watched)
+    said = [record.getMessage() for record in caplog.records if data_of(record).get("cache") == "take"]
+    assert said == ["take made (to-make)."] * 3
+
+
 def test_every_take_kept_or_made_says_why_and_the_worker_count_is_recorded(
     inputs: Inputs, watched: Watched, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -501,7 +511,23 @@ def test_a_section_sharing_a_missing_take_says_why_the_take_is_missing(
     doubled = make_inputs(script=SCRIPT.replace("It steps down the bowl.", "Every picture waited for its word."))
     result = narrate(doubled, make_run(doubled).run)
     for found in result.findings:
-        assert f"Section {found.location.section} plays a placeholder, because it has no take yet." in found.message
+        assert (
+            f"Section {found.location.section} plays a placeholder, because it has no voiced take yet." in found.message
+        )
+
+
+@pytest.mark.parametrize("named", [True, False], ids=["voice-named", "no-voice"])
+def test_a_second_run_without_spend_says_what_the_first_said_of_each_placeholder(
+    inputs: Inputs, make_run: Callable[..., Watched], named: bool
+) -> None:
+    """The placeholder the first run made is not a voiced take, so the second run's reason is the first's."""
+    environ = ENVIRON if named else {key: value for key, value in ENVIRON.items() if key != VOICE_ID_VARIABLE}
+    project = Inputs.load(inputs.root, environ=environ)
+    first = [found.message for found in narrate(project, make_run(project).run).findings]
+    second = [found.message for found in narrate(project, make_run(project).run).findings]
+    assert len(first) == 3
+    assert second == first
+    assert all("because it has no voiced take yet." in message for message in first)
 
 
 @pytest.mark.usefixtures("counted")
@@ -618,7 +644,7 @@ def test_the_index_is_checkpointed_after_every_take(
     inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A run that fails keeps every take it has already paid for, so the next run reuses them."""
-    (second,) = [segment for segment in inputs.spoken() if segment.index == 2]
+    (second,) = [section for section in inputs.spoken() if section.number == 2]
     monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: RefusesOneSection(second.pieces))
     watched = make_run(inputs, spend=True)
     with pytest.raises(ProviderError):

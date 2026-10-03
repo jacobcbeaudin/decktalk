@@ -105,6 +105,19 @@ POSSIBLY_CHARGED = "The request was possibly charged, so it is not sent again."
 CHARGE_HINT = "Check the account's usage before you run the command again, which sends the request once more."
 """The advice beside a failure that was possibly charged, since running again buys the request again."""
 
+FREE_HINT = "Run the command again, which sends the request once more and costs nothing."
+"""The advice beside the same failure from a provider that bills nothing, which has no bill to check."""
+
+
+def _after_sending(free: bool) -> tuple[str, str]:
+    """What a failure after the request went out says about the bill, and the advice beside it.
+
+    A provider whose bill is free charged nothing, so it says neither, and every other provider may
+    have billed the request.
+    """
+    return ("", FREE_HINT) if free else (f" {POSSIBLY_CHARGED}", CHARGE_HINT)
+
+
 STATED = "retry-after"
 """The source of a wait the service named in its own `Retry-After`."""
 
@@ -239,10 +252,10 @@ def _http_error(url: str, exc: urllib.error.HTTPError, carried: Collection[str])
     return ProviderError(f"HTTP {exc.code} from {shown(url)}: {detail}", retryable=exc.code in RETRYABLE_STATUS)
 
 
-def _unreachable(url: str, exc: urllib.error.URLError, carried: Collection[str]) -> ProviderError:
+def _unreachable(url: str, exc: urllib.error.URLError, carried: Collection[str], *, free: bool) -> ProviderError:
     """A request urllib could not send, worth trying again only when nothing connected at all."""
     if isinstance(exc.reason, BROKEN_REPLIES) and not isinstance(exc.reason, UNCONNECTED):
-        return _broken(url, exc.reason, carried)
+        return _broken(url, exc.reason, carried, free=free)
     return ProviderError(
         f"could not reach {shown(url)}: {scrub(str(exc.reason), carried)}",
         retryable=isinstance(exc.reason, UNCONNECTED),
@@ -250,12 +263,11 @@ def _unreachable(url: str, exc: urllib.error.URLError, carried: Collection[str])
     )
 
 
-def _broken(url: str, exc: BaseException, carried: Collection[str]) -> ProviderError:
+def _broken(url: str, exc: BaseException, carried: Collection[str], *, free: bool) -> ProviderError:
     """A reply that broke once the request was connected, which the service may already have billed."""
     said = scrub(str(exc), carried) or "no reason given"
-    return ProviderError(
-        f"{shown(url)} stopped answering ({type(exc).__name__}: {said}). {POSSIBLY_CHARGED}", hint=CHARGE_HINT
-    )
+    bill, hint = _after_sending(free)
+    return ProviderError(f"{shown(url)} stopped answering ({type(exc).__name__}: {said}).{bill}", hint=hint)
 
 
 def pause(seconds: float) -> None:
@@ -301,8 +313,11 @@ def post[T](
     timeout: float,
     retries: int,
     parse: Callable[[bytes], T],
+    free: bool = False,
 ) -> T:
     """One POST, with its reply read by `parse`, and any failure as a `PROVIDER` error that quotes no key.
+
+    `free` is true for a provider whose bill is free, whose failures never say the request was charged.
 
     `secrets` are every secret the URL, the body or the headers carry, which is what is scrubbed out
     of every message and what no redirect to another origin is handed, whatever header holds it.
@@ -327,10 +342,10 @@ def post[T](
             failure, asked, cause = _http_error(url, exc, carried), exc.headers.get("Retry-After"), exc
         except urllib.error.URLError as exc:
             _attempted(path, attempt, started, reason=type(exc.reason).__name__)
-            failure, cause = _unreachable(url, exc, carried), exc
+            failure, cause = _unreachable(url, exc, carried, free=free), exc
         except BROKEN_REPLIES as exc:
             _attempted(path, attempt, started, reason=type(exc).__name__)
-            failure, cause = _broken(url, exc, carried), exc
+            failure, cause = _broken(url, exc, carried, free=free), exc
         else:
             _attempted(path, attempt, started, status=status, bytes=len(reply))
             return parse(reply)
@@ -378,6 +393,7 @@ def post_json(
     secrets: Collection[Secret],
     timeout: float,
     retries: int,
+    free: bool = False,
 ) -> dict[str, Any]:
     """One POST whose reply is a JSON object, which is every call a provider makes but the two sound ones."""
 
@@ -387,11 +403,10 @@ def post_json(
         except ValueError as exc:
             # A gateway may have answered for a service that never had the request, and the service may
             # equally have billed a reply that arrived mangled, so it is reported and never sent again.
-            raise ProviderError(
-                f"{shown(url)} answered with something that is not JSON. {POSSIBLY_CHARGED}", hint=CHARGE_HINT
-            ) from exc
+            bill, hint = _after_sending(free)
+            raise ProviderError(f"{shown(url)} answered with something that is not JSON.{bill}", hint=hint) from exc
         if not isinstance(answered, dict):
             raise ProviderError(f"{shown(url)} answered with a {type(answered).__name__} rather than an object.")
         return answered
 
-    return post(url, body, headers, secrets=secrets, timeout=timeout, retries=retries, parse=parse)
+    return post(url, body, headers, secrets=secrets, timeout=timeout, retries=retries, parse=parse, free=free)

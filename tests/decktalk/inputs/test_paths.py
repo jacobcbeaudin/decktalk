@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from decktalk.errors import ErrorCode, InputError
@@ -39,11 +39,20 @@ def test_a_location_carries_whatever_else_the_caller_knew(tmp_path: Path) -> Non
 ROOT = Path(tempfile.gettempdir()).resolve() / "decktalk-containment" / "project"
 """A project that is never created, because the lexical half of the rule needs no file to judge."""
 
-STEPS = st.lists(st.sampled_from(("deck", "index.html", ".", "..", ROOT.name)), min_size=1, max_size=6)
-"""A path a project could name, built from steps down, steps back up and the project's own name."""
+EVIL = f"{ROOT.name}-evil"
+"""A sibling folder whose name starts with the project's, which a comparison of strings takes for the project."""
+
+STEPS = st.lists(st.sampled_from(("deck", "index.html", ".", "..", ROOT.name, EVIL)), min_size=1, max_size=6)
+"""A path a project could name, built from steps down, steps back up, the project's own name and its sibling's."""
 
 
 @given(STEPS, st.booleans())
+@example(["."], False)
+@example([ROOT.name], True)
+@example(["..", ROOT.name, "deck"], False)
+@example([".."], False)
+@example(["..", EVIL, "deck"], False)
+@example([EVIL], True)
 def test_a_path_is_joined_to_its_root_exactly_when_it_stays_inside_the_project(
     steps: list[str], absolute: bool
 ) -> None:

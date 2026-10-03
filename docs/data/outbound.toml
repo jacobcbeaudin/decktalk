@@ -18,7 +18,7 @@
 host = "api.elevenlabs.io"
 name = "Narration"
 sent_by = "`decktalk narrate`, and `decktalk build` on a voiced run"
-body = "The section's spoken text, the voice id, the model name and the audio format, together with up to `narration.context_chars` characters of the previous section and up to the same of the next section as speaking context. The default is 1500 characters, and `narration.context_chars = 0` keeps the neighbouring sections on your machine."
+body = "The section's spoken text, the voice id, the model name and the audio format, together with up to `narration.context_characters` characters of the previous section and up to the same of the next section as speaking context. The default is 1500 characters, and `narration.context_characters = 0` keeps the neighbouring sections on your machine."
 credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header, to the host `[elevenlabs] base_url` names. Only this machine's own file, environment or `--set` can name it, and a project file that sets it is refused, because the key goes wherever it points."
 note = "Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-spend` sends nothing at all."
 
@@ -43,7 +43,7 @@ host = "cdn.playwright.dev"
 name = "Headless Chromium"
 sent_by = "the first command that opens a page, or `decktalk install`"
 body = "A download request for the pinned browser build, and nothing else."
-note = "This is Playwright's own download host. `PLAYWRIGHT_DOWNLOAD_HOST` points it at a mirror, and `[record] browser_path` skips the download by recording with a browser the machine already has."
+note = "This is Playwright's own download host. `PLAYWRIGHT_DOWNLOAD_HOST` points it at a mirror, and `[tools] chromium` skips the download by recording with a browser the machine already has."
 
 [[download]]
 host = "github.com"

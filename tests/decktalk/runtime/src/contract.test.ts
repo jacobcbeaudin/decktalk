@@ -116,7 +116,7 @@ test("the page plays every declared span at the length the contract publishes", 
   }
   for (const [name, row] of Object.entries(ATTRS)) {
     if (row.span !== null) declared.push([`${name} span`, row.span]);
-    if (row.range && name !== "data-hold") declared.push([`${name} range`, row.range.max]);
+    if (row.range && name !== "data-preview-seconds") declared.push([`${name} range`, row.range.max]);
   }
   for (const [name, seconds] of declared) {
     assert.equal(scaled(seconds, 1), seconds, `${name} declares ${seconds} s and the page would play less`);
@@ -141,7 +141,7 @@ test("every attribute either carries a code or is named in the closed exemption 
 test("no span an author can declare reaches the ceiling that makes a cue unmeasurable", () => {
   for (const [name, row] of Object.entries(ATTRS)) {
     if (row.span !== null) assert.ok(measurable(row.span), `${name} declares a span at or above the ceiling`);
-    if (row.range && row.range.unit === "seconds" && name !== "data-hold") {
+    if (row.range && row.range.unit === "seconds" && name !== "data-preview-seconds") {
       assert.ok(measurable(row.range.max), `${name} publishes a range whose top is unmeasurable`);
     }
   }

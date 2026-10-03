@@ -126,8 +126,8 @@ def test_a_driver_started_where_the_host_named_no_directory_leaves_none_named(
 
 
 def test_a_missing_chromium_is_fetched_rather_than_refused(monkeypatch, on_disk) -> None:
-    """The bug this change exists to fix: `chromium()` caught the launch failure and told the caller
-    to go and run `decktalk install`, while ffmpeg had been downloading itself all along."""
+    """A launch that fails fetches the browser and tries again, the way ffmpeg fetches itself, rather
+    than telling the caller to run `decktalk install`."""
     chromium = FakeChromium(on_disk)
     commands = fake_fetch(monkeypatch, on_disk)
     launched = browser.launch(chromium.driver(), policy=browser.TRUSTED, spend=False)
@@ -194,7 +194,7 @@ def test_a_browser_that_is_already_there_is_launched_without_a_fetch(monkeypatch
 
 
 def test_a_machine_that_names_its_own_chromium_is_never_sent_to_download_one(monkeypatch, tmp_path, on_disk) -> None:
-    """`[record] browser_path` is the managed machine's own executable. Fetching Playwright's build
+    """`[tools] chromium` is the managed machine's own executable. Fetching Playwright's build
     would download it for nothing, because the next launch would use that same path again."""
     named = tmp_path / "opt" / "chromium"
     pw = FakeChromium(on_disk).driver()
@@ -204,7 +204,7 @@ def test_a_machine_that_names_its_own_chromium_is_never_sent_to_download_one(mon
     assert commands == [], f"a named executable triggered a download: {commands}"
     said = f"{caught.value} {caught.value.hint}"
     assert str(named) in said, said
-    assert "browser_path" in said, said
+    assert "[tools] chromium" in said, said
 
 
 def test_a_fetch_that_fails_is_a_tool_error_rather_than_a_return_code(monkeypatch, on_disk) -> None:
@@ -220,8 +220,9 @@ def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, 
     commands = fake_fetch(monkeypatch, on_disk)
     monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(on_disk).started())
     with browser.chromium(policy=browser.TRUSTED, spend=False) as opened:
-        assert isinstance(opened, BareBrowser)
-    assert opened.closed, "the browser was left running"
+        assert isinstance(opened.browser, BareBrowser)
+        assert opened.trusted
+    assert opened.browser.closed, "the browser was left running"
     assert len(commands) == 1, commands
 
 

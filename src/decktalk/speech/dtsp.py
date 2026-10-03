@@ -34,7 +34,7 @@ from pydantic import ValidationError
 from ..errors import ProviderError
 from ..results import Word
 from ..settings import DtspConfig
-from . import PUNCT, Output, SpeechContext, SpeechRequest
+from . import DECLARED, FREE, PUNCT, Output, SpeechContext, SpeechRequest
 from .http import post_json
 
 NAME = "dtsp"
@@ -88,6 +88,7 @@ class Dtsp:
             secrets=(),
             timeout=self.context.speech_timeout_seconds,
             retries=self.context.retries,
+            free=DECLARED[NAME].billing is FREE,
         )
         return _audio(reply, request.output_format), _words(reply)
 

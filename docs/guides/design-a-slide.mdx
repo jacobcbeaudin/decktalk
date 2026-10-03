@@ -12,11 +12,11 @@ reduced motion.
 `decktalk schema page` prints the whole attribute table with each value, default, range and the
 finding it raises. Read it beside this page rather than guessing an attribute name.
 
-## The stage is 1920 by 1080
+## The canvas is 1920 by 1080
 
-The runtime builds a stage element, `#dt-stage`, that is exactly 1920 by 1080 CSS pixels, scales it
+The runtime builds a canvas element, `#dt-canvas`, that is exactly 1920 by 1080 CSS pixels, scales it
 to fit the window and centres it. A size written in your stylesheet is therefore a size on the video
-frame. A page may supply its own `<div id="dt-stage">` and the runtime will use that one, which is
+frame. A page may supply its own `<div id="dt-canvas">` and the runtime will use that one, which is
 how a deck puts one figure under all of its slides.
 
 Place every element absolutely, so one reveal never moves another. Both packaged decks do this.

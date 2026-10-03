@@ -80,13 +80,13 @@ def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
     bare = page.context.browser.new_page(viewport={"width": 1920, "height": 1080})
     try:
         url = deck(tmp_path, "bare.html")
-        settled(bare, f"{url}?slide=1.1")
+        settled(bare, f"{url}?freeze=1.1")
         assert bare.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
         opened(bare, url)
         assert bare.evaluate("() => !!document.getElementById('dt-index')")
         # Nothing measures the boxes, which is the one thing a page loses with no probe.
         assert bare.evaluate("() => window.__decktalk.catalog.every((c) => c.elements === undefined)")
-        assert bare.evaluate("() => !window.__dtprobe")
+        assert bare.evaluate("() => !window.__decktalkProbe")
     finally:
         bare.close()
 
@@ -97,16 +97,16 @@ def test_a_page_without_the_probe_still_freezes_lists_and_plays(page, tmp_path):
 def test_the_cover_hides_the_page_until_the_clock_starts(page, errors, tmp_path):
     """The recorder starts capturing before the page settles, so the cover owns every frame until t=0."""
     page.goto(f"{deck(tmp_path, 'cover.html')}?scene=1&t0=signal")
-    page.evaluate("() => window.__dtprobe.cover()")
-    box = page.evaluate("() => document.getElementById('__t0cover').getBoundingClientRect().toJSON()")
+    page.evaluate("() => window.__decktalkProbe.cover()")
+    box = page.evaluate("() => document.getElementById('dt-cover').getBoundingClientRect().toJSON()")
     assert (box["width"], box["height"]) == (1920, 1080)
-    paint = page.evaluate("() => getComputedStyle(document.getElementById('__t0cover')).backgroundColor")
+    paint = page.evaluate("() => getComputedStyle(document.getElementById('dt-cover')).backgroundColor")
     assert paint == "rgb(255, 0, 255)"
     # The keep-alive turns for the whole recording, so the compositor keeps painting frames.
-    alive = "() => document.getElementById('__dtkeepalive').getAnimations().length"
+    alive = "() => document.getElementById('dt-keepalive').getAnimations().length"
     assert page.evaluate(alive) == 1
-    at = page.evaluate("() => window.__dtprobe.lift()")
-    assert page.evaluate("() => document.getElementById('__t0cover')") is None
+    at = page.evaluate("() => window.__decktalkProbe.lift()")
+    assert page.evaluate("() => document.getElementById('dt-cover')") is None
     assert at > 0
     # The clock started on the frame that showed the cover gone, so the page's t=0 is that frame.
     assert page.evaluate("() => window.__decktalk.now()") >= 0
@@ -120,7 +120,7 @@ def test_the_wait_helper_waits_for_the_pages_own_condition(page, errors, tmp_pat
         "<script>DeckTalk.waitFor(new Promise((r) => setTimeout(() => { window.__late = true; r(); }, 300)));</script>"
     )
     page.goto(deck(tmp_path, "wait.html", body + MARKUP_SCENE))
-    assert page.evaluate("() => window.__dtprobe.ready()") is True
+    assert page.evaluate("() => window.__decktalkProbe.ready()") is True
     assert page.evaluate("() => window.__late") is True
     assert not errors
 
@@ -129,7 +129,7 @@ def test_the_wait_helper_waits_for_the_pages_own_condition(page, errors, tmp_pat
 
 
 def test_the_catalog_measures_every_cued_element(page, errors, tmp_path):
-    """In index mode each slide is laid out once, so every element carries a box in stage pixels."""
+    """In index mode each slide is laid out once, so every element carries a box in canvas pixels."""
     head = "<style>.title { position: absolute; left: 120px; top: 80px; width: 600px; height: 90px; margin: 0 }</style>"
     opened(page, write_page(tmp_path, "boxes.html", MARKUP_SCENE, head=head))
     rows = page.evaluate("() => window.__decktalk.catalog[0].elements['1.1']")
@@ -179,7 +179,7 @@ def test_measuring_leaves_nothing_on_the_stage(page, tmp_path):
     assert page.evaluate("() => !document.getElementById('dt-measure')")
     assert page.evaluate("() => !document.getElementById('dt-spans')")
     assert page.evaluate("() => document.querySelectorAll('#dt-pan .dt-slide').length") == 0
-    assert page.evaluate("() => getComputedStyle(document.getElementById('dt-stage')).display") == "none"
+    assert page.evaluate("() => getComputedStyle(document.getElementById('dt-canvas')).display") == "none"
 
 
 def test_a_played_scene_is_not_measured(page, tmp_path):
@@ -197,9 +197,9 @@ def test_the_recorder_reads_the_whole_page_back_in_one_call(page, tmp_path):
     url = deck(tmp_path, "report.html")
     page.goto(f"{url}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:step@0.3")
     page.wait_for_function("() => window.__decktalk.fired.length === 2")
-    report = page.evaluate("() => window.__dtprobe.report()")
+    report = page.evaluate("() => window.__decktalkProbe.report()")
     assert set(report) == set(REPORT)
-    assert report["mode"] == "cue"
+    assert report["mode"] == "record"
     assert report["scene"] == "1"
     assert report["slide"] == "1.1"
     assert [row["id"] for row in report["cues"]] == ["1.1:ball", "1.1:step"]
@@ -221,12 +221,12 @@ def test_a_synced_line_reports_itself_through_the_seam(page, tmp_path):
     """
     url = write_page(tmp_path, "spoken.html", scene)
     page.goto(f"{url}?scene=20&t0=0&cues=20.1:say@0.05&words=alpha@0.4,beta@0.8")
-    page.wait_for_function("() => window.__dtprobe.report().words.length === 1")
-    row = page.evaluate("() => window.__dtprobe.report().words[0]")
+    page.wait_for_function("() => window.__decktalkProbe.report().words.length === 1")
+    row = page.evaluate("() => window.__decktalkProbe.report().words[0]")
     assert row["text"] == "alpha beta"
     assert row["count"] == 2
-    assert row["runAt"] == 0.4
-    assert row["firstOn"] <= row["runAt"]
+    assert row["spokenAt"] == 0.4
+    assert row["firstShown"] <= row["spokenAt"]
 
 
 # ---- freezing at one cue ------------------------------------------------------------------
@@ -242,11 +242,11 @@ def test_freeze_at_and_before_one_cue(page, errors, tmp_path):
         ("before=1.1:ball", [], {".ball": False}),
         ("after=1.1:step&before=1.1:ball", ["1.1:ball", "1.1:step"], {}),
     ):
-        settled(page, f"{url}?slide=1.1&{query}")
+        settled(page, f"{url}?freeze=1.1&{query}")
         assert page.evaluate("() => window.__decktalk.fired") == fired, query
         assert {selector: page.evaluate(on, selector) for selector in shown} == shown, query
 
-    settled(page, f"{url}?slide=1.1&after=nope")
+    settled(page, f"{url}?freeze=1.1&after=nope")
     reported = page.evaluate("() => window.__decktalk.warnings")
     assert [row["code"] for row in reported] == ["PAGE_FREEZE_CUE_UNKNOWN"]
     assert (reported[0]["slide"], reported[0]["cue"]) == ("1.1", "nope")
@@ -270,12 +270,12 @@ def test_the_frame_before_a_cue_and_the_frame_at_it_are_two_pictures(page, error
     """
     url = starter_deck(page, tmp_path)
     shown = "() => getComputedStyle(document.querySelector('.end')).opacity"
-    settled(page, f"{url}?slide=3.1&before=3.1:make")
+    settled(page, f"{url}?freeze=3.1&before=3.1:make")
     assert page.evaluate("() => window.__decktalk.fired") == ["3.1:idea", "3.1:again"]
     assert float(page.evaluate(shown)) == 0
     before = page.screenshot()
 
-    settled(page, f"{url}?slide=3.1&after=3.1:make")
+    settled(page, f"{url}?freeze=3.1&after=3.1:make")
     assert page.evaluate("() => window.__decktalk.fired") == ["3.1:idea", "3.1:again", "3.1:make"]
     assert float(page.evaluate(shown)) == 1
     assert page.evaluate("() => document.querySelector('.end').classList.contains('dt-shown')") is True

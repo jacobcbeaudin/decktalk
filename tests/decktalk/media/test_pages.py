@@ -71,7 +71,7 @@ def test_a_page_that_answers_neither_ready_nor_painted_is_taken_as_it_stands_and
         pages.await_painted(Hangs(UNANSWERED).page())
     said = [record.getMessage() for record in caplog.records if record.name == "decktalk.media.pages"]
     assert len(said) == 2
-    assert "did not answer __dtprobe.ready()" in said[0] and "painted no frame" in said[1]
+    assert "did not answer __decktalkProbe.ready()" in said[0] and "painted no frame" in said[1]
 
 
 def test_a_page_that_cannot_report_leaves_a_report_that_says_so():
@@ -109,14 +109,14 @@ def test_a_deck_cannot_take_the_probes_name_on_a_real_page(tmp_path):
     deck.mkdir()
     deck.joinpath("index.html").write_text(
         "<!doctype html><meta charset=utf-8><title>t</title>"
-        "<script>window.__dtprobe = { report: () => ({ taken: true }) };</script>",
+        "<script>window.__decktalkProbe = { report: () => ({ taken: true }) };</script>",
         encoding="utf-8",
     )
     with browser.chromium(policy=browser.TRUSTED, spend=False) as real:
         page, _assets = pages.open_page(real, Allowed.of(tmp_path, ["deck"]), width=400, height=300)
         page.goto(page_url("deck/index.html"), wait_until="load")
-        assert page.evaluate("() => typeof window.__dtprobe.report") == "function"
-        assert page.evaluate("() => window.__dtprobe.report().taken") is None
+        assert page.evaluate("() => typeof window.__decktalkProbe.report") == "function"
+        assert page.evaluate("() => window.__decktalkProbe.report().taken") is None
         report = pages.read_report(page, "deck")
         assert report.unreadable == () and report.warnings == () and report.catalog == ()
 
@@ -129,7 +129,7 @@ def test_the_probe_travels_with_a_page_across_every_url_it_is_driven_through(tmp
         page, _assets = pages.open_page(real, allowed, width=320, height=240)
         for name in ("one.html", "two.html"):
             page.goto(page_url(f"deck/{name}"), wait_until="load")
-            assert page.evaluate("() => typeof window.__dtprobe.report") == "function", name
+            assert page.evaluate("() => typeof window.__decktalkProbe.report") == "function", name
 
 
 def test_a_frozen_frame_is_taken_once_the_page_is_ready_and_has_painted_twice(tmp_path):
@@ -145,3 +145,15 @@ def test_a_frozen_frame_is_taken_once_the_page_is_ready_and_has_painted_twice(tm
     order = [script for script in page.scripts if pages.READY_JS in script or pages.PAINTED_JS in script]
     assert [pages.READY_JS in script for script in order] == [True, False]
     assert waits == [], "no fixed settle is spent on top of ready() and two painted frames"
+
+
+def test_a_frame_the_browser_will_not_write_is_a_tool_failure_and_not_a_bug(tmp_path, monkeypatch):
+    """A page that closed under the screenshot is the tool failing, so it is never reported as INTERNAL."""
+
+    def refuses(_page: FakePage, **_kwargs: object) -> None:
+        raise PlaywrightError("Target page, context or browser has been closed\nCall log:")
+
+    monkeypatch.setattr(FakePage, "screenshot", refuses)
+    page = FakePage(FakeContext(tmp_path)).page()
+    with pytest.raises(ToolError, match=r"^could not write 01\.png \(Target page"):
+        pages.screenshot(page, page_url("deck/index.html"), tmp_path / "01.png")

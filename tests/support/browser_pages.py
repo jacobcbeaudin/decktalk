@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 import pytest
 from playwright.sync_api import Error as PlaywrightError
 
+from decktalk.page import DONE_ATTR
 from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.assets import katex_dir, runtime_path
 from support.tools import absent, machine_tools
@@ -93,4 +94,4 @@ def opened(page: Page, url: str) -> None:
 def settled(page: Page, url: str) -> None:
     """Open `url` and wait until the page has drawn everything the query asked it for."""
     page.goto(url)
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    page.wait_for_function(f"() => document.body.hasAttribute({DONE_ATTR!r})")

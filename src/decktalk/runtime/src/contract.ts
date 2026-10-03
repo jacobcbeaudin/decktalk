@@ -147,7 +147,7 @@ export type Count = keyof typeof COUNTS;
  * the documentation host into every deck.
  */
 export const CODES = {
-  PAGE_UNKNOWN_ATTR:
+  PAGE_ATTR_UNKNOWN:
     "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
   PAGE_BAD_VALUE: "{attr}={value} is not one of {allowed}, so write one of those instead.",
   PAGE_MOMENT_UNKNOWN:
@@ -259,7 +259,7 @@ const IN_SECONDS_RANGE: Range = { min: 0.12, max: 0.44, step: 0.04, unit: "secon
 const STAGGER_RANGE: Range = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
 
 /** How long a slide rests in the preview, which no recording reads and no check measures. */
-const HOLD_RANGE: Range = { min: 1, max: 60, step: 1, unit: "seconds" };
+const PREVIEW_SECONDS_RANGE: Range = { min: 1, max: 60, step: 1, unit: "seconds" };
 
 /**
  * Every attribute of the contract, in the order an author reaches for them.
@@ -521,13 +521,13 @@ export const ATTRS = {
     affects: ["cue-order", "catalog"],
     summary: "Declares a slide on a template. Its id qualifies every moment written inside it.",
   },
-  "data-hold": {
-    name: "data-hold",
+  "data-preview-seconds": {
+    name: "data-preview-seconds",
     on: ["slide"],
     kind: "seconds",
     values: [],
     default: "8",
-    range: HOLD_RANGE,
+    range: PREVIEW_SECONDS_RANGE,
     code: null,
     span: 0,
     affects: ["preview"],
@@ -573,7 +573,7 @@ export const EXEMPT = {
   "data-describe": "Any description clears the finding, so no value of it can change a verdict.",
   "data-describe-class": "The transcript prints the description verbatim, so no value of it can change a verdict.",
   "data-describe-out": "It replaces one transcript sentence with another, and neither is measured.",
-  "data-hold": "The preview alone reads it, and a preview is never recorded.",
+  "data-preview-seconds": "The preview alone reads it, and a preview is never recorded.",
   "data-name": "It names a scene in the index, which no check and no finding reads.",
 } as const satisfies Record<string, string>;
 
@@ -582,7 +582,7 @@ export const EXEMPT = {
 /** Every query key a DeckTalk page reads, with what it asks the page for. */
 export const QUERY = {
   scene: "Play this scene from its first slide.",
-  slide: "Freeze this slide with its cues already fired, which is what a screenshot opens.",
+  freeze: "Freeze this slide with its cues already fired, which is what a screenshot opens.",
   cues: "The cue times to fire at, as id@seconds pairs separated by a comma.",
   words: "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
   t0: "The narration second the page starts at, or the word signal when the recorder starts the clock.",
@@ -599,7 +599,7 @@ export type Q = keyof typeof QUERY;
 /** Every field the probe's one `report()` call answers with, and what a reader does with it. */
 export const REPORT = {
   version: "The runtime version the page carries.",
-  mode: "Which of index, preview, cue and freeze the page is in.",
+  mode: "Which of index, preview, record and freeze the page is in.",
   scene: "The scene the page is playing, or null on the index page.",
   slide: "The slide on screen, or null when none is mounted.",
   warnings: "Every distinct warning the page reported, as code, message, slide, cue and attr.",
@@ -637,6 +637,9 @@ export const LIST_SEPARATOR = ",";
 
 /** What `?t0=` says when the recorder starts the clock itself rather than naming a second. */
 export const T0_SIGNAL = "signal";
+
+/** The attribute the runtime sets on the body once the page has drawn everything its URL asked for. */
+export const DONE_ATTR = "data-done";
 
 /**
  * The path under every origin DeckTalk opens a page at that the engine answers itself.
@@ -697,7 +700,7 @@ export function message(code: Code, fields: Readonly<Record<string, string | num
   return CODES[code].replace(/\{(\w+)\}/g, (whole, key: string) => (key in fields ? String(fields[key]) : whole));
 }
 
-/** Whether a `data-` attribute name is one the contract defines, which is what `PAGE_UNKNOWN_ATTR` asks. */
+/** Whether a `data-` attribute name is one the contract defines, which is what `PAGE_ATTR_UNKNOWN` asks. */
 export function known(name: string): name is Attr {
   return Object.hasOwn(ATTRS, name);
 }
@@ -760,7 +763,6 @@ export function scaled(span: number, scale: number): number {
  * the JSON the skills quote.
  */
 export const CONTRACT = {
-  milliseconds: MILLISECONDS,
   secondDigits: SECOND_DIGITS,
   captureFps: CAPTURE_FPS,
   pairSeparator: PAIR_SEPARATOR,
@@ -769,6 +771,7 @@ export const CONTRACT = {
   timeMark: TIME_MARK,
   listSeparator: LIST_SEPARATOR,
   t0Signal: T0_SIGNAL,
+  doneAttr: DONE_ATTR,
   enginePath: ENGINE_PATH,
   previewCueTimes: PREVIEW_CUE_TIMES,
   motionScaleProperty: MOTION_SCALE_PROPERTY,

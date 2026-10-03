@@ -17,8 +17,8 @@ file for it. A sound placed on a cue lands on the second that cue resolved to, w
 | Narration | `build/narrate/narration.mp3` | It plays under the page sections. A clip between two page sections, or a hold, pauses it, so it plays in the runs the timeline splits it into. |
 | Clip audio | each clip file | Each clip's own sound lands at its section start, trimmed to its picture and faded over 20 milliseconds at each edge, so a cut into it never clicks. |
 | Music | `[mix] music` | One bed loops under the whole film at `[mix] music_db`. It fades in over `music_fade_in_seconds` and out over `music_fade_out_seconds`. |
-| Ambience bed | `[mix] ambience` | One bed loops at `[mix] ambience_db` under each page section that sets `ambience = true`, and is silent everywhere else. |
-| Effects | `[[mix.effects]]` | Each effect plays once, at the second its own cue resolved to plus its own `offset_seconds`, at its own `db`. |
+| Ambience bed | `[mix] ambience` | One bed loops at `[mix] ambience_db` under each page section that sets `with_ambience = true`, and is silent everywhere else. |
+| Effects | `[[mix.effect]]` | Each effect plays once, at the second its own cue resolved to plus its own `offset_seconds`, at its own `db`. |
 
 The anchor is what fixes the length. The picture carries no audio of its own, so without a silence as
 long as the film the soundtrack would run as long as whichever layer happened to be longest.
@@ -29,7 +29,7 @@ the narration and the clip audio alone. Nothing else changes.
 ### What `[mix]` holds
 
 [`[mix]`](/reference/decktalk-toml#mix) lists every key that names a file and its level, and
-[`[[mix.effects]]`](/reference/decktalk-toml#mix-effects) every key of an effect. A cued sound takes
+[`[[mix.effect]]`](/reference/decktalk-toml#mix-effect) every key of an effect. A cued sound takes
 a `caption`, and [Captions carry the whole soundtrack](/guides/accessible-video#captions-carry-the-whole-soundtrack)
 says what a viewer reads in its place.
 
@@ -84,7 +84,7 @@ Each table holds its prompt and its file beside the settings that size its reque
 same way in every table. [`[score]`](/reference/decktalk-toml#score) lists every key of each table,
 and [Configuration](/reference/configuration#score) every setting with its range.
 
-Music longer than `[score.music] max_chunk_seconds` is asked for in equal parts, because the
+Music longer than `[score.music] chunk_max_seconds` is asked for in equal parts, because the
 service will not write a long piece in one answer. Each part is told which one it is so it keeps the
 key and the tempo, and the parts are joined with a crossfade of `[score.music] crossfade_seconds`.
 
@@ -93,7 +93,7 @@ key and the tempo, and the parts are joined with a crossfade of `[score.music] c
 music = "media/bed.mp3"
 ambience = "media/room.mp3"
 
-[[mix.effects]]
+[[mix.effect]]
 file = "score/tick.mp3"
 section = 2
 cue = "2.1:code"
@@ -119,11 +119,11 @@ have to name the same path.
 |---|---|---|
 | Music | its parts in `score/music-part<n>.mp3`, joined into `[score.music] out`, else `[mix] music`, else `build/score/music.mp3` | `[mix] music` |
 | Ambience | `[score.ambience] out`, else `[mix] ambience`, else `score/ambience.mp3` | `[mix] ambience` |
-| Effect `<name>` | `[score.effects.<name>] out`, else `score/<name>.mp3` | every `[[mix.effects]]` row whose `file` names that path |
+| Effect `<name>` | `[score.effects.<name>] out`, else `score/<name>.mp3` | every `[[mix.effect]]` row whose `file` names that path |
 
 So naming the file in `[mix]` is enough for the music and the ambience: `score` writes to the
 path the mix will read. An effect has no such shortcut, because one generated sound can be cued in
-several places, so a `[[mix.effects]] file` points at `score/<name>.mp3` by hand.
+several places, so a `[[mix.effect]] file` points at `score/<name>.mp3` by hand.
 
 ### The score directory
 
@@ -232,7 +232,7 @@ normalising them would move the clicks the offset check listens for.
 
 ## Your own audio files
 
-Point `[mix] music`, `[mix] ambience` and each `[[mix.effects]] file` at any audio file ffmpeg can
+Point `[mix] music`, `[mix] ambience` and each `[[mix.effect]] file` at any audio file ffmpeg can
 read. A project that generates nothing needs no `[score]` table at all.
 
 Keep a file of your own at a path no `[score]` table writes to. An item whose ledger row does

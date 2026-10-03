@@ -29,16 +29,16 @@ from .conftest import VOICE_ID, a_paid_take
 
 
 def test_estimated_words_space_the_section_evenly_and_drop_its_punctuation() -> None:
-    (segment,) = parse_script("## 1. Open\n\nA bowl, a ball.\n")
-    words = estimated_words(segment, 4.0)
+    (section,) = parse_script("## 1. Open\n\nA bowl, a ball.\n")
+    words = estimated_words(section, 4.0)
     assert [word.word for word in words] == ["A", "bowl", "a", "ball"]
     assert words[0].start == 0.0
     assert words[-1].end == pytest.approx(3.98)
 
 
 def test_a_section_that_says_nothing_has_no_estimated_words() -> None:
-    (segment,) = parse_script("## 1. Open\n\n[A direction alone.]\n")
-    assert estimated_words(segment, 4.0) == []
+    (section,) = parse_script("## 1. Open\n\n[A direction alone.]\n")
+    assert estimated_words(section, 4.0) == []
 
 
 def test_placing_a_take_reads_its_own_bytes_and_its_own_section(inputs: Inputs) -> None:
@@ -61,10 +61,10 @@ def test_a_row_that_carries_its_sound_end_keeps_it(inputs: Inputs) -> None:
 @pytest.mark.usefixtures("fake_ffmpeg")
 def test_a_placeholder_take_writes_its_audio_and_its_words(inputs: Inputs) -> None:
     inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
-    (segment,) = [s for s in inputs.spoken() if s.index == 1]
-    plan = placeholder_plan(inputs, [segment])[0]
+    (section,) = [s for s in inputs.spoken() if s.number == 1]
+    plan = placeholder_plan(inputs, [section])[0]
     assert plan.digest is not None
-    row, written = write_placeholder_take(inputs, segment, "Open", plan.digest)
+    row, written = write_placeholder_take(inputs, section, "Open", plan.digest)
     assert [path.name for path in written] == [take_file(plan.digest, TAKE_SUFFIX), words_file(plan.digest)]
     assert all(path.exists() for path in written)
     assert row.voiced is False
@@ -81,10 +81,10 @@ def test_a_placeholder_take_closes_on_silence_so_its_sound_end_can_be_read(
     asked: list[float] = []
     monkeypatch.setattr(audio, "write_clicks", lambda path, duration, times, **_k: asked.append(duration))
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
-    (segment,) = [s for s in inputs.spoken() if s.index == 1]
+    (section,) = [s for s in inputs.spoken() if s.number == 1]
     (inputs.workspace.takes / take_file("000000000000000d", TAKE_SUFFIX)).write_bytes(b"")
-    write_placeholder_take(inputs, segment, "Open", "000000000000000d")
-    assert asked == [pytest.approx(segment.silent_seconds(inputs.settings.narration) + PLACEHOLDER_CLOSE_SECONDS)]
+    write_placeholder_take(inputs, section, "Open", "000000000000000d")
+    assert asked == [pytest.approx(section.placeholder_seconds(inputs.settings.narration) + PLACEHOLDER_CLOSE_SECONDS)]
 
 
 @pytest.mark.usefixtures("fake_ffmpeg")
@@ -92,9 +92,9 @@ def test_a_voiced_take_writes_what_the_provider_answered(
     inputs: Inputs, watched: Watched, fake_voice: FakeVoice
 ) -> None:
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
-    (segment,) = [s for s in inputs.spoken() if s.index == 1]
-    request = SpeechRequest(pieces=segment.pieces, voice_id=VOICE_ID, model="m")
-    row, written = write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)
+    (section,) = [s for s in inputs.spoken() if s.number == 1]
+    request = SpeechRequest(pieces=section.pieces, voice_id=VOICE_ID, model="m")
+    row, written = write_voiced_take(inputs, watched.run, fake_voice, section, "Open", "00000000000000af", request)
     assert (inputs.workspace.takes / take_file("00000000000000af", TAKE_SUFFIX)).read_bytes() == b"take"
     assert row.voiced is True
     assert row.speech_end_seconds == pytest.approx(1.0)
@@ -105,14 +105,14 @@ def test_a_voiced_take_writes_what_the_provider_answered(
 @pytest.mark.usefixtures("fake_ffmpeg")
 def test_a_voiced_take_is_charged_on_the_stream_once(inputs: Inputs, watched: Watched, fake_voice: FakeVoice) -> None:
     """The line a host's ledger reads carries the section, the take, its characters and its price."""
-    (segment,) = [s for s in inputs.spoken() if s.index == 1]
-    request = SpeechRequest(pieces=segment.pieces, voice_id=VOICE_ID, model="m")
-    write_voiced_take(inputs, watched.run, fake_voice, segment, "Open", "00000000000000af", request)
+    (section,) = [s for s in inputs.spoken() if s.number == 1]
+    request = SpeechRequest(pieces=section.pieces, voice_id=VOICE_ID, model="m")
+    write_voiced_take(inputs, watched.run, fake_voice, section, "Open", "00000000000000af", request)
     (charged,) = watched.of(TakeCharged)
     assert charged.section == 1
     assert charged.digest == "00000000000000af"
-    assert charged.characters == len(canonical_text(segment.pieces))
-    assert charged.dollars == pytest.approx(len(canonical_text(segment.pieces)) / 1000 * 0.30)
+    assert charged.characters == len(canonical_text(section.pieces))
+    assert charged.dollars == pytest.approx(len(canonical_text(section.pieces)) / 1000 * 0.30)
 
 
 @pytest.mark.usefixtures("fake_ffmpeg")
@@ -144,19 +144,19 @@ def test_the_narration_is_joined_in_the_order_the_index_holds(inputs: Inputs, mo
 
 
 def test_planned_words_estimate_a_section_nothing_has_voiced_yet(inputs: Inputs) -> None:
-    (segment,) = [s for s in inputs.spoken() if s.index == 1]
-    plan = placeholder_plan(inputs, [segment])[0]
+    (section,) = [s for s in inputs.spoken() if s.number == 1]
+    plan = placeholder_plan(inputs, [section])[0]
     words, span, estimated = planned_words(inputs, plan)
     assert estimated is True
     assert words[0].start == pytest.approx(inputs.lead_seconds(1))
-    assert span == pytest.approx(inputs.lead_seconds(1) + segment.silent_seconds(inputs.settings.narration) + 0.7)
+    assert span == pytest.approx(inputs.lead_seconds(1) + section.placeholder_seconds(inputs.settings.narration) + 0.7)
 
 
 @pytest.mark.usefixtures("fake_ffmpeg", "fake_voice")
 def test_planned_words_read_the_take_on_disk_when_there_is_one(inputs: Inputs) -> None:
     """A cached take already carries its own words, so a cue resolves against them and not a guess."""
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
-    targets = [s for s in inputs.spoken() if s.index == 1]
+    targets = [s for s in inputs.spoken() if s.number == 1]
     plans, _why = voiced_plan(inputs, targets, model="m", voice_id=VOICE_ID)
     digest = plans[0].digest
     assert digest is not None

@@ -29,12 +29,13 @@ from decktalk.events import Event, Level, RunLog
 from decktalk.files import replace_all
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs import Inputs
+from decktalk.inputs.workspace import LOCK_FILE, OWNER_FILE
 from decktalk.machine import Machine, Toolchain
 from decktalk.machine.run import Run
 from decktalk.media import audio
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
-from decktalk.project import LOCK_FILE, OWNER_FILE, Origin, Project, section_numbers
+from decktalk.project import Origin, Project, section_numbers
 from decktalk.results import (
     BuildResult,
     CheckResult,
@@ -47,6 +48,8 @@ from decktalk.results import (
 )
 from decktalk.results import Layer as SettingLayer
 from decktalk.settings import ToolsConfig
+from decktalk.speech import SpeechProviders
+from decktalk.speech.sound import SoundProviders
 from decktalk.stages import storyboard as storyboard_stage
 from decktalk.stages.table import CALLS
 from support.costs import a_cost
@@ -112,8 +115,8 @@ def _filler(name: str) -> dict[str, Any]:
         "cue": {"sections": (), "elapsed_seconds": 0.0},
         "record": {"sections": (), "elapsed_seconds": 0.0},
         "build": {"stages": (), "spend": False, "cost": priced, "elapsed_seconds": 0.0},
-        "status": {"name": "t", "script": Path("script.md"), "cues": Path("cues.json"), "sections": ()},
-        "check": {"judged": (), "pages": True, "frames": True, "cost": priced},
+        "status": {"name": "t", "script": Path("script.md"), "cues_file": Path("cues.json"), "sections": ()},
+        "check": {"judged": (), "pages_opened": True, "frames_compared": True, "cost": priced},
     }[name]
 
 
@@ -164,13 +167,13 @@ def test_an_override_given_for_one_run_reaches_the_settings(tmp_path: Path) -> N
     assert project.reload().settings.video.crf == 20
 
 
-@pytest.mark.parametrize("pair", ["record.page_policy=trusted", "record.browser_path=/bin/echo"])
+@pytest.mark.parametrize("pair", ["record.page_policy=trusted", "tools.chromium=/bin/echo"])
 def test_an_override_at_open_cannot_set_a_key_that_belongs_to_the_host_machine(tmp_path: Path, pair: str) -> None:
     """A host that forwards a tenant's pairs would otherwise hand the tenant its browser and its trust level."""
     write_project(tmp_path)
     host = Machine.of(
         environ={},
-        config_path=tmp_path / "host.toml",
+        machine_file=tmp_path / "host.toml",
         cwd=tmp_path,
         cache_dir=tmp_path / "cache",
         overrides=("record.page_policy=untrusted",),
@@ -198,6 +201,34 @@ def test_the_layers_say_which_layer_set_each_key(tmp_path: Path) -> None:
 def test_a_changed_file_names_the_sections_a_watch_loop_must_rebuild(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     assert project.sections_touching(tmp_path / "deck" / "index.html") == (1, 2)
+
+
+def test_a_price_covers_the_stages_that_buy_and_opens_no_run(tmp_path: Path) -> None:
+    """The takes of a written script are priced from the plan alone, and a span that buys nothing has no price."""
+    project = a_project(tmp_path)
+    (tmp_path / "script.md").write_text("## 1. One\n\nHello there.\n\n## 2. Two\n\nAnd again.\n", encoding="utf-8")
+    priced = project.price(stages=[Stage.NARRATE], only=[1])
+    assert priced is not None
+    assert priced.sections == (1,)
+    assert project.price(stages=[Stage.RECORD, Stage.ASSEMBLE]) is None
+    assert not (tmp_path / "build" / "events").exists(), "pricing opened a run"
+
+
+def test_what_a_run_writes_is_never_an_authored_file(tmp_path: Path) -> None:
+    project = a_project(tmp_path)
+    for written in ("build/takes.json", "node_modules/x/index.js", ".git/HEAD"):
+        (tmp_path / written).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / written).write_text("{}", encoding="utf-8")
+    (tmp_path / "script.md").write_text("one", encoding="utf-8")
+    assert set(project.authored_files()) == {tmp_path / "decktalk.toml", tmp_path / "script.md"}
+
+
+def test_a_build_folder_the_project_names_is_never_an_authored_file(tmp_path: Path) -> None:
+    """A run writes into this folder, so watching it would start the next build without end."""
+    project = a_project(tmp_path, MINIMAL_TOML.replace('name = "t"', 'name = "t"\nbuild = "out/film"'))
+    (tmp_path / "out" / "film").mkdir(parents=True)
+    (tmp_path / "out" / "film" / "takes.json").write_text("{}", encoding="utf-8")
+    assert set(project.authored_files()) == {tmp_path / "decktalk.toml"}
 
 
 # ---- the selection edge ------------------------------------------------------------------------
@@ -254,7 +285,7 @@ name = "t"
 number = 1
 page = "deck/index.html"
 scene = "1"
-ambience = true
+with_ambience = true
 
 [score.ambience]
 prompt = "a quiet room"
@@ -298,11 +329,11 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
     machine = Machine(
         environ={"DECKTALK_VOICE_ID": "voice-under-test"},
         tables={},
-        config_path=tmp_path / "config.toml",
+        machine_file=tmp_path / "config.toml",
         cwd=tmp_path,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
-        speech_providers={FAKE_VOICE_NAME: lambda _context: bought.voice},
-        sound_providers={"elevenlabs": lambda _context: bought},
+        speech_providers=SpeechProviders(factories={FAKE_VOICE_NAME: lambda _context: bought.voice}),
+        sound_providers=SoundProviders(factories={"elevenlabs": lambda _context: bought}),
     )
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
     monkeypatch.setattr(
@@ -331,7 +362,7 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
 def test_a_result_that_is_not_the_one_the_command_is_named_after_is_a_bug(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    answer = {"name": "t", "script": Path("s"), "cues": Path("c"), "sections": ()}
+    answer = {"name": "t", "script": Path("s"), "cues_file": Path("c"), "sections": ()}
     a_stage(monkeypatch, "cue", lambda _inputs, run, **_options: run.result(StatusResult, **answer))
     with pytest.raises(TypeError, match="cue answered with StatusResult"):
         a_project(tmp_path).cue()
@@ -401,7 +432,7 @@ def test_a_build_directory_linked_out_of_the_project_is_neither_pruned_nor_writt
     outside.mkdir()
     victim = outside / "victim.jsonl"
     victim.write_text("not the project's\n", encoding="utf-8")
-    project = a_project(root, MINIMAL_TOML + "\n[output]\nevents_keep_runs = 1\n")
+    project = a_project(root, MINIMAL_TOML + "\n[events]\nkeep_runs = 1\n")
     project._inputs.workspace.build.mkdir()
     project._inputs.workspace.events_dir.symlink_to(outside, target_is_directory=True)
     with pytest.raises(InputError) as refused:
@@ -538,7 +569,7 @@ import os, sys
 from pathlib import Path
 from filelock import FileLock
 from decktalk.files import replace_all
-from decktalk.project import LOCK_FILE, OWNER_FILE
+from decktalk.inputs.workspace import LOCK_FILE, OWNER_FILE
 build = Path(sys.argv[1])
 lock = FileLock(build / LOCK_FILE)
 lock.acquire()
@@ -603,7 +634,7 @@ def test_the_callers_threshold_reaches_the_build(tmp_path: Path, fake_stages: di
 def fixing(edit: Edit) -> Finding:
     """A finding whose one safe fix is `edit`."""
     fix = EditFix(title="Repair the row.", applicability=Applicability.SAFE, edits=(edit,))
-    return Finding(code=Code.CUE_MISSING, message="x", location=Location(where=edit.file.as_posix()), fix=fix)
+    return Finding(code=Code.CUE_UNLISTED, message="x", location=Location(where=edit.file.as_posix()), fix=fix)
 
 
 @pytest.mark.parametrize(
@@ -638,7 +669,7 @@ def test_an_edit_into_a_file_that_is_not_there_says_so_rather_than_raising(tmp_p
 
 def test_a_finding_with_no_fix_is_nothing_to_apply(tmp_path: Path) -> None:
     project = a_project(tmp_path)
-    found = Finding(code=Code.CUE_MISSING, message="x", location=Location(where="cues.json"))
+    found = Finding(code=Code.CUE_UNLISTED, message="x", location=Location(where="cues.json"))
     assert project.apply([found]).fixes == ()
 
 
@@ -669,7 +700,7 @@ def test_a_voiced_build_under_the_untrusted_policy_is_refused_before_it_buys_any
     machine = Machine(
         environ={},
         tables={"record": {"page_policy": "untrusted"}},
-        config_path=tmp_path / "config.toml",
+        machine_file=tmp_path / "config.toml",
         cwd=tmp_path,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
     )

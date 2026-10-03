@@ -1,8 +1,8 @@
-/*! The stage a deck is drawn on, and the one stylesheet that renders every closed word.
+/*! The canvas a deck is drawn on, and the one stylesheet that renders every closed word.
  *
- * A DeckTalk page draws into one stage of a fixed size, named below and scaled to whatever window
+ * A DeckTalk page draws onto one canvas of a fixed size, named below and scaled to whatever window
  * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
- * This module owns that stage, the fit, the heads-up display, and the stylesheet.
+ * This module owns that canvas, the fit, the heads-up display, and the stylesheet.
  *
  * Every rule below is generated from the registry, so a style word's length lives once. Each
  * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
@@ -27,9 +27,9 @@ import {
   type WordStyle,
 } from "./contract.ts";
 
-/** The stage every deck is laid out on, which is the frame a recording captures. */
-const STAGE_WIDTH = 1920;
-const STAGE_HEIGHT = 1080;
+/** The canvas every deck is laid out on, which is the frame a recording captures. */
+const CANVAS_WIDTH = 1920;
+const CANVAS_HEIGHT = 1080;
 
 /** The one easing every entrance shares, which draws a quarter of the element inside the first frame. */
 const EASE = "cubic-bezier(.2,.7,.2,1)";
@@ -116,7 +116,7 @@ function rule(family: string, word: string, seconds: number, body: string, extra
 /**
  * The rules for the two things DeckTalk draws for an author rather than for a film.
  *
- * The heads-up display sits over the stage and the index page lists a deck's scenes, and a
+ * The heads-up display sits over the canvas and the index page lists a deck's scenes, and a
  * recording holds neither of them. Every length here is therefore typography that no check reads
  * and no finding names, which is why the block is one binding rather than a number a reader has to
  * weigh one at a time.
@@ -145,7 +145,7 @@ function sheet(): string {
     .join(",");
   const parts = [
     `:where(${declared}){display:none}\n`,
-    `:where(#dt-stage){position:absolute;left:0;top:0;width:${STAGE_WIDTH}px;height:${STAGE_HEIGHT}px;` +
+    `:where(#dt-canvas){position:absolute;left:0;top:0;width:${CANVAS_WIDTH}px;height:${CANVAS_HEIGHT}px;` +
       "overflow:hidden;transform-origin:0 0}\n",
     ":where(#dt-camera,#dt-pan){position:absolute;inset:0}\n",
     `:where(.${CLASS.slide}){position:absolute;inset:0}\n`,
@@ -190,8 +190,8 @@ function sheet(): string {
   return parts.join("");
 }
 
-/** The elements the stage is made of, created once and kept for as long as the page is open. */
-let stageEl: HTMLElement | null = null;
+/** The elements the canvas is made of, created once and kept for as long as the page is open. */
+let canvasEl: HTMLElement | null = null;
 let cameraEl: HTMLElement | null = null;
 let panEl: HTMLElement | null = null;
 let hudEl: HTMLElement | null = null;
@@ -236,18 +236,18 @@ export function span(el: HTMLElement, seconds: number): void {
   el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds, motionScale())}s`);
 }
 
-/** Build the stage, fit it to the window, and keep it fitted for as long as the page is open. */
+/** Build the canvas, fit it to the window, and keep it fitted for as long as the page is open. */
 export function build(hud: boolean): void {
-  if (stageEl) return;
-  stageEl = document.getElementById("dt-stage") ?? document.createElement("div");
-  stageEl.id = "dt-stage";
-  if (!stageEl.isConnected) document.body.appendChild(stageEl);
+  if (canvasEl) return;
+  canvasEl = document.getElementById("dt-canvas") ?? document.createElement("div");
+  canvasEl.id = "dt-canvas";
+  if (!canvasEl.isConnected) document.body.appendChild(canvasEl);
   cameraEl = document.createElement("div");
   cameraEl.id = "dt-camera";
   panEl = document.createElement("div");
   panEl.id = "dt-pan";
   cameraEl.appendChild(panEl);
-  stageEl.appendChild(cameraEl);
+  canvasEl.appendChild(cameraEl);
   if (hud) {
     hudEl = document.createElement("div");
     hudEl.id = "dt-hud";
@@ -258,13 +258,13 @@ export function build(hud: boolean): void {
   window.addEventListener("resize", fit);
 }
 
-/** Scale the stage into the window and centre it, which is what turns a client rect into stage pixels. */
+/** Scale the canvas into the window and centre it, which is what turns a client rect into canvas pixels. */
 function fit(): void {
-  if (!stageEl) return;
-  fitScale = Math.min(window.innerWidth / STAGE_WIDTH, window.innerHeight / STAGE_HEIGHT);
-  const x = (window.innerWidth - STAGE_WIDTH * fitScale) / 2;
-  const y = (window.innerHeight - STAGE_HEIGHT * fitScale) / 2;
-  stageEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
+  if (!canvasEl) return;
+  fitScale = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT);
+  const x = (window.innerWidth - CANVAS_WIDTH * fitScale) / 2;
+  const y = (window.innerHeight - CANVAS_HEIGHT * fitScale) / 2;
+  canvasEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
 }
 
 /** The layer slides are mounted into, which is where every reveal is drawn. */
@@ -272,12 +272,12 @@ export function pan(): HTMLElement {
   return panEl as HTMLElement;
 }
 
-/** The stage itself, which is the frame every measured box is taken against. */
+/** The canvas itself, which is the frame every measured box is taken against. */
 export function frame(): HTMLElement {
-  return stageEl as HTMLElement;
+  return canvasEl as HTMLElement;
 }
 
-/** The stage's current fit, which turns a client rect into the stage pixels a check reasons in. */
+/** The canvas's current fit, which turns a client rect into the canvas pixels a check reasons in. */
 export function scale(): number {
   return fitScale;
 }
@@ -287,9 +287,9 @@ export function freeze(): void {
   document.documentElement.classList.add(CLASS.frozen);
 }
 
-/** Hide the stage, which the index page does because it lists slides rather than drawing one. */
+/** Hide the canvas, which the index page does because it lists slides rather than drawing one. */
 export function hide(): void {
-  if (stageEl) stageEl.style.display = "none";
+  if (canvasEl) canvasEl.style.display = "none";
   document.body.style.overflow = "auto";
 }
 

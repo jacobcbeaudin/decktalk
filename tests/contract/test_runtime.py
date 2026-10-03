@@ -52,16 +52,16 @@ pytestmark = pytest.mark.browser
 # are local names, so the cue ids the recorder sees are "1.1:ball" and the rest.
 MARKUP_SCENE = """
 <div data-scene="1" data-name="Open">
-  <template data-slide="1.1" data-hold="6">
+  <template data-slide="1.1" data-preview-seconds="6">
     <h1 class="title">A bowl</h1>
     <p class="ball" data-in="ball" data-in-style="pop" data-describe="a ball rests in the bowl">A ball</p>
     <p class="step" data-in="step" data-back="ball" data-describe="the step down">Watch it step down</p>
   </template>
-  <template data-slide="1.2" data-hold="4">
+  <template data-slide="1.2" data-preview-seconds="4">
     <p class="sum" data-in="sum" data-tex-display data-tex="\\sum_{i=1}^{n} x_i"
        data-describe="the sum of the first n terms">the sum of x i from one to n</p>
   </template>
-  <template data-slide="1.3" data-hold="4" data-owns="aside">
+  <template data-slide="1.3" data-preview-seconds="4" data-owns="aside">
     <p class="late" data-in="late" data-describe="the closing line">nothing follows</p>
   </template>
 </div>
@@ -178,7 +178,7 @@ def test_the_stylesheet_is_prepended_and_carries_no_specificity(page, tmp_path):
     forced = [line for line in sheet.splitlines() if "!important" in line]
     assert all("dt-frozen" in line for line in forced)
     assert page.evaluate("() => document.head.firstElementChild.id") == "dt-style"
-    settled(page, f"{write_page(tmp_path, 'weight-shown.html', MARKUP_SCENE, head=head + KATEX)}?slide=1.1")
+    settled(page, f"{write_page(tmp_path, 'weight-shown.html', MARKUP_SCENE, head=head + KATEX)}?freeze=1.1")
     assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).color") == "rgb(1, 2, 3)"
 
 
@@ -205,7 +205,7 @@ def test_a_markup_scene_needs_no_javascript(page, tmp_path):
 
 def test_a_template_slide_writes_a_backslash_once(page, tmp_path):
     """Markup is parsed and not evaluated, which is the reason to prefer a template to a render string."""
-    settled(page, f"{deck(tmp_path, 'tex.html')}?slide=1.2")
+    settled(page, f"{deck(tmp_path, 'tex.html')}?freeze=1.2")
     assert page.evaluate("() => document.querySelector('.sum').getAttribute('data-tex')") == "\\sum_{i=1}^{n} x_i"
 
 
@@ -289,7 +289,7 @@ def test_cue_mode_fires_in_order_and_reports_each_cue(page, tmp_path):
     settled(page, f"{url}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:step@0.3,1.2:sum@0.6")
     page.wait_for_function("() => window.__decktalk.fired.length === 3")
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step", "1.2:sum"]
-    assert page.evaluate("() => window.__decktalk.mode") == "cue"
+    assert page.evaluate("() => window.__decktalk.mode") == "record"
 
 
 def test_the_first_slide_is_mounted_before_the_clock_starts(page, tmp_path):
@@ -305,7 +305,7 @@ def test_the_first_slide_is_mounted_before_the_clock_starts(page, tmp_path):
 
 def test_freeze_mode_fires_every_cue_the_slide_declares(page, tmp_path):
     """A still is the whole slide, which is what the index links and what a screenshot records."""
-    settled(page, f"{deck(tmp_path, 'frozen.html')}?slide=1.1")
+    settled(page, f"{deck(tmp_path, 'frozen.html')}?freeze=1.1")
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
     assert page.evaluate("() => window.__decktalk.mode") == "freeze"
     assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).opacity") == "1"
@@ -317,8 +317,8 @@ def test_the_index_page_lists_every_scene_and_slide(page, tmp_path):
     assert page.evaluate("() => window.__decktalk.mode") == "index"
     links = page.evaluate("() => [...document.querySelectorAll('#dt-index a')].map((a) => a.getAttribute('href'))")
     assert "?scene=1" in links
-    assert "?slide=1.1" in links
-    assert page.evaluate("() => getComputedStyle(document.getElementById('dt-stage')).display") == "none"
+    assert "?freeze=1.1" in links
+    assert page.evaluate("() => getComputedStyle(document.getElementById('dt-canvas')).display") == "none"
 
 
 def test_a_preview_without_cue_times_still_shows_every_cue(page, tmp_path):
@@ -628,7 +628,7 @@ def test_a_decorative_element_writes_no_line(page, tmp_path):
       <template data-slide="11.1"><p class="rule" data-in="show" data-describe="">---</p></template>
     </div>
     """
-    settled(page, f"{write_page(tmp_path, 'decorative.html', scene)}?slide=11.1")
+    settled(page, f"{write_page(tmp_path, 'decorative.html', scene)}?freeze=11.1")
     assert warnings_of(page) == []
 
 
@@ -700,7 +700,7 @@ def test_an_attribute_the_registry_does_not_define_is_reported(page, tmp_path):
     """
     opened(page, write_page(tmp_path, "misspelled.html", scene))
     rows = warnings_of(page)
-    assert [row["code"] for row in rows] == ["PAGE_UNKNOWN_ATTR"]
+    assert [row["code"] for row in rows] == ["PAGE_ATTR_UNKNOWN"]
     assert rows[0]["attr"] == "data-inn"
 
 
@@ -736,7 +736,7 @@ def test_katex_refusing_a_value_leaves_the_readable_text(page, tmp_path):
       </template>
     </div>
     """
-    settled(page, f"{write_page(tmp_path, 'katex-bad.html', scene, head=KATEX)}?slide=19.1")
+    settled(page, f"{write_page(tmp_path, 'katex-bad.html', scene, head=KATEX)}?freeze=19.1")
     assert "PAGE_KATEX_ERROR" in codes_of(page)
     assert page.evaluate("() => document.querySelector('.bad').textContent") == "one over"
 

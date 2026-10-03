@@ -150,9 +150,9 @@ class ElevenLabs:
             "voice_settings": request.voice_settings,
         }
         if request.previous_text:
-            payload["previous_text"] = request.previous_text[-self.context.context_chars :]
+            payload["previous_text"] = request.previous_text[-self.context.context_characters :]
         if request.next_text:
-            payload["next_text"] = request.next_text[: self.context.context_chars]
+            payload["next_text"] = request.next_text[: self.context.context_characters]
         reply = post_json(
             f"{url}?output_format={request.output_format}" if request.output_format else url,
             payload,

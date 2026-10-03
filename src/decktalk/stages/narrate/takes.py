@@ -7,7 +7,7 @@ ends, measured from its own bytes, and its tail is the section's `tail_seconds` 
 `[narration] tail_seconds` after that. The join puts the lead before the take, cuts the take at
 its sound end and puts the tail after it, so whatever the take holds past its sound end, such as a
 breath after its last word, never plays, and the silence across every cut is one tail plus one lead.
-Nothing about a neighbour, and nothing about whether this run voiced the take or found it cached,
+Nothing about a neighbour, and nothing about whether this run voiced the take or found it on disk,
 reaches those numbers, which is what lets a change to one sentence rebuild one section and no other.
 None of them is part of the input digest either, so changing a lead or a tail voices nothing.
 
@@ -40,7 +40,7 @@ from decktalk.errors import ProjectLocked
 from decktalk.events import Level, TakeCharged
 from decktalk.files import replace_all
 from decktalk.inputs import Inputs
-from decktalk.inputs.script import Segment
+from decktalk.inputs.script import ScriptSection
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
@@ -90,9 +90,9 @@ def place(inputs: Inputs, number: int, row: Take) -> Take:
     )
 
 
-def estimated_words(segment: Segment, duration: float) -> list[Word]:
+def estimated_words(section: ScriptSection, duration: float) -> list[Word]:
     """Evenly spaced words for a run without voice, so every cue resolves to a plausible time."""
-    tokens = segment.spoken.split()
+    tokens = section.spoken.split()
     if not tokens:
         return []
     per = max(SHORTEST_PLACEHOLDER_SECONDS, duration) / len(tokens)
@@ -106,33 +106,35 @@ def estimated_words(segment: Segment, duration: float) -> list[Word]:
     ]
 
 
-def take_row(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voiced: bool) -> Take:
+def take_row(inputs: Inputs, section: ScriptSection, chapter: str, digest: str, *, voiced: bool) -> Take:
     """The take index row for one section, placed, with the fields every kind of take shares."""
     workspace = inputs.workspace
     written = inputs.take_words(digest)
     row = Take(
-        section=segment.index,
-        key=segment.key,
+        section=section.number,
+        key=section.key,
         chapter=chapter,
         digest=digest,
         voiced=voiced,
-        word_count=segment.word_count,
-        characters=len(canonical_text(segment.pieces)),
-        estimated_seconds=segment.estimated_seconds(inputs.settings.narration),
+        word_count=section.word_count,
+        characters=len(canonical_text(section.pieces)),
+        estimated_seconds=section.estimated_seconds(inputs.settings.narration),
         duration_seconds=ffmpeg.probe_duration(workspace.take_path(digest)),
         speech_end_seconds=written.end if written is not None else None,
-        spoken=segment.spoken,
+        spoken=section.spoken,
     )
-    return place(inputs, segment.index, row)
+    return place(inputs, section.number, row)
 
 
-def write_placeholder_take(inputs: Inputs, segment: Segment, chapter: str, digest: str) -> tuple[Take, list[Path]]:
+def write_placeholder_take(
+    inputs: Inputs, section: ScriptSection, chapter: str, digest: str
+) -> tuple[Take, list[Path]]:
     """Write one click track and its estimated words, and give back the row and the files."""
     cfg = inputs.settings.narration
     home = inputs.workspace.narrate_dir
     out = home / inputs.workspace.take_file(digest)
-    duration = segment.silent_seconds(cfg)
-    words = estimated_words(segment, duration)
+    duration = section.placeholder_seconds(cfg)
+    words = estimated_words(section, duration)
     clicks = [word.start for word in words] + ([words[-1].end] if words else [])
     audio.write_clicks(
         out,
@@ -143,14 +145,14 @@ def write_placeholder_take(inputs: Inputs, segment: Segment, chapter: str, diges
     )
     written = home / words_file(digest)
     EstimatedWords(words=tuple(words)).write(written)
-    return take_row(inputs, segment, chapter, digest, voiced=False), [out, written]
+    return take_row(inputs, section, chapter, digest, voiced=False), [out, written]
 
 
 def write_voiced_take(
     inputs: Inputs,
     run: Run,
     provider: SpeechProvider,
-    segment: Segment,
+    section: ScriptSection,
     chapter: str,
     digest: str,
     request: SpeechRequest,
@@ -170,10 +172,10 @@ def write_voiced_take(
     voice = inputs.settings.voice.provider
     if not is_free(voice):
         characters = len(canonical_text(request.pieces))
-        seconds = segment.estimated_seconds(inputs.settings.narration)
+        seconds = section.estimated_seconds(inputs.settings.narration)
         run.emit(
             TakeCharged,
-            section=segment.index,
+            section=section.number,
             digest=digest,
             characters=characters,
             dollars=dollars_for(billed(characters, seconds, voice), inputs),
@@ -187,7 +189,7 @@ def write_voiced_take(
     # stopped while it writes leaves both or neither and never audio with no words to vouch for it.
     replace_all(pair)
     keep_in_store(inputs, run, digest, {path.name: content for path, content in pair.items()})
-    return take_row(inputs, segment, chapter, digest, voiced=True), [out, written]
+    return take_row(inputs, section, chapter, digest, voiced=True), [out, written]
 
 
 def keep_in_store(inputs: Inputs, run: Run, digest: str, pair: dict[str, str | bytes]) -> None:
@@ -354,24 +356,24 @@ def planned_words(inputs: Inputs, plan: TakePlan) -> tuple[tuple[Word, ...], flo
     is what lets `check` resolve every cue against the words a section will have before anything is
     voiced.
     """
-    segment = plan.segment
-    number = segment.index
+    section = plan.section
+    number = section.number
     lead, tail = inputs.lead_seconds(number), inputs.tail_seconds(number)
     index = inputs.takes()
     row = index.of(number) if index is not None else None
     paid = row if row is not None and row.voiced else None
-    if plan.cached and plan.digest is not None and is_held(plan.digest, inputs.workspace):
+    if plan.held and plan.digest is not None and is_held(plan.digest, inputs.workspace):
         # The take of this exact text is on disk, so the cues land on the words it already carries.
-        words = inputs.words(number, plan.digest)
+        words = inputs.section_words(number, plan.digest)
         if paid is not None and paid.digest == plan.digest:
             return words, place(inputs, number, paid).span_seconds, False
         end = sound_end_of(inputs, inputs.workspace.take_path(plan.digest))
         return words, round(lead + end + tail, SECOND_DIGITS), False
-    if plan.unchecked and paid is not None and paid.spoken == segment.spoken:
+    if plan.unchecked and paid is not None and paid.spoken == section.spoken:
         # There is no voice to ask, and the take on disk was voiced from this exact text.
-        return inputs.words(number, paid.digest), place(inputs, number, paid).span_seconds, False
-    length = segment.silent_seconds(inputs.settings.narration)
-    shifted = Words(words=tuple(estimated_words(segment, length))).shifted(lead)
+        return inputs.section_words(number, paid.digest), place(inputs, number, paid).span_seconds, False
+    length = section.placeholder_seconds(inputs.settings.narration)
+    shifted = Words(words=tuple(estimated_words(section, length))).shifted(lead)
     return shifted, round(lead + length + tail, SECOND_DIGITS), True
 
 

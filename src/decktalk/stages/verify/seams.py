@@ -48,7 +48,7 @@ def start_checks(inputs: Inputs, run: Run, film: Path, starts: dict[int, float])
     for number, at in starts.items():
         probe = at + verify.after_dip_seconds
         _mean, brightest = frames.luma_at(film, probe)
-        rows.append(StartCheck(section=number, at=round(probe, 3), luma=round(brightest, 2)))
+        rows.append(StartCheck(section=number, at_seconds=round(probe, 3), luma=round(brightest, 2)))
         if brightest <= verify.black_max_luma:
             run.found(
                 judge(
@@ -89,7 +89,9 @@ def cut_checks(
         speech = audio.rms_db(narration, max(0.0, end - window), window)
         at = round(offsets[section.number] + end, 3)
         step = _step_dbfs(film, at)
-        rows.append(CutCheck(section=section.number, at=at, speech_dbfs=round(speech, 2), step_dbfs=round(step, 2)))
+        rows.append(
+            CutCheck(section=section.number, at_seconds=at, speech_dbfs=round(speech, 2), step_dbfs=round(step, 2))
+        )
         if speech > verify.cut_max_dbfs:
             run.found(
                 judge(
@@ -126,7 +128,7 @@ def planned_seams(inputs: Inputs, starts: dict[int, float]) -> list[Seam]:
 
     The frames compared sit outside any dip, so a fade to black is never taken for a jump.
     """
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     flags = inputs.document.fade_flags
     dip = frame_dip(inputs.document.transition.dip_seconds, fps)
     sections = inputs.document.sections
@@ -143,7 +145,7 @@ def planned_seams(inputs: Inputs, starts: dict[int, float]) -> list[Seam]:
 
 def want_seams(inputs: Inputs, seams: list[Seam], wanted: Wanted) -> None:
     """Add the frames every seam compares, the opening and the few after it, to the film's one plan."""
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     size = frame_size(inputs.settings)
     for seam in seams:
         wanted.point(size, seam.last, *(seam.opening + step / fps for step in range(SEAM_SEARCH_FRAMES + 1)))
@@ -156,14 +158,14 @@ def seam_checks(inputs: Inputs, run: Run, film: Path, seams: list[Seam], decoded
     shows what the outgoing one ended on, which is how late a section that slipped arrived.
     """
     verify = inputs.settings.verify
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     size = frame_size(inputs.settings)
     rows: list[SeamCheck] = []
     for seam in seams:
         drift, share = _drift(
             decoded, seam.last, seam.opening, fps, size, verify.probe_diff_luma, verify.cut_change_max_percent
         )
-        rows.append(SeamCheck(section=seam.section, at=round(seam.cut, 3), drift=drift))
+        rows.append(SeamCheck(section=seam.section, at_seconds=round(seam.cut, 3), drift_seconds=drift))
         if share > verify.cut_change_max_percent:
             run.found(
                 judge(

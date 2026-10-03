@@ -10,12 +10,13 @@ from typing import Any, cast
 from playwright.sync_api import Browser, BrowserContext, Page
 
 from decktalk.media import pagereport, pages, recording
+from decktalk.media.browser import TRUSTED, Chromium, PagePolicy
 from decktalk.media.origin import Allowed, page_url
 from decktalk.settings import MotionConfig
 
 REPORTED = {
     "version": "0.5.0",
-    "mode": "cue",
+    "mode": "record",
     "scene": "intro",
     "slide": "1.1",
     "warnings": [{"code": "PAGE_CUE_UNKNOWN", "message": "no such cue", "cue": "1.1:nope"}],
@@ -25,7 +26,7 @@ REPORTED = {
     "frameGaps": [{"at": 0.4, "ms": 150}],
     "longFrames": [],
 }
-"""What the page answers `window.__dtprobe.report()` with, in the shape the contract names."""
+"""What the page answers `window.__decktalkProbe.report()` with, in the shape the contract names."""
 
 
 @dataclass
@@ -130,9 +131,9 @@ class FakeBrowser:
         self.contexts: list[FakeContext] = []
         self.asked: list[dict[str, object]] = []  # what each context was opened with
 
-    def browser(self) -> Browser:
-        """This browser as the Playwright browser it stands in for."""
-        return cast("Browser", self)
+    def opened(self, policy: PagePolicy = TRUSTED) -> Chromium:
+        """This browser as a Chromium launched under `policy`, which is what `chromium()` yields."""
+        return Chromium(cast("Browser", self), policy)
 
     def new_context(self, **kwargs: object) -> FakeContext:
         self.asked.append(kwargs)
@@ -166,7 +167,7 @@ def record(
     """One fake recording of the deck's page, with any option of `record_page` a test is about in `extra`."""
     options: dict[str, Any] = {
         "settle_seconds": 0.0,
-        "min_cover_seconds": 0.0,
+        "cover_min_seconds": 0.0,
         "width": 960,
         "height": 540,
         "color_scheme": "dark",
@@ -175,7 +176,7 @@ def record(
     }
     allowed = Allowed.of(tmp_path, ["deck"])
     return recording.record_page(
-        (fake or FakeBrowser()).browser(),
+        (fake or FakeBrowser()).opened(),
         page_url("deck/index.html"),
         seconds,
         out,

@@ -7,9 +7,11 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError
 
 from decktalk.errors import ToolError
 from decktalk.media import bias, browser
+from decktalk.media.browser import Chromium
 from support.recorder import FakeBrowser, FakeContext, FakePage
 
 
@@ -18,10 +20,10 @@ def measuring(monkeypatch, presented: list[float]) -> None:
     fake = FakeBrowser()
 
     @contextmanager
-    def chromium(_browser_path: str = "", *, policy: str, spend: bool) -> Iterator[FakeBrowser]:
+    def chromium(_executable: str = "", *, policy: str, spend: bool) -> Iterator[Chromium]:
         assert policy == browser.TRUSTED, "the bias page is DeckTalk's own"
         assert not spend, "a measurement of the machine is never a run that buys"
-        yield fake
+        yield fake.opened()
 
     def new_page(**_kwargs: object) -> FakePage:
         page = FakePage(FakeContext(Path(".")))
@@ -65,3 +67,15 @@ def test_this_machine_either_measures_a_bias_inside_the_published_range_or_says_
         assert "reports no presentation times" in str(refused)
         return
     assert -BIAS_LIMIT_MS <= measured <= BIAS_LIMIT_MS
+
+
+def test_a_bias_page_the_browser_will_not_draw_is_a_tool_failure_and_not_a_bug(monkeypatch):
+    """`doctor --measure` on a browser that closes under it says the tool failed, never INTERNAL."""
+
+    def refuses(_page: FakePage, _html: str) -> None:
+        raise PlaywrightError("Target page, context or browser has been closed\nCall log:")
+
+    measuring(monkeypatch, [11.0])
+    monkeypatch.setattr(FakePage, "set_content", refuses)
+    with pytest.raises(ToolError, match=r"^could not open a page \(Target page"):
+        bias.measure_presentation_bias()

@@ -30,10 +30,10 @@ from pydantic import Field, field_validator, model_validator
 from decktalk.errors import ErrorInfo
 from decktalk.findings import Finding, Model, ProjectPath
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Cost, Elapsed, Run, SectionNumber, SoundKind
+from decktalk.results import Cost, Elapsed, RunId, SectionNumber, SoundKind
 from decktalk.secret import redacted
 
-MOMENT = "Which moment this line reports, which is what a reader dispatches on."
+MOMENT = "Which event this line is, which is what a reader dispatches on."
 """The one sentence the discriminator publishes, so all thirteen names describe themselves alike."""
 
 
@@ -62,7 +62,7 @@ class Event(Model):
     event: str = Field(description=MOMENT)
     time: datetime = Field(description="When this happened, as an instant.", json_schema_extra={"volatile": True})
     seq: int = Field(ge=0, description="This line's place in its run, counting from zero.")
-    run: Run
+    run: RunId
 
     @model_validator(mode="before")
     @classmethod
@@ -75,7 +75,7 @@ class RunStart(Event):
     """A run opened, and this is where its lines are being written."""
 
     event: Literal["run.start"] = Field("run.start", description=MOMENT)
-    events_path: ProjectPath | None = Field(
+    events_file: ProjectPath | None = Field(
         None, description="The file this run's lines are appended to, or null when no project holds one."
     )
 
@@ -91,7 +91,7 @@ class RunDone(Event):
         description="Why the run stopped or failed, in the shape a result's error takes, or null when it finished.",
     )
     dropped: int = Field(
-        0, ge=0, description="How many lines the events file left out once it reached output.events_max_bytes."
+        0, ge=0, description="How many lines the events file left out once it reached events.max_bytes."
     )
 
 
@@ -280,7 +280,7 @@ class RunLog(Event):
         }
 
 
-Line = Annotated[
+AnyEvent = Annotated[
     RunStart
     | RunDone
     | StageStart
@@ -298,8 +298,8 @@ Line = Annotated[
 ]
 """One line of the stream, which a reader parses by its `event` and never by trying each shape."""
 
-EVENTS: dict[str, type[Event]] = {kind.model_fields["event"].default: kind for kind in get_args(get_args(Line)[0])}
-"""Every event by its name, which is the closed list `decktalk schema event` prints, read off `Line`."""
+EVENTS: dict[str, type[Event]] = {kind.model_fields["event"].default: kind for kind in get_args(get_args(AnyEvent)[0])}
+"""Every event by its name, which is the closed list `decktalk schema event` prints, read off `AnyEvent`."""
 
 Listener = Callable[[Event], None]
 
@@ -507,7 +507,7 @@ __all__ = [
     "FindingRaised",
     "JsonlSink",
     "Level",
-    "Line",
+    "AnyEvent",
     "RunLog",
     "RunDone",
     "RunStart",

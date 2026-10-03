@@ -7,7 +7,7 @@ from pathlib import Path
 
 from decktalk.media.browser import chromium
 from decktalk.media.encode import css_color
-from decktalk.media.pages import await_painted
+from decktalk.media.pages import await_painted, open_document, write_frame
 
 SLATE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
 html,body{{margin:0;width:{w}px;height:{h}px;background:{bg};color:#f4f6f8;
@@ -32,7 +32,7 @@ def render_slate(
     width: int,
     height: int,
     background: str,
-    browser_path: str,
+    executable: str,
     policy: str,
     spend: bool,
 ) -> Path:
@@ -50,10 +50,8 @@ def render_slate(
         sub=html.escape(sub),
         foot=html.escape(foot),
     )
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with chromium(browser_path, policy=policy, spend=spend) as browser:
-        page = browser.new_page(viewport={"width": width, "height": height})
-        page.set_content(doc)
+    with chromium(executable, policy=policy, spend=spend) as opened:
+        page = open_document(opened, doc, viewport={"width": width, "height": height})
         await_painted(page)
-        page.screenshot(path=str(out))
+        write_frame(page, out)
     return out

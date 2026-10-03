@@ -21,11 +21,11 @@
  * reading the page back. Nothing imports it, which is what keeps every other module testable.
  */
 
+import { motionScale } from "./canvas.ts";
 import { now, start, started } from "./clock.ts";
 import { MILLISECONDS } from "./contract.ts";
 import { begin, buildSlide, isFrozen, query, state, waitsForSignal } from "./modes.ts";
 import { all, declare, findSlide, type Handler, on, type SceneInput, setMotionScale } from "./scene.ts";
-import { motionScale } from "./stage.ts";
 import { type Probe, type RuntimeView, setRecorder } from "./telemetry.ts";
 import { warn, warnings } from "./warn.ts";
 
@@ -45,7 +45,7 @@ const gates: Promise<unknown>[] = [];
 
 /** The probe the recorder injected, or null on every page a person opens for themselves. */
 function injected(): Probe | null {
-  return window.__dtprobe ?? null;
+  return window.__decktalkProbe ?? null;
 }
 
 /**

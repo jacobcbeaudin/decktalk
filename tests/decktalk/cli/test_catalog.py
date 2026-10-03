@@ -84,7 +84,7 @@ def test_every_result_name_is_answerable() -> None:
         assert catalog.named(name)["title"]
 
 
-@pytest.mark.parametrize("name", ["finding", "error", "event", "settings", "page", "cues"])
+@pytest.mark.parametrize("name", ["finding", "error", "event", "setting", "page", "cues"])
 def test_every_other_contract_name_is_answerable(name: str) -> None:
     assert catalog.named(name)
 
@@ -149,6 +149,7 @@ def test_every_finding_code_is_a_row_with_its_sentence_and_its_page() -> None:
         assert row["sentence"] == code.sentence
         assert row["severity"] == code.severity.value
         assert row["raised_by"] == code.raised_by.value
+        assert row["raised_in"] == list(code.raised_in)
         assert row["docs"] == code.url
 
 

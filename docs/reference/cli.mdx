@@ -61,7 +61,7 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 
 | Code | Severity | Meaning |
 |---|---|---|
-| [`PAGE_UNKNOWN_ATTR`](/reference/findings/PAGE_UNKNOWN_ATTR) | error | An element carries a data attribute the contract does not declare, so nothing reads it. |
+| [`PAGE_ATTR_UNKNOWN`](/reference/findings/PAGE_ATTR_UNKNOWN) | error | An element carries a data attribute the contract does not declare, so nothing reads it. |
 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | error | An attribute's value is outside the range the contract publishes for it. |
 | [`PAGE_MOMENT_UNKNOWN`](/reference/findings/PAGE_MOMENT_UNKNOWN) | error | An element outside every slide template names a moment, so no slide owns its cue and it never plays. |
 | [`PAGE_MOMENT_ORDER`](/reference/findings/PAGE_MOMENT_ORDER) | error | An element's exit is declared at or before its own entrance, so the exit never plays. |
@@ -98,7 +98,7 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`RECORD_STALLED`](/reference/findings/RECORD_STALLED) | error | The picture held still for longer than a recorded section ever should. |
 | [`RECORD_BLACK`](/reference/findings/RECORD_BLACK) | error | A recorded frame is black, so the film shows nothing at that moment. |
 | [`RECORD_TRUNCATED`](/reference/findings/RECORD_TRUNCATED) | error | A recording stopped before its section's clock ran out, so the film is short of picture. |
-| [`CUE_MISSING`](/reference/findings/CUE_MISSING) | error | The page declares a moment that cues.json does not list, so nothing gives it a second. |
+| [`CUE_UNLISTED`](/reference/findings/CUE_UNLISTED) | error | The page declares a moment that cues.json does not list, so nothing gives it a second. |
 | [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN) | error | cues.json lists a cue no page declares, so nothing plays it. |
 | [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED) | error | The cue's phrase is not spoken in its section, so there is no second to place it at. |
 | [`CUE_STALE`](/reference/findings/CUE_STALE) | error | The cue times on disk were placed from a different cues.json than the project's, so the film is judged against moments nobody asked for until the project is built again. |
@@ -136,7 +136,6 @@ It answers with the `init` result: `decktalk schema init`.
 | `--name` `NAME` | The project's name. |
 | `--example` `NAME` | The packaged example to write: lesson, product (reserved), tutorial (reserved). |
 | `--no-skills` | Leave the packaged skills out. |
-| `--defaults` | Take every default and ask nothing. |
 | `--overwrite` | Write into a directory that already holds files. |
 
 #### `decktalk install`
@@ -195,8 +194,8 @@ It answers with the `check` result: `decktalk schema check`.
 | Option | Meaning |
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
-| `--no-pages` | Judge the written files with no browser, and say what was not reached. |
-| `--no-frames` | Keep the browser and drop the freeze comparison. |
+| `--pages`, `--no-pages` | Open the pages in a browser, or judge the written files alone and say what was not reached. |
+| `--frames`, `--no-frames` | Freeze and compare the slides, or keep the browser and drop that. |
 | `--fix`, `--no-fix` | Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--fail-on` `WHEN` | error fails on an error, warning fails on any finding, never fails on none. Default error. |
@@ -266,7 +265,7 @@ decktalk schema [OPTIONS] [NAME]
 
 | Option | Meaning |
 |---|---|
-| `--scope` `SCOPE` | With settings, the keys one file may hold: project or machine. |
+| `--scope` `SCOPE` | With setting, the keys one file may hold: project or machine. |
 
 #### `decktalk config list`
 
@@ -324,7 +323,7 @@ It answers with the `config-unset` result: `decktalk schema config-unset`.
 | Option | Meaning |
 |---|---|
 | `--scope` `SCOPE` | project writes decktalk.toml, machine writes this machine's file. |
-| `--all` | Remove a whole table rather than one key. |
+| `--table` | Remove a whole table rather than one key. |
 
 #### `decktalk config explain`
 
@@ -338,7 +337,7 @@ It answers with the `config-explain` result: `decktalk schema config-explain`.
 
 | Option | Meaning |
 |---|---|
-| `--value` `N` | A candidate value, held to the same range. |
+| `--candidate` `N` | A candidate value, held to the same range. |
 
 ### Run one stage, in this order
 
@@ -504,4 +503,4 @@ It answers with the `clip` result: `decktalk schema clip`.
 
 ## The schemas
 
-`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes `apply`, `assemble`, `build`, `check`, `clip`, `config-explain`, `config-get`, `config-list`, `config-set`, `config-unset`, `cue`, `doctor`, `error`, `init`, `install`, `narrate`, `record`, `score`, `serve`, `status`, `storyboard`, `verify`, `words`, `event`, `finding`, `cues`, `page`, `settings`.
+`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes `apply`, `assemble`, `build`, `check`, `clip`, `config-explain`, `config-get`, `config-list`, `config-set`, `config-unset`, `cue`, `doctor`, `error`, `init`, `install`, `narrate`, `record`, `score`, `serve`, `status`, `storyboard`, `verify`, `words`, `event`, `finding`, `cues`, `page`, `setting`.

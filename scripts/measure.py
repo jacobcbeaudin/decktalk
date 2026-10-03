@@ -64,7 +64,7 @@ LIMIT_KEY = "verify.cue_offset_max_ms"
 """The setting verify grades every reveal against, early or late."""
 
 PROJECT = "starter"
-"""What `decktalk init --defaults` writes, which is the project the quickstart builds."""
+"""What `decktalk init --no-input` writes, which is the project the quickstart builds."""
 
 EDIT_SECTION = 3
 """The section whose sentence the one-section build changes, which is the starter's last."""
@@ -209,7 +209,7 @@ def one_project(scratch: Path) -> tuple[list[dict[str, Any]], dict[str, Any], fl
     Answers each build's seconds and sections recorded, verify's answer, the limit and the film.
     """
     project = scratch / PROJECT
-    text([sys.executable, "-m", "decktalk", "init", str(project), "--defaults", "--no-input"])
+    text([sys.executable, "-m", "decktalk", "init", str(project), "--no-input"])
     builds: list[dict[str, Any]] = []
     cold, seconds = decktalk("build", "--no-spend", cwd=project)
     builds.append({"build": BUILDS[0], "seconds": seconds, "recorded": recorded_sections(cold)})

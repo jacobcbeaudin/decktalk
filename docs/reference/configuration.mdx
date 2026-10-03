@@ -50,7 +50,7 @@ this machine may be driven. A project file that sets one is refused by name, bec
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
 machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 
-`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.browser_path`, `record.page_policy`, `record.concurrency`, `elevenlabs.base_url`, `dtsp.base_url`, `output.events_max_bytes`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
+`narration.concurrency`, `narration.retries`, `narration.store_dir`, `record.page_policy`, `record.concurrency`, `elevenlabs.base_url`, `dtsp.base_url`, `events.max_bytes`, `tools.chromium`, `tools.ffmpeg`, `tools.ffprobe`, `tools.timeout_seconds` and `tools.cache_dir`.
 
 ## Which key moves which failure
 
@@ -82,13 +82,13 @@ These keys set the frame size and the encoding of every recording and of the fin
 |---|---|---|---|---|---|---|---|
 | `width` | integer | `1920` | must be between 320 and 7680 | pixels | project |  | Frame width in pixels, for every recording and the final mp4. |
 | `height` | integer | `1080` | must be between 240 and 4320 | pixels | project |  | Frame height in pixels, for every recording and the final mp4. |
-| `output_fps` | integer | `25` | must be one of 25, 30, 50, 60 | frames per second | project |  | Frame rate of the final mp4. The recorder's own rate is measured and is not a setting. |
+| `fps` | integer | `25` | must be one of 25, 30, 50, 60 | frames per second | project |  | Frame rate of the final mp4. The recorder's own rate is measured and is not a setting. |
 | `preset` | string | `"medium"` | must be one of ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow |  | project |  | x264 preset. Use veryfast for drafts. |
 | `crf` | integer | `18` | must be between 0 and 32 |  | project | `CUE_NO_CHANGE`, `CUE_THIN_CHANGE`, `PAGE_THIN_DRAW` | x264 quality. A lower value gives higher quality and a larger file. |
 | `slate_color` | string | `"0x0e1116"` | must match the pattern ^(#\|0[xX])[0-9A-Fa-f]{6}$ |  | project |  | Color of the plain frame that plays when a slate image cannot be rendered, as #RRGGBB or 0xRRGGBB. |
 
 <Warning>
-**`video.output_fps`** Encoding below the rate the recorder captured at drops presented frames, which both loses motion a viewer saw and corrupts the frames verify measures its own verdicts from.
+**`video.fps`** Encoding below the rate the recorder captured at drops presented frames, which both loses motion a viewer saw and corrupts the frames verify measures its own verdicts from.
 
 **`video.crf`** Above about 32 the encoder's own ringing is larger than a small reveal, so a cue that played reads as no change and the check that would have caught it passes instead.
 
@@ -112,8 +112,8 @@ These keys govern how the script is turned into audio.
 | `tail_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project | `CUT_SPEECH` | Silence after the last word of every spoken section, so a cut never falls on speech. The take is placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it. |
 | `takes_dir` | string | `"takes"` | must match the pattern ^.+$ | path | project |  | Directory inside the project that holds every take the film plays and the words its voice sent with each, which you commit so a fresh clone builds the film with no key. The take index stays under the build, because it is a cache built again from the takes. A take is looked for here first and in the machine's take store, `store_dir`, second, and a take this project buys or finds there is written here. |
 | `store_dir` | string | `""` | takes any value of its type | path | machine |  | The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its input digest. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a take nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS. |
-| `context_chars` | integer | `1500` | must be between 0 and 5000 | characters | project |  | Characters of each neighbour section sent with a request, for continuous prosody. |
-| `timeout_seconds` | integer | `180` | must be between 10 and 1800 | seconds | project |  | Seconds before a speech request times out. |
+| `context_characters` | integer | `1500` | must be between 0 and 5000 | characters | project |  | Characters of each neighbour section sent with a request, for continuous prosody. |
+| `timeout_seconds` | integer | `180` | must be between 10 and 1800 | seconds | project |  | Seconds before a speech request times out. It is also the longest a run waits while another project on this machine buys the same take, before it is refused as locked. |
 | `sound_end_noise_dbfs` | number | `-35.0` | must be between -60 and -25 | dBFS | project | `CUT_SPEECH` | Level under which the tail of a take counts as silence, which is where the take's sound ends. |
 | `sound_end_min_run_seconds` | number | `0.05` | must be between 0.02 and 0.5 | seconds | project | `CUT_SPEECH` | Shortest run under the noise level that counts as the end of a take's sound. |
 
@@ -135,19 +135,18 @@ These keys tune the headless Chromium recording and how narration t=0 is found i
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
 | `settle_seconds` | number | `0.5` | must be between 0 and 30 | seconds | project |  | Shortest wait after the page is ready and before narration t=0. |
-| `min_cover_seconds` | number | `1.5` | must be between 0 and 30 | seconds | project |  | Shortest time from the start of the recorder to narration t=0. |
-| `browser_path` | string | `""` | takes any value of its type | path | machine |  | Chromium executable that `record` drives. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another. |
+| `cover_min_seconds` | number | `1.5` | must be between 0 and 30 | seconds | project |  | Shortest time from the start of the recorder to narration t=0. |
 | `color_scheme` | string | `"light"` | must be one of light, dark, no-preference |  | project |  | Color scheme that Chromium reports to the page. |
 | `page_policy` | string | `"trusted"` | must be one of trusted, untrusted |  | machine |  | How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. It is the machine's to set, so a project someone else wrote cannot trust its own page. |
 | `concurrency` | integer | `0` | must be between 0 and 16 |  | machine |  | How many page sections `record` records at once. Zero chooses from the CPU this process may use, which inside a container is its quota rather than the host's core count. |
 | `retries` | integer | `2` | must be between 0 and 10 |  | project |  | How many more times `record` records a section whose frames stalled. |
 | `cover_scan_seconds` | number | `4.0` | must be between 0 and 30 | seconds | project |  | Seconds at the start of each recording that `record` scans for the magenta cover. |
 | `fallback_first_paint_seconds` | number | `1.1` | must be between 0 and 10 | seconds | project |  | Guessed first paint when `record` finds no cover and no painted frame. `record` adds `settle_seconds` to it. |
-| `cover_luma_min` | number | `70.0` | must be between 40 and 120 | luma | project |  | A cover frame has an average luma above this. |
-| `cover_luma_max` | number | `140.0` | must be between 80 and 200 | luma | project |  | A cover frame has an average luma below this. |
-| `cover_chroma_min` | number | `165.0` | must be between 128 and 255 | luma | project |  | A cover frame has an average U and an average V above this. |
-| `painted_peak_luma_min` | number | `60.0` | must be between 1 and 200 | luma | project |  | A painted frame has a brightest luma above this. |
-| `painted_mean_luma_max` | number | `120.0` | must be between 20 and 240 | luma | project |  | A painted frame has an average luma below this, so a white flash does not count as the picture. |
+| `cover_min_luma` | number | `70.0` | must be between 40 and 120 | luma | project |  | A cover frame has an average luma above this. |
+| `cover_max_luma` | number | `140.0` | must be between 80 and 200 | luma | project |  | A cover frame has an average luma below this. |
+| `cover_min_chroma` | number | `165.0` | must be between 128 and 255 | chroma | project |  | A cover frame has an average U and an average V above this. |
+| `painted_peak_min_luma` | number | `60.0` | must be between 1 and 200 | luma | project |  | A painted frame has a brightest luma above this. |
+| `painted_mean_max_luma` | number | `120.0` | must be between 20 and 240 | luma | project |  | A painted frame has an average luma below this, so a white flash does not count as the picture. |
 | `truncated_slack_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project | `RECORD_TRUNCATED` | Allowed shortfall of a recording against its requested length. |
 | `frame_gap_max_ms` | integer | `150` | must be between 100 and 2000 | milliseconds | project | `RECORD_STALLED` | Longest gap between two presented frames after narration t=0. A longer gap makes `record` try again. |
 
@@ -310,7 +309,7 @@ The settings half of `[score]`: how the music, the ambience and the effects are 
 |---|---|---|---|---|---|---|---|
 | `dir` | string | `"score"` | must match the pattern ^.+$ | path | project |  | Directory inside the project that holds every sound the score bought and the ledger that records them, each named by its item, which you commit so a fresh clone mixes the film with no key. Music bought in parts keeps its parts here, and the piece joined from them is a cache under the build. |
 | `provider` | string | `"elevenlabs"` | takes any value of its type |  | project |  | The sound provider the music, the ambience and the effects are bought from, which is a name the machine's own sound table answers. ElevenLabs is the only sound provider DeckTalk ships, and it buys with the key and `base_url` of `[elevenlabs]`. |
-| `format` | string | `"mp3_44100_128"` | takes any value of its type |  | project |  | Audio format the music, the ambience and the effects are asked for in. A take's format is its voice's own, such as `[elevenlabs] output_format`. |
+| `output_format` | string | `"mp3_44100_128"` | takes any value of its type |  | project |  | Audio format the music, the ambience and the effects are asked for in. A take's format is its voice's own, such as `[elevenlabs] output_format`. |
 | `timeout_seconds` | integer | `600` | must be between 10 and 3600 | seconds | project |  | Seconds before a sound or music request times out. |
 
 <Warning>
@@ -359,7 +358,7 @@ The settings half of `[score.music]`: how the bed is asked for and joined. Its p
 | `model` | string | `"music_v2"` | takes any value of its type |  | project |  | Model the music is asked for from. |
 | `duration_seconds` | integer | `360` | must be between 1 and 3600 | seconds | project |  | Length of the music that is asked for, which `[mix]` fades out at the end of the film. |
 | `bitrate` | string | `"192k"` | must be one of 96k, 128k, 160k, 192k, 256k, 320k |  | project |  | Bitrate of the music file that `score` joins from its chunks. |
-| `max_chunk_seconds` | integer | `300` | must be between 30 and 600 | seconds | project |  | Longest music request. Longer music is requested in chunks and crossfaded. |
+| `chunk_max_seconds` | integer | `300` | must be between 30 and 600 | seconds | project |  | Longest music request. Longer music is requested in chunks and crossfaded. |
 | `crossfade_seconds` | integer | `2` | must be between 0 and 30 | seconds | project |  | Crossfade between two music chunks. |
 | `dollars_per_minute` | number | `0.0` | must be between 0 and 100 | US dollars per minute of audio | project |  | What this project's sound plan charges in US dollars per minute of music audio, which is priced by the second of audio asked for. |
 
@@ -370,16 +369,23 @@ The settings half of `[score.music]`: how the bed is asked for and joined. Its p
 
 ## `[output]`
 
-These keys switch the files a build writes beside the final mp4 and how long they are kept.
+These keys switch the files a build writes beside the final mp4.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
 | `timestamped_copy` | boolean | `false` | takes any value of its type |  | project |  | Write a second copy of the final mp4 named with the date and time. |
-| `events_keep_runs` | integer | `20` | must be between 1 and 1000 | runs | project |  | How many runs of event files `build/events/` keeps before the oldest is deleted. |
-| `events_max_bytes` | integer | `8388608` | must be between 65536 and 1073741824 | bytes | machine |  | Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its costs are always kept. |
+
+## `[events]`
+
+These keys bound the events files a run writes under `build/events/`.
+
+| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
+|---|---|---|---|---|---|---|---|
+| `keep_runs` | integer | `20` | must be between 1 and 1000 | runs | project |  | How many runs of event files `build/events/` keeps before the oldest is deleted. |
+| `max_bytes` | integer | `8388608` | must be between 65536 and 1073741824 | bytes | machine |  | Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its costs are always kept. |
 
 <Warning>
-**`output.events_max_bytes`** A file with no bound grows with every tool call a long film makes, on a disk a host shares.
+**`events.max_bytes`** A file with no bound grows with every tool call a long film makes, on a disk a host shares.
 
 </Warning>
 
@@ -389,6 +395,7 @@ These keys name the tools DeckTalk drives, for a machine that supplies its own.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
+| `chromium` | string | `""` | takes any value of its type | path | machine |  | Chromium executable that `record`, `check` and `storyboard` drive. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another. |
 | `ffmpeg` | string | `""` | takes any value of its type | path | machine |  | ffmpeg executable. It is empty for the build DeckTalk fetches itself. |
 | `ffprobe` | string | `""` | takes any value of its type | path | machine |  | ffprobe executable. It is empty for the build DeckTalk fetches itself. |
 | `timeout_seconds` | number | `600.0` | must be between 10 and 7200 | seconds | machine |  | Longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before it is stopped. |
@@ -409,12 +416,13 @@ can read.
 
 | Number | Kind | Formula | At the defaults | Why |
 |---|---|---|---|---|
-| `verify.probe_width` | derived | `video.width // 4` | 480 pixels | Derived: a quarter-size frame is what every share is measured over, at every frame size. |
-| `verify.probe_height` | derived | `video.height // 4` | 270 pixels | Derived: a quarter-size frame is what every share is measured over, at every frame size. |
+| `verify.probe_width` | derived | `video.width // PROBE_SCALE` | 480 pixels | Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size. |
+| `verify.probe_height` | derived | `video.height // PROBE_SCALE` | 270 pixels | Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size. |
 | `verify.block_width` | derived | `video.width // BLOCK_PX` | 240 pixels | Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every frame size rather than only at 1080p. |
-| `verify.block_height` | derived | `video.height // BLOCK_PX` | 135 pixels | Derived: one pixel per H.264 transform block, as the block width is. |
+| `verify.block_height` | derived | `video.height // BLOCK_PX` | 135 pixels | Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every frame size rather than only at 1080p. |
 | `verify.reference_lead_seconds` | derived | `verify.cue_offset_max_ms / 1000 + GUARD_FRAMES / CAPTURE_FPS + verify.reference_lead_extra_ms / 1000` | 0.14 seconds | Derived: the reference frame has to sit outside the window the offset limit allows, or the check compares a cue against a frame the same cue had already changed. |
 | `CAPTURE_FPS` | constant | `25` | 25 frames per second | Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for. |
+| `PROBE_SCALE` | constant | `4` | 4 times | Calibration: a frame a quarter the film's size keeps every share a cue can move while comparing a sixteenth of the pixels. |
 | `BLOCK_PX` | constant | `8` | 8 pixels | Truth: the H.264 transform block the block-averaged copy of a frame cancels ringing over. |
 | `GUARD_FRAMES` | constant | `1.5` | 1.5 frames | Truth: half a frame of rounding guard on each side of the window the offset limit allows. |
 | `REPORT_FRAME_GAP_MS` | constant | `100` | 100 milliseconds | Calibration: the runtime's own reporting floor, under which a frame gap cannot be seen. |

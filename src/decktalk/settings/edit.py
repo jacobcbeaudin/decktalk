@@ -19,9 +19,19 @@ from decktalk.errors import InputError
 from decktalk.files import current_text, replace_all
 from decktalk.findings import Location
 from decktalk.locate import refused_line
-from decktalk.results import ConfigSetResult, ConfigUnsetResult, Scope
-from decktalk.settings import key_named
-from decktalk.settings.layers import ABSENT, Loaded, json_value, load, refuse_off_scope, stated, value_of
+from decktalk.results import ConfigSetResult, ConfigUnsetResult, Layer, Scope, SettingValue, counted
+from decktalk.settings import BY_ID, KEYS, PROJECT_FILE, key_named, not_a_key
+from decktalk.settings.layers import (
+    ABSENT,
+    Loaded,
+    json_value,
+    load,
+    not_toml,
+    read_toml,
+    refuse_off_scope,
+    stated,
+    value_of,
+)
 from decktalk.tomlmap import Key
 from decktalk.tomlmap.read import read_value
 
@@ -179,11 +189,7 @@ def _document(text: str, file: Path) -> tomlkit.TOMLDocument:
     try:
         return tomlkit.parse(text)
     except ParseError as exc:
-        raise InputError(
-            f"{file.name} is not valid TOML: {exc}.",
-            hint="Fix the line this message names, which is usually a quote or a bracket left open.",
-            location=Location(where=file.name, file=file, line=exc.line),
-        ) from exc
+        raise not_toml(file, exc, exc.line) from exc
 
 
 def _put(document: MutableMapping[str, Any], parts: list[str], value: object) -> None:
@@ -257,3 +263,62 @@ def nested(flat: Mapping[str, object]) -> dict[str, Any]:
             table = table.setdefault(part, {})
         table[parts[-1]] = value
     return out
+
+
+def under(published: str, named: str) -> bool:
+    """Whether one published key is the key a caller named, or one of the keys of the table they named."""
+    return published == named or published.startswith(f"{named}.")
+
+
+def key_or_table(named: str) -> None:
+    """Refuse a name that is neither a key nor a table, before any file is read for it.
+
+    `unset` removes a key or a whole table, so either is a name it takes. A name that is neither is
+    the caller's slip, which is refused the way a reader of one key refuses it rather than reported
+    as a file that happens not to state it.
+    """
+    if not any(under(one.id, named) for one in KEYS):
+        raise not_a_key(named)
+
+
+def setting_value(loaded: Loaded, key: Key, *, defaults: bool = False) -> SettingValue:
+    """One key as one row: the value in force and the layer that set it, or the default alone under `defaults`."""
+    winner = loaded.layers.winner(key.id)
+    return SettingValue(
+        key=key.id,
+        value=json_value(key.default if defaults else value_of(loaded.settings, key.id)),
+        default=json_value(key.default),
+        layer=Layer.DEFAULT if defaults else winner.layer,
+        file=winner.file,
+    )
+
+
+def rows(loaded: Loaded, table: str | None, *, defaults: bool, changed: bool) -> tuple[SettingValue, ...]:
+    """Every published key as one row, filtered by the table and by whether anything overrode it."""
+    found = tuple(
+        setting_value(loaded, key, defaults=defaults)
+        for key in KEYS
+        if not (table and not under(key.id, table))
+        and not (changed and loaded.layers.winner(key.id).layer is Layer.DEFAULT)
+    )
+    if table and not found:
+        raise InputError(f"{table!r} is not a table of {PROJECT_FILE}.", hint="Run decktalk config list.")
+    return found
+
+
+def stating(path: Path, named: str, *, whole_table: bool) -> tuple[str, ...]:
+    """Every published key this file states under the name a caller gave, in the order the tables declare them.
+
+    A caller names one key or one table, and a table is refused unless `whole_table` says to take it,
+    because a table is many keys at once and a person who typed one word meant one thing.
+    """
+    document = read_toml(path)
+    going = tuple(one.id for one in KEYS if under(one.id, named) and stated(document, one.id) is not ABSENT)
+    if not going:
+        raise InputError(f"{path.name} sets nothing under '{named}'.", hint="Run decktalk config list --changed.")
+    if named not in BY_ID and not whole_table:
+        raise InputError(
+            f"'{named}' is a whole table, and removing it would take out {counted(len(going), 'key')} at once.",
+            hint=f"Run decktalk config unset {named} --table to remove all of them.",
+        )
+    return going

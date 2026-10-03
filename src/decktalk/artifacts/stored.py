@@ -25,7 +25,7 @@ again, and that is a decision about money a person takes.
 
 Every fingerprint of a file's content is `file_digest`, and every fingerprint of content held in
 memory is `content_digest`, which are one hash: BLAKE3. The files a build fingerprints are the
-recordings, the section cuts and the film, which grow with the film, and BLAKE3 spreads one large
+recordings, the section videos and the film, which grow with the film, and BLAKE3 spreads one large
 file across every core where SHA-256 reads it on one. The keys taken over those fingerprints stay
 the SHA-256 of `engine_digest`, because a key is a few lines of text, and the paid voice takes keep
 the SHA-256 their names are published as, because a changed take name would buy the take again.
@@ -52,6 +52,9 @@ log = logging.getLogger(__name__)
 
 DIGEST_BYTES = 8
 """How much of a BLAKE3 names some content, sixteen hex characters, which never collide within one project."""
+
+DIGEST_DIGITS = 2 * DIGEST_BYTES
+"""Derived: the hex characters of a key cut from a sha256, which is as long as a content digest and as safe."""
 
 THREADED_BYTES = 1 << 20
 """Measured: below a mebibyte, handing a file to several threads costs more than hashing it on one does."""
@@ -244,6 +247,7 @@ def _place(loc: tuple[int | str, ...]) -> str:
 
 
 __all__ = [
+    "DIGEST_DIGITS",
     "ENGINE_VERSION",
     "GONE",
     "Stored",

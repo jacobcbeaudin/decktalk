@@ -49,7 +49,7 @@ Eleven modules make the runtime. Each owns one thing, and nothing imports the fa
 | `scene.ts` | Scenes, slides, the markup reader and the cue order every check is written against. It is the only module that reads markup. |
 | `modes.ts` | The four things a page can be doing, and the one URL that decides which. It is the only module that touches the URL. |
 | `reveal.ts` | The four moments, the class moment, the swap, and the sentence each of them writes into the transcript. |
-| `stage.ts` | The stage a deck is drawn on, the fit into the window, the heads-up display and the one generated stylesheet. |
+| `canvas.ts` | The canvas a deck is drawn on, the fit into the window, the heads-up display and the one generated stylesheet. |
 | `clock.ts` | The narration origin, the queue of work sorted by the second it is due, and the animation frame loop that drains it. It holds no DOM. |
 | `text.ts` | The two effects that rewrite an element's own text, which are the count up and the line shown on the voice. |
 | `katex.ts` | Typesetting, the wait for the typesetter, and the readable text an equation falls back to. |
@@ -121,7 +121,7 @@ comes to the front, and it leaves. The runtime qualifies a cue name with its sli
 
 ```html deck/index.html
 <div data-scene="2" data-name="How it works">
-  <template data-slide="2.1" data-hold="16">
+  <template data-slide="2.1" data-preview-seconds="16">
     <h1 data-in="average" data-describe="the heading, the average of n numbers">The average of n numbers.</h1>
     <p data-in="formula" data-tex="\bar{x}=\frac{1}{n}\sum_{i=1}^{n} x_i" data-tex-display>
       the mean of n numbers
@@ -141,7 +141,7 @@ and its motion span. Read that and write from it.
 |---|---|
 | An element or a container | `data-in`, `data-describe`, `data-tex`, `data-tex-display`, `data-in-style`, `data-back`, `data-front`, `data-out`, `data-words`, `data-count`, `data-class`, `data-describe-class`, `data-stagger`, `data-spotlight`, `data-in-seconds`, `data-out-style`, `data-swaps`, `data-describe-out` |
 | The scene wrapper | `data-scene`, `data-name` |
-| A slide template | `data-slide`, `data-hold`, `data-owns`, `data-enter`, `data-describe` |
+| A slide template | `data-slide`, `data-preview-seconds`, `data-owns`, `data-enter`, `data-describe` |
 
 Three numbers bound every span a page may declare.
 
@@ -151,10 +151,8 @@ Three numbers bound every span a page may declare.
 | `CAPTURE_FPS` | 25 | The rate the recorder captures at, which is the rate Chromium paints a deck at. |
 | `FRAME_STEP_MS` | 40 | One captured frame, which is the finest interval any range may name. |
 
-`data-in-seconds` runs from 0.12 to 0.44 in steps of 0.04, which is three to eleven frames.
-`data-stagger` runs from 0.04 to 0.2 in steps of 0.04, and a staggered container's whole span is the
-step times the children less one, plus the entrance, which must stay under half a second.
-[The page contract](/concepts/page-contract) explains how the parts work together.
+[How long a moment may move](/concepts/page-contract#how-long-a-moment-may-move) gives the range of
+each attribute in those frames, and the stagger's arithmetic.
 
 ## The query keys
 
@@ -168,7 +166,7 @@ uv run python -c "from decktalk import page; print(page.QUERY)"
 | Key | What it does |
 |---|---|
 | `scene` | Play this scene from its first slide. |
-| `slide` | Freeze this slide with its cues already fired, which is what a still opens. |
+| `freeze` | Freeze this slide with its cues already fired, which is what a still opens. |
 | `cues` | The cue times to fire at, as `id@seconds` pairs separated by a comma. |
 | `words` | The spoken words to sync a line against, as `word@seconds` pairs separated by a comma. |
 | `t0` | The narration second the page starts at, or the word `signal` when the recorder starts the clock. |
@@ -177,7 +175,7 @@ uv run python -c "from decktalk import page; print(page.QUERY)"
 | `after` | Freeze after this cue, so the cues up to and including it fire and later ones stay hidden. |
 | `before` | Freeze just before this cue, so it and every later cue stay hidden. |
 
-`after` and `before` are read by the probe alone, so a page opened by hand at `?slide=2.1` shows
+`after` and `before` are read by the probe alone, so a page opened by hand at `?freeze=2.1` shows
 every reveal and ignores both.
 
 ## Modes
@@ -186,12 +184,12 @@ The URL picks one, and `window.__decktalk.mode` reports it.
 
 | Mode | URL | What happens |
 |---|---|---|
-| `index` | No `scene`, `cues` or `slide`. | The page lists its scenes and slides. Every slide is laid out once in a hidden layer and measured, which is the catalog a judgement without a recording is read from. |
+| `index` | No `scene`, `cues` or `freeze`. | The page lists its scenes and slides. Every slide is laid out once in a hidden layer and measured, which is the catalog a judgement without a recording is read from. |
 | `preview` | `?scene=N` | The scene plays at the speed a person reads it. The page asks the origin for the cue times the last run resolved and uses them, and falls back to one second per cue when there are none. |
-| `cue` | `?cues=…` | The scene plays against the section clock, which is the mode a recording is made in. |
-| `freeze` | `?slide=ID` | One slide is drawn with its cues already fired and nothing in motion, which is what makes two frozen frames comparable. |
+| `record` | `?cues=…` | The scene plays against the section clock, which is the mode a recording is made in. |
+| `freeze` | `?freeze=ID` | One slide is drawn with its cues already fired and nothing in motion, which is what makes two frozen frames comparable. |
 
-`slide` wins over `scene` and `cues`. With `cues` and no `scene`, the scene that owns the earliest
+`freeze` wins over `scene` and `cues`. With `cues` and no `scene`, the scene that owns the earliest
 cue plays. `speed` divides preview time and its floor is 0.05. With `t0=signal` the clock waits for
 `DeckTalk.startClock()`, which is what the recorder calls once its cover has come off.
 
@@ -241,7 +239,7 @@ references it. It is never a `<script>` tag, and `decktalk init` never writes it
 without it plays, previews, freezes and lists its scenes exactly the same, and keeps nothing. Once
 it is on the window it is frozen and made read-only, so a deck cannot take its name.
 
-The recorder holds it as `window.__dtprobe`.
+The recorder holds it as `window.__decktalkProbe`.
 
 | Call | What it does |
 |---|---|
@@ -317,7 +315,7 @@ belong to Python, and a page that reported one of those would be a deck judging 
 
 | Code | What the page could not honour |
 |---|---|
-| `PAGE_UNKNOWN_ATTR` | An element carries a data attribute the contract does not declare, so nothing reads it. |
+| `PAGE_ATTR_UNKNOWN` | An element carries a data attribute the contract does not declare, so nothing reads it. |
 | `PAGE_BAD_VALUE` | An attribute's value is outside the range the contract publishes for it. |
 | `PAGE_MOMENT_UNKNOWN` | An element outside every slide template names a moment, so no slide owns its cue and it never plays. |
 | `PAGE_MOMENT_ORDER` | An element's exit is declared at or before its own entrance, so the exit never plays. |
@@ -387,8 +385,8 @@ opened in, so an element measured on a laptop is at the pixel a recording will p
 
 | Selector | What it is |
 |---|---|
-| `#dt-stage` | The stage every deck is laid out on, which is the frame a recording captures. |
-| `#dt-camera` | The layer the stage moves inside. |
+| `#dt-canvas` | The canvas every deck is laid out on, which is the frame a recording captures. |
+| `#dt-camera` | The layer the canvas moves inside. |
 | `#dt-pan` | The layer slides are mounted into, which is where every reveal is drawn. |
 | `#dt-hud` | The heads-up display, drawn only under `?hud=1`. |
 | `#dt-style` | The runtime's own stylesheet. |

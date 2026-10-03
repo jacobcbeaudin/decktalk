@@ -27,7 +27,6 @@ from decktalk.artifacts import CueTimes, Takes
 from decktalk.events import Level
 from decktalk.findings import Finding
 from decktalk.inputs import CuedSection, Inputs
-from decktalk.inputs.cues import Spoken
 from decktalk.machine.run import Run
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import measured_rows, overlap_findings, scene_entry
@@ -35,7 +34,7 @@ from decktalk.pipeline import Artifact, Stage
 from decktalk.results import CueResult, SectionCues, Word
 from decktalk.stages import selects
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
-from decktalk.stages.cue.resolve import ambiguity, resolve_sections, short_section
+from decktalk.stages.cue.resolve import resolve_sections, short_section
 
 __all__ = ["cue"]
 
@@ -50,10 +49,10 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> CueRe
     wanted = selects(only)
     takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
     cued = [block for block in inputs.cues() if wanted(block.number)]
-    words = {take.section: inputs.words(take.section, take.digest) for take in takes.sections}
+    words = {take.section: inputs.section_words(take.section, take.digest) for take in takes.sections}
     estimated = {take.section for take in takes.sections if not take.voiced}
 
-    sections, judged = resolve_sections(
+    sections, judged, notes = resolve_sections(
         cued,
         words,
         clips=inputs.document.clip_numbers,
@@ -64,7 +63,7 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> CueRe
     )
     for block in cued:
         with run.section(Stage.CUE, block.number):
-            _say_what_was_chosen(run, block, words.get(block.number, ()))
+            _say_what_was_chosen(run, block, words.get(block.number, ()), notes.get(block.number, ()))
     for found in judged:
         run.found(found)
     for found in _catalog_findings(inputs, only):
@@ -81,18 +80,15 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> CueRe
     )
 
 
-def _say_what_was_chosen(run: Run, block: CuedSection, words: Sequence[Word]) -> None:
+def _say_what_was_chosen(run: Run, block: CuedSection, words: Sequence[Word], chosen: Sequence[str]) -> None:
     """Every choice this section's cues made for their author, as one sentence each.
 
     A phrase that occurs twice and a section whose speech runs shorter than its visuals ask for are
     both readings rather than judgements, so each is a line on the stream and no code is invented
-    for it.
+    for it. `chosen` is what resolving the section's cues already said about their phrases.
     """
-    spoken = Spoken.of(words)
-    for row in block.cues:
-        said = ambiguity(row, spoken)
-        if said:
-            run.note(said, level=Level.WARNING)
+    for said in chosen:
+        run.note(said, level=Level.WARNING)
     short = short_section(block, words)
     if short:
         run.note(short, level=Level.WARNING)

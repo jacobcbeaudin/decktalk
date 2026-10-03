@@ -70,11 +70,16 @@ def read_toml(path: Path) -> dict[str, Any]:
         with path.open("rb") as fh:
             return tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
-        raise InputError(
-            f"{path.name} is not valid TOML: {exc}.",
-            hint="Fix the line this message names, which is usually a quote or a bracket left open.",
-            location=Location(where=path.name, file=path, line=refused_line(exc)),
-        ) from exc
+        raise not_toml(path, exc, refused_line(exc)) from exc
+
+
+def not_toml(path: Path, exc: Exception, line: int | None) -> InputError:
+    """The refusal of a settings file that is not valid TOML, at the line the parser names."""
+    return InputError(
+        f"{path.name} is not valid TOML: {exc}.",
+        hint="Fix the line this message names, which is usually a quote or a bracket left open.",
+        location=Location(where=path.name, file=path, line=line),
+    )
 
 
 def read_project_toml(root: Path) -> dict[str, Any]:
@@ -178,7 +183,7 @@ def _unknown_variable(name: str, known: set[str]) -> str:
     names, by the rule the files' own warnings use, is offered by its variable. A name that opens
     with no table is offered the closest variable by spelling.
     """
-    spelled = name.removeprefix("DECKTALK_").lower()
+    spelled = name.removeprefix(ENV_PREFIX).lower()
     tables = sorted({key.table for key in KEYS}, key=len, reverse=True)
     table = next((t for t in tables if spelled.startswith(t.replace(".", "_") + "_")), None)
     if table is None:

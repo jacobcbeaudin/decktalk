@@ -21,12 +21,12 @@ from decktalk.errors import ApprovalRequired, ErrorCode, InputError, NotBuiltErr
 from decktalk.events import CostPriced, RunLog, StageDone, StageStart
 from decktalk.findings import Code, Finding, Location, Severity
 from decktalk.inputs import Inputs
-from decktalk.machine.run import Run
+from decktalk.machine.run import Run, Threshold
 from decktalk.media import audio
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
-    Billing,
+    BillingBasis,
     Cost,
     CostState,
     CueResult,
@@ -93,7 +93,7 @@ def price(dollars: float = 0.0, *, state: CostState = CostState.ESTIMATE) -> Cos
         characters=int(dollars * 1000),
         dollars=dollars,
         ceiling_dollars=dollars,
-        billing=Billing.PER_CHARACTER,
+        billing=BillingBasis.PER_CHARACTER,
         dollars_per_1000_characters=RATE,
         price_layer=Layer.PROJECT,
     )
@@ -113,7 +113,7 @@ def sound_price(seconds: float) -> Cost:
         seconds=seconds,
         dollars=dollars,
         ceiling_dollars=dollars,
-        billing=Billing.PER_SECOND,
+        billing=BillingBasis.PER_SECOND,
         dollars_per_1000_characters=0.0,
         dollars_per_minute=SOUND_RATE,
         price_key="score.music.dollars_per_minute",
@@ -422,7 +422,7 @@ def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: W
 
 
 PAYING_TOML = (
-    TOML.replace('scene = "1"', 'scene = "1"\nambience = true', 1)
+    TOML.replace('scene = "1"', 'scene = "1"\nwith_ambience = true', 1)
     + """
 [score.ambience]
 prompt = "a quiet room"
@@ -609,7 +609,7 @@ def test_a_stage_that_asks_for_more_than_the_build_was_priced_at_is_refused_and_
     said = str(refused.value)
     assert money(TAKES + SOUND) in said and money(CAP) in said and "kept" in said, said
     kept = paying.takes()
-    assert kept is not None and len(kept.voiced) == 2, "the takes it bought are kept"
+    assert kept is not None and len(kept.voiced_sections) == 2, "the takes it bought are kept"
 
 
 def test_an_error_stops_the_run_where_it_was_found(
@@ -754,6 +754,27 @@ def test_what_verify_found_ends_the_run_rather_than_stopping_it(
     assert result.stages[-1].outcome is Outcome.RAN
 
 
+@pytest.mark.parametrize(
+    ("stop_on", "code"),
+    [
+        pytest.param(Severity.ERROR, Code.CUE_OFF, id="an error at the error threshold"),
+        pytest.param(Severity.WARNING, Code.CUE_THIN_CHANGE, id="a warning at the any threshold"),
+    ],
+)
+def test_verify_judging_on_the_threshold_fails_the_run_and_never_stops_it(
+    inputs: Inputs, watched: Watched, answers: Answers, calls: Calls, stop_on: Severity, code: Code
+) -> None:
+    """Verify is the last stage, so a finding there that would stop any other stage fails the run instead."""
+    found = judged(code, Stage.VERIFY)
+    assert Threshold(stop_on=stop_on).reaches(found)
+    answers.verify.append(found)
+    result = build(inputs, watched.run, stop_on=stop_on)
+    assert calls.names[-1] == "verify"
+    assert result.stopped_at is None
+    assert result.ok is False
+    assert [line.message for line in watched.of(RunLog)] == []
+
+
 @pytest.mark.usefixtures("calls")
 def test_the_spend_is_every_stage_that_priced_something_added_up(
     inputs: Inputs, watched: Watched, answers: Answers
@@ -774,7 +795,7 @@ def test_a_total_of_speech_and_sound_says_it_is_mixed_and_counts_both(
     answers.narrate_dollars = 0.3
     answers.score_cost = sound_price(120.0)
     result = build(inputs, watched.run)
-    assert result.cost.billing is Billing.MIXED
+    assert result.cost.billing is BillingBasis.MIXED
     assert (result.cost.characters, result.cost.seconds) == (300, 120.0)
     assert (result.cost.dollars_per_1000_characters, result.cost.dollars_per_minute) == (RATE, SOUND_RATE)
     assert result.cost.sentence == (
@@ -790,7 +811,7 @@ def test_a_total_that_buys_only_sound_is_billed_the_way_sound_is(
     answers.narrate_cost = price(0.0).model_copy(update={"sections": ()})
     answers.score_cost = sound_price(60.0)
     result = build(inputs, watched.run)
-    assert result.cost.billing is Billing.PER_SECOND
+    assert result.cost.billing is BillingBasis.PER_SECOND
     assert result.cost.dollars_per_minute == SOUND_RATE
     assert result.cost.sentence.endswith("per minute of audio.")
 
@@ -800,10 +821,12 @@ def test_a_free_voice_beside_paid_sound_leaves_the_sound_to_bill_the_total(
     inputs: Inputs, watched: Watched, answers: Answers
 ) -> None:
     """The free takes cost nothing and state no rate, so the total names the rate somebody stated."""
-    answers.narrate_cost = price(0.0).model_copy(update={"billing": Billing.FREE, "dollars_per_1000_characters": 0.0})
+    answers.narrate_cost = price(0.0).model_copy(
+        update={"billing": BillingBasis.FREE, "dollars_per_1000_characters": 0.0}
+    )
     answers.score_cost = sound_price(60.0)
     result = build(inputs, watched.run)
-    assert result.cost.billing is Billing.PER_SECOND
+    assert result.cost.billing is BillingBasis.PER_SECOND
     assert (result.cost.price_key, result.cost.price_layer) == ("score.music.dollars_per_minute", Layer.PROJECT)
 
 
@@ -811,10 +834,10 @@ def test_a_free_voice_beside_paid_sound_leaves_the_sound_to_bill_the_total(
 def test_a_voice_that_declares_no_bill_leaves_the_whole_total_undeclared(
     inputs: Inputs, watched: Watched, answers: Answers
 ) -> None:
-    answers.narrate_cost = price(0.3).model_copy(update={"billing": Billing.UNDECLARED})
+    answers.narrate_cost = price(0.3).model_copy(update={"billing": BillingBasis.UNDECLARED})
     answers.score_cost = sound_price(60.0)
     result = build(inputs, watched.run)
-    assert result.cost.billing is Billing.UNDECLARED
+    assert result.cost.billing is BillingBasis.UNDECLARED
     assert "cannot price it" in result.cost.sentence
 
 

@@ -57,7 +57,7 @@ document about schemas is unreadable. Every other command under `--json` prints 
 decktalk schema finding     # the Finding model, with its fixes and its codes
 decktalk schema error       # the error object
 decktalk schema event       # every event line
-decktalk schema settings    # every setting, its default, its range, its unit and its hazard
+decktalk schema setting     # every setting, its default, its range, its unit and its hazard
 decktalk schema page        # every page attribute
 decktalk schema cues        # the shape of cues.json
 ```
@@ -76,7 +76,7 @@ decktalk schema cues        # the shape of cues.json
   "run": "90c3b0af7a6f",
   "name": "my-lesson",
   "script": "script.md",
-  "cues": "cues.json",
+  "cues_file": "cues.json",
   "sections": [
     {
       "section": 1,
@@ -84,6 +84,7 @@ decktalk schema cues        # the shape of cues.json
       "kind": "page",
       "source": "deck/index.html?scene=1",
       "voiced": false,
+      "voiced_stale": false,
       "recorded": false,
       "assembled": false,
       "stale": false
@@ -94,6 +95,7 @@ decktalk schema cues        # the shape of cues.json
       "kind": "page",
       "source": "deck/index.html?scene=2",
       "voiced": false,
+      "voiced_stale": false,
       "recorded": false,
       "assembled": false,
       "stale": false
@@ -104,6 +106,7 @@ decktalk schema cues        # the shape of cues.json
       "kind": "page",
       "source": "deck/index.html?scene=3",
       "voiced": false,
+      "voiced_stale": false,
       "recorded": false,
       "assembled": false,
       "stale": false
@@ -141,8 +144,8 @@ cost, so it is the one call an agent makes to learn the price of a run.
     "script.md",
     "cues.json"
   ],
-  "pages": false,
-  "frames": false,
+  "pages_opened": false,
+  "frames_compared": false,
   "cost": {
     "state": "estimate",
     "sections": [1, 2, 3],
@@ -214,8 +217,8 @@ judgements about the project rather than a reason the command could not run.
   "run": "a793bd17679a",
   "written": [],
   "judged": ["script.md", "cues.json"],
-  "pages": false,
-  "frames": false,
+  "pages_opened": false,
+  "frames_compared": false,
   "cost": {
     "state": "estimate",
     "sections": [1, 2, 3],
@@ -360,7 +363,7 @@ for a JSON file, `key` is a dotted TOML key for a TOML file, such as a settings 
 other text file. `old` is what is there now, or null when the edit only adds, and `new` is what goes
 there instead, which is the empty string when the edit removes.
 
-This one comes from a `CUE_MISSING` finding that `decktalk check --json` raised on a project whose
+This one comes from a `CUE_UNLISTED` finding that `decktalk check --json` raised on a project whose
 deck declares two moments `cues.json` does not list.
 
 {/* sample: decktalk check --json, on a starter with the rows 3.1:again and 3.1:make deleted from cues.json */}
@@ -419,7 +422,7 @@ Both are on `doctor`, `check`, `storyboard`, `narrate`, `cue`, `record`, `score`
 ## Errors and exit codes
 
 An error means DeckTalk could not run, so nothing was judged. The error object carries `code`,
-`message`, `hint`, `location` and `docs`. `hint` is the whole command that would clear it, or null.
+`message`, `hint`, `location` and `docs`. `hint` is the smallest next action, or null: the whole command that clears a refusal, or how to report a bug.
 `location` is the same five-key object a finding carries, or null. `message` never carries the value
 of a secret. [Error codes](/reference/cli#error-codes) lists every code with its exit, and each code
 has a page of its own, such as [`NOT_BUILT`](/reference/errors/NOT_BUILT).
@@ -435,12 +438,12 @@ broken machine can exit non-zero for reasons that are not the project's fault.
 A result arrives when the call is over. The event stream says what is happening while it runs.
 `--events` prints one JSON line per event on stderr as it happens, and every run of a project also
 appends the same lines to `build/events/<run>.jsonl`, named by the run id the result carries. A run
-with no project behind it, such as `decktalk doctor` outside one, reports `events_path` as null and
+with no project behind it, such as `decktalk doctor` outside one, reports `events_file` as null and
 appends nothing.
 
 {/* sample: decktalk build --no-spend --events --json, the first six lines of stderr, on a fresh decktalk init my-lesson */}
 ```json
-{"event":"run.start","time":"2026-10-02T07:36:49.958492Z","seq":0,"run":"d8244c090102","events_path":"build/events/d8244c090102.jsonl"}
+{"event":"run.start","time":"2026-10-02T07:36:49.958492Z","seq":0,"run":"d8244c090102","events_file":"build/events/d8244c090102.jsonl"}
 {"event":"run.log","time":"2026-10-02T07:36:49.959299Z","seq":1,"run":"d8244c090102","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":15057,"lock":".lock"}}
 {"event":"stage.start","time":"2026-10-02T07:36:49.971981Z","seq":2,"run":"d8244c090102","stage":"narrate","index":1,"count":6}
 {"event":"run.log","time":"2026-10-02T07:36:49.973050Z","seq":3,"run":"d8244c090102","level":"debug","message":"3 takes are made on 2 workers.","source":"stages.narrate","stage":"narrate","section":null,"data":{"workers":2,"jobs":3,"requested":2}}
@@ -457,7 +460,7 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 
 | `event` | What it says | Its own fields |
 |---|---|---|
-| `run.start` | A run opened. | `events_path` |
+| `run.start` | A run opened. | `events_file` |
 | `run.done` | A run closed, and why when it did not finish. | `outcome`, `elapsed_seconds`, `error`, `dropped` |
 | `stage.start` | A stage began, with its place in the run's plan. | `stage`, `index`, `count` |
 | `stage.done` | A stage ended. | `stage`, `outcome`, `elapsed_seconds` |
@@ -492,9 +495,9 @@ A `cost.priced` line carries `cost`, the object a result carries, whose `state` 
 the run buys anything and `charged` after.
 [How the price is worked out](/requirements#how-the-price-is-worked-out) gives each of its fields.
 
-`build/events/` keeps the most recent `output.events_keep_runs` runs and deletes the oldest, and
-that key defaults to 20. Run `decktalk config explain output.events_keep_runs` for its range. One
-file stops taking progress, fetch, debug and info lines once it reaches `output.events_max_bytes`,
+`build/events/` keeps the most recent `events.keep_runs` runs and deletes the oldest, and
+that key defaults to 20. Run `decktalk config explain events.keep_runs` for its range. One
+file stops taking progress, fetch, debug and info lines once it reaches `events.max_bytes`,
 8 MiB by default, and keeps every line about the run, its stages and sections, its findings and its
 costs. `run.done` says in `dropped` how many lines were left out, so a reader can tell a bounded
 file from a quiet run.

@@ -31,7 +31,7 @@ from decktalk.stages import selects
 
 def row_of(inputs: Inputs, take: Take) -> SectionWords:
     """One section's words, on its own clock, carrying the script's own spelling."""
-    spoken = inputs.words(take.section, take.digest)
+    spoken = inputs.section_words(take.section, take.digest)
     shown = display_words(list(spoken), take.spoken) if take.spoken else list(spoken)
     return SectionWords(
         section=take.section,

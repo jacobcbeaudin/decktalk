@@ -104,7 +104,7 @@ def test_the_cache_is_the_machines_own_when_no_key_moves_it(tmp_path: Path) -> N
     here = Machine(
         environ={},
         tables={},
-        config_path=tmp_path / "config.toml",
+        machine_file=tmp_path / "config.toml",
         cwd=tmp_path,
         toolchain=Toolchain(cache=tmp_path / "standard"),
     )
@@ -191,7 +191,7 @@ def test_a_toolchain_that_is_there_fetches_nothing(tmp_path: Path, monkeypatch: 
 
     monkeypatch.setattr(machine_module, "fetch_ffmpeg", refuse)
     chain = Toolchain(ffmpeg=tmp_path / "a", ffprobe=tmp_path / "b")
-    assert chain.fetched() is chain
+    assert chain.fetch() is chain
 
 
 def test_a_fetch_the_network_refuses_is_a_tool_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -202,7 +202,7 @@ def test_a_fetch_the_network_refuses_is_a_tool_refusal(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(machine_module, "fetch_ffmpeg", offline)
     with pytest.raises(machine_module.ToolError, match="offline") as refused:
-        Toolchain().fetched()
+        Toolchain().fetch()
     assert refused.value.code is ErrorCode.TOOL
     assert "network access" in (refused.value.hint or "")
 
@@ -213,7 +213,7 @@ def test_a_run_hands_its_pair_and_its_cancel_to_every_ffmpeg_call(tmp_path: Path
     here = Machine(
         environ={},
         tables={},
-        config_path=tmp_path / "config.toml",
+        machine_file=tmp_path / "config.toml",
         cwd=tmp_path,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache")), ffmpeg=pair[0], ffprobe=pair[1]),
     )
@@ -253,7 +253,7 @@ def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest
     monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(tmp_path / "none.toml"))
     here = Machine.from_environment()
     assert here.cwd == Path.cwd()
-    assert here.config_path == tmp_path / "none.toml"
+    assert here.machine_file == tmp_path / "none.toml"
     assert here.tables == {}
 
 
@@ -267,7 +267,7 @@ def a_host(tmp_path: Path, **choices: object) -> Machine:
     """A machine a host built from values it chose, with the voice job's two variables by default."""
     values: dict[str, Any] = {
         "environ": HOST_SECRETS,
-        "config_path": tmp_path / "host" / "machine.toml",
+        "machine_file": tmp_path / "host" / "machine.toml",
         "cwd": tmp_path,
         "cache_dir": tmp_path / "host" / "cache",
         **choices,
@@ -293,7 +293,7 @@ def test_what_reading_the_machine_noticed_is_a_warning_on_every_run(tmp_path: Pa
     config = tmp_path / "host" / "machine.toml"
     config.parent.mkdir(parents=True)
     config.write_text("[video]\npresett = 'veryfast'\n", encoding="utf-8")
-    here = a_host(tmp_path, environ={"DECKTALK_VIDEO_CRV": "20"}, config_path=config)
+    here = a_host(tmp_path, environ={"DECKTALK_VIDEO_CRV": "20"}, machine_file=config)
     seen: list[Event] = []
     with here.events.subscribe(seen.append), here._run():
         pass
@@ -310,7 +310,7 @@ def test_tools_that_name_half_a_build_are_a_note_that_names_the_key_rather_than_
     config.parent.mkdir(parents=True)
     (tmp_path / "ffmpeg").write_bytes(b"")
     config.write_text(f"[tools]\nffmpeg = '{(tmp_path / 'ffmpeg').as_posix()}'\n", encoding="utf-8")
-    here = a_host(tmp_path, config_path=config)
+    here = a_host(tmp_path, machine_file=config)
     assert here.toolchain.ffmpeg is None
     assert any("tools.ffprobe is not set" in note for note in here.notes)
 
@@ -339,7 +339,7 @@ def test_a_host_machine_reads_nothing_from_the_process(tmp_path: Path, monkeypat
     monkeypatch.setenv("DECKTALK_TOOLS_TIMEOUT_SECONDS", "11")
     here = a_host(tmp_path)
     assert here.environ == HOST_SECRETS
-    assert here.config_path == tmp_path / "host" / "machine.toml"
+    assert here.machine_file == tmp_path / "host" / "machine.toml"
     assert here.cache_dir == tmp_path / "host" / "cache"
     assert here.dotenv is False
     assert here.toolchain.tools.timeout_seconds == BY_ID["tools.timeout_seconds"].default
@@ -376,7 +376,7 @@ def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> N
 def test_a_host_machine_answers_no_voice_its_host_left_out(tmp_path: Path) -> None:
     here = a_host(tmp_path, speech_providers={"house": lambda _context: FakeVoice()})
     with here._run() as run, pytest.raises(InputError, match="not a voice this machine answers for"):
-        run.voices.provider("elevenlabs", a_context())
+        run.machine.speech_providers.provider("elevenlabs", a_context())
 
 
 def test_two_machines_in_one_process_answer_with_their_own_voices(tmp_path: Path) -> None:
@@ -385,8 +385,8 @@ def test_two_machines_in_one_process_answer_with_their_own_voices(tmp_path: Path
     two = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: second})
     with one._run() as outer:
         with two._run() as inner:
-            assert inner.voices.provider("elevenlabs", a_context()) is second
-        assert outer.voices.provider("elevenlabs", a_context()) is first
+            assert inner.machine.speech_providers.provider("elevenlabs", a_context()) is second
+        assert outer.machine.speech_providers.provider("elevenlabs", a_context()) is first
 
 
 def test_a_thread_started_without_the_runs_context_answers_with_the_hosts_voices(tmp_path: Path) -> None:
@@ -407,25 +407,25 @@ def test_the_machines_retries_are_stamped_on_every_voice_it_builds(tmp_path: Pat
     seen: list[SpeechContext] = []
     here = a_host(tmp_path, speech_providers={"elevenlabs": seen.append}, overrides=("narration.retries=5",))
     with here._run() as run:
-        run.voices.provider("elevenlabs", a_context())
+        run.machine.speech_providers.provider("elevenlabs", a_context())
     assert seen[0].retries == 5
 
 
 def test_a_machine_whose_host_gave_no_table_answers_with_the_shipped_sound_providers(tmp_path: Path) -> None:
-    assert sorted(a_host(tmp_path).sounds.factories) == sorted(SOUNDS)
+    assert sorted(a_host(tmp_path).sound_providers.factories) == sorted(SOUNDS)
 
 
 def test_a_host_that_gave_its_voices_and_no_sounds_reaches_no_shipped_sound_provider(tmp_path: Path) -> None:
     """A machine built with a fake voice must not reach the real sound service by a table its host left out."""
     here = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: FakeVoice()})
-    assert dict(here.sounds.factories) == {}
+    assert dict(here.sound_providers.factories) == {}
 
 
 def test_the_sound_providers_a_host_supplies_are_the_ones_every_run_carries(tmp_path: Path) -> None:
     seen: list[SoundContext] = []
     here = a_host(tmp_path, sound_providers={"house": seen.append}, overrides=("narration.retries=5",))
     with here._run() as run:
-        run.sounds.provider("house", SoundContext(secrets=NoSecrets(), base_url="", timeout_seconds=1))
+        run.machine.sound_providers.provider("house", SoundContext(secrets=NoSecrets(), base_url="", timeout_seconds=1))
     assert seen[0].retries == 5
 
 
@@ -473,7 +473,7 @@ def a_context() -> SpeechContext:
     return SpeechContext(
         secrets=NoSecrets(),
         base_url="https://api.elevenlabs.io/v1",
-        context_chars=1,
+        context_characters=1,
         speech_timeout_seconds=1,
     )
 
@@ -558,7 +558,7 @@ def test_a_measured_doctor_reports_the_number_and_keeps_nothing(
         lambda _name: SimpleNamespace(measure_presentation_bias=lambda: 12.5),
     )
     assert here.doctor(measure=True).bias_ms == 12.5
-    assert not here.config_path.exists()
+    assert not here.machine_file.exists()
 
 
 def rows(*answers: InstalledTool) -> Callable[[Machine], InstalledTool]:
@@ -675,7 +675,7 @@ def test_init_writes_a_project_and_says_what_it_wrote(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     result = init(tmp_path / "demo", machine=here, skills=False)
     assert result.root == Path("demo")
-    assert result.name == "demo" and result.example == "starter" and not result.skills
+    assert result.name == "demo" and result.example == "starter" and not result.skills_written
     assert Path("decktalk.toml") in result.written
     assert (tmp_path / "demo" / "decktalk.toml").exists()
 

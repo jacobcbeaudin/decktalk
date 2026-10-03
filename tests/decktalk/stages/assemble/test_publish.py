@@ -197,7 +197,7 @@ def test_a_cued_sound_that_names_no_caption_is_said(tmp_path):
     toml = (
         "[project]\nname = 't'\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
-        '[[mix.effects]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\n'
+        '[[mix.effect]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\n'
     )
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
@@ -212,7 +212,7 @@ def test_a_sounds_caption_is_bracketed_and_placed_at_its_resolved_cue(tmp_path):
     toml = (
         "[project]\nname = 't'\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
-        '[[mix.effects]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\ncaption = "ball bounces"\n'
+        '[[mix.effect]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\ncaption = "ball bounces"\n'
     )
     inputs = write_project(tmp_path, toml)
     cue_times(inputs, {1: {"1.1:ping": 0.5}})
@@ -250,7 +250,7 @@ def test_no_two_captions_are_ever_on_screen_at_once():
 def test_the_poster_freezes_the_opening_slide_with_its_reveals_fired(tmp_path):
     inputs = write_project(tmp_path)
     catalog = (MeasuredScene.model_validate({"scene": "1", "elements": {}, "slides": ["1.1", "1.2"]}),)
-    assert poster_query(catalog, inputs.document.page_sections[0]) == {Q.SLIDE: "1.1"}
+    assert poster_query(catalog, inputs.document.page_sections[0]) == {Q.FREEZE: "1.1"}
     assert poster_query((), inputs.document.page_sections[0]) is None
 
 

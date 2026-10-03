@@ -13,6 +13,7 @@ from decktalk.errors import Cancelled, ToolError
 from decktalk.media import browser, pagereport, pages, recording
 from decktalk.media.origin import ORIGIN, Allowed, Assets, page_url
 from decktalk.settings import MotionConfig
+from support import recorder as recording_fakes
 from support.logs import data_of
 from support.recorder import BARE, THROWS, FakeBrowser, FakeContext, Said, Sink, deck_of, record
 
@@ -53,7 +54,7 @@ def test_the_temporary_directory_and_the_context_go_however_the_recording_ends(t
     allowed = Allowed.of(tmp_path, ["deck"])
     with pytest.raises(PlaywrightError):
         with recording.capturing(
-            fake.browser(), allowed, width=960, height=540, color_scheme="dark", motion=MotionConfig()
+            fake.opened(), allowed, width=960, height=540, color_scheme="dark", motion=MotionConfig()
         ) as capture:
             directory = capture.directory
             assert directory.is_dir()
@@ -69,7 +70,7 @@ def test_a_browser_that_will_not_do_something_is_a_tool_failure_and_not_a_bug(tm
 
     with pytest.raises(ToolError) as raised:
         with recording.capturing(
-            Refuses().browser(),
+            Refuses().opened(),
             Allowed.of(tmp_path, []),
             width=960,
             height=540,
@@ -145,7 +146,7 @@ def record_real(real, allowed: Allowed, tmp_path: Path, page: str) -> pagereport
     out = tmp_path / f"{page}.webm"
     return recording.record_page(
         real, page_url(f"deck/{page}"), 0.3, out, allowed=allowed, log_sink=Sink(out),
-        settle_seconds=0.0, min_cover_seconds=0.0, width=320, height=240,
+        settle_seconds=0.0, cover_min_seconds=0.0, width=320, height=240,
         color_scheme="no-preference", motion=MotionConfig(),
     )  # fmt: skip
 
@@ -186,3 +187,15 @@ def test_a_recorded_pages_own_errors_and_warnings_are_collected_and_its_chatter_
     console: list[tuple[str, str]] = []
     capture.open("http://project.localhost/deck/", [], console)
     assert console == [("warning", "a slow font"), ("error", "no cue 2.1")]
+
+
+def test_a_page_that_stops_while_it_is_recorded_is_a_tool_failure_and_not_a_bug(tmp_path, monkeypatch):
+    """A tab that crashes mid-recording fails the wait, and the reader is sent to the page, not to DeckTalk."""
+
+    def crashed(_page: object, _ms: float, /) -> None:
+        raise PlaywrightError("Target crashed\nCall log:")
+
+    monkeypatch.setattr(recording_fakes.FakePage, "wait_for_timeout", crashed)
+    out = tmp_path / "01.webm"
+    with pytest.raises(ToolError, match=r"^the page stopped while 01\.webm was recorded \(Target crashed\)"):
+        record(tmp_path, Sink(out), out=out)

@@ -13,8 +13,8 @@ from decktalk.artifacts import AudioPrint, ProviderWords, TakeInputs, Takes, tak
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.inputs.workspace import Workspace
-from decktalk.results import Billing, CostState, Layer, TakeStatus
-from decktalk.speech import DECLARED, FREE, PROVIDERS, Bill, canonical_text
+from decktalk.results import BillingBasis, CostState, Layer, TakeStatus
+from decktalk.speech import DECLARED, FREE, PROVIDERS, Billing, canonical_text
 from decktalk.stages.narrate.plan import (
     cost_of,
     is_held,
@@ -53,7 +53,7 @@ def test_the_digest_of_a_paid_take_is_the_one_its_film_was_billed_for(
     measured, from the markdown an author wrote through the script parser to the inputs the plan
     hands the digest, because every one of those steps decides what a take costs.
     """
-    (segment,) = parse_script(markdown)
+    (parsed,) = parse_script(markdown)
     inputs = GOLDEN["inputs"]
     made = TakeInputs.of(
         provider=inputs["provider"],
@@ -61,7 +61,7 @@ def test_the_digest_of_a_paid_take_is_the_one_its_film_was_billed_for(
         model=inputs["model"],
         output_format=inputs["output_format"],
         settings=inputs["settings"],
-        text=canonical_text(segment.pieces),
+        text=canonical_text(parsed.pieces),
     )
     assert made.digest == digest, f"{film} section {section} would be voiced again"
 
@@ -87,8 +87,8 @@ def test_a_placeholder_digest_moves_with_the_pace_it_was_sized_at(
 ) -> None:
     faster = make_inputs(toml=TOML.replace("lead_seconds = 0.5", "placeholder_words_per_minute = 200"), name="faster")
     plain = make_inputs()
-    (segment,) = [s for s in plain.spoken() if s.index == 1]
-    assert placeholder_inputs(plain, segment).digest != placeholder_inputs(faster, segment).digest
+    (section,) = [s for s in plain.spoken() if s.number == 1]
+    assert placeholder_inputs(plain, section).digest != placeholder_inputs(faster, section).digest
 
 
 def test_two_sections_with_the_same_words_share_one_take(make_inputs: Callable[..., Inputs]) -> None:
@@ -162,7 +162,7 @@ def test_a_voiced_plan_prices_what_it_will_send_and_what_it_can_cost(inputs: Inp
     plans, why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
     assert why is None
     spend = cost_of(plans, inputs, state=CostState.ESTIMATE)
-    characters = sum(len(canonical_text(plan.segment.pieces)) for plan in plans)
+    characters = sum(len(canonical_text(plan.section.pieces)) for plan in plans)
     assert spend.characters == characters
     assert spend.dollars == pytest.approx(round(characters / 1000 * 0.30, 2))
     assert spend.ceiling_dollars == spend.dollars
@@ -177,13 +177,13 @@ def test_a_paid_take_the_cache_could_not_be_checked_for_is_priced_into_the_ceili
     """Only a voiced take could turn out to be the one this run asks for, so only a voiced take is in doubt."""
     project = unvoiceable(make_inputs)
     first, *rest = project.spoken()
-    held = Takes(script="script.md", model="m", output_format="mp3", sections=(a_paid_take(first.index),))
+    held = Takes(script="script.md", model="m", output_format="mp3", sections=(a_paid_take(first.number),))
     monkeypatch.setattr(Inputs, "takes", lambda _self: held)
     plans, _why = voiced_plan(project, [first, *rest], model="m", voice_id=None)
     assert [plan.unchecked for plan in plans] == [True] + [False] * len(rest)
     spend = cost_of(plans, project, state=CostState.ESTIMATE)
     assert spend.characters == sum(plan.characters_sent for plan in plans[1:])
-    assert spend.sections == (*(plan.segment.index for plan in plans[1:]), first.index)
+    assert spend.sections == (*(plan.section.number for plan in plans[1:]), first.number)
 
 
 def test_a_section_with_no_paid_take_is_priced_as_certain_when_no_voice_is_named(
@@ -209,7 +209,7 @@ def test_a_price_nobody_stated_is_reported_as_the_default(make_inputs: Callable[
     assert spend.dollars_per_1000_characters == pytest.approx(0.0)
 
 
-def declare(monkeypatch: pytest.MonkeyPatch, bill: Bill) -> None:
+def declare(monkeypatch: pytest.MonkeyPatch, bill: Billing) -> None:
     """Have the shipped voice declare this bill, which is the one thing a price reads about how it bills."""
     monkeypatch.setitem(DECLARED, "elevenlabs", replace(DECLARED["elevenlabs"], billing=bill))
 
@@ -222,7 +222,7 @@ def test_a_voice_that_declares_itself_free_prices_at_nothing_whatever_its_table_
     declare(monkeypatch, FREE)
     plans, _why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
     spend = cost_of(plans, inputs, state=CostState.ESTIMATE)
-    assert spend.free and spend.billing is Billing.FREE
+    assert spend.free and spend.billing is BillingBasis.FREE
     assert spend.dollars == spend.ceiling_dollars == 0
     assert spend.characters > 0 and spend.sections == (1, 2, 3)
     assert spend.price_key is None
@@ -234,11 +234,11 @@ def test_a_voice_that_bills_per_second_is_priced_on_the_seconds_its_takes_will_r
     inputs: Inputs, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The rate is read under the key the declaration names, per minute of audio rather than per character."""
-    declare(monkeypatch, Bill(Billing.PER_SECOND, rate="dollars_per_1000_characters"))
+    declare(monkeypatch, Billing(BillingBasis.PER_SECOND, rate="dollars_per_1000_characters"))
     plans, _why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
     spend = cost_of(plans, inputs, state=CostState.ESTIMATE)
     seconds = sum(seconds_of(inputs, plan) for plan in plans)
-    assert spend.billing is Billing.PER_SECOND
+    assert spend.billing is BillingBasis.PER_SECOND
     assert spend.seconds == pytest.approx(seconds)
     assert spend.dollars == pytest.approx(round(seconds * 0.30 / 60, 2))
     assert spend.dollars_per_minute == 0.30 and spend.dollars_per_1000_characters == 0
@@ -251,7 +251,7 @@ def test_a_voice_that_bills_per_second_is_priced_on_the_seconds_its_takes_will_r
 def test_a_voice_that_bills_per_character_states_the_key_its_rate_is_set_under(inputs: Inputs) -> None:
     plans, _why = voiced_plan(inputs, list(inputs.spoken()), model="m", voice_id=VOICE_ID)
     spend = cost_of(plans, inputs, state=CostState.ESTIMATE)
-    assert spend.billing is Billing.PER_CHARACTER
+    assert spend.billing is BillingBasis.PER_CHARACTER
     assert spend.price_key == "elevenlabs.dollars_per_1000_characters"
     assert "per 1,000 characters" in spend.sentence
 
@@ -262,7 +262,7 @@ def test_a_voice_a_host_registered_declares_no_bill_and_prices_at_nothing_anybod
     project = make_inputs(toml=TOML.replace('provider = "elevenlabs"', 'provider = "house"'), name="house")
     plans, _why = voiced_plan(project, list(project.spoken()), model="m", voice_id=VOICE_ID)
     spend = cost_of(plans, project, state=CostState.ESTIMATE)
-    assert spend.billing is Billing.UNDECLARED
+    assert spend.billing is BillingBasis.UNDECLARED
     assert spend.dollars == 0 and spend.price_key is None and spend.price_layer is Layer.DEFAULT
     assert not spend.free
 
@@ -274,8 +274,8 @@ def test_a_project_at_the_defaults_names_each_paid_take_by_what_elevenlabs_decla
     """What `[elevenlabs]` declares at its defaults, identity and format, is what every take was paid under."""
     golden = GOLDEN["inputs"]
     project = load_project(tmp_path, MINIMAL_TOML, environ={})
-    (segment,) = parse_script(markdown)
-    made = take_inputs(project, segment, provider="elevenlabs", voice_id=golden["voice"], model=golden["model"])
+    (parsed,) = parse_script(markdown)
+    made = take_inputs(project, parsed, provider="elevenlabs", voice_id=golden["voice"], model=golden["model"])
     assert made.output_format == golden["output_format"]
     assert made.digest == digest, f"{film} section {section} would be voiced again"
     assert project.workspace.take_file(digest) == f"{digest}.mp3"
@@ -286,8 +286,8 @@ def test_a_voice_a_host_registered_keeps_the_digest_its_takes_were_named_by(
 ) -> None:
     """It declares no format, so it is asked for the one every take was asked for before adapters declared theirs."""
     project = make_inputs(toml=TOML.replace('provider = "elevenlabs"', 'provider = "house"'), name="house")
-    (segment, *_rest) = project.spoken()
-    made = take_inputs(project, segment, provider="house", voice_id=VOICE_ID, model="m")
+    (section, *_rest) = project.spoken()
+    made = take_inputs(project, section, provider="house", voice_id=VOICE_ID, model="m")
     assert made.output_format == "mp3_44100_128"
     assert (
         made.digest
@@ -297,9 +297,9 @@ def test_a_voice_a_host_registered_keeps_the_digest_its_takes_were_named_by(
             model="m",
             output_format="mp3_44100_128",
             settings={"speed": 1.0},
-            text=canonical_text(segment.pieces),
+            text=canonical_text(section.pieces),
         ).digest
     )
     assert project.workspace.take_file(made.digest) == f"{made.digest}.mp3"
-    spend = cost_of(voiced_plan(project, [segment], model="m", voice_id=VOICE_ID)[0], project, state=CostState.ESTIMATE)
+    spend = cost_of(voiced_plan(project, [section], model="m", voice_id=VOICE_ID)[0], project, state=CostState.ESTIMATE)
     assert "declares no bill" in spend.sentence

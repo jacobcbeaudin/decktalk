@@ -83,7 +83,7 @@ class Driven:
         self.counting = threading.Lock()
 
     @contextmanager
-    def chromium(self, _browser_path: str = "", *, policy: str = "trusted", **_launch: object) -> Iterator[object]:
+    def chromium(self, _executable: str = "", *, policy: str = "trusted", **_launch: object) -> Iterator[object]:
         if self.launches_together is not None:
             self.launches_together.wait()
         with self.counting:

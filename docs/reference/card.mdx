@@ -110,7 +110,7 @@ range, warning code and motion span. They fall on three rows.
 |---|---|
 | Element and container | `data-in`, `data-describe`, `data-tex`, `data-tex-display`, `data-in-style`, `data-back`, `data-front`, `data-out`, `data-words`, `data-count`, `data-class`, `data-describe-class`, `data-stagger`, `data-spotlight`, `data-in-seconds`, `data-out-style`, `data-swaps`, `data-describe-out` |
 | Scene | `data-scene`, `data-name` |
-| Slide | `data-slide`, `data-hold`, `data-owns`, `data-enter` |
+| Slide | `data-slide`, `data-preview-seconds`, `data-owns`, `data-enter` |
 
 The closed word lists are small. `data-in-style` is `rise`, `settle`, `fade`, `pop`, `draw` or
 `cut`, and defaults to `rise`. `data-out-style` is `fade` or `fall`, and defaults to `fade`.
@@ -121,7 +121,7 @@ The closed word lists are small. `data-in-style` is `rise`, `settle`, `fade`, `p
 `data-in-seconds` runs from 0.12 to 0.44 in steps of 0.04, which is three to eleven frames at 25
 frames per second. `data-stagger` runs from 0.04 to 0.2 in steps of 0.04, and a staggered
 container's total is the step times the children less one, plus the entrance, which must stay under
-0.5 seconds. `data-hold` defaults to 8 and runs from 1 to 60.
+0.5 seconds. `data-preview-seconds` defaults to 8 and runs from 1 to 60.
 
 Read the table rather than this summary:
 
@@ -157,7 +157,7 @@ Every one of them takes `--json`. Run `decktalk <command> --help` for the whole 
 
 | Command | What it does | Flags that matter |
 |---|---|---|
-| `decktalk init DIR` | Create a project with a deck that already builds. | `--name NAME`, `--example NAME`, `--no-skills`, `--defaults`, `--overwrite` |
+| `decktalk init DIR` | Create a project with a deck that already builds. | `--name NAME`, `--example NAME`, `--no-skills`, `--overwrite` |
 | `decktalk install` | Fetch Chromium and ffmpeg before a build needs them. | |
 | `decktalk doctor` | Report what is installed and what a run would use. | `--measure`, `--fix`, `--no-fix` |
 
@@ -185,11 +185,11 @@ is bought.
 | `decktalk config list [TABLE]` | Print every key, its value and the layer that set it. | `--defaults`, `--changed` |
 | `decktalk config get KEY` | Print one key's value and the layer that set it. | |
 | `decktalk config set KEY VALUE` | Write one key into `decktalk.toml` or into this machine's file. | `--scope project\|machine`, `--dry-run` |
-| `decktalk config unset KEY` | Remove one key so the layer below it wins again. | `--scope project\|machine`, `--all` |
-| `decktalk config explain KEY` | Print one key whole: what it does, what may be set, and what set it. | `--value N` |
+| `decktalk config unset KEY` | Remove one key so the layer below it wins again. | `--scope project\|machine`, `--table` |
+| `decktalk config explain KEY` | Print one key whole: what it does, what may be set, and what set it. | `--candidate N` |
 
-`decktalk schema NAME` takes a command name, or `finding`, `error`, `event`, `settings`, `page` or
-`project`.
+`decktalk schema NAME` takes a command name, or `apply`, `finding`, `error`, `event`, `cues`, `page` or
+`setting`.
 
 ### Run one stage, in this order
 
@@ -314,7 +314,7 @@ sentences, their severities and the settings keys that move them.
 A project key is set by its default, then `decktalk.toml`, then `DECKTALK_<TABLE>_<KEY>`, then
 `--set table.key=value` for one run. A machine key, about this machine rather than the film, takes
 the per-machine file `machine.toml` in place of `decktalk.toml`, and a project file that sets one is
-refused. `decktalk schema settings --scope machine` prints those keys, and
+refused. `decktalk schema setting --scope machine` prints those keys, and
 [Which value wins](/reference/configuration#which-value-wins) has the rule and the file's path on
 each platform.
 
@@ -322,7 +322,7 @@ The settings sit in `[video]`, `[narration]`, `[record]`, `[audio]`, `[verify]`,
 `[motion]`, `[elevenlabs]`, `[score]`, `[output]` and `[tools]`. `decktalk.toml` also carries
 the tables that are project content rather than tuning, which are `[project]`, `[[section]]`,
 `[transition]`, the prompts of `[score]` with `[score.effects.<name>]`, and
-`[[mix.effects]]`. `[mix]` and `[score]` are each both things at once, because each holds
+`[[mix.effect]]`. `[mix]` and `[score]` are each both things at once, because each holds
 content keys the document owns beside settings the settings loader declares.
 
 The published range is the safe range. A bound is there because a value past it deletes a check,
@@ -350,7 +350,7 @@ for finding in result.findings:
 ```
 
 `decktalk.open(path, *, machine=None, overrides=())` returns a `Project`, and
-`decktalk.init(path, *, machine, name, example, skills, force)` writes one.
+`decktalk.init(path, *, machine, name, example, skills, overwrite)` writes one.
 `Machine.from_environment()` is the only function that reads the environment, the per-machine file
 or the working directory. `Project` carries the twelve calls `narrate`, `cue`, `record`,
 `score`, `assemble`, `verify`, `build`, `status`, `check`, `words`, `storyboard` and `clip`,
@@ -369,8 +369,8 @@ disagree, the tool is right.
 decktalk --help                      # the tree, the global flags and the exit codes
 decktalk <command> --help            # one command's flags, and what its JSON object carries
 decktalk schema                      # every command, flag, exit, error code, finding code and stage
-decktalk schema NAME                 # one command's result, or finding, error, event, settings, page, cues
-decktalk schema settings             # every setting with its default, range, unit and hazard
+decktalk schema NAME                 # one command's result, or apply, finding, error, event, cues, page, setting
+decktalk schema setting              # every setting with its default, range, unit and hazard
 decktalk config explain KEY          # one setting whole, with its value and the layer in force
 decktalk status --json               # where this project stands, and the command to run next
 decktalk doctor --json               # what this machine has, and what a run would use

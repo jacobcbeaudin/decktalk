@@ -26,7 +26,7 @@ script section, `cues.json` says which spoken phrase each moment lands on, and `
 pages. The section number, the scene its `[[section]]` names and the slide ids of its cues agree.
 
 `decktalk --help` is the instruction set. `decktalk schema` prints every command, flag, finding and
-result, `decktalk schema settings` prints every setting, `decktalk schema page` prints every page
+result, `decktalk schema setting` prints every setting, `decktalk schema page` prints every page
 attribute, and `decktalk config explain KEY` explains one setting. Every command takes `--json` and
 prints one object. `decktalk status` says where the project stands.
 
@@ -53,7 +53,7 @@ text, and the other three print JSON.
 |---|---|
 | `decktalk --help` | The command tree, the global flags and the five exit codes. |
 | `decktalk schema` | Every command with every flag, its type and its default, plus the globals, the exit codes, the nine error codes, the fifty-three finding codes and the six stages, as one object. |
-| `decktalk schema settings` and `decktalk config explain KEY` | Every setting with its default, its safe range, its unit, the findings it moves and its hazard, and then one setting whole with the layer that set it. |
+| `decktalk schema setting` and `decktalk config explain KEY` | Every setting with its default, its safe range, its unit, the findings it moves and its hazard, and then one setting whole with the layer that set it. |
 | `decktalk status --json` and `decktalk doctor --json` | Where this project stands, and what this machine has installed. |
 
 Three more names narrow `decktalk schema` to one document: `decktalk schema page` prints

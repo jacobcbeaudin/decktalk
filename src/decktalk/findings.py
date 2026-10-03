@@ -5,7 +5,7 @@ because an error means DeckTalk could not run at all. Every judgement in the pro
 these, so a reader dispatches on a code and never on the absence of one.
 
 `Code` is the closed list of every judgement DeckTalk can make. A member carries its own sentence,
-its severity and the side that raises it, so those sentences live once and the docs page,
+its severity, the side that raises it and the commands that report it, so those facts live once and the docs page,
 the JSON Schema and the printed line are three renderings of one row. A code never spells its own
 severity, because an agent dispatching on a code would then meet two codes for one condition and
 have to know that one is the other's hedge.
@@ -76,8 +76,21 @@ class RaisedBy(Enum):
     PYTHON = "python", "DeckTalk measures it from what the run produced"
 
 
+CHECK = "check"
+"""The command that judges the files before a build, which raises most codes a stage also raises."""
+
+STATUS = "status"
+"""The command that reports what is built, which names a file the project lists and the disk lacks."""
+
+DOCTOR = "doctor"
+"""The command that reports the machine, which names a tool file the machine lists and the disk lacks."""
+
+PAGE_OPENERS = (CHECK, Stage.RECORD.value)
+"""The two commands that open a page and so report every code the page raises itself."""
+
+
 class Code(Enum):
-    """Every judgement DeckTalk can make, with its sentence, its severity and who raises it.
+    """Every judgement DeckTalk can make, with its sentence, its severity, who raises it and where.
 
     The member name is the code an agent dispatches on and passes to `--allow`. The prefix is the
     subject the finding judges, which groups the codes for sorting, for `--allow` and for the docs
@@ -91,21 +104,26 @@ class Code(Enum):
     sentence: str
     severity: Severity
     raised_by: RaisedBy
+    raised_in: tuple[str, ...]
+    """The commands whose run can report this code, which a code's page names."""
 
     def __new__(
         cls,
         code: str,
         sentence: str,
         raised_by: RaisedBy = RaisedBy.RUNTIME,
+        raised_in: tuple[str, ...] = PAGE_OPENERS,
         severity: Severity = Severity.ERROR,
     ) -> Code:
-        # A row that names no severity is an error and one that names no side is the page's, because
-        # most rows are both, and a row that differs says so where it is written.
+        # A row that names no severity is an error and one that names no side is the page's, which
+        # `check` and `record` report when they open it, because most rows are both, and a row that
+        # differs says so where it is written.
         member = object.__new__(cls)
         member._value_ = code
         member.sentence = sentence
         member.severity = severity
         member.raised_by = raised_by
+        member.raised_in = raised_in
         return member
 
     def __repr__(self) -> str:
@@ -122,8 +140,8 @@ class Code(Enum):
         return f"{DOCS}/findings/{self.name}"
 
     # Reported by the page in the browser.
-    PAGE_UNKNOWN_ATTR = (
-        "PAGE_UNKNOWN_ATTR",
+    PAGE_ATTR_UNKNOWN = (
+        "PAGE_ATTR_UNKNOWN",
         "An element carries a data attribute the contract does not declare, so nothing reads it.",
     )
     PAGE_BAD_VALUE = (
@@ -240,136 +258,161 @@ class Code(Enum):
         "PAGE_MOTION_OVERRUN",
         "A motion span runs past the measurable ceiling, so the cue it carries cannot be verified.",
         RaisedBy.PYTHON,
+        (CHECK,),
     )
     PAGE_STAGGER_OVERRUN = (
         "PAGE_STAGGER_OVERRUN",
         "A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact.",
         RaisedBy.PYTHON,
+        (CHECK,),
     )
     PAGE_THIN_DRAW = (
         "PAGE_THIN_DRAW",
         "A frozen slide draws less of the picture than a change must cross to be seen.",
         RaisedBy.PYTHON,
+        (CHECK,),
         Severity.WARNING,
     )
     PAGE_NO_DESCRIPTION = (
         "PAGE_NO_DESCRIPTION",
         "An element changes the picture and describes nothing, so the transcript loses the change.",
         RaisedBy.PYTHON,
+        (CHECK,),
     )
     PAGE_SWAP_APART = (
         "PAGE_SWAP_APART",
         "A swap's two halves land far enough apart that a viewer sees the gap between them.",
         RaisedBy.PYTHON,
+        (CHECK,),
         Severity.WARNING,
     )
     PAGE_CDN_ASSET = (
         "PAGE_CDN_ASSET",
         "The page loads an asset from a network origin, so the film depends on somebody else's server.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.RECORD.value),
     )
     RECORD_STALLED = (
         "RECORD_STALLED",
         "The picture held still for longer than a recorded section ever should.",
         RaisedBy.PYTHON,
+        (Stage.RECORD.value,),
     )
     RECORD_BLACK = (
         "RECORD_BLACK",
         "A recorded frame is black, so the film shows nothing at that moment.",
         RaisedBy.PYTHON,
+        (Stage.RECORD.value, Stage.VERIFY.value),
     )
     RECORD_TRUNCATED = (
         "RECORD_TRUNCATED",
         "A recording stopped before its section's clock ran out, so the film is short of picture.",
         RaisedBy.PYTHON,
+        (Stage.RECORD.value,),
     )
 
     # Measured in Python, about the script, the cues, the cut and the files.
-    CUE_MISSING = (
-        "CUE_MISSING",
+    CUE_UNLISTED = (
+        "CUE_UNLISTED",
         "The page declares a moment that cues.json does not list, so nothing gives it a second.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.CUE.value),
     )
     CUE_UNKNOWN = (
         "CUE_UNKNOWN",
         "cues.json lists a cue no page declares, so nothing plays it.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.CUE.value),
     )
     CUE_UNRESOLVED = (
         "CUE_UNRESOLVED",
         "The cue's phrase is not spoken in its section, so there is no second to place it at.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.CUE.value, Stage.VERIFY.value),
     )
     CUE_STALE = (
         "CUE_STALE",
         "The cue times on disk were placed from a different cues.json than the project's, so the film "
         "is judged against moments nobody asked for until the project is built again.",
         RaisedBy.PYTHON,
+        (Stage.VERIFY.value,),
     )
     CUE_OFF = (
         "CUE_OFF",
         "The change lands further from its word than the offset limit allows.",
         RaisedBy.PYTHON,
+        (Stage.VERIFY.value,),
     )
     CUE_NO_ONSET = (
         "CUE_NO_ONSET",
         "The cue resolved with no measured onset, so its second is the section's start and not its word's.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.CUE.value, Stage.VERIFY.value),
         Severity.WARNING,
     )
     CUE_NO_CHANGE = (
         "CUE_NO_CHANGE",
         "Nothing in the picture changed at the cue's second, so the reveal never happened.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.VERIFY.value),
     )
     CUE_THIN_CHANGE = (
         "CUE_THIN_CHANGE",
         "Less of the picture changed at the cue than a visible reveal must cross.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.VERIFY.value),
         Severity.WARNING,
     )
     CUE_OVERLAP = (
         "CUE_OVERLAP",
         "Two cues resolve close enough together that a viewer cannot tell them apart.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.CUE.value),
         Severity.WARNING,
     )
     SCRIPT_UNFINISHED = (
         "SCRIPT_UNFINISHED",
         "The script still holds an unfilled blank such as [NUMBER], so a voiced run would read it out.",
         RaisedBy.PYTHON,
+        (CHECK,),
     )
     SCRIPT_SPOKEN_SYMBOL = (
         "SCRIPT_SPOKEN_SYMBOL",
         "The script holds a symbol the voice reads as its name rather than as the thing it means.",
         RaisedBy.PYTHON,
+        (CHECK,),
         Severity.WARNING,
     )
     SCRIPT_PAUSE_DROPPED = (
         "SCRIPT_PAUSE_DROPPED",
         "The script asks for a timed pause the voice's model does not render, so a voiced run would drop it.",
         RaisedBy.PYTHON,
+        (CHECK,),
     )
     TAKE_MISSING = (
         "TAKE_MISSING",
         "A section's take is not on disk, so a placeholder plays in its place until its voice makes one.",
         RaisedBy.PYTHON,
+        (Stage.NARRATE.value,),
         Severity.WARNING,
     )
     CUT_SPEECH = (
         "CUT_SPEECH",
         "Speech is still sounding at a section cut, so the film slices a word in two.",
         RaisedBy.PYTHON,
+        (Stage.VERIFY.value,),
     )
     CUT_POP = (
         "CUT_POP",
         "The picture steps at a section cut, so the film pops on the seam.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.VERIFY.value),
     )
     MIX_LOUDNESS = (
         "MIX_LOUDNESS",
         "The mixed film misses the loudness it was mastered to.",
         RaisedBy.PYTHON,
+        (Stage.ASSEMBLE.value,),
         Severity.WARNING,
     )
     SOUND_MISSING = (
@@ -377,12 +420,14 @@ class Code(Enum):
         "A sound the `[score]` table declares has not been bought, so silence plays where it would until a run "
         "with --spend buys it.",
         RaisedBy.PYTHON,
+        (Stage.SCORE.value, Stage.ASSEMBLE.value),
         Severity.WARNING,
     )
     FILE_MISSING = (
         "FILE_MISSING",
         "A file the project names is not on disk.",
         RaisedBy.PYTHON,
+        (CHECK, STATUS, DOCTOR, Stage.RECORD.value, Stage.ASSEMBLE.value),
     )
 
 

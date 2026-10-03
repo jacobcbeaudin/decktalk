@@ -6,7 +6,7 @@
     decktalk schema                  read the whole instruction set in one call
 
 The command line is the instruction set. An agent runs `decktalk --help` for the tree, `decktalk
-schema` for every command, flag, exit code, error code and finding code, `decktalk schema settings`
+schema` for every command, flag, exit code, error code and finding code, `decktalk schema setting`
 for every setting with its range and its sentence, and `decktalk config explain KEY` for one setting whole.
 Nothing on that path is a documentation page.
 

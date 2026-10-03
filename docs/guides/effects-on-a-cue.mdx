@@ -5,7 +5,7 @@ description: Generate a one-shot sound and play it on the second a named cue lan
 
 A sound effect is one short file that plays once, at the second a named cue fires. Two tables carry
 it and each one is read by a different stage. `[score.effects.<name>]` says what the sound is,
-and `decktalk score` generates it. `[[mix.effects]]` says where it plays, and `decktalk
+and `decktalk score` generates it. `[[mix.effect]]` says where it plays, and `decktalk
 assemble` lays it into the soundtrack.
 
 The two are split because the sound is bought once and placed as often as you like. Moving an effect
@@ -126,10 +126,10 @@ the closing band lands.
   </Step>
 
   <Step title="Cue the sound">
-    A `[[mix.effects]]` row names the file, the section and the cue. The cue is a [cue id](/concepts/cues#the-cue-id).
+    A `[[mix.effect]]` row names the file, the section and the cue. The cue is a [cue id](/concepts/cues#the-cue-id).
 
     ```toml decktalk.toml
-    [[mix.effects]]
+    [[mix.effect]]
     file = "score/tick.mp3"
     section = 1
     cue = "1.2:word"
@@ -204,13 +204,13 @@ are named rather than numbered. So a run that names sections keeps the effects t
 decktalk score --section 1 --spend
 ```
 
-An effect belongs to that run when a `[[mix.effects]]` row in one of the named sections points at
+An effect belongs to that run when a `[[mix.effect]]` row in one of the named sections points at
 the file the item writes. The row's `file` and the item's output path are compared as paths, so a
 row that names `media/tick.mp3` while the table writes `score/tick.mp3` selects nothing.
 Set `out` on the table when you want the sound somewhere else, rather than copying the file by hand.
 
 The music is generated whenever any section is selected, because one bed plays under the whole film,
-and the ambience bed is generated when a selected page section sets `ambience = true`.
+and the ambience bed is generated when a selected page section sets `with_ambience = true`.
 
 ## Related
 

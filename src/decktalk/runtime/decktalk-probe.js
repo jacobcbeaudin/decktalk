@@ -44,7 +44,7 @@
   var READ_FROM_THE_PAGE = null;
   var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
-  var HOLD_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
+  var PREVIEW_SECONDS_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
     "data-in": {
       name: "data-in",
@@ -299,13 +299,13 @@
       affects: ["cue-order", "catalog"],
       summary: "Declares a slide on a template. Its id qualifies every moment written inside it.",
     },
-    "data-hold": {
-      name: "data-hold",
+    "data-preview-seconds": {
+      name: "data-preview-seconds",
       on: ["slide"],
       kind: "seconds",
       values: [],
       default: "8",
-      range: HOLD_RANGE,
+      range: PREVIEW_SECONDS_RANGE,
       code: null,
       span: 0,
       affects: ["preview"],
@@ -359,24 +359,24 @@
    * the same, and keeps nothing.
    *
    * What the recorder calls
-   *   window.__dtprobe.cover()   draw the magenta cover and the keep-alive from the first paint
-   *   window.__dtprobe.lift()    remove the cover and start the page clock on the next animation
-   *                              frame, resolving to the performance.now() of that frame, which is
-   *                              the recording's narration t=0
-   *   window.__dtprobe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
-   *   window.__dtprobe.report()  everything the recorder reads back off the page, in one call
+   *   window.__decktalkProbe.cover()   draw the magenta cover and the keep-alive from the first paint
+   *   window.__decktalkProbe.lift()    remove the cover and start the page clock on the next animation
+   *                                    frame, resolving to the performance.now() of that frame, which is
+   *                                    the recording's narration t=0
+   *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
+   *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
    *
    * What the runtime reads, and only when this file is there
-   *   window.__dtprobe.recorder                          the telemetry sink, read once at startup
-   *   window.__dtprobe.freezeCues(order, slideId, warn)  which of a frozen slide's cues fire
-   *   window.__dtprobe.measure(catalog, stage)           one box row per element, onto the catalog
+   *   window.__decktalkProbe.recorder                          the telemetry sink, read once at startup
+   *   window.__decktalkProbe.freezeCues(order, slideId, warn)  which of a frozen slide's cues fire
+   *   window.__decktalkProbe.measure(catalog, canvas)          one box row per element, onto the catalog
    *
    * This module imports the contract and the telemetry seam and nothing else, which is what keeps the
    * split honest: the probe knows the vocabulary and it knows the sink, and it knows no DOM the
    * runtime owns.
    */
-  var COVER_ID = "__t0cover";
-  var KEEPALIVE_ID = "__dtkeepalive";
+  var COVER_ID = "dt-cover";
+  var KEEPALIVE_ID = "dt-keepalive";
   var GAP_MS = 100;
   var AFTER = "after";
   var BEFORE = "before";
@@ -536,19 +536,19 @@
     }
     return rows;
   }
-  function measure(catalog, stage) {
+  function measure(catalog, canvas) {
     const layer = document.createElement("div");
     layer.id = "dt-measure";
     layer.style.cssText = "position:absolute;inset:0;visibility:hidden";
-    stage.pan.appendChild(layer);
-    const frame = stage.origin.getBoundingClientRect();
-    const scale = stage.scale || 1;
+    canvas.pan.appendChild(layer);
+    const frame = canvas.origin.getBoundingClientRect();
+    const scale = canvas.scale || 1;
     for (const entry of catalog) {
-      const scene = stage.scenes.get(entry.scene);
+      const scene = canvas.scenes.get(entry.scene);
       if (!scene) continue;
       entry.elements = {};
       for (const slide of scene.slides) {
-        const slideEl = stage.build(scene, slide);
+        const slideEl = canvas.build(scene, slide);
         layer.appendChild(slideEl);
         entry.elements[slide.id] = rowsFor(slideEl, slide.id, frame, scale);
         layer.removeChild(slideEl);
@@ -559,5 +559,5 @@
   }
   watchFrames();
   var probe = { cover, lift, ready, report, recorder, freezeCues, measure };
-  window.__dtprobe = probe;
+  window.__decktalkProbe = probe;
 })();

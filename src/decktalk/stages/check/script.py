@@ -19,7 +19,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from decktalk.findings import Code, Finding, Location, judge
-from decktalk.inputs.script import Segment
+from decktalk.inputs.script import ScriptSection
 from decktalk.stages.narrate.plan import DROPPED_PAUSE_HINT
 from decktalk.stages.narrate.script_rules import (
     BRACKET_RE,
@@ -69,7 +69,7 @@ def placeholder_findings(markdown: str, *, script: Path) -> list[Finding]:
     ]
 
 
-def symbol_findings(segments: Iterable[Segment], *, script: Path) -> list[Finding]:
+def symbol_findings(sections: Iterable[ScriptSection], *, script: Path) -> list[Finding]:
     """One warning per section whose spoken words hold a digit or a symbol.
 
     A reader turns each of those into a word of its own and a voice may say something else, so the
@@ -77,22 +77,22 @@ def symbol_findings(segments: Iterable[Segment], *, script: Path) -> list[Findin
     """
     where = script.as_posix()
     found: list[Finding] = []
-    for segment in segments:
-        tokens = symbol_tokens(segment)
+    for section in sections:
+        tokens = symbol_tokens(section)
         if not tokens:
             continue
         found.append(
             judge(
                 Code.SCRIPT_SPOKEN_SYMBOL,
-                f"section {segment.index} speaks {len(tokens)} word(s) holding a digit or a symbol, which are "
+                f"section {section.number} speaks {len(tokens)} word(s) holding a digit or a symbol, which are "
                 f"{shown(tokens)}. Write them the way the voice should say them.",
-                Location(where=where, file=script, section=segment.index),
+                Location(where=where, file=script, section=section.number),
             )
         )
     return found
 
 
-def pause_findings(dropped: Iterable[Segment], *, provider: str, model: str, script: Path) -> list[Finding]:
+def pause_findings(dropped: Iterable[ScriptSection], *, provider: str, model: str, script: Path) -> list[Finding]:
     """One error per section whose timed pauses the voice's model would drop.
 
     `narrate` refuses to build the voice for such a script, so the finding names each section here,
@@ -102,17 +102,17 @@ def pause_findings(dropped: Iterable[Segment], *, provider: str, model: str, scr
     return [
         judge(
             Code.SCRIPT_PAUSE_DROPPED,
-            f"section {segment.index} asks for a timed pause, and [voice] provider {provider!r} renders none on "
+            f"section {section.number} asks for a timed pause, and [voice] provider {provider!r} renders none on "
             f"model {model!r}, so a voiced run would drop it. {DROPPED_PAUSE_HINT}",
-            Location(where=where, file=script, section=segment.index),
+            Location(where=where, file=script, section=section.number),
         )
-        for segment in dropped
+        for section in dropped
     ]
 
 
-def script_findings(markdown: str, segments: Sequence[Segment], *, script: Path) -> list[Finding]:
+def script_findings(markdown: str, sections: Sequence[ScriptSection], *, script: Path) -> list[Finding]:
     """Everything a check judges about the script, which is what it would refuse and what it may misread."""
-    return [*placeholder_findings(markdown, script=script), *symbol_findings(segments, script=script)]
+    return [*placeholder_findings(markdown, script=script), *symbol_findings(sections, script=script)]
 
 
 __all__ = [

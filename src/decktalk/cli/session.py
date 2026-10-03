@@ -12,7 +12,7 @@ A prompt an agent cannot answer and a flag that does not exist are the same fail
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -25,21 +25,22 @@ from typer import Context
 
 from decktalk import project as projects
 from decktalk.cli import output
-from decktalk.cli.options import FailOn, When, pairs
+from decktalk.cli.options import When, pairs
 from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorInfo, Exit
 from decktalk.events import Events
 from decktalk.files import json_text
-from decktalk.findings import Code, Finding
+from decktalk.findings import Finding
 from decktalk.machine import Machine
-from decktalk.machine.run import Threshold
+from decktalk.machine.run import ERRORS_FAIL, Threshold
+from decktalk.pipeline import Stage
 from decktalk.project import Project
 from decktalk.results import Cost, ErrorResult, Result, counted
 
-TAKES_PLAY = "a placeholder wherever a take is missing"
-"""What a run that may not spend plays in place of a take it would buy, which a spend refusal names."""
-
-SOUNDS_PLAY = "silence where a sound is unbought"
-"""What a run that may not spend plays in place of a sound it would buy, which a spend refusal names."""
+PLAYS = {
+    Stage.NARRATE: "a placeholder wherever a take is missing",
+    Stage.SCORE: "silence where a sound is unbought",
+}
+"""What a run that may not spend plays in place of what each stage that buys would buy, which a spend refusal names."""
 
 
 @dataclass(frozen=True)
@@ -53,7 +54,6 @@ class Globals:
     no_input: bool = False
     verbose: bool = False
     quiet: bool = False
-    yes: bool = False
 
     def merged(self, values: dict[str, Any]) -> Globals:
         """These flags with the ones written after the command name on top.
@@ -68,36 +68,35 @@ class Globals:
 
 @dataclass(frozen=True)
 class Terminal:
-    """What is on the other end of the two streams, which is what chooses every rendering."""
+    """What is on the other end of stderr, which is what chooses every rendering beside the flags."""
 
     is_terminal: bool
     is_dumb: bool
     no_color: bool
-    json: bool
-    events: bool
-    quiet: bool
-
-    @property
-    def live(self) -> bool:
-        """True when a transient region may animate, which needs a real terminal and one stream to itself.
-
-        `--events` turns it off because a live region and a line stream cannot share one stream
-        without control characters landing in the stream.
-        """
-        return self.is_terminal and not self.is_dumb and not self.no_color and not self.json and not self.events
 
 
 class Session:
     """One command in progress, with its flags, its two consoles and its answer."""
 
-    def __init__(self, flags: Globals, *, command: str) -> None:
+    def __init__(
+        self,
+        flags: Globals,
+        *,
+        command: str,
+        threshold: Threshold = ERRORS_FAIL,
+        spend: bool | None = None,
+        max_cost: float | None = None,
+    ) -> None:
+        """`threshold` is what `--fail-on` and `--allow` name, which the exit code and `ok` are both read
+        from. `spend` and `max_cost` are the two flags that decide what this run buys, where an unset
+        `--spend` means ask.
+        """
         self.flags = flags
         self.command = command
+        self.threshold = threshold
+        self.spend = spend
+        self.max_cost = max_cost
         self.cancel = Cancel()
-        self.allowed: frozenset[Code] = frozenset()
-        self.fail_on = FailOn.ERROR
-        self.spend: bool | None = None
-        self.max_cost: float | None = None
         self._said = False
         self.out, self.err = (
             Console(
@@ -111,24 +110,15 @@ class Session:
             for stderr in (False, True)
         )
         self.terminal = Terminal(
-            is_terminal=self.err.is_terminal,
-            is_dumb=self.err.is_dumb_terminal,
-            no_color=self.err.no_color,
-            json=flags.json_out,
-            events=flags.events,
-            quiet=flags.quiet,
+            is_terminal=self.err.is_terminal, is_dumb=self.err.is_dumb_terminal, no_color=self.err.no_color
         )
         self._overrides: tuple[str, ...] = ()
 
     # ---- what the command opens -------------------------------------------------------------
 
-    def overriding(self, overrides: Sequence[str]) -> None:
-        """Hold this run's `--set` pairs, which are validated by the loader the first call opens."""
-        self._overrides = tuple(overrides)
-
     def opened(self, overrides: Sequence[str] | None) -> Project:
         """This run's project, opened with its `--set` pairs, which the loader validates before a stage runs."""
-        self.overriding(pairs(overrides))
+        self._overrides = tuple(pairs(overrides))
         return self.project()
 
     @cached_property
@@ -156,6 +146,17 @@ class Session:
 
     # ---- the stream -------------------------------------------------------------------------
 
+    @property
+    def live(self) -> bool:
+        """True when a transient region may animate, which needs a real terminal and one stream to itself.
+
+        `--events` turns it off because a live region and a line stream cannot share one stream
+        without control characters landing in the stream.
+        """
+        terminal = self.terminal
+        plain = terminal.is_dumb or terminal.no_color or self.flags.json_out or self.flags.events
+        return terminal.is_terminal and not plain
+
     @contextmanager
     def watching(self, events: Events, *, opening: bool = False, heard: set[str] | None = None) -> Iterator[None]:
         """Render this call's events for as long as it runs, and leave the stream as it was found.
@@ -169,15 +170,15 @@ class Session:
         line of it. The log lines are among them, and `run.start` already names the events file.
         """
         renderers: list[output.Renderer] = []
-        if self.terminal.events:
+        if self.flags.events:
             renderers.append(output.Jsonl(self.err))
         else:
             renderers.append(output.Notes(self.err, verbose=self.flags.verbose, quiet=self.flags.quiet, heard=heard))
             if opening:
                 renderers.append(output.Opening(self.err))
-            if self.terminal.live and not self.terminal.quiet:
+            if self.live and not self.flags.quiet:
                 renderers.append(output.Region(self.err))
-            elif not self.terminal.quiet:
+            elif not self.flags.quiet:
                 renderers.append(output.Lines(self.err))
         for renderer in renderers:
             renderer.open()
@@ -213,79 +214,59 @@ class Session:
 
     def say(self, message: str) -> None:
         """One sentence on stderr, which is where everything but the result goes, unless `--events` holds it."""
-        if not self.flags.quiet and not self.terminal.events:
+        if not self.flags.quiet and not self.flags.events:
             self.err.print(message)
 
     # ---- the spend gate -----------------------------------------------------------------------
 
-    def gate_spend(self, *, spend: bool | None, max_cost: float | None) -> None:
-        """Hold the two flags that decide what this run buys, where an unset `--spend` means ask."""
-        self.spend, self.max_cost = spend, max_cost
-
     def spends(
         self,
         project: Project,
+        stages: Collection[Stage],
         *,
-        price: Callable[[], Cost | None] | None = None,
-        replacing: bool = False,
+        only: Sequence[int] | None = None,
+        replace_voiced: bool = False,
+        replace_score: bool = False,
         storyboard: bool = False,
-        plays: str = TAKES_PLAY,
     ) -> bool:
-        """Whether this run may buy what is missing, asked once before anything is bought.
+        """Whether this run of `stages` may buy what is missing, asked once before anything is bought.
 
-        `--spend` and `--no-spend` answer it outright. Unset, the run is priced first, by `price` or
-        else by the check that prices a voiced build. A run with nothing to buy is asked nothing and
-        buys nothing, unless `replacing` says it was told to replace a voiced take or a bought sound,
-        which buys it again.
+        `--spend` and `--no-spend` answer it outright. Unset, a run of no stage that buys buys nothing
+        and is never priced. Any other is priced first by `Project.price`, the sum `build` itself holds
+        the ceiling against. A run with nothing to buy is asked nothing and buys nothing, unless it was
+        told to replace a voiced take or a bought sound, which buys it again.
         `--force` never reaches here, because it rebuilds what is free and so buys nothing. A run
         whose voice declares itself free is asked nothing either, and is let buy, because buying from
         it costs nothing. Spend gates money alone, so `--no-spend` still lets a free voice make its
         takes. Otherwise, on a terminal the checkpoint is the storyboard and the price: the run
         says what it will cost and where to look at what it is about to narrate, and then it asks.
         Without a terminal there is nobody to ask, so the run refuses and names the two flags that
-        answer, and the refusal carries the price so that one call prices the run. `plays` is what
-        `--no-spend` plays in place of what this command would buy, which the refusal's hint names.
+        answer, and the refusal carries the price so that one call prices the run. Its hint says what
+        `--no-spend` plays in place of what these stages would buy. A run that could not be priced
+        says why, on the question and in the refusal alike.
         """
         if self.spend is not None:
             return self.spend
-        priced = (price or (lambda: self.price(project)))()
+        buying = [stage for stage in Stage.keyed_stages() if stage in stages]
+        if not buying:
+            return False
+        try:
+            priced, unpriced = (
+                project.price(stages=buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score),
+                None,
+            )
+        except DeckTalkError as refused:
+            priced, unpriced = None, refused
         if priced is not None and priced.free:
             return True
-        if priced is not None and not priced.buys and not replacing:
+        if priced is not None and not priced.buys and not (replace_voiced or replace_score):
             return False
         if not self.asks:
-            raise ApprovalRequired(_cost_sentence(priced), hint=_spend_hint(self.command, plays))
+            raise ApprovalRequired(_cost_sentence(priced, unpriced), hint=_spend_hint(self.command, buying))
         if storyboard:
             self.say(self.storyboard_line(project))
-        if priced is not None:
-            self.say(priced.sentence)
+        self.say(priced.sentence if priced is not None else _unpriced_sentence(unpriced))
         return self.confirm("Spend that now?")
-
-    def price(self, project: Project, *, only: Sequence[int] | None = None) -> Cost | None:
-        """What a voiced run of these sections would cost, read without opening a browser.
-
-        The judgement that prices a run is `check`, so the price a refusal carries and the price
-        `decktalk check --json` reports are one number worked out in one place.
-        """
-        try:
-            return project.check(only=only, pages=False, frames=False).cost
-        except DeckTalkError:
-            # silent: the check run's own run.done line carries why it could not price.
-            return None
-
-    def sound_price(self, project: Project, *, only: Sequence[int] | None, replace_score: bool = False) -> Cost | None:
-        """What buying this project's score would cost, read from its plan and its ledger.
-
-        No run is opened and no client is built, so pricing takes no lock, writes no events file and
-        can never buy anything. A run told to replace the score is priced at every item it selects.
-        """
-        from decktalk.stages import score  # noqa: PLC0415  (a stage is loaded by the call that needs it)
-
-        try:
-            return score.price(project._inputs, only=only, replace_score=replace_score)
-        except DeckTalkError:
-            # silent: the run that follows meets the same refusal and reports it.
-            return None
 
     def storyboard_line(self, project: Project) -> str:
         """The storyboard this checkpoint points at, drawn now so that the path names a real page.
@@ -298,15 +279,6 @@ class Session:
         return f"Storyboard {where}, {counted(len(written.panels), 'panel')}."
 
     # ---- how a command ends -------------------------------------------------------------------
-
-    def judging(self, *, fail_on: FailOn, allow: frozenset[Code]) -> None:
-        """Hold the threshold and the carried codes this run's exit code is worked out from."""
-        self.fail_on, self.allowed = fail_on, allow
-
-    @property
-    def threshold(self) -> Threshold:
-        """The threshold `--fail-on` and `--allow` name, which the exit code and `ok` are both read from."""
-        return Threshold(stop_on=self.fail_on.stops_on, allow=self.allowed)
 
     def report(self, result: Result) -> int:
         """Write the result the way the terminal asked for it, and give back the exit code.
@@ -357,7 +329,7 @@ class Session:
         """Write one refusal, and give back the exit code its own code carries."""
         if self.flags.json_out:
             self._stdout(ErrorResult(ok=False, error=info).model_dump_json(indent=2))
-        elif self.terminal.events:
+        elif self.flags.events:
             # Every line of stderr is one JSON object under `--events`, so the refusal is one as well.
             self.err.file.write(ErrorResult(ok=False, error=info).model_dump_json() + "\n")
             self.err.file.flush()
@@ -370,20 +342,30 @@ class Session:
 
         The traceback is never written under `--events`, because every line of stderr is JSON there.
         """
-        if self.flags.verbose and not self.terminal.events:
+        if self.flags.verbose and not self.flags.events:
             self.err.print_exception()
         return self.reported(ErrorInfo.of_failure(failure))
 
 
-def _cost_sentence(spend: Cost | None) -> str:
-    """The sentence an approval refusal carries, with the price in it whenever the price is known."""
-    if spend is None:
-        return "This run may buy something and no terminal is here to approve it."
-    return f"{spend.sentence} No terminal is here to approve it."
+def _cost_sentence(spend: Cost | None, unpriced: DeckTalkError | None = None) -> str:
+    """The sentence an approval refusal carries, with the price in it, or why there is none."""
+    said = spend.sentence if spend is not None else _unpriced_sentence(unpriced)
+    return f"{said} No terminal is here to approve it."
 
 
-def _spend_hint(command: str, plays: str) -> str:
-    """The two whole commands that answer a spend refusal, which is what makes a hint a hint."""
+def _unpriced_sentence(unpriced: DeckTalkError | None) -> str:
+    """What a run says in place of its price, which names the refusal that kept it from being priced."""
+    if unpriced is None:
+        return "This run may buy something, and its price is not known."
+    return f"This run may buy something, and it could not be priced: {unpriced}"
+
+
+def _spend_hint(command: str, buying: Sequence[Stage]) -> str:
+    """The two whole commands that answer a spend refusal, which is what makes a hint a hint.
+
+    The second says what `--no-spend` plays in place of what each stage that buys would buy.
+    """
+    plays = " and ".join(PLAYS[stage] for stage in buying)
     return f"Run decktalk {command} --spend to approve that spend, or decktalk {command} --no-spend to play {plays}."
 
 

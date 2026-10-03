@@ -126,3 +126,45 @@ def test_a_test_anywhere_that_resolves_another_host_fails_before_it_is_asked(sui
     result.assert_outcomes(failed=1)
     result.stdout.fnmatch_lines(["*tried to reach 'decktalk.invalid'*"])
     assert asked == []
+
+
+RAW = {
+    "an IPv4 literal": ("socket.AF_INET", "connect(('192.0.2.1', 443))"),
+    "an IPv6 literal": ("socket.AF_INET6", "connect(('2001:db8::1', 443, 0, 0))"),
+    "a connect that answers with a number": ("socket.AF_INET", "connect_ex(('192.0.2.1', 443))"),
+    "a datagram": ("socket.AF_INET, socket.SOCK_DGRAM", "sendto(b'x', ('192.0.2.1', 53))"),
+    "a name the socket resolves itself": ("socket.AF_INET", "connect(('decktalk.invalid', 443))"),
+}
+"""Each way a test can open or address a socket without asking `socket.getaddrinfo` first."""
+
+OPENS = ("connect", "connect_ex", "sendto")
+"""The socket methods that take an address to reach, which a recorder stands in for below."""
+
+
+@pytest.fixture
+def opened(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    """Every address a socket was asked to reach, recorded in place of reaching it."""
+    asked: list[object] = []
+    for name in OPENS:
+        monkeypatch.setattr(socket.socket, name, lambda _self, *args: asked.append(args[-1]) or 0)
+    return asked
+
+
+def raw(kind: str, call: str) -> str:
+    """A test that opens a socket of `kind` and makes `call` on it."""
+    return f"import socket\n\ndef test_raw():\n    with socket.socket({kind}) as raw:\n        raw.{call}\n"
+
+
+@pytest.mark.parametrize(("kind", "call"), RAW.values(), ids=RAW.keys())
+def test_a_socket_addressed_to_another_host_fails_before_it_is_opened(suite, opened, kind, call):
+    suite.makepyfile(test_raw=raw(kind, call))
+    result = suite.runpytest("test_raw.py")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*tried to reach*which is not this machine*"])
+    assert opened == []
+
+
+def test_a_socket_addressed_to_this_machine_is_opened(suite, opened):
+    suite.makepyfile(test_raw=raw("socket.AF_INET", "connect(('127.0.0.1', 9))"))
+    suite.runpytest("test_raw.py").assert_outcomes(passed=1)
+    assert opened == [("127.0.0.1", 9)]

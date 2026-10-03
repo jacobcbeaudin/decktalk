@@ -324,7 +324,7 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
     environ = {"ELEVENLABS_API_KEY": key, "DECKTALK_VOICE_ID": "voice-canary", "HOST_DB_PASSWORD": host}
     here = Machine.of(
         environ=environ,
-        config_path=tmp_path / "machine.toml",
+        machine_file=tmp_path / "machine.toml",
         cwd=root,
         cache_dir=tmp_path / "cache",
         dotenv=True,

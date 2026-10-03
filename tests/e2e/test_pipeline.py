@@ -41,7 +41,6 @@ from decktalk.errors import Exit
 from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart, StageDone, StageStart
 from decktalk.findings import Code
 from decktalk.media import audio, ffmpeg, frames
-from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import CostState, Layer, SectionKind, Substitute, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing
@@ -401,7 +400,7 @@ def test_the_build_writes_one_events_file_an_agent_can_read(built: Project) -> N
 def test_the_build_writes_every_artifact_the_pipeline_declares(built: Project) -> None:
     """A path an agent finds from `Artifact` and nowhere else, so no reader spells a build path."""
     for artifact in (Artifact.TAKES, Artifact.CUE_TIMES, Artifact.RECORDINGS, Artifact.FINAL):
-        assert (built.root / artifact.value).exists(), artifact.value
+        assert (built.build_dir / artifact.value).exists(), artifact.value
 
 
 def test_the_missing_optional_clip_plays_its_slate(built: Project) -> None:
@@ -490,12 +489,12 @@ def test_every_cue_lands_inside_the_limit_the_project_publishes(built: Project, 
     """
     assert built.verified is not None
     published = built.cli("config", "get", "verify.cue_offset_max_ms", "--json")
-    stated_ms = float(published.json["key"]["value"])
+    stated_ms = float(published.json["setting"]["value"])
     allowed_ms = offset_limit_ms(stated_ms, gates_timing(pytestconfig))
     late = [
-        (qualified(row), abs(row["offset_seconds"]) * MILLISECONDS)
+        (qualified(row), abs(row["offset_seconds"]) * 1000)
         for row in built.verified.json["cues"]
-        if row["offset_seconds"] is not None and abs(row["offset_seconds"]) * MILLISECONDS > stated_ms
+        if row["offset_seconds"] is not None and abs(row["offset_seconds"]) * 1000 > stated_ms
     ]
     assert [(cue, out) for cue, out in late if out > allowed_ms] == [], late
     if late:
@@ -506,7 +505,7 @@ def test_section_2_opens_on_section_1s_last_frame(built: Project) -> None:
     assert built.verified is not None
     [seam] = built.verified.json["seams"]
     assert seam["section"] == 2
-    assert seam["drift"] is not None
+    assert seam["drift_seconds"] is not None
 
 
 # ---- the finished film ------------------------------------------------------------------------------
@@ -667,7 +666,7 @@ def test_check_judges_the_inputs_and_prices_the_run_without_a_browser(built: Pro
     """
     run = built.cli("check", "--no-pages", "--json", "--fail-on", "never")
     doc = run.json
-    assert doc["pages"] is False
+    assert doc["pages_opened"] is False
     assert sorted(Path(path).name for path in doc["judged"]) == ["cues.json", "script.md"]
     cost = doc["cost"]
     assert cost["state"] == CostState.ESTIMATE.value, cost
@@ -713,11 +712,11 @@ def test_the_equation_typesets_from_the_engine_and_not_from_a_cdn(built: Project
 
 def test_the_take_index_and_the_cue_times_agree_with_what_was_built(built: Project) -> None:
     """The two artifacts every later stage reads, checked as the models a caller reads them as."""
-    takes = Takes.read(built.root / Artifact.TAKES.value)
+    takes = Takes.read(built.build_dir / Artifact.TAKES.value)
     assert takes is not None
     assert [row.key for row in takes.sections] == list(SPOKEN)
     assert takes.estimated, "every take of an unvoiced build is a placeholder"
-    cue_times = CueTimes.read(built.root / Artifact.CUE_TIMES.value)
+    cue_times = CueTimes.read(built.build_dir / Artifact.CUE_TIMES.value)
     assert cue_times is not None
     resolved = [f"{section.section}:{cue.id}" for section in cue_times.sections for cue in section.cues]
     assert resolved == list(CUES)
@@ -751,7 +750,7 @@ def test_cues_resolve_by_occurrence_and_by_phrase_on_uneven_word_timestamps(buil
     shutil.copytree(built.build_dir, root / "build", ignore=shutil.ignore_patterns("final", "sections", "events"))
     project = Project(root=root, shim=built.shim, attempts=tmp_path / "attempts.txt", config=built.config)
 
-    takes = Takes.read(root / Artifact.TAKES.value)
+    takes = Takes.read(root / "build" / Artifact.TAKES.value)
     assert takes is not None
     [first] = [row for row in takes.sections if row.key == "01"]
     words = []

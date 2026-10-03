@@ -65,8 +65,8 @@ def test_a_beat_inside_a_paragraph_is_left_alone() -> None:
 
 def test_a_digit_is_a_warning_against_its_section() -> None:
     """The author may want the voice to try "41", so the finding names it and decides nothing."""
-    (segment,) = parse_script("## 3. Three\n\nAbout 41 percent of them.\n")
-    (found,) = symbol_findings([segment], script=WHERE)
+    (section,) = parse_script("## 3. Three\n\nAbout 41 percent of them.\n")
+    (found,) = symbol_findings([section], script=WHERE)
     assert found.code is Code.SCRIPT_SPOKEN_SYMBOL
     assert found.severity is Severity.WARNING
     assert found.location.section == 3
@@ -74,18 +74,18 @@ def test_a_digit_is_a_warning_against_its_section() -> None:
 
 
 def test_a_section_written_out_in_words_is_left_alone() -> None:
-    (segment,) = parse_script("## 3. Three\n\nAbout forty one percent of them.\n")
-    assert symbol_findings([segment], script=WHERE) == []
+    (section,) = parse_script("## 3. Three\n\nAbout forty one percent of them.\n")
+    assert symbol_findings([section], script=WHERE) == []
 
 
 def test_the_two_rules_are_reported_by_one_call() -> None:
-    segments = parse_script(SCRIPT)
-    codes = {found.code for found in script_findings(SCRIPT, segments, script=WHERE)}
+    sections = parse_script(SCRIPT)
+    codes = {found.code for found in script_findings(SCRIPT, sections, script=WHERE)}
     assert codes == {Code.SCRIPT_UNFINISHED}
 
 
 def test_every_judgement_names_the_script_it_is_about() -> None:
-    segments = parse_script("## 1. One\n\nThe number is [NUMBER] at 41 percent.\n")
-    found = script_findings("## 1. One\n\nThe number is [NUMBER] at 41 percent.\n", segments, script=WHERE)
+    sections = parse_script("## 1. One\n\nThe number is [NUMBER] at 41 percent.\n")
+    found = script_findings("## 1. One\n\nThe number is [NUMBER] at 41 percent.\n", sections, script=WHERE)
     assert {one.location.file for one in found} == {WHERE}
     assert {one.code for one in found} == {Code.SCRIPT_UNFINISHED, Code.SCRIPT_SPOKEN_SYMBOL}

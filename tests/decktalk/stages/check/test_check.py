@@ -36,8 +36,8 @@ def test_a_run_with_no_pages_judges_the_script_and_opens_nothing(tmp_path: Path)
     run = a_run(tmp_path)
     result = check(inputs, run, pages=False)
     assert isinstance(result, CheckResult)
-    assert result.pages is False
-    assert result.frames is False
+    assert result.pages_opened is False
+    assert result.frames_compared is False
 
 
 def test_a_run_with_no_pages_says_which_judgements_it_could_not_reach(tmp_path: Path) -> None:
@@ -97,7 +97,7 @@ def test_a_moment_the_cue_file_does_not_list_is_judged_from_the_catalog(tmp_path
     inputs = a_project(tmp_path)
     drawn.report("deck/index.html", *SCENES)
     result = check(inputs, a_run(tmp_path), frames=False)
-    missing = [one for one in result.findings if one.code is Code.CUE_MISSING]
+    missing = [one for one in result.findings if one.code is Code.CUE_UNLISTED]
     assert missing
     assert missing[0].fix is not None
 
@@ -114,7 +114,7 @@ def test_a_run_without_frames_keeps_the_catalog_and_draws_nothing(tmp_path: Path
     inputs = a_project(tmp_path, cues=CUES)
     drawn.report("deck/index.html", *SCENES)
     result = check(inputs, a_run(tmp_path), frames=False)
-    assert result.frames is False
+    assert result.frames_compared is False
     assert drawn.shots == []
     assert result.storyboard is None
 

@@ -59,17 +59,6 @@
       "description": "These keys tune the headless Chromium recording and how narration t=0 is found in it.",
       "x-kind": "tuning",
       "properties": {
-        "browser_path": {
-          "description": "Chromium executable that `record` drives. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another.",
-          "type": "string",
-          "default": "",
-          "x-range": "takes any value of its type",
-          "x-unit": "path",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_BROWSER_PATH"
-        },
         "page_policy": {
           "description": "How far `record`, `check` and `storyboard` trust a page. `trusted` lets a page reach the network as a browser would. `untrusted` turns the Chromium sandbox on and refuses every request that is not for the project's own origin, through every channel a page can open. It is the machine's to set, so a project someone else wrote cannot trust its own page.",
           "type": "string",
@@ -139,12 +128,12 @@
       },
       "additionalProperties": false
     },
-    "output": {
+    "events": {
       "type": "object",
-      "description": "These keys switch the files a build writes beside the final mp4 and how long they are kept.",
+      "description": "These keys bound the events files a run writes under `build/events/`.",
       "x-kind": "tuning",
       "properties": {
-        "events_max_bytes": {
+        "max_bytes": {
           "description": "Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its costs are always kept.",
           "type": "integer",
           "default": 8388608,
@@ -157,9 +146,9 @@
           "x-source": "chosen",
           "x-hazard": "A file with no bound grows with every tool call a long film makes, on a disk a host shares.",
           "x-see-also": [
-            "output.events_keep_runs"
+            "events.keep_runs"
           ],
-          "x-environment": "DECKTALK_OUTPUT_EVENTS_MAX_BYTES"
+          "x-environment": "DECKTALK_EVENTS_MAX_BYTES"
         }
       },
       "additionalProperties": false
@@ -169,6 +158,17 @@
       "description": "These keys name the tools DeckTalk drives, for a machine that supplies its own.",
       "x-kind": "tuning",
       "properties": {
+        "chromium": {
+          "description": "Chromium executable that `record`, `check` and `storyboard` drive. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another.",
+          "type": "string",
+          "default": "",
+          "x-range": "takes any value of its type",
+          "x-unit": "path",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_TOOLS_CHROMIUM"
+        },
         "ffmpeg": {
           "description": "ffmpeg executable. It is empty for the build DeckTalk fetches itself.",
           "type": "string",

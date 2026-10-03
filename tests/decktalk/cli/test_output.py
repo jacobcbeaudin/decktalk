@@ -30,6 +30,10 @@ from decktalk.results import (
     Scope,
     ScoreResult,
     SettingValue,
+    SoundItem,
+    SoundKind,
+    SoundStatus,
+    StatusResult,
     VerifyResult,
 )
 from support.samples import sample
@@ -235,10 +239,10 @@ Found 1 finding, 1 error.
 
  Section   Key     Plays      Voiced   Recorded   Assembled   Stale
  ──────────────────────────────────────────────────────────────────
- 14        key15   source17   no       yes        no          yes
+ 14        key15   source17   no       no         yes         yes
 
 Film   build/film18, 0:19 long
-Live   run20 writing build/events21
+Live   run20 writing build/events_file21
 Takes  24 takes and 25 aligned words files in build/directory23/ that no section plays (26 bytes). DeckTalk never
 deletes from the takes directory, so remove the ones you no longer want with git rm.
 Next   next28
@@ -324,7 +328,7 @@ def test_a_note_one_command_already_printed_is_not_printed_by_its_second_judgeme
 
 
 def test_the_opening_line_names_the_run_and_its_events_file_once() -> None:
-    line = RunStart(event="run.start", time=_now(), seq=0, run="abc", events_path=Path("build/events/abc.jsonl"))
+    line = RunStart(event="run.start", time=_now(), seq=0, run="abc", events_file=Path("build/events/abc.jsonl"))
     assert heard(output.Opening, line, line).count("run abc") == 1
 
 
@@ -475,7 +479,7 @@ def test_an_unset_names_every_key_the_file_no_longer_sets() -> None:
 )
 def test_a_settings_value_prints_in_the_spelling_config_set_accepts(value: JsonValue, shown: str) -> None:
     got = ConfigGetResult(
-        ok=True, key=SettingValue(key="verify.strict", value=value, default=value, layer=Layer.DEFAULT)
+        ok=True, setting=SettingValue(key="verify.strict", value=value, default=value, layer=Layer.DEFAULT)
     )
     assert recorded(got) == f"verify.strict = {shown} (default)\n"
 
@@ -484,3 +488,21 @@ def test_the_score_states_its_price_in_the_one_money_sentence() -> None:
     """A price has one sentence, which tells what a run certainly spends from its ceiling."""
     result = sample(ScoreResult, every=True)
     assert result.cost.sentence in recorded(result, width=len(result.cost.sentence))
+
+
+def test_a_length_not_known_yet_is_said_rather_than_printed_as_zero() -> None:
+    """A planned sound has no length before it is bought, and null is not 0.0 seconds."""
+    planned = SoundItem(name="tick", kind=SoundKind.EFFECT, status=SoundStatus.PLANNED, prompt="a tick")
+    result = sample(ScoreResult, every=True).model_copy(update={"items": (planned,)})
+    said = recorded(result, width=200)
+    (row,) = [line for line in said.splitlines() if "tick" in line]
+    assert row.split()[-2:] == ["not", "yet"], said
+
+
+def test_a_voiced_take_of_older_words_shows_its_section_as_stale() -> None:
+    """`voiced` is no once the words moved, so the Stale column is what tells a reader the take is out of date."""
+    result = sample(StatusResult, every=True)
+    row = result.sections[0].model_copy(update={"voiced": False, "voiced_stale": True, "stale": False})
+    said = recorded(result.model_copy(update={"sections": (row,)}), width=200)
+    (line,) = [line for line in said.splitlines() if line.split()[:1] == [str(row.section)]]
+    assert line.split()[-1] == "yes", said

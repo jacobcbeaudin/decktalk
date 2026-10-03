@@ -31,16 +31,19 @@ class TestTheFiveLayers:
     """Which value wins, and the record that says which one did."""
 
     def test_each_layer_overrides_the_one_below_it(self) -> None:
+        """The project, the environment and `--set` compete on the preset, and each wins over the one before."""
         here = load(
             machine={"tools": {"ffmpeg": "/m"}},
             project={"video": {"preset": "veryfast", "crf": 20}},
-            environ={"DECKTALK_VIDEO_CRF": "23"},
+            environ={"DECKTALK_VIDEO_CRF": "23", "DECKTALK_VIDEO_PRESET": "medium"},
             overrides=("video.preset=slow",),
         )
         assert here.settings.tools.ffmpeg == "/m"
         assert here.settings.video.crf == 23
         assert here.settings.video.preset == "slow"
-        assert here.settings.video.output_fps == 25
+        assert here.layers.winner("video.preset").layer is Layer.OVERRIDE
+        assert [row.value for row in here.layers.of("video.preset")][1:] == ["veryfast", "medium", "slow"]
+        assert here.settings.video.fps == 25
 
     def test_the_record_names_every_layer_that_stated_a_key(self) -> None:
         here = load(machine={}, project={"video": {"crf": 20}}, environ={"DECKTALK_VIDEO_CRF": "23"})
@@ -66,7 +69,7 @@ class TestTheFiveLayers:
 
     def test_a_bad_environment_value_is_refused(self) -> None:
         with pytest.raises(InputError):
-            load(machine={}, project={}, environ={"DECKTALK_VIDEO_OUTPUT_FPS": "thirty"})
+            load(machine={}, project={}, environ={"DECKTALK_VIDEO_FPS": "thirty"})
 
     def test_a_variable_decktalk_does_not_read_is_warned_about_by_name(self) -> None:
         assert env_warnings({"DECKTALK_ZZZZZZZZZZZZ": "1"}) == [
@@ -153,11 +156,11 @@ class TestScope:
         loaded = load(project={}, machine=machine, environ={}).settings
         assert (loaded.elevenlabs.base_url, loaded.dtsp.base_url) == ("http://127.0.0.1:9/v1", "http://10.0.0.2:9")
 
-    def test_the_browser_path_in_a_project_file_is_refused_at_its_line(self, tmp_path: Path) -> None:
+    def test_the_chromium_in_a_project_file_is_refused_at_its_line(self, tmp_path: Path) -> None:
         (tmp_path / "decktalk.toml").write_text(
-            '[project]\nname = "x"\n\n[record]\nbrowser_path = "/tmp/not-a-browser"\n', encoding="utf-8"
+            '[project]\nname = "x"\n\n[tools]\nchromium = "/tmp/not-a-browser"\n', encoding="utf-8"
         )
-        with pytest.raises(InputError, match="record.browser_path") as caught:
+        with pytest.raises(InputError, match="tools.chromium") as caught:
             load(tmp_path, machine={}, environ={})
         assert caught.value.location is not None
         assert caught.value.location.line == 5
@@ -213,8 +216,12 @@ class TestScope:
         assert exported.settings.voice.id == "kept_private-1"
         assert exported.layers.winner("voice.id").layer is Layer.ENVIRONMENT
 
-    def test_a_project_key_in_a_project_is_read(self) -> None:
-        refuse_off_scope({"verify": {"cue_offset_max_ms": 400}}, Scope.PROJECT, file=Path("decktalk.toml"))
+    def test_a_project_key_in_a_project_is_let_through_and_read(self) -> None:
+        project = {"verify": {"cue_offset_max_ms": 400}}
+        refuse_off_scope(project, Scope.PROJECT, file=Path("decktalk.toml"))
+        here = load(machine={}, project=project, environ={})
+        assert here.settings.verify.cue_offset_max_ms == 400
+        assert here.layers.winner("verify.cue_offset_max_ms").layer is Layer.PROJECT
 
     def test_malformed_toml_is_refused_at_its_own_line(self, tmp_path: Path) -> None:
         path = tmp_path / "machine.toml"
@@ -259,7 +266,7 @@ class TestCrossTableRelations:
 
     def test_the_relation_reads_a_published_number_by_name(self) -> None:
         assert BY_ID["record.frame_gap_max_ms"].requires == "record.frame_gap_max_ms >= REPORT_FRAME_GAP_MS"
-        assert BY_ID["video.output_fps"].requires == "video.output_fps >= CAPTURE_FPS"
+        assert BY_ID["video.fps"].requires == "video.fps >= CAPTURE_FPS"
 
 
 MOVED: list[tuple[str, str, Any]] = [
@@ -283,7 +290,7 @@ MOVED: list[tuple[str, str, Any]] = [
     ("elevenlabs.timeout_seconds", "score.timeout_seconds", 300),
     ("elevenlabs.music_model", "score.music.model", "music_v3"),
     ("elevenlabs.music_bitrate", "score.music.bitrate", "256k"),
-    ("elevenlabs.max_music_chunk_seconds", "score.music.max_chunk_seconds", 120),
+    ("elevenlabs.max_music_chunk_seconds", "score.music.chunk_max_seconds", 120),
     ("elevenlabs.music_crossfade_seconds", "score.music.crossfade_seconds", 4),
     ("elevenlabs.ambience_seconds", "score.ambience.duration_seconds", 30.0),
     ("elevenlabs.ambience_prompt_influence", "score.ambience.prompt_influence", 0.4),

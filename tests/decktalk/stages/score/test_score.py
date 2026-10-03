@@ -26,7 +26,7 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.workspace import LEDGER_FILE
 from decktalk.media import audio
 from decktalk.pipeline import Stage
-from decktalk.results import Billing, CostState, Layer, SoundKind, SoundStatus, rate_money
+from decktalk.results import BillingBasis, CostState, Layer, SoundKind, SoundStatus, rate_money
 from decktalk.speech.sound import SoundContext
 from decktalk.stages import score as stage
 from decktalk.stages.score import ledger as ledger_module
@@ -45,7 +45,7 @@ name = "demo"
 number = 1
 page = "deck/index.html"
 scene = "1"
-ambience = true
+with_ambience = true
 
 [[section]]
 number = 2
@@ -55,7 +55,7 @@ scene = "2"
 [mix]
 music = "build/score/music.mp3"
 
-[[mix.effects]]
+[[mix.effect]]
 file = "score/chime.mp3"
 section = 1
 cue = "1.1:open"
@@ -212,7 +212,7 @@ duration_seconds = 10
 def test_a_ten_second_effect_is_priced_per_second_at_the_rate_its_table_states(tmp_path: Path) -> None:
     priced = stage.price(an_inputs(tmp_path, EFFECT))
     assert priced.dollars == priced.ceiling_dollars == 0.02
-    assert (priced.billing, priced.seconds, priced.characters) == (Billing.PER_SECOND, 10.0, 0)
+    assert (priced.billing, priced.seconds, priced.characters) == (BillingBasis.PER_SECOND, 10.0, 0)
     assert priced.dollars_per_minute == 0.12
     assert (priced.price_key, priced.price_layer, priced.averaged) == (
         "score.effects.dollars_per_minute",
@@ -264,22 +264,19 @@ def test_sound_is_asked_for_in_its_own_format(tmp_path: Path) -> None:
             formats.append(output_format)
             return super().effect(body, output_format=output_format)
 
-    toml = EFFECT.replace("[score.effects]\n", '[score]\nformat = "mp3_22050_32"\n\n[score.effects]\n')
+    toml = EFFECT.replace("[score.effects]\n", '[score]\noutput_format = "mp3_22050_32"\n\n[score.effects]\n')
     toml = toml.replace("[project]", '[elevenlabs]\noutput_format = "mp3_44100_192"\n\n[project]', 1)
     fake = Formats()
     score(an_inputs(tmp_path, toml), a_sounding_run(tmp_path, {"elevenlabs": lambda _context: fake}, spend=True))
     assert formats == ["mp3_22050_32"]
 
 
-def test_the_format_narration_used_to_hold_is_pointed_at_the_voices_own_key(tmp_path: Path) -> None:
-    """A project that set the take format under `[narration]` is told where it lives now.
-
-    Read in silence it would leave every take at the voice's default format and buy each one again.
-    """
+def test_a_format_written_under_narration_is_pointed_at_a_table_that_reads_it(tmp_path: Path) -> None:
+    """Read in silence, a take format under `[narration]` would leave every take at the voice's default."""
     toml = EFFECT.replace("[project]", '[narration]\noutput_format = "mp3_22050_32"\n\n[project]', 1)
     inputs = an_inputs(tmp_path, toml)
     assert any(
-        "[narration]: ignoring unknown key 'output_format' (did you mean 'elevenlabs.output_format'?)" in note
+        "[narration]: ignoring unknown key 'output_format' (did you mean '" in note and ".output_format'?)" in note
         for note in inputs.notes
     ), inputs.notes
 
@@ -456,7 +453,7 @@ def test_the_music_is_asked_for_in_chunks_and_joined_into_one_bed(
     assert len(service.music_bodies) > 1
     parts, out = joined[0]
     assert len(parts) == len(service.music_bodies)
-    assert out == inputs.workspace.joined_dir / "music.mp3"
+    assert out == inputs.workspace.joined_music
 
 
 @pytest.mark.usefixtures("fake_ffmpeg")
@@ -467,7 +464,7 @@ def test_a_music_part_that_was_already_bought_is_not_bought_again(
     inputs = an_inputs(tmp_path, toml)
     score(inputs, a_run(tmp_path, spend=True))
     sent = len(service.music_bodies)
-    (inputs.workspace.joined_dir / "music.mp3").unlink()
+    (inputs.workspace.joined_music).unlink()
     score(inputs, a_run(tmp_path, spend=True))
     assert len(service.music_bodies) == sent
     assert len(joined) == 2

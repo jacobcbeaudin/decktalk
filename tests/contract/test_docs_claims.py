@@ -193,7 +193,7 @@ def opened_with(root: Path, key: str, values: dict[Layer, int]) -> decktalk.Proj
     machine_scoped = BY_ID[key].scope is Scope.MACHINE
     machine = decktalk.Machine.of(
         environ=environ,
-        config_path=root / "machine.toml",
+        machine_file=root / "machine.toml",
         cwd=root,
         cache_dir=root / "cache",
         overrides=pair if machine_scoped else (),
@@ -266,7 +266,7 @@ def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(tmp
     voice = ClosedVoice()
     machine = decktalk.Machine.of(
         environ={"DECKTALK_VOICE_ID": "voice-under-test"},
-        config_path=tmp_path / "machine.toml",
+        machine_file=tmp_path / "machine.toml",
         cwd=tmp_path,
         cache_dir=tmp_path / "cache",
         speech_providers={FAKE_VOICE_NAME: lambda _context: voice},

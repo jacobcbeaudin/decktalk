@@ -26,7 +26,7 @@ class TestMessages:
 
     def test_a_thing_written_under_the_wrong_table_is_offered_the_key_that_sets_it(self) -> None:
         """A person who remembers `fps` and not `[video]` meant the frame rate, not the retry count."""
-        assert did_you_mean("record.fps", BY_ID) == " Did you mean 'video.output_fps'?"
+        assert did_you_mean("record.fps", BY_ID) == " Did you mean 'video.fps'?"
 
     def test_a_part_too_short_to_name_one_thing_falls_back_to_the_closest_spelling(self) -> None:
         assert did_you_mean("mix.db", ["mix.ambience_db", "mix.music_db"]) == " Did you mean 'mix.music_db'?"

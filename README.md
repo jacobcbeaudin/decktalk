@@ -88,7 +88,7 @@ To hear your own voice, copy `.env.example` to `.env`, fill in your ElevenLabs A
 One cue id ties them together. In the starter, the slide `1.1` declares a moment called `title`, and `cues.json` says that moment waits for the words "This is DeckTalk".
 
 ```html
-<template data-slide="1.1" data-hold="10" data-describe="the opening title and the count of files">
+<template data-slide="1.1" data-preview-seconds="10" data-describe="the opening title and the count of files">
   <div class="title" data-in="title" data-describe="the title, This is DeckTalk">This is DeckTalk</div>
 </template>
 ```

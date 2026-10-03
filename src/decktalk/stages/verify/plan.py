@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
 from decktalk.media.frames import Size
-from decktalk.page import MILLISECONDS
 from decktalk.settings import Settings, VerifyConfig
 from decktalk.settings.numbers import block_height, block_width, probe_height, probe_width, reference_lead_seconds
 from decktalk.stages import selects
@@ -141,7 +140,7 @@ def probe_plan(
     configured = [d for d in settings.probe_delays_seconds if cue_at + d <= sec_end - PROBE_TAIL_SECONDS]
     if not any(spoiled(d) for d in configured):
         return configured, False
-    shortest = settings.cue_offset_max_ms / MILLISECONDS + 1.0 / fps
+    shortest = settings.cue_offset_max_ms / 1000 + 1.0 / fps
     fits = (
         d if not spoiled(d) else _fitted(d, cue_at, before, others, lead, fps, shortest, spoiled) for d in configured
     )

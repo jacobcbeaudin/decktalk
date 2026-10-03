@@ -22,7 +22,7 @@ from werkzeug import Request, Response
 import decktalk
 from decktalk import logs
 from decktalk.errors import Cancel, ErrorCode, NotBuiltError, ProjectLocked, ProviderError
-from decktalk.events import Event, Level, Line, RunDone, RunLog
+from decktalk.events import AnyEvent, Event, Level, RunDone, RunLog
 from decktalk.findings import Applicability, Code, CommandFix
 from decktalk.logs import HANDLER, LOGGER, RunHandler, install, level_of, logging_into, within
 from decktalk.machine import Machine, Toolchain
@@ -315,10 +315,10 @@ def test_a_hosts_formatter_never_prints_a_secret_from_an_exception_or_a_stack(
 # ---- every failure path leaves a record --------------------------------------------------------------
 #
 # Each row injects one fault inside a real run with a real events file, then reads the file back
-# through the `Line` adapter, as a host would, and names the one record the fault must leave. A path
+# through the `AnyEvent` adapter, as a host would, and names the one record the fault must leave. A path
 # that stops leaving its record fails its row, which is what keeps the table true as the code grows.
 
-LINES = TypeAdapter(Line)
+LINES = TypeAdapter(AnyEvent)
 
 
 @dataclass(frozen=True)
@@ -344,7 +344,7 @@ def a_host_machine(root: Path, *, limit: float = 600.0) -> Machine:
     return Machine(
         environ={},
         tables={},
-        config_path=root / "machine.toml",
+        machine_file=root / "machine.toml",
         cwd=root,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(root / "cache"), timeout_seconds=limit)),
     )

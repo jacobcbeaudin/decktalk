@@ -163,7 +163,7 @@ EXERCISED: dict[Attr, tuple[str, ...]] = {
     Attr.SCENE: (STARTER, LESSON),
     Attr.NAME: (STARTER, LESSON),
     Attr.SLIDE: (STARTER, LESSON),
-    Attr.HOLD: (STARTER, LESSON),
+    Attr.PREVIEW_SECONDS: (STARTER, LESSON),
     Attr.OWNS: (LESSON,),
     Attr.ENTER: (LESSON,),
 }
@@ -228,7 +228,7 @@ def test_the_page_and_the_cue_file_name_the_same_moments(project: Project) -> No
 @pytest.mark.parametrize("project", PARSED.values(), ids=lambda p: p.name)
 def test_every_cue_phrase_occurs_exactly_once_in_its_own_section(project: Project) -> None:
     script = filled((project.root / project.document.script).read_text(encoding="utf-8"))
-    spoken = {segment.index: words(segment.spoken) for segment in parse_script(script)}
+    spoken = {section.number: words(section.spoken) for section in parse_script(script)}
     for section in load_cues(
         project.root / project.document.cues, project.root, {s.number for s in project.document.sections}
     ):

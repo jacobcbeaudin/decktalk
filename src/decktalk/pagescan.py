@@ -1,7 +1,7 @@
 """The static scan: what a slide's measured catalog says, before anybody looks at a picture.
 
 The probe lays every slide out once and reports one row per element it can reveal, with the moments
-that element names, the words it draws and the box it occupies in stage pixels. That is enough to
+that element names, the words it draws and the box it occupies in canvas pixels. That is enough to
 judge four things a model reading a frame could not state exactly: a motion long enough that the cue
 it carries can no longer be measured, a staggered container whose last child lands past that same
 ceiling, an element that changes the picture and describes nothing, and a swap whose two halves land

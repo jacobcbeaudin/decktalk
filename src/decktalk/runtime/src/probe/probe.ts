@@ -11,17 +11,17 @@
  * the same, and keeps nothing.
  *
  * What the recorder calls
- *   window.__dtprobe.cover()   draw the magenta cover and the keep-alive from the first paint
- *   window.__dtprobe.lift()    remove the cover and start the page clock on the next animation
- *                              frame, resolving to the performance.now() of that frame, which is
- *                              the recording's narration t=0
- *   window.__dtprobe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
- *   window.__dtprobe.report()  everything the recorder reads back off the page, in one call
+ *   window.__decktalkProbe.cover()   draw the magenta cover and the keep-alive from the first paint
+ *   window.__decktalkProbe.lift()    remove the cover and start the page clock on the next animation
+ *                                    frame, resolving to the performance.now() of that frame, which is
+ *                                    the recording's narration t=0
+ *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
+ *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
  *
  * What the runtime reads, and only when this file is there
- *   window.__dtprobe.recorder                          the telemetry sink, read once at startup
- *   window.__dtprobe.freezeCues(order, slideId, warn)  which of a frozen slide's cues fire
- *   window.__dtprobe.measure(catalog, stage)           one box row per element, onto the catalog
+ *   window.__decktalkProbe.recorder                          the telemetry sink, read once at startup
+ *   window.__decktalkProbe.freezeCues(order, slideId, warn)  which of a frozen slide's cues fire
+ *   window.__decktalkProbe.measure(catalog, canvas)          one box row per element, onto the catalog
  *
  * This module imports the contract and the telemetry seam and nothing else, which is what keeps the
  * split honest: the probe knows the vocabulary and it knows the sink, and it knows no DOM the
@@ -32,8 +32,8 @@ import { ATTRS, type Attr, cueId, MOMENT_SELECTOR, type Q, type ReportField } fr
 import type * as Seam from "../telemetry.ts";
 
 /** The cover over the first paint, and the square that keeps the compositor painting under it. */
-const COVER_ID = "__t0cover";
-const KEEPALIVE_ID = "__dtkeepalive";
+const COVER_ID = "dt-cover";
+const KEEPALIVE_ID = "dt-keepalive";
 
 /** A gap between two animation frames longer than this many milliseconds was long enough to move a cue. */
 const GAP_MS = 100;
@@ -279,7 +279,7 @@ function rowFor(el: Element, slideId: string, frame: DOMRect, scale: number): Se
 /**
  * One row per element a slide declares a moment for, and one per direct child it never reveals.
  *
- * The caption band and the off-stage rules read these rows, and both key on whether an element is
+ * The caption band and the off-canvas rules read these rows, and both key on whether an element is
  * ever drawn rather than on whether it carries a cue, so an element on screen from the mount is
  * measured exactly like one that arrives.
  */
@@ -293,24 +293,24 @@ function rowsFor(slideEl: Element, slideId: string, frame: DOMRect, scale: numbe
 }
 
 /**
- * Lay every slide out once in a hidden layer of the stage, measure it and throw it away.
+ * Lay every slide out once in a hidden layer of the canvas, measure it and throw it away.
  *
  * The runtime asks for this on the index page alone, which is the page a static check opens, so no
  * recording and no preview ever lays a slide out twice.
  */
-export function measure(catalog: Seam.CatalogEntry[], stage: Seam.StageLoan): Seam.CatalogEntry[] {
+export function measure(catalog: Seam.CatalogEntry[], canvas: Seam.CanvasLoan): Seam.CatalogEntry[] {
   const layer = document.createElement("div");
   layer.id = "dt-measure";
   layer.style.cssText = "position:absolute;inset:0;visibility:hidden";
-  stage.pan.appendChild(layer);
-  const frame = stage.origin.getBoundingClientRect();
-  const scale = stage.scale || 1;
+  canvas.pan.appendChild(layer);
+  const frame = canvas.origin.getBoundingClientRect();
+  const scale = canvas.scale || 1;
   for (const entry of catalog) {
-    const scene = stage.scenes.get(entry.scene);
+    const scene = canvas.scenes.get(entry.scene);
     if (!scene) continue;
     entry.elements = {};
     for (const slide of scene.slides) {
-      const slideEl = stage.build(scene, slide);
+      const slideEl = canvas.build(scene, slide);
       layer.appendChild(slideEl);
       entry.elements[slide.id] = rowsFor(slideEl, slide.id, frame, scale);
       layer.removeChild(slideEl);
@@ -323,4 +323,4 @@ export function measure(catalog: Seam.CatalogEntry[], stage: Seam.StageLoan): Se
 watchFrames();
 
 const probe: Seam.Probe = { cover, lift, ready, report, recorder, freezeCues, measure };
-window.__dtprobe = probe;
+window.__decktalkProbe = probe;

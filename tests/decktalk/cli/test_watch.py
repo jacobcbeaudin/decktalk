@@ -3,17 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
-
-import pytest
 
 from decktalk.cli import watch
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import InputError
-from decktalk.inputs.workspace import Workspace
 from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult
 from support.costs import a_cost
-from support.takes import TAKE_SUFFIX
 
 from .conftest import Fake
 
@@ -38,21 +33,19 @@ def session() -> Session:
     return Session(Globals(quiet=True), command="build")
 
 
-def test_the_loop_serves_builds_once_and_never_voices(monkeypatch, tmp_path) -> None:
+def test_the_loop_serves_builds_once_and_never_voices(monkeypatch) -> None:
     monkeypatch.setattr(watch.time, "sleep", _stop)
     origin = Origin()
-    project = Fake(serve=origin, build=BUILT, status=_status())
-    _place(project, tmp_path)
+    project = Fake(serve=origin, build=BUILT, status=_status(), authored_files=())
     built = watch.loop(session(), project.project())
     assert built is BUILT
     assert project.called("build")["spend"] is False
     assert origin.closed
 
 
-def test_a_refused_rebuild_is_reported_and_the_loop_keeps_watching(monkeypatch, tmp_path, capsys) -> None:
+def test_a_refused_rebuild_is_reported_and_the_loop_keeps_watching(monkeypatch, capsys) -> None:
     monkeypatch.setattr(watch.time, "sleep", _stop)
-    project = Fake(serve=Origin(), build=InputError("script.md is not there."), status=_status())
-    _place(project, tmp_path)
+    project = Fake(serve=Origin(), build=InputError("script.md is not there."), status=_status(), authored_files=())
     built = watch.loop(session(), project.project())
     assert built.ok is False
     assert "error[INPUT]" in capsys.readouterr().err
@@ -70,42 +63,15 @@ def test_a_saved_file_that_touches_nothing_named_rebuilds_everything(tmp_path) -
     assert watch._touched(project.project(), [tmp_path / "decktalk.toml"]) is None
 
 
-def test_what_a_run_writes_is_never_watched(tmp_path) -> None:
+def test_the_loop_stamps_the_files_the_project_says_an_author_edits(tmp_path) -> None:
+    """A file removed between the listing and its stat is left out rather than stopping the loop."""
     (tmp_path / "script.md").write_text("one", encoding="utf-8")
-    (tmp_path / "build").mkdir()
-    (tmp_path / "build" / "takes.json").write_text("{}", encoding="utf-8")
-    watched = watch._stamps(_place(Fake(), tmp_path).project())
-    assert set(watched) == {tmp_path / "script.md"}
+    project = Fake(authored_files=(tmp_path / "script.md", tmp_path / "gone.md"))
+    assert set(watch._stamps(project.project())) == {tmp_path / "script.md"}
 
 
-def test_a_build_folder_the_project_names_is_never_watched(tmp_path) -> None:
-    """A run writes into this folder, so watching it would start the next build without end."""
-    (tmp_path / "script.md").write_text("one", encoding="utf-8")
-    for written in ("out/film", "takes"):
-        (tmp_path / written).mkdir(parents=True)
-        (tmp_path / written / "takes.json").write_text("{}", encoding="utf-8")
-    project = _place(Fake(), tmp_path, build="out/film", takes="takes")
-    watched = watch._stamps(project.project())
-    assert set(watched) == {tmp_path / "script.md"}
-
-
-def _place(project: Fake, root: Path, *, build: str = "build", takes: str = "takes") -> Fake:
-    """Put a fake project at a root, with its build and take folders where a test's settings put them."""
-    project.root = root
-    project._inputs = SimpleNamespace(
-        workspace=Workspace(
-            root=root,
-            build=root / build,
-            name="demo",
-            suffix=TAKE_SUFFIX,
-            takes=root / takes,
-            score_dir=root / "score",
-        )
-    )
-    return project
-
-
-def test_a_voiced_take_that_goes_stale_is_named_with_the_command_that_voices_it(capsys, tmp_path) -> None:
+def test_a_voiced_take_of_older_words_is_named_with_the_command_that_voices_it(capsys, tmp_path) -> None:
+    """`voiced` is false once the words moved, so the row that says the take is stale is its own field."""
     project = Fake(status=_status(stale=True))
     project.root = tmp_path
     made = Session(Globals(), command="build")
@@ -127,22 +93,18 @@ def _status(*, stale: bool = False) -> StatusResult:
         run="r",
         name="demo",
         script=Path("script.md"),
-        cues=Path("cues.json"),
+        cues_file=Path("cues.json"),
         sections=(
             SectionStatus(
                 section=2,
                 key="02",
                 kind=SectionKind.PAGE,
                 source="deck/index.html",
-                voiced=True,
+                voiced=not stale,
+                voiced_stale=stale,
                 recorded=True,
                 assembled=True,
-                stale=stale,
+                stale=False,
             ),
         ),
     )
-
-
-@pytest.mark.parametrize("directory", sorted(watch.IGNORED))
-def test_every_ignored_directory_is_one_a_run_writes(directory: str) -> None:
-    assert directory in {"build", ".git", ".venv", "node_modules", "__pycache__"}

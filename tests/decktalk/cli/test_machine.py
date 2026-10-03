@@ -14,7 +14,7 @@ def test_init_writes_the_project_and_reports_what_it_chose(run, machine, monkeyp
     made = Fake()
     monkeypatch.setattr(commands.machines, "init", lambda *args, **keywords: _record(made, *args, **keywords))
     machine()
-    ran = run("init", str(tmp_path / "demo"), "--defaults")
+    ran = run("--no-input", "init", str(tmp_path / "demo"))
     assert ran.exit_code == 0
     assert made.called("init")["skills"] is True
     assert "Wrote" in ran.out
@@ -30,7 +30,7 @@ def test_init_takes_the_flags_it_was_given_over_the_defaults(run, machine, monke
     made = Fake()
     monkeypatch.setattr(commands.machines, "init", lambda *args, **keywords: _record(made, *args, **keywords))
     machine()
-    run("init", str(tmp_path / "demo"), "--defaults", "--name", "lesson", "--example", "lesson", "--no-skills")
+    run("--no-input", "init", str(tmp_path / "demo"), "--name", "lesson", "--example", "lesson", "--no-skills")
     asked = made.called("init")
     assert asked["name"] == "lesson"
     assert asked["example"] == "lesson"

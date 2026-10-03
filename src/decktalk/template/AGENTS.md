@@ -5,7 +5,7 @@ script section, `cues.json` says which spoken phrase each moment lands on, and `
 pages. The section number, the scene its `[[section]]` names and the slide ids of its cues agree.
 
 `decktalk --help` is the instruction set. `decktalk schema` prints every command, flag, finding and
-result, `decktalk schema settings` prints every setting, `decktalk schema page` prints every page
+result, `decktalk schema setting` prints every setting, `decktalk schema page` prints every page
 attribute, and `decktalk config explain KEY` explains one setting. Every command takes `--json` and
 prints one object. `decktalk status` says where the project stands.
 

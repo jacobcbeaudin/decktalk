@@ -14,9 +14,19 @@ from dataclasses import dataclass
 from decktalk.findings import Code
 from decktalk.page import CAPTURE_FPS, MEASURABLE_SPAN_SECONDS
 from decktalk.settings import BLOCK_PX, CLICK_LEVEL_DBFS, GUARD_FRAMES, REPORT_FRAME_GAP_MS, Settings
-from decktalk.tomlmap import (
-    Nature,
+from decktalk.tomlmap import Nature
+
+PROBE_SCALE = 4
+"""Calibration: how many times smaller than the film every frame is before two frames are compared."""
+
+PROBE_SENTENCE = "Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size."
+"""Why the probe is the size it is, said once for its width and its height."""
+
+BLOCK_SENTENCE = (
+    "Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every "
+    "frame size rather than only at 1080p."
 )
+"""Why the block-averaged copy is the size it is, said once for its width and its height."""
 
 
 @dataclass(frozen=True)
@@ -49,13 +59,13 @@ class Number:
 
 
 def probe_width(settings: Settings) -> int:
-    """The width every frame is scaled to before a comparison, which is a quarter of the frame."""
-    return settings.video.width // 4
+    """The width every frame is scaled to before a comparison."""
+    return settings.video.width // PROBE_SCALE
 
 
 def probe_height(settings: Settings) -> int:
-    """The height every frame is scaled to before a comparison, which is a quarter of the frame."""
-    return settings.video.height // 4
+    """The height every frame is scaled to before a comparison."""
+    return settings.video.height // PROBE_SCALE
 
 
 def block_width(settings: Settings) -> int:
@@ -80,20 +90,20 @@ def reference_lead_seconds(settings: Settings) -> float:
 NUMBERS: tuple[Number, ...] = (
     Number(
         id="verify.probe_width",
-        formula="video.width // 4",
-        reads=("video.width",),
+        formula="video.width // PROBE_SCALE",
+        reads=("video.width", "PROBE_SCALE"),
         unit="pixels",
         nature=Nature.DERIVED,
-        sentence="Derived: a quarter-size frame is what every share is measured over, at every frame size.",
+        sentence=PROBE_SENTENCE,
         at=probe_width,
     ),
     Number(
         id="verify.probe_height",
-        formula="video.height // 4",
-        reads=("video.height",),
+        formula="video.height // PROBE_SCALE",
+        reads=("video.height", "PROBE_SCALE"),
         unit="pixels",
         nature=Nature.DERIVED,
-        sentence="Derived: a quarter-size frame is what every share is measured over, at every frame size.",
+        sentence=PROBE_SENTENCE,
         at=probe_height,
     ),
     Number(
@@ -102,10 +112,7 @@ NUMBERS: tuple[Number, ...] = (
         reads=("video.width", "BLOCK_PX"),
         unit="pixels",
         nature=Nature.DERIVED,
-        sentence=(
-            "Derived: one pixel per H.264 transform block, so the block average cancels the encoder's "
-            "ringing at every frame size rather than only at 1080p."
-        ),
+        sentence=BLOCK_SENTENCE,
         at=block_width,
     ),
     Number(
@@ -114,7 +121,7 @@ NUMBERS: tuple[Number, ...] = (
         reads=("video.height", "BLOCK_PX"),
         unit="pixels",
         nature=Nature.DERIVED,
-        sentence="Derived: one pixel per H.264 transform block, as the block width is.",
+        sentence=BLOCK_SENTENCE,
         at=block_height,
     ),
     Number(
@@ -136,6 +143,16 @@ NUMBERS: tuple[Number, ...] = (
         "frames per second",
         Nature.TRUTH,
         "Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for.",
+    ),
+    Number.fixed(
+        "PROBE_SCALE",
+        PROBE_SCALE,
+        "times",
+        Nature.CALIBRATION,
+        (
+            "Calibration: a frame a quarter the film's size keeps every share a cue can move while comparing "
+            "a sixteenth of the pixels."
+        ),
     ),
     Number.fixed(
         "BLOCK_PX",

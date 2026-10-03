@@ -6,7 +6,7 @@ import statistics
 
 from ..errors import ToolError
 from .browser import TRUSTED, chromium
-from .pages import evaluate
+from .pages import evaluate, open_document
 
 MEASURED_FRAMES = 12
 """Calibration: how many frames the bias is measured over, which is enough for the middle one to settle."""
@@ -59,9 +59,8 @@ def measure_presentation_bias() -> float:
     on, rather than one a project names: a bias belongs to the machine and not to a deck.
     """
     # The page is DeckTalk's own and loads nothing, so it is trusted whatever the projects are.
-    with chromium(policy=TRUSTED, spend=False) as browser:
-        page = browser.new_page()
-        page.set_content("<!doctype html><title>bias</title>")
+    with chromium(policy=TRUSTED, spend=False) as opened:
+        page = open_document(opened, "<!doctype html><title>bias</title>")
         answer = evaluate(page, bias_script(MEASURED_FRAMES, MEASURED_FRAME_MS))
     rows = answer if isinstance(answer, list) else []
     samples = [float(row) for row in rows if isinstance(row, (int, float)) and not isinstance(row, bool)]

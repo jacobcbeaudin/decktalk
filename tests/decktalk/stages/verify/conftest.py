@@ -106,7 +106,7 @@ def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> N
     sections = inputs.document.sections
     write_takes(inputs, *(a_take(section.number, seconds=SECTION_SECONDS, voiced=False) for section in sections))
     Placements(
-        fps=inputs.settings.video.output_fps,
+        fps=inputs.settings.video.fps,
         sections=tuple(
             Placement(
                 section=section.number,

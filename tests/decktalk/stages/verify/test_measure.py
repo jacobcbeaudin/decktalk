@@ -200,6 +200,51 @@ def test_a_reveal_on_its_word_says_nothing_and_reports_where_it_landed(
     assert rows[0].spoken == pytest.approx(2.0)
 
 
+LIMIT_SECONDS = 0.1
+"""The 80 ms offset limit with the half frame at 25 fps beside it, which a reveal may land on and pass."""
+
+
+@pytest.mark.parametrize(
+    ("onset", "off"),
+    [
+        pytest.param(2.0 + LIMIT_SECONDS, False, id="late on the limit"),
+        pytest.param(2.001 + LIMIT_SECONDS, True, id="late one ms past it"),
+        pytest.param(2.0 - LIMIT_SECONDS, False, id="early on the limit"),
+        pytest.param(1.999 - LIMIT_SECONDS, True, id="early one ms past it"),
+    ],
+)
+def test_a_reveal_on_the_offset_limit_passes_and_one_millisecond_past_it_is_off(
+    assembled: Callable[..., Inputs], measured: Measurements, onset: float, off: bool
+) -> None:
+    """The limit is the configured milliseconds and half a frame more, so its own rounding never fails it."""
+    inputs = assembled(CUES)
+    assert inputs.settings.verify.cue_offset_max_ms == 80.0
+    assert inputs.settings.video.fps == 25
+    measured.changed = 9.0
+    measured.series = [(onset - 0.04, 0.0), (onset, 9.0)]
+    rows, found = judged(inputs)
+    assert rows[0].offset_seconds == pytest.approx(onset - 2.0)
+    assert ([row.code for row in found] == [Code.CUE_OFF]) is off, found
+
+
+@pytest.mark.parametrize(
+    ("control", "no_change"),
+    [pytest.param(0.15, False, id="margin on the floor"), pytest.param(0.16, True, id="margin under the floor")],
+)
+def test_a_reveal_whose_margin_reaches_its_floor_changed_and_one_under_it_did_not(
+    assembled: Callable[..., Inputs], measured: Measurements, control: float, no_change: bool
+) -> None:
+    """The changed share alone is well over its floor, so only the margin over the control decides."""
+    inputs = assembled(CUES)
+    floor = inputs.settings.verify.margin_min_points
+    measured.changed, measured.control = 0.25, control
+    assert measured.changed > 2 * inputs.settings.verify.changed_share_min_percent
+    assert (measured.changed - control == floor) is not no_change
+    measured.series = [(1.9, 0.0), (2.02, 9.0)]
+    _rows, found = judged(inputs)
+    assert (Code.CUE_NO_CHANGE in [row.code for row in found]) is no_change
+
+
 def test_a_cue_the_author_opted_out_of_is_skipped_and_never_measured(assembled: Callable[..., Inputs]) -> None:
     inputs = assembled(CUES)
     with opened(inputs.root) as run:

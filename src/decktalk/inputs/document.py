@@ -23,7 +23,7 @@ from typing import Any, cast, get_args, get_type_hints
 
 from decktalk.errors import InputError
 from decktalk.page import Q
-from decktalk.results import SectionKind, section_key
+from decktalk.results import SectionKind, SoundKind, section_key
 from decktalk.settings import BY_ID, PROJECT_FILE, Settings
 from decktalk.tomlmap.read import Table
 from decktalk.tomlmap.suggest import unknown_key_message
@@ -57,7 +57,7 @@ class ClipSection:
         return True
 
 
-FREEZE_QUERY_KEYS = frozenset(key.value for key in (Q.CUES, Q.T0, Q.SLIDE, Q.AFTER, Q.BEFORE))
+FREEZE_QUERY_KEYS = frozenset(key.value for key in (Q.CUES, Q.T0, Q.FREEZE, Q.AFTER, Q.BEFORE))
 """The query keys DeckTalk sets itself on a still, so a section's own params never override them."""
 
 
@@ -70,8 +70,8 @@ class PageSection:
 
     `lead_seconds` replaces `[narration] lead_seconds`, the silence in the narration before the
     section's first word, and `tail_seconds` replaces `[narration] tail_seconds`, the silence
-    after its last. Both are placed when the takes are joined, not sent to the voice, so a cached
-    take stays cached. `hold_seconds` holds the section's
+    after its last. Both are placed when the takes are joined, not sent to the voice, so a held
+    take stays held. `hold_seconds` holds the section's
     last frame after its narration, and the narration pauses for it.
     """
 
@@ -81,7 +81,7 @@ class PageSection:
     chapter: str = ""
     record_margin_seconds: float = 0.3
     hold_seconds: float = 0.0
-    ambience: bool = False
+    with_ambience: bool = False
     params: dict[str, str] = field(default_factory=dict)
     seamless: bool = False
     lead_seconds: float | None = None  # None uses [narration] lead_seconds.
@@ -100,7 +100,7 @@ class PageSection:
         """The params a still of this section carries, which is every one the runtime does not set itself.
 
         A frozen frame and the poster both ask the page for a state rather than for the film, so they
-        set `slide`, `after` and `before` themselves and pass the author's own params through.
+        set `freeze`, `after` and `before` themselves and pass the author's own params through.
         """
         return {k: v for k, v in self.params.items() if k not in FREEZE_QUERY_KEYS}
 
@@ -381,15 +381,21 @@ def parse_transition(doc: dict[str, Any], numbers: set[int], notes: list[str]) -
     return fill(t, Transition, dips=dips)
 
 
+EFFECT_TABLE = SoundKind.EFFECT.value
+"""The array of tables under `[mix]` that places a sound effect, named for the kind of sound it places and in the
+singular like `[[section]]`."""
+
+
 def parse_mix(doc: dict[str, Any], numbers: set[int], notes: list[str]) -> Mix:
     raw = doc.get("mix")
     if raw is None:
         return Mix()
     t = Table(raw, f"{PROJECT_FILE}: [mix]", table="mix")
-    notes += t.note_unknown(set(Mix.__dataclass_fields__) | tuning_keys("mix"), anywhere=BY_ID)
+    keys = set(Mix.__dataclass_fields__) - {"effects"} | {EFFECT_TABLE}
+    notes += t.note_unknown(keys | tuning_keys("mix"), anywhere=BY_ID)
     effects: list[MixEffect] = []
-    for i, item in enumerate(t.get_tables("effects")):
-        s = Table(item, f"{PROJECT_FILE}: [[mix.effects]] #{i + 1}")
+    for i, item in enumerate(t.get_tables(EFFECT_TABLE)):
+        s = Table(item, f"{PROJECT_FILE}: [[mix.{EFFECT_TABLE}]] #{i + 1}")
         notes += s.note_unknown(MixEffect.__dataclass_fields__)
         section = s.get_int("section", required=True)
         if section not in numbers:

@@ -42,7 +42,7 @@ WORDS = (
 """The words section one speaks, before its own lead of half a second is added to them."""
 
 FPS = 25
-"""The rate `[video] output_fps` is left at, which is what turns a second into whole frames here."""
+"""The rate `[video] fps` is left at, which is what turns a second into whole frames here."""
 
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
@@ -78,8 +78,8 @@ def test_a_clip_reports_its_span_its_hold_and_the_two_files_it_wrote(tmp_path: P
     result = cut_a_clip(inputs, a_run(tmp_path), hold_seconds=0.2)
     assert result.section == 1
     assert result.file == Path("media/answer.mp4")
-    assert result.words == Path("media/answer.words.json")
-    assert (result.start, result.end) == (0.0, 0.8)
+    assert result.words_file == Path("media/answer.words.json")
+    assert (result.start_seconds, result.end_seconds) == (0.0, 0.8)
     assert result.hold_seconds == 0.2
     assert result.seconds == 1.0
     assert set(result.written) == {Path("media/answer.mp4"), Path("media/answer.words.json")}
@@ -88,7 +88,7 @@ def test_a_clip_reports_its_span_its_hold_and_the_two_files_it_wrote(tmp_path: P
 def test_the_span_is_rounded_to_whole_frames(tmp_path: Path) -> None:
     """A clip that began mid-frame would play its first frame twice, so the span names frames."""
     result = cut_a_clip(a_project(tmp_path), a_run(tmp_path), start=0.01, end=0.79)
-    assert (result.start, result.end) == (0.0, 0.8)
+    assert (result.start_seconds, result.end_seconds) == (0.0, 0.8)
 
 
 def test_the_words_file_holds_every_word_wholly_inside_the_span(tmp_path: Path) -> None:
@@ -188,8 +188,8 @@ def test_a_clip_the_project_cannot_cut_is_refused(tmp_path: Path, options: dict[
         cut_a_clip(a_project(tmp_path), a_run(tmp_path), **options)
 
 
-def test_a_section_with_no_cut_names_the_command_that_makes_one(tmp_path: Path) -> None:
-    with pytest.raises(NotBuiltError, match="has no cut at") as refused:
+def test_a_section_with_no_video_names_the_command_that_makes_one(tmp_path: Path) -> None:
+    with pytest.raises(NotBuiltError, match="has no section video at") as refused:
         cut_a_clip(a_project(tmp_path, cut=False), a_run(tmp_path))
     assert refused.value.hint == "Run `decktalk assemble` first."
 

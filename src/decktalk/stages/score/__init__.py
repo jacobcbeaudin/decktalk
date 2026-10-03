@@ -10,7 +10,7 @@ spends is already spent by the time the film is cut. `narrate` is the other stag
 `cue` and `record` between the two, so a run that reaches here has nothing left to pay for.
 
 Ambience and effects are one sound request each, and music is asked for in chunks of at most
-`[score.music] max_chunk_seconds` and joined with a crossfade, because the service will not
+`[score.music] chunk_max_seconds` and joined with a crossfade, because the service will not
 write a long piece in one answer. Every request is priced by the seconds of audio it asks for, at
 the per-minute rate its kind's own table states.
 
@@ -37,7 +37,7 @@ every paid request is a `sound.charged` line the moment the provider answers, an
 that bought something reports is marked charged.
 
 `only` names section numbers, because that is what every other stage takes, and the score's own
-items are named rather than numbered. An effect is wanted when a `[[mix.effects]]` row cues it in a
+items are named rather than numbered. An effect is wanted when a `[[mix.effect]]` row cues it in a
 selected section, the ambience bed is wanted when a selected page section asks for one, and the
 music is wanted whenever any section is selected, because one bed plays under the whole film.
 """
@@ -56,11 +56,11 @@ from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, MusicSpec, SoundSpec
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
-from decktalk.page import MILLISECONDS
+from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Stage
 from decktalk.results import (
     DOLLAR_DIGITS,
-    Billing,
+    BillingBasis,
     Cost,
     CostState,
     Layer,
@@ -69,7 +69,7 @@ from decktalk.results import (
     SoundKind,
     SoundStatus,
 )
-from decktalk.settings import AmbienceConfig, EffectsConfig, MusicConfig
+from decktalk.settings import AmbienceConfig, EffectConfig, MusicConfig
 from decktalk.speech.sound import SOUND_DECLARED, SoundContext, SoundProvider, endpoint
 from decktalk.stages import selects
 from decktalk.stages.score.ledger import (
@@ -88,9 +88,6 @@ MUSIC_NAME = "music"
 SECONDS_PER_MINUTE = 60
 """Truth: the seconds in a minute, which is what a rate stated per minute is divided by to price a second."""
 
-SECOND_DIGITS = 3
-"""Truth: the seconds of audio a price is for are kept to the millisecond, the finest a request asks for."""
-
 TABLES = {SoundKind.AMBIENCE: "ambience", SoundKind.EFFECT: "effects", SoundKind.MUSIC: "music"}
 """The `[score]` table each kind is sized and priced by."""
 
@@ -101,7 +98,7 @@ PRICE_KEY = "dollars_per_minute"
 def requested_seconds(kind: SoundKind, body: Mapping[str, Any]) -> float:
     """How many seconds of audio one request asks for, which is what it is priced by."""
     if kind is SoundKind.MUSIC:
-        return float(body["music_length_ms"]) / MILLISECONDS
+        return float(body["music_length_ms"]) / 1000
     return float(body["duration_seconds"])
 
 
@@ -139,7 +136,7 @@ class Planned:
         return json.dumps(self.bodies[0] if len(self.bodies) == 1 else list(self.bodies), sort_keys=True)
 
 
-def sound_body(spec: SoundSpec, cfg: AmbienceConfig | EffectsConfig, *, loop: bool) -> dict[str, Any]:
+def sound_body(spec: SoundSpec, cfg: AmbienceConfig | EffectConfig, *, loop: bool) -> dict[str, Any]:
     """The request one ambience bed or one effect sends, with its table's settings filling what the item left out."""
     body: dict[str, Any] = {
         "text": spec.prompt,
@@ -156,10 +153,10 @@ def sound_body(spec: SoundSpec, cfg: AmbienceConfig | EffectsConfig, *, loop: bo
 def music_bodies(spec: MusicSpec, cfg: MusicConfig) -> list[dict[str, Any]]:
     """One request per chunk of the music, each carrying the same prompt and its place in the piece.
 
-    The service writes at most `max_chunk_seconds` in one answer, so a longer bed is asked for in
+    The service writes at most `chunk_max_seconds` in one answer, so a longer bed is asked for in
     equal parts and each part is told which one it is, which is what keeps the key and the tempo.
     """
-    parts = max(1, math.ceil(cfg.duration_seconds / cfg.max_chunk_seconds))
+    parts = max(1, math.ceil(cfg.duration_seconds / cfg.chunk_max_seconds))
     each = cfg.duration_seconds / parts
     bodies: list[dict[str, Any]] = []
     for index in range(parts):
@@ -171,7 +168,7 @@ def music_bodies(spec: MusicSpec, cfg: MusicConfig) -> list[dict[str, Any]]:
                 "prompt": prompt,
                 "force_instrumental": spec.force_instrumental,
                 "model_id": cfg.model,
-                "music_length_ms": int(each * MILLISECONDS),
+                "music_length_ms": int(each * 1000),
             }
         )
     return bodies
@@ -230,7 +227,7 @@ def plan_items(inputs: Inputs) -> list[Planned]:
                 name=MUSIC_NAME,
                 kind=SoundKind.MUSIC,
                 prompt=spec.music.prompt,
-                out=_out(inputs, spec.music.out or mix.music, inputs.workspace.joined_dir / f"{MUSIC_NAME}.mp3"),
+                out=_out(inputs, spec.music.out or mix.music, inputs.workspace.joined_music),
                 endpoint=music,
                 bodies=tuple(bodies),
                 digest=request_digest(music, whole),
@@ -251,7 +248,7 @@ def wanted(inputs: Inputs, only: Sequence[int] | None) -> Callable[[Planned], bo
     if not only:
         return lambda _item: True
     played = any(chosen(section.number) for section in document.sections)
-    bedded = any(chosen(section.number) for section in document.page_sections if section.ambience)
+    bedded = any(chosen(section.number) for section in document.page_sections if section.with_ambience)
     cued = {inputs.path(row.file) for row in document.mix.effects if chosen(row.section)}
 
     def keeps(item: Planned) -> bool:
@@ -288,7 +285,7 @@ def price_key_of(kind: SoundKind) -> str:
 
 def rate_of(inputs: Inputs, kind: SoundKind) -> float:
     """What this kind of sound costs in US dollars per minute of audio, exactly as its own table states it."""
-    table: AmbienceConfig | EffectsConfig | MusicConfig = getattr(inputs.settings.score, TABLES[kind])
+    table: AmbienceConfig | EffectConfig | MusicConfig = getattr(inputs.settings.score, TABLES[kind])
     return table.dollars_per_minute
 
 
@@ -334,7 +331,7 @@ def cost_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | None
         seconds=round(seconds, SECOND_DIGITS),
         dollars=dollars,
         ceiling_dollars=dollars,
-        billing=Billing.PER_SECOND,
+        billing=BillingBasis.PER_SECOND,
         dollars_per_1000_characters=0.0,
         dollars_per_minute=_per_minute(rates, exact, seconds),
         price_key=price_key_of(weakest) if weakest is not None else None,
@@ -377,7 +374,7 @@ def client_for(run: Run, inputs: Inputs) -> SoundProvider:
     It is looked up in the run's sounds, so a host that handed its machine another table is never
     billed through the shipped one, and the machine's switch and retries apply here too.
     """
-    return run.sounds.provider(inputs.settings.score.provider, sound_context(inputs))
+    return run.machine.sound_providers.provider(inputs.settings.score.provider, sound_context(inputs))
 
 
 def _keep(ledger: Ledger, path: Path, entry: SoundEntry) -> Ledger:
@@ -404,7 +401,7 @@ def _buy_sound(
 ) -> tuple[Ledger, float]:
     """Buy one ambience bed or one effect, write it, and record what it was bought with and what it cost."""
     body = item.bodies[0]
-    audio_bytes = client.effect(body, output_format=inputs.settings.score.format)
+    audio_bytes = client.effect(body, output_format=inputs.settings.score.output_format)
     dollars = _charge(run, inputs, item, item.digest, body)
     item.out.parent.mkdir(parents=True, exist_ok=True)
     item.out.write_bytes(audio_bytes)
@@ -452,7 +449,7 @@ def _buy_music(
         if index < len(known) and known[index] == digest and part.is_file():
             run.note(f"{part.name} was bought before and its request is unchanged, so this run keeps it.")
         else:
-            audio_bytes = client.music(body, output_format=inputs.settings.score.format)
+            audio_bytes = client.music(body, output_format=inputs.settings.score.output_format)
             dollars += _charge(run, inputs, item, digest, body)
             part.write_bytes(audio_bytes)
             run.wrote(part)

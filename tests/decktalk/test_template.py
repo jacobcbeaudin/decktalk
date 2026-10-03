@@ -98,7 +98,7 @@ def test_every_project_init_writes_commits_its_takes_and_its_score_and_ignores_t
     workspace = Inputs.load(tmp_path, environ={}).workspace
     assert workspace.score_dir == tmp_path.resolve() / "score"
     paid = [workspace.takes / "a.mp3", workspace.score_dir / "music-part1.mp3", workspace.score_dir / "ledger.json"]
-    for path in [*paid, workspace.joined_dir / "music.mp3"]:
+    for path in [*paid, workspace.joined_music]:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"audio")
     git(tmp_path, "init", "-q")

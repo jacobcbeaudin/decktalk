@@ -67,7 +67,7 @@ from decktalk.results import (
     Scope,
 )
 from decktalk.secret import register_environment
-from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, ToolsConfig
+from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, NarrationConfig, ToolsConfig
 from decktalk.settings import Scope as SettingScope
 from decktalk.settings.layers import (
     env_warnings,
@@ -182,7 +182,7 @@ class Toolchain:
             )
         return self.ffmpeg, self.ffprobe
 
-    def fetched(self, *, cancel: Cancel | None = None) -> Toolchain:
+    def fetch(self, *, cancel: Cancel | None = None) -> Toolchain:
         """This toolchain with the pinned build downloaded when it was not already there.
 
         `cancel` is the run's token, which a fetch waiting on another fetch of the same build polls. A
@@ -207,24 +207,29 @@ class Machine:
 
     environ: Mapping[str, str] = field(repr=False)
     tables: Mapping[str, Any] = field(repr=False)
-    config_path: Path
+    machine_file: Path
     cwd: Path
     toolchain: Toolchain
     events: Events = field(default_factory=Events, compare=False)
     overrides: tuple[str, ...] = ()
-    speech_providers: Mapping[str, SpeechFactory] | None = field(default=None, repr=False, compare=False)
-    """The speech providers this machine answers with by name, or None for the closed set DeckTalk ships.
+    speech_providers: SpeechProviders = field(
+        default_factory=lambda: _speech(None, NarrationConfig().retries), repr=False, compare=False
+    )
+    """The voices this machine answers with by name, and how often each asks a busy provider again.
 
-    A host's table is code the host wrote and imported itself, not a member of the closed set, and it
-    replaces the shipped one rather than sitting over it, so a machine built with a fake voice can
-    reach no real one by a name the host left out. Each value is a `decktalk.speech.SpeechFactory`.
+    `Machine.of` resolves it from the table a host handed in, or the closed set DeckTalk ships, at the
+    retries this machine's own layers name. A host's table is code the host wrote and imported itself,
+    and it replaces the shipped one rather than sitting over it, so a machine built with a fake voice
+    can reach no real one by a name the host left out.
     """
-    sound_providers: Mapping[str, SoundFactory] | None = field(default=None, repr=False, compare=False)
-    """The sound providers this machine answers with by name, or None for the ones its voices imply.
+    sound_providers: SoundProviders = field(
+        default_factory=lambda: _sounds(None, None, NarrationConfig().retries), repr=False, compare=False
+    )
+    """The sound providers this machine answers with by name, and how often each asks again.
 
     A machine whose host gave neither table answers with the sound providers DeckTalk ships. A host
     that gave a voice table and no sound table gets none, so a machine built with a fake voice can
-    reach no real sound provider either. Each value is a factory that takes a sound context.
+    reach no real sound provider either.
     """
     dotenv: bool = True
     """Whether a project's `.env` is read, which is true for the author's own machine and false for a host's."""
@@ -244,7 +249,7 @@ class Machine:
         home = Path.home()
         return cls.of(
             environ=environ,
-            config_path=machine_config_path(environ, home),
+            machine_file=machine_config_path(environ, home),
             cwd=Path.cwd(),
             cache_dir=standard_cache_dir(environ, home),
             store_dir=standard_data_dir(environ, home) / STORE_FOLDER,
@@ -257,7 +262,7 @@ class Machine:
         cls,
         *,
         environ: Mapping[str, str],
-        config_path: Path,
+        machine_file: Path,
         cwd: Path,
         cache_dir: Path,
         store_dir: Path | None = None,
@@ -270,22 +275,25 @@ class Machine:
 
         Nothing here reads the process. `environ` is every variable a run on this machine may see,
         which for a render job is none and for a voice job is the key and the voice id. The machine
-        file at `config_path` is read when it is there and is where a machine-scope fix lands.
+        file at `machine_file` is read when it is there and is where a machine-scope fix lands.
         `speech_providers` replaces the shipped voices by name, and `sound_providers` the shipped sound
         providers. A project's `.env` is left unread unless `dotenv` says otherwise, because it is what
         a tenant's upload would reach for, and every base URL a request goes to is a machine-scoped key,
         so no project can send the key or the script anywhere this machine did not name.
         """
         register_environment(environ)
-        tables = read_machine_toml(config_path)
+        tables = read_machine_toml(machine_file)
         pairs = tuple(overrides)
         mine = _machine_overrides(pairs)
-        loaded = load(project={}, machine=tables, machine_path=config_path, environ=environ, overrides=mine)
+        loaded = load(project={}, machine=tables, machine_path=machine_file, environ=environ, overrides=mine)
         # Both machine folders are read here, where the machine file is known, so a relative one is
         # refused naming it, and the tools are handed the cache with its `~` already expanded.
         store = machine_folder(loaded, "narration.store_dir", environ) or store_dir
         named = machine_folder(loaded, "tools.cache_dir", environ)
         tools = loaded.settings.tools if named is None else replace(loaded.settings.tools, cache_dir=str(named))
+        # The retries are a machine-scoped key, so the machine's own file, environment and overrides
+        # decide them whole and no project can.
+        retries = loaded.settings.narration.retries
         _refuse_store_in_cache(store, named or cache_dir)
         # A machine whose `[tools]` names no usable pair is still a machine: every run says why, so
         # `doctor` reports the key to mend rather than a missing encoder `install` could not fix.
@@ -296,14 +304,14 @@ class Machine:
         return cls(
             environ=dict(environ),
             tables=tables,
-            config_path=config_path,
+            machine_file=machine_file,
             cwd=cwd,
             toolchain=toolchain,
             overrides=pairs,
-            speech_providers=speech_providers,
-            sound_providers=sound_providers,
+            speech_providers=_speech(speech_providers, retries),
+            sound_providers=_sounds(sound_providers, speech_providers, retries),
             dotenv=dotenv,
-            notes=(*env_warnings(environ), *key_warnings(tables, config_path.name), *refused),
+            notes=(*env_warnings(environ), *key_warnings(tables, machine_file.name), *refused),
             store=store_dir,
         )
 
@@ -312,29 +320,6 @@ class Machine:
         """Where this machine keeps the browser and the encoder it fetches."""
         return self.toolchain.cache_dir
 
-    @property
-    def voices(self) -> SpeechProviders:
-        """The voices this machine answers with, and how often each asks again.
-
-        The retries are a machine-scoped key, so the machine's own file, environment and overrides
-        decide them whole and no project can.
-        """
-        mine = _machine_overrides(self.overrides)
-        tuned = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings
-        return SpeechProviders(
-            factories=PROVIDERS if self.speech_providers is None else self.speech_providers,
-            retries=tuned.narration.retries,
-        )
-
-    @property
-    def sounds(self) -> SoundProviders:
-        """The sound providers this machine answers with, and how often each asks again."""
-        if self.sound_providers is not None:
-            factories = self.sound_providers
-        else:
-            factories = SOUNDS if self.speech_providers is None else {}
-        return SoundProviders(factories=factories, retries=self.voices.retries)
-
     def child_environ(self) -> dict[str, str]:
         """The environment a DeckTalk command this machine starts runs with, so the command acts on this machine.
 
@@ -342,7 +327,7 @@ class Machine:
         two are spelled into the child's environment, and a child `decktalk install` fetches into the
         cache this machine reads and writes to the file this machine holds.
         """
-        child = {**self.environ, MACHINE_FILE_VARIABLE: str(self.config_path)}
+        child = {**self.environ, MACHINE_FILE_VARIABLE: str(self.machine_file)}
         if self.toolchain.tools.cache_dir or self.toolchain.cache is not None:
             child[BY_ID["tools.cache_dir"].environment] = str(self.cache_dir)
         return child
@@ -391,7 +376,7 @@ class Machine:
                 pruned = JsonlSink.prune(events_path.parent, keep_runs)
             written = JsonlSink(events_path, max_bytes=max_bytes)
             sink = self.events.subscribe(written, runs=[run.id])
-        self.events.emit(run.id, RunStart, events_path=relative(events_path, root) if events_path and root else None)
+        self.events.emit(run.id, RunStart, events_file=relative(events_path, root) if events_path and root else None)
         # What the machine noticed when it was read is said on every run, because the machine was read
         # once and each run's events file is read on its own.
         for note in self.notes:
@@ -402,7 +387,8 @@ class Machine:
             # browser is built from are what this run renders, fetches, reads secrets and opens pages
             # with. All of them sit below the event stream, so the run binds them for its own length
             # rather than threading a machine through every filter, fetcher and browser launch. The
-            # voices and whether the run may spend are not among them: they travel on the run itself.
+            # providers and whether the run may spend are not among them: the providers travel on the
+            # machine and the spend on the run.
             with (
                 self.toolchain.bound(cancel=run.cancel),
                 children_see(self.environ),
@@ -449,13 +435,13 @@ class Machine:
             # a second `install` fetches nothing and names what was already there.
             browser = self._browser_row()
             if browser.version is None:
-                chromium_fetch.fetch_chromium(env=child_environment(), with_deps=sys.platform.startswith("linux"))
+                chromium_fetch.fetch_chromium(env=child_environment(), with_deps=installs_system_libraries())
                 # The row is asked again the way `doctor` asks for it, by launching what was just
                 # fetched, so `install` cannot print the browser as missing a second after it
                 # downloaded one.
                 browser = self._browser_row().model_copy(update={"fetched": True})
             held = self.toolchain.complete
-            tools = (browser, *_encoder_rows(self.toolchain.fetched(cancel=run.cancel), fetched=not held))
+            tools = (browser, *_encoder_rows(self.toolchain.fetch(cancel=run.cancel), fetched=not held))
             return run.result(InstallResult, tools=tools, cache=self.cache_dir)
 
     def doctor(self, *, measure: bool = False, cancel: Cancel | None = None) -> DoctorResult:
@@ -479,10 +465,10 @@ class Machine:
                 bias_ms=self._bias(measure=measure),
             )
 
-    def apply(self, fix: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
+    def apply(self, findings: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
         """Carry out the fixes a machine can make, which is changing a machine setting and running a command."""
         with self._run(root=self.cwd) as run:
-            return apply_fixes(run, fix, root=self.cwd, scope=Scope.MACHINE, unsafe=unsafe)
+            return apply_fixes(run, findings, root=self.cwd, scope=Scope.MACHINE, unsafe=unsafe)
 
     # ---- the rows `doctor` reports ---------------------------------------------------------
 
@@ -542,7 +528,7 @@ def init(
     name: str | None = None,
     example: str | None = None,
     skills: bool = True,
-    force: bool = False,
+    overwrite: bool = False,
 ) -> InitResult:
     """Write a project that already builds into `path`, and say what was written.
 
@@ -555,7 +541,7 @@ def init(
     here = machine or Machine.from_environment()
     root = here.cwd / Path(path).expanduser()
     with here._run(root=root) as run:
-        written = write_project(root, name=name or root.name, example_name=example, skills=skills, force=force)
+        written = write_project(root, name=name or root.name, example_name=example, skills=skills, force=overwrite)
         for wrote in written:
             run.wrote(wrote)
         return run.result(
@@ -563,7 +549,7 @@ def init(
             root=relative(root, here.cwd),
             name=name or root.name,
             example=example or STARTER,
-            skills=skills,
+            skills_written=skills,
         )
 
 
@@ -585,9 +571,32 @@ def _missing_findings(tools: tuple[InstalledTool, ...]) -> tuple[Finding, ...]:
     )
 
 
+def _speech(given: Mapping[str, SpeechFactory] | None, retries: int) -> SpeechProviders:
+    """The voices a machine answers with: its host's table when it gave one, else the closed set DeckTalk ships."""
+    return SpeechProviders(factories=PROVIDERS if given is None else given, retries=retries)
+
+
+def _sounds(
+    given: Mapping[str, SoundFactory] | None, voices: Mapping[str, SpeechFactory] | None, retries: int
+) -> SoundProviders:
+    """The sound providers a machine answers with, which are none when its host gave voices and no sounds."""
+    if given is not None:
+        return SoundProviders(factories=given, retries=retries)
+    return SoundProviders(factories=SOUNDS if voices is None else {}, retries=retries)
+
+
 def _machine_overrides(overrides: tuple[str, ...]) -> tuple[str, ...]:
     """The machine-scoped pairs of a run of `--set` overrides, spelled the way the loader takes them."""
     return tuple(f"{key}={value}" for key, value in scoped(route(overrides), SettingScope.MACHINE).items())
 
 
-__all__ = ["Machine", "Run", "Toolchain", "init"]
+def installs_system_libraries() -> bool:
+    """True on the platform where `install` also installs the browser's system libraries, through sudo.
+
+    It is the one rule both sides read: `install` passes it to the fetch, and the command line asks
+    for the password it costs before it starts.
+    """
+    return sys.platform.startswith("linux")
+
+
+__all__ = ["Machine", "Run", "Toolchain", "init", "installs_system_libraries"]

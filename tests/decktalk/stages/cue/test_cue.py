@@ -146,7 +146,7 @@ def test_a_moment_the_cue_file_does_not_list_is_missing_with_a_fix(tmp_path: Pat
     inputs = a_project(tmp_path, cues={"1": {"cues": [{"id": "1.1:a", "phrase": "there"}]}})
     a_recording(inputs, 1, "1", {"1.1": ["1.1:a", "1.1:b"]})
     result = cue(inputs, a_run(tmp_path))
-    (judged,) = [one for one in result.findings if one.code is Code.CUE_MISSING]
+    (judged,) = [one for one in result.findings if one.code is Code.CUE_UNLISTED]
     assert "1.1:b" in judged.message and judged.fix is not None
     assert judged.stage is Stage.CUE
 

@@ -85,7 +85,7 @@ def spoken_words(inputs: Inputs, section: int) -> tuple[Word, ...]:
     """One section's words in seconds after it starts, or nothing when it has no take yet."""
     takes = inputs.takes()
     take = takes.of(section) if takes is not None else None
-    return () if take is None else inputs.words(section, take.digest)
+    return () if take is None else inputs.section_words(section, take.digest)
 
 
 def words_query(inputs: Inputs, section: PageSection) -> str | None:
@@ -124,8 +124,7 @@ class SceneSpans(HTMLParser):
     and an HTML comment cannot disturb because the parser hands neither back as a tag.
 
     A page whose scene element never closes leaves `balanced` false. Nothing is sliced then, and the
-    caller keys the section on the whole file, which is what a recording was keyed on before this
-    key could tell one scene from another.
+    caller keys the section on the whole file, which is the one key that cannot miss a change.
     """
 
     def __init__(self, source: str) -> None:
@@ -244,7 +243,7 @@ def section_digest(inputs: Inputs, section: PageSection, url: str, seconds: floa
     lines = [
         url,
         f"{seconds:.{SECOND_DIGITS}f}",
-        f"{video.width}x{video.height}@{video.output_fps}",
+        f"{video.width}x{video.height}@{video.fps}",
         record.color_scheme,
         f"policy:{record.page_policy}",
         f"motion:{motion.reduce}:{motion.scale:g}",

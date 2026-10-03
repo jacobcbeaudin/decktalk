@@ -12,6 +12,8 @@ from decktalk.events import Event, RunLog
 from decktalk.machine import Machine, Toolchain
 from decktalk.machine.run import Run
 from decktalk.settings import ToolsConfig
+from decktalk.speech import SpeechProviders
+from decktalk.speech.sound import SoundProviders
 
 RUN_ID = "r1"
 """The id of every run `a_run` opens, which a test that reads a result's run compares against."""
@@ -22,7 +24,7 @@ def a_machine(root: Path, **environ: str) -> Machine:
     return Machine(
         environ=environ,
         tables={},
-        config_path=root / "config.toml",
+        machine_file=root / "config.toml",
         cwd=root,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(root / "cache"))),
     )
@@ -37,21 +39,22 @@ def a_run(
     **environ: str,
 ) -> Run:
     """One run opened straight on a machine that read nothing, with every line it emits kept in `lines`."""
-    machine = Machine(environ=environ, tables={}, config_path=root / "machine.toml", cwd=root, toolchain=Toolchain())
+    machine = Machine(environ=environ, tables={}, machine_file=root / "machine.toml", cwd=root, toolchain=Toolchain())
     if lines is not None:
         machine.events.subscribe(lines.append)
     return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, max_cost=max_cost, root=root)
 
 
 def a_voiced_run(root: Path, speech_providers: Mapping[str, Any], *, spend: bool = False) -> Run:
-    """One run opened straight on a machine whose host handed it this voice table, as `Machine.of` takes it."""
+    """One run on a machine whose host handed it this voice table and no sounds, as `Machine.of` resolves it."""
     machine = Machine(
         environ={},
         tables={},
-        config_path=root / "machine.toml",
+        machine_file=root / "machine.toml",
         cwd=root,
         toolchain=Toolchain(),
-        speech_providers=speech_providers,
+        speech_providers=SpeechProviders(factories=speech_providers),
+        sound_providers=SoundProviders(factories={}),
     )
     return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, root=root)
 
@@ -63,10 +66,10 @@ def a_sounding_run(
     machine = Machine(
         environ={},
         tables={},
-        config_path=root / "machine.toml",
+        machine_file=root / "machine.toml",
         cwd=root,
         toolchain=Toolchain(),
-        sound_providers=sounds,
+        sound_providers=SoundProviders(factories=sounds),
     )
     if lines is not None:
         machine.events.subscribe(lines.append)

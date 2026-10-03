@@ -10,6 +10,7 @@
  * anywhere downstream.
  */
 
+import { CLASS, countSeconds, span, styleClass } from "./canvas.ts";
 import { now, schedule } from "./clock.ts";
 import { ATTENTION, type Attr, type Count, cueId, EXITS } from "./contract.ts";
 import { fallback } from "./katex.ts";
@@ -29,7 +30,6 @@ import {
   wordStyleOf,
   written,
 } from "./scene.ts";
-import { CLASS, countSeconds, span, styleClass } from "./stage.ts";
 import { count as countUp, type Spoken, line as spokenLine } from "./text.ts";
 
 /**
@@ -59,7 +59,7 @@ export type Playing = {
   readonly words: readonly Spoken[] | null;
 };
 
-/** A slide on the stage, with every cue of it wired and every stop it owes when it leaves. */
+/** A slide on the canvas, with every cue of it wired and every stop it owes when it leaves. */
 export type Mounted = {
   readonly el: HTMLElement;
   readonly slide: Slide;
@@ -137,7 +137,7 @@ function hide(el: HTMLElement): void {
 }
 
 /**
- * Which element each swap holds on the stage until its replacement has arrived.
+ * Which element each swap holds on the canvas until its replacement has arrived.
  *
  * A swap is only ever between one thing and one other thing, so zero candidates and two candidates
  * are both reported and neither is guessed at: an author who meant a swap names the cue on both

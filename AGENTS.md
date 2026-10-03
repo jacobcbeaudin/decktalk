@@ -10,7 +10,7 @@ The command line is the instruction set, and it documents itself. Four calls tel
 - `decktalk --help` for the tree, the global flags and the exit codes.
 - `decktalk schema` for every command, every flag with its type and default, every error code and
   every finding code, as one JSON object.
-- `decktalk schema settings` for every setting with its default, its safe range, its unit and its
+- `decktalk schema setting` for every setting with its default, its safe range, its unit and its
   hazard, and `decktalk config explain KEY` for one of them whole.
 - `decktalk status --json` for a project and `decktalk doctor --json` for this machine.
 

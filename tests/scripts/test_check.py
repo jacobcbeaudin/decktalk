@@ -80,6 +80,15 @@ def test_the_rehearsal_row_has_the_node_packages_and_the_history_it_reads() -> N
     assert "history" in rehearsal.tools
 
 
+@pytest.mark.parametrize("script", sorted((REPO / "scripts").glob("build_*.py")), ids=lambda path: path.name)
+def test_every_generator_is_checked_in_a_row_that_prepares_what_it_runs(script: Path) -> None:
+    """A generator no row runs is never held, and the samples' generator runs DeckTalk, which needs ffmpeg."""
+    rows = [group for group in check.GROUPS for command in group.commands if f"scripts/{script.name}" in command]
+    assert rows, f"no row checks {script.name}"
+    if script.stem == check.SAMPLES:
+        assert all("ffmpeg" in group.tools for group in rows), [group.name for group in rows]
+
+
 @pytest.mark.parametrize(
     "group", [check.BY_NAME["generated"], check.BY_NAME["rehearsal"]], ids=lambda group: group.name
 )
@@ -228,7 +237,7 @@ def test_the_tools_cache_is_the_one_directory_doctor_names() -> None:
 
 
 def test_the_linux_e2e_row_reports_timing_until_it_is_trusted_to_gate() -> None:
-    (command,) = check.BY_NAME["e2e"].commands
+    (command,) = [command for command in check.BY_NAME["e2e"].commands if "pytest" in command]
     assert (check.REPORT_TIMING in command) is not check.LINUX_GATES_TIMING
 
 

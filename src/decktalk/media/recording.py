@@ -17,12 +17,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from playwright.sync_api import Browser, BrowserContext, Page
+from playwright.sync_api import BrowserContext, Page
 from playwright.sync_api import Error as PlaywrightError
 
 from ..errors import ToolError
 from ..settings import MotionConfig
-from .browser import trusts
+from .browser import Chromium
 from .origin import Allowed, Assets, route_pages
 from .pagereport import Recording
 from .pages import (
@@ -100,11 +100,12 @@ class Capture:
         The page is closed first, so a deck whose script is still running is stopped before anything
         waits on it, and the old file at `out` is replaced only once the new one exists.
         """
-        video = self.page.video if self.page else None
-        if self.page:
-            self.page.close()
-        self.context.close()
-        src = Path(video.path()) if video else None
+        with driving(f"could not finish {out.name}"):
+            video = self.page.video if self.page else None
+            if self.page:
+                self.page.close()
+            self.context.close()
+            src = Path(video.path()) if video else None
         if src is None or not src.exists():
             raise ToolError(f"Chromium produced no video for {out.name}")
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -114,7 +115,7 @@ class Capture:
 
 @contextmanager
 def capturing(
-    browser: Browser,
+    chromium: Chromium,
     allowed: Allowed,
     *,
     width: int,
@@ -131,13 +132,13 @@ def capturing(
     directory = Path(tempfile.mkdtemp(prefix="decktalk-rec-"))
     try:
         with driving("could not open a recording context"):
-            context = browser.new_context(
+            context = chromium.browser.new_context(
                 **view(width, height, color_scheme, motion),
                 record_video_dir=str(directory),
                 record_video_size={"width": width, "height": height},
             )
         opened = time.monotonic()
-        assets = route_pages(context, allowed, documents, trusted=trusts(browser))
+        assets = route_pages(context, allowed, documents, trusted=chromium.trusted)
         capture = Capture(context=context, assets=assets, directory=directory, opened=opened)
         instrument(context, "(" + COVER_JS + ")()", *motion_scripts(motion))
         try:
@@ -159,7 +160,7 @@ def suppressing_a_closed_context() -> Iterator[None]:
 
 
 def record_page(
-    browser: Browser,
+    chromium: Chromium,
     url: str,
     seconds: float,
     out: Path,
@@ -167,7 +168,7 @@ def record_page(
     allowed: Allowed,
     log_sink: RecordingSink,
     settle_seconds: float,
-    min_cover_seconds: float,
+    cover_min_seconds: float,
     width: int,
     height: int,
     color_scheme: str,
@@ -189,7 +190,7 @@ def record_page(
     """
     log_sink.clear()
     with capturing(
-        browser, allowed, width=width, height=height, color_scheme=color_scheme, motion=motion, documents=documents
+        chromium, allowed, width=width, height=height, color_scheme=color_scheme, motion=motion, documents=documents
     ) as capture:
         caught: list[str] = []
         console: list[tuple[str, str]] = []
@@ -198,11 +199,12 @@ def record_page(
         await_ready(page)
         # Settle after load, and never start the clock before the recorder has certainly begun
         # capturing, because Windows starts its capture late, and the cover makes the wait invisible.
-        wait = max(settle_seconds, min_cover_seconds - (time.monotonic() - capture.opened))
-        page.wait_for_timeout(wait * 1000)
-        evaluate(page, START_JS)
-        started = time.monotonic()
-        waited(page, seconds, check)
+        wait = max(settle_seconds, cover_min_seconds - (time.monotonic() - capture.opened))
+        with driving(f"the page stopped while {out.name} was recorded"):
+            page.wait_for_timeout(wait * 1000)
+            evaluate(page, START_JS)
+            started = time.monotonic()
+            waited(page, seconds, check)
         report = read_report(page, out.stem)
         errors = page_errors(page, caught, out.stem)
         for kind, text in console:
@@ -251,8 +253,8 @@ def _log_what_the_page_reported(recording: Recording, label: str) -> None:
         )  # fmt: skip
     for line in recording.report.words:
         log.debug(
-            "[spkn] %s  cue %.3f  run %.3f  first word shown %s",
-            line.text, line.cue_at, line.run_at, line.first_shown,
+            "[spkn] %s  cue %.3f  spoken %.3f  first word shown %s",
+            line.text, line.cue_at, line.spoken_at, line.first_shown,
         )  # fmt: skip
     after_start = [gap for gap in recording.report.frame_gaps if gap.at is not None and gap.at > 0]
     if after_start:

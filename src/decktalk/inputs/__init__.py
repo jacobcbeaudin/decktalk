@@ -62,7 +62,7 @@ from decktalk.inputs.document import (
 from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
 from decktalk.inputs.paths import at, contained, relative
-from decktalk.inputs.script import Segment, read_script
+from decktalk.inputs.script import ScriptSection, read_script
 from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import Word
@@ -257,20 +257,20 @@ class Inputs:
 
     # ---- the files the author writes ------------------------------------------------------
 
-    def script(self) -> tuple[Segment, ...]:
+    def script(self) -> tuple[ScriptSection, ...]:
         """Every section of `script.md`, checked against `decktalk.toml`, parsed once per project."""
         return self._parsed
 
     @cached_property
-    def _parsed(self) -> tuple[Segment, ...]:
+    def _parsed(self) -> tuple[ScriptSection, ...]:
         """The script as `script` answers it, kept on this value alone so a replaced one reads it afresh."""
         declared = {section.number for section in self.document.sections}
         return tuple(read_script(self.script_path, self.root, declared=declared))
 
-    def spoken(self) -> tuple[Segment, ...]:
+    def spoken(self) -> tuple[ScriptSection, ...]:
         """Every section the voice reads, which is every one that does not play a clip."""
         clips = self.document.clip_numbers
-        return tuple(segment for segment in self.script() if segment.index not in clips)
+        return tuple(section for section in self.script() if section.number not in clips)
 
     def chapters(self) -> dict[int, str]:
         """One chapter title per section, which the film's chapter markers and a slate carry.
@@ -280,7 +280,7 @@ class Inputs:
         neither is named by its number.
         """
         try:
-            headings = {segment.index: segment.title for segment in self.script()}
+            headings = {section.number: section.title for section in self.script()}
         except InputError as unread:
             log.debug(
                 "The script did not parse, so a section with no chapter of its own is named by its number.",
@@ -356,7 +356,7 @@ class Inputs:
         own = found.tail_seconds
         return round(self.settings.narration.tail_seconds if own is None else own, 3)
 
-    def words(self, section: int, digest: str) -> tuple[Word, ...]:
+    def section_words(self, section: int, digest: str) -> tuple[Word, ...]:
         """One take's words in seconds after its section starts, which is after that section's lead."""
         found = self.take_words(digest)
         if found is None:
@@ -501,7 +501,7 @@ __all__ = [
     "MusicSpec",
     "PageSection",
     "Section",
-    "Segment",
+    "ScriptSection",
     "SoundSpec",
     "Score",
     "Transition",

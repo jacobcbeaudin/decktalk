@@ -1,0 +1,40 @@
+# Every docs sample `scripts/build_samples.py` writes, keyed by the id its page names in a
+# `{/* sample: <id> */}` comment above the block.
+#
+# A row says how the project was made, what ran on it and which file it shows:
+#   page     the page whose block this row fills
+#   what     the run, in a sentence, which is what a reader of the page source sees in this file
+#   edits    find and replace pairs applied to the fresh `decktalk init my-lesson`, each [file, find, replace]
+#   voice    "dtsp" to read the script with the loopback fake voice, which needs no key and spends nothing
+#   run      the commands run in the project, in order, each one argv after `decktalk`
+#   file     the file the block shows, project-relative, where {digest} is section 1's take digest
+#   keep     how many items to keep of each named list, so a long file is cut to its first rows
+#   varies   the keys whose values the encoder decides, which `--check` holds by key and not by value
+#
+# Rows with the same edits, voice and run share one project and one run.
+
+[takes-json]
+page = "docs/reference/artifacts.mdx"
+what = "build/narrate/takes.json after decktalk narrate --no-spend on a fresh decktalk init my-lesson read by a local dtsp voice, cut to the first section"
+edits = [
+    ["decktalk.toml", 'provider = "elevenlabs"', 'provider = "dtsp"'],
+    ["decktalk.toml", 'id = ""', 'id = "af_heart"'],
+]
+voice = "dtsp"
+run = [["narrate", "--no-spend"]]
+file = "build/narrate/takes.json"
+keep = { sections = 1 }
+varies = ["duration_seconds", "sound_end_seconds"]
+
+[words-json]
+page = "docs/reference/artifacts.mdx"
+what = "the words file of section 1's take after the same run, cut to its first three words"
+edits = [
+    ["decktalk.toml", 'provider = "elevenlabs"', 'provider = "dtsp"'],
+    ["decktalk.toml", 'id = ""', 'id = "af_heart"'],
+]
+voice = "dtsp"
+run = [["narrate", "--no-spend"]]
+file = "takes/{digest}.words.json"
+keep = { words = 3 }
+varies = ["bytes", "blake3"]

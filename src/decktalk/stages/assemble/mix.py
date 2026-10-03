@@ -31,7 +31,7 @@ from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.media.audio import gain
 from decktalk.media.encode import Encoder
-from decktalk.page import MILLISECONDS, SECOND_DIGITS
+from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Stage
 from decktalk.results import Word
 from decktalk.stages import score as score_stage
@@ -118,7 +118,7 @@ class Chain:
 
 def delay(seconds: float) -> str:
     """Where one layer starts in the film, in the milliseconds `adelay` takes."""
-    return f"adelay={round(seconds * MILLISECONDS)}:all=1"
+    return f"adelay={round(seconds * 1000)}:all=1"
 
 
 type Span = tuple[float, float]
@@ -214,7 +214,7 @@ def marker_times(
     def words_of(section: int) -> tuple[Sequence[Word], Spoken] | None:
         if section not in heard:
             take = takes.of(section)
-            words = inputs.words(section, take.digest) if take is not None else None
+            words = inputs.section_words(section, take.digest) if take is not None else None
             heard[section] = None if words is None else (words, Spoken.of(words))
         return heard[section]
 
@@ -343,7 +343,7 @@ def _ambience(chain: Chain, inputs: Inputs, run: Run, rows: list[Rendered], star
               total: float) -> None:  # fmt: skip
     """The ambience bed, under the sections that ask for one and silent everywhere else."""
     mix = inputs.document.mix
-    flagged = [row for row in rows if isinstance(row.section, PageSection) and row.section.ambience]
+    flagged = [row for row in rows if isinstance(row.section, PageSection) and row.section.with_ambience]
     if not mix.ambience or not flagged:
         return
     path = inputs.path(mix.ambience)
@@ -433,14 +433,14 @@ def mix_input_args(plan: MixPlan) -> list[str]:
 
 def mix_soundtrack(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes, work: Path, *, score: bool
                    ) -> MixPlan:  # fmt: skip
-    """Join the section cuts and lay the whole soundtrack under them, into one work file.
+    """Join the section videos and lay the whole soundtrack under them, into one work file.
 
     The soundtrack is written as floating-point samples, so a sum of layers louder than 0 dBFS is
     carried rather than clipped, and the delivery encoder runs once, downstream of the limiter. The
     graph reaches ffmpeg as a file read with `-/filter_complex`, because a long film's graph runs
     past the 32,767 characters a Windows command line holds.
     """
-    picture = inputs.workspace.final_dir / ".picture.mp4"
+    picture = inputs.workspace.work_file("picture.mp4")
     graph = work.with_suffix(".graph")
     concat_files = [row.path for row in rows]
     if not concat_files:

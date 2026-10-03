@@ -90,7 +90,7 @@ def sent_by_elevenlabs(markdown: str, monkeypatch: pytest.MonkeyPatch) -> str:
     context = SpeechContext(
         secrets=NoSecrets(),
         base_url="https://api.elevenlabs.io/v1",
-        context_chars=0,
+        context_characters=0,
         speech_timeout_seconds=1,
     )
     (segment,) = parse_script(markdown)
@@ -126,7 +126,7 @@ def test_the_markdown_still_parses_to_the_text_that_was_voiced(take: dict[str, A
     (segment,) = parse_script(take["markdown"])
     assert rendered(take["markdown"]) == take["text"]
     if "section" in take:
-        assert segment.index == take["section"]
+        assert segment.number == take["section"]
         assert segment.title == take["title"]
 
 

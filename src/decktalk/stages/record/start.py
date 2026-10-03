@@ -29,9 +29,9 @@ MIN_FRAME_SECONDS = 1 / FASTEST_CAPTURE_FPS
 def is_cover(frame: frames.FrameStats, settings: RecordConfig) -> bool:
     """Whether one frame is the recorder's cover, which is mid luma with both chroma planes high."""
     return (
-        settings.cover_luma_min < frame.yavg < settings.cover_luma_max
-        and frame.uavg > settings.cover_chroma_min
-        and frame.vavg > settings.cover_chroma_min
+        settings.cover_min_luma < frame.yavg < settings.cover_max_luma
+        and frame.uavg > settings.cover_min_chroma
+        and frame.vavg > settings.cover_min_chroma
     )
 
 
@@ -59,7 +59,7 @@ def find_start(webm: Path, settle: float, settings: RecordConfig) -> Start:
     painted = [
         row.pts
         for row in rows
-        if row.ymax > settings.painted_peak_luma_min and row.yavg < settings.painted_mean_luma_max
+        if row.ymax > settings.painted_peak_min_luma and row.yavg < settings.painted_mean_max_luma
     ]
     if painted:
         return Start(

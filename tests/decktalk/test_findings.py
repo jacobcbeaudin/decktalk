@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
+import decktalk
 from decktalk.findings import (
+    DOCTOR,
     Applicability,
     Code,
     CommandFix,
@@ -21,7 +26,7 @@ from decktalk.pipeline import Stage
 
 # The list the design froze before the fork, so this file and contract.ts carry the same members.
 RUNTIME_CODES = (
-    "PAGE_UNKNOWN_ATTR",
+    "PAGE_ATTR_UNKNOWN",
     "PAGE_BAD_VALUE",
     "PAGE_MOMENT_UNKNOWN",
     "PAGE_MOMENT_ORDER",
@@ -62,7 +67,7 @@ PYTHON_CONTRACT_CODES = (
     "RECORD_TRUNCATED",
 )
 PYTHON_OTHER_CODES = (
-    "CUE_MISSING",
+    "CUE_UNLISTED",
     "CUE_UNKNOWN",
     "CUE_UNRESOLVED",
     "CUE_STALE",
@@ -149,7 +154,7 @@ def test_a_finding_that_disagrees_with_its_code_is_refused() -> None:
 
 def test_a_finding_round_trips_through_its_own_model() -> None:
     finding = Finding(
-        code=Code.CUE_MISSING,
+        code=Code.CUE_UNLISTED,
         message="The moment expand is not listed, so nothing gives it a second.",
         location=Location(where="4.1:expand", file="cues.json", line=14, section=4, cue="4.1:expand"),
         stage=Stage.CUE,
@@ -222,6 +227,47 @@ def test_a_judgement_carries_the_fix_it_was_given() -> None:
         applicability=Applicability.SAFE,
         edits=(Edit(file="cues.json", line=2, new='{"id": "3.1:a", "phrase": ""}'),),
     )
-    found = judge(Code.CUE_MISSING, "the page declares 3.1:a and cues.json lists 0 rows for it.",
+    found = judge(Code.CUE_UNLISTED, "the page declares 3.1:a and cues.json lists 0 rows for it.",
                   Location(where="3.1:a"), fix=fix)  # fmt: skip
     assert found.fix is fix
+
+
+def _source(module: str) -> Path | None:
+    """The file a `decktalk` module is read from, or None when the dotted name is not a module."""
+    base = Path(decktalk.__file__).parent.parent / module.replace(".", "/")
+    return next((path for path in (base.with_suffix(".py"), base / "__init__.py") if path.is_file()), None)
+
+
+def _reachable(module: str) -> str:
+    """The source of a command's module and of every stage or page-scan module it imports, joined."""
+    seen, todo, text = {module}, [module], []
+    while todo:
+        path = _source(todo.pop())
+        assert path is not None
+        source = path.read_text(encoding="utf-8")
+        text.append(source)
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("decktalk."):
+                for named in (node.module, *(f"{node.module}.{alias.name}" for alias in node.names)):
+                    inside = named.startswith("decktalk.stages") or named == "decktalk.pagescan"
+                    if inside and named not in seen and _source(named) is not None:
+                        seen.add(named)
+                        todo.append(named)
+    return "\n".join(text)
+
+
+@pytest.mark.parametrize("code", [code for code in Code if code.raised_by is RaisedBy.PYTHON], ids=str)
+def test_every_command_a_code_names_can_reach_the_line_that_raises_it(code: Code) -> None:
+    """A code's page says which commands report it, so each one named must reach a line that judges it."""
+    modules = {DOCTOR: "decktalk.machine"}
+    assert code.raised_in
+    for command in code.raised_in:
+        reached = _reachable(modules.get(command, f"decktalk.stages.{command}"))
+        assert f"Code.{code.name}" in reached, f"{command} cannot raise {code.name}"
+
+
+def test_every_command_a_code_names_is_one_the_tree_has() -> None:
+    from decktalk.cli import catalog  # noqa: PLC0415
+
+    commands = {str(row["command"]) for row in catalog.walk()}
+    assert {command for code in Code for command in code.raised_in} <= commands

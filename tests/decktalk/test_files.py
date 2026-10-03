@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts.stored import engine_digest
+from decktalk.artifacts.stored import DIGEST_DIGITS, engine_digest
 from decktalk.artifacts.takes import Take, TakeInputs, Takes
 from decktalk.files import json_text, replace_all
 from decktalk.inputs import Inputs
@@ -29,7 +29,7 @@ from decktalk.settings import Settings
 from decktalk.stages import kept
 from decktalk.stages.assemble import cut
 from decktalk.stages.score import Planned
-from decktalk.stages.score.ledger import DIGEST_DIGITS, request_digest
+from decktalk.stages.score.ledger import request_digest
 from support.links import link
 
 

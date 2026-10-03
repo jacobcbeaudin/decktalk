@@ -182,6 +182,12 @@ def parse_cue(raw: dict[str, object], where: str, location: Location | None = No
     cue = fill(Table(raw, where), Cue, occurrence_set="occurrence" in raw)
     if not cue.id:
         raise InputError(f"{where}: 'id' must not be empty", location=location)
+    if cue.occurrence < 1:
+        raise InputError(
+            f"{where}: 'occurrence' is {cue.occurrence}, and occurrences count from 1.",
+            hint="Set it to 1 for the first time the phrase is spoken, or leave it out.",
+            location=location,
+        )
     return cue
 
 

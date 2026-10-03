@@ -44,7 +44,7 @@
           ],
           "x-environment": "DECKTALK_VIDEO_HEIGHT"
         },
-        "output_fps": {
+        "fps": {
           "description": "Frame rate of the final mp4. The recorder's own rate is measured and is not a setting.",
           "type": "integer",
           "default": 25,
@@ -60,11 +60,11 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-hazard": "Encoding below the rate the recorder captured at drops presented frames, which both loses motion a viewer saw and corrupts the frames verify measures its own verdicts from.",
-          "x-requires": "video.output_fps >= CAPTURE_FPS",
+          "x-requires": "video.fps >= CAPTURE_FPS",
           "x-see-also": [
             "CAPTURE_FPS"
           ],
-          "x-environment": "DECKTALK_VIDEO_OUTPUT_FPS"
+          "x-environment": "DECKTALK_VIDEO_FPS"
         },
         "preset": {
           "description": "x264 preset. Use veryfast for drafts.",
@@ -269,7 +269,7 @@
           ],
           "x-environment": "DECKTALK_NARRATION_STORE_DIR"
         },
-        "context_chars": {
+        "context_characters": {
           "description": "Characters of each neighbour section sent with a request, for continuous prosody.",
           "type": "integer",
           "default": 1500,
@@ -280,10 +280,10 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_NARRATION_CONTEXT_CHARS"
+          "x-environment": "DECKTALK_NARRATION_CONTEXT_CHARACTERS"
         },
         "timeout_seconds": {
-          "description": "Seconds before a speech request times out.",
+          "description": "Seconds before a speech request times out. It is also the longest a run waits while another project on this machine buys the same take, before it is refused as locked.",
           "type": "integer",
           "default": 180,
           "minimum": 10,
@@ -356,7 +356,7 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_RECORD_SETTLE_SECONDS"
         },
-        "min_cover_seconds": {
+        "cover_min_seconds": {
           "description": "Shortest time from the start of the recorder to narration t=0.",
           "type": "number",
           "default": 1.5,
@@ -367,18 +367,7 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_MIN_COVER_SECONDS"
-        },
-        "browser_path": {
-          "description": "Chromium executable that `record` drives. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another.",
-          "type": "string",
-          "default": "",
-          "x-range": "takes any value of its type",
-          "x-unit": "path",
-          "x-scope": "machine",
-          "x-nature": "apparatus",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_BROWSER_PATH"
+          "x-environment": "DECKTALK_RECORD_COVER_MIN_SECONDS"
         },
         "color_scheme": {
           "description": "Color scheme that Chromium reports to the page.",
@@ -464,7 +453,7 @@
           "x-source": "chosen",
           "x-environment": "DECKTALK_RECORD_FALLBACK_FIRST_PAINT_SECONDS"
         },
-        "cover_luma_min": {
+        "cover_min_luma": {
           "description": "A cover frame has an average luma above this.",
           "type": "number",
           "default": 70.0,
@@ -476,9 +465,9 @@
           "x-scope": "project",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_COVER_LUMA_MIN"
+          "x-environment": "DECKTALK_RECORD_COVER_MIN_LUMA"
         },
-        "cover_luma_max": {
+        "cover_max_luma": {
           "description": "A cover frame has an average luma below this.",
           "type": "number",
           "default": 140.0,
@@ -490,9 +479,9 @@
           "x-scope": "project",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_COVER_LUMA_MAX"
+          "x-environment": "DECKTALK_RECORD_COVER_MAX_LUMA"
         },
-        "cover_chroma_min": {
+        "cover_min_chroma": {
           "description": "A cover frame has an average U and an average V above this.",
           "type": "number",
           "default": 165.0,
@@ -500,13 +489,13 @@
           "maximum": 255,
           "x-range": "must be between 128 and 255",
           "x-typed-range": "must be between 0 and 255",
-          "x-unit": "luma",
+          "x-unit": "chroma",
           "x-scope": "project",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_COVER_CHROMA_MIN"
+          "x-environment": "DECKTALK_RECORD_COVER_MIN_CHROMA"
         },
-        "painted_peak_luma_min": {
+        "painted_peak_min_luma": {
           "description": "A painted frame has a brightest luma above this.",
           "type": "number",
           "default": 60.0,
@@ -518,9 +507,9 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_PAINTED_PEAK_LUMA_MIN"
+          "x-environment": "DECKTALK_RECORD_PAINTED_PEAK_MIN_LUMA"
         },
-        "painted_mean_luma_max": {
+        "painted_mean_max_luma": {
           "description": "A painted frame has an average luma below this, so a white flash does not count as the picture.",
           "type": "number",
           "default": 120.0,
@@ -532,7 +521,7 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_RECORD_PAINTED_MEAN_LUMA_MAX"
+          "x-environment": "DECKTALK_RECORD_PAINTED_MEAN_MAX_LUMA"
         },
         "truncated_slack_seconds": {
           "description": "Allowed shortfall of a recording against its requested length.",
@@ -957,7 +946,7 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-see-also": [
-            "record.painted_peak_luma_min"
+            "record.painted_peak_min_luma"
           ],
           "x-decides": [
             "RECORD_BLACK"
@@ -1353,7 +1342,7 @@
           ],
           "x-environment": "DECKTALK_SCORE_PROVIDER"
         },
-        "format": {
+        "output_format": {
           "description": "Audio format the music, the ambience and the effects are asked for in. A take's format is its voice's own, such as `[elevenlabs] output_format`.",
           "type": "string",
           "default": "mp3_44100_128",
@@ -1364,7 +1353,7 @@
           "x-see-also": [
             "elevenlabs.output_format"
           ],
-          "x-environment": "DECKTALK_SCORE_FORMAT"
+          "x-environment": "DECKTALK_SCORE_OUTPUT_FORMAT"
         },
         "timeout_seconds": {
           "description": "Seconds before a sound or music request times out.",
@@ -1547,7 +1536,7 @@
               "x-source": "chosen",
               "x-environment": "DECKTALK_SCORE_MUSIC_BITRATE"
             },
-            "max_chunk_seconds": {
+            "chunk_max_seconds": {
               "description": "Longest music request. Longer music is requested in chunks and crossfaded.",
               "type": "integer",
               "default": 300,
@@ -1558,7 +1547,7 @@
               "x-scope": "project",
               "x-nature": "apparatus",
               "x-source": "chosen",
-              "x-environment": "DECKTALK_SCORE_MUSIC_MAX_CHUNK_SECONDS"
+              "x-environment": "DECKTALK_SCORE_MUSIC_CHUNK_MAX_SECONDS"
             },
             "crossfade_seconds": {
               "description": "Crossfade between two music chunks.",
@@ -1599,7 +1588,7 @@
     },
     "output": {
       "type": "object",
-      "description": "These keys switch the files a build writes beside the final mp4 and how long they are kept.",
+      "description": "These keys switch the files a build writes beside the final mp4.",
       "x-kind": "tuning",
       "properties": {
         "timestamped_copy": {
@@ -1611,8 +1600,16 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_OUTPUT_TIMESTAMPED_COPY"
-        },
-        "events_keep_runs": {
+        }
+      },
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "object",
+      "description": "These keys bound the events files a run writes under `build/events/`.",
+      "x-kind": "tuning",
+      "properties": {
+        "keep_runs": {
           "description": "How many runs of event files `build/events/` keeps before the oldest is deleted.",
           "type": "integer",
           "default": 20,
@@ -1623,9 +1620,9 @@
           "x-scope": "project",
           "x-nature": "taste",
           "x-source": "chosen",
-          "x-environment": "DECKTALK_OUTPUT_EVENTS_KEEP_RUNS"
+          "x-environment": "DECKTALK_EVENTS_KEEP_RUNS"
         },
-        "events_max_bytes": {
+        "max_bytes": {
           "description": "Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its costs are always kept.",
           "type": "integer",
           "default": 8388608,
@@ -1638,9 +1635,9 @@
           "x-source": "chosen",
           "x-hazard": "A file with no bound grows with every tool call a long film makes, on a disk a host shares.",
           "x-see-also": [
-            "output.events_keep_runs"
+            "events.keep_runs"
           ],
-          "x-environment": "DECKTALK_OUTPUT_EVENTS_MAX_BYTES"
+          "x-environment": "DECKTALK_EVENTS_MAX_BYTES"
         }
       },
       "additionalProperties": false
@@ -1650,6 +1647,17 @@
       "description": "These keys name the tools DeckTalk drives, for a machine that supplies its own.",
       "x-kind": "tuning",
       "properties": {
+        "chromium": {
+          "description": "Chromium executable that `record`, `check` and `storyboard` drive. It is empty for the build DeckTalk fetches itself, and a path here is what a managed machine sets: a named executable that will not launch is never a reason to download another.",
+          "type": "string",
+          "default": "",
+          "x-range": "takes any value of its type",
+          "x-unit": "path",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_TOOLS_CHROMIUM"
+        },
         "ffmpeg": {
           "description": "ffmpeg executable. It is empty for the build DeckTalk fetches itself.",
           "type": "string",
@@ -1732,28 +1740,30 @@
     {
       "id": "verify.probe_width",
       "kind": "derived",
-      "formula": "video.width // 4",
+      "formula": "video.width // PROBE_SCALE",
       "reads": [
-        "video.width"
+        "video.width",
+        "PROBE_SCALE"
       ],
       "value": 480,
       "unit": "pixels",
       "nature": "derived",
       "decides": [],
-      "description": "Derived: a quarter-size frame is what every share is measured over, at every frame size."
+      "description": "Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size."
     },
     {
       "id": "verify.probe_height",
       "kind": "derived",
-      "formula": "video.height // 4",
+      "formula": "video.height // PROBE_SCALE",
       "reads": [
-        "video.height"
+        "video.height",
+        "PROBE_SCALE"
       ],
       "value": 270,
       "unit": "pixels",
       "nature": "derived",
       "decides": [],
-      "description": "Derived: a quarter-size frame is what every share is measured over, at every frame size."
+      "description": "Derived: every share is measured over the frame scaled down by PROBE_SCALE, at every frame size."
     },
     {
       "id": "verify.block_width",
@@ -1781,7 +1791,7 @@
       "unit": "pixels",
       "nature": "derived",
       "decides": [],
-      "description": "Derived: one pixel per H.264 transform block, as the block width is."
+      "description": "Derived: one pixel per H.264 transform block, so the block average cancels the encoder's ringing at every frame size rather than only at 1080p."
     },
     {
       "id": "verify.reference_lead_seconds",
@@ -1812,6 +1822,17 @@
       "nature": "truth",
       "decides": [],
       "description": "Truth: the rate the recorder captures at, which DeckTalk cannot set and so never asks for."
+    },
+    {
+      "id": "PROBE_SCALE",
+      "kind": "constant",
+      "formula": "4",
+      "reads": [],
+      "value": 4,
+      "unit": "times",
+      "nature": "calibration",
+      "decides": [],
+      "description": "Calibration: a frame a quarter the film's size keeps every share a cue can move while comparing a sixteenth of the pixels."
     },
     {
       "id": "BLOCK_PX",

@@ -211,10 +211,10 @@ the times the voice really took.
 
 `decktalk check` judges `script.md`, `cues.json` and the pages together, prices the narration a
 voiced build would buy and writes `build/storyboard.html`. It reports a moment on the page that no
-row names as [`CUE_MISSING`](/reference/findings/CUE_MISSING), a row the page does not declare as
+row names as [`CUE_UNLISTED`](/reference/findings/CUE_UNLISTED), a row the page does not declare as
 [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN), and two cues close enough together to read as one
 as [`CUE_OVERLAP`](/reference/findings/CUE_OVERLAP). `decktalk check --fix` applies every safe fix,
-and the fix for `CUE_MISSING` adds the row with an empty `phrase` for you to write the phrase into.
+and the fix for `CUE_UNLISTED` adds the row with an empty `phrase` for you to write the phrase into.
 
 ## Next
 

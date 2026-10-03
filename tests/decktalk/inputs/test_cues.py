@@ -54,6 +54,14 @@ def test_a_row_a_fix_scaffolded_loads_with_its_phrase_still_to_be_written(tmp_pa
     assert section.cues[0].phrase == ""
 
 
+@pytest.mark.parametrize("occurrence", [0, -1])
+def test_an_occurrence_below_the_first_is_refused_where_it_is_written(tmp_path: Path, occurrence: int) -> None:
+    """Occurrences count from one, so a row asking for the zeroth names no word and is the author's typo."""
+    path = write_cues(tmp_path, [{"id": "1.1:open", "phrase": "the words", "occurrence": occurrence}])
+    with pytest.raises(InputError, match=rf"'occurrence' is {occurrence}, and occurrences count from 1"):
+        load_cues(path, tmp_path, {1})
+
+
 def test_a_row_with_no_id_is_still_refused(tmp_path: Path) -> None:
     path = write_cues(tmp_path, [{"id": "", "phrase": "the words"}])
     with pytest.raises(InputError, match="'id' must not be empty"):
@@ -113,6 +121,12 @@ def test_a_phrase_of_punctuation_alone_matches_nothing(phrase: str) -> None:
 def test_the_nth_occurrence_is_found_and_one_past_the_last_is_none() -> None:
     assert SAID.find("hello", occurrence=2) == 2
     assert SAID.find("hello", occurrence=3) is None
+
+
+@pytest.mark.parametrize("occurrence", [0, -1])
+def test_an_occurrence_below_the_first_finds_nothing_rather_than_counting_from_the_end(occurrence: int) -> None:
+    """Occurrences count from one, so zero names no occurrence rather than the last one."""
+    assert SAID.find("hello", occurrence=occurrence) is None
 
 
 def test_the_words_are_normalised_once_when_they_are_read(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -229,8 +243,8 @@ def test_a_hyphenated_word_counts_once_where_its_whole_and_its_parts_both_match(
 
 @pytest.mark.parametrize(("phrase", "index"), [("R & D", 1), ("state of the art", 6), ("tools / fast", 7)])
 def test_the_placeholder_words_of_a_run_without_voice_resolve_the_same_phrases(phrase: str, index: int) -> None:
-    (segment,) = parse_script(f"## 1. Open\n\n{SCRIPT}\n")
-    assert Spoken.of(estimated_words(segment, 8.0)).find(phrase) == index
+    (section,) = parse_script(f"## 1. Open\n\n{SCRIPT}\n")
+    assert Spoken.of(estimated_words(section, 8.0)).find(phrase) == index
 
 
 SYMBOL = st.sampled_from(["&", "/", "+", "-", "—", "..."])

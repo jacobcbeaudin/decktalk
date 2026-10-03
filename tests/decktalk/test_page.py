@@ -53,7 +53,7 @@ def test_every_attribute_carries_a_code_or_is_named_in_the_closed_exemption_list
 def test_the_exemption_list_is_five_rows_and_each_says_why():
     """A closed list a test can count beats an open field claiming what a row affects."""
     assert len(EXEMPT) == 5
-    assert set(EXEMPT) == {Attr.DESCRIBE, Attr.DESCRIBE_CLASS, Attr.DESCRIBE_OUT, Attr.HOLD, Attr.NAME}
+    assert set(EXEMPT) == {Attr.DESCRIBE, Attr.DESCRIBE_CLASS, Attr.DESCRIBE_OUT, Attr.PREVIEW_SECONDS, Attr.NAME}
     for name, why in EXEMPT.items():
         assert why.endswith("."), f"{name} is exempt without a whole sentence saying why"
         assert ATTRS[name].span == 0
@@ -64,7 +64,7 @@ def test_no_span_an_author_can_declare_reaches_the_ceiling():
     for name, row in ATTRS.items():
         if row.span is not None:
             assert page.measurable(row.span), f"{name} declares a span at or above the ceiling"
-        if row.range is not None and name is not Attr.HOLD:
+        if row.range is not None and name is not Attr.PREVIEW_SECONDS:
             assert page.measurable(row.range.max), f"{name} publishes a range whose top is unmeasurable"
     for effect in page.ENTRANCES.values():
         assert page.measurable(effect.seconds)

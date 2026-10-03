@@ -24,9 +24,9 @@ from __future__ import annotations
 
 import logging
 import time
-import weakref
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from playwright.sync_api import Browser, Playwright
@@ -114,25 +114,29 @@ def launch_options(policy: PagePolicy) -> dict[str, Any]:
     return options
 
 
-_POLICIES: weakref.WeakKeyDictionary[Browser, PagePolicy] = weakref.WeakKeyDictionary()
-"""The policy each open browser was launched under, which every page it opens is routed by."""
+@dataclass(frozen=True)
+class Chromium:
+    """A launched browser and the policy it was launched under, which routes every page it opens."""
 
+    browser: Browser
+    policy: PagePolicy
 
-def trusts(browser: Browser) -> bool:
-    """Whether a browser was launched for a trusted page, which a browser this module never launched was not."""
-    return _POLICIES.get(browser) == TRUSTED
+    @property
+    def trusted(self) -> bool:
+        """Whether the pages this browser opens are the author's own, which reach the network as they would."""
+        return self.policy == TRUSTED
 
 
 @contextmanager
-def chromium(browser_path: str = "", *, policy: str, spend: bool) -> Iterator[Browser]:
-    """A launched headless Chromium, as the machine and the page policy configure it, closed on exit.
+def chromium(executable: str = "", *, policy: str, spend: bool) -> Iterator[Chromium]:
+    """A launched headless Chromium and its page policy, as the machine and the project configure it, closed on exit.
 
     Under the trusted policy no proxy argument is passed. Request routing answers the local origin
     before the network stack reaches it, so no proxy ever sees that host, and every other request a
     recorded page makes goes the way the machine sends it, through its own proxy and its own logging.
     Under the untrusted policy the browser is sealed as `launch_options` says.
 
-    `browser_path` is `[record] browser_path`, the executable a machine that manages its own
+    `executable` is `[tools] chromium`, the executable a machine that manages its own
     Chromium names. It is empty on a machine DeckTalk fetches the browser for, whose driver looks in
     the browser directory of the run's tool cache, which is where `launch` fetches it. `policy` is
     `[record] page_policy`, which every caller that opens a project's page passes on. It has no
@@ -141,15 +145,14 @@ def chromium(browser_path: str = "", *, policy: str, spend: bool) -> Iterator[Br
     which the caller passes from its run for the same reason: a default would be a fail-open guess.
     """
     with chromium_fetch.driver(chromium_fetch.browsers_dir()) as pw:
-        browser = launch(pw, browser_path, policy=policy, spend=spend)
-        _POLICIES[browser] = page_policy(policy)
+        browser = launch(pw, executable, policy=policy, spend=spend)
         try:
-            yield browser
+            yield Chromium(browser, page_policy(policy))
         finally:
             browser.close()
 
 
-def launch(pw: Playwright, browser_path: str = "", *, policy: str, spend: bool) -> Browser:
+def launch(pw: Playwright, executable: str = "", *, policy: str, spend: bool) -> Browser:
     """A launched Chromium, fetching the build Playwright manages when this machine has not got it.
 
     This is the one place a browser starts, so every command gets the browser it needs without
@@ -172,13 +175,13 @@ def launch(pw: Playwright, browser_path: str = "", *, policy: str, spend: bool) 
     options = launch_options(sealed)
     started = time.monotonic()
     try:
-        return _launched(pw.chromium.launch(executable_path=browser_path or None, **options), sealed, started)
+        return _launched(pw.chromium.launch(executable_path=executable or None, **options), sealed, started)
     except PlaywrightError as exc:
         said = str(exc).splitlines()[0]
-        if browser_path:
+        if executable:
             raise ToolError(
-                f"could not launch the Chromium at {browser_path} ({said}).",
-                hint="[record] browser_path names it. Clear that setting to use the build DeckTalk fetches.",
+                f"could not launch the Chromium at {executable} ({said}).",
+                hint="[tools] chromium names it. Clear that setting to use the build DeckTalk fetches.",
             ) from exc
         if sealed == UNTRUSTED and chromium_fetch.installed_chromium(pw) is not None:
             raise ToolError(f"could not launch Chromium with its sandbox on ({said}).", hint=SANDBOX_HINT) from exc

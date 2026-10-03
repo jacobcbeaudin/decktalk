@@ -12,6 +12,7 @@ from decktalk.stages.cue.resolve import (
     ambiguity,
     anchor_time,
     nearest_phrase,
+    occurrences,
     phrase_fix,
     resolve_cue,
     resolve_sections,
@@ -31,33 +32,38 @@ SPOKEN = Spoken.of(WORDS)
 """The same words with their matched forms worked out once, which is what one cue is resolved against."""
 
 
+def heard(cue: Cue, spoken: Spoken) -> tuple[Cue, Spoken, list[int]]:
+    """A cue, its section's words and the one scan of them for its phrase, which every reading takes."""
+    return cue, spoken, occurrences(cue, spoken)
+
+
 def test_a_phrase_resolves_to_the_start_of_the_word_it_names() -> None:
-    assert anchor_time(Cue(id="1.1:a", phrase="in ten"), SPOKEN) == 1.3
-    assert resolve_cue(Cue(id="1.1:a", phrase="in ten", offset_seconds=0.1), SPOKEN) == 1.4
+    assert anchor_time(*heard(Cue(id="1.1:a", phrase="in ten"), SPOKEN)) == 1.3
+    assert resolve_cue(*heard(Cue(id="1.1:a", phrase="in ten", offset_seconds=0.1), SPOKEN)) == 1.4
 
 
 def test_an_occurrence_chooses_between_two_of_the_same_phrase() -> None:
-    assert resolve_cue(Cue(id="1.1:a", phrase="one", occurrence=2), SPOKEN) == 2.1
+    assert resolve_cue(*heard(Cue(id="1.1:a", phrase="one", occurrence=2), SPOKEN)) == 2.1
 
 
 def test_the_two_edges_are_the_section_start_and_the_last_word() -> None:
-    assert resolve_cue(Cue(id="1.1:a", phrase="$start"), SPOKEN) == 0.0
-    assert resolve_cue(Cue(id="1.1:a", phrase="$end"), SPOKEN) == 2.3
+    assert resolve_cue(*heard(Cue(id="1.1:a", phrase="$start"), SPOKEN)) == 0.0
+    assert resolve_cue(*heard(Cue(id="1.1:a", phrase="$end"), SPOKEN)) == 2.3
 
 
 def test_a_phrase_that_is_not_spoken_resolves_to_nothing() -> None:
-    assert resolve_cue(Cue(id="1.1:a", phrase="missing phrase"), SPOKEN) is None
+    assert resolve_cue(*heard(Cue(id="1.1:a", phrase="missing phrase"), SPOKEN)) is None
 
 
 def test_a_nudge_never_pulls_a_cue_in_front_of_its_own_section() -> None:
     """A second before the section starts has nowhere to play, so it lands on the section's start."""
-    assert resolve_cue(Cue(id="1.1:a", phrase="Hello", offset_seconds=-9.0), SPOKEN) == 0.0
+    assert resolve_cue(*heard(Cue(id="1.1:a", phrase="Hello", offset_seconds=-9.0), SPOKEN)) == 0.0
 
 
 def test_a_cue_on_the_section_start_is_a_warning_with_its_second_in_it() -> None:
     """The null-offset case: the second is the section's own start and not a word's."""
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="$start"),))
-    sections, found = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set(), stage=Stage.CUE)
+    sections, found, _notes = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set(), stage=Stage.CUE)
     assert sections[0].cues[0].seconds == 0.0
     (judged,) = found
     assert judged.code is Code.CUE_NO_ONSET
@@ -68,7 +74,7 @@ def test_a_cue_on_the_section_start_is_a_warning_with_its_second_in_it() -> None
 
 def test_an_unresolved_phrase_is_an_error_and_names_the_phrase_and_the_count() -> None:
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="nowhere"),))
-    sections, found = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set())
+    sections, found, _notes = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set())
     assert sections[0].cues[0].seconds is None
     (judged,) = found
     assert judged.code is Code.CUE_UNRESOLVED
@@ -79,7 +85,7 @@ def test_an_unresolved_phrase_is_an_error_and_names_the_phrase_and_the_count() -
 def test_a_page_section_with_no_take_reports_its_cues_rather_than_dropping_them() -> None:
     """A cue nobody resolved must be counted, because the recorder would otherwise play that section blind."""
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="Hello"),))
-    sections, found = resolve_sections([block], {}, clips=set(), estimated=set())
+    sections, found, _notes = resolve_sections([block], {}, clips=set(), estimated=set())
     assert sections[0].cues[0].seconds is None
     assert [one.code for one in found] == [Code.CUE_UNRESOLVED]
     assert "has no take" in found[0].message
@@ -88,14 +94,14 @@ def test_a_page_section_with_no_take_reports_its_cues_rather_than_dropping_them(
 def test_a_clip_section_with_no_take_is_the_plain_skip_it_should_be() -> None:
     """The voice never reads a clip section, so its cue was never going to resolve against words."""
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="$start"),))
-    sections, found = resolve_sections([block], {}, clips={1}, estimated=set())
+    sections, found, _notes = resolve_sections([block], {}, clips={1}, estimated=set())
     assert found == []
     assert sections[0].cues[0].seconds is None
 
 
 def test_a_row_carries_its_phrase_and_its_nudge_so_the_word_behind_it_is_arithmetic() -> None:
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="ten", offset_seconds=0.25),))
-    sections, _found = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set())
+    sections, _found, _notes = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set())
     (row,) = sections[0].cues
     assert (row.id, row.phrase, row.seconds, row.nudge_seconds) == ("1.1:a", "ten", 1.75, 0.25)
     assert row.seconds is not None
@@ -104,22 +110,41 @@ def test_a_row_carries_its_phrase_and_its_nudge_so_the_word_behind_it_is_arithme
 
 def test_a_section_is_estimated_only_when_its_own_words_were_estimated() -> None:
     blocks = [CuedSection(number=1, cues=()), CuedSection(number=2, cues=())]
-    sections, _found = resolve_sections(blocks, {}, clips=set(), estimated={2})
+    sections, _found, _notes = resolve_sections(blocks, {}, clips=set(), estimated={2})
     assert [(one.section, one.key, one.estimated) for one in sections] == [(1, "01", False), (2, "02", True)]
 
 
 def test_a_finding_carries_the_cue_file_it_is_about_when_the_caller_names_one() -> None:
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="nowhere"),))
-    _sections, found = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set(), cues_file=Path("cues.json"))
+    _sections, found, _notes = resolve_sections(
+        [block], {1: WORDS}, clips=set(), estimated=set(), cues_file=Path("cues.json")
+    )
     assert found[0].location.file == Path("cues.json")
 
 
 def test_a_repeated_phrase_is_ambiguous_only_when_the_cue_names_no_occurrence() -> None:
-    said = ambiguity(Cue(id="1.1:a", phrase="one"), SPOKEN)
+    said = ambiguity(*heard(Cue(id="1.1:a", phrase="one"), SPOKEN))
     assert said is not None and "occurs 2 times" in said and "1.00s, 2.10s" in said
-    assert ambiguity(Cue(id="1.1:a", phrase="one", occurrence=1, occurrence_set=True), SPOKEN) is None
-    assert ambiguity(Cue(id="1.1:a", phrase="ten"), SPOKEN) is None
-    assert ambiguity(Cue(id="1.1:a", phrase="$start"), SPOKEN) is None
+    assert ambiguity(*heard(Cue(id="1.1:a", phrase="one", occurrence=1, occurrence_set=True), SPOKEN)) is None
+    assert ambiguity(*heard(Cue(id="1.1:a", phrase="ten"), SPOKEN)) is None
+    assert ambiguity(*heard(Cue(id="1.1:a", phrase="$start"), SPOKEN)) is None
+
+
+def test_resolving_a_section_says_which_occurrence_a_cue_took_and_matches_each_cue_once(monkeypatch) -> None:
+    """The anchor and the ambiguity are read off one scan, so a long section is not matched twice per cue."""
+    scans: list[str] = []
+    matches = Spoken.matches
+
+    def counted(self: Spoken, phrase: str, case_sensitive: bool = False) -> list[int]:
+        scans.append(phrase)
+        return matches(self, phrase, case_sensitive)
+
+    monkeypatch.setattr(Spoken, "matches", counted)
+    block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="one"), Cue(id="1.1:b", phrase="ten")))
+    sections, found, notes = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set())
+    assert [row.seconds for row in sections[0].cues] == [1.0, 1.5] and found == []
+    assert list(notes) == [1] and len(notes[1]) == 1 and "'one' occurs 2 times" in notes[1][0]
+    assert scans == ["one", "ten"]
 
 
 def test_a_section_shorter_than_its_visuals_need_is_said_once_with_both_numbers() -> None:
@@ -130,11 +155,16 @@ def test_a_section_shorter_than_its_visuals_need_is_said_once_with_both_numbers(
     assert short_section(CuedSection(number=1, cues=()), WORDS) is None
 
 
+def test_a_section_that_speaks_exactly_as_long_as_its_visuals_need_is_not_short() -> None:
+    assert short_section(CuedSection(number=1, cues=(), min_seconds=WORDS[-1].end), WORDS) is None
+    assert short_section(CuedSection(number=1, cues=(), min_seconds=WORDS[-1].end + 0.1), WORDS) is not None
+
+
 def test_a_cue_whose_phrase_is_not_written_yet_says_so_rather_than_naming_an_empty_phrase() -> None:
     """A scaffolded row carries an empty `phrase`, and telling its author that no word of the section is
     `''` reads as a defect where the truth is that nobody has written the phrase yet."""
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase=""),))
-    sections, found = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set())
+    sections, found, _notes = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set())
     assert sections[0].cues[0].seconds is None
     (judged,) = found
     assert judged.code is Code.CUE_UNRESOLVED
@@ -155,16 +185,23 @@ def test_a_phrase_the_section_never_came_near_is_offered_nothing() -> None:
     assert nearest_phrase(Cue(id="1.1:a", phrase="quantum chromodynamics"), SPOKEN) is None
 
 
+def test_a_phrase_exactly_as_alike_as_the_floor_is_not_offered_and_one_more_alike_is() -> None:
+    """Three letters of five in common is a ratio of 0.6, which must be passed rather than reached."""
+    spoken = Spoken.of((Word(word="abcde", start=0.5, end=0.9),))
+    assert nearest_phrase(Cue(id="1.1:a", phrase="abcxy"), spoken) is None
+    assert nearest_phrase(Cue(id="1.1:a", phrase="abcdy"), spoken) == "abcde"
+
+
 def test_the_offered_phrase_keeps_the_case_it_was_spoken_in_so_a_case_sensitive_cue_resolves() -> None:
     cue = Cue(id="1.1:a", phrase="Helo", case_sensitive=True)
     offered = nearest_phrase(cue, SPOKEN)
     assert offered == "Hello"
-    assert resolve_cue(Cue(id="1.1:a", phrase=offered, case_sensitive=True), SPOKEN) == 0.5
+    assert resolve_cue(*heard(Cue(id="1.1:a", phrase=offered, case_sensitive=True), SPOKEN)) == 0.5
 
 
 def test_an_unresolved_cue_names_its_line_and_carries_the_edit_that_resolves_it() -> None:
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="in tin", line=2),))
-    _sections, (found,) = resolve_sections(
+    _sections, (found,), _notes = resolve_sections(
         [block], {1: WORDS}, clips=set(), estimated=set(), cues_file=Path("cues.json"), cues_text=CUES_TEXT
     )
     assert found.code is Code.CUE_UNRESOLVED
@@ -188,11 +225,19 @@ def test_a_phrase_written_with_accents_is_found_on_its_line_and_offered_its_edit
 def test_no_edit_is_offered_when_the_row_is_not_on_the_line_it_was_read_from() -> None:
     """A fix worked out against a file that has since moved would rewrite the wrong line."""
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="in tin", line=1),))
-    _sections, (found,) = resolve_sections(
+    _sections, (found,), _notes = resolve_sections(
         [block], {1: WORDS}, clips=set(), estimated=set(), cues_file=Path("cues.json"), cues_text=CUES_TEXT
     )
     assert found.fix is None
     assert "'in ten'" in found.message
+
+
+def test_an_edit_is_offered_for_a_row_on_the_last_line_and_never_for_a_line_outside_the_file() -> None:
+    """A line counted from one that names no line of the file must not wrap round to the last one."""
+    lines = ['{"sections": {"1": {"cues": [', '  {"id": "1.1:a", "phrase": "in tin"}']
+    for line, offered in ((len(lines), True), (0, False), (len(lines) + 1, False)):
+        fix = phrase_fix(Cue(id="1.1:a", phrase="in tin", line=line), "in ten", Path("cues.json"), lines)
+        assert (fix is not None) is offered, line
 
 
 # ---- a section that speaks a symbol as a word of its own ----------------------------------------
@@ -211,14 +256,14 @@ SYMBOLS = Spoken.of(
 
 
 def test_a_phrase_with_a_symbol_or_a_hyphenated_word_resolves_to_its_first_word() -> None:
-    assert anchor_time(Cue(id="1.1:a", phrase="R & D"), SYMBOLS) == 0.3
-    assert anchor_time(Cue(id="1.1:a", phrase="state of the art"), SYMBOLS) == 1.3
+    assert anchor_time(*heard(Cue(id="1.1:a", phrase="R & D"), SYMBOLS)) == 0.3
+    assert anchor_time(*heard(Cue(id="1.1:a", phrase="state of the art"), SYMBOLS)) == 1.3
 
 
 def test_the_phrase_offered_for_a_symbol_or_a_hyphenated_word_resolves_on_its_first_word() -> None:
     offered = nearest_phrase(Cue(id="1.1:a", phrase="R & D team"), SYMBOLS)
     assert offered is not None
-    assert anchor_time(Cue(id="1.1:a", phrase=offered), SYMBOLS) == 0.3
+    assert anchor_time(*heard(Cue(id="1.1:a", phrase=offered), SYMBOLS)) == 0.3
     offered = nearest_phrase(Cue(id="1.1:a", phrase="teams state of the arts"), SYMBOLS)
     assert offered is not None
-    assert anchor_time(Cue(id="1.1:a", phrase=offered), SYMBOLS) == 0.9
+    assert anchor_time(*heard(Cue(id="1.1:a", phrase=offered), SYMBOLS)) == 0.9

@@ -19,7 +19,7 @@ from collections.abc import Iterable, Iterator
 from itertools import pairwise
 
 from decktalk.errors import InputError
-from decktalk.inputs.script import SECTION_RE, Segment
+from decktalk.inputs.script import SECTION_RE, ScriptSection
 from decktalk.results import counted
 
 INLINE_DIRECTION_RE = re.compile(r"^(?:beat|pause\s+\d+(?:\.\d+)?)$", re.IGNORECASE)
@@ -98,13 +98,13 @@ def check_script(where: str, markdown: str) -> None:
     )
 
 
-def symbol_tokens(segment: Segment) -> tuple[str, ...]:
+def symbol_tokens(section: ScriptSection) -> tuple[str, ...]:
     """Every word of one section that holds a digit or a symbol a voice may read as its name.
 
     The scan lives here beside the refusals because both read the same spoken text, and `check`
     raises the finding from it, so the rule has one home and the judgement has one raiser.
     """
-    return tuple(sorted({token for token in segment.spoken.split() if SYMBOL_RE.search(token)}))
+    return tuple(sorted({token for token in section.spoken.split() if SYMBOL_RE.search(token)}))
 
 
 def shown(tokens: Iterable[str]) -> str:
@@ -113,13 +113,13 @@ def shown(tokens: Iterable[str]) -> str:
     return ", ".join(listed[:SHOWN_TOKENS])
 
 
-def ascending(segments: Iterable[Segment]) -> tuple[Segment, Segment] | None:
+def ascending(sections: Iterable[ScriptSection]) -> tuple[ScriptSection, ScriptSection] | None:
     """The first pair of headings whose numbers do not ascend, or None when the whole script does.
 
     The take index is the one order the narration is joined in, so a script that counts backwards
     would place its takes in an order no other reading of the project agrees with.
     """
-    return next(((first, second) for first, second in pairwise(segments) if second.index <= first.index), None)
+    return next(((first, second) for first, second in pairwise(sections) if second.number <= first.number), None)
 
 
 __all__ = [

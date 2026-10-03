@@ -9,13 +9,12 @@ and it says so when a save leaves a voiced take behind. The explicit spend is a 
 is a separate act.
 
 Files are watched by their modification times rather than by an operating-system channel, because a
-poll a tenth of a second long is indistinguishable to an author and costs no dependency that three
+poll under half a second long is indistinguishable to an author and costs no dependency that three
 platforms would each have to be proved on.
 """
 
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -24,13 +23,10 @@ from decktalk.cli import session as sessions
 from decktalk.errors import Cancelled, DeckTalkError, ErrorInfo
 from decktalk.pipeline import Stage
 from decktalk.project import Project
-from decktalk.results import Billing, BuildResult, Cost, CostState, Layer
+from decktalk.results import BillingBasis, BuildResult, Cost, CostState, Layer
 
 POLL_SECONDS = 0.4
 """How long the loop sleeps between two readings of the tree, which is under an author's own pause."""
-
-IGNORED = frozenset({"build", ".git", ".venv", "node_modules", "__pycache__"})
-"""The directories a save never means, which are what a run writes rather than what an author edits."""
 
 
 def loop(
@@ -93,8 +89,8 @@ def _once(
                 only=only,
                 spend=False,
                 force=force,
-                allow=session.allowed,
-                stop_on=session.fail_on.stops_on,
+                allow=session.threshold.allow,
+                stop_on=session.threshold.stop_on,
                 cancel=session.cancel,
             )
     except Cancelled:
@@ -123,7 +119,7 @@ def _nothing(refusal: ErrorInfo) -> BuildResult:
             characters=0,
             dollars=0.0,
             ceiling_dollars=0.0,
-            billing=Billing.UNDECLARED,
+            billing=BillingBasis.UNDECLARED,
             dollars_per_1000_characters=0.0,
             price_layer=Layer.DEFAULT,
         ),
@@ -145,7 +141,7 @@ def _touched(project: Project, changed: Iterable[Path]) -> tuple[int, ...] | Non
 def _stale(session: sessions.Session, project: Project) -> None:
     """Say which sections now hold a voiced take that no longer matches what the author wrote."""
     reported = project.status()
-    gone = [row.section for row in reported.sections if row.voiced and row.stale]
+    gone = [row.section for row in reported.sections if row.voiced_stale]
     for section in gone:
         session.say(
             f"Section {section} has a voiced take that no longer matches the script. "
@@ -154,26 +150,14 @@ def _stale(session: sessions.Session, project: Project) -> None:
 
 
 def _stamps(project: Project) -> dict[Path, float]:
-    """Every file an author edits under the project, with when it was last written.
-
-    The walk prunes a directory before it descends, so it never stats what `node_modules` or `.git`
-    holds. The project's own build and take folders are pruned wherever its settings put them,
-    because a build that wrote into a watched folder would start the next build without end.
-    """
-    written = {
-        project._inputs.workspace.build.resolve(),
-        *(place.resolve() for place in project._inputs.workspace.take_places),
-    }
+    """Every file an author edits under the project, with when it was last written."""
     found: dict[Path, float] = {}
-    for folder, dirs, files in os.walk(project.root):
-        here = Path(folder)
-        dirs[:] = [name for name in dirs if name not in IGNORED and (here / name).resolve() not in written]
-        for name in files:
-            try:
-                found[here / name] = (here / name).stat().st_mtime
-            except OSError:
-                # silent: a file removed between the listing and its stat is not there to watch.
-                continue
+    for path in project.authored_files():
+        try:
+            found[path] = path.stat().st_mtime
+        except OSError:
+            # silent: a file removed between the listing and its stat is not there to watch.
+            continue
     return found
 
 

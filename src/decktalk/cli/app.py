@@ -1,7 +1,6 @@
 """The one table: a command is its function's signature, and everything else is read off that.
 
-Under argparse the command line was a tuple of rows beside the functions. Under Typer the row is
-the function itself. Its parameters are its own flags, its return annotation is the result model it
+A command's row is the function itself. Its parameters are its own flags, its return annotation is the result model it
 answers with, and the flags it shares with other commands are derived from that annotation, so there
 is no side table to drift from the functions it describes.
 
@@ -39,10 +38,22 @@ from typer.core import TyperCommand, TyperGroup, TyperOption
 from typer.main import get_command
 
 from decktalk import __version__
-from decktalk.cli.options import DOCS, GLOBALS, SHARED, FailOn, Group, Panel, restated, shared_for
+from decktalk.cli.options import (
+    DOCS,
+    GLOBALS,
+    PROMPT_FLAGS,
+    SHARED,
+    SHARED_LINE,
+    FailOn,
+    Group,
+    Panel,
+    restated,
+    shared_for,
+)
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import Cancelled, DeckTalkError, ErrorCode, ErrorInfo, Exit
 from decktalk.findings import Code
+from decktalk.machine.run import Threshold
 from decktalk.results import Result
 
 PROGRAM = "decktalk"
@@ -79,35 +90,13 @@ EPILOG = "\n".join(
             width=EPILOG_WIDTH,
             break_on_hyphens=False,
         ),
-        "Docs: https://docs.decktalk.ai/reference/cli",
+        f"Docs: {DOCS}",
     )
 )
 """The tree's own footer, whose exit codes are read from the one exit table."""
 
-SHARED_LINE = "-p, --json, --events, --color, --no-input, -v and -q work on every command."
-"""The one line a command's help spends on the eight flags every command carries."""
-
 HELP_SENTENCE = "Print this help and exit."
 """What `-h` says, which is a sentence rather than Click's own line about showing a message."""
-
-PROMPT_FLAGS = frozenset(
-    {
-        "--all",
-        "--defaults",
-        "--example",
-        "--fix",
-        "--max-cost",
-        "--name",
-        "--no-fix",
-        "--no-skills",
-        "--no-spend",
-        "--overwrite",
-        "--replace-score",
-        "--replace-voiced",
-        "--spend",
-    }
-)
-"""Every flag that answers a prompt, which is what a refused `--yes` names back at its caller."""
 
 PANELS: tuple[str, ...] = tuple(panel.value for panel in Panel)
 """The order a command's own option panels are read in, which is the order a run meets them."""
@@ -314,14 +303,6 @@ def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
         session = _begin(context, shared, command=name)
         if shared.get("yes"):
             raise _yes_refused(context)
-        session.judging(
-            fail_on=cast("FailOn", shared.get("fail_on") or FailOn.ERROR),
-            allow=frozenset(cast("Sequence[Code] | None", shared.get("allow")) or ()),
-        )
-        session.gate_spend(
-            spend=cast("bool | None", shared.get("spend")),
-            max_cost=cast("float | None", shared.get("max_cost")),
-        )
         answered = fn(ctx=context, **arguments)
         if isinstance(answered, Result):
             return session.report(answered)
@@ -336,7 +317,16 @@ def _begin(context: Context, shared: dict[str, object], *, command: str) -> Sess
     base = context.find_root().obj
     flags = base.flags if isinstance(base, Session) else Globals()
     merged = flags.merged({key: value for key, value in shared.items() if key in _GLOBAL_NAMES})
-    session = Session(merged, command=command)
+    fail_on = cast("FailOn", shared.get("fail_on") or FailOn.ERROR)
+    session = Session(
+        merged,
+        command=command,
+        threshold=Threshold(
+            stop_on=fail_on.stops_on, allow=frozenset(cast("Sequence[Code] | None", shared.get("allow")) or ())
+        ),
+        spend=cast("bool | None", shared.get("spend")),
+        max_cost=cast("float | None", shared.get("max_cost")),
+    )
     context.obj = session
     _current = session
     return session
@@ -406,7 +396,6 @@ def _rooted(fn: Callable[..., int]) -> Callable[..., int]:
             name, inspect.Parameter.KEYWORD_ONLY, annotation=restated(annotation, hidden=False), default=default
         )
         for name, annotation, default in GLOBALS
-        if name != "yes"
     ]
     fn.__signature__ = signature.replace(  # ty: ignore[unresolved-attribute]
         parameters=[ctx, *flags, version.replace(kind=inspect.Parameter.KEYWORD_ONLY)]
@@ -444,8 +433,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 SUGGESTION_CUTOFF = 0.75
 """How alike an unknown flag and a real one must be before the refusal names the real one.
 
-Click's own cutoff of 0.6 offered `--verbose` for `--bogus`, which is a guess rather than a
-suggestion, while every one-letter slip of a real flag scores well above this.
+At this cutoff a one-letter slip of a real flag is named, and an unrelated word such as `--bogus`
+is not taken for `--verbose`.
 """
 
 

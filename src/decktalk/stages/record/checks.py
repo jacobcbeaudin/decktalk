@@ -22,12 +22,6 @@ from decktalk.settings import Settings
 LUMA_POINTS = (0.1, 0.5, 0.9)
 """Derived: a tenth, a half and nine tenths of a recording, which is where its brightness is read."""
 
-LUMA_DIGITS = 1
-"""How precisely a luma is written into a sentence, which is finer than a viewer can tell apart."""
-
-SECOND_DIGITS = 2
-"""How precisely a length is written into a sentence, which is under half a frame."""
-
 
 def measure_luma(webm: Path, duration: float) -> Luma:
     """The recording's brightness at a tenth, a half and nine tenths of its length.
@@ -57,8 +51,8 @@ def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settin
         found.append(
             judge(
                 Code.RECORD_BLACK,
-                f"the frame half way through has a brightest luma of {checks.luma.peak_at_half:.{LUMA_DIGITS}f}, "
-                f"which is at or under the {black:.{LUMA_DIGITS}f} a black frame is.",
+                f"the frame half way through has a brightest luma of {checks.luma.peak_at_half:.1f}, "
+                f"which is at or under the {black:.1f} a black frame is.",
                 Location(where=where.as_posix(), file=where, section=section),
                 stage=Stage.RECORD,
             )
@@ -68,9 +62,9 @@ def frame_findings(checks: RecordingChecks, *, where: Path, section: int, settin
         found.append(
             judge(
                 Code.RECORD_TRUNCATED,
-                f"the recording runs {checks.duration_seconds:.{SECOND_DIGITS}f}s of the "
-                f"{checks.wanted_seconds:.{SECOND_DIGITS}f}s it asked for, which is "
-                f"{short:.{SECOND_DIGITS}f}s short against the {slack:.{SECOND_DIGITS}f}s allowed.",
+                f"the recording runs {checks.duration_seconds:.2f}s of the "
+                f"{checks.wanted_seconds:.2f}s it asked for, which is "
+                f"{short:.2f}s short against the {slack:.2f}s allowed.",
                 Location(where=where.as_posix(), file=where, section=section),
                 stage=Stage.RECORD,
             )

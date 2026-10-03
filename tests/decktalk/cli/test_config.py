@@ -44,7 +44,7 @@ def test_get_prints_one_key(run, project_dir) -> None:
     written = ConfigGetResult.model_validate_json(
         run("-p", str(project_dir), "config", "get", "video.crf", "--json").out
     )
-    assert written.key.key == "video.crf"
+    assert written.setting.key == "video.crf"
 
 
 def test_get_refuses_a_key_that_is_not_one(run, project_dir) -> None:
@@ -120,6 +120,15 @@ def test_unset_prints_the_value_that_now_applies_and_the_layer_it_comes_from(run
     assert written["layer"] == Layer.DEFAULT.value
 
 
+def test_unset_of_one_key_on_a_terminal_asks_nothing(run, project_dir) -> None:
+    """One key needs no permission, so only a whole table is confirmed."""
+    run("-p", str(project_dir), "config", "set", "video.crf", "20")
+    ran = run("-p", str(project_dir), "config", "unset", "video.crf", tty=True, stdin="n\n")
+    assert ran.exit_code == 0, ran.err
+    assert "Remove everything" not in ran.err
+    assert "crf" not in (project_dir / "decktalk.toml").read_text(encoding="utf-8")
+
+
 def test_unset_of_a_key_the_file_does_not_set_says_so(run, project_dir) -> None:
     ran = run("-p", str(project_dir), "config", "unset", "video.crf")
     assert ran.exit_code == 3
@@ -130,12 +139,12 @@ def test_unset_of_a_whole_table_without_a_terminal_refuses_and_names_all(run, pr
     run("-p", str(project_dir), "config", "set", "video.crf", "20")
     ran = run("-p", str(project_dir), "config", "unset", "video")
     assert ran.exit_code == 3
-    assert "--all" in ran.err
+    assert "--table" in ran.err
 
 
 def test_unset_of_a_whole_table_with_all_takes_every_key_it_set(run, project_dir) -> None:
     run("-p", str(project_dir), "config", "set", "video.crf", "20")
-    ran = run("-p", str(project_dir), "config", "unset", "video", "--all", "--json")
+    ran = run("-p", str(project_dir), "config", "unset", "video", "--table", "--json")
     assert ran.exit_code == 0
     assert json.loads(ran.out)["keys"] == ["video.crf"]
 
@@ -160,7 +169,7 @@ def test_explain_reads_the_projects_takes_dir(run, project_dir) -> None:
 
 
 def test_explain_holds_a_candidate_to_the_same_range(run, project_dir) -> None:
-    ran = run("-p", str(project_dir), "config", "explain", "video.crf", "--value", "99")
+    ran = run("-p", str(project_dir), "config", "explain", "video.crf", "--candidate", "99")
     assert ran.exit_code == 2
 
 

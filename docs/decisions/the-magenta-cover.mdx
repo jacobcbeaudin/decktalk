@@ -22,8 +22,8 @@ section clock. Anything the page could tell the recorder in JavaScript arrives o
 clock than the frames do, so the answer has to be visible in the frames themselves.
 
 Magenta is chosen because nothing in a slide is that colour by accident. The scan asks only whether
-a frame sits between `record.cover_luma_min` and `record.cover_luma_max` with both chroma planes
-above `record.cover_chroma_min`, which needs no tuning and no threshold a deck could trip.
+a frame sits between `record.cover_min_luma` and `record.cover_max_luma` with both chroma planes
+above `record.cover_min_chroma`, which needs no tuning and no threshold a deck could trip.
 
 The keep-alive exists because Chromium's screencast emits a frame only when the compositor paints
 one, and a still cover paints once. It outlives the cover for a subtler reason. Playwright stamps

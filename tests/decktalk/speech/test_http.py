@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import socket
+import threading
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -313,12 +314,32 @@ def test_the_wait_a_service_names_is_the_wait_taken_and_held_under_the_longest(h
 # ---- a reply that stops arriving --------------------------------------------------------------------
 
 
+STALL_TIMEOUT_SECONDS = 0.1
+"""The read timeout a stall test gives, which the stalled reply outlasts because it waits on an event."""
+
+WAIT = 10
+"""The longest the test waits for the service to have the request, which only a broken service reaches."""
+
+
 def test_a_reply_that_stalls_after_the_request_was_sent_is_sent_once_and_said_to_be_possibly_charged(service, waits):
-    """A read timeout comes after the service had the whole request, which it may already have billed."""
-    service.expect_request("/stall").respond_with_handler(service.stalls)
+    """A read timeout comes after the service had the whole request, which it may already have billed.
+
+    The reply is held until the test ends, so the timeout fires however short it is, and the service
+    counts the request it was handed rather than its log, which it writes after the handler returns.
+    """
+    handed: list[Request] = []
+    reached = threading.Event()
+
+    def stalls(request: Request) -> Response:
+        handed.append(request)
+        reached.set()
+        return service.stalls(request)
+
+    service.expect_request("/stall").respond_with_handler(stalls)
     with pytest.raises(ProviderError) as caught:
-        _http.post_json(service.url_for("/stall"), {}, {}, secrets=(), timeout=1, retries=3)
-    assert len(service.log) == 1 and waits == []
+        _http.post_json(service.url_for("/stall"), {}, {}, secrets=(), timeout=STALL_TIMEOUT_SECONDS, retries=3)
+    assert reached.wait(WAIT), "the service never had the request"
+    assert len(handed) == 1 and waits == []
     assert "possibly charged" in str(caught.value)
     assert caught.value.retryable is False
     assert isinstance(caught.value.__cause__, TimeoutError), "it ends as a provider error rather than a bare timeout"

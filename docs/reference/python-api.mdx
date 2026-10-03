@@ -47,11 +47,11 @@ Every other public type lives in the module that defines its kind:
 
 | Module | What it holds |
 |---|---|
-| `decktalk.results` | Every result and every row a result carries, with `Billing`, `Layer`, `Scope`, `Outcome` and `ErrorInfo`. |
-| `decktalk.events` | Every event line, `Line`, `Level`, `Unit` and `Subscription`. |
+| `decktalk.results` | Every result and every row a result carries, with `BillingBasis`, `Layer`, `Scope`, `Outcome` and `ErrorInfo`. |
+| `decktalk.events` | Every event line, `AnyEvent`, `Level`, `Unit` and `Subscription`. |
 | `decktalk.findings` | The fix and location types: `Location`, `Fix`, `EditFix`, `Edit`, `CommandFix`, `Applicability` and `RaisedBy`. |
 | `decktalk.settings` | `Settings`, one `*Config` class per table, `ProviderTable` and `Layers`. |
-| `decktalk.speech` | The voice protocol: `SpeechProvider`, `SpeechRequest`, `Piece`, `SpeechFactory`, `SpeechContext`, `Secrets`, `Secret`, `SpeechProviders`, `Bill`, `Output` and `BEAT`. |
+| `decktalk.speech` | The voice protocol: `SpeechProvider`, `SpeechRequest`, `Piece`, `SpeechFactory`, `SpeechContext`, `Secrets`, `Secret`, `SpeechProviders`, `Billing`, `Output` and `BEAT`. |
 | `decktalk.speech.sound` | The sound protocol: `SoundProvider`, `SoundContext`, `SoundFactory` and `SoundProviders`. |
 
 A type any public field, parameter or return value names is importable from one of them, which
@@ -101,7 +101,7 @@ print(lesson.settings.motion.reduce, demo.settings.motion.reduce)
 To write a project rather than open one:
 
 ```python
-decktalk.init(path, *, machine=None, name=None, example=None, skills=True, force=False) -> InitResult
+decktalk.init(path, *, machine=None, name=None, example=None, skills=True, overwrite=False) -> InitResult
 ```
 
 `init` is a machine call rather than a project one, because there is no project until it returns.
@@ -131,7 +131,7 @@ project.build(*, stages=None, skip=(), only=None, spend=False, max_cost=None,
 project.status(*, cancel=None) -> StatusResult
 project.check(*paths, only=None, pages=True, frames=True, cancel=None) -> CheckResult
 project.words(*, only=None, cancel=None) -> WordsResult
-project.storyboard(*, only=None, slide=None, after=None, before=None, at=None,
+project.storyboard(*, only=None, slides=None, after=None, before=None, times=None,
                    cancel=None) -> StoryboardResult
 project.clip(section, *, start, end, out, gain_db=0.0, hold_seconds=0.0,
              cancel=None) -> ClipResult
@@ -315,7 +315,7 @@ except decktalk.ApprovalRequired as refused:
 | `seconds` | How many seconds of audio this price is for, which a per-second bill is priced on. |
 | `dollars` | The price at the stated rate. |
 | `ceiling_dollars` | The most this run can cost, which is what `max_cost` is compared against. |
-| `billing` | How the voice declares it bills: `Billing.PER_CHARACTER`, `PER_SECOND`, `FREE` or `UNDECLARED`. A build's total that adds characters to seconds is `MIXED` and carries both rates. |
+| `billing` | How the voice declares it bills: `BillingBasis.PER_CHARACTER`, `PER_SECOND`, `FREE` or `UNDECLARED`. A build's total that adds characters to seconds is `MIXED` and carries both rates. |
 | `dollars_per_1000_characters` | The rate a per-character bill was worked out at, in US dollars per 1,000 characters. |
 | `dollars_per_minute` | The rate a per-second bill was worked out at, in US dollars per minute of audio, which is the unit a sound's `dollars_per_minute` setting is typed in. |
 | `price_key` | The dotted key that states the rate, or `None` when the voice has no rate to state. |
@@ -407,8 +407,9 @@ because an error means DeckTalk could not run at all.
 `None` when nothing knows it.
 
 A `Code` member carries more than its name. `code.sentence` is what the condition is,
-`code.severity` is how sure it is, `code.raised_by` is `RaisedBy.RUNTIME` when the page reports it
-from the browser and `RaisedBy.PYTHON` when DeckTalk measures it, and `code.url` is its page. The
+`code.severity` is whether it fails the default run, `code.raised_by` is `RaisedBy.RUNTIME` when the page reports it
+from the browser and `RaisedBy.PYTHON` when DeckTalk measures it, `code.raised_in` names the commands
+whose run can report it, and `code.url` is its page. The
 settings keys that move a code are declared on the keys themselves, and `decktalk.explain(KEY)`
 lists the codes one key decides.
 
@@ -436,7 +437,7 @@ when the caller asked for that. `Applicability.DISPLAY` is a change only a perso
 reported and never applied.
 
 ```python
-decktalk.Project.apply(fix, *, unsafe=False) -> ApplyResult
+decktalk.Project.apply(findings, *, unsafe=False) -> ApplyResult
 ```
 
 ```python
@@ -522,8 +523,8 @@ Each name has one model. Skip and fail are not names, because `stage.done` and
 same members in capitals.
 
 `JsonlSink` is the subscriber that appends one JSON line per event to a file. Every run of a project
-gets one, at `build/events/<run>.jsonl`, and `output.events_keep_runs` prunes the oldest. A sink given
-`max_bytes`, as every project run's is from `output.events_max_bytes`, leaves progress, fetch, debug
+gets one, at `build/events/<run>.jsonl`, and `events.keep_runs` prunes the oldest. A sink given
+`max_bytes`, as every project run's is from `events.max_bytes`, leaves progress, fetch, debug
 and info lines out once the file reaches it, keeps every line about the run's shape, its findings
 and its costs, and reports how many it left out as `dropped` on `run.done`.
 
@@ -536,14 +537,14 @@ with project.events.subscribe(decktalk.JsonlSink(Path("run.jsonl"))):
     project.cue()
 ```
 
-`decktalk.events.Line` is the discriminated union of these models, so a reader parses a stored
+`decktalk.events.AnyEvent` is the discriminated union of these models, so a reader parses a stored
 line by its `event` and never by trying each shape.
 
 ```python
 import decktalk
 import pydantic
 
-reader = pydantic.TypeAdapter(decktalk.events.Line)
+reader = pydantic.TypeAdapter(decktalk.events.AnyEvent)
 for raw in open("my-lesson/build/events/a41e586449ed.jsonl", encoding="utf-8"):
     print(reader.validate_json(raw))
 ```
@@ -660,7 +661,7 @@ strings, spelled as `--set` spells them.
 |---|---|
 | `environ` | The environment as this process found it. |
 | `tables` | The per-machine settings file as tables. |
-| `config_path` | Where that file is. |
+| `machine_file` | Where that file is. |
 | `cwd` | The directory the process started in. |
 | `toolchain` | A `Toolchain`, with `tools`, `ffmpeg`, `ffprobe`, `cache_dir`, `complete`, `paths()` and `fetched()`. |
 | `events` | The stream every run on this machine writes to. |
@@ -671,7 +672,7 @@ strings, spelled as `--set` spells them.
 | `dotenv` | Whether a project's `.env` is read. True from the environment, false from `Machine.of` unless the host says otherwise. |
 | `install(*, cancel=None)` | Fetch the browser and the encoder, before a build asks for them. |
 | `doctor(*, measure=False, cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. |
-| `apply(fix, *, unsafe=False)` | Carry out the fixes a machine can make. |
+| `apply(findings, *, unsafe=False)` | Carry out the fixes a machine can make. |
 
 `doctor(measure=True)` drives a browser to measure this host's presentation bias and reports it as
 `bias_ms`. It writes nothing, because no stage reads it.
@@ -695,7 +696,7 @@ contract a host builds on.
 ### A machine the host builds
 
 ```python
-decktalk.Machine.of(*, environ, config_path, cwd, cache_dir, store_dir=None, speech_providers=None,
+decktalk.Machine.of(*, environ, machine_file, cwd, cache_dir, store_dir=None, speech_providers=None,
                     sound_providers=None, overrides=(), dotenv=False) -> Machine
 ```
 
@@ -705,7 +706,7 @@ see is one the host chose.
 | Parameter | Meaning |
 |---|---|
 | `environ` | Every variable a run on this machine may see. A render job passes none, and a voice job passes the key. The voice id is the project's own `[voice] id`, which `DECKTALK_VOICE_ID` here overrides. |
-| `config_path` | The per-machine settings file, read when it is there and where a machine fix lands. The host writes the machine-scoped keys it sets, such as `[record] concurrency`, here. |
+| `machine_file` | The per-machine settings file, read when it is there and where a machine fix lands. The host writes the machine-scoped keys it sets, such as `[record] concurrency`, here. |
 | `cwd` | The directory a relative project path is read from. |
 | `cache_dir` | Where the fetched Chromium and ffmpeg live. |
 | `store_dir` | The take store a project on this machine keeps a second copy of every voiced take in, when `[narration] store_dir` names none. The default is none, so a host that runs other people's projects shares no takes across them unless it passes one. |
@@ -715,12 +716,12 @@ see is one the host chose.
 | `dotenv` | False by default, so a project's `.env` is never read and a tenant's upload cannot supply a credential. |
 
 The page policy and every base URL are machine-scoped, so the host sets them on its machine, in the
-file at `config_path` or in `overrides`, and a project file that names one is refused. A voice
+file at `machine_file` or in `overrides`, and a project file that names one is refused. A voice
 therefore sends its key and its script only to the `[elevenlabs] base_url` or `[dtsp] base_url` the
 host named.
 
 ```python
-render = decktalk.Machine.of(environ={}, config_path=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
+render = decktalk.Machine.of(environ={}, machine_file=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
                              overrides=["record.page_policy=untrusted"])
 ```
 
@@ -764,7 +765,7 @@ build directory is the only thing that moves between them.
 page, which is why it belongs to the render side.
 
 The two parts are read off the pipeline rather than kept in a list of the host's own:
-`decktalk.Stage.voice_part()` is every stage whose row `holds_key`, and `decktalk.Stage.render_part()`
+`decktalk.Stage.keyed_stages()` is every stage whose row `holds_api_key`, and `decktalk.Stage.keyless_stages()`
 is every other. No row both holds the key and `opens_pages`.
 
 A run that may spend refuses to open a page under `record.page_policy = "untrusted"`, with
@@ -784,7 +785,7 @@ cache = Path("/opt/decktalk-cache")
 # `[voice] id`, so neither job is handed the id.
 voice = decktalk.Machine.of(
     environ={"ELEVENLABS_API_KEY": key},
-    config_path=Path("/etc/decktalk/voice.toml"),
+    machine_file=Path("/etc/decktalk/voice.toml"),
     cwd=work,
     cache_dir=cache,
     overrides=["record.page_policy=untrusted"],
@@ -792,7 +793,7 @@ voice = decktalk.Machine.of(
 decktalk.open(work, machine=voice).narrate(spend=True, max_cost=ceiling)
 
 # The render job, in another process whose environment holds no key at all.
-render = decktalk.Machine.of(environ={}, config_path=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
+render = decktalk.Machine.of(environ={}, machine_file=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
                              overrides=["record.page_policy=untrusted"])
 project = decktalk.open(work, machine=render)
 project.cue()
@@ -874,7 +875,7 @@ def silent(context: SpeechContext) -> Silent:
     return Silent()
 
 
-machine = decktalk.Machine.of(environ={}, config_path=Path("machine.toml"), cwd=Path.cwd(),
+machine = decktalk.Machine.of(environ={}, machine_file=Path("machine.toml"), cwd=Path.cwd(),
                               cache_dir=Path("cache"), speech_providers={"silent": silent})
 ```
 
@@ -885,18 +886,19 @@ nothing anybody stated, and `max_cost` refuses to guard it.
 ## Settings
 
 `Project.settings` is a `decktalk.settings.Settings`, with one frozen config object per table.
-`Project.layers` says which of the five layers set each key.
+`Project.layers` says which layer set each key.
 
 ```python
-decktalk.explain(key, *, project=None, value=None) -> ConfigExplainResult
+decktalk.explain(key, *, project=None, value=None, machine=None) -> ConfigExplainResult
 ```
 
 `explain` reads one setting whole: its type, its unit, its safe range, the value in force, every layer
-that stated it, the variable that sets it, the findings it decides, the published numbers it feeds,
-and what a candidate value would clamp in this project. It is the result `config explain` prints. Without
+that stated it, the variable that sets it, the findings it decides, the published numbers it feeds, and
+what a candidate value would clamp in this project. It is the result `config explain` prints. Without
 `project` the answer is about the defaults and the machine alone, which is what an agent reading the
-instruction set before it has a project needs. `value` is a candidate spelled the way a command line
-spells it, held to the same safe range as a value that is written.
+instruction set before it has a project needs. `machine` is the machine whose file and environment are
+the layers under and over the project, this process's own when none is given. `value` is a candidate
+spelled the way a command line spells it, held to the same safe range as a value that is written.
 
 ```python
 import decktalk

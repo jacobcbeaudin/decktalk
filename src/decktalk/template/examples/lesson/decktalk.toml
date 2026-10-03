@@ -1,6 +1,6 @@
 #:schema https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1/decktalk.json
 # The lesson example: one section, one page and one long scene, written in markup.
-# `decktalk init --example lesson DIR` writes it. Run `decktalk schema settings` for every key.
+# `decktalk init --example lesson DIR` writes it. Run `decktalk schema setting` for every key.
 
 [project]
 name = "__NAME__"

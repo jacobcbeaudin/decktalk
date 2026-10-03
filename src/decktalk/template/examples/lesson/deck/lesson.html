@@ -25,9 +25,9 @@
   }
   html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
   body { width: 100vw; height: 100vh; overflow: hidden; }
-  #dt-stage { background: var(--ground); }
+  #dt-canvas { background: var(--ground); }
 
-  /* Everything is placed absolutely on the 1920 by 1080 stage, so one reveal never moves another.
+  /* Everything is placed absolutely on the 1920 by 1080 canvas, so one reveal never moves another.
      Every revealed shape is filled rather than outlined, because `decktalk check` compares frames on
      brightness alone and a thin outline changes too few pixels to be seen. */
   .l-eyebrow, .l-head, .l-card, .l-pill, .l-strip, .l-row, .l-meter, .l-hill, .l-steps, .l-slider, .l-grid {
@@ -92,7 +92,7 @@
 
 <div data-scene="1" data-name="How a model learns">
 
-  <template data-slide="1.1" data-hold="18" data-describe="examples in place of rules, which is machine learning">
+  <template data-slide="1.1" data-preview-seconds="18" data-describe="examples in place of rules, which is machine learning">
     <p class="l-eyebrow">How a model learns</p>
 
     <div class="l-head" data-in="question" data-describe="the question, how does a model learn">
@@ -123,7 +123,7 @@
        data-describe="the term, machine learning">machine learning</p>
   </template>
 
-  <template data-slide="1.2" data-hold="22" data-describe="the loop a model learns by, one example at a time">
+  <template data-slide="1.2" data-preview-seconds="22" data-describe="the loop a model learns by, one example at a time">
     <p class="l-eyebrow">The loop</p>
 
     <div class="l-head" data-in="box" data-describe="the heading, a model is a box of dials">
@@ -154,7 +154,7 @@
     <div class="l-meter" data-in="error" data-describe="the error meter, filled to how wrong the guess was"></div>
   </template>
 
-  <template data-slide="1.3" data-hold="14" data-describe="why every dial is given a direction at once">
+  <template data-slide="1.3" data-preview-seconds="14" data-describe="why every dial is given a direction at once">
     <p class="l-eyebrow">The direction</p>
 
     <div class="l-head" data-in="which" data-describe="the question, which way should each dial turn">
@@ -181,7 +181,7 @@
 
   <!-- data-enter says how a slide replaces the one before it. This one cuts, because the picture
        changes completely and a crossfade would read as a dissolve rather than as a new idea. -->
-  <template data-slide="1.4" data-hold="20" data-enter="cut" data-describe="the error drawn as a hill the model walks down">
+  <template data-slide="1.4" data-preview-seconds="20" data-enter="cut" data-describe="the error drawn as a hill the model walks down">
     <p class="l-eyebrow">Downhill</p>
 
     <div class="l-head" data-in="hill" data-describe="the heading, picture the error as a hill">
@@ -210,7 +210,7 @@
 
   <!-- data-owns lists the cue names no attribute mentions, because a handler serves them.
        It is the one way a slide declares a cue it draws with script of its own. -->
-  <template data-slide="1.5" data-hold="14" data-owns="long short" data-describe="one setting, deciding how long each step is">
+  <template data-slide="1.5" data-preview-seconds="14" data-owns="long short" data-describe="one setting, deciding how long each step is">
     <p class="l-eyebrow">The step size</p>
 
     <div class="l-head" data-in="setting" data-describe="the heading, one setting decides how long each step is">
@@ -221,7 +221,7 @@
     <div class="l-slider"><span class="l-thumb"></span></div>
   </template>
 
-  <template data-slide="1.6" data-hold="16" data-describe="the dials as grids of numbers, and the chips that multiply them">
+  <template data-slide="1.6" data-preview-seconds="16" data-describe="the dials as grids of numbers, and the chips that multiply them">
     <p class="l-eyebrow">Inside</p>
 
     <div class="l-head" data-in="inside" data-describe="the heading, the dials are grids of numbers">

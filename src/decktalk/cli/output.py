@@ -26,7 +26,7 @@ from rich.text import Text
 
 from decktalk.captions import clock
 from decktalk.errors import ErrorInfo
-from decktalk.events import Event, RunLog, RunStart, StageDone, StageProgress, StageStart, ToolFetch
+from decktalk.events import Event, Level, RunLog, RunStart, StageDone, StageProgress, StageStart, ToolFetch
 from decktalk.files import json_text
 from decktalk.findings import Applicability, Finding, Location, Severity
 from decktalk.pipeline import Outcome, Stage
@@ -184,16 +184,16 @@ class Notes(Renderer):
         """Write one log line when its level passes the two flags that choose between them."""
         if not isinstance(event, RunLog):
             return
-        level = event.level.value
-        if level == "debug" and not self._verbose:
+        quiet = event.level in (Level.DEBUG, Level.INFO)
+        if event.level is Level.DEBUG and not self._verbose:
             return
-        if self._quiet and level in ("debug", "info"):
+        if self._quiet and quiet:
             return
         if self._heard is not None:
             if event.message in self._heard:
                 return
             self._heard.add(event.message)
-        style = QUIET_STYLE if level in ("debug", "info") else "yellow"
+        style = QUIET_STYLE if quiet else WARNING_STYLE
         # Under -v a line says which module wrote it, which is what tells a tool call from a stage's sentence.
         said = f"{event.source}: {event.message}" if self._verbose and event.source else event.message
         self._console.print(Text(said, style=style))
@@ -211,14 +211,14 @@ class Opening(Renderer):
         if not isinstance(event, RunStart) or self.said:
             return
         self.said = True
-        where = event.events_path.as_posix() if event.events_path else "no file"
+        where = event.events_file.as_posix() if event.events_file else "no file"
         self._console.print(Text(f"run {event.run}, events {where}", style=QUIET_STYLE))
 
 
 def error_block(info: ErrorInfo, console: Console) -> None:
     """The one layout an error takes, on a terminal and in a pipe, with colour the only difference."""
     block = Text()
-    block.append(f"error[{info.code.value}]", style="bold red")
+    block.append(f"error[{info.code.value}]", style=ERROR_STYLE)
     block.append(f": {info.message}\n")
     if info.hint:
         block.append(f"  hint: {info.hint}\n")
@@ -323,13 +323,13 @@ def _status(result: StatusResult) -> Iterable[RenderableType]:
             _yes(section.voiced),
             _yes(section.recorded),
             _yes(section.assembled),
-            _yes(section.stale),
+            _yes(section.stale or section.voiced_stale),
         )
     yield table
     if result.film is not None:
         yield Text(f"Film   {result.film.as_posix()}, {clock(result.film_seconds or 0)} long")
     for run in result.runs:
-        yield Text(f"Live   {run.run} writing {run.events.as_posix()}", style=QUIET_STYLE)
+        yield Text(f"Live   {run.run} writing {run.events_file.as_posix()}", style=QUIET_STYLE)
     if result.unplayed is not None and result.unplayed.sentence is not None:
         yield Text(f"Takes  {result.unplayed.sentence}")
     if result.next is not None:
@@ -363,9 +363,14 @@ def _serve(result: ServeResult) -> Iterable[RenderableType]:
 def _narrate(result: NarrateResult) -> Iterable[RenderableType]:
     table = _table("Section", "Take", "Characters", "Seconds")
     for take in result.sections:
-        table.add_row(str(take.section), take.status.value, str(take.characters), f"{take.seconds or 0:.1f}")
+        table.add_row(str(take.section), take.status.value, str(take.characters), _length(take.seconds))
     yield table
     yield Text(result.cost.sentence)
+
+
+def _length(seconds: float | None) -> str:
+    """How long a take or a sound runs, or that it has no length yet, which a JSON null says."""
+    return "not yet" if seconds is None else f"{seconds:.1f}"
 
 
 def _cue(result: CueResult) -> Iterable[RenderableType]:
@@ -393,7 +398,7 @@ def _record(result: RecordResult) -> Iterable[RenderableType]:
 def _score(result: ScoreResult) -> Iterable[RenderableType]:
     table = _table("Item", "Kind", "Status", "Seconds")
     for item in result.items:
-        table.add_row(item.name, item.kind.value, item.status.value, f"{item.seconds or 0:.1f}")
+        table.add_row(item.name, item.kind.value, item.status.value, _length(item.seconds))
     yield table
     yield Text(result.cost.sentence)
 
@@ -450,14 +455,15 @@ def _config_list(result: ConfigListResult) -> Iterable[RenderableType]:
 
 
 def _config_get(result: ConfigGetResult) -> Iterable[RenderableType]:
-    yield Text(f"{result.key.key} = {_scalar(result.key.value)} ({result.key.layer.value})")
+    yield Text(f"{result.setting.key} = {_scalar(result.setting.value)} ({result.setting.layer.value})")
 
 
 def _config_set(result: ConfigSetResult) -> Iterable[RenderableType]:
     verb = "would set" if result.dry_run else "set"
     yield Text(f"{result.file.as_posix()} {verb} {result.key} = {_scalar(result.value)}")
     if result.layer.value != result.scope.value:
-        yield Text(f"The {result.layer.value} layer still decides it, at {_scalar(result.effective)}.", style="yellow")
+        still = f"The {result.layer.value} layer still decides it, at {_scalar(result.effective)}."
+        yield Text(still, style=WARNING_STYLE)
 
 
 def _config_unset(result: ConfigUnsetResult) -> Iterable[RenderableType]:
@@ -471,7 +477,7 @@ def _config_explain(result: ConfigExplainResult) -> Iterable[RenderableType]:
     if result.unit:
         yield Text(f"  unit {result.unit}")
     if result.hazard:
-        yield Text(f"  hazard {result.hazard}", style="yellow")
+        yield Text(f"  hazard {result.hazard}", style=WARNING_STYLE)
     if result.decides:
         yield Text(f"  decides {', '.join(code.value for code in result.decides)}", style=QUIET_STYLE)
     yield Text(f"  docs {result.docs}", style=QUIET_STYLE)

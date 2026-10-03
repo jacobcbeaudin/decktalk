@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
+from decktalk.artifacts.stored import DIGEST_DIGITS
 from decktalk.errors import ErrorCode, InputError
 from decktalk.results import SoundKind
 from decktalk.stages.score.ledger import (
-    DIGEST_DIGITS,
     UNFINISHED_DIGEST,
     Ledger,
     SoundEntry,

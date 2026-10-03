@@ -144,7 +144,8 @@ def test_a_merged_group_is_one_leaf_holding_a_balanced_max_of_its_ramps():
 def test_the_music_and_the_ambience_are_shaped_by_the_search_tree(tmp_path):
     """The duck, the marker swells and mutes, and the ambience bed are each one tree, never one long fold."""
     pages = "".join(
-        f"[[section]]\nnumber = {n}\npage = 'deck/index.html'\nscene = '{n}'\nambience = true\n" for n in range(1, 121)
+        f"[[section]]\nnumber = {n}\npage = 'deck/index.html'\nscene = '{n}'\nwith_ambience = true\n"
+        for n in range(1, 121)
     )
     toml = (
         "[project]\nname = 't'\n[narration]\nlead_seconds = 0\n"
@@ -281,7 +282,7 @@ def test_an_effect_lands_at_the_second_its_own_cue_resolved_to(tmp_path):
         "[project]\nname = 't'\n[narration]\nlead_seconds = 0\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
         "[[section]]\nnumber = 2\npage = 'deck/index.html'\nscene = '2'\n"
-        '[[mix.effects]]\nfile = "media/ping.mp3"\nsection = 2\ncue = "2.1:ping"\ndb = -16\n'
+        '[[mix.effect]]\nfile = "media/ping.mp3"\nsection = 2\ncue = "2.1:ping"\ndb = -16\n'
     )
     inputs = write_project(tmp_path, toml)
     (tmp_path / "media").mkdir()
@@ -299,7 +300,7 @@ def test_an_effect_whose_cue_is_unresolved_is_said_and_never_played(tmp_path):
     toml = (
         "[project]\nname = 't'\n[narration]\nlead_seconds = 0\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
-        '[[mix.effects]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\n'
+        '[[mix.effect]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\n'
     )
     inputs = write_project(tmp_path, toml)
     (tmp_path / "media").mkdir()
@@ -457,7 +458,7 @@ SECTION_SECONDS = 0.4
 def test_a_film_with_music_and_more_spoken_spans_than_ffmpeg_nests_assembles(tmp_path):
     """ffmpeg refuses an expression nested a hundred deep, which a fold of 94 ramps already is."""
     pages = "".join(
-        f"[[section]]\nnumber = {n}\npage = 'deck/index.html'\nscene = '{n}'\nambience = true\n"
+        f"[[section]]\nnumber = {n}\npage = 'deck/index.html'\nscene = '{n}'\nwith_ambience = true\n"
         for n in range(1, SECTIONS + 1)
     )
     toml = (

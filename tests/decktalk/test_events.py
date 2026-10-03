@@ -19,12 +19,12 @@ from decktalk.events import (
     CUT,
     EVENTS,
     LINE_CHARS,
+    AnyEvent,
     Event,
     Events,
     FindingRaised,
     JsonlSink,
     Level,
-    Line,
     RunDone,
     RunLog,
     RunStart,
@@ -61,7 +61,7 @@ MINTED = ("event", "time", "seq", "run")
 FINDING = Finding(code=Code.CUE_OFF, message="It lands 340 ms late.", location=Location(where="2.1:formula"))
 COST = a_cost(0.12, 0.15, layer=Layer.DEFAULT)
 PAYLOADS: dict[str, dict[str, object]] = {
-    "run.start": {"events_path": "build/events/r1.jsonl"},
+    "run.start": {"events_file": "build/events/r1.jsonl"},
     "run.done": {"outcome": Outcome.RAN, "elapsed_seconds": 64.0},
     "stage.start": {"stage": Stage.RECORD, "index": 3, "count": 6},
     "stage.done": {"stage": Stage.RECORD, "outcome": Outcome.SKIPPED, "elapsed_seconds": 0.0},
@@ -117,7 +117,7 @@ def test_every_name_is_its_own_class_and_its_own_discriminator() -> None:
 
 
 def test_the_union_is_closed_over_the_eleven_names() -> None:
-    members = typing.get_args(typing.get_args(Line)[0])
+    members = typing.get_args(typing.get_args(AnyEvent)[0])
     assert set(members) == set(EVENTS.values())
 
 
@@ -126,7 +126,7 @@ def test_an_event_round_trips_through_the_union(name: str) -> None:
     built = EVENTS[name].model_validate(
         {"time": datetime(2026, 9, 24, 3, 0, tzinfo=UTC), "seq": 0, "run": "r1", **PAYLOADS[name]}
     )
-    assert TypeAdapter(Line).validate_json(built.model_dump_json()) == built
+    assert TypeAdapter(AnyEvent).validate_json(built.model_dump_json()) == built
 
 
 def test_the_stream_mints_the_run_the_time_and_the_sequence() -> None:
@@ -261,8 +261,8 @@ def test_pruning_keeps_the_newest_runs_and_leaves_the_directory_alone_when_it_is
 
 def test_the_sink_path_travels_on_the_line_that_opens_the_run() -> None:
     stream = Events()
-    opened = stream.emit("r1", RunStart, events_path="build/events/r1.jsonl")
-    assert opened.model_dump(mode="json")["events_path"] == "build/events/r1.jsonl"
+    opened = stream.emit("r1", RunStart, events_file="build/events/r1.jsonl")
+    assert opened.model_dump(mode="json")["events_file"] == "build/events/r1.jsonl"
 
 
 def test_an_event_refuses_a_field_it_does_not_declare() -> None:
@@ -283,7 +283,7 @@ def carrying(text: str) -> dict[str, dict[str, object]]:
     finding = FINDING.model_copy(update={"message": text})
     error = ErrorInfo(code=ErrorCode.PROVIDER, message=text, hint=text, docs=ErrorCode.PROVIDER.url)
     return {
-        "run.start": {"events_path": f"build/events/{text}.jsonl"},
+        "run.start": {"events_file": f"build/events/{text}.jsonl"},
         "run.done": {"outcome": Outcome.FAILED, "elapsed_seconds": 1.0, "error": error},
         "stage.progress": {"stage": Stage.NARRATE, "done": 1, "total": 3, "unit": Unit.TAKE, "label": text},
         "finding.raised": {"finding": finding},
@@ -327,7 +327,7 @@ def test_a_bounded_file_keeps_every_lifecycle_and_money_line_and_counts_what_it_
     kept_kinds = {"stage.start", "finding.raised", "take.charged", "stage.done"}
     sent_kept = 0
     with stream.subscribe(sink):
-        stream.emit("r1", RunStart, events_path="build/events/r1.jsonl")
+        stream.emit("r1", RunStart, events_file="build/events/r1.jsonl")
         for number in range(10_000):
             stream.emit("r1", RunLog, level=Level.DEBUG, message=f"ffmpeg call {number} exited 0.")
             if number % 500 == 0:
@@ -438,5 +438,5 @@ def test_the_events_file_schema_is_committed_under_the_schema_folder_and_names_e
     assert set(committed["$defs"]) >= {kind.__name__ for kind in EVENTS.values()}
     assert set(committed["discriminator"]["mapping"]) == set(EVENTS)
     assert {key: value for key, value in committed.items() if not key.startswith("$")} == {
-        key: value for key, value in TypeAdapter(Line).json_schema().items() if not key.startswith("$")
+        key: value for key, value in TypeAdapter(AnyEvent).json_schema().items() if not key.startswith("$")
     }

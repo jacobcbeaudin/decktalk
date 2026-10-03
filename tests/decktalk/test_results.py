@@ -175,7 +175,7 @@ def test_a_price_of_nothing_says_the_run_buys_nothing() -> None:
 
 def test_a_price_for_seconds_of_sound_alone_buys_something() -> None:
     """A sound-only price covers no section and no character, so its seconds are what it buys."""
-    sound = a_cost(0.0, 0.0, sections=(), billing=results.Billing.UNDECLARED).model_copy(update={"seconds": 12.0})
+    sound = a_cost(0.0, 0.0, sections=(), billing=results.BillingBasis.UNDECLARED).model_copy(update={"seconds": 12.0})
     assert sound.characters == 0 and sound.buys
     assert sound.sentence == (
         "This run makes about 12 seconds of audio on a provider that declares no bill, so DeckTalk cannot price it."
@@ -184,9 +184,9 @@ def test_a_price_for_seconds_of_sound_alone_buys_something() -> None:
 
 def test_a_free_price_for_sound_names_the_provider_rather_than_a_voice() -> None:
     """A sound is made by a provider and never spoken by a voice, so its free price says provider."""
-    sound = a_cost(0.0, 0.0, sections=(), billing=results.Billing.FREE).model_copy(update={"seconds": 12.0})
+    sound = a_cost(0.0, 0.0, sections=(), billing=results.BillingBasis.FREE).model_copy(update={"seconds": 12.0})
     assert sound.sentence == "This run makes about 12 seconds of audio for nothing, because the provider is free."
-    speech = a_cost(0.0, 0.0, billing=results.Billing.FREE).model_copy(update={"characters": 476})
+    speech = a_cost(0.0, 0.0, billing=results.BillingBasis.FREE).model_copy(update={"characters": 476})
     assert speech.sentence == "This run voices 476 characters for nothing, because the voice is free."
 
 

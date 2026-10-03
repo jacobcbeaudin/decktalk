@@ -16,7 +16,7 @@ import pytest
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
 from decktalk.media.frames import Size
-from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS, MILLISECONDS
+from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS
 from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig
 from decktalk.settings.numbers import reference_lead_seconds
 from decktalk.stages.verify.plan import (
@@ -50,7 +50,7 @@ def settings_with(**verify: object) -> Settings:
 def test_the_reference_lead_is_the_published_formula_and_not_a_second_copy() -> None:
     """The lead is the offset limit plus the grid guard plus whatever extra lead was asked for."""
     settings = settings_with(cue_offset_max_ms=80.0, reference_lead_extra_ms=40.0)
-    expected = 80.0 / MILLISECONDS + GUARD_FRAMES / CAPTURE_FPS + 40.0 / MILLISECONDS
+    expected = 80.0 / 1000 + GUARD_FRAMES / CAPTURE_FPS + 40.0 / 1000
     assert reference_lead_seconds(settings) == pytest.approx(expected)
 
 

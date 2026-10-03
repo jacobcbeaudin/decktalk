@@ -63,10 +63,10 @@ group's log opens with its name and the one local command that reproduces it.
 | `node` | `node --test tests/decktalk/runtime/src/*.test.ts tests/scripts/*.test.mjs` | npm | Linux | pr, main |
 | `browser` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | Linux | pr, main |
 | `media` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | Linux | pr, main |
-| `e2e` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report` | chromium, ffmpeg | Linux | pr, main |
+| `e2e` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report`, and 1 more | chromium, ffmpeg | Linux | pr, main |
 | `browser-platforms` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml --timing=report` | chromium | macOS, Windows | main |
 | `media-platforms` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml --timing=report` | ffmpeg | macOS, Windows | main |
-| `e2e-platforms` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report` | chromium, ffmpeg | macOS, Windows | main |
+| `e2e-platforms` | `uv run pytest -q -rs -m e2e --cov --cov-report= --junitxml=tests/out/junit/e2e.xml --timing=report`, and 1 more | chromium, ffmpeg | macOS, Windows | main |
 | `platform` | `uv run pytest -q -rs -m platform`, and 1 more | chromium, ffmpeg | Linux, macOS, Windows | pr, main |
 | `generated` | `uv run python scripts/build_runtime.py --check`, and 14 more | npm | Linux | pr, main |
 | `rehearsal` | `uv run python scripts/rehearse_release.py` | npm, history | Linux | pr, main |

@@ -13,7 +13,6 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -75,8 +74,6 @@ class Fake:
     Every command is a thin client of one of those two objects, so a fake at that seam is the whole
     of what a command-line test needs to say what the client did.
     """
-
-    _inputs: SimpleNamespace  # set by a test whose command reads the project's folders, as `workspace`
 
     def __init__(self, **answers: object) -> None:
         self.answers = dict(answers)
@@ -161,7 +158,7 @@ def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
 
 
 ANSWERS: dict[str, Result] = {
-    "init": InitResult(ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills=True),
+    "init": InitResult(ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills_written=True),
     "install": InstallResult(ok=True, run="r", tools=(), cache=Path("cache")),
     "doctor": DoctorResult(
         ok=True,
@@ -173,9 +170,11 @@ ANSWERS: dict[str, Result] = {
         api_key_state=ApiKeyState.MISSING,
     ),
     "status": StatusResult(
-        ok=True, run="r", name="demo", script=Path("script.md"), cues=Path("cues.json"), sections=()
+        ok=True, run="r", name="demo", script=Path("script.md"), cues_file=Path("cues.json"), sections=()
     ),
-    "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, cost=a_cost()),
+    "check": CheckResult(
+        ok=True, run="r", judged=(Path("script.md"),), pages_opened=True, frames_compared=True, cost=a_cost()
+    ),
     "words": WordsResult(ok=True, run="r", sections=()),
     "storyboard": StoryboardResult(ok=True, run="r", storyboard=Path("build/storyboard.html"), panels=()),
     "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000),

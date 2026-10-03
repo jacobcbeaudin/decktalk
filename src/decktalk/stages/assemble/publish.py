@@ -53,9 +53,6 @@ SOUND_CAPTION_SECONDS = 1.0
 """Calibration: how long a sound's caption stays on screen, which is what SC 1.2.2 expects of one."""
 
 
-WORK_MARK = "."
-"""What a work file's name opens with, so nothing a viewer can open is written until the film is whole."""
-
 POSTER_MARK = "poster"
 """What a poster's still is keyed under before its scene, so it never shares a key with a frozen state."""
 
@@ -79,7 +76,7 @@ def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], t
     placed = takes.placed
     for take in takes.sections:
         shift = offsets.get(take.section, 0.0) + placed[take.section].start
-        words = list(Words(words=inputs.words(take.section, take.digest)).shifted(shift))
+        words = list(Words(words=inputs.section_words(take.section, take.digest)).shifted(shift))
         text = texts.get(take.section)
         cues += caption_cues(display_words(words, text) if text else words)
     return cues
@@ -204,8 +201,8 @@ def caption_texts(inputs: Inputs, takes: Takes) -> dict[int, str]:
     """
     texts = {take.section: take.spoken for take in takes.sections if take.spoken}
     if any(take.section not in texts for take in takes.sections):
-        for segment in inputs.script():
-            texts.setdefault(segment.index, segment.spoken)
+        for section in inputs.script():
+            texts.setdefault(section.number, section.spoken)
     return texts
 
 
@@ -321,7 +318,7 @@ def poster_query(catalog: tuple[MeasuredScene, ...], section: PageSection) -> di
     first cue is an empty stage, so the slide is frozen in the state it ends in.
     """
     slides = slide_cues(scene_entry(catalog, section.scene))
-    return None if not slides else {Q.SLIDE: next(iter(slides))}
+    return None if not slides else {Q.FREEZE: next(iter(slides))}
 
 
 def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
@@ -343,9 +340,9 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
         return out
     try:
         record = inputs.settings.record
-        with browser.chromium(record.browser_path, policy=record.page_policy, spend=run.spend) as chrome:
+        with browser.chromium(inputs.settings.tools.chromium, policy=record.page_policy, spend=run.spend) as chrome:
             page, assets = open_project_page(chrome, inputs)
-            page.goto(page_url(section.page))
+            pages.load(page, page_url(section.page))
             pages.await_ready(page)
             query = poster_query(pages.read_report(page, out.stem).catalog, section)
             if query is None:
@@ -370,9 +367,7 @@ def publish(inputs: Inputs, work: Path, paths: Mapping[str, Path]) -> Path | Non
     Nothing a viewer can open is written until the film is whole, because a rename is the only step
     another process can observe.
     """
-    final_dir = inputs.workspace.final_dir
-    name = inputs.workspace.name
-    chaptered = final_dir / f"{WORK_MARK}{name}.chapters.mp4"
+    chaptered = inputs.workspace.work_file("chapters.mp4")
     mux_chapters(work, paths["chapters"], chaptered, inputs.document.language)
     chaptered.replace(work)
     if not work.exists() or work.stat().st_size == 0:
@@ -383,7 +378,7 @@ def publish(inputs: Inputs, work: Path, paths: Mapping[str, Path]) -> Path | Non
     work.replace(inputs.workspace.film)
     if not inputs.settings.output.timestamped_copy:
         return None
-    stamped = final_dir / f"{name}-{time.strftime(STAMP_FORMAT)}.mp4"
+    stamped = inputs.workspace.stamped_film(time.strftime(STAMP_FORMAT))
     shutil.copyfile(inputs.workspace.film, stamped)
     return stamped
 
@@ -396,7 +391,6 @@ def write_transcript_page(inputs: Inputs, path: Path, placements: Placements, te
 
 __all__ = [
     "SOUND_CAPTION_SECONDS",
-    "WORK_MARK",
     "build_captions",
     "build_chapters",
     "caption_texts",

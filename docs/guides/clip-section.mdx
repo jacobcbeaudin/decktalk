@@ -208,9 +208,9 @@ The JSON is one flat object, so a caller reads what was written without parsing 
   "written": ["media/open-line.mp4", "media/open-line.words.json"],
   "section": 1,
   "file": "media/open-line.mp4",
-  "words": "media/open-line.words.json",
-  "start": 0.48,
-  "end": 1.92,
+  "words_file": "media/open-line.words.json",
+  "start_seconds": 0.48,
+  "end_seconds": 1.92,
   "seconds": 1.92,
   "hold_seconds": 0.48,
   "gain_db": 0.0,
@@ -228,7 +228,7 @@ there. Each refusal names the command that makes what is missing.
 
 | The refusal | What to do |
 |---|---|
-| The section has no cut | Run `decktalk assemble` first. |
+| The section has no section video | Run `decktalk assemble` first. |
 | The section has no take, or the take file is gone | Run `decktalk narrate`, or `decktalk narrate --no-spend` to spend nothing. |
 | The section plays a clip the project already has | Cut from a page section, which is one DeckTalk recorded. There is nothing to cut out of a file you supplied. |
 | The span ends before it starts, or starts before zero | Write `--start` at 0 or later and `--end` after it. |

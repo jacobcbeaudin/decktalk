@@ -11,7 +11,7 @@ uv venv --quiet --python "$1" "$scratch/venv"
 uv pip install --python "$scratch/venv" --resolution lowest-direct .
 decktalk="$scratch/venv/bin/decktalk"
 "$decktalk" --version
-"$decktalk" init "$scratch/project" --defaults --no-input
+"$decktalk" init "$scratch/project" --no-input
 "$decktalk" check --no-pages -p "$scratch/project"
 "$decktalk" schema >/dev/null
 set +e

@@ -134,27 +134,28 @@ It is a cache, not a paid record. Every field of a row is read again off the scr
 the take and words files its digest names, so `narrate` builds an index that will not parse again
 from the takes on disk, keeps every take it finds and buys nothing for it.
 
+{/* sample: takes-json, build/narrate/takes.json after decktalk narrate --no-spend on a fresh decktalk init my-lesson read by a local dtsp voice, cut to the first section */}
 ```json build/narrate/takes.json
 {
   "script": "script.md",
-  "model": "eleven_multilingual_v2",
-  "output_format": "mp3_44100_128",
+  "model": "kokoro-82m",
+  "output_format": "mp3",
   "sections": [
     {
       "section": 1,
       "key": "01",
       "chapter": "Open",
-      "digest": "9f2c1ab7d4e60518",
+      "digest": "1e039d03eff9853a",
       "voiced": true,
       "word_count": 38,
       "characters": 200,
       "estimated_seconds": 16.3,
-      "duration_seconds": 18.1,
-      "speech_end_seconds": 17.98,
-      "sound_end_seconds": 17.987,
+      "duration_seconds": 12.667,
+      "speech_end_seconds": 12.667,
+      "sound_end_seconds": 12.667,
       "lead_seconds": 0.5,
       "tail_seconds": 1.3,
-      "spoken": "This is DeckTalk. Four files sit in one folder, and you write two of them."
+      "spoken": "This is DeckTalk. Four files sit in one folder, and you write two of them. You write what you will say, and you write the slides that go with it. Then every picture waits for its own word."
     }
   ]
 }
@@ -236,14 +237,15 @@ is good, the run is refused with a sentence, because the next step would buy the
 DeckTalk estimated for a placeholder take are a cache under `build/narrate/`, like the rest of
 `build/`.
 
-```json takes/9f2c1ab7d4e60518.words.json
+{/* sample: words-json, the words file of section 1's take after the same run, cut to its first three words */}
+```json takes/1e039d03eff9853a.words.json
 {
   "words": [
-    { "word": "This", "start": 0.0, "end": 0.454 },
-    { "word": "is", "start": 0.474, "end": 0.927 },
-    { "word": "DeckTalk", "start": 0.947, "end": 1.401 }
+    { "word": "This", "start": 0.0, "end": 0.333 },
+    { "word": "is", "start": 0.333, "end": 0.667 },
+    { "word": "DeckTalk", "start": 0.667, "end": 1.0 }
   ],
-  "audio": { "bytes": 22656, "blake3": "4be0ce1f9a2d7c31" }
+  "audio": { "bytes": 101791, "blake3": "fffe804f5695880d", "suffix": ".mp3" }
 }
 ```
 
@@ -294,24 +296,24 @@ instead.
 that section, written when that section is finished, so a reader of a long run sees each section's
 log as soon as that section is done and a measurement always belongs to the recording beside it.
 
-{/* sample: build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's five lists cut to [] */}
+{/* sample: build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues and words cut to [] */}
 ```json build/recordings/01.json
 {
   "section": 1,
-  "digest": "8c4be7f272a18203",
+  "digest": "aa91663794a02783",
   "recording": {
     "url": "http://project.localhost/deck/index.html?scene=1&cues=1.1%3Atitle%400.5%2C1.1%3Afiles%401.921%2C1.2%3Ascript%408.553%2C1.2%3Adeck%4011.868%2C1.2%3Aword%4017.079&words=This%400.50%2Cis%400.97%2CDeckTalk%401.45%2CFour%401.92%2Cfiles%402.40%2Csit%402.87%2Cin%403.34%2Cone%403.82%2Cfolder%404.29%2Cand%404.76%2Cyou%405.24%2Cwrite%405.71%2Ctwo%406.18%2Cof%406.66%2Cthem%407.13%2CYou%407.61%2Cwrite%408.08%2Cwhat%408.55%2Cyou%409.03%2Cwill%409.50%2Csay%409.97%2Cand%4010.45%2Cyou%4010.92%2Cwrite%4011.39%2Cthe%4011.87%2Cslides%4012.34%2Cthat%4012.82%2Cgo%4013.29%2Cwith%4013.76%2Cit%4014.24%2CThen%4014.71%2Cevery%4015.18%2Cpicture%4015.66%2Cwaits%4016.13%2Cfor%4016.61%2Cits%4017.08%2Cown%4017.55%2Cword%4018.03&t0=signal",
     "assets": ["deck/index.html"],
     "external": [],
     "missing": [],
     "requested_seconds": 20.087,
-    "load_seconds": 0.241,
-    "settle_seconds": 1.268,
-    "clock_start_seconds": 1.509,
+    "load_seconds": 0.053,
+    "settle_seconds": 1.454,
+    "clock_start_seconds": 1.507,
     "page_errors": [],
     "report": {
       "version": "0.5.0",
-      "mode": "cue",
+      "mode": "record",
       "scene": "1",
       "slide": "1.2",
       "warnings": [],
@@ -324,19 +326,19 @@ log as soon as that section is done and a measurement always belongs to the reco
     }
   },
   "start": {
-    "seconds": 1.36,
-    "method": "the frame after the last of 34 cover frames",
+    "seconds": 1.48,
+    "method": "the frame after the last of 37 cover frames",
     "guessed": false
   },
   "findings": [],
   "checks": {
-    "duration_seconds": 22.44,
+    "duration_seconds": 22.56,
     "wanted_seconds": 20.087,
     "luma": {
-      "at_tenth": 231.919,
-      "at_half": 218.764,
-      "at_nine_tenths": 187.515,
-      "peak_at_half": 242.0
+      "at_tenth": 231.923,
+      "at_half": 218.763,
+      "at_nine_tenths": 187.518,
+      "peak_at_half": 243.0
     }
   }
 }
@@ -372,7 +374,7 @@ its cues and its words, the frame geometry, the markup of the one scene the sect
 of its page, which every scene shares, and the content of every file the page loaded. A section
 whose digest is unchanged would be recorded again for nothing, so it is kept.
 
-`report` is what the page answered `window.__dtprobe.report()` with, kept whole.
+`report` is what the page answered `window.__decktalkProbe.report()` with, kept whole.
 [Runtime](/reference/runtime) gives every field of it.
 
 ## `score/ledger.json`
@@ -431,7 +433,7 @@ Beside each section video, `NN.json` holds the key it was encoded from.
 {/* sample: build/sections/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson */}
 ```json build/sections/01.json
 {
-  "digest": "5d584d9c228cd63e785d2a8788dfc94227a6359612dd5e621c28f0a860382580"
+  "digest": "6a0b6860ad7cd96f72d01d1cbe5e69659dcc6ccfeab9c9b438ddc4b29a6b275f"
 }
 ```
 
@@ -554,7 +556,7 @@ the other is writing. `--events` prints the same lines on stderr as they happen.
 
 {/* sample: decktalk cue, on a starter built with --no-spend, the whole events file it wrote */}
 ```jsonl build/events/36d65ca9220b.jsonl
-{"event":"run.start","time":"2026-10-02T08:37:55.627448Z","seq":0,"run":"36d65ca9220b","events_path":"build/events/36d65ca9220b.jsonl"}
+{"event":"run.start","time":"2026-10-02T08:37:55.627448Z","seq":0,"run":"36d65ca9220b","events_file":"build/events/36d65ca9220b.jsonl"}
 {"event":"run.log","time":"2026-10-02T08:37:55.628391Z","seq":1,"run":"36d65ca9220b","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":32488,"lock":".lock"}}
 {"event":"section.start","time":"2026-10-02T08:37:55.630716Z","seq":2,"run":"36d65ca9220b","stage":"cue","section":1}
 {"event":"section.done","time":"2026-10-02T08:37:55.630872Z","seq":3,"run":"36d65ca9220b","stage":"cue","section":1,"outcome":"ran","elapsed_seconds":0.0}
@@ -570,11 +572,11 @@ rather than per machine, so a reader can tell a gap from a lost line.
 [The event stream](/agents/json#the-event-stream) gives every name and every field of every line.
 
 A directory of every run a project ever made would grow without limit, and the runs a caller wants
-are the recent ones, so `output.events_keep_runs` prunes the oldest. It defaults to 20 and the
+are the recent ones, so `events.keep_runs` prunes the oldest. It defaults to 20 and the
 pruning happens as a run opens.
 
 ```bash
-uv run decktalk config set output.events_keep_runs 50
+uv run decktalk config set events.keep_runs 50
 ```
 
 `decktalk status --json` reports every run whose events file is still open, which is how a caller
@@ -585,7 +587,7 @@ finds a build running in the background and follows its lines.
 `check` freezes each slide either side of a cue and compares the two pictures, which is how it says
 whether a reveal really changes anything before a single credit is spent. Those pictures are written
 to `build/frames/<key>/<state>.png`, where `<state>` names the URL that drew it, such as
-`slide-2.1-after-2.1_formula.png`. Each state is drawn once however many cues are measured against
+`freeze-2.1-after-2.1_formula.png`. Each state is drawn once however many cues are measured against
 it, because the same URL is the same picture, and each is copied from `build/stills/` when a still of
 it is already kept there.
 

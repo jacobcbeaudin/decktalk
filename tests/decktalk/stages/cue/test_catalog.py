@@ -60,7 +60,7 @@ def test_a_moment_with_no_row_is_one_error_per_section(tmp_path: Path) -> None:
     found = cue_findings({1: ("1.1:a", "1.1:b", "1.1:c")}, _cued(1, [("1.1:a", "hello")]),
                          cues_path=path, root=tmp_path, stage=Stage.CUE)  # fmt: skip
     (judged,) = found
-    assert judged.code is Code.CUE_MISSING and judged.stage is Stage.CUE
+    assert judged.code is Code.CUE_UNLISTED and judged.stage is Stage.CUE
     assert "2 moment(s)" in judged.message and "1.1:b, 1.1:c" in judged.message
     assert judged.location.section == 1 and judged.location.file == Path("cues.json")
 
@@ -117,7 +117,7 @@ def test_a_project_with_no_cue_file_is_one_finding_whose_fix_writes_the_whole_fi
     path = tmp_path / "cues.json"
     found = cue_findings({1: ("1.1:a",), 2: ("2.1:b",)}, [], cues_path=path, root=tmp_path)
     (judged,) = found
-    assert judged.code is Code.CUE_MISSING and "there is no cues.json" in judged.message
+    assert judged.code is Code.CUE_UNLISTED and "there is no cues.json" in judged.message
     assert judged.fix is not None and judged.fix.applicability is Applicability.SAFE
     applied(path, tmp_path, found)
     sections = json.loads(path.read_text(encoding="utf-8"))["sections"]
@@ -140,14 +140,14 @@ def test_a_missing_moment_and_an_unknown_row_are_both_reported(tmp_path: Path) -
     path = write_cues(tmp_path, {"1": {"cues": [{"id": "9.9:x", "phrase": "there"}]}})
     cued = _cued(1, [("9.9:x", "there")])
     codes = {one.code for one in cue_findings({1: ("1.1:a",)}, cued, cues_path=path, root=tmp_path)}
-    assert codes == {Code.CUE_MISSING, Code.CUE_UNKNOWN}
+    assert codes == {Code.CUE_UNLISTED, Code.CUE_UNKNOWN}
 
 
 def test_one_stale_row_beside_one_new_moment_reads_as_a_rename(tmp_path: Path) -> None:
     """The phrase is what survives a rename, so the row that carries it is the row for that moment."""
     path = write_cues(tmp_path, {"1": {"cues": [{"id": "1.1:old", "phrase": "hello"}]}})
     found = cue_findings({1: ("1.1:new",)}, _cued(1, [("1.1:old", "hello")]), cues_path=path, root=tmp_path)
-    missing = next(one for one in found if one.code is Code.CUE_MISSING)
+    missing = next(one for one in found if one.code is Code.CUE_UNLISTED)
     unknown = next(one for one in found if one.code is Code.CUE_UNKNOWN)
     assert "looks like 1.1:new renamed" in unknown.message
     assert unknown.fix is not None and unknown.fix.applicability is Applicability.UNSAFE

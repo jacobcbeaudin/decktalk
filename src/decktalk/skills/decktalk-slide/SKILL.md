@@ -42,7 +42,7 @@ finding it raises. Read it rather than guessing, and read
    has to differ in brightness rather than only in colour. Text on white is usually too thin. A
    colour change of the same brightness counts as nothing.
 6. **Keep a slide to four reveals.** Start a new slide for the next part of a derivation.
-7. **Keep the picture inside the frame.** The stage is 1920 by 1080. Body text is 36 pixels or
+7. **Keep the picture inside the frame.** The canvas is 1920 by 1080. Body text is 36 pixels or
    larger. The bottom fifteen percent is the caption band, so keep every cued element out of it.
    Scope every class name to its scene so two scenes cannot collide.
 8. **Write a readable fallback under every equation.** The element's own text is what shows if the
@@ -58,7 +58,7 @@ finding it raises. Read it rather than guessing, and read
 - Never load a font, a stylesheet, a highlighter or a typesetter from a network address. A recording
   must not depend on the network. Copy the asset into `deck/`.
 - Never draw a product interface in HTML. Use a real screenshot, from a demo account, at twice the
-  stage scale.
+  canvas scale.
 - A page edit changes the picture and not the words, so it costs nothing to re-voice. A script edit
   costs a take.
 

@@ -13,7 +13,7 @@ reference.
 
 The **settings** are what a project changes. Every settings key publishes its default, its safe range, its unit,
 its scope and what a value at the edge risks, all from one declaration in the code, so
-`decktalk schema settings`, the JSON Schema, `decktalk config explain` and
+`decktalk schema setting`, the JSON Schema, `decktalk config explain` and
 [Configuration](/reference/configuration) are four renderings of one row. This page names the tables
 and sends you there rather than copying the numbers.
 
@@ -77,7 +77,7 @@ refusal names what it read and would not accept.
 - A section has both `page` and `clip`, or neither.
 - `record_margin_seconds`, `hold_seconds`, `lead_seconds` or `tail_seconds` is below 0.
 - `seamless` is set on the first section, which has no previous section.
-- A `[transition] dips` pair or a `[[mix.effects]]` row names a section that does not exist.
+- A `[transition] dips` pair or a `[[mix.effect]]` row names a section that does not exist.
 - A settings value is outside its safe range.
 - A `page` sits at the project root. The origin serves a page's whole directory, and the root holds
   the script, the cue file and the build directory.
@@ -158,8 +158,8 @@ file does not matter. A section is a **page section**, which records one scene o
 | `hold_seconds` | number | `0` | How long the section's last frame holds after its narration. The narration waits for the hold, and the next section starts after it. |
 | `lead_seconds` | number | `[narration] lead_seconds` | Silence before the section's first word. |
 | `tail_seconds` | number | `[narration] tail_seconds` | Silence after the section's last word. |
-| `ambience` | boolean | `false` | Play the ambience bed under this section. |
-| `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `slide`, `cues`, `words`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads. Loading the project accepts any key, and a command that opens the page or works out whether its recording is current refuses any other key by name, as `INPUT`: `check` with pages, `storyboard`, `status`, `record` and `build`. `narrate`, `cue` and `check --no-pages` never read it. Every value reaches the page as a string. |
+| `with_ambience` | boolean | `false` | Play the ambience bed under this section. |
+| `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `freeze`, `cues`, `words`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads. Loading the project accepts any key, and a command that opens the page or works out whether its recording is current refuses any other key by name, as `INPUT`: `check` with pages, `storyboard`, `status`, `record` and `build`. `narrate`, `cue` and `check --no-pages` never read it. Every value reaches the page as a string. |
 
 `lead_seconds` and `tail_seconds` are placed when the takes are joined and are never sent to the
 voice, so changing either voices nothing. The section starts where its silence starts, so
@@ -168,7 +168,7 @@ at zero. [script.md](/reference/script-md) has the whole rule.
 
 `record` sets `t0` itself so that the page starts its clock on the recorder's signal, and it fills
 `cues` and `words` from what `cue` and `narrate` resolved unless the section names them. A frozen
-frame, which `storyboard` and `check` draw, sets `cues`, `t0`, `slide`, `after` and `before` itself,
+frame, which `storyboard` and `check` draw, sets `cues`, `t0`, `freeze`, `after` and `before` itself,
 so those five are dropped from a section's `params` rather than passed through.
 
 ```toml decktalk.toml
@@ -182,7 +182,7 @@ hold_seconds = 2      # the last frame stays 2 seconds before section 5
 
 A page may load only what this file declares. Every page is opened at a local origin that answers
 for the directory each `page` sits in and for the files the document names, which are each clip and
-its `words`, every `[mix]` file, every `[[mix.effects]]` file and every `[score]` `out`. Every
+its `words`, every `[mix]` file, every `[[mix.effect]]` file and every `[score]` `out`. Every
 other file in the project is refused, so the script, the cue file, `build/` and `.env` stay out of a
 page's reach. A declared file is reached by the spelling written here and by no other, so
 `media/Theme.mp3` does not answer a request for `media/theme.mp3` on any platform. A declared
@@ -272,7 +272,7 @@ duration_seconds = 360
 |---|---|---|---|
 | `prompt` | string | required | The prompt. |
 | `out` | path | `[mix] ambience`, else `score/ambience.mp3` | Where to write it. |
-| `duration_seconds` | number | `25` | A setting: how long a bed to ask for. The bed loops under every section that sets `ambience = true`. |
+| `duration_seconds` | number | `25` | A setting: how long a bed to ask for. The bed loops under every section that sets `with_ambience = true`. |
 | `prompt_influence` | number | `0.3` | A setting: how closely the sound follows the prompt. |
 | `model` | string | `eleven_text_to_sound_v2` | A setting: the sound model to ask. |
 
@@ -282,7 +282,7 @@ duration_seconds = 360
 `prompt_influence`, which is `0.5`, and `model`. One `[score.effects.<name>]` table per effect
 names it, and `<name>` is the name the file is written under. It takes `prompt`, which is required, and
 `out`, which is `score/<name>.mp3` by default, and it may set any of the three settings for
-itself. A `[[mix.effects]]` row is what places the finished sound in the film.
+itself. A `[[mix.effect]]` row is what places the finished sound in the film.
 
 ### `[score.music]`
 
@@ -294,10 +294,10 @@ itself. A `[[mix.effects]]` row is what places the finished sound in the film.
 | `duration_seconds` | integer | `360` | A setting: how long a piece to ask for. It is an integer, so `120.5` fails the load. |
 | `model` | string | `music_v2` | A setting: the music model to ask. |
 | `bitrate` | string | `192k` | A setting: the bitrate of the file joined from the parts. |
-| `max_chunk_seconds` | integer | `300` | A setting: the longest one request asks for. |
+| `chunk_max_seconds` | integer | `300` | A setting: the longest one request asks for. |
 | `crossfade_seconds` | integer | `2` | A setting: the crossfade between two parts. |
 
-A piece longer than `max_chunk_seconds` is asked for in parts and joined with a crossfade, because the
+A piece longer than `chunk_max_seconds` is asked for in parts and joined with a crossfade, because the
 service will not write a long piece in one answer.
 
 ## `[mix]`
@@ -317,14 +317,14 @@ Without `[mix]` the film carries the narration and the audio of any clip, and no
 | `music_fade_in_seconds` | number | `2` | The fade in. |
 | `music_fade_out_seconds` | number | `3` | The fade out. |
 | `music_markers` | path | none | A markers file that swells and mutes the music at spoken phrases. |
-| `ambience` | path | none | The ambience bed for every section that sets `ambience = true`. |
+| `ambience` | path | none | The ambience bed for every section that sets `with_ambience = true`. |
 | `ambience_db` | number | `-20` | The ambience level. |
 | `slate` | path | a rendered slate | A PNG to show for a missing clip, instead of the titled slate DeckTalk renders. |
 
 A missing music or ambience file does not fail the build. `assemble` warns and plays the film
 without it.
 
-### `[[mix.effects]]`
+### `[[mix.effect]]`
 
 One table per sound effect, each of which plays at a cue.
 
@@ -387,7 +387,7 @@ show, which is also what a `seamless` section needs.
 A settings table may be written here with its project keys. Its machine keys go in the per-machine
 file instead, and `[tools]` holds nothing else, so it is never written here. These are the tables,
 and every key of each one is published with its default, its safe range, its unit, its scope and
-its hazard by `decktalk schema settings` and documented in full on
+its hazard by `decktalk schema setting` and documented in full on
 [Configuration](/reference/configuration).
 
 | Table | What it sets |

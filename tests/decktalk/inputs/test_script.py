@@ -34,7 +34,7 @@ not a section
 
 def test_parse_script_sections_and_directions():
     segs = parse_script(SCRIPT)
-    assert [s.index for s in segs] == [0, 1]
+    assert [s.number for s in segs] == [0, 1]
     one = segs[1]
     assert one.title == "Open" and one.target_seconds == 20
     # The direction before any prose has nothing to pause after, and the one between paragraphs is a beat.
@@ -50,25 +50,25 @@ def test_strip_markdown_keeps_placeholders():
 
 
 def test_a_section_carries_its_pauses_as_data_and_never_as_markup():
-    seg = parse_script("## 1. A\n\nThink about it.\n\n[pause 3]\n\nOnly two x is left. [beat] Done.")[0]
-    assert seg.pieces == (Piece("Think about it.", 3.0), Piece("Only two x is left.", BEAT), Piece("Done."))
-    assert not any("<" in piece.text or piece.text.endswith("—") for piece in seg.pieces)
-    assert seg.spoken == "Think about it. Only two x is left. Done."
-    # The silent placeholder honours the declared pauses, so the pause lengthens the section.
+    section = parse_script("## 1. A\n\nThink about it.\n\n[pause 3]\n\nOnly two x is left. [beat] Done.")[0]
+    assert section.pieces == (Piece("Think about it.", 3.0), Piece("Only two x is left.", BEAT), Piece("Done."))
+    assert not any("<" in piece.text or piece.text.endswith("—") for piece in section.pieces)
+    assert section.spoken == "Think about it. Only two x is left. Done."
+    # The placeholder honours the declared pauses, so the pause lengthens the section.
     short = parse_script("## 1. A\n\nThink about it.\n\nOnly two x is left. Done.")[0]
     cfg = Settings().narration
-    assert abs((seg.silent_seconds(cfg) - short.silent_seconds(cfg)) - 3.7) < 1e-6
+    assert abs((section.placeholder_seconds(cfg) - short.placeholder_seconds(cfg)) - 3.7) < 1e-6
 
 
 def test_pause_direction_accepts_decimals_and_case():
-    seg = parse_script("## 1. A\n\nOne. [Pause 1.5] Two.")[0]
-    assert seg.pieces == (Piece("One.", 1.5), Piece("Two."))
-    assert seg.spoken == "One. Two."
+    section = parse_script("## 1. A\n\nOne. [Pause 1.5] Two.")[0]
+    assert section.pieces == (Piece("One.", 1.5), Piece("Two."))
+    assert section.spoken == "One. Two."
 
 
 def test_back_to_back_directions_keep_the_longest_pause_and_a_last_pause_is_the_tail():
-    seg = parse_script("## 1. A\n\nOne.\n\n[beat]\n\n[pause 2]\n\nTwo.\n\n[pause 4]\n")[0]
-    assert seg.pieces == (Piece("One.", 2.0), Piece("Two."))
+    section = parse_script("## 1. A\n\nOne.\n\n[beat]\n\n[pause 2]\n\nTwo.\n\n[pause 4]\n")[0]
+    assert section.pieces == (Piece("One.", 2.0), Piece("Two."))
 
 
 @pytest.mark.parametrize(
@@ -93,7 +93,8 @@ def test_a_dash_the_author_wrote_is_spoken_text_and_counts_as_a_beat_in_a_placeh
     plain = parse_script("## 1. A\n\nOne thought another.")[0]
     assert dashed.pieces == (Piece("One thought — another."),)
     assert dashed.spoken == plain.spoken
-    assert dashed.silent_seconds(cfg) - plain.silent_seconds(cfg) == pytest.approx(cfg.placeholder_beat_seconds)
+    beat = cfg.placeholder_beat_seconds
+    assert dashed.placeholder_seconds(cfg) - plain.placeholder_seconds(cfg) == pytest.approx(beat)
 
 
 def test_a_break_tag_refused_while_reading_the_file_names_the_file(tmp_path):

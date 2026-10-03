@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Container, Mapping, Sequence
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import NamedTuple
 
 from decktalk.files import json_text
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location, judge
@@ -38,44 +39,54 @@ WIDTH_SLACK = 1
 """How many words longer or shorter than the cue's phrase a spoken phrase may be and still be offered."""
 
 
-def anchor_time(cue: Cue, spoken: Spoken) -> float | None:
-    """The moment this cue is anchored to, before its own nudge, or None when its phrase is not spoken."""
+def occurrences(cue: Cue, spoken: Spoken) -> list[int]:
+    """Index of the word every occurrence of the cue's phrase starts on, which is none for either end.
+
+    This is the one scan of a section for a cue. Its anchor and whether it is ambiguous are both read
+    off it, so a section is matched against once per cue however much is asked of the match.
+    """
+    if cue.phrase in (SECTION_START, SECTION_END):
+        return []
+    return spoken.matches(cue.phrase, cue.case_sensitive)
+
+
+def anchor_time(cue: Cue, spoken: Spoken, found: Sequence[int]) -> float | None:
+    """The moment this cue is anchored to, before its own nudge, or None when its phrase is not spoken.
+
+    `found` is the cue's `occurrences` in `spoken`.
+    """
     words = spoken.words
     if cue.phrase == SECTION_START:
         return SECTION_START_SECONDS
     if cue.phrase == SECTION_END:
         return words[-1].end if words else None
-    found = spoken.find(cue.phrase, cue.occurrence, cue.case_sensitive)
-    return None if found is None else words[found].start
+    return words[found[cue.occurrence - 1]].start if 1 <= cue.occurrence <= len(found) else None
 
 
-def resolve_cue(cue: Cue, spoken: Spoken) -> float | None:
+def resolve_cue(cue: Cue, spoken: Spoken, found: Sequence[int]) -> float | None:
     """The second this cue fires, which is its anchor plus its own nudge, never before the section starts.
 
     A nudge that would pull a cue in front of its own section has nowhere to go, so it lands on the
     section's start, which is the case `CUE_NO_ONSET` names.
     """
-    anchor = anchor_time(cue, spoken)
+    anchor = anchor_time(cue, spoken, found)
     if anchor is None:
         return None
     return max(SECTION_START_SECONDS, round(anchor + cue.offset_seconds, SECOND_DIGITS))
 
 
-def ambiguity(cue: Cue, spoken: Spoken) -> str | None:
+def ambiguity(cue: Cue, spoken: Spoken, found: Sequence[int]) -> str | None:
     """The sentence for a phrase that occurs more than once on a cue that names no occurrence, or None.
 
     It is a sentence and not a judgement because the cue does resolve: it takes the first occurrence,
     which is what the author most often meant, and the frozen code list holds no code for a choice
     that was made for them.
     """
-    if cue.occurrence_set or cue.phrase in (SECTION_START, SECTION_END):
+    if cue.occurrence_set or len(found) < REPEATS_MIN:
         return None
-    matches = spoken.matches(cue.phrase, cue.case_sensitive)
-    if len(matches) < REPEATS_MIN:
-        return None
-    times = ", ".join(f"{spoken.words[found].start:.2f}s" for found in matches)
+    times = ", ".join(f"{spoken.words[start].start:.2f}s" for start in found)
     return (
-        f"{cue.phrase!r} occurs {len(matches)} times in section {cue.id.split(':', 1)[0]}, at {times}, and the cue "
+        f"{cue.phrase!r} occurs {len(found)} times in section {cue.id.split(':', 1)[0]}, at {times}, and the cue "
         'takes the first. Set "occurrence" on the cue to choose another.'
     )
 
@@ -141,6 +152,15 @@ def phrase_fix(cue: Cue, phrase: str, cues_file: Path | None, lines: Sequence[st
     )
 
 
+class Resolved(NamedTuple):
+    """Every section's cues resolved, what judges them, and the choices they made for their author."""
+
+    sections: tuple[SectionCues, ...]
+    found: list[Finding]
+    notes: dict[int, list[str]]
+    """For each section, the sentence for every cue that took one of several occurrences of its phrase."""
+
+
 def resolve_sections(
     cued: Sequence[CuedSection],
     words_by_section: Mapping[int, Sequence[Word]],
@@ -150,8 +170,8 @@ def resolve_sections(
     cues_file: Path | None = None,
     cues_text: str = "",
     stage: Stage | None = None,
-) -> tuple[tuple[SectionCues, ...], list[Finding]]:
-    """Every section's cues resolved against the words it speaks, and everything that judges.
+) -> Resolved:
+    """Every section's cues resolved against the words it speaks, everything that judges, and every choice made.
 
     `words_by_section` holds the words of each section that has any, in seconds after that section
     starts. A section that is not in it has no take, so its cues resolve to nothing: that is a
@@ -163,14 +183,19 @@ def resolve_sections(
     lines = cues_text.splitlines()
     sections: list[SectionCues] = []
     found: list[Finding] = []
+    notes: dict[int, list[str]] = {}
     for block in sorted(cued, key=lambda one: one.number):
         words = words_by_section.get(block.number)
         spoken = None if words is None else Spoken.of(words)
         rows: list[CueTime] = []
         for cue in block.cues:
             place = Location(where=cue.id, file=cues_file, line=cue.line, section=block.number, cue=cue.id)
-            seconds = None if spoken is None else resolve_cue(cue, spoken)
+            matched = [] if spoken is None else occurrences(cue, spoken)
+            seconds = None if spoken is None else resolve_cue(cue, spoken, matched)
             rows.append(CueTime(id=cue.id, phrase=cue.phrase, seconds=seconds, nudge_seconds=cue.offset_seconds))
+            said = None if spoken is None else ambiguity(cue, spoken, matched)
+            if said is not None:
+                notes.setdefault(block.number, []).append(said)
             if seconds is None:
                 found += _unresolved(cue, block, spoken, place, clips=clips, stage=stage, lines=lines)
                 continue
@@ -193,7 +218,7 @@ def resolve_sections(
                 cues=tuple(rows),
             )
         )
-    return tuple(sections), found
+    return Resolved(tuple(sections), found, notes)
 
 
 def _unresolved(
@@ -240,9 +265,11 @@ def _unresolved(
 __all__ = [
     "NEAREST_MIN_RATIO",
     "REPEATS_MIN",
+    "Resolved",
     "ambiguity",
     "anchor_time",
     "nearest_phrase",
+    "occurrences",
     "phrase_fix",
     "resolve_cue",
     "resolve_sections",

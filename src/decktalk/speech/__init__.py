@@ -40,7 +40,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Protocol, cast
 
 from ..errors import InputError
-from ..results import Billing, Word
+from ..results import BillingBasis, Word
 from ..secret import Secret
 from ..settings import DtspConfig, ElevenLabsConfig, ProviderTable, Settings
 
@@ -125,7 +125,7 @@ class SpeechContext:
 
     secrets: Secrets
     base_url: str  # its own table's base_url, such as [elevenlabs] base_url, which the machine alone sets
-    context_chars: int  # [narration] context_chars
+    context_characters: int  # [narration] context_characters
     speech_timeout_seconds: int  # [narration] timeout_seconds
     retries: int = 0
     """How many more times a busy or failed request is sent, which the machine sets from `[narration] retries`."""
@@ -147,7 +147,7 @@ SpeechFactory = Callable[[SpeechContext], SpeechProvider]
 
 
 @dataclass(frozen=True)
-class Bill:
+class Billing:
     """How one adapter bills a take, which every price, every spend and every cap reads.
 
     `by` is per character, per second of audio, or free. The rate is read from the adapter's own
@@ -155,15 +155,15 @@ class Bill:
     second for a per-second one, so no layer above this one assumes how speech is billed.
     """
 
-    by: Billing
+    by: BillingBasis
     rate: str | None = None
     """The key in the adapter's own table that states its rate, or None for a bill that has no rate."""
 
 
-FREE = Bill(Billing.FREE)
+FREE = Billing(BillingBasis.FREE)
 """The bill of a voice that charges nothing, which never asks before it buys."""
 
-UNDECLARED = Bill(Billing.UNDECLARED)
+UNDECLARED = Billing(BillingBasis.UNDECLARED)
 """The bill of a provider a host registered itself, which declares nothing DeckTalk can price."""
 
 
@@ -205,7 +205,7 @@ class Declared:
     """Whether a model of it renders a timed pause. A beat is a dash every model reads as one."""
     identity: Callable[[ProviderTable, float], dict[str, Any]]
     """Its own table and `[voice] speed` as the settings a take's digest is taken over, under its own names."""
-    billing: Bill
+    billing: Billing
     """How it bills, per character, per second or free, and the key in its own table that states the rate."""
     output: Callable[[ProviderTable], Output]
     """The format its own table asks for, and the suffix a take in that format is written under."""
@@ -263,7 +263,7 @@ DECLARED: dict[str, Declared] = {
         table="elevenlabs",
         renders_pauses=_elevenlabs_renders_pauses,
         identity=_elevenlabs_identity,
-        billing=Bill(Billing.PER_CHARACTER, rate="dollars_per_1000_characters"),
+        billing=Billing(BillingBasis.PER_CHARACTER, rate="dollars_per_1000_characters"),
         output=_elevenlabs_output,
         factory=_elevenlabs,
     ),
@@ -300,7 +300,7 @@ def base_of(settings: Settings, provider: str) -> str:
     return table.base_url.rstrip("/") if table is not None else ""
 
 
-def billing_of(provider: str) -> Bill:
+def billing_of(provider: str) -> Billing:
     """How `provider` bills, which a provider a host registered leaves undeclared."""
     declared = DECLARED.get(provider)
     return declared.billing if declared is not None else UNDECLARED
@@ -308,7 +308,7 @@ def billing_of(provider: str) -> Bill:
 
 def is_free(provider: str) -> bool:
     """Whether `provider` declares that it bills nothing, which is what lets a run that may not spend call it."""
-    return billing_of(provider).by is Billing.FREE
+    return billing_of(provider).by is BillingBasis.FREE
 
 
 def start_hint(provider: str) -> str:
@@ -373,7 +373,7 @@ class SpeechProviders:
 
 __all__ = [
     "BEAT",
-    "Bill",
+    "Billing",
     "Output",
     "Piece",
     "Secret",

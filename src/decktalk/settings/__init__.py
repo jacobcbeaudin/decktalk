@@ -34,7 +34,7 @@ from pydantic import Field
 
 from decktalk.errors import InputError
 from decktalk.findings import Code, Model
-from decktalk.results import LayerValue, Scope
+from decktalk.results import LayerValue, Scope, SoundKind
 from decktalk.tomlmap import A_LUMA, A_PERCENT, A_SHARE, ENV_PREFIX, Bounds, Key, Nature, Source, registry, tune
 from decktalk.tomlmap.suggest import did_you_mean
 
@@ -58,17 +58,12 @@ HEX_COLOR = r"^(#|0[xX])[0-9A-Fa-f]{6}$"
 PAGE_POLICIES = ("trusted", "untrusted")
 """The two ways `record` treats a page: as the author's own work, or as a stranger's that may be hostile."""
 
+# The four constants a setting's bounds or relations read. `settings.numbers.NUMBERS` publishes each
+# one with its unit and its reason, so the reason is written there alone.
 BLOCK_PX = 8
-"""Truth: the H.264 transform block the block-averaged copy of a frame cancels ringing over."""
-
 GUARD_FRAMES = 1.5
-"""Truth: half a frame on each side of a two-frame window, which is the grid rounding guard."""
-
 REPORT_FRAME_GAP_MS = 100
-"""Calibration: the runtime's own reporting floor, which no frame-gap limit may go under."""
-
 CLICK_LEVEL_DBFS = -24.0
-"""Truth: the level DeckTalk generates its own click at, which every click floor sits under."""
 
 
 @dataclass(frozen=True)
@@ -89,12 +84,12 @@ class VideoConfig:
         bounds=Bounds(ge=240, le=4320),
         see_also=("verify.probe_height", "verify.block_height"),
     )
-    output_fps: int = tune(
+    fps: int = tune(
         25,
         "Frame rate of the final mp4. The recorder's own rate is measured and is not a setting.",
         unit="frames per second",
         bounds=Bounds(enum=(25, 30, 50, 60)),
-        requires="video.output_fps >= CAPTURE_FPS",
+        requires="video.fps >= CAPTURE_FPS",
         hazard=(
             "Encoding below the rate the recorder captured at drops presented frames, which both loses "
             "motion a viewer saw and corrupts the frames verify measures its own verdicts from."
@@ -220,7 +215,7 @@ class NarrationConfig:
         ),
         see_also=("narration.takes_dir", "tools.cache_dir"),
     )
-    context_chars: int = tune(
+    context_characters: int = tune(
         1500,
         "Characters of each neighbour section sent with a request, for continuous prosody.",
         unit="characters",
@@ -228,7 +223,8 @@ class NarrationConfig:
     )
     timeout_seconds: int = tune(
         180,
-        "Seconds before a speech request times out.",
+        "Seconds before a speech request times out. It is also the longest a run waits while another project "
+        "on this machine buys the same take, before it is refused as locked.",
         unit="seconds",
         bounds=Bounds(ge=10, le=1800),
         nature=Nature.APPARATUS,
@@ -265,20 +261,11 @@ class RecordConfig:
         unit="seconds",
         bounds=Bounds(ge=0, le=30),
     )
-    min_cover_seconds: float = tune(
+    cover_min_seconds: float = tune(
         1.5,
         "Shortest time from the start of the recorder to narration t=0.",
         unit="seconds",
         bounds=Bounds(ge=0, le=30),
-    )
-    browser_path: str = tune(
-        "",
-        "Chromium executable that `record` drives. It is empty for the build DeckTalk fetches itself, and a "
-        "path here is what a managed machine sets: a named executable that will not launch is never a reason "
-        "to download another.",
-        unit="path",
-        scope=Scope.MACHINE,
-        nature=Nature.APPARATUS,
     )
     color_scheme: str = tune(
         "light",
@@ -330,7 +317,7 @@ class RecordConfig:
         unit="seconds",
         bounds=Bounds(ge=0, le=10),
     )
-    cover_luma_min: float = tune(
+    cover_min_luma: float = tune(
         70.0,
         "A cover frame has an average luma above this.",
         unit="luma",
@@ -338,7 +325,7 @@ class RecordConfig:
         typed=A_LUMA,
         nature=Nature.APPARATUS,
     )
-    cover_luma_max: float = tune(
+    cover_max_luma: float = tune(
         140.0,
         "A cover frame has an average luma below this.",
         unit="luma",
@@ -346,22 +333,22 @@ class RecordConfig:
         typed=A_LUMA,
         nature=Nature.APPARATUS,
     )
-    cover_chroma_min: float = tune(
+    cover_min_chroma: float = tune(
         165.0,
         "A cover frame has an average U and an average V above this.",
-        unit="luma",
+        unit="chroma",
         bounds=Bounds(ge=128, le=255),
         typed=A_LUMA,
         nature=Nature.APPARATUS,
     )
-    painted_peak_luma_min: float = tune(
+    painted_peak_min_luma: float = tune(
         60.0,
         "A painted frame has a brightest luma above this.",
         unit="luma",
         bounds=Bounds(ge=1, le=200),
         typed=A_LUMA,
     )
-    painted_mean_luma_max: float = tune(
+    painted_mean_max_luma: float = tune(
         120.0,
         "A painted frame has an average luma below this, so a white flash does not count as the picture.",
         unit="luma",
@@ -585,7 +572,7 @@ class VerifyConfig:
         bounds=Bounds(ge=1, le=200),
         typed=A_LUMA,
         decides=(Code.RECORD_BLACK,),
-        see_also=("record.painted_peak_luma_min",),
+        see_also=("record.painted_peak_min_luma",),
     )
     cut_window_seconds: float = tune(
         0.15,
@@ -812,8 +799,22 @@ SOUND_PRICE_HAZARD = (
     "It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is "
     "still the default, because DeckTalk would otherwise be capping a spend against a number it invented."
 )
-
 """Why a sound rate nobody stated refuses a cap, said once for the three tables that state one."""
+
+
+def sound_rate(kind: SoundKind) -> float:
+    """The rate of one kind of sound, which each of the three tables states the same way for its own audio."""
+    return tune(
+        0.0,
+        f"What this project's sound plan charges in US dollars per minute of {kind.value} audio, which is priced "
+        "by the second of audio asked for.",
+        unit="US dollars per minute of audio",
+        bounds=Bounds(ge=0, le=100),
+        source=Source.STATED,
+        evidence="the plan page of the account whose key buys the sound",
+        hazard=SOUND_PRICE_HAZARD,
+        see_also=("score.provider",),
+    )
 
 
 @dataclass(frozen=True)
@@ -832,21 +833,11 @@ class AmbienceConfig:
         "How closely the ambience bed follows its prompt.",
         bounds=A_SHARE,
     )
-    dollars_per_minute: float = tune(
-        0.0,
-        "What this project's sound plan charges in US dollars per minute of ambience audio, which is priced by "
-        "the second of audio asked for.",
-        unit="US dollars per minute of audio",
-        bounds=Bounds(ge=0, le=100),
-        source=Source.STATED,
-        evidence="the plan page of the account whose key buys the sound",
-        hazard=SOUND_PRICE_HAZARD,
-        see_also=("score.provider",),
-    )
+    dollars_per_minute: float = sound_rate(SoundKind.AMBIENCE)
 
 
 @dataclass(frozen=True)
-class EffectsConfig:
+class EffectConfig:
     """The settings half of `[score.effects]`: how each effect is asked for unless its own table says."""
 
     model: str = tune(
@@ -863,17 +854,7 @@ class EffectsConfig:
         "How closely every effect follows its prompt, unless its own table sets how closely.",
         bounds=A_SHARE,
     )
-    dollars_per_minute: float = tune(
-        0.0,
-        "What this project's sound plan charges in US dollars per minute of effect audio, which is priced by "
-        "the second of audio asked for.",
-        unit="US dollars per minute of audio",
-        bounds=Bounds(ge=0, le=100),
-        source=Source.STATED,
-        evidence="the plan page of the account whose key buys the sound",
-        hazard=SOUND_PRICE_HAZARD,
-        see_also=("score.provider",),
-    )
+    dollars_per_minute: float = sound_rate(SoundKind.EFFECT)
 
 
 @dataclass(frozen=True)
@@ -892,7 +873,7 @@ class MusicConfig:
         "Bitrate of the music file that `score` joins from its chunks.",
         bounds=Bounds(enum=("96k", "128k", "160k", "192k", "256k", "320k")),
     )
-    max_chunk_seconds: int = tune(
+    chunk_max_seconds: int = tune(
         300,
         "Longest music request. Longer music is requested in chunks and crossfaded.",
         unit="seconds",
@@ -905,17 +886,7 @@ class MusicConfig:
         unit="seconds",
         bounds=Bounds(ge=0, le=30),
     )
-    dollars_per_minute: float = tune(
-        0.0,
-        "What this project's sound plan charges in US dollars per minute of music audio, which is priced by "
-        "the second of audio asked for.",
-        unit="US dollars per minute of audio",
-        bounds=Bounds(ge=0, le=100),
-        source=Source.STATED,
-        evidence="the plan page of the account whose key buys the sound",
-        hazard=SOUND_PRICE_HAZARD,
-        see_also=("score.provider",),
-    )
+    dollars_per_minute: float = sound_rate(SoundKind.MUSIC)
 
 
 @dataclass(frozen=True)
@@ -948,7 +919,7 @@ class ScoreConfig:
         "with the key and `base_url` of `[elevenlabs]`.",
         see_also=("elevenlabs.base_url",),
     )
-    format: str = tune(
+    output_format: str = tune(
         "mp3_44100_128",
         "Audio format the music, the ambience and the effects are asked for in. A take's format is its "
         "voice's own, such as `[elevenlabs] output_format`.",
@@ -963,7 +934,7 @@ class ScoreConfig:
     )
     ambience: AmbienceConfig = field(default_factory=AmbienceConfig)
     music: MusicConfig = field(default_factory=MusicConfig)
-    effects: EffectsConfig = field(default_factory=EffectsConfig)
+    effects: EffectConfig = field(default_factory=EffectConfig)
 
 
 type ProviderTable = ElevenLabsConfig | DtspConfig
@@ -977,16 +948,22 @@ adapter's declaration and never names a vendor.
 
 @dataclass(frozen=True)
 class OutputConfig:
-    """These keys switch the files a build writes beside the final mp4 and how long they are kept."""
+    """These keys switch the files a build writes beside the final mp4."""
 
     timestamped_copy: bool = tune(False, "Write a second copy of the final mp4 named with the date and time.")
-    events_keep_runs: int = tune(
+
+
+@dataclass(frozen=True)
+class EventsConfig:
+    """These keys bound the events files a run writes under `build/events/`."""
+
+    keep_runs: int = tune(
         20,
         "How many runs of event files `build/events/` keeps before the oldest is deleted.",
         unit="runs",
         bounds=Bounds(ge=1, le=1000),
     )
-    events_max_bytes: int = tune(
+    max_bytes: int = tune(
         8_388_608,
         "Bytes one run's events file may reach before debug and info lines are left out of it. "
         "Lines about the run, its stages, its sections, its findings and its costs are always kept.",
@@ -994,7 +971,7 @@ class OutputConfig:
         bounds=Bounds(ge=65_536, le=1_073_741_824),
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
-        see_also=("output.events_keep_runs",),
+        see_also=("events.keep_runs",),
         hazard="A file with no bound grows with every tool call a long film makes, on a disk a host shares.",
     )
 
@@ -1003,6 +980,15 @@ class OutputConfig:
 class ToolsConfig:
     """These keys name the tools DeckTalk drives, for a machine that supplies its own."""
 
+    chromium: str = tune(
+        "",
+        "Chromium executable that `record`, `check` and `storyboard` drive. It is empty for the build DeckTalk "
+        "fetches itself, and a path here is what a managed machine sets: a named executable that will not launch "
+        "is never a reason to download another.",
+        unit="path",
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+    )
     ffmpeg: str = tune(
         "",
         "ffmpeg executable. It is empty for the build DeckTalk fetches itself.",
@@ -1053,6 +1039,7 @@ class Settings:
     dtsp: DtspConfig = field(default_factory=DtspConfig)
     score: ScoreConfig = field(default_factory=ScoreConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    events: EventsConfig = field(default_factory=EventsConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
 
 
@@ -1092,7 +1079,7 @@ def not_a_key(key: str) -> InputError:
     """The one refusal of a name no settings key carries, with the nearest key when one is near."""
     return InputError(
         f"'{key}' is not a settings key.{did_you_mean(key, BY_ID)}",
-        hint="Run `decktalk schema settings` for every key DeckTalk reads.",
+        hint="Run `decktalk schema setting` for every key DeckTalk reads.",
     )
 
 
@@ -1145,8 +1132,9 @@ __all__ = [
     "AmbienceConfig",
     "AudioConfig",
     "DtspConfig",
-    "EffectsConfig",
+    "EffectConfig",
     "ElevenLabsConfig",
+    "EventsConfig",
     "Layers",
     "MixConfig",
     "MotionConfig",

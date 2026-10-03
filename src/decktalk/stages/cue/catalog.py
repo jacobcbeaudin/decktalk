@@ -6,7 +6,7 @@ every moment its elements declare, already qualified into the cue id `cues.json`
 read from the catalog and never from a regex over the markup, because `data-spotlight`, `data-class` and
 `data-owns` all declare moments no text scan can see.
 
-A moment with no row is `CUE_MISSING`, whose fix adds the row and leaves the phrase for the author,
+A moment with no row is `CUE_UNLISTED`, whose fix adds the row and leaves the phrase for the author,
 because the phrase is their line and not DeckTalk's. A row no page declares is `CUE_UNKNOWN`, which
 names the row rather than deleting it, and when one row's phrase survives beside exactly one
 undeclared moment the two are read as a rename and the fix changes the id alone.
@@ -125,7 +125,7 @@ def _missing_finding(
         else ""
     )
     return judge(
-        Code.CUE_MISSING,
+        Code.CUE_UNLISTED,
         f"section {number} declares {len(missing)} moment(s) that {where.as_posix()} does not list, which is "
         f"{named}, so nothing gives them a second.{also}",
         Location(where=where.as_posix(), file=where, section=number),
@@ -214,7 +214,7 @@ def _create_findings(declared: Mapping[int, Sequence[str]], *, where: Path, stag
     )
     return [
         judge(
-            Code.CUE_MISSING,
+            Code.CUE_UNLISTED,
             f"the deck declares {len(moments)} moment(s) and there is no {where.as_posix()}, so nothing gives "
             "any of them a second.",
             Location(where=where.as_posix(), file=where),

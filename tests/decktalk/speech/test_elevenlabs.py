@@ -17,14 +17,14 @@ from typing import Any
 import pytest
 
 from decktalk.errors import InputError, ProviderError
-from decktalk.results import Billing
+from decktalk.results import BillingBasis
 from decktalk.secret import Secret
 from decktalk.settings import ElevenLabsConfig, Settings
 from decktalk.speech import (
     BEAT,
     HOST_OUTPUT,
     PROVIDERS,
-    Bill,
+    Billing,
     Output,
     Piece,
     SpeechContext,
@@ -100,7 +100,7 @@ def provider(**over: object) -> ElevenLabs:
     fields: dict[str, Any] = {
         "secrets": None,
         "base_url": BASE,
-        "context_chars": 10,
+        "context_characters": 10,
         "speech_timeout_seconds": 180,
         **over,
     }
@@ -200,9 +200,9 @@ def test_elevenlabs_declares_its_format_and_names_a_take_by_the_codec_in_it():
 
 
 def test_elevenlabs_declares_it_bills_per_character_at_the_rate_its_own_table_states():
-    assert billing_of("elevenlabs") == Bill(Billing.PER_CHARACTER, rate="dollars_per_1000_characters")
+    assert billing_of("elevenlabs") == Billing(BillingBasis.PER_CHARACTER, rate="dollars_per_1000_characters")
     assert hasattr(ElevenLabsConfig(), "dollars_per_1000_characters")
-    assert billing_of("a-host-voice").by is Billing.UNDECLARED
+    assert billing_of("a-host-voice").by is BillingBasis.UNDECLARED
 
 
 def test_the_normalised_alignment_is_read_when_the_written_one_is_absent(monkeypatch):
@@ -279,7 +279,7 @@ def test_the_registry_builds_the_cloud_voice():
         def require(self, *names: str) -> list[Secret]:
             return [Secret(SENTINEL, name) for name in names]
 
-    context = SpeechContext(secrets=Env(), base_url=BASE, context_chars=1500, speech_timeout_seconds=90)
+    context = SpeechContext(secrets=Env(), base_url=BASE, context_characters=1500, speech_timeout_seconds=90)
     speech = SpeechProviders(factories=PROVIDERS).provider("elevenlabs", context)
     assert speech.name == "elevenlabs" and isinstance(speech, ElevenLabs)
     assert speech.context.speech_timeout_seconds == 90
@@ -289,7 +289,7 @@ def test_a_provider_name_decktalk_does_not_know_is_refused_with_the_ones_it_does
     context = SpeechContext(
         secrets=NoSecrets(),
         base_url=BASE,
-        context_chars=1,
+        context_characters=1,
         speech_timeout_seconds=1,
     )
     with pytest.raises(InputError) as caught:

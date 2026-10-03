@@ -12,7 +12,8 @@
 `decktalk.open(path)` returns a `Project`. Six verbs move it forward, six more calls report on it or
 cut a piece out of it, `serve` puts it on a local origin and `apply` carries out a fix. Every one of
 them opens a run on the machine's event stream, takes a cancel token, and returns a frozen result
-whose findings carry a code, a place, a severity and often a fix.
+whose findings carry a code, a place, a severity and often a fix. `price` alone opens no run, because
+it says what a run would buy before anybody approves it.
 
 This module is the facade and nothing below it may import it. It is also the only module that
 reaches down into the stages, and it imports them when a call is made rather than at the top,
@@ -52,6 +53,7 @@ from decktalk.results import (
     BuildResult,
     CheckResult,
     ClipResult,
+    Cost,
     CueResult,
     NarrateResult,
     RecordResult,
@@ -69,14 +71,14 @@ from decktalk.settings.layers import route, scoped
 
 log = logging.getLogger(__name__)
 
-LOCK_FILE = ".lock"
-"""What the file a writer holds is called, under the build directory it is writing into."""
-
-OWNER_FILE = ".lock.owner"
-"""What the note that names the writer holding the lock is called, beside the lock itself."""
+LOOPBACK = "127.0.0.1"
+"""The interface `serve` listens on unless told otherwise, which no other machine can reach."""
 
 CLOSE_POLL_SECONDS = 0.05
 """Calibration: how often a serving origin looks for a close, so closing it returns at once rather than in 0.5 s."""
+
+NOT_AUTHORED = frozenset({"build", ".git", ".venv", "node_modules", "__pycache__"})
+"""The directories no author edits, which are what a run, a tool or a package manager writes."""
 
 SECTION_RANGE = re.compile(r"^(\d+)(?:-(\d+))?$")
 """One item of a section selection, which is a number or two numbers with a dash between them."""
@@ -244,6 +246,22 @@ class Project:
         """Every section a change to this file would change, in section order."""
         return self._inputs.sections_touching(path)
 
+    def authored_files(self) -> tuple[Path, ...]:
+        """Every file under the project an author edits, which is what a watch loop polls for saves.
+
+        The walk prunes a directory before it descends, so it never lists what `node_modules` or
+        `.git` holds. The project's own build and take folders are pruned wherever its settings put
+        them, because a build that wrote into a watched folder would start the next build without end.
+        """
+        workspace = self._inputs.workspace
+        written = {workspace.build.resolve(), *(place.resolve() for place in workspace.take_places)}
+        found: list[Path] = []
+        for folder, dirs, files in os.walk(self.root):
+            here = Path(folder)
+            dirs[:] = [name for name in dirs if name not in NOT_AUTHORED and (here / name).resolve() not in written]
+            found.extend(here / name for name in files)
+        return tuple(found)
+
     # ---- the six verbs, in run order --------------------------------------------------------
 
     def narrate(
@@ -381,6 +399,27 @@ class Project:
                           loudness=loudness, strict=strict,
                           allow=frozenset(allow), stop_on=stop_on)  # fmt: skip
 
+    def price(
+        self,
+        *,
+        stages: Collection[Stage] | None = None,
+        only: Sequence[int] | None = None,
+        replace_voiced: bool = False,
+        replace_score: bool = False,
+    ) -> Cost | None:
+        """What a run of these stages that may spend would buy, or None when none of them buys anything.
+
+        `stages` defaults to the whole pipeline, and the options mean what they mean to `build`. It is
+        the sum `build` holds `max_cost` against and reports, worked out from each stage's plan alone:
+        no run is opened, no lock is taken, no voice is built and nothing is sent, so a caller prices a
+        run before it asks anybody to approve it. Raises `InputError` when a stage that buys cannot be
+        planned, which is the reason the run could not be priced.
+        """
+        from decktalk.stages import build  # noqa: PLC0415
+
+        return build.price(self._inputs, tuple(stages or Stage), only=only, replace_voiced=replace_voiced,
+                           replace_score=replace_score)  # fmt: skip
+
     # ---- the six that report or cut ---------------------------------------------------------
 
     def status(self, *, cancel: Cancel | None = None) -> StatusResult:
@@ -423,23 +462,23 @@ class Project:
         self,
         *,
         only: Sequence[int] | None = None,
-        slide: Sequence[str] | None = None,
+        slides: Sequence[str] | None = None,
         after: Sequence[str] | None = None,
         before: Sequence[str] | None = None,
-        at: Sequence[float] | None = None,
+        times: Sequence[float] | None = None,
         cancel: Cancel | None = None,
     ) -> StoryboardResult:
         """Freeze every slide at every cue onto one page, which is the checkpoint before anything is bought.
 
-        The four selectors beside `only` narrow which moments are drawn. `slide` names the slides,
+        The four selectors beside `only` narrow which moments are drawn. `slides` names the slides,
         `after` and `before` name the state just after and just before one cue, which are the pair
-        an author compares to see what a reveal changed, and `at` names a second of the section's
+        an author compares to see what a reveal changed, and `times` names seconds of the section's
         own clock. Each one repeats, and one that matches nothing draws nothing.
         """
         from decktalk.stages.storyboard import storyboard  # noqa: PLC0415
 
-        return self._call(storyboard, StoryboardResult, cancel=cancel, only=only, slide=slide, after=after,
-                          before=before, at=at)  # fmt: skip
+        return self._call(storyboard, StoryboardResult, cancel=cancel, only=only, slide=slides, after=after,
+                          before=before, at=times)  # fmt: skip
 
     def clip(
         self,
@@ -458,7 +497,7 @@ class Project:
         return self._call(clip, ClipResult, cancel=cancel, section=section, start=start, end=end, out=out,
                           gain_db=gain_db, hold_seconds=hold_seconds)  # fmt: skip
 
-    def apply(self, fix: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
+    def apply(self, findings: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
         """Carry out the fixes a set of findings offer, and say what each one did.
 
         A safe fix cannot lose the author's work and is applied. An unsafe fix can, so it is applied
@@ -466,11 +505,11 @@ class Project:
         applied.
         """
         with self._open(writes=True) as run:
-            return apply_fixes(run, fix, root=self.root, scope=Scope.PROJECT, unsafe=unsafe)
+            return apply_fixes(run, findings, root=self.root, scope=Scope.PROJECT, unsafe=unsafe)
 
     # ---- the local origin ---------------------------------------------------------------------
 
-    def serve(self, *, host: str = "127.0.0.1", port: int = 0) -> Origin:
+    def serve(self, *, host: str = LOOPBACK, port: int = 0) -> Origin:
         """Serve this project's deck on a local origin, and hand back the origin rather than a result.
 
         The origin answers only for the deck directory and the files the document declares, so a
@@ -539,7 +578,7 @@ class Project:
         tree is confined before the run opens, whether or not the stage itself writes.
         """
         self._inputs.workspace.confine()
-        output = self._inputs.settings.output
+        files = self._inputs.settings.events
         opening = new_run()
         self._runs.add(opening)
         with self.machine._run(
@@ -549,8 +588,8 @@ class Project:
             max_cost=max_cost,
             root=self.root,
             events_dir=self._inputs.workspace.events_dir,
-            keep_runs=output.events_keep_runs,
-            max_bytes=output.events_max_bytes,
+            keep_runs=files.keep_runs,
+            max_bytes=files.max_bytes,
         ) as run:
             # What the load noticed, such as a misspelled key, is said on every run of the project,
             # because the project was loaded once and each run's events file is read on its own.
@@ -571,8 +610,8 @@ class Project:
         under a lock nobody holds says so rather than refusing, because a caller cannot clear a file
         it was never told about.
         """
-        path = self._inputs.workspace.build / LOCK_FILE
-        note = self._inputs.workspace.build / OWNER_FILE
+        path = self._inputs.workspace.lock_path
+        note = self._inputs.workspace.owner_path
         try:
             held = FileLock(path, blocking=False).acquire()
         except Timeout:
@@ -588,18 +627,18 @@ class Project:
             # which confinement lets through because it stays inside, is refused here, as is a
             # directory under the lock's name.
             raise InputError(
-                f"{LOCK_FILE} cannot be used as the build lock ({unusable.strerror or unusable}).",
-                hint=f"Delete {LOCK_FILE} from the build directory and run again.",
+                f"{path.name} cannot be used as the build lock ({unusable.strerror or unusable}).",
+                hint=f"Delete {path.name} from the build directory and run again.",
                 location=at(path, self.root),
             ) from unusable
         with held:
             if _read_owner(note) is not None:
-                gone = f"A run that is no longer there left {OWNER_FILE} behind, so this run took it."
+                gone = f"A run that is no longer there left {note.name} behind, so this run took it."
                 run.note(gone, level=Level.WARNING)
             # The note is replaced whole, so a reader never sees half a line.
             replace_all({note: f"{os.getpid()} {run.id}\n"})
             # A host that sees two jobs collide learns the winner's side from this line.
-            log.debug("This run holds the build directory.", extra={"data": {"pid": os.getpid(), "lock": LOCK_FILE}})
+            log.debug("This run holds the build directory.", extra={"data": {"pid": os.getpid(), "lock": path.name}})
             try:
                 yield
             finally:

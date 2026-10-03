@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decktalk.results import Billing, Cost, CostState, Layer
+from decktalk.results import BillingBasis, Cost, CostState, Layer
 
 PRICE = 0.30
 """Dollars per thousand characters, which is what every price here is quoted at."""
@@ -18,7 +18,7 @@ def a_cost(
     state: CostState = CostState.ESTIMATE,
     layer: Layer = Layer.PROJECT,
     sections: tuple[int, ...] = (1,),
-    billing: Billing = Billing.PER_CHARACTER,
+    billing: BillingBasis = BillingBasis.PER_CHARACTER,
 ) -> Cost:
     """A price as a stage states one, for as many whole characters as `dollars` buys at `PRICE`."""
     return Cost(
@@ -28,7 +28,7 @@ def a_cost(
         dollars=dollars,
         ceiling_dollars=ceiling,
         billing=billing,
-        dollars_per_1000_characters=PRICE if billing is Billing.PER_CHARACTER else 0.0,
-        price_key=PRICE_KEY if billing is Billing.PER_CHARACTER else None,
+        dollars_per_1000_characters=PRICE if billing is BillingBasis.PER_CHARACTER else 0.0,
+        price_key=PRICE_KEY if billing is BillingBasis.PER_CHARACTER else None,
         price_layer=layer,
     )

@@ -22,7 +22,6 @@ from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.media.audio import FULL_SCALE, gain
 from decktalk.media.frames import Decoded, Size, Wanted
-from decktalk.page import MILLISECONDS
 from decktalk.pagescan import measured_rows, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, SkipReason, section_key
@@ -117,7 +116,7 @@ def first_change_seconds(film: Decoded, before: float, after: float, cue_at: flo
     otherwise reads as a reveal a frame or two early.
     """
     verify = inputs.settings.verify
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     series, blocks = (
         film.series(before, before, after, level=verify.onset_diff_luma, size=size)
         for size in (frame_size(inputs.settings), block_size(inputs.settings))
@@ -127,7 +126,7 @@ def first_change_seconds(film: Decoded, before: float, after: float, cue_at: flo
         before,
         cue_at,
         verify.onset_rise_points,
-        tolerance=(verify.cue_offset_max_ms / MILLISECONDS) + HALF_FRAME / fps,
+        tolerance=(verify.cue_offset_max_ms / 1000) + HALF_FRAME / fps,
         blocks=dict(blocks),
     )
 
@@ -270,7 +269,7 @@ def _planned(
     if section not in starts:
         return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.NOT_ASSEMBLED)
     verify = inputs.settings.verify
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     flags = inputs.document.fade_flags
     found = inputs.document.section(section)
     key = found.key if found is not None else section_key(section)
@@ -369,12 +368,12 @@ def _judge(
             word = heard
             _judge_click(inputs, run, cue, where, promised=at, heard=heard)
     landed = round(shown - word, 3)
-    limit = verify.cue_offset_max_ms / MILLISECONDS
-    if abs(landed) > limit + HALF_FRAME / inputs.settings.video.output_fps:
+    limit = verify.cue_offset_max_ms / 1000
+    if abs(landed) > limit + HALF_FRAME / inputs.settings.video.fps:
         run.found(
             judge(
                 Code.CUE_OFF,
-                f"the reveal at {cue} first changed {landed * MILLISECONDS:+.0f} ms from the word it lands "
+                f"the reveal at {cue} first changed {landed * 1000:+.0f} ms from the word it lands "
                 f"on, which is outside the {verify.cue_offset_max_ms:.0f} ms the offset limit allows.",
                 where,
                 stage=Stage.VERIFY,
@@ -397,7 +396,7 @@ def _judge_click(inputs: Inputs, run: Run, cue: str, where: Location, *, promise
     than the picture, which is what `av_offset_max_ms` is for.
     """
     verify = inputs.settings.verify
-    apart = (heard - promised) * MILLISECONDS
+    apart = (heard - promised) * 1000
     if abs(apart) <= verify.av_offset_max_ms:
         return
     run.found(

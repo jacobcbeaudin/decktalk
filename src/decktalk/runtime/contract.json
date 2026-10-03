@@ -1,5 +1,4 @@
 {
-  "milliseconds": 1000,
   "secondDigits": 3,
   "captureFps": 25,
   "pairSeparator": "|",
@@ -8,6 +7,7 @@
   "timeMark": "@",
   "listSeparator": ",",
   "t0Signal": "signal",
+  "doneAttr": "data-done",
   "enginePath": "/__decktalk/",
   "previewCueTimes": "/__decktalk/cue-times.json",
   "motionScaleProperty": "--dt-motion-scale",
@@ -490,8 +490,8 @@
       ],
       "summary": "Declares a slide on a template. Its id qualifies every moment written inside it."
     },
-    "data-hold": {
-      "name": "data-hold",
+    "data-preview-seconds": {
+      "name": "data-preview-seconds",
       "on": [
         "slide"
       ],
@@ -553,11 +553,11 @@
     "data-describe": "Any description clears the finding, so no value of it can change a verdict.",
     "data-describe-class": "The transcript prints the description verbatim, so no value of it can change a verdict.",
     "data-describe-out": "It replaces one transcript sentence with another, and neither is measured.",
-    "data-hold": "The preview alone reads it, and a preview is never recorded.",
+    "data-preview-seconds": "The preview alone reads it, and a preview is never recorded.",
     "data-name": "It names a scene in the index, which no check and no finding reads."
   },
   "codes": {
-    "PAGE_UNKNOWN_ATTR": "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
+    "PAGE_ATTR_UNKNOWN": "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
     "PAGE_BAD_VALUE": "{attr}={value} is not one of {allowed}, so write one of those instead.",
     "PAGE_MOMENT_UNKNOWN": "{attr}={value} names a cue slide {slide} does not own, so declare it on the slide or correct the name.",
     "PAGE_MOMENT_ORDER": "The exit {value} is at or before the entrance on the same element, so give the exit a later cue.",
@@ -597,7 +597,7 @@
   },
   "query": {
     "scene": "Play this scene from its first slide.",
-    "slide": "Freeze this slide with its cues already fired, which is what a screenshot opens.",
+    "freeze": "Freeze this slide with its cues already fired, which is what a screenshot opens.",
     "cues": "The cue times to fire at, as id@seconds pairs separated by a comma.",
     "words": "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
     "t0": "The narration second the page starts at, or the word signal when the recorder starts the clock.",
@@ -608,7 +608,7 @@
   },
   "report": {
     "version": "The runtime version the page carries.",
-    "mode": "Which of index, preview, cue and freeze the page is in.",
+    "mode": "Which of index, preview, record and freeze the page is in.",
     "scene": "The scene the page is playing, or null on the index page.",
     "slide": "The slide on screen, or null when none is mounted.",
     "warnings": "Every distinct warning the page reported, as code, message, slide, cue and attr.",

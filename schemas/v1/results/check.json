@@ -12,7 +12,7 @@
       "title": "Applicability",
       "type": "string"
     },
-    "Billing": {
+    "BillingBasis": {
       "description": "How a voice bills what it makes, which its adapter declares and every price is worked out by.\n\nA provider DeckTalk does not ship declares nothing, so its bill is `undeclared`: its price is\nnothing anybody stated, and a spend cap refuses to guard it. A build's total that adds a bill per\ncharacter to a bill per second is `mixed`, and carries the rate of each.",
       "enum": [
         "per_character",
@@ -21,13 +21,13 @@
         "undeclared",
         "mixed"
       ],
-      "title": "Billing",
+      "title": "BillingBasis",
       "type": "string"
     },
     "Code": {
-      "description": "Every judgement DeckTalk can make, with its sentence, its severity and who raises it.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
+      "description": "Every judgement DeckTalk can make, with its sentence, its severity, who raises it and where.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
       "enum": [
-        "PAGE_UNKNOWN_ATTR",
+        "PAGE_ATTR_UNKNOWN",
         "PAGE_BAD_VALUE",
         "PAGE_MOMENT_UNKNOWN",
         "PAGE_MOMENT_ORDER",
@@ -64,7 +64,7 @@
         "RECORD_STALLED",
         "RECORD_BLACK",
         "RECORD_TRUNCATED",
-        "CUE_MISSING",
+        "CUE_UNLISTED",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
         "CUE_STALE",
@@ -167,7 +167,7 @@
           "type": "number"
         },
         "billing": {
-          "$ref": "#/$defs/Billing",
+          "$ref": "#/$defs/BillingBasis",
           "description": "How the voice bills, which its adapter declares and the rate is per."
         },
         "dollars_per_1000_characters": {
@@ -381,7 +381,7 @@
             }
           ],
           "default": null,
-          "description": "The whole command that would clear this, or null.",
+          "description": "The smallest next action, or null. A refusal names the whole command that clears it, and a bug says how to report it.",
           "title": "Hint"
         },
         "location": {
@@ -653,14 +653,14 @@
       "title": "Judged",
       "type": "array"
     },
-    "pages": {
+    "pages_opened": {
       "description": "True when the pages were opened in a browser rather than read as text.",
-      "title": "Pages",
+      "title": "Pages Opened",
       "type": "boolean"
     },
-    "frames": {
+    "frames_compared": {
       "description": "True when slides were frozen and compared as pictures.",
-      "title": "Frames",
+      "title": "Frames Compared",
       "type": "boolean"
     },
     "cost": {
@@ -686,8 +686,8 @@
     "ok",
     "run",
     "judged",
-    "pages",
-    "frames",
+    "pages_opened",
+    "frames_compared",
     "cost"
   ],
   "title": "CheckResult",

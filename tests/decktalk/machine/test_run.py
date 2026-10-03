@@ -17,7 +17,7 @@ from decktalk.findings import (
 )
 from decktalk.machine.run import Threshold
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Billing, Layer, StatusResult
+from decktalk.results import BillingBasis, Layer, StatusResult
 from support.costs import a_cost
 from support.runs import a_machine
 
@@ -114,7 +114,7 @@ def test_a_run_says_the_path_its_own_lines_are_going_to(tmp_path: Path) -> None:
     with here.events.subscribe(seen.append), here._run(root=tmp_path, events_dir=tmp_path / "build" / "events") as run:
         pass
     assert isinstance(seen[0], RunStart)
-    assert seen[0].events_path == Path(f"build/events/{run.id}.jsonl")
+    assert seen[0].events_file == Path(f"build/events/{run.id}.jsonl")
 
 
 def test_a_machine_run_holds_no_project_so_it_writes_no_file(tmp_path: Path) -> None:
@@ -122,7 +122,7 @@ def test_a_machine_run_holds_no_project_so_it_writes_no_file(tmp_path: Path) -> 
     seen: list[Event] = []
     with here.events.subscribe(seen.append), here._run():
         pass
-    assert isinstance(seen[0], RunStart) and seen[0].events_path is None
+    assert isinstance(seen[0], RunStart) and seen[0].events_file is None
 
 
 def test_the_oldest_event_files_are_pruned_before_a_new_run_opens(tmp_path: Path) -> None:
@@ -172,7 +172,7 @@ def test_a_result_carries_the_run_the_judgements_and_the_files(tmp_path: Path) -
     with here._run(root=tmp_path) as run:
         run.wrote(tmp_path / "build" / "final" / "a.mp4")
         run.wrote(tmp_path / "build" / "final" / "a.mp4")
-        result = run.result(StatusResult, name="t", script=Path("script.md"), cues=Path("cues.json"), sections=())
+        result = run.result(StatusResult, name="t", script=Path("script.md"), cues_file=Path("cues.json"), sections=())
     assert result.run == run.id
     assert result.ok
 
@@ -184,9 +184,9 @@ def test_an_error_is_what_makes_a_result_not_ok(tmp_path: Path) -> None:
     assert error.severity is Severity.ERROR and warning.severity is Severity.WARNING
     with here._run() as run:
         run.found(warning)
-        assert run.result(StatusResult, name="t", script=Path("s"), cues=Path("c"), sections=()).ok
+        assert run.result(StatusResult, name="t", script=Path("s"), cues_file=Path("c"), sections=()).ok
         run.found(error)
-        assert not run.result(StatusResult, name="t", script=Path("s"), cues=Path("c"), sections=()).ok
+        assert not run.result(StatusResult, name="t", script=Path("s"), cues_file=Path("c"), sections=()).ok
 
 
 ERROR = Finding(code=Code.CUE_UNRESOLVED, message="x", location=Location(where="cues.json"))
@@ -211,7 +211,13 @@ def test_a_result_is_ok_exactly_when_nothing_reaches_the_threshold_it_was_given(
     assert ERROR.severity is Severity.ERROR and WARNING.severity is Severity.WARNING
     with a_machine(tmp_path)._run() as run:
         result = run.result(
-            StatusResult, findings=found, threshold=threshold, name="t", script=Path("s"), cues=Path("c"), sections=()
+            StatusResult,
+            findings=found,
+            threshold=threshold,
+            name="t",
+            script=Path("s"),
+            cues_file=Path("c"),
+            sections=(),
         )
     assert result.ok is passes
     assert threshold.fails(found) is not passes
@@ -235,7 +241,7 @@ def test_a_free_voice_is_never_asked_for_approval_even_by_a_run_that_may_not_spe
 ) -> None:
     """Spend gates money, so a voice that declares it bills nothing passes the gate whatever the run may spend."""
     here = a_machine(tmp_path)
-    free = a_cost(0.0, 0.0, billing=Billing.FREE)
+    free = a_cost(0.0, 0.0, billing=BillingBasis.FREE)
     assert free.free
     with here._run(spend=False, max_cost=max_cost) as run:
         assert run.approve(free) == free
@@ -252,19 +258,19 @@ def test_free_is_what_the_voice_declares_and_never_a_rate_of_zero() -> None:
     """A zero rate on a voice that bills is somebody's statement about their plan, stated or not."""
     assert not a_cost(0.0, 0.0, layer=Layer.DEFAULT).model_copy(update={"dollars_per_1000_characters": 0.0}).free
     assert not a_cost(0.0, 0.0).model_copy(update={"dollars_per_1000_characters": 0.0}).free
-    assert a_cost(0.0, 0.0, billing=Billing.FREE, layer=Layer.DEFAULT).free
+    assert a_cost(0.0, 0.0, billing=BillingBasis.FREE, layer=Layer.DEFAULT).free
 
 
 def test_a_cap_lets_a_free_voice_through_with_no_rate_stated(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
-    free = a_cost(0.0, 0.0, billing=Billing.FREE, layer=Layer.DEFAULT)
+    free = a_cost(0.0, 0.0, billing=BillingBasis.FREE, layer=Layer.DEFAULT)
     with here._run(spend=True, max_cost=0.0) as run:
         assert run.approve(free) == free
 
 
 def test_a_cap_is_refused_for_a_voice_that_declares_no_bill_with_what_to_declare(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
-    undeclared = a_cost(0.0, 0.0, billing=Billing.UNDECLARED, layer=Layer.DEFAULT)
+    undeclared = a_cost(0.0, 0.0, billing=BillingBasis.UNDECLARED, layer=Layer.DEFAULT)
     with here._run(spend=True, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
         run.approve(undeclared)
     assert "declares no bill" in str(refused.value)
@@ -298,10 +304,39 @@ def test_the_ceiling_is_compared_against_the_most_a_run_can_cost(tmp_path: Path)
     assert "0.90" in str(refused.value)
 
 
+@pytest.mark.parametrize(
+    ("ceilings", "cap", "passes"),
+    [
+        ((0.9,), 0.9, True),
+        ((0.9,), 0.89, False),
+        ((0.5, 0.5), 1.0, True),
+        ((0.5, 0.51), 1.0, False),
+        ((0.1, 0.2), 0.3, True),
+    ],
+    ids=["at-the-cap", "a-cent-over", "summed-to-the-cap", "summed-a-cent-over", "summed-in-floats"],
+)
+def test_the_ceiling_lets_a_run_cost_exactly_the_cap_and_not_a_cent_more(
+    tmp_path: Path, ceilings: tuple[float, ...], cap: float, passes: bool
+) -> None:
+    """`--max-cost` is the most a run may cost, so the cap itself passes and a cent over it is refused.
+
+    The approvals are summed in dollars to the cent, so 0.1 and 0.2 make the 0.3 they say.
+    """
+    with a_machine(tmp_path)._run(spend=True, max_cost=cap) as run:
+        *before, last = (a_cost(ceiling, ceiling) for ceiling in ceilings)
+        for cost in before:
+            run.approve(cost)
+        if passes:
+            assert run.approve(last) == last
+        else:
+            with pytest.raises(ApprovalRequired):
+                run.approve(last)
+
+
 def test_the_ceiling_caps_everything_one_run_approves_and_not_each_approval(tmp_path: Path) -> None:
     """A build approves its takes and then its sounds, and `--max-cost` is the most the whole run may cost."""
     here = a_machine(tmp_path)
-    sounds = a_cost(0.9, 0.9, billing=Billing.PER_SECOND)
+    sounds = a_cost(0.9, 0.9, billing=BillingBasis.PER_SECOND)
     with here._run(spend=True, max_cost=1.0) as run:
         run.approve(a_cost(0.9, 0.9))
         with pytest.raises(ApprovalRequired) as refused:

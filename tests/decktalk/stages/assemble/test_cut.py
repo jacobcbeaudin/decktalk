@@ -20,7 +20,7 @@ from decktalk.stages.assemble.cut import (
     concat,
     page_target,
     placements_of,
-    remove_stray_cuts,
+    remove_stray_videos,
     render_clip,
     render_sections,
     rendered_starts,
@@ -243,7 +243,7 @@ def test_the_placements_record_where_each_section_plays_and_what_stood_in(tmp_pa
     assert placements.total_seconds == 9.0
     assert [row.kind for row in placements.sections[:2]] == [SectionKind.PAGE, SectionKind.CLIP]
     assert placements.sections[2].chapter == "The edit"
-    assert placements.fps == inputs.settings.video.output_fps
+    assert placements.fps == inputs.settings.video.fps
 
 
 def test_rendered_starts_add_up_in_the_order_the_film_plays(tmp_path):
@@ -282,7 +282,7 @@ def test_a_leftover_cut_and_key_of_a_section_nobody_declares_are_removed(tmp_pat
     sections.mkdir(parents=True)
     for name in ("01.mp4", "01.json", "09.mp4", "09.json"):
         (sections / name).write_bytes(b"")
-    remove_stray_cuts(inputs)
+    remove_stray_videos(inputs)
     assert sorted(path.name for path in sections.iterdir()) == ["01.json", "01.mp4"]
 
 

@@ -33,6 +33,7 @@ __all__ = [
     "CAPTURE_FPS",
     "COUNTS",
     "CUE_MARK",
+    "DONE_ATTR",
     "ENGINE_PATH",
     "ENTRANCES",
     "EXEMPT",
@@ -42,7 +43,6 @@ __all__ = [
     "Kind",
     "LIST_SEPARATOR",
     "MEASURABLE_SPAN_SECONDS",
-    "MILLISECONDS",
     "MOMENTS",
     "MOTION_SCALE_PROPERTY",
     "ONSET_FIRST_FRAME_PERCENT",
@@ -63,9 +63,6 @@ __all__ = [
     "measurable",
     "stagger_span",
 ]
-
-MILLISECONDS = 1000
-"""Truth: the milliseconds in a second, which is the unit Chromium and the page both count in."""
 
 SECOND_DIGITS = 3
 """Truth: a second is written to the millisecond, which is finer than any frame a recording holds."""
@@ -110,6 +107,9 @@ LIST_SEPARATOR = ","
 
 T0_SIGNAL = "signal"
 """What `t0` says when the recorder starts the page clock on its own signal rather than at a second."""
+
+DONE_ATTR = "data-done"
+"""The attribute the runtime sets on the body once the page has drawn everything its URL asked for."""
 
 ENGINE_PATH = "/__decktalk/"
 """The path the engine answers itself under every origin, which holds the runtime and KaTeX."""
@@ -179,7 +179,7 @@ class Attr(Enum):
     SCENE = "data-scene"
     NAME = "data-name"
     SLIDE = "data-slide"
-    HOLD = "data-hold"
+    PREVIEW_SECONDS = "data-preview-seconds"
     OWNS = "data-owns"
     ENTER = "data-enter"
 
@@ -188,7 +188,7 @@ class Q(Enum):
     """Every query key a DeckTalk page reads, which is the whole vocabulary of a page URL."""
 
     SCENE = "scene"
-    SLIDE = "slide"
+    FREEZE = "freeze"
     CUES = "cues"
     WORDS = "words"
     T0 = "t0"
@@ -625,8 +625,8 @@ ATTRS: dict[Attr, AttrSpec] = {
         ),
         summary="Declares a slide on a template. Its id qualifies every moment written inside it.",
     ),
-    Attr.HOLD: AttrSpec(
-        name=Attr.HOLD,
+    Attr.PREVIEW_SECONDS: AttrSpec(
+        name=Attr.PREVIEW_SECONDS,
         on=(Subject.SLIDE,),
         kind=Kind.SECONDS,
         values=(),
@@ -674,14 +674,14 @@ EXEMPT = {
     Attr.DESCRIBE: "Any description clears the finding, so no value of it can change a verdict.",
     Attr.DESCRIBE_CLASS: "The transcript prints the description verbatim, so no value of it can change a verdict.",
     Attr.DESCRIBE_OUT: "It replaces one transcript sentence with another, and neither is measured.",
-    Attr.HOLD: "The preview alone reads it, and a preview is never recorded.",
+    Attr.PREVIEW_SECONDS: "The preview alone reads it, and a preview is never recorded.",
     Attr.NAME: "It names a scene in the index, which no check and no finding reads.",
 }
 """The rows that survive without a code, and the sentence that says why each one is allowed to."""
 
 QUERY = {
     Q.SCENE: "Play this scene from its first slide.",
-    Q.SLIDE: "Freeze this slide with its cues already fired, which is what a screenshot opens.",
+    Q.FREEZE: "Freeze this slide with its cues already fired, which is what a screenshot opens.",
     Q.CUES: "The cue times to fire at, as id@seconds pairs separated by a comma.",
     Q.WORDS: "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
     Q.T0: "The narration second the page starts at, or the word signal when the recorder starts the clock.",
@@ -694,7 +694,7 @@ QUERY = {
 
 REPORT = {
     "version": "The runtime version the page carries.",
-    "mode": "Which of index, preview, cue and freeze the page is in.",
+    "mode": "Which of index, preview, record and freeze the page is in.",
     "scene": "The scene the page is playing, or null on the index page.",
     "slide": "The slide on screen, or null when none is mounted.",
     "warnings": "Every distinct warning the page reported, as code, message, slide, cue and attr.",

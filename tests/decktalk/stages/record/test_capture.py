@@ -53,7 +53,7 @@ words = "media/broll.words.json"
 music = "media/bed.mp3"
 slate = "media/slate.png"
 
-[[mix.effects]]
+[[mix.effect]]
 file = "media/chime.wav"
 section = 1
 cue = "1.1:open"

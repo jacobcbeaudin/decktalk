@@ -28,7 +28,7 @@ The index is also the time base. A section runs for its lead, then its take up t
 sound ends, then its tail, and the sections run in section order, so where each one sits in the
 joined narration is arithmetic over the rows rather than a second file that can disagree with them.
 Each of those three numbers is a pure function of the take's own bytes and its own section's
-settings, so a section lands the same way whether this run voiced its take or found it cached.
+settings, so a section lands the same way whether this run voiced its take or found it on disk.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ FIELD_SEPARATOR = "\n"
 PLACEHOLDER_DIGITS = 10
 """How much of the sha256 names a placeholder take, which is regenerated rather than bought."""
 
-TAKE_HASH = rf"^(?:[0-9a-f]{{{TAKE_DIGITS}}}|{PLACEHOLDER_PREFIX}[0-9a-f]{{{PLACEHOLDER_DIGITS}}})$"
+TAKE_DIGEST = rf"^(?:[0-9a-f]{{{TAKE_DIGITS}}}|{PLACEHOLDER_PREFIX}[0-9a-f]{{{PLACEHOLDER_DIGITS}}})$"
 """Every digest a take may be named by, which is the head of a sha256 in hex and nothing else.
 
 A take's digest becomes a file name under the take directory, so an index a user supplied could
@@ -172,7 +172,7 @@ class Take(Model):
     key: SectionKey
     chapter: str = Field(description="The section's title, which the film's chapter marker carries.")
     digest: str = Field(
-        pattern=TAKE_HASH,
+        pattern=TAKE_DIGEST,
         description="The digest of the inputs this take was made from, which names its files, in lowercase hex.",
     )
     voiced: bool = Field(description="True when a provider spoke this take, false on a placeholder.")
@@ -239,7 +239,7 @@ class Takes(Stored):
         return next((take for take in self.sections if take.section == section), None)
 
     @property
-    def voiced(self) -> tuple[int, ...]:
+    def voiced_sections(self) -> tuple[int, ...]:
         """Every section holding a voiced take."""
         return tuple(take.section for take in self.sections if take.voiced)
 
@@ -267,7 +267,7 @@ __all__ = [
     "PLACEHOLDER_PREFIX",
     "PLACEHOLDER_SUFFIX",
     "TAKE_DIGITS",
-    "TAKE_HASH",
+    "TAKE_DIGEST",
     "PlaceholderInputs",
     "Placed",
     "Take",

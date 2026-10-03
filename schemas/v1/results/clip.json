@@ -13,9 +13,9 @@
       "type": "string"
     },
     "Code": {
-      "description": "Every judgement DeckTalk can make, with its sentence, its severity and who raises it.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
+      "description": "Every judgement DeckTalk can make, with its sentence, its severity, who raises it and where.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
       "enum": [
-        "PAGE_UNKNOWN_ATTR",
+        "PAGE_ATTR_UNKNOWN",
         "PAGE_BAD_VALUE",
         "PAGE_MOMENT_UNKNOWN",
         "PAGE_MOMENT_ORDER",
@@ -52,7 +52,7 @@
         "RECORD_STALLED",
         "RECORD_BLACK",
         "RECORD_TRUNCATED",
-        "CUE_MISSING",
+        "CUE_UNLISTED",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
         "CUE_STALE",
@@ -263,7 +263,7 @@
             }
           ],
           "default": null,
-          "description": "The whole command that would clear this, or null.",
+          "description": "The smallest next action, or null. A refusal names the whole command that clears it, and a bug says how to report it.",
           "title": "Hint"
         },
         "location": {
@@ -526,22 +526,22 @@
       "title": "File",
       "type": "string"
     },
-    "words": {
+    "words_file": {
       "description": "The clip's own words file, project-relative.",
       "format": "path",
-      "title": "Words",
+      "title": "Words File",
       "type": "string"
     },
-    "start": {
+    "start_seconds": {
       "description": "The first frame's time in the section, in seconds.",
       "minimum": 0,
-      "title": "Start",
+      "title": "Start Seconds",
       "type": "number"
     },
-    "end": {
+    "end_seconds": {
       "description": "The time just after the last frame, in seconds.",
       "minimum": 0,
-      "title": "End",
+      "title": "End Seconds",
       "type": "number"
     },
     "seconds": {
@@ -572,9 +572,9 @@
     "run",
     "section",
     "file",
-    "words",
-    "start",
-    "end",
+    "words_file",
+    "start_seconds",
+    "end_seconds",
     "seconds",
     "hold_seconds",
     "gain_db",

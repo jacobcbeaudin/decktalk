@@ -34,11 +34,11 @@ def schema(
     ctx: Context,  # noqa: ARG001  (the session is made for every command, and this one needs none of it)
     name: Annotated[
         str | None,
-        typer.Argument(metavar="NAME", help="A command, or finding, error, event, settings, cues or page."),
+        typer.Argument(metavar="NAME", help="A command, or finding, error, event, setting, cues or page."),
     ] = None,
     scope: Annotated[
         Scope | None,
-        typer.Option("--scope", metavar="SCOPE", help="With settings, the keys one file may hold: project or machine."),
+        typer.Option("--scope", metavar="SCOPE", help="With setting, the keys one file may hold: project or machine."),
     ] = None,
 ) -> dict[str, Any]:
     """Print the JSON Schema of a command, a setting or an event.

@@ -43,7 +43,7 @@ written as a string, and it must name a `[[section]]` in `decktalk.toml`. Each s
 with a `cues` array and an optional `min_seconds`.
 
 The file is optional. A project without it resolves no cues at all, and the deck earns one
-`CUE_MISSING` finding counting every moment it declares, whose fix writes the whole file with a row
+`CUE_UNLISTED` finding counting every moment it declares, whose fix writes the whole file with a row
 for each of them.
 
 | Section key | Type | Default | Meaning |
@@ -93,7 +93,7 @@ the section's own start: a cue that would resolve earlier than zero lands at zer
 the case `CUE_NO_ONSET` names, because a second that is the section's start rather than a word's has
 nothing to measure an onset against.
 
-`offset_seconds` here is not the one of a sound effect. A `[[mix.effects]]` row in `decktalk.toml`
+`offset_seconds` here is not the one of a sound effect. A `[[mix.effect]]` row in `decktalk.toml`
 carries its own `offset_seconds`, which shifts the sound and not the picture.
 
 ### The two anchors
@@ -138,10 +138,10 @@ this file has no row for.
 
 {/* sample: decktalk check --no-frames, on a fresh decktalk init my-lesson with the 2.1:formula row deleted, which exits 1 */}
 ```text
-No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.14 for 476 characters at $0.30 per 1,000 characters.
-cues.json: CUE_MISSING section 2 declares 1 moment(s) that cues.json does not list, which is 2.1:formula, so nothing gives them a second.
+cues.json: CUE_UNLISTED section 2 declares 1 moment(s) that cues.json does not list, which is 2.1:formula, so nothing gives them a second.
   fix (safe): Add 1 row to section 2 of cues.json, each waiting for the words you write in its `phrase`.
 Found 1 finding, 1 error. 1 fixable with --fix.
 ```

@@ -194,7 +194,7 @@ loop dispatches on.
   "run": "46116e0ba657",
   "name": "my-lesson",
   "script": "script.md",
-  "cues": "cues.json",
+  "cues_file": "cues.json",
   "sections": [
     {
       "section": 1,
@@ -202,6 +202,7 @@ loop dispatches on.
       "kind": "page",
       "source": "deck/index.html?scene=1",
       "voiced": false,
+      "voiced_stale": false,
       "recorded": false,
       "assembled": false,
       "stale": false
@@ -249,9 +250,9 @@ Assemble kept what it made last time, because nothing it reads has changed.
 Verify kept what it made last time, because nothing it reads has changed.
       Verify    0:00   kept
        Built build/final/my-lesson.mp4, $0.00, 3 findings
-script.md: TAKE_MISSING Section 1 plays a placeholder, because only a take without voice exists. Run decktalk narrate --section 1 --spend to buy its take.
-script.md: TAKE_MISSING Section 2 plays a placeholder, because only a take without voice exists. Run decktalk narrate --section 2 --spend to buy its take.
-script.md: TAKE_MISSING Section 3 plays a placeholder, because only a take without voice exists. Run decktalk narrate --section 3 --spend to buy its take.
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
 Found 3 findings, 0 errors.
 ```
 
@@ -281,10 +282,12 @@ decktalk build --force --no-spend
 not spend plays every voiced take on disk and puts a placeholder only where a take is missing, reporting
 each such section as [`TAKE_MISSING`](/reference/findings/TAKE_MISSING), so a film you have already
 voiced rehearses its new section for nothing. `--replace-voiced --no-spend` plays placeholders in
-place of the voiced takes for that one run, and the voiced takes stay on disk for the next.
+place of the voiced takes for that one run, and the voiced takes stay on disk for the next. A voice
+that bills nothing, such as `dtsp`, voices each section it names again with or without `--spend`.
 
+{/* sample: decktalk narrate --section 2 --replace-voiced --no-spend, on a fresh decktalk init my-lesson, the finding line */}
 ```text
-script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take yet. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
 ```
 
 `--replace-score` is the same for the score. With `--spend` it buys every bought sound again,
@@ -330,14 +333,10 @@ Four things are worth knowing about it.
   clip to the section that plays it, and `script.md`, `cues.json` and `decktalk.toml` each belong to
   every section at once. A file that belongs to no section, such as a stylesheet, rebuilds all of
   them, because nothing can say which sections it reached.
-- After each rebuild it names every section that now holds a voiced take that no longer matches the
-  script, and gives the whole command that would voice it again.
+- A section whose words changed under a voice that bills plays a placeholder until you voice it, and
+  `decktalk status` shows it as not voiced. `decktalk narrate --section N --spend` voices it.
 - A save that breaks a file is printed as one error block and the loop keeps watching, so you fix the
   file and save again rather than restarting the loop.
-
-```text
-Section 1 has a voiced take that no longer matches the script. Run decktalk narrate --section 1 --spend to voice it again.
-```
 
 ## Run one stage at a time
 

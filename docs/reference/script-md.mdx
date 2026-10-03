@@ -45,7 +45,7 @@ above a `---` line. A `###` heading inside a section does not close it: `narrate
 marks and the voice reads the heading text as prose.
 
 The budget is read into the section and no command prints it. The library exposes it as
-`Segment.start`, `Segment.end` and `Segment.target_seconds`, so a caller that wants to hold a
+`ScriptSection.start`, `ScriptSection.end` and `ScriptSection.target_seconds`, so a caller that wants to hold a
 section to its budget compares those against `estimated_seconds` in `build/narrate/takes.json`.
 
 ### What the script and the project file must agree on

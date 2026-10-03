@@ -56,7 +56,7 @@ scene = "1"
 """A project that states one key on its second line and moves its build directory, as an author may."""
 
 
-MACHINE = Machine(environ={}, tables={}, config_path=Path("unread.toml"), cwd=Path(), toolchain=Toolchain())
+MACHINE = Machine(environ={}, tables={}, machine_file=Path("unread.toml"), cwd=Path(), toolchain=Toolchain())
 """A machine that read nothing, so the machine running the suite sets no key in any explanation."""
 
 
@@ -108,8 +108,8 @@ class TestTheKeyItself:
             explain("verify.cue_offset_maks_ms")
 
     def test_a_setting_is_explainable_before_a_project_exists(self) -> None:
-        found = explain("video.output_fps")
-        assert found.value == BY_ID["video.output_fps"].default
+        found = explain("video.fps")
+        assert found.value == BY_ID["video.fps"].default
         assert found.layer is Layer.DEFAULT
         assert found.measured is False
 
@@ -207,7 +207,7 @@ class TestWhereTheExplainerReads:
         here = Machine(
             environ={"DECKTALK_TOOLS_TIMEOUT_SECONDS": "40"},
             tables={"tools": {"timeout_seconds": 30}},
-            config_path=tmp_path / "machine.toml",
+            machine_file=tmp_path / "machine.toml",
             cwd=tmp_path,
             toolchain=Toolchain(),
         )

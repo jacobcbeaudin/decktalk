@@ -74,7 +74,7 @@ when it leaves. Write the cue name on the page and its [cue id](/concepts/cues#t
 
     ```html deck/index.html
     <div data-scene="4" data-name="One more section">
-      <template data-slide="4.1" data-hold="10" data-describe="the heading and the band about waiting">
+      <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
         <p class="eyebrow">One more section</p>
 
         <div class="title" style="top: 190px" data-in="heading" data-describe="the heading, one more section">
@@ -91,7 +91,7 @@ when it leaves. Write the cue name on the page and its [cue id](/concepts/cues#t
     ```
 
     - A `[data-scene]` wrapper is a scene and never draws anything itself. `data-name` is what the scene index calls it.
-    - Each `<template data-slide>` inside it is one slide, cloned onto the stage when the slide mounts. `data-hold` is how long the preview rests on the slide, and no recording reads it.
+    - Each `<template data-slide>` inside it is one slide, cloned onto the stage when the slide mounts. `data-preview-seconds` is how long the preview rests on the slide, and no recording reads it.
     - An element with `data-in` stays hidden until that cue fires. The cue name is yours to choose, and it has to be unique within the slide.
     - `data-describe` says in one sentence what the moment shows. It is what the transcript reads and what a reviewer checks a reveal against, and a moment without one is reported.
     - Every element is placed absolutely on the 1920 by 1080 stage, so one thing arriving moves nothing else.
@@ -138,16 +138,16 @@ decktalk check --section 4 --no-frames
 
 {/* sample: decktalk check --section 4 --no-frames, on a fresh decktalk init my-lesson with the four pastes above, which exits 1 */}
 ```text
-No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.03 for 111 characters at $0.30 per 1,000 characters.
-cues.json: CUE_MISSING section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
+cues.json: CUE_UNLISTED section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
   fix (safe): Add 1 row to section 4 of cues.json, each waiting for the words you write in its `phrase`.
 Found 1 finding, 1 error. 1 fixable with --fix.
 ```
 
 It exits 1, because it found an error. The slide declares `4.1:waits` and no row gives it a
-second, which is [CUE_MISSING](/reference/findings/CUE_MISSING). The finding carries a safe fix, so
+second, which is [CUE_UNLISTED](/reference/findings/CUE_UNLISTED). The finding carries a safe fix, so
 `--fix` applies it.
 
 ```console
@@ -156,7 +156,7 @@ decktalk check --section 4 --no-frames --fix
 
 {/* sample: decktalk check --section 4 --no-frames --fix, on the same project, which exits 1 */}
 ```text
-No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.03 for 111 characters at $0.30 per 1,000 characters.
 cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'phrase' and it will have a second.
@@ -190,7 +190,7 @@ decktalk check --section 4 --no-frames
 
 {/* sample: decktalk check --section 4 --no-frames, on the same project with the phrase written, which exits 0 */}
 ```text
-No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.03 for 111 characters at $0.30 per 1,000 characters.
 ```
@@ -221,10 +221,10 @@ The loudness pass is skipped because the narration is a placeholder, so the soun
     Assemble    0:03
       Verify    0:03
        Built build/final/my-lesson.mp4, $0.00, 4 findings
-script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no take yet. Run decktalk narrate --section 1 --spend to buy its take.
-script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take yet. Run decktalk narrate --section 2 --spend to buy its take.
-script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no take yet. Run decktalk narrate --section 3 --spend to buy its take.
-script.md: TAKE_MISSING Section 4 plays a placeholder, because it has no take yet. Run decktalk narrate --section 4 --spend to buy its take.
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
+script.md: TAKE_MISSING Section 4 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 4 --spend to buy its take.
 Found 4 findings, 0 errors.
 ```
 

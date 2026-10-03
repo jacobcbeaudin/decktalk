@@ -59,7 +59,7 @@ export const ATTR = {
   scene: named("scene"),
   name: named("name"),
   slide: named("slide"),
-  hold: named("hold"),
+  previewSeconds: named("preview-seconds"),
   owns: named("owns"),
   enter: named("enter"),
   in: named("in"),
@@ -99,7 +99,7 @@ export type Render = (ctx: { scene: Scene; slide: Slide; frozen: boolean }) => s
 /** One slide, as the markup declared it or as a script registered it. */
 export type Slide = {
   readonly id: string;
-  hold: number;
+  previewSeconds: number;
   enter: SlideEntrance;
   owns: string[];
   markup: HTMLTemplateElement | null;
@@ -225,8 +225,8 @@ export function staggerSeconds(el: Element): number | null {
 }
 
 /** How long the preview rests on a slide, which is the author's own length or the published default. */
-function holdSeconds(el: Element): number {
-  return seconds(el, ATTR.hold) ?? Number(ATTRS[ATTR.hold].default);
+function previewSeconds(el: Element): number {
+  return seconds(el, ATTR.previewSeconds) ?? Number(ATTRS[ATTR.previewSeconds].default);
 }
 
 // ---- moments -------------------------------------------------------------------------------------
@@ -426,7 +426,7 @@ export function catalog(): CatalogEntry[] {
 /** One slide of a scene a script declares, in the shape a page writes it. */
 export type SlideInput = {
   id?: string | number;
-  hold?: number;
+  previewSeconds?: number;
   enter?: SlideEntrance;
   owns?: readonly (string | number)[];
   render?: Render;
@@ -440,7 +440,7 @@ export type SceneInput = { name?: string; slides?: readonly SlideInput[] };
 function slideFrom(sceneId: string, input: SlideInput, at: number): Slide {
   return {
     id: String(input.id ?? `${sceneId}.${at + 1}`),
-    hold: Number(input.hold ?? ATTRS[ATTR.hold].default),
+    previewSeconds: Number(input.previewSeconds ?? ATTRS[ATTR.previewSeconds].default),
     enter: input.enter ?? (ATTRS[ATTR.enter].default as SlideEntrance),
     owns: (input.owns ?? []).map(String),
     markup: null,
@@ -508,7 +508,7 @@ export function readMarkup(): void {
       // A slide that builds itself in script keeps its render, and the template beside it is the
       // markup of nothing, so only a slide with no render of its own takes one.
       if (!slide.render) slide.markup = tpl;
-      slide.hold = holdSeconds(tpl);
+      slide.previewSeconds = previewSeconds(tpl);
       slide.enter = slideEntranceOf(tpl);
       slide.owns = (written(tpl, ATTR.owns) ?? "").split(/\s+/).filter(Boolean);
       check(tpl.content, slideId, true);
@@ -535,7 +535,7 @@ function check(root: ParentNode, place: string, inSlide: boolean): void {
     for (const attribute of el.attributes) {
       if (!attribute.name.startsWith(PREFIX)) continue;
       if (!known(attribute.name)) {
-        warn("PAGE_UNKNOWN_ATTR", place, null, { attr: attribute.name });
+        warn("PAGE_ATTR_UNKNOWN", place, null, { attr: attribute.name });
         continue;
       }
       const row = ATTRS[attribute.name];

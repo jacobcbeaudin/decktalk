@@ -118,7 +118,7 @@ def test_a_command_runs_as_this_interpreters_decktalk_under_a_timeout_and_the_ma
     assert asked["timeout"] == FIX_TIMEOUT_SECONDS
     assert asked["env"] == {
         "ONLY_THIS": "1",
-        "DECKTALK_MACHINE_FILE": str(here.config_path),
+        "DECKTALK_MACHINE_FILE": str(here.machine_file),
         "DECKTALK_TOOLS_CACHE_DIR": str(here.cache_dir),
     }
 
@@ -175,7 +175,7 @@ def a_key_fix(key: str, value: str) -> EditFix:
 
 def applied(here: Machine, fix: EditFix, root: Path) -> tuple[bool, str]:
     with here._run() as run:
-        outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
+        outcome = apply_fix(run, Code.CUE_UNLISTED, fix, root=root, scope=Scope.PROJECT, unsafe=False)
     return outcome.applied, outcome.why or ""
 
 
@@ -332,7 +332,7 @@ def test_a_settings_fix_never_writes_through_a_project_file_linked_out_of_the_pr
     link(root / "decktalk.toml", outside, hard=kind == "hard")
     fix = a_key_fix("video.width", "1280")
     with a_machine(tmp_path)._run() as run:
-        outcome = apply_fix(run, Code.CUE_MISSING, fix, root=root, scope=Scope.PROJECT, unsafe=False)
+        outcome = apply_fix(run, Code.CUE_UNLISTED, fix, root=root, scope=Scope.PROJECT, unsafe=False)
     assert outside.read_text(encoding="utf-8") == '[project]\nname = "victim"\n'
     if kind == "symbolic":
         assert not outcome.applied and "outside the project" in (outcome.why or "")
@@ -363,5 +363,5 @@ def test_a_setting_a_fix_names_is_written_into_the_file_the_machine_holds(
     fix = a_key_fix("tools.ffmpeg", "/usr/bin/ffmpeg")
     result = here.apply(a_finding(fix))
     assert result.fixes[0].applied, result.fixes[0].why
-    assert "/usr/bin/ffmpeg" in here.config_path.read_text(encoding="utf-8")
+    assert "/usr/bin/ffmpeg" in here.machine_file.read_text(encoding="utf-8")
     assert not (tmp_path / "the-process-file.toml").exists()

@@ -28,11 +28,9 @@ from typing import Any, ClassVar
 from pydantic import Field
 
 from decktalk.artifacts import Stored
+from decktalk.artifacts.stored import DIGEST_DIGITS
 from decktalk.findings import Model, ProjectPath
 from decktalk.results import SoundKind
-
-DIGEST_DIGITS = 16
-"""Truth: sixteen hex characters of a sha256, which two requests of one project never collide within."""
 
 UNFINISHED_DIGEST = ""
 """What a row carries while the parts of one piece are still being bought, which matches no request.
@@ -88,4 +86,4 @@ class Ledger(Stored):
         return Ledger(items=(*kept, entry))
 
 
-__all__ = ["DIGEST_DIGITS", "UNFINISHED_DIGEST", "Ledger", "SoundEntry", "request_digest"]
+__all__ = ["UNFINISHED_DIGEST", "Ledger", "SoundEntry", "request_digest"]

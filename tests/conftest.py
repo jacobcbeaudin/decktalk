@@ -12,7 +12,7 @@ the `-m` a person types, and `-m "not e2e"` would then admit the five-minute sca
 from __future__ import annotations
 
 import socket
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -94,24 +94,44 @@ def httpserver_listen_address() -> tuple[str, int]:
     return ("127.0.0.1", 0)
 
 
+def refuse_another_host(host: object) -> None:
+    """Fail the test if `host` is anything but this machine, before a byte could leave it."""
+    if host not in LOOPBACK:
+        raise AssertionError(f"a test tried to reach {host!r}, which is not this machine")
+
+
+def addressed(send: Callable[..., object]) -> Callable[..., object]:
+    """`send`, a socket method whose last argument is the address, refusing an internet address off this machine."""
+
+    def guarded(self: socket.socket, *args: Any) -> object:
+        if self.family in (socket.AF_INET, socket.AF_INET6):
+            refuse_another_host(args[-1][0])
+        return send(self, *args)
+
+    return guarded
+
+
 @pytest.fixture(autouse=True)
 def only_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fail any test that resolves a host other than this machine, before a byte could leave it.
+    """Fail any test that resolves a host other than this machine, or opens a socket to one.
 
     It is the root's, so it holds in every directory and under every marker. The fake voice stands in
     under the shipped voice's name, so a test that forgot it would build the real adapter, and this is
-    what stops that test reaching the service with whatever key it holds. No suite fetches in this
-    process: one that needs a tool fails with the command that fetches it, and a subprocess the e2e
-    suite starts carries a guard of its own.
+    what stops that test reaching the service with whatever key it holds. HTTP clients resolve through
+    `getaddrinfo`, and a socket handed an address directly, an IP literal or a name the C library
+    resolves, is held at `connect`, `connect_ex` and `sendto`. No suite fetches in this process: one
+    that needs a tool fails with the command that fetches it, and a subprocess the e2e suite starts
+    carries a guard of its own.
     """
     resolve = socket.getaddrinfo
 
     def guarded(host: str | bytes | None, *args: int, **kwargs: int) -> list[Any]:
-        if host not in LOOPBACK:
-            raise AssertionError(f"a test tried to reach {host!r}, which is not this machine")
+        refuse_another_host(host)
         return resolve(host, *args, **kwargs)
 
     monkeypatch.setattr(socket, "getaddrinfo", guarded)
+    for name in ("connect", "connect_ex", "sendto"):
+        monkeypatch.setattr(socket.socket, name, addressed(getattr(socket.socket, name)))
 
 
 @pytest.fixture(autouse=True)

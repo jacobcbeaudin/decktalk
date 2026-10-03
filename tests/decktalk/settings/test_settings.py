@@ -168,12 +168,16 @@ class TestTheRecordEveryKeyCarries:
     def test_no_key_is_a_truth_or_a_derived_number(self, key: Key) -> None:
         assert key.nature in (Nature.TASTE, Nature.APPARATUS)
 
-    def test_every_key_name_ends_in_its_own_unit_where_it_has_one(self) -> None:
-        units = {"ms": "milliseconds", "seconds": "seconds", "dbfs": "dBFS", "percent": "percent", "luma": "luma"}
+    def test_every_key_name_ends_in_the_unit_it_publishes(self) -> None:
+        """One affix rule, `<quantity>_<min|max>_<unit>`, held both ways: the name's unit is the published one."""
+        suffixes = {"milliseconds": "ms", "seconds": "seconds", "dBFS": "dbfs", "percent": "percent", "luma": "luma",
+                    "chroma": "chroma"}  # fmt: skip
         for key in KEYS:
             last = key.name.rsplit("_", 1)[-1]
-            if last in units:
-                assert key.unit is not None, f"{key.id} names a unit it does not publish"
+            if key.unit in suffixes:
+                assert last == suffixes[key.unit], f"{key.id} publishes {key.unit} and its name does not end in it"
+            if last in suffixes.values():
+                assert suffixes.get(key.unit or "") == last, f"{key.id} names a unit it does not publish"
 
     def test_no_verdict_limit_is_machine_scoped(self) -> None:
         for key in KEYS:

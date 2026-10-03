@@ -46,14 +46,12 @@ from decktalk.logs import WHERE, level_of, source_of, within
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     DOLLAR_DIGITS,
-    Billing,
+    BillingBasis,
     Cost,
     Layer,
     Result,
     money,
 )
-from decktalk.speech import SpeechProviders
-from decktalk.speech.sound import SoundProviders
 
 if TYPE_CHECKING:  # pragma: no cover
     from decktalk.machine import Machine
@@ -100,14 +98,12 @@ ERRORS_FAIL = Threshold()
 
 
 class Run:
-    """One call in progress: its id, its stream, its cancel token, its spend gate, its voices and its sounds.
+    """One call in progress: its id, its stream, its cancel token and its spend gate.
 
     A stage is handed one of these and reports through it. It is the only thing a stage has that
-    knows about the machine, so a stage can neither read the environment nor print.
-
-    `voices` and `sounds` are the machine's tables, read once when the run opens. A stage builds every
-    provider from them, so a thread the run hands work to answers with the same providers whether or
-    not it copied the context of the thread that opened the run.
+    knows about the machine, so a stage can neither read the environment nor print. A stage builds
+    every provider from `run.machine`, so a thread the run hands work to answers with the same
+    providers whether or not it copied the context of the thread that opened the run.
     """
 
     def __init__(
@@ -128,8 +124,6 @@ class Run:
         # The most everything this run approved under `max_cost` can cost, which the cap is held against.
         self.approved = 0.0
         self.root = root
-        self.voices: SpeechProviders = machine.voices
-        self.sounds: SoundProviders = machine.sounds
         self.written: list[Path] = []
         self.findings: list[Finding] = []
         self.opened = time.monotonic()
@@ -267,7 +261,7 @@ class Run:
 
     def _capped(self, cost: Cost, cap: float, *, already: float) -> float:
         """The most the run can cost with `cost` added to what it `already` approved, refused over `cap`."""
-        if cost.billing is Billing.UNDECLARED:
+        if cost.billing is BillingBasis.UNDECLARED:
             raise ApprovalRequired(
                 "--max-cost was given and the voice declares no bill, so the cap would guard a made-up price.",
                 hint=(

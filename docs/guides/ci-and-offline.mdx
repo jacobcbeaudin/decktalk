@@ -80,7 +80,7 @@ stderr with neither in the other's way.
 
 {/* sample: decktalk status --json --events, its stderr, on a fresh decktalk init my-lesson */}
 ```json
-{"event":"run.start","time":"2026-10-02T07:36:06.301156Z","seq":0,"run":"0208b197a5c7","events_path":"build/events/0208b197a5c7.jsonl"}
+{"event":"run.start","time":"2026-10-02T07:36:06.301156Z","seq":0,"run":"0208b197a5c7","events_file":"build/events/0208b197a5c7.jsonl"}
 {"event":"run.done","time":"2026-10-02T07:36:06.312588Z","seq":1,"run":"0208b197a5c7","outcome":"ran","elapsed_seconds":0.012,"error":null,"dropped":0}
 ```
 
@@ -92,7 +92,7 @@ lists every event and its fields.
 Every run appends the same lines to `build/events/<run>.jsonl` whether `--events` was passed or not,
 and the first line names that file. So a job that backgrounds a build can follow the file, and
 `decktalk status --json` lists any run whose file is still open under `runs`.
-`[output] events_keep_runs` prunes the oldest, and keeps twenty runs by default.
+`[events] keep_runs` prunes the oldest, and keeps twenty runs by default.
 
 ## The exit codes a job gates on
 
@@ -135,8 +135,8 @@ reach, so a docs-only job, a pre-commit hook and a container with no Chromium ca
 
 {/* sample: decktalk check --no-pages, on a fresh decktalk init my-lesson with no API key and no voice id */}
 ```text
-No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
-no page was opened, so these judgements were not reached: CUE_MISSING, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
+No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+no page was opened, so these judgements were not reached: CUE_UNLISTED, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
 frames were asked for and no page was opened, so no frame was frozen either.
 Checking script.md, cues.json.
 This run costs $0.14 for 476 characters at $0.30 per 1,000 characters.

@@ -15,6 +15,7 @@
                         transcript page and poster
     build/events/       one JSON lines file per run, which is what a run says it is doing
     build/kept.json     what the last build's assemble and verify read, wrote and found
+    build/.lock         the lock a writing run holds, and `.lock.owner` beside it naming who
 
 A new artifact gets a property here and nowhere else, so a reader who wants to know what a build
 leaves behind opens one module and no stage ever spells a build path by hand. The five paths the
@@ -26,7 +27,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from decktalk.artifacts import is_placeholder, pair_fault, recorded_suffix, take_file, words_file
 from decktalk.inputs.paths import confined
@@ -41,8 +42,17 @@ EVENTS_SUFFIX = ".jsonl"
 KEPT_FILE = "kept.json"
 """What the record of the last assemble and verify is called, under the project's build directory."""
 
+LOCK_FILE = ".lock"
+"""What the file a writer holds is called, under the build directory it is writing into."""
+
+OWNER_FILE = ".lock.owner"
+"""What the note that names the writer holding the lock is called, beside the lock itself."""
+
 LEDGER_FILE = "ledger.json"
 """What the record of bought audio is called, in the score directory beside the audio it records."""
+
+WORK_MARK = "."
+"""What a work file's name opens with, so nothing a viewer can open is written until the film is whole."""
 
 
 @dataclass(frozen=True)
@@ -76,7 +86,7 @@ class Workspace:
 
     def of(self, artifact: Artifact) -> Path:
         """Where this project keeps one artifact the pipeline declares, under its own build directory."""
-        return self.build.joinpath(*PurePosixPath(artifact.value).parts[1:])
+        return self.build / artifact.value
 
     @property
     def narrate_dir(self) -> Path:
@@ -172,6 +182,11 @@ class Workspace:
         return self.of(Artifact.SCORE)
 
     @property
+    def joined_music(self) -> Path:
+        """Where the score joins the music from its parts, when the project names no file of its own."""
+        return self.joined_dir / "music.mp3"
+
+    @property
     def sections_dir(self) -> Path:
         return self.build / "sections"
 
@@ -199,6 +214,16 @@ class Workspace:
         return self.build / KEPT_FILE
 
     @property
+    def lock_path(self) -> Path:
+        """The lock a run that writes into the build directory holds for its length."""
+        return self.build / LOCK_FILE
+
+    @property
+    def owner_path(self) -> Path:
+        """The note beside the lock that names the process holding it."""
+        return self.build / OWNER_FILE
+
+    @property
     def ledger_path(self) -> Path:
         return self.score_dir / LEDGER_FILE
 
@@ -213,6 +238,18 @@ class Workspace:
     @property
     def film(self) -> Path:
         return self.final_dir / f"{self.name}.mp4"
+
+    def stamped_film(self, stamp: str) -> Path:
+        """A copy of the film named with when it was made, which `[output] timestamped_copy` asks for."""
+        return self.final_dir / f"{self.name}-{stamp}.mp4"
+
+    def work_file(self, step: str) -> Path:
+        """A file assemble writes on its way to the film, such as `picture.mp4`, which the film's step names.
+
+        It sits beside the film so the last step is a rename, and its name opens with a dot, so nothing
+        a viewer can open is written until the film is whole.
+        """
+        return self.final_dir / f"{WORK_MARK}{self.name}.{step}"
 
     @property
     def placements_path(self) -> Path:
@@ -243,8 +280,8 @@ class Workspace:
     def section_video(self, key: str) -> Path:
         return self.sections_dir / f"{key}.mp4"
 
-    def stray_cuts(self, keys: tuple[str, ...]) -> tuple[Path, ...]:
-        """Cuts and cut keys in the sections directory whose section is no longer in `decktalk.toml`.
+    def stray_videos(self, keys: tuple[str, ...]) -> tuple[Path, ...]:
+        """Section videos and their keys in the sections directory whose section is no longer in `decktalk.toml`.
 
         A build made before the sections were renumbered or one was removed leaves such files
         behind, and nothing reads them again.

@@ -66,8 +66,8 @@ REPORTS = ROOT / "tests" / "out" / "junit"
 """Where every measuring suite writes the JUnit report of what it ran, one file named after the group.
 
 Coverage data says which lines a suite reached, and a suite whose every test skipped still reaches
-the lines its imports run, so the data alone called such a suite reporting. The report says how
-many tests ran and how many skipped, which is what `check_coverage.py` needs to call it silent.
+the lines its imports run, so the data alone would call such a suite reporting. The report says
+how many tests ran and how many skipped, which is what `check_coverage.py` needs to call it silent.
 """
 
 
@@ -112,8 +112,8 @@ def measured(name: str) -> tuple[tuple[str, str], ...]:
     """The data file one group writes, named after the group so that no two groups overwrite each other.
 
     `coverage combine` reads every `.coverage.*` beside it, so naming each group's file is what lets
-    a whole run on one machine be combined at the end. Without this each suite wrote `.coverage` and
-    the last suite to finish was the only one the floor ever saw.
+    a whole run on one machine be combined at the end. One shared `.coverage` would hold only the
+    suite that finished last.
 
     The path is absolute because a suite that drives the command line starts its subprocesses in the
     project they are building, and a relative name would leave each subprocess writing its measure
@@ -259,9 +259,9 @@ def tools_key(group: Group, runner: str) -> str:
     """The cache key of the tools one leg fetches, or an empty string when the leg fetches nothing to keep.
 
     The key names the leg and the two pins that decide what `decktalk install` downloads, and nothing
-    else. A key shared by every leg let whichever leg saved first decide the cache for every later
-    run, so one suite ran 102 tests on one run and 5 on the next. A key on the whole lockfile threw
-    the download away on every unrelated dependency bump.
+    else. A key shared by every leg would let whichever leg saved first decide the cache, and so how
+    many tests every later leg could run. A key on the whole lockfile would throw the download away
+    on every unrelated dependency bump.
     """
     if not any(NEEDS[tool].cached for tool in group.tools):
         return ""
@@ -290,9 +290,14 @@ def generator(name: str) -> tuple[str, ...]:
 FIRST_GENERATOR = "build_runtime"
 """The generator that runs before the others, because it writes `page.py`, which every other one imports."""
 
+SAMPLES = "build_samples"
+"""The generator that runs DeckTalk on a starter for the docs samples, which needs ffmpeg and runs in the e2e row."""
+
 GENERATORS = (
     FIRST_GENERATOR,
-    *sorted(path.stem for path in (ROOT / "scripts").glob(f"{GENERATES}*.py") if path.stem != FIRST_GENERATOR),
+    *sorted(
+        path.stem for path in (ROOT / "scripts").glob(f"{GENERATES}*.py") if path.stem not in (FIRST_GENERATOR, SAMPLES)
+    ),
 )
 """Every generator the generated row runs, read from the directory so a new one gates from the commit that adds it.
 
@@ -444,8 +449,8 @@ ON_A_REAL_TOOL: tuple[Group, ...] = (
     ),
     Group(
         name="e2e",
-        why="The pipeline fixture built end to end, which samples the joint behaviour of every tool.",
-        commands=(linux_timing(measuring("e2e", "-m", "e2e")),),
+        why="The pipeline fixture built end to end, and the docs samples DeckTalk writes from a real run.",
+        commands=(linux_timing(measuring("e2e", "-m", "e2e")), generator(SAMPLES)),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=("chromium", "ffmpeg"),
@@ -748,9 +753,8 @@ def summary(group: Group) -> tuple[str, str, str, str]:
 def table() -> str:
     """Every group with its first check, what it needs and the job that calls it.
 
-    No wall time is printed. A time typed into this table was a number nothing checked, and every one
-    that was measured against CI was wrong by a factor of two or more, so the time a group takes is
-    read from the job that ran it rather than from here.
+    No wall time is printed. A time typed into this table would be a number nothing checks, so the
+    time a group takes is read from the job that ran it rather than from here.
     """
     rows = []
     for group in GROUPS:

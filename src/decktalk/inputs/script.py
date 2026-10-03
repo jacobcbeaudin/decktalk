@@ -40,10 +40,10 @@ BEAT_DASH_RE = re.compile(r"\s+—(?=\s|$)")
 
 
 @dataclass
-class Segment:
+class ScriptSection:
     """One "## N. Title" section of the script, cleaned for speech."""
 
-    index: int
+    number: int
     title: str
     slug: str  # The heading as a file-name-safe word, which the tables print. A take is named by its digest.
     pieces: tuple[Piece, ...]  # the paragraphs the voice reads, each with the pause after it
@@ -52,7 +52,7 @@ class Segment:
 
     @property
     def key(self) -> str:
-        return section_key(self.index)
+        return section_key(self.number)
 
     @property
     def spoken(self) -> str:
@@ -73,7 +73,7 @@ class Segment:
     def estimated_seconds(self, cfg: NarrationConfig) -> float:
         return round(self.word_count / cfg.words_per_minute * 60, 1)
 
-    def silent_seconds(self, cfg: NarrationConfig) -> float:
+    def placeholder_seconds(self, cfg: NarrationConfig) -> float:
         """How long a placeholder take of this section runs, which is speech and pauses and no silence around them.
 
         A beat, and a dash the author wrote after a word, each run `placeholder_beat_seconds`. The lead
@@ -144,18 +144,18 @@ def _tag_seconds(match: re.Match[str]) -> float:
     return amount / 1000 if match.group("unit").lower() == "ms" else amount
 
 
-def parse_script(markdown: str) -> list[Segment]:
+def parse_script(markdown: str) -> list[ScriptSection]:
     """Every "## N. Title" section of the text, in the order it appears."""
-    segments: list[Segment] = []
+    sections: list[ScriptSection] = []
     current: dict[str, Any] | None = None
     body: list[str] = []
 
     def flush() -> None:
         if current is None:
             return
-        segments.append(
-            Segment(
-                index=int(current["num"]),
+        sections.append(
+            ScriptSection(
+                number=int(current["num"]),
                 title=current["title"].strip(),
                 slug=slugify(current["title"]),
                 pieces=strip_markdown("\n".join(body)),
@@ -179,10 +179,10 @@ def parse_script(markdown: str) -> list[Segment]:
         if current is not None:
             body.append(line)
     flush()
-    return segments
+    return sections
 
 
-def read_script(path: Path, root: Path, *, declared: set[int]) -> list[Segment]:
+def read_script(path: Path, root: Path, *, declared: set[int]) -> list[ScriptSection]:
     """Every section in the script, in order, where `declared` is every section number in `decktalk.toml`."""
     if not path.exists():
         raise InputError(
@@ -191,20 +191,20 @@ def read_script(path: Path, root: Path, *, declared: set[int]) -> list[Segment]:
             location=at(path, root),
         )
     try:
-        all_segments = parse_script(path.read_text(encoding="utf-8"))
+        all_sections = parse_script(path.read_text(encoding="utf-8"))
     except InputError as refused:
         raise InputError(str(refused), hint=refused.hint, location=at(path, root)) from refused
-    if not all_segments:
+    if not all_sections:
         raise InputError(
             f"{path.name} holds no '## N. Title' section.",
             hint="Open each spoken section with a heading such as '## 1. Open'.",
             location=at(path, root),
         )
-    undeclared = [s.index for s in all_segments if s.index not in declared]
+    undeclared = [s.number for s in all_sections if s.number not in declared]
     if undeclared:
         raise InputError(
             f"script sections {undeclared} have no [[section]] in decktalk.toml.",
             hint="Add a [[section]] for each, or drop the heading from the script.",
             location=at(path, root),
         )
-    return all_segments
+    return all_sections

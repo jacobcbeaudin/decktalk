@@ -207,7 +207,7 @@ def read_value(
 
     An environment variable carries a string and nothing else, so its value is converted. A mapping
     carries the type its author wrote, so a value of the wrong type is refused rather than converted,
-    which is what keeps `[video] output_fps = "25"` and `[video] output_fps = 25.7` from becoming a
+    which is what keeps `[video] fps = "25"` and `[video] fps = 25.7` from becoming a
     number nobody typed. `config set` and `--set` hand over the string a command line carried, so
     both read it the way an environment variable is read, and the loader and the writer meet one rule.
     """

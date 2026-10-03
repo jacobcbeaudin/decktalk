@@ -53,7 +53,7 @@ Then every picture waits for its own word.
 ```
 
 ```html deck/index.html
-<template data-slide="1.2" data-hold="12" data-describe="the two files you write, and the promise">
+<template data-slide="1.2" data-preview-seconds="12" data-describe="the two files you write, and the promise">
   <div class="card" style="left: 120px; top: 300px" data-in="script"
        data-describe="a card for script.md, the file that holds what you say">
     <div class="k">script.md</div>
@@ -144,7 +144,7 @@ one carries the sentence below, its severity, the object it judged and the fix w
 
 | Code | Severity | What it names | Raised by |
 |---|---|---|---|
-| [`CUE_MISSING`](/reference/findings/CUE_MISSING) | error | The page declares a moment that cues.json does not list, so nothing gives it a second. | `cue`, `check` |
+| [`CUE_UNLISTED`](/reference/findings/CUE_UNLISTED) | error | The page declares a moment that cues.json does not list, so nothing gives it a second. | `cue`, `check` |
 | [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN) | error | cues.json lists a cue no page declares, so nothing plays it. | `cue`, `check` |
 | [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED) | error | The cue's phrase is not spoken in its section, so there is no second to place it at. | `cue`, `check`, `verify` |
 | [`CUE_STALE`](/reference/findings/CUE_STALE) | error | The cue times on disk were placed from a different cues.json than the project's. | `verify` |
@@ -156,7 +156,7 @@ one carries the sentence below, its severity, the object it judged and the fix w
 
 What each one means for the film, and what clears it:
 
-- **`CUE_MISSING`** is a moment on the page that nothing in `cues.json` gives a second to. Add the
+- **`CUE_UNLISTED`** is a moment on the page that nothing in `cues.json` gives a second to. Add the
   row, or take the moment off the page. Its fix adds the row for you, which the next section
   describes.
 - **`CUE_UNKNOWN`** is a row whose cue id no slide of the section's scene declares. The row is named
@@ -194,7 +194,7 @@ and `decktalk config explain verify.cue_offset_max_ms` prints the layers of any 
 
 ## The fix that writes cues.json
 
-`CUE_MISSING` carries a safe `EditFix` that adds the row, so a deck can be written first and its
+`CUE_UNLISTED` carries a safe `EditFix` that adds the row, so a deck can be written first and its
 seconds named afterwards.
 
 ```console
@@ -210,7 +210,7 @@ Both comparisons read the moments off the catalog the page itself published rath
 its markup, because `data-spotlight`, `data-class` and `data-owns` all declare moments no text scan can
 see. `check` reads a catalog live, `cue` reads the one the last recording kept, and the two reach the
 same judgements. A section whose page has never been opened is left unjudged rather than guessed at,
-so `check --no-pages` reaches neither `CUE_MISSING` nor `CUE_UNKNOWN` and names both as judgements it
+so `check --no-pages` reaches neither `CUE_UNLISTED` nor `CUE_UNKNOWN` and names both as judgements it
 could not make.
 
 The fix writes `{"id": "<cue id>", "phrase": ""}` and leaves `phrase` empty, because the phrase is your
@@ -247,7 +247,7 @@ These guidelines help a moment land on the word you meant.
 
 ## Sound on a cue
 
-A `[[mix.effects]]` table names a `section` and a `cue`, and `assemble` places that sound at the
+A `[[mix.effect]]` table names a `section` and a `cue`, and `assemble` places that sound at the
 second the cue resolved to plus the effect's own `offset_seconds`. A music marker matches a spoken phrase by
 these same rules, through its own `on`, `occurrence`, `case_sensitive` and `offset` keys, and raises or
 mutes the music there. [Sound](/concepts/sound) explains both.

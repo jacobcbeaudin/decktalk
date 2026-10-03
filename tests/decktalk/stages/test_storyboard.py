@@ -8,8 +8,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError
 
+from decktalk.errors import ToolError
 from decktalk.inputs import Inputs
+from decktalk.media.origin import Assets
 from decktalk.media.pagereport import PageReport
 from decktalk.page import Q
 from decktalk.results import Panel, StoryboardResult
@@ -24,6 +27,7 @@ from decktalk.stages.storyboard import (
     write_page,
 )
 from support.pages import a_project, catalog
+from support.recorder import FakeContext, FakePage
 from support.runs import a_run
 
 CUES = {"1": {"cues": [{"id": "1.1:a", "phrase": "there"}]}}
@@ -57,7 +61,7 @@ def opened(monkeypatch: pytest.MonkeyPatch) -> Opened:
     made = Opened()
 
     @contextmanager
-    def chromium(_browser_path: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
+    def chromium(_executable: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
         made.policies.append(policy)
         yield object()
 
@@ -84,13 +88,13 @@ def opened(monkeypatch: pytest.MonkeyPatch) -> Opened:
 
 
 def test_a_frozen_state_asks_the_page_for_a_slide_and_a_moment() -> None:
-    assert Freeze("1.1", cue="1.1:a").query() == {Q.SLIDE: "1.1", Q.AFTER: "1.1:a"}
-    assert Freeze("1.1", before="1.1:a").query() == {Q.SLIDE: "1.1", Q.BEFORE: "1.1:a"}
-    assert Freeze("1.1").query() == {Q.SLIDE: "1.1"}
+    assert Freeze("1.1", cue="1.1:a").query() == {Q.FREEZE: "1.1", Q.AFTER: "1.1:a"}
+    assert Freeze("1.1", before="1.1:a").query() == {Q.FREEZE: "1.1", Q.BEFORE: "1.1:a"}
+    assert Freeze("1.1").query() == {Q.FREEZE: "1.1"}
 
 
 def test_a_frozen_state_names_one_file_safely() -> None:
-    assert Freeze("4.1", cue="4.1:expand").label == "slide-4.1-after-4.1_expand"
+    assert Freeze("4.1", cue="4.1:expand").label == "freeze-4.1-after-4.1_expand"
 
 
 def test_a_slide_shows_the_state_it_opens_on_before_any_of_its_cues() -> None:
@@ -144,10 +148,27 @@ def test_a_selector_that_matches_nothing_draws_nothing() -> None:
 
 def test_a_frozen_url_asks_for_a_state_and_never_for_the_recorder_clock(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    url = freeze_url(inputs, inputs.document.page_sections[0], Freeze("1.1", cue="1.1:a"))
-    assert "slide=1.1" in url
+    url = freeze_url(inputs.document.page_sections[0], Freeze("1.1", cue="1.1:a"), "")
+    assert "freeze=1.1" in url
     assert "after=1.1" in url
     assert "t0=" not in url
+
+
+def test_a_sheet_reads_each_sections_words_and_the_documents_once_however_many_states_it_draws(
+    tmp_path: Path, published: Inputs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A storyboard draws many states of one section, and each read is a file and a validation."""
+    reads: list[str] = []
+    monkeypatch.setattr(stage, "words_query", lambda _inputs, section: reads.append(f"words {section.number}") or "")
+    documents = published.documents
+    monkeypatch.setattr(type(published), "documents", lambda self: reads.append("documents") or documents())
+    pages = {"deck/index.html": (FakePage(FakeContext(tmp_path)).page(), Assets(published.root))}
+    sheet = stage.Sheet(published, a_run(tmp_path), pages, tmp_path / "out")
+    section = published.document.page_sections[0]
+    for freeze in (Freeze("1.1"), Freeze("1.1", cue="1.1:a"), Freeze("1.1")):
+        sheet.frozen(section, freeze)
+        sheet.panel(section, freeze, None, 0.0)
+    assert reads == ["words 1", "documents"]
 
 
 # ---- the contact sheet -------------------------------------------------------------------------
@@ -155,7 +176,7 @@ def test_a_frozen_url_asks_for_a_state_and_never_for_the_recorder_clock(tmp_path
 
 def test_the_page_names_every_panel_and_points_at_it(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    panels = [Panel(section=1, slide="1.1", cue="1.1:a", at=1.0, image=Path("build/storyboard/01/x.png"))]
+    panels = [Panel(section=1, slide="1.1", cue="1.1:a", at_seconds=1.0, image=Path("build/storyboard/01/x.png"))]
     written = write_page(inputs.workspace, panels, title="demo")
     text = written.read_text(encoding="utf-8")
     assert 'src="storyboard/01/x.png"' in text
@@ -167,7 +188,7 @@ def test_markup_in_a_cue_or_a_slide_id_is_shown_as_text(tmp_path: Path) -> None:
     # A cue id and a slide id are whatever the project's author typed, and the sheet opens in a browser.
     inputs = a_project(tmp_path)
     hostile = "<script>alert(1)</script>"
-    panels = [Panel(section=1, slide=f"1.1{hostile}", cue=f"1.1:{hostile}", at=1.0, image=Path("build/x.png"))]
+    panels = [Panel(section=1, slide=f"1.1{hostile}", cue=f"1.1:{hostile}", at_seconds=1.0, image=Path("build/x.png"))]
     text = write_page(inputs.workspace, panels, title=hostile).read_text(encoding="utf-8")
     assert "<script>" not in text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
@@ -296,3 +317,15 @@ def test_an_untrusted_project_draws_its_pages_untrusted(tmp_path: Path, opened: 
     opened.publishes("deck/index.html", catalog("1", {"1.1": ["1.1:a"]}), catalog("2", {"2.1": ["2.1:a"]}))
     storyboard(inputs, a_run(tmp_path))
     assert opened.policies == ["untrusted"]
+
+
+def test_a_page_the_browser_will_not_load_is_a_tool_failure_and_not_a_bug(tmp_path: Path) -> None:
+    """A page whose navigation fails is the tool failing, so it is never reported as INTERNAL."""
+
+    class Unreachable(FakePage):
+        def goto(self, url: str, **_kwargs: object) -> None:
+            raise PlaywrightError(f"net::ERR_ABORTED at {url}\nCall log:")
+
+    inputs = a_project(tmp_path, cues=CUES)
+    with pytest.raises(ToolError, match=r"^could not load http"):
+        stage.reports_of(Unreachable(FakeContext(tmp_path)).page(), inputs, ["deck/index.html"])

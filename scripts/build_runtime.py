@@ -330,7 +330,6 @@ def page_module(data: dict[str, Any]) -> str:
         "Kind",
         "LIST_SEPARATOR",
         "MEASURABLE_SPAN_SECONDS",
-        "MILLISECONDS",
         "MOTION_SCALE_PROPERTY",
         "MOMENTS",
         "ONSET_FIRST_FRAME_PERCENT",
@@ -345,6 +344,7 @@ def page_module(data: dict[str, Any]) -> str:
         "SECOND_DIGITS",
         "SLIDE_ENTRANCES",
         "T0_SIGNAL",
+        "DONE_ATTR",
         "Subject",
         "TIME_MARK",
         "CUE_MARK",
@@ -355,8 +355,6 @@ def page_module(data: dict[str, Any]) -> str:
     parts = [
         PAGE_HEADER,
         "__all__ = [\n" + "".join(f"    {name!r},\n" for name in sorted(exported)) + "]\n",
-        f"MILLISECONDS = {data['milliseconds']!r}\n"
-        '"""Truth: the milliseconds in a second, which is the unit Chromium and the page both count in."""\n',
         f"SECOND_DIGITS = {data['secondDigits']!r}\n"
         '"""Truth: a second is written to the millisecond, which is finer than any frame a recording holds."""\n',
         f"CAPTURE_FPS = {data['captureFps']!r}\n"
@@ -384,6 +382,8 @@ def page_module(data: dict[str, Any]) -> str:
         f'LIST_SEPARATOR = {data["listSeparator"]!r}\n"""What separates two entries of that query."""\n',
         f"T0_SIGNAL = {data['t0Signal']!r}\n"
         '"""What `t0` says when the recorder starts the page clock on its own signal rather than at a second."""\n',
+        f"DONE_ATTR = {data['doneAttr']!r}\n"
+        '"""The attribute the runtime sets on the body once the page has drawn everything its URL asked for."""\n',
         f"ENGINE_PATH = {data['enginePath']!r}\n"
         '"""The path the engine answers itself under every origin, which holds the runtime and KaTeX."""\n',
         f"PREVIEW_CUE_TIMES = {data['previewCueTimes']!r}\n"

@@ -33,7 +33,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from decktalk.inputs import Inputs
-from decktalk.results import Billing, Layer
+from decktalk.results import BillingBasis, Layer
 from decktalk.speech import DECLARED, SpeechContext, base_of, billing_of, table_of
 
 SECONDS_PER_PRICE = 60
@@ -79,14 +79,14 @@ def dollars_for(amount: float, inputs: Inputs, provider: str | None = None) -> f
     rounded once, after the sum.
     """
     name = provider or inputs.settings.voice.provider
-    per = 1000 if billing_of(name).by is Billing.PER_CHARACTER else SECONDS_PER_PRICE
+    per = 1000 if billing_of(name).by is BillingBasis.PER_CHARACTER else SECONDS_PER_PRICE
     return amount / per * rate_of(inputs, name)
 
 
 def billed(characters: int, seconds: float, provider: str) -> float:
     """Which of a take's characters and seconds `provider`'s bill counts, which is nothing for a voice with no rate."""
     by = billing_of(provider).by
-    return characters if by is Billing.PER_CHARACTER else seconds if by is Billing.PER_SECOND else 0.0
+    return characters if by is BillingBasis.PER_CHARACTER else seconds if by is BillingBasis.PER_SECOND else 0.0
 
 
 def price_layer(inputs: Inputs, provider: str | None = None) -> Layer:
@@ -108,14 +108,14 @@ def rate_fields(inputs: Inputs, provider: str | None = None) -> dict[str, Any]:
     by, rate = billing_of(name).by, rate_of(inputs, name)
     return {
         "billing": by,
-        "dollars_per_1000_characters": rate if by is Billing.PER_CHARACTER else 0.0,
-        "dollars_per_minute": rate if by is Billing.PER_SECOND else 0.0,
+        "dollars_per_1000_characters": rate if by is BillingBasis.PER_CHARACTER else 0.0,
+        "dollars_per_minute": rate if by is BillingBasis.PER_SECOND else 0.0,
         "price_key": price_key(name),
         "price_layer": price_layer(inputs, name),
     }
 
 
-def voice_context(inputs: Inputs, provider: str | None = None) -> SpeechContext:
+def speech_context(inputs: Inputs, provider: str | None = None) -> SpeechContext:
     """What a speech provider is built from, taken from its own table, this project's tuning and its own `.env`.
 
     The base URL is its own table's `base_url`, which only the machine sets, so a provider with no
@@ -125,7 +125,7 @@ def voice_context(inputs: Inputs, provider: str | None = None) -> SpeechContext:
     return SpeechContext(
         secrets=inputs.env,
         base_url=base_of(settings, provider or settings.voice.provider),
-        context_chars=settings.narration.context_chars,
+        context_characters=settings.narration.context_characters,
         speech_timeout_seconds=settings.narration.timeout_seconds,
     )
 
@@ -146,6 +146,6 @@ __all__ = [
     "rate_fields",
     "rate_of",
     "selects",
-    "voice_context",
+    "speech_context",
     "voice_model",
 ]

@@ -28,10 +28,10 @@ is what it measured. It prints its own sentences, then one line per judgement, t
 
 {/* sample: decktalk check, on a fresh decktalk init my-lesson with cues.json deleted, which exits 1 */}
 ```text
-No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, deck/index.html.
 This run costs $0.14 for 476 characters at $0.30 per 1,000 characters.
-cues.json: CUE_MISSING the deck declares 12 moment(s) and there is no cues.json, so nothing gives any of them a second.
+cues.json: CUE_UNLISTED the deck declares 12 moment(s) and there is no cues.json, so nothing gives any of them a second.
   fix (safe): Write cues.json with a row for each of the 12 moment(s) the deck declares, each waiting for the words you write in its `phrase`.
 Found 1 finding, 1 error. 1 fixable with --fix.
 ```
@@ -60,7 +60,7 @@ commit hook. It names every judgement it could not reach rather than passing qui
 
 {/* sample: decktalk check --no-pages, on a fresh decktalk init my-lesson, the line about what it skipped */}
 ```text
-no page was opened, so these judgements were not reached: CUE_MISSING, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
+no page was opened, so these judgements were not reached: CUE_UNLISTED, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
 ```
 
 `decktalk check --no-frames` keeps the browser and drops the freeze comparison, which is the faster
@@ -117,9 +117,9 @@ Cue made 1 finding that the build stops on, so the build stopped before record r
     Assemble    0:00   skipped
       Verify    0:00   skipped
      Stopped at cue, $0.00, 4 findings
-script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no take yet. Run decktalk narrate --section 1 --spend to buy its take.
-script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take yet. Run decktalk narrate --section 2 --spend to buy its take.
-script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no take yet. Run decktalk narrate --section 3 --spend to buy its take.
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
 cues.json:30: CUE_UNRESOLVED the cue 3.1:idea waits for 'a phrase nobody says' and section 3 speaks 25 words, none of which is that phrase.
 Found 4 findings, 1 error.
 ```
@@ -155,7 +155,7 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | A stage said a file it reads has not been built | [NOT_BUILT](/reference/errors/NOT_BUILT) | [A stage run before the one it reads](#a-stage-run-before-the-one-it-reads) |
 | A voiced run stopped on an answer from ElevenLabs | [PROVIDER](/reference/errors/PROVIDER) | [A voice that did not answer](#a-voice-that-did-not-answer) |
 | A command said another writer holds the build directory | [LOCKED](/reference/errors/LOCKED) | [A locked project](#a-locked-project) |
-| A reveal never happened, and the message names a cue | [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED), [CUE_MISSING](/reference/findings/CUE_MISSING), [CUE_UNKNOWN](/reference/findings/CUE_UNKNOWN), [PAGE_CUE_UNKNOWN](/reference/findings/PAGE_CUE_UNKNOWN) | [An unresolved cue](#an-unresolved-cue) |
+| A reveal never happened, and the message names a cue | [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED), [CUE_UNLISTED](/reference/findings/CUE_UNLISTED), [CUE_UNKNOWN](/reference/findings/CUE_UNKNOWN), [PAGE_CUE_UNKNOWN](/reference/findings/PAGE_CUE_UNKNOWN) | [An unresolved cue](#an-unresolved-cue) |
 | Two reveals ran into each other | [CUE_OVERLAP](/reference/findings/CUE_OVERLAP) | [An unresolved cue](#an-unresolved-cue) |
 | `verify` says the cue times are older than cues.json | [CUE_STALE](/reference/findings/CUE_STALE) | [An unresolved cue](#an-unresolved-cue) |
 | A cue resolved and nothing on screen changed | [CUE_NO_CHANGE](/reference/findings/CUE_NO_CHANGE), [CUE_THIN_CHANGE](/reference/findings/CUE_THIN_CHANGE), [PAGE_THIN_DRAW](/reference/findings/PAGE_THIN_DRAW) | [A picture that does not change](#a-picture-that-does-not-change) |
@@ -167,7 +167,7 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | The film is too quiet, too loud or too peaky | [MIX_LOUDNESS](/reference/findings/MIX_LOUDNESS) | [A loudness miss](#a-loudness-miss) |
 | The page fetched something from another server | [PAGE_CDN_ASSET](/reference/findings/PAGE_CDN_ASSET) | [A page that loads an asset from a network origin](#a-page-that-loads-an-asset-from-a-network-origin) |
 | Chromium would not start with its sandbox on | [TOOL](/reference/errors/TOOL) | [A sandbox that will not start](#a-sandbox-that-will-not-start) |
-| An attribute or a value the contract does not declare | [PAGE_UNKNOWN_ATTR](/reference/findings/PAGE_UNKNOWN_ATTR), [PAGE_BAD_VALUE](/reference/findings/PAGE_BAD_VALUE) | [A page the contract refuses](#a-page-the-contract-refuses) |
+| An attribute or a value the contract does not declare | [PAGE_ATTR_UNKNOWN](/reference/findings/PAGE_ATTR_UNKNOWN), [PAGE_BAD_VALUE](/reference/findings/PAGE_BAD_VALUE) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A slide, a scene or a template is wrong in the markup | [PAGE_SLIDE_NO_ID](/reference/findings/PAGE_SLIDE_NO_ID), [PAGE_SLIDE_DOUBLED](/reference/findings/PAGE_SLIDE_DOUBLED), [PAGE_SLIDE_UNUSED](/reference/findings/PAGE_SLIDE_UNUSED), [PAGE_TEMPLATE_IGNORED](/reference/findings/PAGE_TEMPLATE_IGNORED), [PAGE_SCENE_EMPTY](/reference/findings/PAGE_SCENE_EMPTY) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A moment has no owner, no element or the wrong order | [PAGE_MOMENT_UNKNOWN](/reference/findings/PAGE_MOMENT_UNKNOWN), [PAGE_MOMENT_ORDER](/reference/findings/PAGE_MOMENT_ORDER), [PAGE_NO_OWNER](/reference/findings/PAGE_NO_OWNER), [PAGE_FREEZE_CUE_UNKNOWN](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | Two elements claim one thing | [PAGE_SWAP_AMBIGUOUS](/reference/findings/PAGE_SWAP_AMBIGUOUS), [PAGE_PREVIEW_AMBIGUOUS](/reference/findings/PAGE_PREVIEW_AMBIGUOUS), [PAGE_SWAP_APART](/reference/findings/PAGE_SWAP_APART) | [A page the contract refuses](#a-page-the-contract-refuses) |
@@ -201,7 +201,7 @@ fetches both the first time a command needs them and keeps them in a per-user ca
    that will not launch says to run `decktalk install`.
 
 **The settings.** `[tools] ffmpeg` and `[tools] ffprobe` name binaries the machine already has.
-`[tools] cache_dir` moves what DeckTalk fetches, Chromium and ffmpeg together. `[record] browser_path` records with a browser the
+`[tools] cache_dir` moves what DeckTalk fetches, Chromium and ffmpeg together. `[tools] chromium` records with a browser the
 machine already has and skips the Chromium download entirely. All four are machine keys, so set them
 with `decktalk config set KEY VALUE --scope machine`, because a `decktalk.toml` that sets one is
 refused. Set
@@ -209,7 +209,7 @@ refused. Set
 `[tools] cache_dir` when the home directory is read-only or the browser is shared.
 
 `FILE_MISSING` is also what a stage raises when a file the project names is not on disk, such as an
-audio file of your own that a `[[mix.effects]]` row cues or a clip a section names. There the fix is
+audio file of your own that a `[[mix.effect]]` row cues or a clip a section names. There the fix is
 to write the file or correct the path. A sound the score describes and has not bought yet is
 [`SOUND_MISSING`](/reference/findings/SOUND_MISSING) instead, a warning that plays silence in its
 place, and `decktalk score --spend` buys it.
@@ -301,7 +301,7 @@ say which half is missing.
 
 | Code | Which half is missing | Where the change goes |
 |---|---|---|
-| [CUE_MISSING](/reference/findings/CUE_MISSING) | The page's half exists and the file's does not. | Add the row to `cues.json`, or let `--fix` add it. |
+| [CUE_UNLISTED](/reference/findings/CUE_UNLISTED) | The page's half exists and the file's does not. | Add the row to `cues.json`, or let `--fix` add it. |
 | [CUE_UNKNOWN](/reference/findings/CUE_UNKNOWN) | The file's half exists and the page's does not. | Draw the element, correct the id, or delete the row. |
 | [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED) | Both halves exist and the narration has no such phrase. | Change the row's `phrase`, or change the script. |
 | [PAGE_CUE_UNKNOWN](/reference/findings/PAGE_CUE_UNKNOWN) | The deck declares no such cue at all. | Name the cue in a moment attribute on the slide, or take it out. |
@@ -332,7 +332,7 @@ The phrase is not the problem, so leave it alone. Run `decktalk build`. It place
 records only the sections whose cue times moved, and keeps the rest. `decktalk status` names `build`
 as the next step for the same reason.
 
-**Reading `CUE_MISSING`.** This one carries a safe `edit` fix that writes a row per declared moment
+**Reading `CUE_UNLISTED`.** This one carries a safe `edit` fix that writes a row per declared moment
 with an empty `phrase` for you to fill. On a `cues.json` laid out in a way DeckTalk cannot place a row
 into, the fix is `display` instead and prints the rows for you to paste.
 
@@ -344,7 +344,7 @@ deck under construction that lists the cues of slides nobody has drawn yet.
 **Which command sees what.** The `cue` stage compares `cues.json` against the catalog the page
 published into its recordings, so a section whose page has never been recorded is left unjudged
 rather than guessed at. `decktalk check` makes the same comparison against a page it opens live,
-which is why a fresh project shows `CUE_MISSING` and `CUE_UNKNOWN` from `check` and not from `cue`.
+which is why a fresh project shows `CUE_UNLISTED` and `CUE_UNKNOWN` from `check` and not from `cue`.
 
 `CUE_OVERLAP` is the neighbouring warning. It fires when two cues resolve close enough
 together that one motion is still playing when the next begins, and the message says how far apart
@@ -365,7 +365,7 @@ measure that, all of them by comparing frames.
 
 {/* sample: decktalk check, on a fresh decktalk init my-lesson whose 1.1:title element is styled visibility: hidden, the finding line */}
 ```text
-build/frames/01/slide-1.1-after-1.1_title.png: CUE_NO_CHANGE freezing the slide either side of 1.1:title changes 0.00 percent of the frame, which is under the 0.10 percent floor, so the reveal would not be measured at all.
+build/frames/01/freeze-1.1-after-1.1_title.png: CUE_NO_CHANGE freezing the slide either side of 1.1:title changes 0.00 percent of the frame, which is under the 0.10 percent floor, so the reveal would not be measured at all.
 ```
 
 **What to do.**
@@ -405,7 +405,7 @@ t=0. When the scan finds no cover frames, the run falls back to the first painte
 settle, and failing that to `record.fallback_first_paint_seconds` plus the settle. It says so when it
 does:
 
-{/* sample: decktalk record --section 2 --force --set record.cover_chroma_min=255, on a starter after narrate --no-spend and cue, the warning line */}
+{/* sample: decktalk record --section 2 --force --set record.cover_min_chroma=255, on a starter after narrate --no-spend and cue, the warning line */}
 ```text
 Section 2 shows no cover, so narration t=0 is a guess at 1.434s (the first painted frame and the settle), and every reveal in the section moves with it.
 ```
@@ -478,12 +478,10 @@ it.
 | [PAGE_STAGGER_OVERRUN](/reference/findings/PAGE_STAGGER_OVERRUN) | `data-stagger`, or the number of children the container staggers. |
 | [PAGE_APPEAR_TOO_LONG](/reference/findings/PAGE_APPEAR_TOO_LONG) | The line itself, or swap `data-words` from `appear` to `highlight`. |
 
-`data-in-seconds` runs from 0.12 to 0.44 in steps of 0.04, which is three to eleven frames at the 25
-frames per second the recorder captures at. `data-stagger` runs from 0.04 to 0.2 in steps of 0.04,
-and a staggered container's total is the step times the children less one, plus the entrance, which
-must stay under half a second. `motion.scale` multiplies every declared length, so a value above one
-is what pushes a deck that was fine over the ceiling. `decktalk schema page` prints every attribute
-with its range.
+[How long a moment may move](/concepts/page-contract#how-long-a-moment-may-move) gives the range of
+`data-in-seconds` and `data-stagger` and the stagger's arithmetic, and `decktalk schema page` prints
+every attribute with its range. `motion.scale` multiplies every declared length, so a value above one
+is what pushes a deck that was fine over the ceiling.
 
 **`CUT_SPEECH` and `CUT_POP`** are about the cuts rather than the reveals. A cut that slices a word
 means the section's narration did not have room to finish, and `[narration] tail_seconds` is the
@@ -581,7 +579,7 @@ contract either declares a thing or it does not.
 
 | Code | The change that clears it |
 |---|---|
-| [PAGE_UNKNOWN_ATTR](/reference/findings/PAGE_UNKNOWN_ATTR) | Spell the attribute the way `decktalk schema page` spells it, or take it off. |
+| [PAGE_ATTR_UNKNOWN](/reference/findings/PAGE_ATTR_UNKNOWN) | Spell the attribute the way `decktalk schema page` spells it, or take it off. |
 | [PAGE_BAD_VALUE](/reference/findings/PAGE_BAD_VALUE) | Put the value back inside the published range, which the message quotes. |
 | [PAGE_MOMENT_UNKNOWN](/reference/findings/PAGE_MOMENT_UNKNOWN) | Declare that cue on the slide the element sits in, or correct the name. |
 | [PAGE_MOMENT_ORDER](/reference/findings/PAGE_MOMENT_ORDER) | Give the exit a cue that fires later than the entrance on the same element. |
@@ -671,7 +669,7 @@ Some things are not judgements. Use the stream.
   names every line and its fields.
 - `stage.done` and `section.done` carry an `outcome`, so a run that stopped early still says what it
   did not reach rather than leaving you to infer it from a shorter list.
-- `output.events_keep_runs` prunes the oldest files, and its default is 20.
+- `events.keep_runs` prunes the oldest files, and its default is 20.
 - `-v` puts debug lines on stderr and prints the traceback of a bug. `error[INTERNAL]` means a bug in
   DeckTalk, and `-v` is what turns it into something worth reporting.
 - `decktalk status` reports where the project stands and what to run next.

@@ -211,7 +211,13 @@ class ErrorInfo(Model):
 
     code: ErrorCode = Field(description="The code a caller dispatches on, such as NOT_BUILT.")
     message: str = Field(description="One sentence saying what is wrong, with the measured detail in it.")
-    hint: str | None = Field(None, description="The whole command that would clear this, or null.")
+    hint: str | None = Field(
+        None,
+        description=(
+            "The smallest next action, or null. A refusal names the whole command that clears it, and a bug "
+            "says how to report it."
+        ),
+    )
     location: Location | None = Field(None, description="The file and line to open, or null.")
     docs: str = Field(description="The docs page for this code.")
 

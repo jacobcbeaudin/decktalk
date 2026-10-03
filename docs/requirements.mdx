@@ -127,7 +127,7 @@ is one setting, and none of them changes the project.
 | The ffmpeg download | `[tools] ffmpeg` and `[tools] ffprobe`, naming two executables from one build. They override every other source, so nothing downloads a build. |
 | A write to the per-user cache | `[tools] cache_dir`, which moves Chromium and ffmpeg together. |
 
-The `[tools]` keys and `record.browser_path` are
+The `[tools]` keys are
 [machine keys](/reference/configuration#keys-only-a-machine-may-set). They describe this machine, so
 they go in its own settings file through `decktalk config set KEY VALUE --scope machine`, and a
 `decktalk.toml` that sets one is refused by name.
@@ -140,7 +140,7 @@ Every setting has an environment variable of its own, spelled `DECKTALK_<TABLE>_
 If the machine already has an approved Chrome or Chromium, record with that one instead.
 
 ```console
-decktalk config set record.browser_path "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --scope machine
+decktalk config set tools.chromium "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --scope machine
 ```
 
 The pinned Playwright build is the reference build, and DeckTalk's timing limits are measured against
@@ -282,9 +282,10 @@ Two things call ElevenLabs. The `narrate` stage sends each section's text and ge
 No library or command call spends without approval. On the command line the flags are `--no-spend`, which plays every take on disk, writes
 placeholder narration where a take is missing and calls nothing, `--spend`, which approves the spend,
 and `--max-cost N`, which puts a ceiling on it. With neither flag, a build with something to buy
-prices the run and asks on a terminal. Without a terminal it refuses and names the two flags that
-answer, so a script or a CI job cannot spend by accident. A build whose takes are all on disk buys
-nothing, so it asks nothing and reads no key.
+prices the run and asks on a terminal, once, about its takes and its sounds added together. Without a
+terminal it refuses and names the two flags that answer, so a script or a CI job cannot spend by
+accident. A build whose takes are all on disk buys nothing, so it asks nothing and reads no key, and
+a voice that declares itself free, such as `dtsp`, is never asked about, because it costs nothing.
 
 Everything else spends nothing: `init`, `install`, `doctor`, `status`, `check`, `words`,
 `storyboard`, `serve`, `config`, `schema`, `cue`, `record`, `assemble`, `verify`, `clip`, and any
@@ -356,7 +357,7 @@ decktalk check --json
   effects, so the rate is their average and `price_key` names the one least surely stated.
 - `price_layer` names the settings layer that set the rate, where `default` means nobody did.
 
-`dollars` and `ceiling_dollars` differ when a section's cache cannot be checked. A take is named by
+`dollars` and `ceiling_dollars` differ when a section's take cannot be matched. A take is named by
 its text and its voice, so with no `[voice] id` named no take on disk can be matched to the
 voice that made it: each unmatched section's characters go into the ceiling and none of them into
 the price. The key is not needed to price a run, because the price never asks the voice anything.
@@ -382,6 +383,7 @@ together first, so a run it refuses has bought nothing. Each request that buys i
 made, against what the run already approved, so a stage that asks for more than the build was
 priced at is still refused, and the refusal says that what the run bought before it is kept.
 
+{/* sample: decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voice] id set and no API key, which refuses before any request */}
 ```text
 error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.14, is over the $0.05 ceiling --max-cost set.
   hint: Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
@@ -390,6 +392,7 @@ error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 char
 
 `--max-cost` also refuses while the price is still the default, before it compares anything.
 
+{/* sample: the same run with the dollars_per_1000_characters line deleted from decktalk.toml */}
 ```text
 error[APPROVAL]: --max-cost was given and nothing states the rate this run buys at, so the cap would guard a made-up price.
   hint: Set elevenlabs.dollars_per_1000_characters to what your plan charges, then run it again.
@@ -412,10 +415,9 @@ you intend to.
 
 Recording runs in real time, so a section takes as long to record as it plays. Several page
 sections record at once, as many as `record.concurrency` allows, so a film of several sections
-records in about the time of its longest few rather than of all of them end to end. The starter's
-build that does not spend took about 27 seconds in all on a MacBook Pro with an Apple M5 Pro and 64 GB of
-memory, on a machine that already had Chromium and ffmpeg, and the film it made is 50 seconds long.
-Most of that is the recording.
+records in about the time of its longest few rather than of all of them end to end, and most of a
+build is the recording. [Build times](/reference/measured#build-times) gives the starter's build
+cold, kept and after one changed word, measured on a named machine.
 
 [Rebuild one section](/guides/rebuild-one-section) shows how to record only what changed.
 

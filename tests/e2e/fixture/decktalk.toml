@@ -36,7 +36,7 @@ chapter = "Equation"
 page = "deck/index.html"
 scene = "3"
 hold_seconds = 0.5
-ambience = true
+with_ambience = true
 
 [[section]]
 number = 5
@@ -54,7 +54,7 @@ music_markers = "media/markers.json"
 ambience = "media/ambience.mp3"
 ambience_db = -32             # well under the -24 dBFS clicks, so the a/v check still finds each click
 
-[[mix.effects]]
+[[mix.effect]]
 file = "media/tick.mp3"
 section = 1
 cue = "1.1:second"

@@ -46,7 +46,7 @@ from decktalk.inputs import Inputs
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run, Threshold
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
-from decktalk.results import DOLLAR_DIGITS, Billing, BuildResult, Cost, CostState, Layer, Result, StageRun, counted
+from decktalk.results import DOLLAR_DIGITS, BillingBasis, BuildResult, Cost, CostState, Layer, Result, StageRun, counted
 from decktalk.stages import narrate, storyboard
 from decktalk.stages import score as score_stage
 from decktalk.stages.kept import (
@@ -318,19 +318,36 @@ def _hold_to_ceiling(
 ) -> None:
     """Refuse a run whose every stage that buys, added together, is over its ceiling, before any of them runs.
 
-    Each stage is priced from the plan the way it prices itself, so the cap is held against the whole
-    run before the first purchase rather than stage by stage as the run goes. A run with no ceiling,
-    or one that may not spend, is never priced here.
+    The cap is held against the whole run's `price` before the first purchase rather than stage by
+    stage as the run goes. A run with no ceiling, or one that may not spend, is never priced here.
     """
     if not run.spend or run.max_cost is None:
         return
+    whole = price(inputs, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
+    if whole is not None:
+        run.approve_whole(whole)
+
+
+def price(
+    inputs: Inputs,
+    stages: Collection[Stage],
+    *,
+    only: Sequence[int] | None = None,
+    replace_voiced: bool = False,
+    replace_score: bool = False,
+) -> Cost | None:
+    """What a run of these stages that may spend would buy, or None when none of them buys anything.
+
+    Each stage that buys is priced from its plan the way it prices itself, sending nothing, and the
+    prices are added by `total`. So the price a caller asks about before a run, the ceiling the run
+    is held to and the spend its result reports are one sum of the same stages.
+    """
     spends: list[Cost] = []
-    if Stage.NARRATE in plan:
+    if Stage.NARRATE in stages:
         spends.append(narrate.price(inputs, only=only, replace_voiced=replace_voiced))
-    if Stage.SCORE in plan:
+    if Stage.SCORE in stages:
         spends.append(score_stage.price(inputs, only=only, replace_score=replace_score))
-    if spends:
-        run.approve_whole(total(spends))
+    return total(spends) if spends else None
 
 
 def _cost_of(answer: Result) -> list[Cost]:
@@ -385,12 +402,12 @@ def total(spends: Sequence[Cost]) -> Cost:
     buying = [spend for spend in spends if spend.buys] or list(spends)
     deciding = [spend for spend in buying if not spend.free] or buying
     bills = list(dict.fromkeys(spend.billing for spend in deciding))
-    if Billing.UNDECLARED in bills:
-        bills = [Billing.UNDECLARED]
+    if BillingBasis.UNDECLARED in bills:
+        bills = [BillingBasis.UNDECLARED]
     first = {bill: next(spend for spend in deciding if spend.billing is bill) for bill in bills}
     unstated = [spend for spend in deciding if spend.price_layer is Layer.DEFAULT]
     named = (unstated or deciding)[0]
-    per_character, per_second = first.get(Billing.PER_CHARACTER), first.get(Billing.PER_SECOND)
+    per_character, per_second = first.get(BillingBasis.PER_CHARACTER), first.get(BillingBasis.PER_SECOND)
     return Cost(
         state=CostState.CHARGED if any(s.state is CostState.CHARGED for s in spends) else CostState.ESTIMATE,
         sections=tuple(sorted({number for spend in spends for number in spend.sections})),
@@ -398,7 +415,7 @@ def total(spends: Sequence[Cost]) -> Cost:
         seconds=sum(spend.seconds for spend in spends),
         dollars=round(sum(spend.dollars for spend in spends), DOLLAR_DIGITS),
         ceiling_dollars=round(sum(spend.ceiling_dollars for spend in spends), DOLLAR_DIGITS),
-        billing=bills[0] if len(bills) == 1 else Billing.MIXED,
+        billing=bills[0] if len(bills) == 1 else BillingBasis.MIXED,
         dollars_per_1000_characters=per_character.dollars_per_1000_characters if per_character else 0.0,
         dollars_per_minute=per_second.dollars_per_minute if per_second else 0.0,
         price_key=named.price_key,
@@ -407,4 +424,4 @@ def total(spends: Sequence[Cost]) -> Cost:
     )
 
 
-__all__ = ["build", "total"]
+__all__ = ["build", "price", "total"]

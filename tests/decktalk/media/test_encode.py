@@ -46,8 +46,8 @@ def test_the_encoder_tags_every_output_bt709_and_mixes_in_float():
 
 
 def test_the_encoder_takes_its_rate_from_the_output_key_and_keyframes_on_it():
-    """`[video] output_fps` is the encoder's rate, so the recorder's own rate never reaches these arguments."""
-    enc = Encoder(VideoConfig(output_fps=50), AudioConfig())
+    """`[video] fps` is the encoder's rate, so the recorder's own rate never reaches these arguments."""
+    enc = Encoder(VideoConfig(fps=50), AudioConfig())
     assert "fps=50," in enc.fit
     assert enc.venc[enc.venc.index("-g") + 1] == "100"
     assert enc.color_source("black", 1.0)[-1].endswith(":r=50")

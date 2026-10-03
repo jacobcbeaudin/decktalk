@@ -1,6 +1,6 @@
 """The one reader of what a page hands back, so nothing above this module trusts a page's own words.
 
-`window.__dtprobe.report()` answers with the ten fields `page.REPORT` names, written by JavaScript
+`window.__decktalkProbe.report()` answers with the ten fields `page.REPORT` names, written by JavaScript
 that a deck's own script shares a window with. Every row therefore arrives here and is read into a
 model before anything above uses it, and a row this contract cannot read is dropped with the reason
 rather than carried into an artifact or into a verdict.
@@ -20,7 +20,7 @@ from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from .. import page
 from ..findings import Code, Model, RaisedBy
-from ..page import MILLISECONDS, REPORT, Attr, stagger_span
+from ..page import REPORT, Attr, stagger_span
 
 
 class PageWarningRow(Model):
@@ -62,9 +62,9 @@ class WordRow(Model):
 
     text: str = Field(description="The opening of the line, which is enough to find it in the script.")
     cue_at: float = Field(alias="cueAt", description="The second the cue that started the line ran.")
-    run_at: float = Field(alias="runAt", description="The second the voice reaches the line's first word.")
+    spoken_at: float = Field(alias="spokenAt", description="The second the voice reaches the line's first word.")
     count: int = Field(ge=0, description="How many words the line holds.")
-    first_shown: float = Field(alias="firstOn", description="The second the first word was drawn.")
+    first_shown: float = Field(alias="firstShown", description="The second the first word was drawn.")
 
 
 class FrameGap(Model):
@@ -185,7 +185,7 @@ class PageReport(Model):
         there. A gap is recorded when it ends, so a gap that began before t=0 counts only what fell
         after it, and a gap with no time on the section clock counts nothing.
         """
-        visible = (0.0 if gap.at is None else min(gap.ms, gap.at * MILLISECONDS) for gap in self.frame_gaps)
+        visible = (0.0 if gap.at is None else min(gap.ms, gap.at * 1000) for gap in self.frame_gaps)
         return int(max((seen for seen in visible if seen > 0), default=0))
 
 

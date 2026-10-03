@@ -57,7 +57,7 @@
     front: { seconds: 0.2 },
   };
   var CODES = {
-    PAGE_UNKNOWN_ATTR:
+    PAGE_ATTR_UNKNOWN:
       "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
     PAGE_BAD_VALUE: "{attr}={value} is not one of {allowed}, so write one of those instead.",
     PAGE_MOMENT_UNKNOWN:
@@ -114,7 +114,7 @@
   var READ_FROM_THE_PAGE = null;
   var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
-  var HOLD_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
+  var PREVIEW_SECONDS_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
     "data-in": {
       name: "data-in",
@@ -369,13 +369,13 @@
       affects: ["cue-order", "catalog"],
       summary: "Declares a slide on a template. Its id qualifies every moment written inside it.",
     },
-    "data-hold": {
-      name: "data-hold",
+    "data-preview-seconds": {
+      name: "data-preview-seconds",
       on: ["slide"],
       kind: "seconds",
       values: [],
       default: "8",
-      range: HOLD_RANGE,
+      range: PREVIEW_SECONDS_RANGE,
       code: null,
       span: 0,
       affects: ["preview"],
@@ -414,6 +414,7 @@
   var TIME_MARK = "@";
   var LIST_SEPARATOR = ",";
   var T0_SIGNAL = "signal";
+  var DONE_ATTR = "data-done";
   var ENGINE_PATH = "/__decktalk/";
   var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
   var MOTION_SCALE_PROPERTY = "--dt-motion-scale";
@@ -459,6 +460,211 @@
     return Math.min(span2 * scale2, PLAYABLE_SPAN_SECONDS);
   }
 
+  // src/decktalk/runtime/src/canvas.ts
+  /*! The canvas a deck is drawn on, and the one stylesheet that renders every closed word.
+   *
+   * A DeckTalk page draws onto one canvas of a fixed size, named below and scaled to whatever window
+   * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
+   * This module owns that canvas, the fit, the heads-up display, and the stylesheet.
+   *
+   * Every rule below is generated from the registry, so a style word's length lives once. Each
+   * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
+   * to the head, so a page rule of equal weight wins on document order. An author's stylesheet is
+   * therefore always able to override the runtime without reaching for `!important`.
+   */
+  var CANVAS_WIDTH = 1920;
+  var CANVAS_HEIGHT = 1080;
+  var EASE = "cubic-bezier(.2,.7,.2,1)";
+  var POP_ENTRY_SCALE = 0.7;
+  var POP_OVERSHOOT_AT = 60;
+  var FALL_PIXELS = ENTRANCES.rise.liftPixels;
+  var SPAN_PROPERTY = "--dt-span";
+  var CLASS = {
+    slide: "dt-slide",
+    leaving: "dt-leaving",
+    arriving: "dt-arriving",
+    hidden: "dt-hidden",
+    shown: "dt-shown",
+    back: "dt-back",
+    front: "dt-front",
+    word: "dt-word",
+    frozen: "dt-frozen",
+    /** The class a reduced render puts on the root, which the page's own stylesheet must honour. */
+    reduced: "dt-reduced",
+  };
+  function frames(family, word2) {
+    return `dt-${family}-${word2}`;
+  }
+  function styleClass(family, word2) {
+    return frames(family, word2);
+  }
+  var ENTRANCE_BODY = {
+    rise: `from{opacity:0;transform:translateY(${ENTRANCES.rise.liftPixels}px)}to{opacity:1;transform:none}`,
+    settle: `from{opacity:0;transform:translateY(${ENTRANCES.settle.liftPixels}px)}to{opacity:1;transform:none}`,
+    fade: "from{opacity:0}to{opacity:1}",
+    pop: `0%{opacity:0;transform:scale(${POP_ENTRY_SCALE})}${POP_OVERSHOOT_AT}%{opacity:1;transform:scale(${1 + ENTRANCES.pop.overshootPercent / 100})}100%{opacity:1;transform:none}`,
+    draw: "from{opacity:1;stroke-dashoffset:1}to{opacity:1;stroke-dashoffset:0}",
+    cut: "from{opacity:1}to{opacity:1}",
+  };
+  var EXIT_BODY = {
+    fade: "from{opacity:1}to{opacity:0}",
+    fall: `from{opacity:1;transform:none}to{opacity:0;transform:translateY(${FALL_PIXELS}px)}`,
+  };
+  var WORD_BODY = {
+    highlight: `from{opacity:${BACK_OPACITY}}to{opacity:1}`,
+    appear: "from{opacity:0}to{opacity:1}",
+  };
+  var SLIDE_BODY = {
+    crossfade: "from{opacity:0}to{opacity:1}",
+    cut: "from{opacity:1}to{opacity:1}",
+  };
+  function rule(family, word2, seconds2, body, extra = "") {
+    const name = frames(family, word2);
+    return `@keyframes ${name}{${body}}
+:where(.${name}){animation-name:${name};animation-duration:var(${SPAN_PROPERTY},${seconds2}s);animation-timing-function:${EASE};animation-fill-mode:both;${extra}}
+`;
+  }
+  var CHROME_CSS = [
+    ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}\n",
+    ":where(#dt-index){font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}\n",
+    ":where(#dt-index h1){font-size:28px}:where(#dt-index h2){font-size:20px;margin-top:28px}\n",
+    ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
+    ":where(#dt-index code){color:inherit;opacity:.7}\n",
+    ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
+  ];
+  function sheet() {
+    const declared2 = Object.values(ATTRS)
+      .filter((row) => row.kind === "id")
+      .map((row) => `[${row.name}]`)
+      .join(",");
+    const parts = [
+      `:where(${declared2}){display:none}
+`,
+      `:where(#dt-canvas){position:absolute;left:0;top:0;width:${CANVAS_WIDTH}px;height:${CANVAS_HEIGHT}px;overflow:hidden;transform-origin:0 0}
+`,
+      ":where(#dt-camera,#dt-pan){position:absolute;inset:0}\n",
+      `:where(.${CLASS.slide}){position:absolute;inset:0}
+`,
+      // The outgoing slide keeps full opacity underneath the incoming one, so the composite of the two
+      // is opaque at every moment of a crossfade and never dips towards the page's own background.
+      `:where(.${CLASS.leaving}){opacity:1;z-index:0;pointer-events:none}
+`,
+      `:where(.${CLASS.arriving}){z-index:1}
+`,
+      `:where(.${CLASS.hidden}){opacity:0}
+`,
+      `:where(.${CLASS.shown}){opacity:1}
+`,
+    ];
+    for (const [word2, effect] of Object.entries(ENTRANCES)) {
+      const extra = word2 === "draw" ? "stroke-dasharray:1;animation-timing-function:linear;" : "";
+      parts.push(rule("in", word2, effect.seconds, ENTRANCE_BODY[word2], extra));
+    }
+    for (const [word2, effect] of Object.entries(EXITS))
+      parts.push(rule("out", word2, effect.seconds, EXIT_BODY[word2]));
+    for (const [word2, effect] of Object.entries(WORD_STYLES)) {
+      parts.push(rule("word", word2, effect.seconds, WORD_BODY[word2]));
+    }
+    for (const [word2, effect] of Object.entries(SLIDE_ENTRANCES)) {
+      parts.push(rule("enter", word2, effect.seconds, SLIDE_BODY[word2]));
+    }
+    parts.push(
+      `:where(.${CLASS.back}){opacity:${BACK_OPACITY};transition:opacity var(${SPAN_PROPERTY},${ATTENTION.back.seconds}s) ${EASE}}
+`,
+      `:where(.${CLASS.front}){opacity:1;transition:opacity var(${SPAN_PROPERTY},${ATTENTION.front.seconds}s) ${EASE}}
+`,
+    );
+    const fade = frames("in", "fade");
+    parts.push(
+      `:where(.${CLASS.reduced}) :where(${Object.keys(ENTRANCES)
+        .map((word2) => `.${frames("in", word2)}`)
+        .join(",")}){animation-name:${fade}}
+`,
+    );
+    parts.push(
+      `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}
+`,
+    );
+    parts.push(...CHROME_CSS);
+    return parts.join("");
+  }
+  var canvasEl = null;
+  var cameraEl = null;
+  var panEl = null;
+  var hudEl = null;
+  var fitScale = 1;
+  function style() {
+    if (document.getElementById("dt-style")) return;
+    const el = document.createElement("style");
+    el.id = "dt-style";
+    el.textContent = sheet();
+    const head = document.head || document.documentElement;
+    head.insertBefore(el, head.firstChild);
+  }
+  function reduced() {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+  }
+  function motionScale() {
+    const written2 = getComputedStyle(document.documentElement).getPropertyValue(MOTION_SCALE_PROPERTY).trim();
+    const scale2 = Number.parseFloat(written2);
+    return Number.isFinite(scale2) && scale2 > 0 ? scale2 : 1;
+  }
+  function span(el, seconds2) {
+    el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds2, motionScale())}s`);
+  }
+  function build(hud) {
+    if (canvasEl) return;
+    canvasEl = document.getElementById("dt-canvas") ?? document.createElement("div");
+    canvasEl.id = "dt-canvas";
+    if (!canvasEl.isConnected) document.body.appendChild(canvasEl);
+    cameraEl = document.createElement("div");
+    cameraEl.id = "dt-camera";
+    panEl = document.createElement("div");
+    panEl.id = "dt-pan";
+    cameraEl.appendChild(panEl);
+    canvasEl.appendChild(cameraEl);
+    if (hud) {
+      hudEl = document.createElement("div");
+      hudEl.id = "dt-hud";
+      document.body.appendChild(hudEl);
+    }
+    if (reduced()) document.documentElement.classList.add(CLASS.reduced);
+    fit();
+    window.addEventListener("resize", fit);
+  }
+  function fit() {
+    if (!canvasEl) return;
+    fitScale = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT);
+    const x = (window.innerWidth - CANVAS_WIDTH * fitScale) / 2;
+    const y = (window.innerHeight - CANVAS_HEIGHT * fitScale) / 2;
+    canvasEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
+  }
+  function pan() {
+    return panEl;
+  }
+  function frame() {
+    return canvasEl;
+  }
+  function scale() {
+    return fitScale;
+  }
+  function freeze() {
+    document.documentElement.classList.add(CLASS.frozen);
+  }
+  function hide() {
+    if (canvasEl) canvasEl.style.display = "none";
+    document.body.style.overflow = "auto";
+  }
+  function say(line2) {
+    if (hudEl) hudEl.textContent = line2;
+  }
+  function slideSeconds(word2) {
+    return scaled(SLIDE_ENTRANCES[word2].seconds, motionScale());
+  }
+  function countSeconds(word2) {
+    return scaled(COUNTS[word2].seconds, motionScale());
+  }
+
   // src/decktalk/runtime/src/clock.ts
   /*! The section clock and the queue of everything the page has still to do.
    *
@@ -474,7 +680,7 @@
   var MOUNT_FIRST = 0;
   var AFTER_THE_MOUNT = 1;
   var origin = null;
-  var frame = 0;
+  var frame2 = 0;
   var queue = [];
   var looping = false;
   function start() {
@@ -487,7 +693,7 @@
     return origin === null ? Number.NEGATIVE_INFINITY : (performance.now() - origin) / MILLISECONDS;
   }
   function frameAt() {
-    return origin === null ? null : round((frame - origin) / MILLISECONDS);
+    return origin === null ? null : round((frame2 - origin) / MILLISECONDS);
   }
   function round(seconds2) {
     return Number(seconds2.toFixed(SECOND_DIGITS));
@@ -503,7 +709,7 @@
     if (looping) return;
     looping = true;
     const tick = (at) => {
-      frame = at;
+      frame2 = at;
       const seconds2 = now();
       while (queue.length && queue[0].at <= seconds2) queue.shift().run();
       onFrame?.(seconds2);
@@ -568,7 +774,7 @@
     scene: named("scene"),
     name: named("name"),
     slide: named("slide"),
-    hold: named("hold"),
+    previewSeconds: named("preview-seconds"),
     owns: named("owns"),
     enter: named("enter"),
     in: named("in"),
@@ -593,9 +799,9 @@
   var SCENE_WORD = "Scene";
   var scenes = /* @__PURE__ */ new Map();
   var handlers = /* @__PURE__ */ new Map();
-  var motionScale = 1;
+  var motionScale2 = 1;
   function setMotionScale(scale2) {
-    motionScale = scale2;
+    motionScale2 = scale2;
   }
   function all() {
     return scenes;
@@ -650,8 +856,8 @@
   function staggerSeconds(el) {
     return seconds(el, ATTR.stagger);
   }
-  function holdSeconds(el) {
-    return seconds(el, ATTR.hold) ?? Number(ATTRS[ATTR.hold].default);
+  function previewSeconds(el) {
+    return seconds(el, ATTR.previewSeconds) ?? Number(ATTRS[ATTR.previewSeconds].default);
   }
   function momentsOf(el, slideId) {
     const out = [];
@@ -720,7 +926,7 @@
     return spans;
   }
   function declared(span2) {
-    return Number((span2 * motionScale).toFixed(SECOND_DIGITS));
+    return Number((span2 * motionScale2).toFixed(SECOND_DIGITS));
   }
   function spanOf(el, attr) {
     if (attr === ATTR.back) return ATTENTION.back.seconds;
@@ -771,7 +977,7 @@
   function slideFrom(sceneId, input, at) {
     return {
       id: String(input.id ?? `${sceneId}.${at + 1}`),
-      hold: Number(input.hold ?? ATTRS[ATTR.hold].default),
+      previewSeconds: Number(input.previewSeconds ?? ATTRS[ATTR.previewSeconds].default),
       enter: input.enter ?? ATTRS[ATTR.enter].default,
       owns: (input.owns ?? []).map(String),
       markup: null,
@@ -823,7 +1029,7 @@
           scene.slides.push(slide);
         }
         if (!slide.render) slide.markup = tpl;
-        slide.hold = holdSeconds(tpl);
+        slide.previewSeconds = previewSeconds(tpl);
         slide.enter = slideEntranceOf(tpl);
         slide.owns = (written(tpl, ATTR.owns) ?? "").split(/\s+/).filter(Boolean);
         check(tpl.content, slideId, true);
@@ -840,7 +1046,7 @@
       for (const attribute of el.attributes) {
         if (!attribute.name.startsWith(PREFIX)) continue;
         if (!known(attribute.name)) {
-          warn("PAGE_UNKNOWN_ATTR", place, null, { attr: attribute.name });
+          warn("PAGE_ATTR_UNKNOWN", place, null, { attr: attribute.name });
           continue;
         }
         const row = ATTRS[attribute.name];
@@ -974,211 +1180,6 @@
     });
   }
 
-  // src/decktalk/runtime/src/stage.ts
-  /*! The stage a deck is drawn on, and the one stylesheet that renders every closed word.
-   *
-   * A DeckTalk page draws into one stage of a fixed size, named below and scaled to whatever window
-   * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
-   * This module owns that stage, the fit, the heads-up display, and the stylesheet.
-   *
-   * Every rule below is generated from the registry, so a style word's length lives once. Each
-   * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
-   * to the head, so a page rule of equal weight wins on document order. An author's stylesheet is
-   * therefore always able to override the runtime without reaching for `!important`.
-   */
-  var STAGE_WIDTH = 1920;
-  var STAGE_HEIGHT = 1080;
-  var EASE = "cubic-bezier(.2,.7,.2,1)";
-  var POP_ENTRY_SCALE = 0.7;
-  var POP_OVERSHOOT_AT = 60;
-  var FALL_PIXELS = ENTRANCES.rise.liftPixels;
-  var SPAN_PROPERTY = "--dt-span";
-  var CLASS = {
-    slide: "dt-slide",
-    leaving: "dt-leaving",
-    arriving: "dt-arriving",
-    hidden: "dt-hidden",
-    shown: "dt-shown",
-    back: "dt-back",
-    front: "dt-front",
-    word: "dt-word",
-    frozen: "dt-frozen",
-    /** The class a reduced render puts on the root, which the page's own stylesheet must honour. */
-    reduced: "dt-reduced",
-  };
-  function frames(family, word2) {
-    return `dt-${family}-${word2}`;
-  }
-  function styleClass(family, word2) {
-    return frames(family, word2);
-  }
-  var ENTRANCE_BODY = {
-    rise: `from{opacity:0;transform:translateY(${ENTRANCES.rise.liftPixels}px)}to{opacity:1;transform:none}`,
-    settle: `from{opacity:0;transform:translateY(${ENTRANCES.settle.liftPixels}px)}to{opacity:1;transform:none}`,
-    fade: "from{opacity:0}to{opacity:1}",
-    pop: `0%{opacity:0;transform:scale(${POP_ENTRY_SCALE})}${POP_OVERSHOOT_AT}%{opacity:1;transform:scale(${1 + ENTRANCES.pop.overshootPercent / 100})}100%{opacity:1;transform:none}`,
-    draw: "from{opacity:1;stroke-dashoffset:1}to{opacity:1;stroke-dashoffset:0}",
-    cut: "from{opacity:1}to{opacity:1}",
-  };
-  var EXIT_BODY = {
-    fade: "from{opacity:1}to{opacity:0}",
-    fall: `from{opacity:1;transform:none}to{opacity:0;transform:translateY(${FALL_PIXELS}px)}`,
-  };
-  var WORD_BODY = {
-    highlight: `from{opacity:${BACK_OPACITY}}to{opacity:1}`,
-    appear: "from{opacity:0}to{opacity:1}",
-  };
-  var SLIDE_BODY = {
-    crossfade: "from{opacity:0}to{opacity:1}",
-    cut: "from{opacity:1}to{opacity:1}",
-  };
-  function rule(family, word2, seconds2, body, extra = "") {
-    const name = frames(family, word2);
-    return `@keyframes ${name}{${body}}
-:where(.${name}){animation-name:${name};animation-duration:var(${SPAN_PROPERTY},${seconds2}s);animation-timing-function:${EASE};animation-fill-mode:both;${extra}}
-`;
-  }
-  var CHROME_CSS = [
-    ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}\n",
-    ":where(#dt-index){font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}\n",
-    ":where(#dt-index h1){font-size:28px}:where(#dt-index h2){font-size:20px;margin-top:28px}\n",
-    ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
-    ":where(#dt-index code){color:inherit;opacity:.7}\n",
-    ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
-  ];
-  function sheet() {
-    const declared2 = Object.values(ATTRS)
-      .filter((row) => row.kind === "id")
-      .map((row) => `[${row.name}]`)
-      .join(",");
-    const parts = [
-      `:where(${declared2}){display:none}
-`,
-      `:where(#dt-stage){position:absolute;left:0;top:0;width:${STAGE_WIDTH}px;height:${STAGE_HEIGHT}px;overflow:hidden;transform-origin:0 0}
-`,
-      ":where(#dt-camera,#dt-pan){position:absolute;inset:0}\n",
-      `:where(.${CLASS.slide}){position:absolute;inset:0}
-`,
-      // The outgoing slide keeps full opacity underneath the incoming one, so the composite of the two
-      // is opaque at every moment of a crossfade and never dips towards the page's own background.
-      `:where(.${CLASS.leaving}){opacity:1;z-index:0;pointer-events:none}
-`,
-      `:where(.${CLASS.arriving}){z-index:1}
-`,
-      `:where(.${CLASS.hidden}){opacity:0}
-`,
-      `:where(.${CLASS.shown}){opacity:1}
-`,
-    ];
-    for (const [word2, effect] of Object.entries(ENTRANCES)) {
-      const extra = word2 === "draw" ? "stroke-dasharray:1;animation-timing-function:linear;" : "";
-      parts.push(rule("in", word2, effect.seconds, ENTRANCE_BODY[word2], extra));
-    }
-    for (const [word2, effect] of Object.entries(EXITS))
-      parts.push(rule("out", word2, effect.seconds, EXIT_BODY[word2]));
-    for (const [word2, effect] of Object.entries(WORD_STYLES)) {
-      parts.push(rule("word", word2, effect.seconds, WORD_BODY[word2]));
-    }
-    for (const [word2, effect] of Object.entries(SLIDE_ENTRANCES)) {
-      parts.push(rule("enter", word2, effect.seconds, SLIDE_BODY[word2]));
-    }
-    parts.push(
-      `:where(.${CLASS.back}){opacity:${BACK_OPACITY};transition:opacity var(${SPAN_PROPERTY},${ATTENTION.back.seconds}s) ${EASE}}
-`,
-      `:where(.${CLASS.front}){opacity:1;transition:opacity var(${SPAN_PROPERTY},${ATTENTION.front.seconds}s) ${EASE}}
-`,
-    );
-    const fade = frames("in", "fade");
-    parts.push(
-      `:where(.${CLASS.reduced}) :where(${Object.keys(ENTRANCES)
-        .map((word2) => `.${frames("in", word2)}`)
-        .join(",")}){animation-name:${fade}}
-`,
-    );
-    parts.push(
-      `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}
-`,
-    );
-    parts.push(...CHROME_CSS);
-    return parts.join("");
-  }
-  var stageEl = null;
-  var cameraEl = null;
-  var panEl = null;
-  var hudEl = null;
-  var fitScale = 1;
-  function style() {
-    if (document.getElementById("dt-style")) return;
-    const el = document.createElement("style");
-    el.id = "dt-style";
-    el.textContent = sheet();
-    const head = document.head || document.documentElement;
-    head.insertBefore(el, head.firstChild);
-  }
-  function reduced() {
-    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-  }
-  function motionScale2() {
-    const written2 = getComputedStyle(document.documentElement).getPropertyValue(MOTION_SCALE_PROPERTY).trim();
-    const scale2 = Number.parseFloat(written2);
-    return Number.isFinite(scale2) && scale2 > 0 ? scale2 : 1;
-  }
-  function span(el, seconds2) {
-    el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds2, motionScale2())}s`);
-  }
-  function build(hud) {
-    if (stageEl) return;
-    stageEl = document.getElementById("dt-stage") ?? document.createElement("div");
-    stageEl.id = "dt-stage";
-    if (!stageEl.isConnected) document.body.appendChild(stageEl);
-    cameraEl = document.createElement("div");
-    cameraEl.id = "dt-camera";
-    panEl = document.createElement("div");
-    panEl.id = "dt-pan";
-    cameraEl.appendChild(panEl);
-    stageEl.appendChild(cameraEl);
-    if (hud) {
-      hudEl = document.createElement("div");
-      hudEl.id = "dt-hud";
-      document.body.appendChild(hudEl);
-    }
-    if (reduced()) document.documentElement.classList.add(CLASS.reduced);
-    fit();
-    window.addEventListener("resize", fit);
-  }
-  function fit() {
-    if (!stageEl) return;
-    fitScale = Math.min(window.innerWidth / STAGE_WIDTH, window.innerHeight / STAGE_HEIGHT);
-    const x = (window.innerWidth - STAGE_WIDTH * fitScale) / 2;
-    const y = (window.innerHeight - STAGE_HEIGHT * fitScale) / 2;
-    stageEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
-  }
-  function pan() {
-    return panEl;
-  }
-  function frame2() {
-    return stageEl;
-  }
-  function scale() {
-    return fitScale;
-  }
-  function freeze() {
-    document.documentElement.classList.add(CLASS.frozen);
-  }
-  function hide() {
-    if (stageEl) stageEl.style.display = "none";
-    document.body.style.overflow = "auto";
-  }
-  function say(line2) {
-    if (hudEl) hudEl.textContent = line2;
-  }
-  function slideSeconds(word2) {
-    return scaled(SLIDE_ENTRANCES[word2].seconds, motionScale2());
-  }
-  function countSeconds(word2) {
-    return scaled(COUNTS[word2].seconds, motionScale2());
-  }
-
   // src/decktalk/runtime/src/telemetry.ts
   /*! The seam between the page and the recorder, and nothing else.
    *
@@ -1271,7 +1272,7 @@
       warn("PAGE_WORDS_NOT_FOUND", scene.slide, scene.cue, { value: text.slice(0, TEXT_MAX) });
       return;
     }
-    const lead = scaled(WORD_STYLES[style2].seconds, motionScale2());
+    const lead = scaled(WORD_STYLES[style2].seconds, motionScale());
     const due = [];
     el.textContent = "";
     let taken = 0;
@@ -1307,9 +1308,9 @@
             recorder().words({
               text: text.slice(0, TEXT_MAX),
               cueAt: round(cueAt),
-              runAt: spoken[start2].at,
+              spokenAt: spoken[start2].at,
               count: keys.length,
-              firstOn: round(at),
+              firstShown: round(at),
             });
           }
         } else waiting2 = true;
@@ -1534,7 +1535,7 @@
    *
    * A page with no query lists its scenes. `?scene=` plays one at the speed a person reads it.
    * `?cues=` plays one against the section clock, which is the mode a recording is made in.
-   * `?slide=` freezes one slide with its cues already fired, which is what a screenshot opens.
+   * `?freeze=` freezes one slide with its cues already fired, which is what a screenshot opens.
    *
    * Every key this module reads is one the contract publishes, and each is read once here so no other
    * module ever touches the URL. A preview goes one step further and asks the project for the cue
@@ -1542,7 +1543,7 @@
    * than an invented one, and nothing on that path may fail a page that has no such file.
    */
   var SCENE = "scene";
-  var SLIDE = "slide";
+  var FREEZE = "freeze";
   var CUES = "cues";
   var WORDS = "words";
   var T0 = "t0";
@@ -1551,7 +1552,6 @@
   var ON = "1";
   var SLOWEST = 0.05;
   var PREVIEW_STEP_SECONDS = 1;
-  var DONE = "1";
   var state = {
     mode: "index",
     scene: null,
@@ -1563,7 +1563,7 @@
     words: null,
   };
   var params = new URLSearchParams(location.search);
-  var frozen = params.has(SLIDE);
+  var frozen = params.has(FREEZE);
   var signalled = params.get(T0) === T0_SIGNAL;
   var origin2 = signalled ? 0 : Number.parseFloat(params.get(T0) ?? "") || 0;
   var speed = Math.max(SLOWEST, Number.parseFloat(params.get(SPEED) ?? "") || 1);
@@ -1575,6 +1575,9 @@
   }
   function query() {
     return params;
+  }
+  function done() {
+    document.body.toggleAttribute(DONE_ATTR, true);
   }
   function buildSlide(scene, slide) {
     const el = document.createElement("div");
@@ -1695,18 +1698,18 @@
       warn("PAGE_NO_OWNER", scene.id, cues.length ? cues[0].id : null);
       return;
     }
-    if (mode === "cue") {
+    if (mode === "record") {
       for (const slide of scene.slides) {
         if (!mountAt.has(slide)) warn("PAGE_SLIDE_UNUSED", slide.id);
       }
     }
     const last = ordered[ordered.length - 1][0];
     mount(scene, ordered[0][0], null, origin2);
-    if (ordered[0][0] === last) document.body.dataset.done = DONE;
+    if (ordered[0][0] === last) done();
     for (const [slide] of ordered.slice(1)) {
       schedule(origin2 + mountAt.get(slide), "mount", slide.id, () => {
         mount(scene, slide, null, null);
-        if (slide === last) document.body.dataset.done = DONE;
+        if (slide === last) done();
       });
     }
     for (const cue of cues) {
@@ -1728,11 +1731,11 @@
             fireCue(cue, mountAt + ((order2 + 1) * PREVIEW_STEP_SECONDS) / speed),
           );
         });
-        if (slide === last) document.body.dataset.done = DONE;
+        if (slide === last) done();
       };
       if (index2 === 0) start2();
       else schedule(mountAt, "mount", slide.id, start2);
-      at += Math.max(slide.hold, (cues.length + 1) * PREVIEW_STEP_SECONDS) / speed;
+      at += Math.max(slide.previewSeconds, (cues.length + 1) * PREVIEW_STEP_SECONDS) / speed;
     });
   }
   async function resolvedCues(sceneId) {
@@ -1768,7 +1771,7 @@
     const firing = held(order2, found.slide.id);
     mount(found.scene, found.slide, new Set(order2.slice(firing.length)), 0);
     state.fired = [...firing];
-    document.body.dataset.done = DONE;
+    done();
   }
   function index(note) {
     state.mode = "index";
@@ -1786,9 +1789,9 @@
       row.className = "dt-slides";
       for (const slide of scene.slides) {
         const cues = cueOrder(slide);
-        const anchor = link(`?${SLIDE}=${encodeURIComponent(slide.id)}`, `slide ${slide.id} `);
+        const anchor = link(`?${FREEZE}=${encodeURIComponent(slide.id)}`, `slide ${slide.id} `);
         const note_ = document.createElement("code");
-        note_.textContent = `(${slide.hold}s${cues.length ? `, cues ${cues.join(" ")}` : ""})`;
+        note_.textContent = `(${slide.previewSeconds}s${cues.length ? `, cues ${cues.join(" ")}` : ""})`;
         anchor.appendChild(note_);
         row.appendChild(anchor);
       }
@@ -1830,11 +1833,11 @@
     let listing = false;
     let waiting2 = Promise.resolve();
     if (frozen) {
-      stop(params.get(SLIDE) ?? "", (order2, slide) => probe?.freezeCues(order2, slide, warn) ?? order2);
+      stop(params.get(FREEZE) ?? "", (order2, slide) => probe?.freezeCues(order2, slide, warn) ?? order2);
     } else if (chosen !== null || cues.length) {
       const scene = chosen !== null ? (all().get(chosen) ?? null) : (ownerOf(cues[0].id)?.scene ?? null);
       if (!scene) index(`unknown scene ${chosen ?? ""}`);
-      else if (cues.length) play(scene, cues, "cue");
+      else if (cues.length) play(scene, cues, "record");
       else
         waiting2 = resolvedCues(scene.id).then((resolved) =>
           resolved ? play(scene, resolved, "preview") : preview(scene),
@@ -1875,7 +1878,7 @@
     probe?.measure(state.catalog, {
       scenes: all(),
       pan: pan(),
-      origin: frame2(),
+      origin: frame(),
       scale: scale(),
       build: buildSlide,
     });
@@ -1908,21 +1911,21 @@
   var GATE_SECONDS = 5;
   var gates = [];
   function injected() {
-    return window.__dtprobe ?? null;
+    return window.__decktalkProbe ?? null;
   }
   function gatesSettled() {
     if (!gates.length) return Promise.resolve();
-    let done = false;
+    let done2 = false;
     const all_ = Promise.all(
       gates.map((gate) =>
         Promise.resolve(gate).then(null, (err) => warn("PAGE_WAIT_REJECTED", null, null, { value: String(err) })),
       ),
     ).then(() => {
-      done = true;
+      done2 = true;
     });
     const limit = new Promise((resolve) => {
       setTimeout(() => {
-        if (!done) warn("PAGE_WAIT_UNSETTLED");
+        if (!done2) warn("PAGE_WAIT_UNSETTLED");
         resolve();
       }, GATE_SECONDS * MILLISECONDS);
     });
@@ -1933,7 +1936,7 @@
     if (running) return;
     running = true;
     setRecorder(injected()?.recorder);
-    setMotionScale(motionScale2());
+    setMotionScale(motionScale());
     const fonts = Promise.resolve(document.fonts ? document.fonts.ready : null).catch(() => null);
     const ready2 = fonts
       .then(gatesSettled)

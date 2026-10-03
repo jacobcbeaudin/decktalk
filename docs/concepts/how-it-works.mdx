@@ -141,12 +141,9 @@ take. It is a warning, so the default threshold still builds the film.
 - `assemble` skips the loudness pass, because a placeholder has no programme loudness worth matching
   and normalising it would move the clicks the check listens for.
 
-A run that buys is the same command with `--spend`. With neither flag, a run that has something to
-buy prices it and asks on a terminal, and without a terminal it refuses unless `--spend` or
-`--no-spend` is passed. A run with nothing to buy is not asked and buys nothing, and a run whose
-voice declares itself free is not asked and buys from it, because that costs nothing.
-A build asks once, about its takes and its sounds added together, and
-[The ceiling](/requirements#the-ceiling) is how `--max-cost` refuses one.
+A run that buys is the same command with `--spend`.
+[What spends and what does not](/requirements#what-spends-and-what-does-not) says when a run with
+neither flag asks, and [the ceiling](/requirements#the-ceiling) is how `--max-cost` refuses one.
 
 ## Caching
 

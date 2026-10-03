@@ -39,9 +39,9 @@ from pathlib import Path
 from pydantic import TypeAdapter, ValidationError
 
 from decktalk.artifacts import WORDS_SUFFIX, is_placeholder
-from decktalk.artifacts.takes import TAKE_HASH
+from decktalk.artifacts.takes import TAKE_DIGEST
 from decktalk.errors import DeckTalkError
-from decktalk.events import Level, Line, StageStart
+from decktalk.events import AnyEvent, Level, StageStart
 from decktalk.findings import Code, Location, judge
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.paths import at
@@ -58,7 +58,7 @@ from decktalk.stages.record import stale_recording
 
 log = logging.getLogger(__name__)
 
-LINE = TypeAdapter(Line)
+LINE = TypeAdapter(AnyEvent)
 """The one reader of an event file, so a line this library cannot read is never taken for a run."""
 
 ALIGNED_DIR = "aligned"
@@ -135,7 +135,7 @@ def voiced_text(inputs: Inputs) -> dict[int, str]:
     holding a take at all, which is still true and is all this report can honestly say.
     """
     try:
-        return {segment.index: segment.spoken for segment in inputs.script()}
+        return {section.number: section.spoken for section in inputs.script()}
     except DeckTalkError as unread:
         log.debug("The script did not parse, so no take is judged by its words.", exc_info=unread)
         return {}
@@ -152,7 +152,8 @@ def section_rows(inputs: Inputs, run: Run) -> tuple[SectionStatus, ...]:
         said = spoken.get(section.number)
         # `voiced` is the take's own word, so a placeholder take on disk is not one a voice spoke
         # and the column that says what this project has paid for never counts it.
-        voiced = on_disk and take is not None and take.voiced and (said is None or take.spoken == said)
+        bought = on_disk and take is not None and take.voiced
+        voiced = bought and (said is None or take.spoken == said)
         recorded = isinstance(section, PageSection) and inputs.workspace.recording(section.key).is_file()
         rows.append(
             SectionStatus(
@@ -161,6 +162,7 @@ def section_rows(inputs: Inputs, run: Run) -> tuple[SectionStatus, ...]:
                 kind=SectionKind.CLIP if section.is_clip else SectionKind.PAGE,
                 source=source_of(section),
                 voiced=voiced,
+                voiced_stale=bought and not voiced,
                 recorded=recorded,
                 assembled=inputs.workspace.section_video(section.key).is_file(),
                 stale=_stale(inputs, run, section, recorded=recorded),
@@ -249,7 +251,7 @@ def live_runs(inputs: Inputs, run: Run) -> tuple[LiveRun, ...]:
 
 def _live_run(inputs: Inputs, run: Run, path: Path) -> LiveRun | None:
     """The run one events file describes, or None when it has closed or cannot be read."""
-    lines: list[Line] = []
+    lines: list[AnyEvent] = []
     try:
         for raw in path.read_text(encoding="utf-8").splitlines():
             if raw.strip():
@@ -264,7 +266,7 @@ def _live_run(inputs: Inputs, run: Run, path: Path) -> LiveRun | None:
     staged = [line.stage for line in lines if isinstance(line, StageStart)]
     return LiveRun(
         run=lines[0].run,
-        events=inputs.relative(path),
+        events_file=inputs.relative(path),
         started=lines[0].time,
         stage=staged[-1] if staged else None,
     )
@@ -284,8 +286,8 @@ def played_takes(inputs: Inputs) -> set[str] | None:
     try:
         model = voice_model(inputs)
         named = {
-            take_inputs(inputs, segment, provider=provider, voice_id=voice_id, model=model).digest
-            for segment in inputs.spoken()
+            take_inputs(inputs, section, provider=provider, voice_id=voice_id, model=model).digest
+            for section in inputs.spoken()
         }
     except DeckTalkError as unread:
         log.debug("The script's takes could not be named, so no take is called unplayed.", exc_info=unread)
@@ -301,7 +303,7 @@ def _take_of(name: str) -> str | None:
     so a copy set aside as `.unreadable`, or any file of the author's own, names no take.
     """
     digest, _, rest = name.partition(".")
-    if re.fullmatch(TAKE_HASH, digest) is None or is_placeholder(digest):
+    if re.fullmatch(TAKE_DIGEST, digest) is None or is_placeholder(digest):
         return None
     return digest if rest == WORDS_SUFFIX.removeprefix(".") or rest.isalnum() else None
 
@@ -349,7 +351,7 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
         StatusResult,
         name=inputs.document.name,
         script=inputs.relative(inputs.script_path),
-        cues=inputs.relative(inputs.cues_path),
+        cues_file=inputs.relative(inputs.cues_path),
         sections=rows,
         film=inputs.relative(film) if built else None,
         film_seconds=ffmpeg.probe_duration(film) if built else None,

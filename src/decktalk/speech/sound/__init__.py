@@ -29,7 +29,7 @@ from typing import Any, Protocol
 
 from ...errors import InputError
 from ...results import SoundKind
-from .. import Secrets
+from .. import DECLARED, Secrets
 
 
 @dataclass(frozen=True)
@@ -88,7 +88,11 @@ def _elevenlabs(context: SoundContext) -> SoundProvider:
 
 SOUND_DECLARED: dict[str, SoundDeclared] = {
     "elevenlabs": SoundDeclared(
-        key_variable="ELEVENLABS_API_KEY", table="elevenlabs", endpoint=_elevenlabs_endpoint, factory=_elevenlabs
+        # The voice and the sound are bought on one account, so the sound reads the voice's key variable.
+        key_variable=DECLARED["elevenlabs"].key_variable,
+        table="elevenlabs",
+        endpoint=_elevenlabs_endpoint,
+        factory=_elevenlabs,
     )
 }
 """For each sound adapter DeckTalk ships, what it declares about itself, in one place.

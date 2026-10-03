@@ -90,7 +90,7 @@ def test_project_loads_sections_in_order(tmp_path):
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[transition]\ndips = [[1, 9]]\n", "does not exist"),
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[bogus]\nx = 1\n", "unknown table"),
         (
-            "[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[mix.effects]]\nfile = 'x.mp3'\nsection = 1\n",
+            "[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[mix.effect]]\nfile = 'x.mp3'\nsection = 1\n",
             "'cue' is required and is not there.",
         ),
     ],
@@ -193,7 +193,7 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
         "[[section]]\nnumber = 2\npage = 'deck/b.html'\n"
         "[mix]\nmusic_db = -20\n"
         "[audio]\ntarget_lufs = -16\ntrue_peak_max_dbtp = -1.5\nrange_max_lu = 9\n"
-        "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\n"
+        "[[mix.effect]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\n"
         "offset_seconds = 0.1\ncaption = 'a chime'\n"
         "[score.effects.tap]\nprompt = 'a tap'\nout = 'tap.mp3'\nduration_seconds = 0.5\n"
         "prompt_influence = 0.4\nmodel = 'sound'\n"
@@ -209,6 +209,17 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     assert p.settings.audio.range_max_lu == 9
     assert (p.settings.score.music.duration_seconds, p.settings.score.music.model) == (60, "music")
     assert p.document.mix.effects[0].caption == "a chime"
+
+
+def test_a_plural_effect_table_places_nothing_and_says_the_singular(tmp_path):
+    """An array of tables is named in the singular, like `[[section]]`, so `[[mix.effects]]` is an unknown key."""
+    toml = (
+        "[project]\nname = 't'\n[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
+        "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\n"
+    )
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
+    assert p.document.mix.effects == ()
+    assert p.notes == ("decktalk.toml: [mix]: ignoring unknown key 'effects' (did you mean 'effect'?).",)
 
 
 def test_a_section_with_no_chapter_is_titled_by_its_script_heading(tmp_path):
@@ -271,7 +282,7 @@ def test_every_path_key_of_the_document_goes_through_the_one_check(tmp_path):
         "music": "[mix]\nmusic = '/etc/hosts'\n",
         "ambience": "[mix]\nambience = '/etc/hosts'\n",
         "slate": "[mix]\nslate = '/etc/hosts'\n",
-        "file": "[[mix.effects]]\nfile = '/etc/hosts'\nsection = 1\ncue = '1.1a'\n",
+        "file": "[[mix.effect]]\nfile = '/etc/hosts'\nsection = 1\ncue = '1.1a'\n",
         "out": "[score.ambience]\nprompt = 'x'\nout = '/etc/hosts'\n",
     }
     for index, (key, table) in enumerate(cases.items()):
@@ -334,9 +345,9 @@ def test_a_take_words_are_shifted_by_their_own_section_lead(tmp_path):
     inputs = Inputs.load(write_project(tmp_path, toml), environ={})
     spoken = Words(words=(Word(word="hello", start=0.0, end=0.4),))
     spoken.write(inputs.workspace.takes / words_file("abc"))
-    assert inputs.words(1, "abc") == (Word(word="hello", start=0.5, end=0.9),)
-    assert inputs.words(0, "abc") == (Word(word="hello", start=0.0, end=0.4),)  # a clip has no lead
-    assert inputs.words(1, "nothing") == ()
+    assert inputs.section_words(1, "abc") == (Word(word="hello", start=0.5, end=0.9),)
+    assert inputs.section_words(0, "abc") == (Word(word="hello", start=0.0, end=0.4),)  # a clip has no lead
+    assert inputs.section_words(1, "nothing") == ()
 
 
 @pytest.mark.parametrize(
@@ -350,7 +361,7 @@ def test_a_take_words_that_do_not_read_are_paid_exactly_when_the_take_is(tmp_pat
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(refusal) as refused:
-        inputs.words(1, digest)
+        inputs.section_words(1, digest)
     assert refused.value.code is code
     assert path.read_text(encoding="utf-8") == "{not json"
 
@@ -365,8 +376,8 @@ def test_the_voice_never_reads_a_clip_section(tmp_path):
     root = write_project(tmp_path, MINIMAL_TOML)
     (root / "script.md").write_text("## 0. Open\n\nA.\n\n## 1. One\n\nB.\n\n## 2. Two\n\nC.\n", encoding="utf-8")
     inputs = Inputs.load(root, environ={})
-    assert [s.index for s in inputs.script()] == [0, 1, 2]
-    assert [s.index for s in inputs.spoken()] == [1, 2]
+    assert [s.number for s in inputs.script()] == [0, 1, 2]
+    assert [s.number for s in inputs.spoken()] == [1, 2]
 
 
 def test_the_preview_document_is_empty_before_the_cues_are_resolved(tmp_path):
@@ -407,7 +418,7 @@ words = "media/broll.words.json"
 music = "media/bed.mp3"
 slate = "media/slate.png"
 
-[[mix.effects]]
+[[mix.effect]]
 file = "media/chime.wav"
 section = 1
 cue = "1.1:open"

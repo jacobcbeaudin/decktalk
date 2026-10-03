@@ -19,8 +19,8 @@ from hypothesis import strategies as st
 from decktalk.artifacts.takes import (
     PLACEHOLDER_PREFIX,
     PLACEHOLDER_SUFFIX,
+    TAKE_DIGEST,
     TAKE_DIGITS,
-    TAKE_HASH,
     PlaceholderInputs,
     Take,
     TakeInputs,
@@ -117,7 +117,7 @@ def test_a_placeholder_is_the_mp3_decktalk_writes_whatever_the_voice_returns() -
     assert take_file(f"{PLACEHOLDER_PREFIX}0123456789", ".wav") == f"{PLACEHOLDER_PREFIX}0123456789{PLACEHOLDER_SUFFIX}"
 
 
-DIGEST = st.from_regex(TAKE_HASH, fullmatch=True)
+DIGEST = st.from_regex(TAKE_DIGEST, fullmatch=True)
 """Every name a take may have, paid or placeholder, drawn from the pattern the model enforces,
 which is what a near miss is built from."""
 
@@ -127,7 +127,7 @@ NEAR_MISS = (
     | DIGEST.map(lambda digest: digest[:-1])
     | DIGEST.map(lambda digest: digest + "0")
     | DIGEST.map(lambda digest: f"../{digest}")
-).filter(lambda name: re.fullmatch(TAKE_HASH, name) is None)
+).filter(lambda name: re.fullmatch(TAKE_DIGEST, name) is None)
 """Anything that is not a digest, weighted toward the names that are one character away from one."""
 
 
@@ -187,9 +187,9 @@ def test_an_index_is_estimated_when_any_row_is_a_placeholder() -> None:
     assert INDEX.model_copy(update={"sections": (a_take(1, seconds=1.0, voiced=False),)}).estimated
 
 
-def test_the_paid_sections_are_the_ones_a_placeholder_run_must_not_replace() -> None:
+def test_the_voiced_sections_are_the_ones_a_placeholder_run_must_not_replace() -> None:
     mixed = INDEX.model_copy(update={"sections": (a_take(1, seconds=1.0), a_take(2, seconds=1.0, voiced=False))})
-    assert mixed.voiced == (1,)
+    assert mixed.voiced_sections == (1,)
 
 
 def test_the_index_round_trips_through_its_own_file(tmp_path: Path) -> None:

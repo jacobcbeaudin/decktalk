@@ -8,7 +8,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import Error as PlaywrightError
 
+from decktalk.errors import ToolError
+from decktalk.media.browser import Chromium
 from decktalk.stages.assemble import slate
 from support.recorder import FakeBrowser, FakeContext, FakePage
 
@@ -19,9 +22,9 @@ def drawing(monkeypatch: pytest.MonkeyPatch, launched: list[tuple[str, bool]]) -
     drawn: list[FakePage] = []
 
     @contextmanager
-    def chromium(_browser_path: str = "", *, policy: str, spend: bool) -> Iterator[FakeBrowser]:
+    def chromium(_executable: str = "", *, policy: str, spend: bool) -> Iterator[Chromium]:
         launched.append((policy, spend))
-        yield fake
+        yield fake.opened()
 
     def new_page(**_kwargs: object) -> FakePage:
         drawn.append(FakePage(FakeContext(Path("."))))
@@ -43,7 +46,7 @@ def test_a_slate_escapes_what_the_project_wrote_and_is_drawn_under_the_projects_
         width=320,
         height=180,
         background="0x101010",
-        browser_path="",
+        executable="",
         policy="untrusted",
         spend=True,
     )
@@ -57,3 +60,25 @@ def test_a_slate_escapes_what_the_project_wrote_and_is_drawn_under_the_projects_
 def test_no_slate_has_a_page_policy_or_a_spend_to_fall_back_on(name):
     """A default would be the guess of a caller that forgot one, which is the caller most likely to be wrong."""
     assert inspect.signature(slate.render_slate).parameters[name].default is inspect.Parameter.empty
+
+
+def test_a_slate_the_browser_will_not_draw_is_a_tool_failure_and_not_a_bug(monkeypatch, tmp_path):
+    """A browser that closes under the slate is the tool failing, so it is never reported as INTERNAL."""
+
+    def refuses(_page: FakePage, _html: str) -> None:
+        raise PlaywrightError("Target page, context or browser has been closed\nCall log:")
+
+    drawing(monkeypatch, [])
+    monkeypatch.setattr(FakePage, "set_content", refuses)
+    with pytest.raises(ToolError, match=r"^could not open a page \(Target page"):
+        slate.render_slate(
+            tmp_path / "slate.png",
+            title="Missing",
+            eyebrow="Section 2",
+            width=320,
+            height=180,
+            background="0x101010",
+            executable="",
+            policy="trusted",
+            spend=False,
+        )

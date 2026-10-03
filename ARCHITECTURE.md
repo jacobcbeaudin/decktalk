@@ -26,7 +26,7 @@ Three commands make the whole instruction set readable without running a stage. 
 gives the tree, the global flags and the exit codes. `decktalk schema` gives every command, every
 flag with its type and default, the exit codes, every error code, every finding code and the stages
 as one JSON object, and `decktalk schema event` and `decktalk schema page` give every event line and
-every page attribute. `decktalk schema settings` gives every setting with its default, its safe range,
+every page attribute. `decktalk schema setting` gives every setting with its default, its safe range,
 its unit and its hazard, and `decktalk config explain KEY` gives one of them whole.
 
 ## The four files an author writes
@@ -114,7 +114,7 @@ shape.
 ## What every call returns
 
 Every call returns a frozen Pydantic model. Four keys are reserved on every one of them: `schema`,
-which is 2 and is the shape version, `ok`, `findings` and `error`. Two more are declared by the
+which is 1 and is the shape version, `ok`, `findings` and `error`. Two more are declared by the
 results that earn them: `run` on every result whose command opens a run, and `written` on every
 result that writes a file, carrying the project-relative paths that run wrote. There is no wrapper
 object and no nesting, because a flat object is the one shape a caller can dispatch on without
@@ -210,8 +210,8 @@ keep such a deck from reaching what the service holds.
   a page can open, and under both policies the browser is handed a scrubbed environment rather than
   the process's own.
 - **The key never shares a run with a stranger's page.** Each row of `PIPELINE` says whether its
-  stage `holds_key` or `opens_pages`, and no row is both. A host runs `Stage.voice_part()`, which is
-  `narrate` and `score`, in a voice process that holds the key, and `Stage.render_part()` with
+  stage `holds_api_key` or `opens_pages`, and no row is both. A host runs `Stage.keyed_stages()`, which is
+  `narrate` and `score`, in a voice process that holds the key, and `Stage.keyless_stages()` with
   `check` and `storyboard` in a render process that holds none. The build directory is the only thing
   that moves between them. A run that may spend refuses to open an untrusted page, at the one place
   a browser starts, so a voiced `build` on a host is refused before it buys anything rather than

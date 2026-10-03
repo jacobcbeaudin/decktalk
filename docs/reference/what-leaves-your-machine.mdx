@@ -22,7 +22,7 @@ purpose, and every one of them needs an API key that you supply.
 
 | Host | Request | Sent by | What DeckTalk sends |
 |---|---|---|---|
-| api.elevenlabs.io | Narration | `decktalk narrate`, and `decktalk build` on a voiced run | The section's spoken text, the voice id, the model name and the audio format, together with up to `narration.context_chars` characters of the previous section and up to the same of the next section as speaking context. The default is 1500 characters, and `narration.context_chars = 0` keeps the neighbouring sections on your machine. |
+| api.elevenlabs.io | Narration | `decktalk narrate`, and `decktalk build` on a voiced run | The section's spoken text, the voice id, the model name and the audio format, together with up to `narration.context_characters` characters of the previous section and up to the same of the next section as speaking context. The default is 1500 characters, and `narration.context_characters = 0` keeps the neighbouring sections on your machine. |
 | api.elevenlabs.io | Sound effects and ambience | `decktalk score` | The prompt string written in the `[score.ambience]` or a `[score.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
 | api.elevenlabs.io | Music | `decktalk score` | The prompt string written in the `[score.music]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
 
@@ -40,7 +40,7 @@ characters and the layer that set it, so a reviewer can read exactly what would 
 anything is sent. `decktalk build` stops at the same point and names the price before it spends a
 credit, and `--max-cost N` refuses the whole run before the first call when the ceiling is above N.
 
-Set `narration.context_chars = 0` when the neighbouring sections must stay on the machine. Each
+Set `narration.context_characters = 0` when the neighbouring sections must stay on the machine. Each
 section is then sent on its own, with no surrounding text.
 
 ## One-time downloads
@@ -57,7 +57,7 @@ a build that does not spend needs no network at all, unless a page loads somethi
 | evermeet.cx | ffmpeg and ffprobe on an Intel Mac | the first command that encodes, or `decktalk install` | A download request for two pinned archives, and nothing else. |
 | ffmpeg.martin-riedl.de | ffmpeg and ffprobe on an Apple silicon Mac | the first command that encodes, or `decktalk install` | A download request for two pinned archives, and nothing else. |
 
-**`cdn.playwright.dev`.** This is Playwright's own download host. `PLAYWRIGHT_DOWNLOAD_HOST` points it at a mirror, and `[record] browser_path` skips the download by recording with a browser the machine already has.
+**`cdn.playwright.dev`.** This is Playwright's own download host. `PLAYWRIGHT_DOWNLOAD_HOST` points it at a mirror, and `[tools] chromium` skips the download by recording with a browser the machine already has.
 
 **`github.com`.** GitHub answers a release download with a redirect to its asset host, so a proxy rule needs both. The archive is checked against a pinned SHA-256 digest and discarded when the digest does not match.
 
@@ -112,8 +112,8 @@ and none of them is a DeckTalk feature you have to wait for.
 - **Build with no voice and no key.** `decktalk build --no-spend` plays every take on disk,
   writes placeholder narration where a take is missing, and makes a complete video. It contacts no
   service, so you can show a finished internal video before any approval comes back.
-- **Use the browser the machine already has.** Set `record.browser_path` with
-  `decktalk config set record.browser_path PATH --scope machine`, or point `[tools] cache_dir` at a
+- **Use the browser the machine already has.** Set `tools.chromium` with
+  `decktalk config set tools.chromium PATH --scope machine`, or point `[tools] cache_dir` at a
   directory whose `ms-playwright` folder your administrators have already filled. Both are machine
   keys, so a project file that sets either is refused. The pinned build is the reference, and a managed
   browser is supported and unverified.

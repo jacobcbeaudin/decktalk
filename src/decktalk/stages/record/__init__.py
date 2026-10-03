@@ -37,8 +37,6 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
-from playwright.sync_api import Browser
-
 from decktalk.artifacts import RecordingChecks, RecordingLog, Start, Takes
 from decktalk.errors import InputError
 from decktalk.events import Level, SectionDone, SectionStart, Unit
@@ -199,7 +197,9 @@ def passed_over(inputs: Inputs, run: Run, only: Sequence[int] | None) -> None:
         )
 
 
-def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, check: Callable[[], None]) -> Recording:
+def capture(
+    inputs: Inputs, run: Run, opened: browser.Chromium, job: Job, sink: LogSink, check: Callable[[], None]
+) -> Recording:
     """Record one section, retrying while its frames stall, and give back the recording that stuck.
 
     A stalled page froze a reveal for a few frames, which no cut can repair, so the section is
@@ -220,7 +220,7 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, 
             allowed=allowed,
             log_sink=sink,
             settle_seconds=recorder.settle_seconds,
-            min_cover_seconds=recorder.min_cover_seconds,
+            cover_min_seconds=recorder.cover_min_seconds,
             width=video.width,
             height=video.height,
             color_scheme=recorder.color_scheme,
@@ -259,7 +259,9 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, 
     return taken
 
 
-def recorded(inputs: Inputs, run: Run, opened: Browser, job: Job, check: Callable[[], None]) -> SectionRecording:
+def recorded(
+    inputs: Inputs, run: Run, opened: browser.Chromium, job: Job, check: Callable[[], None]
+) -> SectionRecording:
     """Record one section, measure it, and leave its log beside the webm with every judgement in it.
 
     `check` raises when the section should stop, which the recorder asks while it waits.
@@ -354,12 +356,12 @@ def record(
     by_number = {job.section.number: job for job in todo}
     recorder = inputs.settings.record
 
-    def opening(stack: ExitStack) -> Browser:
+    def opening(stack: ExitStack) -> browser.Chromium:
         return stack.enter_context(
-            browser.chromium(recorder.browser_path, policy=recorder.page_policy, spend=run.spend)
+            browser.chromium(inputs.settings.tools.chromium, policy=recorder.page_policy, spend=run.spend)
         )
 
-    def one(opened: Browser, number: int, halt: Halt) -> SectionRecording:
+    def one(opened: browser.Chromium, number: int, halt: Halt) -> SectionRecording:
         with run.section(Stage.RECORD, number):
             return recorded(inputs, run, opened, by_number[number], halt.check)
 

@@ -58,7 +58,7 @@ def explain(
     here = (
         Loaded(settings=opened.settings, layers=opened.layers)
         if opened
-        else load(project, machine=on.tables, machine_path=on.config_path, environ=on.environ)
+        else load(project, machine=on.tables, machine_path=on.machine_file, environ=on.environ)
     )
     candidate = _candidate(known, here, value)
     cues = _cues(opened) if opened else ()

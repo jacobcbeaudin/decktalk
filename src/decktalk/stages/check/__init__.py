@@ -36,7 +36,7 @@ from decktalk.files import current_text
 from decktalk.findings import Code, Finding, Location, ProjectPath, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
-from decktalk.inputs.script import Segment
+from decktalk.inputs.script import ScriptSection
 from decktalk.machine.run import Run
 from decktalk.media.browser import chromium
 from decktalk.media.origin import Assets
@@ -60,7 +60,7 @@ from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, wri
 from decktalk.stages.verify import opted_out
 
 NEEDS_A_PAGE: tuple[Code, ...] = (
-    Code.CUE_MISSING,
+    Code.CUE_UNLISTED,
     Code.CUE_UNKNOWN,
     Code.CUE_OVERLAP,
     Code.PAGE_MOTION_OVERRUN,
@@ -101,8 +101,11 @@ def check(
     """Judge the script, the cue file and the pages, and price the narration a voiced build would buy."""
     wanted = selects(only)
     script = inputs.relative(inputs.script_path)
-    segments = _segments(inputs, run)
-    spoken = [one for one in segments if one.index not in inputs.document.clip_numbers and wanted(one.index)]
+    spoken = [
+        one
+        for one in _script_sections(inputs, run)
+        if one.number not in inputs.document.clip_numbers and wanted(one.number)
+    ]
     for found in script_findings(current_text(inputs.script_path), spoken, script=script):
         run.found(found)
 
@@ -124,8 +127,8 @@ def check(
     return run.result(
         CheckResult,
         judged=_judged(inputs, script, resolved, sections if pages else (), extra if pages else ()),
-        pages=pages,
-        frames=pages and frames,
+        pages_opened=pages,
+        frames_compared=pages and frames,
         cost=cost,
         storyboard=None if sheet is None else inputs.relative(sheet),
     )
@@ -134,7 +137,7 @@ def check(
 # ---- the files the author writes ---------------------------------------------------------------
 
 
-def _segments(inputs: Inputs, run: Run) -> list[Segment]:
+def _script_sections(inputs: Inputs, run: Run) -> list[ScriptSection]:
     """Every section of the script, or a judgement and no sections when it cannot be read."""
     try:
         return list(inputs.script())
@@ -150,7 +153,7 @@ def _segments(inputs: Inputs, run: Run) -> list[Segment]:
         return []
 
 
-def _plan(inputs: Inputs, run: Run, spoken: Sequence[Segment]) -> list[TakePlan]:
+def _plan(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection]) -> list[TakePlan]:
     """What a voiced run would do with each spoken section, and every timed pause its model would drop."""
     if not spoken:
         return []
@@ -171,14 +174,14 @@ def _resolve(
     """Every cue resolved against the words a voiced run would leave, and the seconds they landed on.
 
     The words are the ones each section will have after the build this check is pricing, which is a
-    cached take's own words or the evenly spaced words of a placeholder, so a cue phrase is judged
+    held take's own words or the evenly spaced words of a placeholder, so a cue phrase is judged
     before anything is voiced rather than after.
     """
-    planned = {plan.segment.index: planned_words(inputs, plan) for plan in plans}
+    planned = {plan.section.number: planned_words(inputs, plan) for plan in plans}
     words = {number: row[0] for number, row in planned.items()}
     estimated = {number for number, row in planned.items() if row[2]}
     cued = [block for block in inputs.cues() if wanted(block.number)]
-    sections, found = resolve_sections(
+    sections, found, _notes = resolve_sections(
         cued,
         words,
         clips=inputs.document.clip_numbers,
@@ -240,7 +243,7 @@ def _look(
     looked = Look()
     if not files:
         return looked
-    with chromium(cfg.browser_path, policy=cfg.page_policy, spend=run.spend) as browser:
+    with chromium(inputs.settings.tools.chromium, policy=cfg.page_policy, spend=run.spend) as browser:
         opened: dict[str, tuple[Page, Assets]] = {}
         for page in files:
             if not inputs.path(page).exists():

@@ -23,7 +23,7 @@ changed sections and a written record of what changed and what it cost. Read
 4. **Map each change to the files it touches**, before editing anything: the sentences, the cues, the
    slides and the images that carry it. Show the map and wait for an answer.
 5. **Retake only the pictures a change touched.** From a demo account, never from real customer data,
-   at twice the stage scale. Compare each new image with the one it replaces, and keep only the ones
+   at twice the canvas scale. Compare each new image with the one it replaces, and keep only the ones
    that really changed. Record the date and the version beside each.
 6. **Make the fewest edits.** Keep every section number, every chapter, every cue id and every voice
    setting. Edit only the sentences a change touches, and update the number on screen and the number

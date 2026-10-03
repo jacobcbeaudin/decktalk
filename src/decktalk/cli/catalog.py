@@ -23,7 +23,7 @@ from typer.main import get_command
 from decktalk import page, settings
 from decktalk.cli.app import PROGRAM, Command, Parameter, app
 from decktalk.errors import ErrorCode, Exit
-from decktalk.events import Line
+from decktalk.events import AnyEvent
 from decktalk.findings import Code, Finding
 from decktalk.pipeline import PIPELINE
 from decktalk.results import RESULTS, Result, Scope
@@ -34,7 +34,7 @@ from decktalk.tomlmap import PUBLISHED, Key
 PURPOSE_LIMIT = 120
 """How much of a command's own sentence a row carries, which is more than any of them is long."""
 
-SETTINGS_KEYSPACE = "settings"
+SETTINGS_KEYSPACE = "setting"
 """What the `--set` parameter points a reader at, which is the key space rather than a copy of it."""
 
 NAMES: dict[type[Result], str] = {model: name for name, model in RESULTS.items()}
@@ -42,7 +42,7 @@ NAMES: dict[type[Result], str] = {model: name for name, model in RESULTS.items()
 
 SCHEMAS: dict[str, Callable[[], dict[str, Any]]] = {
     **{name: RESULTS[name].model_json_schema for name in sorted(RESULTS)},
-    "event": lambda: TypeAdapter(Line).json_schema(),
+    "event": lambda: TypeAdapter(AnyEvent).json_schema(),
     "finding": Finding.model_json_schema,
 }
 """Every JSON Schema the library's models own, by the name `decktalk schema NAME` prints it under.
@@ -61,6 +61,7 @@ def finding_codes() -> list[dict[str, Any]]:
             "sentence": code.sentence,
             "severity": code.severity.value,
             "raised_by": code.raised_by.value,
+            "raised_in": list(code.raised_in),
             "docs": code.url,
         }
         for code in Code
@@ -75,7 +76,7 @@ def error_codes() -> list[dict[str, Any]]:
 
 
 def stages() -> list[dict[str, Any]]:
-    """Every stage as a row, with what it reads, what it writes and why it runs where it does."""
+    """Every stage as a row, with what it reads and writes under the build directory and why it runs where it does."""
     return [
         {
             "stage": spec.stage.value,
@@ -217,7 +218,7 @@ def _published(key: Key, name: str) -> object:
 
 
 def page_schema() -> dict[str, Any]:
-    """Every attribute an author or an agent writes in a slide, with its values, its range and its code."""
+    """Every attribute an author or an agent writes in a slide, and every query key a page URL may carry."""
     return {
         "attributes": [spec.model_dump(mode="json") for spec in page.ATTRS.values()],
         "entrances": {name: effect.model_dump(mode="json") for name, effect in page.ENTRANCES.items()},
@@ -226,6 +227,8 @@ def page_schema() -> dict[str, Any]:
         "counts": {name: effect.model_dump(mode="json") for name, effect in page.COUNTS.items()},
         "attention": {name: effect.model_dump(mode="json") for name, effect in page.ATTENTION.items()},
         "slides": {name: effect.model_dump(mode="json") for name, effect in page.SLIDE_ENTRANCES.items()},
+        "query": {key.value: meaning for key, meaning in page.QUERY.items()},
+        "t0_signal": page.T0_SIGNAL,
         "measurable_span_seconds": page.MEASURABLE_SPAN_SECONDS,
         "capture_fps": page.CAPTURE_FPS,
     }
@@ -253,14 +256,14 @@ CONTRACTS: dict[str, Callable[..., dict[str, Any]]] = {
     **SCHEMAS,
     "cues": cues_schema,
     "page": page_schema,
-    "settings": settings_schema,
+    "setting": settings_schema,
 }
 """Every document `decktalk schema NAME` prints, by name, in the order a refusal lists them back."""
 
 
 def named(name: str, *, scope: Scope | None = None) -> dict[str, Any]:
     """The one contract document `decktalk schema NAME` prints, whichever name was asked for."""
-    if name == "settings":
+    if name == "setting":
         return settings_schema(scope=scope)
     return CONTRACTS[name]()
 

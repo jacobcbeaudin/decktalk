@@ -8,7 +8,7 @@ the `stage` of an event line all read.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
 
@@ -37,7 +37,6 @@ from decktalk.results import (
     AssembleResult,
     BuildResult,
     ClipResult,
-    Cost,
     CueResult,
     NarrateResult,
     RecordResult,
@@ -124,7 +123,7 @@ def narrate(
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
-    spend = session.spends(project, price=lambda: session.price(project, only=only), replacing=replace_voiced)
+    spend = session.spends(project, (Stage.NARRATE,), only=only, replace_voiced=replace_voiced)
     with session.watching(project.events):
         return project.narrate(
             only=only,
@@ -183,12 +182,7 @@ def score(
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
-    spend = session.spends(
-        project,
-        price=lambda: session.sound_price(project, only=only, replace_score=replace_score),
-        replacing=replace_score,
-        plays=sessions.SOUNDS_PLAY,
-    )
+    spend = session.spends(project, (Stage.SCORE,), only=only, replace_score=replace_score)
     with session.watching(project.events):
         return project.score(
             only=only,
@@ -271,17 +265,13 @@ def build(
     if watch:
         return watching.loop(session, project, skip=tuple(skip or ()), only=only, force=force)
     stages = _span(from_stage, to_stage)
-    planned = _planned(stages, skip)
-    spend = (
-        session.spends(
-            project,
-            price=_build_price(session, project, planned, only, replace_score=replace_score),
-            replacing=replace_voiced or replace_score,
-            storyboard=True,
-            plays=_plays(planned),
-        )
-        if planned & {Stage.NARRATE, Stage.SCORE}
-        else bool(session.spend)
+    spend = session.spends(
+        project,
+        _planned(stages, skip),
+        only=only,
+        replace_voiced=replace_voiced,
+        replace_score=replace_score,
+        storyboard=True,
     )
     with session.watching(project.events, opening=True):
         built = project.build(
@@ -293,8 +283,8 @@ def build(
             force=force,
             replace_voiced=_replacing(session, replace_voiced),
             replace_score=_replacing_score(session, replace_score, spend=spend),
-            allow=session.allowed,
-            stop_on=session.fail_on.stops_on,
+            allow=session.threshold.allow,
+            stop_on=session.threshold.stop_on,
             cancel=session.cancel,
         )
     return _offered(session, project, built, fix)
@@ -310,45 +300,6 @@ def _span(first: Stage | None, last: Stage | None) -> tuple[Stage, ...] | None:
 def _planned(stages: Sequence[Stage] | None, skip: Sequence[Stage] | None) -> set[Stage]:
     """The stages a build with this span and these skips performs."""
     return set(stages or Stage) - set(skip or ())
-
-
-def _plays(planned: set[Stage]) -> str:
-    """What a build that does not spend plays in place of what its planned stages would buy."""
-    bought = {Stage.NARRATE: sessions.TAKES_PLAY, Stage.SCORE: sessions.SOUNDS_PLAY}
-    return " and ".join(plays for stage, plays in bought.items() if stage in planned)
-
-
-def _build_price(
-    session: sessions.Session,
-    project: Project,
-    planned: set[Stage],
-    only: Sequence[int] | None,
-    *,
-    replace_score: bool = False,
-) -> Callable[[], Cost | None]:
-    """How a build is priced before it is asked about: every stage it performs that buys, added together.
-
-    The price a person approves is the whole run's, so the takes and the score are summed by the
-    same total the build's result reports, and a yes never lets through a stage the question left out.
-    That total keeps the free-voice rules: a free voice beside a sound that buys nothing is asked
-    nothing, and a free voice beside a paid sound is asked about the sound. A stage that could not be
-    priced leaves the build unpriced, so it is asked about rather than called cheaper than it is. A
-    stage the build does not perform is never priced, so a build that starts past `narrate` asks
-    nothing about narration.
-    """
-
-    def price() -> Cost | None:
-        from decktalk.stages.build import total  # noqa: PLC0415  (a stage is loaded by the call that needs it)
-
-        priced: list[Cost | None] = []
-        if Stage.NARRATE in planned:
-            priced.append(session.price(project, only=only))
-        if Stage.SCORE in planned:
-            priced.append(session.sound_price(project, only=only, replace_score=replace_score))
-        stated = [spend for spend in priced if spend is not None]
-        return total(stated) if stated and len(stated) == len(priced) else None
-
-    return price
 
 
 def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, fix: bool | None) -> BuildResult:

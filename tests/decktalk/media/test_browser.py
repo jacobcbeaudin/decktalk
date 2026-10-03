@@ -17,7 +17,7 @@ from decktalk.media.environment import child_environment
 from decktalk.media.origin import Allowed, page_url
 from decktalk.settings import PAGE_POLICIES
 from decktalk.toolchain.cache import caching_in
-from support.fakes import BareBrowser, FakeChromium
+from support.fakes import FakeChromium
 
 
 def test_the_page_policies_this_module_accepts_are_the_ones_the_setting_publishes():
@@ -91,9 +91,7 @@ def test_every_page_a_browser_opens_is_routed_by_the_policy_it_was_launched_unde
     for policy in (browser.TRUSTED, browser.UNTRUSTED):
         with caching_in(str(tmp_path / "cache")), browser.chromium(policy=policy, spend=False) as launched:
             pages.open_page(launched, allowed, width=10, height=10)
-    # A browser this module never launched is routed as a stranger's page.
-    pages.open_page(BareBrowser().browser(), allowed, width=10, height=10)
-    assert seen == [True, False, False]
+    assert seen == [True, False]
 
 
 @pytest.mark.parametrize("name", ["policy", "spend"])

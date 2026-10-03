@@ -102,7 +102,7 @@ def test_every_page_warning_becomes_the_finding_of_the_code_the_page_carried() -
                 "attr": None,
             },
             {
-                "code": Code.PAGE_UNKNOWN_ATTR.value,
+                "code": Code.PAGE_ATTR_UNKNOWN.value,
                 "message": "data-nope is not an attribute.",
                 "slide": None,
                 "cue": "1.1:open",
@@ -111,7 +111,7 @@ def test_every_page_warning_becomes_the_finding_of_the_code_the_page_carried() -
         ]
     )
     found = page_findings(report, page=PAGE, section=1, stage=Stage.RECORD)
-    assert [row.code for row in found] == [Code.PAGE_KATEX_ERROR, Code.PAGE_UNKNOWN_ATTR]
+    assert [row.code for row in found] == [Code.PAGE_KATEX_ERROR, Code.PAGE_ATTR_UNKNOWN]
     assert [row.location.where for row in found] == ["1.1", "1.1:open"]
     assert found[0].location.file == Path(PAGE)
     assert {row.stage for row in found} == {Stage.RECORD}

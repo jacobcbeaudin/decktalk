@@ -31,7 +31,7 @@ from pydantic import TypeAdapter
 import decktalk
 from decktalk.cli import catalog
 from decktalk.errors import DeckTalkError
-from decktalk.events import EVENTS, Event, Line
+from decktalk.events import EVENTS, AnyEvent, Event
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.machine import Machine
 from decktalk.pipeline import Stage
@@ -546,7 +546,7 @@ def test_a_driven_row_returns_its_result_as_one_flat_object(
 def test_every_event_a_driven_call_emitted_validates_back(project: Project, collected: list[Event]):
     """An event is data on a wire, so every line a subscriber saw is readable by the same reader."""
     project.check(pages=False)
-    reader = TypeAdapter(Line)
+    reader = TypeAdapter(AnyEvent)
     assert collected, "a call that opened a run emitted nothing"
     for event in collected:
         assert reader.validate_json(event.model_dump_json()) is not None

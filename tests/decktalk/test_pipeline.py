@@ -37,9 +37,10 @@ def test_every_artifact_is_read_or_written_by_some_stage() -> None:
     assert touched == set(Artifact)
 
 
-def test_every_artifact_path_is_project_relative_and_posix() -> None:
+def test_every_artifact_path_is_relative_to_the_build_directory_and_posix() -> None:
+    """The value never names the build directory itself, which `[project] build` may move."""
     for artifact in Artifact:
-        assert artifact.value.startswith("build/"), artifact
+        assert not artifact.value.startswith(("build/", "/")), artifact
         assert "\\" not in artifact.value, artifact
 
 
@@ -151,8 +152,8 @@ def stage_source(stage: Stage) -> str:
 def test_the_key_holders_are_the_stages_that_pass_the_spend_gate() -> None:
     """A stage holds the key exactly when its code asks the run to approve a price, which is narrate and score."""
     for stage in Stage:
-        assert stage.spec.holds_key == ("run.approve(" in stage_source(stage)), stage
-    assert Stage.voice_part() == (Stage.NARRATE, Stage.SCORE)
+        assert stage.spec.holds_api_key == ("run.approve(" in stage_source(stage)), stage
+    assert Stage.keyed_stages() == (Stage.NARRATE, Stage.SCORE)
 
 
 def test_the_page_openers_are_the_stages_that_reach_the_browser() -> None:
@@ -165,11 +166,11 @@ def test_the_page_openers_are_the_stages_that_reach_the_browser() -> None:
 
 def test_no_stage_both_holds_the_key_and_opens_a_page() -> None:
     for spec in PIPELINE:
-        assert not (spec.holds_key and spec.opens_pages), spec.stage
+        assert not (spec.holds_api_key and spec.opens_pages), spec.stage
 
 
 def test_the_two_parts_split_the_pipeline_in_run_order() -> None:
     """A host runs the voice part where the key is and the render part where it is not, and the two are the pipeline."""
-    assert Stage.render_part() == (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)
-    assert sorted((*Stage.voice_part(), *Stage.render_part()), key=list(Stage).index) == list(Stage)
-    assert not set(Stage.voice_part()) & set(Stage.render_part())
+    assert Stage.keyless_stages() == (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)
+    assert sorted((*Stage.keyed_stages(), *Stage.keyless_stages()), key=list(Stage).index) == list(Stage)
+    assert not set(Stage.keyed_stages()) & set(Stage.keyless_stages())

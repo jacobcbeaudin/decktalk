@@ -62,7 +62,7 @@ is made on words, and that requirement is what a second provider would have to m
 It sounds like the ElevenLabs voice you pick. Any voice id works, including a clone of your own.
 
 `[elevenlabs]` in `decktalk.toml` sets `stability`, `similarity_boost`, `style` and `speaker_boost`,
-and `[voice] speed` sets the pace. DeckTalk also sends up to `[narration] context_chars` of the text before and after each
+and `[voice] speed` sets the pace. DeckTalk also sends up to `[narration] context_characters` of the text before and after each
 section with the request, so the rhythm and the tone stay even across a cut that the listener never
 hears as one.
 
@@ -141,8 +141,8 @@ Yes. DeckTalk runs on Linux, macOS and Windows.
 - What DeckTalk fetches goes under `%LOCALAPPDATA%` on Windows, and `[tools] cache_dir` moves it.
   Chromium is fetched by the first command that needs it, or up front by `decktalk install`. If a
   proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents, or point
-  `[record] browser_path` at a browser the machine already has, with
-  `decktalk config set record.browser_path PATH --scope machine`.
+  `[tools] chromium` at a browser the machine already has, with
+  `decktalk config set tools.chromium PATH --scope machine`.
 - The groups that drive a real browser or a real ffmpeg run on macOS and Windows when a change
   merges and when a release is cut. Those legs report cue timing rather than fail on it, because a
   hosted runner presents frames late, and the Linux legs hold every reveal to its word.
@@ -152,7 +152,7 @@ Yes. DeckTalk runs on Linux, macOS and Windows.
 ## Can an agent drive it?
 
 That is what it is built for. The command line is the instruction set and it documents itself, so
-four calls tell an agent everything: `decktalk --help`, `decktalk schema`, `decktalk schema settings`
+four calls tell an agent everything: `decktalk --help`, `decktalk schema`, `decktalk schema setting`
 beside `decktalk config explain KEY`, and `decktalk status --json` beside `decktalk doctor --json`.
 Every command under `--json` prints one flat object with the same four reserved keys. `decktalk
 init` also writes six skills into the project, which hold the craft a help screen cannot say.

@@ -97,7 +97,7 @@ def a_recording(**fields: object) -> Recording:
 
 def a_report(**fields: object) -> PageReport:
     """What the page says about its first scene, with every field a case names in place of the default."""
-    return PageReport.model_validate({"version": "0.5.0", "mode": "cue", "scene": "1", "slide": "1.1", **fields})
+    return PageReport.model_validate({"version": "0.5.0", "mode": "record", "scene": "1", "slide": "1.1", **fields})
 
 
 def write_log(

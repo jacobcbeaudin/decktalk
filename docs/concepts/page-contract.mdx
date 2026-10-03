@@ -97,12 +97,12 @@ that never moves a pixel and `from the page` is a span read off the page or off 
 | `data-scene` | scene | an id |  |  | 0 | [`PAGE_SCENE_EMPTY`](/reference/findings/PAGE_SCENE_EMPTY) | Declares the scene a section names, on the wrapper that holds its slides. |
 | `data-name` | scene | a description |  |  | 0 | none | The scene's name in the index and in the catalog. |
 | `data-slide` | slide | an id |  |  | 0 | [`PAGE_SLIDE_NO_ID`](/reference/findings/PAGE_SLIDE_NO_ID) | Declares a slide on a template. Its id qualifies every moment written inside it. |
-| `data-hold` | slide | seconds | `8` | 1 to 60 in steps of 1 | 0 | none | How long the preview rests on this slide. No recording reads it. |
+| `data-preview-seconds` | slide | seconds | `8` | 1 to 60 in steps of 1 | 0 | none | How long the preview rests on this slide. No recording reads it. |
 | `data-owns` | slide | cue names |  |  | 0 | [`PAGE_CUE_UNKNOWN`](/reference/findings/PAGE_CUE_UNKNOWN) | Cue names only a handler serves, which no moment attribute mentions. |
 | `data-enter` | slide | `crossfade`, `cut` | `crossfade` |  | 0.24 | [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | How this slide replaces the one before it. |
 
 A `data-` attribute that is not in this table is
-[`PAGE_UNKNOWN_ATTR`](/reference/findings/PAGE_UNKNOWN_ATTR), reported before a single pixel is
+[`PAGE_ATTR_UNKNOWN`](/reference/findings/PAGE_ATTR_UNKNOWN), reported before a single pixel is
 drawn, so a misspelling is a finding rather than an attribute nothing reads.
 
 `decktalk schema page` prints this same table as JSON, with each row's `on`, `kind`, `values`,
@@ -126,7 +126,7 @@ length nothing records, and each publishes the sentence that says why.
 | `data-describe` | Any description clears the finding that asks for one, so the description itself is never measured. |
 | `data-describe-class` | The transcript prints the description exactly as it was written. |
 | `data-describe-out` | It replaces one transcript sentence with another, and neither is measured. |
-| `data-hold` | The preview alone reads it, and a preview is never recorded. |
+| `data-preview-seconds` | The preview alone reads it, and a preview is never recorded. |
 | `data-name` | It names a scene in the index, which no check and no finding reads. |
 
 The list is closed and a test counts it. An open field saying what a row affects would let every
@@ -194,7 +194,7 @@ There is no prefix rule and no guessing, so a cue id may carry any characters an
 templates claiming one slide id would give every moment inside either of them two owners, which is
 [`PAGE_SLIDE_DOUBLED`](/reference/findings/PAGE_SLIDE_DOUBLED).
 
-In cue mode, ownership decides when each slide mounts.
+In record mode, ownership decides when each slide mounts.
 
 - A slide mounts at the earliest cue time it owns.
 - The first slide to mount is on the stage before the clock starts and before the cover comes off, so
@@ -231,7 +231,7 @@ almost always a name that drifted between the two files.
 A page holds scenes, a page section plays one scene, and the URL decides what the page is doing. It
 lists its scenes and slides with no query, previews a scene at `?scene=N` at the speed a person reads
 it, plays a scene against its cue times at `?cues=` in the mode every recording is made in, and
-freezes one slide at `?slide=ID` for `storyboard` and `check`. `window.__decktalk.mode` holds the
+freezes one slide at `?freeze=ID` for `storyboard` and `check`. `window.__decktalk.mode` holds the
 word. [Modes](/reference/runtime#modes) and [the query keys](/reference/runtime#the-query-keys) give
 each mode and each key, and a section's `params` may name no key outside that list.
 
@@ -240,7 +240,7 @@ A preview and a recording differ in three places.
 | Value | In a browser preview | In a recording |
 |---|---|---|
 | The cue times | The page asks the project for the times the last `cue` run resolved, and plays the film's own timing. With no such file it fires the cues each slide declares one second apart, so a deck whose cues have never been resolved still shows its whole self. | The recorder writes them into `?cues=` from `build/cue-times.json`. |
-| `data-hold` on a slide | The preview rests on the slide for this long, or for as long as its cues need, whichever is more. | Nothing reads it. A slide mounts at the earliest cue it owns. |
+| `data-preview-seconds` on a slide | The preview rests on the slide for this long, or for as long as its cues need, whichever is more. | Nothing reads it. A slide mounts at the earliest cue it owns. |
 | `data-words` on an element | The line is shown whole, because a preview carries no `?words=`. | The words appear on the voice, from the `?words=` list the recorder wrote. |
 
 `record`, `storyboard` and `check` open every page at `http://project.localhost/`, and answer each
@@ -283,7 +283,7 @@ the film then comes before its word.
 The recorder wait sits between readiness and the cover coming off, and two settings decide it.
 
 ```text
-recorder wait = max(record.settle_seconds, record.min_cover_seconds - elapsed)
+recorder wait = max(record.settle_seconds, record.cover_min_seconds - elapsed)
 elapsed       = seconds since the recorder opened its browser context
 ```
 

@@ -15,7 +15,7 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | Word | Meaning | Not | Explained in |
 |---|---|---|---|
 | project | One directory holding `script.md`, `decktalk.toml`, `cues.json`, the deck pages and the `build/` directory those four produce. | | [decktalk.toml](/reference/decktalk-toml) |
-| section | One `## N.` heading of the script and the `[[section]]` table that pairs it with a scene or a clip. | | [decktalk.toml](/reference/decktalk-toml) |
+| section | One `## N.` heading of the script and the `[[section]]` table that pairs it with a scene or a clip. | segment | [decktalk.toml](/reference/decktalk-toml) |
 | section key | The two-digit `"01"` that names a section's files and its rows in `cues.json`. | | [cues.json](/reference/cues-json) |
 | chapter | The title a section shows in the chapter markers, the transcript and a slate. | | [decktalk.toml](/reference/decktalk-toml) |
 | script | `script.md`, which the voice reads once it is cleaned into spoken text. | | [script.md](/reference/script-md) |
@@ -29,6 +29,8 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | deck page | An HTML file under `deck/` that a page section records. | | [The page contract](/concepts/page-contract) |
 | scene | One `[data-scene]` wrapper in a deck page, holding the slides a section plays. | | [The page contract](/concepts/page-contract) |
 | slide | One `<template data-slide>` inside a scene, which the runtime clones when the slide mounts. A deck page is never called a slide. | | [The page contract](/concepts/page-contract) |
+| preview seconds | How long the preview rests on a slide, which `data-preview-seconds` writes. No recording reads it. | data-hold | [The page contract](/concepts/page-contract) |
+| freeze | One slide drawn with its cues already fired and nothing in motion, which `?freeze=ID` asks the page for. | ?slide | [The runtime](/reference/runtime) |
 | container | An element whose children carry moments, so one cue can stagger them or a spotlight can walk them. | | [The page contract](/concepts/page-contract) |
 | moment | One of the four things an element does, which are `data-in`, `data-back`, `data-front` and `data-out`. A moment is never an event, a cue name or a time. | | [The page contract](/concepts/page-contract) |
 | cue name | The name a moment attribute writes, such as `expand`, which means something inside its own slide alone. | local name | [The page contract](/concepts/page-contract) |
@@ -39,8 +41,8 @@ appears in the CLI help, in a docs page or in a packaged skill, so a retired wor
 | cue time | The second a cue lands on, counted on its section clock. | | [Cues](/concepts/cues) |
 | section clock | The seconds since a section starts, which its words, its cues and its page all run on. | narration clock | [Cues](/concepts/cues) |
 | film clock | The seconds since the film starts, which `verify` reports on. | | [Verify](/reference/verify) |
-| canvas | The 1920 by 1080 surface the runtime draws on. | | [The runtime](/reference/runtime) |
-| runtime | `decktalk-runtime.js`, the page's script, which the engine serves beside every deck. | | [The runtime](/reference/runtime) |
+| canvas | The 1920 by 1080 surface the runtime draws on, which is `#dt-canvas` on the page. | #dt-stage, stage pixels | [The runtime](/reference/runtime) |
+| runtime | `decktalk-runtime.js`, the page's script, which the engine serves beside every deck. The recorder reads it through `window.__decktalkProbe`. | __dtprobe | [The runtime](/reference/runtime) |
 
 ## The six stages
 
@@ -110,7 +112,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 | Word | Meaning | Not | Explained in |
 |---|---|---|---|
 | score item | One named sound in `[score]`: the music, an ambience bed or an effect. | | [Sound](/concepts/sound) |
-| sound effect | An effect item placed on a cue by `[[mix.effects]]`. The runtime uses "effect" alone for motion. | | [Put a sound effect on a cue](/guides/effects-on-a-cue) |
+| sound effect | An effect item placed on a cue by `[[mix.effect]]`. The runtime uses "effect" alone for motion. | | [Put a sound effect on a cue](/guides/effects-on-a-cue) |
 | score directory | The folder inside the project that holds every sound the score bought and the ledger, each named by its item, `score/` unless `[score] dir` names another. You commit it, so a clone mixes the film with no key. | | [Sound](/concepts/sound) |
 | section video | One section encoded to its own span, `build/sections/NN.mp4`, which `assemble` joins into the film. | | [Build artifacts](/reference/artifacts) |
 | film | The finished mp4, `build/final/<name>.mp4`. | | [Build artifacts](/reference/artifacts) |
@@ -128,7 +130,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 |---|---|---|---|
 | setting | One published value with a default, a safe range, a unit and a hazard, addressed by its dotted key, which `decktalk config explain` prints whole. | knob, tunable | [Configuration](/reference/configuration) |
 | number | A published value `config explain` shows and nobody sets, with the formula or the fact that fixes it. | | [Configuration](/reference/configuration) |
-| layer | One of the five places a setting's value can come from, which are the default, the machine file, `decktalk.toml`, the environment variable and `--set`. Each overrides the ones before it. | | [Configuration](/reference/configuration) |
+| layer | One of the places a setting's value can come from. A project key is set by its default, `decktalk.toml`, its environment variable and `--set`, and a machine key by its default, the machine file, its variable and `--set`, each over the ones before it. | | [Configuration](/reference/configuration) |
 | provenance | What every layer said about every key, which is where a value in force is traced from. | | [Configuration](/reference/configuration) |
 | scope | Which file a write lands in, `project` or `machine`, which `config set --scope` names. | | [Configuration](/reference/configuration) |
 | machine file | `machine.toml`, the per-machine settings file. | | [Configuration](/reference/configuration) |

@@ -34,7 +34,7 @@ characters and the layer that set it, so a reviewer can read exactly what would 
 anything is sent. `decktalk build` stops at the same point and names the price before it spends a
 credit, and `--max-cost N` refuses the whole run before the first call when the ceiling is above N.
 
-Set `narration.context_chars = 0` when the neighbouring sections must stay on the machine. Each
+Set `narration.context_characters = 0` when the neighbouring sections must stay on the machine. Each
 section is then sent on its own, with no surrounding text.
 
 ## One-time downloads
@@ -97,8 +97,8 @@ and none of them is a DeckTalk feature you have to wait for.
 - **Build with no voice and no key.** `decktalk build --no-spend` plays every take on disk,
   writes placeholder narration where a take is missing, and makes a complete video. It contacts no
   service, so you can show a finished internal video before any approval comes back.
-- **Use the browser the machine already has.** Set `record.browser_path` with
-  `decktalk config set record.browser_path PATH --scope machine`, or point `[tools] cache_dir` at a
+- **Use the browser the machine already has.** Set `tools.chromium` with
+  `decktalk config set tools.chromium PATH --scope machine`, or point `[tools] cache_dir` at a
   directory whose `ms-playwright` folder your administrators have already filled. Both are machine
   keys, so a project file that sets either is refused. The pinned build is the reference, and a managed
   browser is supported and unverified.

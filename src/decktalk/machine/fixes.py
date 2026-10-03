@@ -49,14 +49,16 @@ FIX_TIMEOUT_SECONDS = 1800.0
 """The longest a command fix may run, which fetches a browser and an encoder in minutes and never in an hour."""
 
 
-def apply_fixes(run: Run, fix: Finding | Iterable[Finding], *, root: Path, scope: Scope, unsafe: bool) -> ApplyResult:
+def apply_fixes(
+    run: Run, findings: Finding | Iterable[Finding], *, root: Path, scope: Scope, unsafe: bool
+) -> ApplyResult:
     """Carry out every fix a caller handed over, in order, and publish what each one did.
 
     A fix left alone is also a warning on the run, so a reader of the stream or the events file
     learns why without holding the result.
     """
     outcomes = tuple(
-        apply_fix(run, code, found, root=root, scope=scope, unsafe=unsafe) for code, found in fixes_of(fix)
+        apply_fix(run, code, found, root=root, scope=scope, unsafe=unsafe) for code, found in fixes_of(findings)
     )
     for outcome in outcomes:
         if not outcome.applied:
@@ -267,4 +269,4 @@ def _settings_files(run: Run, root: Path) -> dict[Path, Scope]:
 
 def _machine_file(run: Run) -> Path:
     """This machine's settings file with its links followed, which is where a change to it lands."""
-    return run.machine.config_path.resolve()
+    return run.machine.machine_file.resolve()

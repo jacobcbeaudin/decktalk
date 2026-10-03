@@ -113,7 +113,7 @@ KEY_DIGITS = 12
 def cache_decision(
     log: logging.Logger, cache: str, *, hit: bool, why: str, key: str | None = None, **more: object
 ) -> None:
-    """Record one decision to keep or remake something cached, and the one short token that says why.
+    """Record one decision to keep or make something cached, and the one short token that says why.
 
     `why` is a fixed token such as `unchanged`, `no-record`, `key-changed` or `forced`, so a reader
     answers why a stage rebuilt with a filter on `data.why` rather than by parsing a sentence.
@@ -121,7 +121,7 @@ def cache_decision(
     log.debug(
         "%s %s (%s).",
         cache,
-        "reused" if hit else "made again",
+        "reused" if hit else "made",
         why,
         extra={"data": {"cache": cache, "hit": hit, "why": why, "key": key[:KEY_DIGITS] if key else None, **more}},
     )

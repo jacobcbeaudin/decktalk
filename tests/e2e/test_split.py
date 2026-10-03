@@ -86,7 +86,7 @@ class Tone:
 import os
 here = Machine.of(
     environ=dict(os.environ),
-    config_path=out.parent / "voice-machine.toml",
+    machine_file=out.parent / "voice-machine.toml",
     cwd=root,
     cache_dir=cache,
     speech_providers={"elevenlabs": Tone},

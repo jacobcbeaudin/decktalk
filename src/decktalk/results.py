@@ -46,7 +46,7 @@ It is also the folder the schemas are published in, `schemas/v1`, so the two are
 VOLATILE: dict[str, JsonValue] = {"volatile": True}
 """What marks a field whose value differs between two otherwise identical runs."""
 
-Run = Annotated[
+RunId = Annotated[
     str,
     Field(description="The id of the run this call opened, which names its events file.", json_schema_extra=VOLATILE),
 ]
@@ -101,7 +101,7 @@ class CostState(Enum):
     CHARGED = "charged"
 
 
-class Billing(Enum):
+class BillingBasis(Enum):
     """How a voice bills what it makes, which its adapter declares and every price is worked out by.
 
     A provider DeckTalk does not ship declares nothing, so its bill is `undeclared`: its price is
@@ -247,7 +247,7 @@ class Cost(Model):
     )
     dollars: float = Field(ge=0, description="The price at the stated rate, in US dollars.")
     ceiling_dollars: float = Field(ge=0, description="The most this run can cost, in US dollars.")
-    billing: Billing = Field(description="How the voice bills, which its adapter declares and the rate is per.")
+    billing: BillingBasis = Field(description="How the voice bills, which its adapter declares and the rate is per.")
     dollars_per_1000_characters: float = Field(
         ge=0, description="The rate a per-character bill was worked out at, in US dollars per 1,000 characters."
     )
@@ -281,15 +281,15 @@ class Cost(Model):
         Free is what the adapter declares and never a rate of zero, because a zero rate on a voice
         that bills is somebody's statement about their plan, and a cap or a question still guards it.
         """
-        return self.billing is Billing.FREE
+        return self.billing is BillingBasis.FREE
 
     @property
     def rate(self) -> str:
         """The rate this price was worked out at, in words, which every sentence that states a price ends on."""
-        if self.billing is Billing.PER_SECOND:
+        if self.billing is BillingBasis.PER_SECOND:
             stated = f"{rate_money(self.dollars_per_minute)} per minute of audio"
             return f"an average of {stated}" if self.averaged else stated
-        if self.billing is Billing.MIXED:
+        if self.billing is BillingBasis.MIXED:
             return "the rates each stage states"
         return f"{money(self.dollars_per_1000_characters)} per 1,000 characters"
 
@@ -298,9 +298,9 @@ class Cost(Model):
         """What the bill is counted in, which is seconds of audio for a per-second bill and characters otherwise."""
         # A sound shorter than a second still costs something, so it is never said to be none.
         audio = f"about {counted(max(round(self.seconds), 1) if self.seconds > 0 else 0, 'second')} of audio"
-        if self.billing is Billing.PER_SECOND or (self.seconds > 0 and self.characters == 0):
+        if self.billing is BillingBasis.PER_SECOND or (self.seconds > 0 and self.characters == 0):
             return audio
-        if self.billing is Billing.MIXED:
+        if self.billing is BillingBasis.MIXED:
             return f"{counted(self.characters, 'character')} and {audio}"
         return counted(self.characters, "character")
 
@@ -330,7 +330,7 @@ class Cost(Model):
         made = self._made
         if self.free and self.buys and self.ceiling_dollars == 0:
             return f"This run {made} {self.amount} for nothing, because the {self._maker} is free."
-        if self.billing is Billing.UNDECLARED and self.buys:
+        if self.billing is BillingBasis.UNDECLARED and self.buys:
             return (
                 f"This run {made} {self.amount} on a {self._maker} that declares no bill, so DeckTalk cannot price it."
             )
@@ -437,6 +437,9 @@ class SectionStatus(Model):
     kind: SectionKind = Field(description="Whether the section plays a recorded page or a supplied clip.")
     source: str = Field(description="The page or the file this section plays.")
     voiced: bool = Field(description="True when a voice spoke a take of this section's current text.")
+    voiced_stale: bool = Field(
+        description="True when a voice spoke a take of this section's older text, which a voiced run would replace."
+    )
     recorded: bool = Field(description="True when a recording of this section is on disk.")
     assembled: bool = Field(description="True when this section has been assembled into the film.")
     stale: bool = Field(description="True when what is on disk no longer matches what the project says.")
@@ -445,8 +448,8 @@ class SectionStatus(Model):
 class LiveRun(Model):
     """One run whose events file is still open, which is how a caller finds a background build."""
 
-    run: Run
-    events: ProjectPath = Field(description="The events file that run appends to, project-relative.")
+    run: RunId
+    events_file: ProjectPath = Field(description="The events file that run appends to, project-relative.")
     started: datetime = Field(description="When the run opened.", json_schema_extra=VOLATILE)
     stage: Stage | None = Field(None, description="The stage that run was last in, or null before the first.")
 
@@ -551,7 +554,7 @@ class RenderedSection(Model):
     section: SectionNumber
     key: SectionKey
     file: ProjectPath = Field(description="The cut this section contributed, project-relative.")
-    start: float = Field(ge=0, description="When this section starts in the film, in seconds.")
+    start_seconds: float = Field(ge=0, description="When this section starts in the film, in seconds.")
     seconds: float = Field(ge=0, description="How long this section runs in the film.")
     substitute: Substitute | None = Field(None, description="What stood in for a missing file, or null.")
 
@@ -569,7 +572,7 @@ class StartCheck(Model):
     """What the first frame of one section looks like, which is how a black opening is caught."""
 
     section: SectionNumber
-    at: float = Field(ge=0, description="When this frame sits in the film, in seconds.")
+    at_seconds: float = Field(ge=0, description="When this frame sits in the film, in seconds.")
     luma: float = Field(ge=0, description="The frame's brightest pixel, on the luma scale the settings bound.")
 
 
@@ -577,7 +580,7 @@ class CutCheck(Model):
     """What one cut between two sections sounds like."""
 
     section: SectionNumber
-    at: float = Field(ge=0, description="When the cut sits in the film, in seconds.")
+    at_seconds: float = Field(ge=0, description="When the cut sits in the film, in seconds.")
     speech_dbfs: float = Field(description="How loud speech is across the cut.")
     step_dbfs: float = Field(description="How far the waveform steps across the cut.")
 
@@ -586,8 +589,8 @@ class SeamCheck(Model):
     """One seamless cut: whether the incoming section opens on the picture the outgoing one ended on."""
 
     section: SectionNumber
-    at: float = Field(ge=0, description="When the seam sits in the film, in seconds.")
-    drift: float = Field(
+    at_seconds: float = Field(ge=0, description="When the seam sits in the film, in seconds.")
+    drift_seconds: float = Field(
         description="How far past the cut the outgoing picture was found, in seconds, or 0 when it matched at once."
     )
 
@@ -668,25 +671,25 @@ class Panel(Model):
     section: SectionNumber
     slide: str = Field(description="The slide this panel shows.")
     cue: str | None = Field(None, description="The cue this panel is frozen at, or null for the slide's opening.")
-    at: float = Field(ge=0, description="When this moment sits in its section, in seconds.")
+    at_seconds: float = Field(ge=0, description="When this moment sits in its section, in seconds.")
     image: ProjectPath = Field(description="The frozen image, project-relative.")
 
 
 class InitResult(Result):
     """What `decktalk init` wrote, which is a project that already builds."""
 
-    run: Run
+    run: RunId
     written: Written
     root: ProjectPath = Field(description="The project directory this call created.")
     name: str = Field(description="The project's name, which its film is named after.")
     example: str = Field(description="The packaged example this project was written from.")
-    skills: bool = Field(description="True when the packaged skills were written into the project.")
+    skills_written: bool = Field(description="True when the packaged skills were written into the project.")
 
 
 class InstallResult(Result):
     """What `decktalk install` fetched, and what it found already there."""
 
-    run: Run
+    run: RunId
     tools: tuple[InstalledTool, ...] = Field(description="Every tool this machine needs, in the order it checks them.")
     cache: ProjectPath = Field(description="The directory the fetched tools live in.")
 
@@ -696,7 +699,7 @@ class DoctorResult(Result):
 
     reports_findings: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     tools: tuple[InstalledTool, ...] = Field(description="Every tool this machine needs, in the order it checks them.")
     cache: ProjectPath = Field(description="The directory the fetched tools live in.")
     python: str = Field(description="The Python this DeckTalk runs on.")
@@ -713,10 +716,10 @@ class DoctorResult(Result):
 class StatusResult(Result):
     """What is written, what is built, what is stale, and what to do next."""
 
-    run: Run
+    run: RunId
     name: str = Field(description="The project's name, which its film is named after.")
     script: ProjectPath = Field(description="The script this project speaks, project-relative.")
-    cues: ProjectPath = Field(description="The cue file this project resolves, project-relative.")
+    cues_file: ProjectPath = Field(description="The cue file this project resolves, project-relative.")
     sections: tuple[SectionStatus, ...] = Field(description="Every section, in script order.")
     film: ProjectPath | None = Field(None, description="The built film, or null when none is built.")
     film_seconds: float | None = Field(None, ge=0, description="How long the built film runs, or null.")
@@ -734,11 +737,11 @@ class CheckResult(Result):
 
     reports_findings: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     written: Written
     judged: tuple[ProjectPath, ...] = Field(description="Every file and page this call judged, project-relative.")
-    pages: bool = Field(description="True when the pages were opened in a browser rather than read as text.")
-    frames: bool = Field(description="True when slides were frozen and compared as pictures.")
+    pages_opened: bool = Field(description="True when the pages were opened in a browser rather than read as text.")
+    frames_compared: bool = Field(description="True when slides were frozen and compared as pictures.")
     cost: Cost = Field(description="What the narration of a voiced build would cost, leaving out any sound.")
     storyboard: ProjectPath | None = Field(None, description="The storyboard this call wrote, or null.")
 
@@ -746,7 +749,7 @@ class CheckResult(Result):
 class WordsResult(Result):
     """Every spoken word with its span, which is how a cue phrase is written."""
 
-    run: Run
+    run: RunId
     sections: tuple[SectionWords, ...] = Field(description="Every spoken section, in script order.")
 
 
@@ -755,7 +758,7 @@ class StoryboardResult(Result):
 
     reports_findings: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     written: Written
     storyboard: ProjectPath | None = Field(None, description="The storyboard page this call wrote, or null.")
     panels: tuple[Panel, ...] = Field(description="Every frozen moment on that page, in film order.")
@@ -764,7 +767,7 @@ class StoryboardResult(Result):
 class ServeResult(Result):
     """The local origin serving this project's deck."""
 
-    run: Run
+    run: RunId
     url: str = Field(description="The origin's base URL, which is where the deck is served.")
     port: int = Field(ge=1, description="The port the origin listens on.")
 
@@ -778,7 +781,7 @@ class ConfigListResult(Result):
 class ConfigGetResult(Result):
     """One settings key with the value in force."""
 
-    key: SettingValue = Field(description="The key asked for, with the value in force.")
+    setting: SettingValue = Field(description="The key asked for, with the value in force.")
 
 
 class ConfigSetResult(Result):
@@ -850,7 +853,7 @@ class NarrateResult(Result):
     reports_findings: ClassVar[bool] = True
     spends: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     written: Written
     spend: bool = Field(description=SPEND)
     sections: tuple[SectionTake, ...] = Field(description="Every section this run considered, in script order.")
@@ -864,7 +867,7 @@ class CueResult(Result):
 
     reports_findings: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     written: Written
     sections: tuple[SectionCues, ...] = Field(description="Every section that declares a cue, in script order.")
     file: ProjectPath | None = Field(None, description="The cue times this run wrote, or null when it wrote none.")
@@ -876,7 +879,7 @@ class RecordResult(Result):
 
     reports_findings: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     written: Written
     sections: tuple[SectionRecording, ...] = Field(description="Every section this run considered, in script order.")
     elapsed_seconds: Elapsed
@@ -888,7 +891,7 @@ class ScoreResult(Result):
     reports_findings: ClassVar[bool] = True
     spends: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     written: Written
     spend: bool = Field(description=SPEND)
     items: tuple[SoundItem, ...] = Field(description="Every item, in the order decktalk.toml declares them.")
@@ -901,7 +904,7 @@ class AssembleResult(Result):
 
     reports_findings: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     written: Written
     film: ProjectPath = Field(description="The finished film, project-relative.")
     film_seconds: float = Field(ge=0, description="How long the finished film runs.")
@@ -915,7 +918,7 @@ class VerifyResult(Result):
 
     reports_findings: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     film: ProjectPath = Field(description="The film this call measured, project-relative.")
     film_seconds: float = Field(ge=0, description="How long that film runs.")
     starts: tuple[StartCheck, ...] = Field((), description="The first frame of every section, in film order.")
@@ -931,7 +934,7 @@ class BuildResult(Result):
     reports_findings: ClassVar[bool] = True
     spends: ClassVar[bool] = True
 
-    run: Run
+    run: RunId
     written: Written
     stages: tuple[StageRun, ...] = Field(description="Every stage this run planned, in run order.")
     spend: bool = Field(description=SPEND)
@@ -948,13 +951,13 @@ class BuildResult(Result):
 class ClipResult(Result):
     """A span of one built section, cut into its own file."""
 
-    run: Run
+    run: RunId
     written: Written
     section: SectionNumber
     file: ProjectPath = Field(description="The clip this call wrote, project-relative.")
-    words: ProjectPath = Field(description="The clip's own words file, project-relative.")
-    start: float = Field(ge=0, description="The first frame's time in the section, in seconds.")
-    end: float = Field(ge=0, description="The time just after the last frame, in seconds.")
+    words_file: ProjectPath = Field(description="The clip's own words file, project-relative.")
+    start_seconds: float = Field(ge=0, description="The first frame's time in the section, in seconds.")
+    end_seconds: float = Field(ge=0, description="The time just after the last frame, in seconds.")
     seconds: float = Field(ge=0, description="How long the clip runs, including its hold.")
     hold_seconds: float = Field(ge=0, description="How long the last frame is held after the span.")
     gain_db: float = Field(description="How much the clip's audio was lifted or cut.")
@@ -964,7 +967,7 @@ class ClipResult(Result):
 class ApplyResult(Result):
     """What applying a set of fixes changed, and what it left alone."""
 
-    run: Run
+    run: RunId
     written: Written
     fixes: tuple[FixOutcome, ...] = Field(description="Every fix this call considered, in the order it met them.")
 
@@ -984,7 +987,7 @@ __all__ = [
     "ApiKeyState",
     "ApplyResult",
     "AssembleResult",
-    "Billing",
+    "BillingBasis",
     "BuildResult",
     "CheckResult",
     "ClipResult",

@@ -20,13 +20,13 @@ runtime alone.
 
 ```html
 <div data-scene="3" data-name="How it works">
-  <template data-slide="3.1" data-hold="12" data-describe="the idea and the line under it">
+  <template data-slide="3.1" data-preview-seconds="12" data-describe="the idea and the line under it">
     <h1 data-in="title" data-describe="the heading, One idea">One idea</h1>
     <p data-in="detail" data-in-style="fade" data-describe="the line that follows it">
       The line that follows it
     </p>
   </template>
-  <template data-slide="3.2" data-hold="10" data-enter="cut" data-describe="the next idea">
+  <template data-slide="3.2" data-preview-seconds="10" data-enter="cut" data-describe="the next idea">
     <h1 data-in="next" data-describe="the heading, The next idea">The next idea</h1>
   </template>
 </div>
@@ -79,7 +79,7 @@ the typesetter does not load, so it carries its own brackets and is correct math
      data-in="inbox" data-in-style="fade" data-describe="the inbox, with one unread message">
 ```
 
-- Capture at twice the stage scale, so text stays sharp at 1920 by 1080.
+- Capture at twice the canvas scale, so text stays sharp at 1920 by 1080.
 - Capture from a demo account. Never show a real customer's name, email or invoice.
 - Give a screenshot at least four seconds before the next reveal on the same slide.
 - Highlight a region by revealing a filled box over it on its own cue, or by dimming the rest with a
@@ -113,7 +113,7 @@ the page's stylesheet has to drop the motion under the reduced-motion class or t
 
 ## The frame
 
-- The stage is 1920 by 1080, and the page is scaled to it.
+- The canvas is 1920 by 1080, and the page is scaled to it.
 - Body text is 36 pixels or larger.
 - The bottom fifteen percent is the caption band. Keep every cued element out of it.
 - Four reveals is the most one slide should carry, and three equations is the most.

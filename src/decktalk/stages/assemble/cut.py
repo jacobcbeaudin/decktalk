@@ -144,7 +144,7 @@ def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None
             width=video.width,
             height=video.height,
             background=video.slate_color,
-            browser_path=inputs.settings.record.browser_path,
+            executable=inputs.settings.tools.chromium,
             policy=policy,
             spend=run.spend,
         )
@@ -187,7 +187,7 @@ def _render_slate_section(
     configured = inputs.path(inputs.document.mix.slate) if inputs.document.mix.slate else None
     png = configured if configured is not None and configured.exists() else section_slate(inputs, run, section)
     source = (
-        ["-loop", "1", "-framerate", str(enc.v.output_fps), "-t", f"{seconds}", *ffmpeg.source(png)]
+        ["-loop", "1", "-framerate", str(enc.v.fps), "-t", f"{seconds}", *ffmpeg.source(png)]
         if png
         else enc.color_source(enc.v.slate_color, seconds)
     )
@@ -255,7 +255,7 @@ def render_sections(
     enc = Encoder(inputs.settings.video, inputs.settings.audio)
     inputs.workspace.final_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.sections_dir.mkdir(parents=True, exist_ok=True)
-    dip = frame_dip(inputs.document.transition.dip_seconds, enc.v.output_fps)
+    dip = frame_dip(inputs.document.transition.dip_seconds, enc.v.fps)
     wanted = selects(only)
     sections = inputs.document.sections
     rows: list[Rendered] = []
@@ -275,7 +275,7 @@ def _cut_one(inputs: Inputs, run: Run, enc: Encoder, takes: Takes, section: Sect
     """One section cut again, whichever kind of section it is."""
     if isinstance(section, ClipSection):
         return render_clip(inputs, run, enc, section, out, dip, strict=strict)
-    total = page_target(takes, section, enc.v.output_fps)
+    total = page_target(takes, section, enc.v.fps)
     return render_page(inputs, run, enc, section, out, dip, total, strict=strict)
 
 
@@ -308,7 +308,7 @@ def placements_of(inputs: Inputs, rows: list[Rendered]) -> Placements:
     flags = inputs.document.fade_flags
     chapters = inputs.chapters()
     return Placements(
-        fps=inputs.settings.video.output_fps,
+        fps=inputs.settings.video.fps,
         sections=tuple(
             Placement(
                 section=row.number,
@@ -334,7 +334,7 @@ def rendered_starts(rows: list[Rendered]) -> dict[int, float]:
 
 
 def concat(files: list[Path], out: Path) -> None:
-    """Join the section cuts into one picture, with no re-encoding and no gaps between them.
+    """Join the section videos into one picture, with no re-encoding and no gaps between them.
 
     Each cut is opened through the join's own whitelists, so a cut a supplied `build/` planted cannot
     make the demuxer read a file or a host the project never named.
@@ -366,9 +366,9 @@ def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:
     return filters
 
 
-def remove_stray_cuts(inputs: Inputs) -> None:
-    """Remove the cuts and keys of sections `decktalk.toml` no longer declares, which a renumbering leaves."""
-    for path in inputs.workspace.stray_cuts(tuple(s.key for s in inputs.document.sections)):
+def remove_stray_videos(inputs: Inputs) -> None:
+    """Remove the section videos and keys of sections `decktalk.toml` no longer declares, which a renumbering leaves."""
+    for path in inputs.workspace.stray_videos(tuple(s.key for s in inputs.document.sections)):
         path.unlink(missing_ok=True)
 
 
@@ -385,6 +385,6 @@ __all__ = [
     "rendered_starts",
     "section_slate",
     "section_targets",
-    "remove_stray_cuts",
+    "remove_stray_videos",
     "vfades",
 ]

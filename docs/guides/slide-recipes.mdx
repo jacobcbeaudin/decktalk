@@ -39,7 +39,7 @@ The heading and the bar under it are one element with one cue, so the whole bloc
   .r-title .r-rule { margin-top: 28px; width: 1000px; height: 12px; background: var(--accent); }
 </style>
 
-<template data-slide="4.1" data-hold="10" data-describe="the opening title">
+<template data-slide="4.1" data-preview-seconds="10" data-describe="the opening title">
   <p class="eyebrow">Open</p>
   <div class="r-title" data-in="title" data-describe="the title, This is DeckTalk">
     <h1>This is DeckTalk.</h1>
@@ -68,7 +68,7 @@ One cue, and the container's children arrive one step apart.
   .r-tile { width: 372px; height: 260px; border-radius: 20px; background: var(--ink); }
 </style>
 
-<template data-slide="4.2" data-hold="14" data-describe="four examples of the same kind of thing">
+<template data-slide="4.2" data-preview-seconds="14" data-describe="four examples of the same kind of thing">
   <p class="eyebrow">Examples</p>
   <div class="r-row" data-in="examples" data-in-style="fade" data-stagger="0.04"
        data-describe="four examples, arriving one after another">
@@ -106,7 +106,7 @@ place until its replacement has arrived, so the two read as one thing changing.
                  text-transform: uppercase; color: #a9a9ff; }
 </style>
 
-<template data-slide="4.3" data-hold="14" data-describe="the slow way, replaced by the fast one">
+<template data-slide="4.3" data-preview-seconds="14" data-describe="the slow way, replaced by the fast one">
   <p class="eyebrow">The direction</p>
   <div class="r-card grey" data-in="one" data-out="instead" data-out-style="fall"
        data-describe="turning one dial at a time, and the billions of tries it would take"
@@ -150,7 +150,7 @@ reveal, so neither needs a second element.
             background: var(--ink); color: #fff; font: 500 32px/52px var(--mono); white-space: pre; }
 </style>
 
-<template data-slide="4.4" data-hold="16" data-describe="the formula beside the code that computes it">
+<template data-slide="4.4" data-preview-seconds="16" data-describe="the formula beside the code that computes it">
   <p class="eyebrow">How it works</p>
   <div class="r-formula" data-in="formula" data-in-style="fade" data-back="code" data-front="waited"
        data-describe="the formula for the mean of n numbers">x bar = (x1 + … + xn) / n</div>
@@ -185,7 +185,7 @@ word at a time, each word whole by the second the voice reaches it.
              background: var(--accent); color: #fff; font: 600 52px/62px var(--sans); }
 </style>
 
-<template data-slide="4.5" data-hold="12" data-describe="the promise, filled in on the voice">
+<template data-slide="4.5" data-preview-seconds="12" data-describe="the promise, filled in on the voice">
   <p class="eyebrow">The promise</p>
   <p class="r-strip" data-in="word" data-in-style="fade" data-words
      data-describe="a band that fills in on the voice">
@@ -221,7 +221,7 @@ together.
             background: var(--accent); color: #fff; font: 700 76px/1.1 var(--sans); }
 </style>
 
-<template data-slide="4.6" data-hold="10" data-describe="the count of files a project holds">
+<template data-slide="4.6" data-preview-seconds="10" data-describe="the count of files a project holds">
   <p class="eyebrow">Open</p>
   <p class="r-stat" data-in="files" data-count="last"
      data-describe="the count of files a project holds">
@@ -254,7 +254,7 @@ makes it a display equation on its own line.
   .r-eq .katex { font-size: 58px; }
 </style>
 
-<template data-slide="4.7" data-hold="14" data-describe="the mean of n numbers, typeset">
+<template data-slide="4.7" data-preview-seconds="14" data-describe="the mean of n numbers, typeset">
   <p class="eyebrow">The formula</p>
   <div class="r-eq" data-in="formula" data-in-style="fade"
        data-describe="the formula for the mean of n numbers">
@@ -295,7 +295,7 @@ the contract has no word for.
   :where(.dt-reduced) .r-guess { transition-duration: 0s; }
 </style>
 
-<template data-slide="4.8" data-hold="16" data-describe="the model's answer, set aside and then corrected">
+<template data-slide="4.8" data-preview-seconds="16" data-describe="the model's answer, set aside and then corrected">
   <p class="eyebrow">The loop</p>
   <p class="r-guess" data-in="guess"
      data-class="nudge:stale|right:live"
@@ -333,7 +333,7 @@ cue it draws with script of its own.
   :where(.dt-reduced) .r-thumb { transition-duration: 0s; }
 </style>
 
-<template data-slide="4.9" data-hold="14" data-owns="long short"
+<template data-slide="4.9" data-preview-seconds="14" data-owns="long short"
           data-describe="one setting, deciding how long each step is">
   <p class="eyebrow">The step size</p>
   <div class="r-slider"><span class="r-thumb"></span></div>

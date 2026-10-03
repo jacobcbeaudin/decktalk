@@ -28,12 +28,9 @@ from typing import ClassVar
 
 from pydantic import Field
 
-from decktalk.artifacts.stored import Stored, engine_digest, file_digest
+from decktalk.artifacts.stored import DIGEST_DIGITS, Stored, engine_digest, file_digest
 from decktalk.findings import Finding, Model
 from decktalk.media.pagereport import Recording
-
-HASH_DIGITS = 16
-"""How much of the sha256 keys a recording, which is far more than enough within one project."""
 
 
 def input_digest(parts: Sequence[str], files: Mapping[str, Path]) -> str:
@@ -45,7 +42,7 @@ def input_digest(parts: Sequence[str], files: Mapping[str, Path]) -> str:
     too, because a recording carries the recorder, the probe and the runtime contract that made it,
     and a newer engine keeping an older engine's recording would measure a film it did not make.
     """
-    return engine_digest(*parts, *(f"{name}:{file_digest(files[name])}" for name in sorted(files)))[:HASH_DIGITS]
+    return engine_digest(*parts, *(f"{name}:{file_digest(files[name])}" for name in sorted(files)))[:DIGEST_DIGITS]
 
 
 class Luma(Model):
