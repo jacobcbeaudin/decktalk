@@ -113,13 +113,19 @@ def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate
     samples = array.array("h", bytes(PCM_BYTES_PER_SAMPLE * n))
     amp = int(FULL_SCALE * gain(CLICK_LEVEL_DBFS))
     click = round(CLICK_SECONDS * sample_rate)
+    # One click is drawn once and copied to every word start, cut where it would run off either end.
+    template = array.array(
+        "h",
+        (
+            int(amp * math.sin(math.pi * i / click) * math.sin(2 * math.pi * CLICK_HZ * i / sample_rate))
+            for i in range(click)
+        ),
+    )
     for t in times:
         start = round(t * sample_rate)
-        for i in range(click):
-            j = start + i
-            if 0 <= j < n:
-                env = math.sin(math.pi * i / click)
-                samples[j] = int(amp * env * math.sin(2 * math.pi * CLICK_HZ * i / sample_rate))
+        first, last = max(start, 0), min(start + click, n)
+        if first < last:
+            samples[first:last] = template[first - start : last - start]
     wav = path.with_suffix(".clicks.wav")
     with wave.open(str(wav), "wb") as fh:
         fh.setnchannels(1)

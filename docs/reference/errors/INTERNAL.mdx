@@ -8,5 +8,5 @@ description: A bug in DeckTalk, with a traceback under -v.
 A bug in DeckTalk, with a traceback under -v.
 
 A command that ends this way exits 3. The JSON object carries `error.code` of
-`INTERNAL`, one sentence in `error.message`, and the whole command that would clear it in
-`error.hint`.
+`INTERNAL` and one sentence in `error.message`. `error.hint` carries the next step when
+DeckTalk knows one, and is null when it does not.

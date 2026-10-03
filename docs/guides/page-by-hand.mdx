@@ -220,17 +220,7 @@ a missing file never hangs a build.
 One URL decides which of four things the page is doing: it lists its scenes, it previews one, it
 plays one against the section clock, or it freezes one slide.
 
-| Key | What it asks the page for |
-|---|---|
-| `scene` | Play this scene from its first slide. |
-| `slide` | Freeze this slide with its cues already fired, which is what a still opens. |
-| `cues` | The cue times to fire at, as `id@seconds` pairs separated by a comma. |
-| `words` | The spoken words to sync a line against, as `word@seconds` pairs separated by a comma. |
-| `t0` | The narration second the page starts at, or `signal` when the recorder starts the clock. |
-| `speed` | Multiply the preview clock, so a long section is reviewed quickly. The slowest it goes is 0.05. |
-| `hud` | Set it to `1` to draw the on-page clock and cue list, which is for an author and never for a recording. |
-| `after` | Freeze after this cue, so the cues up to and including it fire and later ones stay hidden. |
-| `before` | Freeze just before this cue, so it and every later cue stay hidden. |
+[The query keys](/reference/runtime#the-query-keys) lists every key and what it asks for.
 
 `after` and `before` are answered by the probe that `decktalk check` and `decktalk storyboard` inject
 into the page. A page you open yourself with `?slide=1.1` freezes that slide with every one of its

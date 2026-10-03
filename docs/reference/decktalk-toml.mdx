@@ -355,16 +355,21 @@ writes one, so the block below is the shape rather than a starter's values.
 }
 ```
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `boost_db` | number | `3` | How far the music rises at each marker. |
-| `boost_seconds` | number | `2` | How long each swell lasts. |
-| `markers` | array | `[]` | The markers. |
+| Key | Where | Type | Default | Meaning |
+|---|---|---|---|---|
+| `boost_db` | top level | number | `3` | How far each marker raises the music, in dB. |
+| `boost_seconds` | top level | number | `2` | How long each swell lasts. |
+| `markers` | top level | array | `[]` | The markers. |
+| `name` | marker | string | none | The name a warning uses for it. |
+| `section` | marker | integer | required | The section that holds the phrase. |
+| `phrase` | marker | string | `$start` | A spoken phrase, `$start` or `$end`. |
+| `offset_seconds` | marker | number | `0` | Seconds added to the matched second. |
+| `occurrence` | marker | integer | `1` | Which match of the phrase to take. |
+| `case_sensitive` | marker | boolean | `false` | Whether the match compares case. |
+| `mute_seconds` | marker | number | `0` | Seconds of silence before the swell starts. |
 
-A marker names a moment in the narration, and `section`, `phrase`, `offset_seconds`, `occurrence` and
-`case_sensitive` resolve exactly as a cue's do. `name` is what a warning calls it, and `mute_seconds`
-drops the music there before the swell. A marker whose phrase is not spoken is reported by `assemble`
-and skipped.
+A marker resolves exactly as a cue does, against the words of its own section. A marker whose phrase
+is not spoken is reported by `assemble` and skipped.
 
 ## `[transition]`
 

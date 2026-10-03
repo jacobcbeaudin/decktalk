@@ -28,9 +28,9 @@
 #
 # Cutting a release: merge the release pull request. That is the whole procedure. Every release is a
 # candidate, 0.5.0-rc1, 0.5.0-rc2, until a pull request carries a `Release-As: 0.5.0` footer and the
-# next release pull request is the final one, as CONTRIBUTING.md describes under "Releases". The
-# workflow file name release.yml and the environment name pypi are registered with PyPI's trusted
-# publisher, so neither may be renamed.
+# next release pull request is the final one, as RELEASING.md describes under "Candidates and
+# finals". The workflow file name release.yml and the environment name pypi are registered with
+# PyPI's trusted publisher, so neither may be renamed.
 name: release
 
 # `workflow_run` is the trigger this design needs and the usual objection to it does not apply here.

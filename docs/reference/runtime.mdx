@@ -134,8 +134,8 @@ comes to the front, and it leaves. The runtime qualifies a cue name with its sli
 what `cues.json` gives a second to. No attribute says when a cue fires, because `cues.json` owns
 that and the page owns what a thing looks like and what it means.
 
-The twenty-four attributes, each with its values, its default, its range, its code and its motion
-span, are published by `decktalk schema page`. Read that and write from it.
+`decktalk schema page` publishes every attribute with its values, its default, its range, its code
+and its motion span. Read that and write from it.
 
 | Written on | Attributes |
 |---|---|
@@ -173,7 +173,7 @@ uv run python -c "from decktalk import page; print(page.QUERY)"
 | `words` | The spoken words to sync a line against, as `word@seconds` pairs separated by a comma. |
 | `t0` | The narration second the page starts at, or the word `signal` when the recorder starts the clock. |
 | `speed` | Multiply the preview clock, so a long section is reviewed quickly. |
-| `hud` | Draw the on-page clock and cue list, which is for an author and never for a recording. |
+| `hud` | Set to `1`, draws the on-page clock and cue list, which is for an author and never for a recording. |
 | `after` | Freeze after this cue, so the cues up to and including it fire and later ones stay hidden. |
 | `before` | Freeze just before this cue, so it and every later cue stay hidden. |
 
@@ -294,7 +294,7 @@ Python reads the answer once, at the boundary where the page stops being trusted
 validated into a model before anything above uses it, and a row that cannot be read is dropped with
 the reason rather than carried into an artifact.
 
-## The twenty-seven codes the page raises
+## The codes the page raises
 
 The page never throws at its author. It records what it could not honour, echoes the sentence to the
 console with a `decktalk:` prefix, and carries on drawing. A row is recorded once per code, slide,

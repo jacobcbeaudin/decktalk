@@ -76,8 +76,9 @@ def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], t
     punctuation and the case the script wrote.
     """
     cues: list[CaptionCue] = []
+    placed = takes.placed
     for take in takes.sections:
-        shift = offsets.get(take.section, 0.0) + (takes.start(take.section) or 0.0)
+        shift = offsets.get(take.section, 0.0) + placed[take.section].start
         words = list(Words(words=inputs.words(take.section, take.digest)).shifted(shift))
         text = texts.get(take.section)
         cues += caption_cues(display_words(words, text) if text else words)

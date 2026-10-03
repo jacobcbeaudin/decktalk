@@ -28,32 +28,10 @@ the narration and the clip audio alone. Nothing else changes.
 
 ### What `[mix]` holds
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `music` | path | none | The music bed under the whole film. It loops, and it ducks under speech and under clips. |
-| `music_db` | number | -24 | The music's own level, in dB. |
-| `music_duck_db` | number | -6 | How far the music drops under a spoken span or a clip, in dB. |
-| `music_fade_in_seconds` | number | 2 | How long the music fades in at the start of the film. |
-| `music_fade_out_seconds` | number | 3 | How long the music fades out at the end of it. |
-| `music_markers` | path | none | A markers file, which raises and mutes the music at spoken phrases. |
-| `ambience` | path | none | The ambience bed, for the sections that set `ambience = true`. |
-| `ambience_db` | number | -20 | The ambience bed's level, in dB. |
-| `slate` | path | a rendered slate | A PNG to play for a missing clip, instead of the titled slate DeckTalk draws. |
-
-One `[[mix.effects]]` table places one sound.
-
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `file` | path | required | The audio file to play. |
-| `section` | integer | required | The section whose cue places it. The section must exist. |
-| `cue` | string | required | The cue id of a cue in that section, which the `cue` stage resolved. |
-| `db` | number | -16 | The effect's level, in dB. |
-| `offset_seconds` | number | 0 | Seconds added to the cue's own second. This offset belongs to the effect and not to the cue. |
-| `caption` | string | none | The caption line a viewer reads when the sound plays, such as `ball bounces`. |
-
-A cued sound that names no caption is a hole in what a deaf viewer receives, so `assemble` says so on
-the stream. A caption is wrapped in square brackets if it is not already, and it gets a line of its
-own in the captions.
+[`[mix]`](/reference/decktalk-toml#mix) lists every key that names a file and its level, and
+[`[[mix.effects]]`](/reference/decktalk-toml#mix-effects) every key of an effect. A cued sound takes
+a `caption`, and [Captions carry the whole soundtrack](/guides/accessible-video#captions-carry-the-whole-soundtrack)
+says what a viewer reads in its place.
 
 ## The score stage
 
@@ -77,8 +55,8 @@ decktalk score --replace-score --spend   # buy every bought sound again
 A run with `--no-spend` reports what it would ask for and buys nothing, which is the plan an author
 reads before approving a spend. With neither flag, a run that would buy something prices it and asks
 on a terminal, and a run with nothing left to buy asks nothing. A build asks once about its takes
-and its sounds added together. `--max-cost N` refuses before the
-first call when the most the run can cost is over N dollars. `--replace-score` is the one way to buy
+and its sounds added together, and [The ceiling](/requirements#the-ceiling) is how `--max-cost`
+refuses one. `--replace-score` is the one way to buy
 again a sound the ledger holds. It acts only with `--spend`, is confirmed once on a terminal, and
 never buys a take, while `--force` never buys a sound.
 
@@ -103,15 +81,8 @@ spend as `charged`.
 | `[score.effects.<name>]` | `prompt` | One effect, named by `<name>`. |
 
 Each table holds its prompt and its file beside the settings that size its request, spelled the
-same way in every table. `[score.music]` also takes `force_instrumental`, which is true by
-default, and `out`, and its settings are `model`, `duration_seconds`, which is 360 by default and
-must be a whole number, `bitrate`, `max_chunk_seconds` and `crossfade_seconds`.
-`[score.ambience]` takes `out`, and its settings are `model`, `duration_seconds` and
-`prompt_influence`. `[score.effects]` holds the same three settings for every effect, and each
-`[score.effects.<name>]` takes `out` and may set any of the three for itself. Each of the three
-tables also states its `dollars_per_minute`. `[score] provider` names the sound provider, and
-`[score] timeout_seconds` is how long one request may take. [Configuration](/reference/configuration#score)
-lists every setting with its range.
+same way in every table. [`[score]`](/reference/decktalk-toml#score) lists every key of each table,
+and [Configuration](/reference/configuration#score) every setting with its range.
 
 Music longer than `[score.music] max_chunk_seconds` is asked for in equal parts, because the
 service will not write a long piece in one answer. Each part is told which one it is so it keeps the
@@ -206,16 +177,10 @@ exactly on a cut.
 
 ### The mix mechanics
 
-These are the five settings of `[mix]`. They set the shape of the mix, beside the files and the levels
-that are the table's project content.
-
-| Key | Default | Meaning |
-|---|---|---|
-| `duck_ramp_seconds` | 0.5 | The ramp of the music duck at each edge of a spoken span or a clip. |
-| `ambience_ramp_seconds` | 1.0 | The ramp of the ambience bed at each edge of its span. |
-| `ambience_pad_seconds` | 0.5 | How far the ambience bed reaches past each edge of its section. |
-| `marker_mute_ramp_seconds` | 0.04 | The ramp into and out of a marker's mute. |
-| `marker_boost_ramp_seconds` | 0.3 | The ramp into and out of a marker's swell. |
+The settings of `[mix]` set the shape of the mix, beside the files and the levels that are the
+table's project content: the ramp of the music duck at each edge of a spoken span or a clip, the ramp
+and the reach of the ambience bed, and the ramps into and out of a marker's mute and swell.
+[Configuration](/reference/configuration#mix) lists each with its default and its range.
 
 ## Markers
 
@@ -233,18 +198,7 @@ without an edit to its audio. `[mix] music_markers` names the file.
 }
 ```
 
-| Key | Where | Default | Meaning |
-|---|---|---|---|
-| `boost_db` | top level | 3 | How far each marker raises the music, in dB. |
-| `boost_seconds` | top level | 2 | How long each swell lasts. |
-| `markers` | top level | none | The markers. |
-| `name` | marker | none | The name a warning uses for it. |
-| `section` | marker | required | The section that holds the phrase. |
-| `phrase` | marker | `$start` | A spoken phrase, `$start` or `$end`. |
-| `offset_seconds` | marker | 0 | Seconds added to the matched second. |
-| `occurrence` | marker | 1 | Which match of the phrase to take. |
-| `case_sensitive` | marker | false | Whether the match compares case. |
-| `mute_seconds` | marker | 0 | Seconds of silence before the swell starts. |
+[`markers.json`](/reference/decktalk-toml#markers-json) lists every key.
 
 A marker resolves exactly as a cue does, against the words of its own section, by the rules in
 [Cues](/concepts/cues#matching-rules). Markers apply only where there is a music file. A markers file

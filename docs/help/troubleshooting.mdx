@@ -288,6 +288,11 @@ than allowed to overwrite the first one's work.
 4. To read the project while a build is running, use `decktalk status` or
    `decktalk check --no-pages`. Neither writes, so neither takes the lock.
 
+The same code names the take store when the message says another run has been buying a take into
+it. Two projects on one machine that need the same take buy it once: the second waits for the
+first, and is refused when the wait passes `narration.timeout_seconds`. Let the other run finish,
+then run this again, and it copies the take in rather than buying it.
+
 ## An unresolved cue
 
 A cue is one thing written in two files. The page declares a moment with a cue name, and `cues.json`
@@ -598,7 +603,7 @@ contract either declares a thing or it does not.
 | [PAGE_NO_DESCRIPTION](/reference/findings/PAGE_NO_DESCRIPTION) | Add `data-describe`, or add it empty to say the element is decorative. |
 | [PAGE_SWAP_APART](/reference/findings/PAGE_SWAP_APART) | Move the two halves of the swap closer together. This one is a warning, because a deliberate jump is possible. |
 
-**What to do.** Run `decktalk schema page`, which prints all twenty-four attributes with their
+**What to do.** Run `decktalk schema page`, which prints every attribute with their
 values, their defaults, their ranges and their spans. It is generated from `contract.ts`, the one
 home of every attribute, so it cannot disagree with what the runtime does. Then fix the markup.
 
@@ -635,10 +640,10 @@ on the first.
 `SCRIPT_SPOKEN_SYMBOL` is a warning because sometimes you do mean the symbol. Write out what the voice
 must say, and [Writing for the ear](/guides/writing-for-the-ear) is the guide for it.
 
-`SCRIPT_PAUSE_DROPPED` names a section with a `[pause N]` on a model that renders no timed pause.
-ElevenLabs renders one only on its v2 family, `eleven_multilingual_v2`, `eleven_flash_v2_5`,
-`eleven_flash_v2`, `eleven_turbo_v2_5` and `eleven_turbo_v2`, and v3 and v4 read no `<break>` tag, so `narrate` refuses to buy a take that would lose the
-pause. A `[beat]` is a dash the voice reads on any model, so a beat alone never raises it.
+`SCRIPT_PAUSE_DROPPED` names a section with a `[pause N]` on a model that renders no timed pause,
+and `narrate` refuses to buy a take that would lose the pause. Move to a model that renders one, or
+write a `[beat]`, which every model reads. [script.md](/reference/script-md#directions-and-placeholders) names the
+models.
 
 ## A take that is missing
 
@@ -662,12 +667,10 @@ and the takes on disk play again.
 Some things are not judgements. Use the stream.
 
 - `--events` prints one JSON line per event on stderr as it happens, and every run also appends
-  `build/events/<run>.jsonl` whether you passed it or not. The discriminator key is `event` and
-  there are thirteen names: `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`,
-  `section.done`, `stage.progress`, `finding.raised`, `cost.priced`, `take.charged`, `sound.charged`, `tool.fetch` and `run.log`.
-- `stage.done` and `section.done` carry an `outcome` of `ran`, `skipped` or `failed`, so a run that
-  stopped early still says what it did not reach rather than leaving you to infer it from a shorter
-  list.
+  `build/events/<run>.jsonl` whether you passed it or not. [The event stream](/agents/json#the-event-stream)
+  names every line and its fields.
+- `stage.done` and `section.done` carry an `outcome`, so a run that stopped early still says what it
+  did not reach rather than leaving you to infer it from a shorter list.
 - `output.events_keep_runs` prunes the oldest files, and its default is 20.
 - `-v` puts debug lines on stderr and prints the traceback of a bug. `error[INTERNAL]` means a bug in
   DeckTalk, and `-v` is what turns it into something worth reporting.

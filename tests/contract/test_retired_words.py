@@ -1,4 +1,4 @@
-"""No word the glossary retired comes back in the help, a docs page or a packaged skill.
+"""No word the glossary retired comes back in the help, a docs page, the README or a packaged skill.
 
 The glossary at `docs/reference/glossary.mdx` gives each concept one name and lists, in its **Not**
 column, the words DeckTalk retired for it. That column is the list this test reads, so the page and
@@ -17,27 +17,27 @@ import re
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from decktalk.cli import catalog, main
+from support.paths import REPO, SRC
 
-ROOT = Path(__file__).resolve().parents[2]
-"""The repository, which every path this test reads is under."""
-
-GLOSSARY = ROOT / "docs" / "reference" / "glossary.mdx"
+GLOSSARY = REPO / "docs" / "reference" / "glossary.mdx"
 """The page whose **Not** column is the list of retired words."""
 
 NOT_COLUMN = "Not"
 """The header of the glossary column that lists the words retired for each concept."""
 
-DOCS = ROOT / "docs"
+DOCS = REPO / "docs"
 """Every page of the site, read as the `.mdx` a visitor is served."""
 
-SKILLS = ROOT / "src" / "decktalk" / "skills"
+SKILLS = SRC / "skills"
 """The packaged skills a project keeps in `.agents/skills/`, read as the Markdown an agent loads."""
+
+FRONT = (REPO / "README.md", SRC / "template" / "AGENTS.md")
+"""The repository's front page and the AGENTS.md `init` writes into every project, read as Markdown."""
 
 HISTORY = frozenset({DOCS / "changelog.mdx"})
 """The published changelog, which records the words a release used and is never rewritten."""
@@ -117,12 +117,12 @@ def help_texts() -> Iterator[Text]:
 
 
 def page_texts() -> Iterator[Text]:
-    """Every docs page and every packaged skill file, with the glossary less its **Not** cells."""
-    for path in sorted([*DOCS.rglob("*.mdx"), *SKILLS.rglob("*.md")]):
+    """Every docs page, the front files and every packaged skill file, with the glossary less its **Not** cells."""
+    for path in sorted([*DOCS.rglob("*.mdx"), *FRONT, *SKILLS.rglob("*.md")]):
         if path in HISTORY:
             continue
         body = _glossary_without_its_not_cells() if path == GLOSSARY else path.read_text(encoding="utf-8")
-        yield Text(path.relative_to(ROOT).as_posix(), body)
+        yield Text(path.relative_to(REPO).as_posix(), body)
 
 
 def offences(texts: list[Text], words: list[Retired]) -> list[str]:
@@ -162,3 +162,9 @@ def test_no_help_text_uses_a_retired_word() -> None:
 def test_no_docs_page_or_skill_uses_a_retired_word() -> None:
     found = offences(list(page_texts()), retired())
     assert not found, "Retired words in the docs and the skills:\n" + "\n".join(found)
+
+
+def test_the_readme_and_the_agents_file_init_writes_are_read() -> None:
+    """The front page and the file every new project's agent reads first meet a reader as surely as a docs page."""
+    read = {text.where for text in page_texts()}
+    assert {"README.md", "src/decktalk/template/AGENTS.md"} <= read

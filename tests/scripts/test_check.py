@@ -267,9 +267,10 @@ def test_the_scaffold_build_judges_a_release_after_it_is_cut() -> None:
 def test_a_pull_request_runs_the_command_line_at_every_floor_pyproject_declares() -> None:
     """The lockfile holds every dependency at its newest, so only a row that installs at the floors judges them."""
     floors = check.BY_NAME["floors"]
-    (script,) = (part for command in floors.commands for part in command if "\n" in part)
+    ((*_, script, _, floor),) = floors.commands
     assert "--resolution lowest-direct" in script
-    assert f"--python {check.FLOOR}" in script
+    assert '--python "$1"' in script
+    assert floor == check.FLOOR
     assert "--version" in script
     assert "pr" in floors.when
 

@@ -81,8 +81,9 @@ decktalk cue --json          # the result as one flat object, carrying run, sect
 ```
 
 A run aimed at some sections leaves every other section's rows in `build/cue-times.json` as they
-were, so a cue run for one section never drops the cues of the rest. `--fail-on error|warning|never`
-chooses which severity fails the run, and `--allow CODE` carries on past one code.
+were, so a cue run for one section never drops the cues of the rest.
+[Which findings fail a run](/agents/json#which-findings-fail-a-run) holds for `cue` as for every
+command.
 
 The same arithmetic runs inside `decktalk check`, against the words a voiced run would leave rather
 than the words it already left, so a phrase that will not match is met before anything is bought.

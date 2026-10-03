@@ -50,8 +50,8 @@ def error_page(code: ErrorCode) -> str:
             code.sentence,
             "",
             f"A command that ends this way exits {code.exit_code}. The JSON object carries `error.code` of",
-            f"`{code.value}`, one sentence in `error.message`, and the whole command that would clear it in",
-            "`error.hint`.",
+            f"`{code.value}` and one sentence in `error.message`. `error.hint` carries the next step when",
+            "DeckTalk knows one, and is null when it does not.",
         ],
     )
 

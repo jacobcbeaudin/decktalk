@@ -36,7 +36,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
-from typing import Any, ClassVar
+from typing import Any, ClassVar, NamedTuple
 
 from pydantic import Field, model_validator
 
@@ -199,6 +199,14 @@ class Take(Model):
         return round(self.lead_seconds + self.sound_seconds + self.tail_seconds, 3)
 
 
+class Placed(NamedTuple):
+    """Where one take sits in the joined narration: where it starts, where it ends, and where its last word ends."""
+
+    start: float
+    end: float
+    speech_end: float | None
+
+
 class Takes(Stored):
     """The take index: what was voiced, with what, and the clock the joined narration runs on.
 
@@ -236,26 +244,23 @@ class Takes(Stored):
         return tuple(take.section for take in self.sections if take.voiced)
 
     @property
-    def starts(self) -> dict[int, float]:
-        """Where each section begins in the joined narration, added up in the order the takes are joined."""
+    def placed(self) -> dict[int, Placed]:
+        """Where each section's take sits in the joined narration, added up in one pass in the order they are joined.
+
+        A caller that walks the sections reads this once, so a film of many sections is placed in one
+        pass rather than once per lookup.
+        """
         ats = itertools.accumulate((take.span_seconds for take in self.sections), initial=0.0)
-        return {take.section: round(at, 3) for take, at in zip(self.sections, ats, strict=False)}
-
-    def start(self, section: int) -> float | None:
-        """Where a section begins in the joined narration, or None when it has no take."""
-        return self.starts.get(section)
-
-    def end(self, section: int) -> float | None:
-        """Where a section ends in the joined narration, or None when it has no take."""
-        take, start = self.of(section), self.start(section)
-        return None if take is None or start is None else round(start + take.span_seconds, 3)
-
-    def speech_end(self, section: int) -> float | None:
-        """Where the last word of a section lands in the joined narration, or None when it says nothing."""
-        take, start = self.of(section), self.start(section)
-        if take is None or start is None or take.speech_end_seconds is None:
-            return None
-        return round(start + take.lead_seconds + take.speech_end_seconds, 3)
+        return {
+            take.section: Placed(
+                start=round(at, 3),
+                end=round(at + take.span_seconds, 3),
+                speech_end=None
+                if take.speech_end_seconds is None
+                else round(at + take.lead_seconds + take.speech_end_seconds, 3),
+            )
+            for take, at in zip(self.sections, ats, strict=False)
+        }
 
 
 __all__ = [
@@ -264,6 +269,7 @@ __all__ = [
     "TAKE_DIGITS",
     "TAKE_HASH",
     "PlaceholderInputs",
+    "Placed",
     "Take",
     "TakeInputs",
     "Takes",

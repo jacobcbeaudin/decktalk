@@ -2,8 +2,7 @@
 
 A suite that needs a tool is only collected when a run names its marker, so a run that reaches one
 of these checks asked for that suite by name. Skipping it then would report a green run that proved
-nothing, which is how the browser and e2e rows passed in CI with every test skipped. So a missing
-tool fails, and the failure names the one command that fetches it.
+nothing. So a missing tool fails, and the failure names the one command that fetches it.
 """
 
 from __future__ import annotations

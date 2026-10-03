@@ -168,20 +168,18 @@ def test_a_take_with_no_measured_sound_end_plays_whole() -> None:
 
 
 def test_the_clock_is_the_rows_added_up_in_section_order() -> None:
-    assert INDEX.starts == {1: 0.0, 2: 3.2}
-    assert INDEX.end(1) == 3.2
+    assert {section: at.start for section, at in INDEX.placed.items()} == {1: 0.0, 2: 3.2}
+    assert INDEX.placed[1].end == 3.2
     assert INDEX.total_seconds == 7.4
 
 
 def test_the_last_word_of_a_section_lands_after_that_section_lead() -> None:
-    assert INDEX.speech_end(1) == 2.5
+    assert INDEX.placed[1].speech_end == 2.5
 
 
 def test_a_section_with_no_take_has_no_place_on_the_clock() -> None:
     assert INDEX.of(9) is None
-    assert INDEX.start(9) is None
-    assert INDEX.end(9) is None
-    assert INDEX.speech_end(9) is None
+    assert 9 not in INDEX.placed
 
 
 def test_an_index_is_estimated_when_any_row_is_a_placeholder() -> None:

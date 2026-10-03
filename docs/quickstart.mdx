@@ -131,13 +131,10 @@ waiting on. Under `--events` the same thing is one `tool.fetch` line per step on
 decktalk install
 ```
 
-Nothing has to run it, and a build works on a machine where it never has. It exists for the three
-cases where the timing of a few hundred megabytes matters: a `RUN decktalk install` layer in a
-Dockerfile is cached, a CI job gets one step to cache and one place to read when a download fails,
-and a laptop that is about to go offline gets everything while there is a network. On Linux it is
-also the one command that installs Chromium's system libraries, and therefore the one command that
-may ask for a password. [Requirements and costs](/requirements#what-decktalk-downloads) gives the
-sizes and the cache paths.
+Nothing has to run it, and a build works on a machine where it never has.
+[What `decktalk install` is for](/requirements#what-decktalk-install-is-for) says when it is worth
+running, and [what DeckTalk downloads](/requirements#what-decktalk-downloads) gives the sizes and the
+cache paths.
 
 ## Part 2: build the starter film
 
@@ -392,13 +389,11 @@ film.
     }
     ```
 
-    `state` is `estimate` for what a run would cost and `charged` for what one did cost.
-    `characters` is what would be sent, `dollars` is that at the stated rate, and `ceiling_dollars`
-    is the most the run can reach. ElevenLabs declares that it bills per character, so the rate is
-    the key `price_key` names, `[elevenlabs] dollars_per_1000_characters` in your own
-    `decktalk.toml`, and `price_layer` names which of the five settings layers set it, so the figure
-    is your plan's and not an invention. [Requirements and costs](/requirements#how-the-price-is-worked-out)
-    explains why the two dollar figures can differ.
+    `dollars` is the price at your rate, and `ceiling_dollars` is the most the run can reach.
+    ElevenLabs declares that it bills per character, so the rate is the key `price_key` names,
+    `[elevenlabs] dollars_per_1000_characters` in your own `decktalk.toml`, and the figure is your
+    plan's and not an invention. [How the price is worked out](/requirements#how-the-price-is-worked-out)
+    gives every field and says why the two dollar figures can differ.
   </Step>
 
   <Step title="Look at what you are about to buy">

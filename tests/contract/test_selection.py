@@ -1,4 +1,4 @@
-"""The collection hook and the Hypothesis profile in `tests/conftest.py`, run against a suite of its own.
+"""The collection hook, the network guard and the Hypothesis profile in `tests/conftest.py`, run on a suite of its own.
 
 The hook decides what every command in `scripts/check.py` runs, and a hook nobody reads rots, so it
 is driven here through `pytester` rather than described. The suite below is the real conftest and
@@ -7,6 +7,7 @@ the real marker list, copied into a throwaway project.
 
 from __future__ import annotations
 
+import socket
 import tomllib
 
 import pytest
@@ -99,3 +100,29 @@ def test_a_property_test_writes_under_the_suite_output_and_never_in_the_director
     suite.runpytest_subprocess("test_drawn.py").assert_outcomes(passed=1)
     assert not (suite.path / ".hypothesis").exists()
     assert (suite.path / "out" / "hypothesis").is_dir()
+
+
+REACH = "import socket\n\ndef test_reaches_out():\n    socket.getaddrinfo('decktalk.invalid', 443)\n"
+"""A test that resolves a host other than this machine, which is the first step of sending it anything."""
+
+PLACES = ("contract", "scripts", "support", "e2e", "platform", "decktalk")
+"""Every directory under `tests/`, since the guard is the root conftest's and no directory is outside it."""
+
+
+@pytest.mark.parametrize(
+    ("place", "args"),
+    [
+        *[pytest.param(place, (), id=f"an unmarked test under {place}") for place in PLACES],
+        *[pytest.param("e2e", ("-m", name), id=f"a test the {name} suite runs") for name in ("e2e", "platform")],
+    ],
+)
+def test_a_test_anywhere_that_resolves_another_host_fails_before_it_is_asked(suite, monkeypatch, place, args):
+    """The guard wraps whatever resolver is in place, so a recorder stands in for DNS and nothing is sent."""
+    asked: list[object] = []
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *_args, **_kwargs: asked.append(host) or [])
+    marker = f"@pytest.mark.{args[1]}\n" if args else ""
+    suite.makepyfile(**{f"{place}/test_reach": "import pytest\n" + REACH.replace("def ", marker + "def ", 1)})
+    result = suite.runpytest(f"{place}/test_reach.py", *args)
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*tried to reach 'decktalk.invalid'*"])
+    assert asked == []

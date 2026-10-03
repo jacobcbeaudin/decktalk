@@ -14,7 +14,7 @@ and a film that stopped for one is not.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,6 +33,7 @@ from decktalk.media.audio import gain
 from decktalk.media.encode import Encoder
 from decktalk.page import MILLISECONDS, SECOND_DIGITS
 from decktalk.pipeline import Stage
+from decktalk.results import Word
 from decktalk.stages import score as score_stage
 from decktalk.stages.assemble.cut import Rendered, concat, rendered_starts
 
@@ -200,24 +201,39 @@ def encode_soundtrack(inputs: Inputs, src: Path, dst: Path, *, filters: str | No
     )  # fmt: skip
 
 
-def resolve_marker_time(marker: Marker, starts: Mapping[int, float], takes: Takes, inputs: Inputs) -> float | None:
-    """Where one marker falls in the finished film, or None when its phrase is not in the narration.
+def marker_times(
+    markers: Sequence[Marker], starts: Mapping[int, float], takes: Takes, inputs: Inputs
+) -> list[float | None]:
+    """Where each marker falls in the finished film, or None when its phrase is not in the narration.
 
     A marker resolves exactly as a cue does, against the words of its own section, which already sit
-    after that section's lead.
+    after that section's lead. Each section's words are read once however many markers it holds.
     """
-    if marker.section not in starts:
-        return None
-    if marker.phrase == SECTION_START:
-        return starts[marker.section] + marker.offset_seconds
-    take = takes.of(marker.section)
-    if take is None:
-        return None
-    words = inputs.words(marker.section, take.digest)
-    if marker.phrase == SECTION_END:
-        return starts[marker.section] + words[-1].end + marker.offset_seconds if words else None
-    found = Spoken.of(words).find(marker.phrase, marker.occurrence, marker.case_sensitive)
-    return None if found is None else starts[marker.section] + words[found].start + marker.offset_seconds
+    heard: dict[int, tuple[Sequence[Word], Spoken] | None] = {}
+
+    def words_of(section: int) -> tuple[Sequence[Word], Spoken] | None:
+        if section not in heard:
+            take = takes.of(section)
+            words = inputs.words(section, take.digest) if take is not None else None
+            heard[section] = None if words is None else (words, Spoken.of(words))
+        return heard[section]
+
+    def one(marker: Marker) -> float | None:
+        if marker.section not in starts:
+            return None
+        start, nudge = starts[marker.section], marker.offset_seconds
+        if marker.phrase == SECTION_START:
+            return start + nudge
+        said = words_of(marker.section)
+        if said is None:
+            return None
+        words, spoken = said
+        if marker.phrase == SECTION_END:
+            return start + words[-1].end + nudge if words else None
+        found = spoken.find(marker.phrase, marker.occurrence, marker.case_sensitive)
+        return None if found is None else start + words[found].start + nudge
+
+    return [one(marker) for marker in markers]
 
 
 def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]) -> list[Span]:
@@ -228,11 +244,10 @@ def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]
     """
     offsets = narration_offsets([row.section for row in rows], takes, starts)
     spans: list[Span] = []
-    for take in takes.sections:
-        offset = offsets[take.section]
-        said = takes.speech_end(take.section)
-        until = said if said is not None else takes.end(take.section)
-        spans.append((offset + (takes.start(take.section) or 0.0), offset + (until or 0.0)))
+    for section, at in takes.placed.items():
+        offset = offsets[section]
+        until = at.speech_end if at.speech_end is not None else at.end
+        spans.append((offset + at.start, offset + until))
     spans += [(starts[row.number], starts[row.number] + row.seconds) for row in rows if row.section.is_clip]
     return spans
 
@@ -289,8 +304,7 @@ def _music_shape(inputs: Inputs, run: Run, takes: Takes, starts: Mapping[int, fl
         run.note(note, level=Level.WARNING)
     boosts: list[Span] = []
     mutes: list[Span] = []
-    for marker in markers.markers:
-        at = resolve_marker_time(marker, starts, takes, inputs)
+    for marker, at in zip(markers.markers, marker_times(markers.markers, starts, takes, inputs), strict=True):
         if at is None:
             run.note(f"The marker {marker.name!r} is unresolved, so it shapes nothing.", level=Level.WARNING)
             continue
@@ -468,7 +482,7 @@ __all__ = [
     "ramp_expr",
     "ramp_groups",
     "ramps_expr",
-    "resolve_marker_time",
+    "marker_times",
     "second",
     "speech_spans",
 ]

@@ -228,29 +228,12 @@ almost always a name that drifted between the two files.
 
 ## Browser preview and recording
 
-A page holds scenes, a page section plays one scene, and the URL decides what the page is doing.
-`window.__decktalk.mode` holds the word.
-
-| Mode | `mode` | Opened as | What happens |
-|---|---|---|---|
-| Index | `index` | no query | The page lists every scene and every slide, with a play link and a freeze link for each. |
-| Preview | `preview` | `?scene=N` | The scene plays on its own clock, at the speed a person reads it. |
-| Cue | `cue` | `?scene=N&cues=id@s,…` | The cue times drive the page. Every recording is made in this mode. |
-| Freeze | `freeze` | `?slide=ID`, with `&after=CUE` or `&before=CUE` | One slide mounts with its cues already fired. `storyboard` and `check` open this mode. |
-
-These are the query keys a DeckTalk page reads, and a section's `params` may name no other.
-
-| Key | What it asks the page for |
-|---|---|
-| `scene` | Play this scene from its first slide. |
-| `slide` | Freeze this slide with its cues already fired, which is what a still opens. |
-| `cues` | The cue times to fire at, as id@seconds pairs separated by a comma. |
-| `words` | The spoken words to sync a line against, as word@seconds pairs separated by a comma. |
-| `t0` | The narration second the page starts at, or the word signal when the recorder starts the clock. |
-| `speed` | Multiply the preview clock, so a long section is reviewed quickly. |
-| `hud` | Draw the on-page clock and cue list, which is for an author and never for a recording. |
-| `after` | Freeze after this cue, so the cues up to and including it fire and later ones stay hidden. |
-| `before` | Freeze just before this cue, so it and every later cue stay hidden. |
+A page holds scenes, a page section plays one scene, and the URL decides what the page is doing. It
+lists its scenes and slides with no query, previews a scene at `?scene=N` at the speed a person reads
+it, plays a scene against its cue times at `?cues=` in the mode every recording is made in, and
+freezes one slide at `?slide=ID` for `storyboard` and `check`. `window.__decktalk.mode` holds the
+word. [Modes](/reference/runtime#modes) and [the query keys](/reference/runtime#the-query-keys) give
+each mode and each key, and a section's `params` may name no key outside that list.
 
 A preview and a recording differ in three places.
 
@@ -309,19 +292,7 @@ The defaults are 0.5 and 1.5 seconds, and the cover hides the page throughout.
 after the cover is narration t=0.
 
 The probe reads the whole page back in one call, and the recording log keeps what it answered.
-
-| Field | What it holds |
-|---|---|
-| `version` | The runtime version the page carries. |
-| `mode` | Which of index, preview, cue and freeze the page is in. |
-| `scene` | The scene the page is playing, or null on the index page. |
-| `slide` | The slide on screen, or null when none is mounted. |
-| `warnings` | Every distinct warning the page reported, as code, message, slide, cue and attr. |
-| `catalog` | One entry per scene, with its slides, its cues and the measured box of every element. |
-| `cues` | When each cue was due, when it ran, and when the frames around it began. |
-| `words` | Each synced line, when its cue ran, when the voice reaches it and when its first word showed. |
-| `frameGaps` | Every gap between two animation frames longer than the recorder can absorb. |
-| `longFrames` | Every animation frame that took longer than a captured frame, with when it was presented. |
+[One `report()` call](/reference/runtime#one-report-call) lists its fields.
 
 The catalog is what every static judgement is read from, rather than a scan of the markup, because
 `data-spotlight`, `data-class` and `data-owns` all declare moments no text scan can see. A page that

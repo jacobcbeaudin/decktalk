@@ -5,7 +5,8 @@ hand-written example of each, so the sampler lives here rather than in either te
 
 Every string, number, path and member gets a value no other field of the sample holds. A string
 carries its field's name and a number from one counter, a number is the next count, and a member is
-picked by the count among the values no other member of the sample holds. A member is unique only
+picked by the count among the values no other member of the sample holds. Booleans alternate, true
+first, so two flags side by side never agree. A member is unique only
 while its enum has a value left over, and otherwise repeats one. A renderer that printed one field
 where another belongs, such as a key's default where its value belongs or a fixed layer where the
 layer in force belongs, therefore writes a different text and fails its snapshot.
@@ -43,6 +44,7 @@ class Filler:
         self.every = every
         self.count = itertools.count(1)
         self.members: set[object] = set()
+        self.flags = itertools.cycle((True, False))
 
     def model[M: BaseModel](self, model: type[M]) -> M:
         """One instance of a model with every field filled, and each optional one only when `every` is asked."""
@@ -60,7 +62,7 @@ class Filler:
         if annotation in EXAMPLES:
             return EXAMPLES[annotation]
         if annotation is bool:
-            return True
+            return next(self.flags)
         if annotation is int:
             return next(self.count)
         if annotation is float:

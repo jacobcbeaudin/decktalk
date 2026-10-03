@@ -79,11 +79,12 @@ def cut_checks(
     played = [section for section in inputs.document.sections if section.number in starts]
     offsets = narration_offsets(played, takes, starts)
     rows: list[CutCheck] = []
+    placed = takes.placed
     for section in played:
-        take = takes.of(section.number)
-        end = takes.end(section.number)
-        if take is None or end is None:
+        take, at = takes.of(section.number), placed.get(section.number)
+        if take is None or at is None:
             continue
+        end = at.end
         window = min(verify.cut_window_seconds, take.span_seconds)
         speech = audio.rms_db(narration, max(0.0, end - window), window)
         at = round(offsets[section.number] + end, 3)

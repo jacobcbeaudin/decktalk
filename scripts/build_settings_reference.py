@@ -94,19 +94,21 @@ def layers() -> str:
     windows = PureWindowsPath(machine_config_path({"APPDATA": "%APPDATA%"}, home, "win32"))
     return f"""## Which value wins
 
-Five layers can set a key. Each one overrides the layers before it.
+Every key has a scope, in the Scope column below, and the scope names the one file that may set it.
+A project key is set by these, each overriding the ones before it:
 
 1. The default in the table below.
-2. The same table in the per-machine settings file.
-3. The same table in the project's `decktalk.toml`.
-4. The environment variable each key publishes, such as `{BY_ID["video.preset"].environment}`.
-5. `--set table.key=value`, on any command, for one run.
+2. The same table in the project's `decktalk.toml`.
+3. The environment variable each key publishes, such as `{BY_ID["video.preset"].environment}`.
+4. `--set table.key=value`, on any command, for one run.
+
+A machine key is set the same way, with the per-machine settings file in place of `decktalk.toml`.
 
 `decktalk config explain KEY` prints the value in force and the layer it comes from, so you never
 have to work out which one that is.
 
-The per-machine settings file holds machine keys alone. A key about the film in that file is
-refused by name, because the file that ships has to carry whatever the machine running it believes.
+Each file refuses a key of the other scope by name. A key about the film in the per-machine file is
+refused because the file that ships has to carry whatever the machine running it believes.
 `{MACHINE_FILE_VARIABLE}` names a different per-machine file.
 
 | Linux | macOS | Windows |

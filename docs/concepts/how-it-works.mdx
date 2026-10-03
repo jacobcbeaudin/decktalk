@@ -131,7 +131,7 @@ take. It is a warning, so the default threshold still builds the film.
 - `narrate` spaces the estimated words at `narration.placeholder_words_per_minute`, which is 150 by
   default, and adds each declared pause, beat, lead and tail.
 - Every other stage runs as usual, so a build that does not spend exercises the cues, the pages, the
-  recording, the cut and the checks.
+  recording, the encode and the checks.
 - `cue` marks a section whose words are estimated, because its seconds are placeholders too.
 - The clicks are what lets `verify` compare the picture with the sound, so `CUE_OFF` still reports a
   reveal that misses its word.
@@ -145,8 +145,8 @@ A run that buys is the same command with `--spend`. With neither flag, a run tha
 buy prices it and asks on a terminal, and without a terminal it refuses unless `--spend` or
 `--no-spend` is passed. A run with nothing to buy is not asked and buys nothing, and a run whose
 voice declares itself free is not asked and buys from it, because that costs nothing.
-A build asks once, about its takes and its sounds added together. `--max-cost N` refuses before the
-first call when the most the run can cost is over N dollars.
+A build asks once, about its takes and its sounds added together, and
+[The ceiling](/requirements#the-ceiling) is how `--max-cost` refuses one.
 
 ## Caching
 

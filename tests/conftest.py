@@ -11,8 +11,10 @@ the `-m` a person types, and `-m "not e2e"` would then admit the five-minute sca
 
 from __future__ import annotations
 
+import socket
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from hypothesis import settings
@@ -25,6 +27,9 @@ pytest_plugins = ["pytester"]
 
 HERE = Path(__file__).parent
 """The directory the paths in `MARKED_BY_PATH` are read under."""
+
+LOOPBACK = frozenset(("127.0.0.1", "::1", "localhost", "0.0.0.0", "::", "", None))
+"""The addresses a test may resolve, which are this machine's own and nothing a key could be sent to."""
 
 # A property test draws its examples from a seed derived from the test itself and keeps no example
 # database, so every machine and every CI run tries the same examples in the same order and a
@@ -87,6 +92,26 @@ def httpserver_listen_address() -> tuple[str, int]:
     It also leaves `localhost` a second host on the same machine, which a redirect test needs.
     """
     return ("127.0.0.1", 0)
+
+
+@pytest.fixture(autouse=True)
+def only_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail any test that resolves a host other than this machine, before a byte could leave it.
+
+    It is the root's, so it holds in every directory and under every marker. The fake voice stands in
+    under the shipped voice's name, so a test that forgot it would build the real adapter, and this is
+    what stops that test reaching the service with whatever key it holds. No suite fetches in this
+    process: one that needs a tool fails with the command that fetches it, and a subprocess the e2e
+    suite starts carries a guard of its own.
+    """
+    resolve = socket.getaddrinfo
+
+    def guarded(host: str | bytes | None, *args: int, **kwargs: int) -> list[Any]:
+        if host not in LOOPBACK:
+            raise AssertionError(f"a test tried to reach {host!r}, which is not this machine")
+        return resolve(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded)
 
 
 @pytest.fixture(autouse=True)

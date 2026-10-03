@@ -44,15 +44,15 @@ entirely, which is a judgement about a film that did get made.
 
 | Code | Exit | Meaning |
 |---|---|---|
-| `INPUT` | 3 | A file the author writes is missing, unreadable or malformed. |
-| `NOT_BUILT` | 3 | A file a stage needs was never built. |
-| `PROVIDER` | 3 | The voice could not be reached, refused the request, or failed it. |
-| `TOOL` | 3 | ffmpeg or Chromium is missing, or one of them failed. |
-| `LOCKED` | 3 | Another writer holds this project's build directory. |
-| `APPROVAL` | 2 | A spend needed an approval that no flag and no terminal gave. |
-| `CANCELLED` | 130 | The caller stopped the run. |
-| `USAGE` | 2 | The command line was refused, and a retry as written fails again. |
-| `INTERNAL` | 3 | A bug in DeckTalk, with a traceback under -v. |
+| [`INPUT`](/reference/errors/INPUT) | 3 | A file the author writes is missing, unreadable or malformed. |
+| [`NOT_BUILT`](/reference/errors/NOT_BUILT) | 3 | A file a stage needs was never built. |
+| [`PROVIDER`](/reference/errors/PROVIDER) | 3 | The voice could not be reached, refused the request, or failed it. |
+| [`TOOL`](/reference/errors/TOOL) | 3 | ffmpeg or Chromium is missing, or one of them failed. |
+| [`LOCKED`](/reference/errors/LOCKED) | 3 | Another writer holds this project's build directory. |
+| [`APPROVAL`](/reference/errors/APPROVAL) | 2 | A spend needed an approval that no flag and no terminal gave. |
+| [`CANCELLED`](/reference/errors/CANCELLED) | 130 | The caller stopped the run. |
+| [`USAGE`](/reference/errors/USAGE) | 2 | The command line was refused, and a retry as written fails again. |
+| [`INTERNAL`](/reference/errors/INTERNAL) | 3 | A bug in DeckTalk, with a traceback under -v. |
 
 ## Finding codes
 
@@ -61,61 +61,61 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 
 | Code | Severity | Meaning |
 |---|---|---|
-| `PAGE_UNKNOWN_ATTR` | error | An element carries a data attribute the contract does not declare, so nothing reads it. |
-| `PAGE_BAD_VALUE` | error | An attribute's value is outside the range the contract publishes for it. |
-| `PAGE_MOMENT_UNKNOWN` | error | An element outside every slide template names a moment, so no slide owns its cue and it never plays. |
-| `PAGE_MOMENT_ORDER` | error | An element's exit is declared at or before its own entrance, so the exit never plays. |
-| `PAGE_CUE_UNKNOWN` | error | A cue fired that no reveal, no handler and no slide in the deck declares, so nothing answered it. |
-| `PAGE_NO_OWNER` | error | A cue the scene plays is owned by none of its slides, so nothing is mounted for it. |
-| `PAGE_SCENE_EMPTY` | error | A scene holds no slide template, so its section has no slide to show. |
-| `PAGE_SLIDE_NO_ID` | error | A slide template carries no id, so no cue and no section can name it. |
-| `PAGE_SLIDE_DOUBLED` | error | Two slide templates carry the same id, so a cue that names it is ambiguous. |
-| `PAGE_SLIDE_UNUSED` | error | No section plays this slide, so nothing on it reaches the film. |
-| `PAGE_TEMPLATE_IGNORED` | error | A template nested inside a slide declares no slide of its own, so nothing ever mounts it. |
-| `PAGE_WORDS_NOT_FOUND` | error | An element syncs to words the transcript does not hold, so word timing cannot start. |
-| `PAGE_KATEX_MISSING` | error | The page asks for KaTeX and the library is not loaded, so every formula shows its source. |
-| `PAGE_KATEX_ERROR` | error | KaTeX refused a formula, so the element shows the readable text the author wrote in its place. |
-| `PAGE_FREEZE_CUE_UNKNOWN` | error | A freeze was asked for a cue the slide does not declare, so no frame could be made. |
-| `PAGE_RENDER_THREW` | error | A slide's render threw, so the slide is drawn without what the render would have written. |
-| `PAGE_ENTER_THREW` | error | A slide's enter threw, so its opening moment never ran. |
-| `PAGE_SLIDE_HANDLER_THREW` | error | A slide's own moment handler threw, so that moment did not play. |
-| `PAGE_HANDLER_THREW` | error | A moment handler threw, so the change it was to make never happened. |
-| `PAGE_WAIT_REJECTED` | error | A wait the page declared was rejected, so the runtime carried on without what it waited for. |
-| `PAGE_WAIT_UNSETTLED` | error | A wait the page declared never settled inside its budget, so the runtime carried on without it. |
-| `PAGE_CLASS_UNDESCRIBED` | error | An element changes class with no description, so the transcript cannot say what changed. |
-| `PAGE_CLASS_NOT_REDUCED` | error | A class change declares no reduced form, so a reduced render would animate anyway. |
-| `PAGE_SWAP_AMBIGUOUS` | error | A swap finds no element or several elements leaving at its cue, so it cannot tell which one it replaces. |
-| `PAGE_PREVIEW_AMBIGUOUS` | error | Two sections name one scene, so a preview cannot choose whose cue times to play. |
-| `PAGE_APPEAR_TOO_LONG` | error | A line shown with data-words=appear holds more words than one cue can carry one at a time. |
-| `PAGE_STAGGER_EMPTY` | error | An element staggers its children and has none, so the stagger plays nothing. |
-| `PAGE_SPOTLIGHT_EMPTY` | error | A spotlight container has no child with a cue, so nothing comes to the front. |
-| `PAGE_MOTION_OVERRUN` | error | A motion span runs past the measurable ceiling, so the cue it carries cannot be verified. |
-| `PAGE_STAGGER_OVERRUN` | error | A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact. |
-| `PAGE_THIN_DRAW` | warning | A frozen slide draws less of the picture than a change must cross to be seen. |
-| `PAGE_NO_DESCRIPTION` | error | An element changes the picture and describes nothing, so the transcript loses the change. |
-| `PAGE_SWAP_APART` | warning | A swap's two halves land far enough apart that a viewer sees the gap between them. |
-| `PAGE_CDN_ASSET` | error | The page loads an asset from a network origin, so the film depends on somebody else's server. |
-| `RECORD_STALLED` | error | The picture held still for longer than a recorded section ever should. |
-| `RECORD_BLACK` | error | A recorded frame is black, so the film shows nothing at that moment. |
-| `RECORD_TRUNCATED` | error | A recording stopped before its section's clock ran out, so the film is short of picture. |
-| `CUE_MISSING` | error | The page declares a moment that cues.json does not list, so nothing gives it a second. |
-| `CUE_UNKNOWN` | error | cues.json lists a cue no page declares, so nothing plays it. |
-| `CUE_UNRESOLVED` | error | The cue's phrase is not spoken in its section, so there is no second to place it at. |
-| `CUE_STALE` | error | The cue times on disk were placed from a different cues.json than the project's, so the film is judged against moments nobody asked for until the project is built again. |
-| `CUE_OFF` | error | The change lands further from its word than the offset limit allows. |
-| `CUE_NO_ONSET` | warning | The cue resolved with no measured onset, so its second is the section's start and not its word's. |
-| `CUE_NO_CHANGE` | error | Nothing in the picture changed at the cue's second, so the reveal never happened. |
-| `CUE_THIN_CHANGE` | warning | Less of the picture changed at the cue than a visible reveal must cross. |
-| `CUE_OVERLAP` | warning | Two cues resolve close enough together that a viewer cannot tell them apart. |
-| `SCRIPT_UNFINISHED` | error | The script still holds an unfilled blank such as [NUMBER], so a voiced run would read it out. |
-| `SCRIPT_SPOKEN_SYMBOL` | warning | The script holds a symbol the voice reads as its name rather than as the thing it means. |
-| `SCRIPT_PAUSE_DROPPED` | error | The script asks for a timed pause the voice's model does not render, so a voiced run would drop it. |
-| `TAKE_MISSING` | warning | A section's take is not on disk, so a placeholder plays in its place until its voice makes one. |
-| `CUT_SPEECH` | error | Speech is still sounding at a section cut, so the film slices a word in two. |
-| `CUT_POP` | error | The picture steps at a section cut, so the film pops on the seam. |
-| `MIX_LOUDNESS` | warning | The mixed film misses the loudness it was mastered to. |
-| `SOUND_MISSING` | warning | A sound the `[score]` table declares has not been bought, so silence plays where it would until a run with --spend buys it. |
-| `FILE_MISSING` | error | A file the project names is not on disk. |
+| [`PAGE_UNKNOWN_ATTR`](/reference/findings/PAGE_UNKNOWN_ATTR) | error | An element carries a data attribute the contract does not declare, so nothing reads it. |
+| [`PAGE_BAD_VALUE`](/reference/findings/PAGE_BAD_VALUE) | error | An attribute's value is outside the range the contract publishes for it. |
+| [`PAGE_MOMENT_UNKNOWN`](/reference/findings/PAGE_MOMENT_UNKNOWN) | error | An element outside every slide template names a moment, so no slide owns its cue and it never plays. |
+| [`PAGE_MOMENT_ORDER`](/reference/findings/PAGE_MOMENT_ORDER) | error | An element's exit is declared at or before its own entrance, so the exit never plays. |
+| [`PAGE_CUE_UNKNOWN`](/reference/findings/PAGE_CUE_UNKNOWN) | error | A cue fired that no reveal, no handler and no slide in the deck declares, so nothing answered it. |
+| [`PAGE_NO_OWNER`](/reference/findings/PAGE_NO_OWNER) | error | A cue the scene plays is owned by none of its slides, so nothing is mounted for it. |
+| [`PAGE_SCENE_EMPTY`](/reference/findings/PAGE_SCENE_EMPTY) | error | A scene holds no slide template, so its section has no slide to show. |
+| [`PAGE_SLIDE_NO_ID`](/reference/findings/PAGE_SLIDE_NO_ID) | error | A slide template carries no id, so no cue and no section can name it. |
+| [`PAGE_SLIDE_DOUBLED`](/reference/findings/PAGE_SLIDE_DOUBLED) | error | Two slide templates carry the same id, so a cue that names it is ambiguous. |
+| [`PAGE_SLIDE_UNUSED`](/reference/findings/PAGE_SLIDE_UNUSED) | error | No section plays this slide, so nothing on it reaches the film. |
+| [`PAGE_TEMPLATE_IGNORED`](/reference/findings/PAGE_TEMPLATE_IGNORED) | error | A template nested inside a slide declares no slide of its own, so nothing ever mounts it. |
+| [`PAGE_WORDS_NOT_FOUND`](/reference/findings/PAGE_WORDS_NOT_FOUND) | error | An element syncs to words the transcript does not hold, so word timing cannot start. |
+| [`PAGE_KATEX_MISSING`](/reference/findings/PAGE_KATEX_MISSING) | error | The page asks for KaTeX and the library is not loaded, so every formula shows its source. |
+| [`PAGE_KATEX_ERROR`](/reference/findings/PAGE_KATEX_ERROR) | error | KaTeX refused a formula, so the element shows the readable text the author wrote in its place. |
+| [`PAGE_FREEZE_CUE_UNKNOWN`](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN) | error | A freeze was asked for a cue the slide does not declare, so no frame could be made. |
+| [`PAGE_RENDER_THREW`](/reference/findings/PAGE_RENDER_THREW) | error | A slide's render threw, so the slide is drawn without what the render would have written. |
+| [`PAGE_ENTER_THREW`](/reference/findings/PAGE_ENTER_THREW) | error | A slide's enter threw, so its opening moment never ran. |
+| [`PAGE_SLIDE_HANDLER_THREW`](/reference/findings/PAGE_SLIDE_HANDLER_THREW) | error | A slide's own moment handler threw, so that moment did not play. |
+| [`PAGE_HANDLER_THREW`](/reference/findings/PAGE_HANDLER_THREW) | error | A moment handler threw, so the change it was to make never happened. |
+| [`PAGE_WAIT_REJECTED`](/reference/findings/PAGE_WAIT_REJECTED) | error | A wait the page declared was rejected, so the runtime carried on without what it waited for. |
+| [`PAGE_WAIT_UNSETTLED`](/reference/findings/PAGE_WAIT_UNSETTLED) | error | A wait the page declared never settled inside its budget, so the runtime carried on without it. |
+| [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED) | error | An element changes class with no description, so the transcript cannot say what changed. |
+| [`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED) | error | A class change declares no reduced form, so a reduced render would animate anyway. |
+| [`PAGE_SWAP_AMBIGUOUS`](/reference/findings/PAGE_SWAP_AMBIGUOUS) | error | A swap finds no element or several elements leaving at its cue, so it cannot tell which one it replaces. |
+| [`PAGE_PREVIEW_AMBIGUOUS`](/reference/findings/PAGE_PREVIEW_AMBIGUOUS) | error | Two sections name one scene, so a preview cannot choose whose cue times to play. |
+| [`PAGE_APPEAR_TOO_LONG`](/reference/findings/PAGE_APPEAR_TOO_LONG) | error | A line shown with data-words=appear holds more words than one cue can carry one at a time. |
+| [`PAGE_STAGGER_EMPTY`](/reference/findings/PAGE_STAGGER_EMPTY) | error | An element staggers its children and has none, so the stagger plays nothing. |
+| [`PAGE_SPOTLIGHT_EMPTY`](/reference/findings/PAGE_SPOTLIGHT_EMPTY) | error | A spotlight container has no child with a cue, so nothing comes to the front. |
+| [`PAGE_MOTION_OVERRUN`](/reference/findings/PAGE_MOTION_OVERRUN) | error | A motion span runs past the measurable ceiling, so the cue it carries cannot be verified. |
+| [`PAGE_STAGGER_OVERRUN`](/reference/findings/PAGE_STAGGER_OVERRUN) | error | A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact. |
+| [`PAGE_THIN_DRAW`](/reference/findings/PAGE_THIN_DRAW) | warning | A frozen slide draws less of the picture than a change must cross to be seen. |
+| [`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION) | error | An element changes the picture and describes nothing, so the transcript loses the change. |
+| [`PAGE_SWAP_APART`](/reference/findings/PAGE_SWAP_APART) | warning | A swap's two halves land far enough apart that a viewer sees the gap between them. |
+| [`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET) | error | The page loads an asset from a network origin, so the film depends on somebody else's server. |
+| [`RECORD_STALLED`](/reference/findings/RECORD_STALLED) | error | The picture held still for longer than a recorded section ever should. |
+| [`RECORD_BLACK`](/reference/findings/RECORD_BLACK) | error | A recorded frame is black, so the film shows nothing at that moment. |
+| [`RECORD_TRUNCATED`](/reference/findings/RECORD_TRUNCATED) | error | A recording stopped before its section's clock ran out, so the film is short of picture. |
+| [`CUE_MISSING`](/reference/findings/CUE_MISSING) | error | The page declares a moment that cues.json does not list, so nothing gives it a second. |
+| [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN) | error | cues.json lists a cue no page declares, so nothing plays it. |
+| [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED) | error | The cue's phrase is not spoken in its section, so there is no second to place it at. |
+| [`CUE_STALE`](/reference/findings/CUE_STALE) | error | The cue times on disk were placed from a different cues.json than the project's, so the film is judged against moments nobody asked for until the project is built again. |
+| [`CUE_OFF`](/reference/findings/CUE_OFF) | error | The change lands further from its word than the offset limit allows. |
+| [`CUE_NO_ONSET`](/reference/findings/CUE_NO_ONSET) | warning | The cue resolved with no measured onset, so its second is the section's start and not its word's. |
+| [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE) | error | Nothing in the picture changed at the cue's second, so the reveal never happened. |
+| [`CUE_THIN_CHANGE`](/reference/findings/CUE_THIN_CHANGE) | warning | Less of the picture changed at the cue than a visible reveal must cross. |
+| [`CUE_OVERLAP`](/reference/findings/CUE_OVERLAP) | warning | Two cues resolve close enough together that a viewer cannot tell them apart. |
+| [`SCRIPT_UNFINISHED`](/reference/findings/SCRIPT_UNFINISHED) | error | The script still holds an unfilled blank such as [NUMBER], so a voiced run would read it out. |
+| [`SCRIPT_SPOKEN_SYMBOL`](/reference/findings/SCRIPT_SPOKEN_SYMBOL) | warning | The script holds a symbol the voice reads as its name rather than as the thing it means. |
+| [`SCRIPT_PAUSE_DROPPED`](/reference/findings/SCRIPT_PAUSE_DROPPED) | error | The script asks for a timed pause the voice's model does not render, so a voiced run would drop it. |
+| [`TAKE_MISSING`](/reference/findings/TAKE_MISSING) | warning | A section's take is not on disk, so a placeholder plays in its place until its voice makes one. |
+| [`CUT_SPEECH`](/reference/findings/CUT_SPEECH) | error | Speech is still sounding at a section cut, so the film slices a word in two. |
+| [`CUT_POP`](/reference/findings/CUT_POP) | error | The picture steps at a section cut, so the film pops on the seam. |
+| [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) | warning | The mixed film misses the loudness it was mastered to. |
+| [`SOUND_MISSING`](/reference/findings/SOUND_MISSING) | warning | A sound the `[score]` table declares has not been bought, so silence plays where it would until a run with --spend buys it. |
+| [`FILE_MISSING`](/reference/findings/FILE_MISSING) | error | A file the project names is not on disk. |
 
 ## Commands
 

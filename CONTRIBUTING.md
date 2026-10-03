@@ -59,7 +59,7 @@ group's log opens with its name and the one local command that reproduces it.
 |---|---|---|---|---|
 | `lint` | `uv lock --check`, and 7 more | npm | Linux | pr, main |
 | `unit` | `uv run pytest -q -rs -n auto --ignore=tests/contract/test_prose.py --ignore=tests/contract/test_vocabulary.py --ignore=tests/contract/test_numbers.py --cov --cov-report= --junitxml=tests/out/junit/unit.xml` | nothing beyond uv | Linux | pr, main |
-| `floors` | `sh -euc <shell script>` | nothing beyond uv | Linux | pr, main |
+| `floors` | `sh -euc <shell script> sh 3.12` | nothing beyond uv | Linux | pr, main |
 | `node` | `node --test tests/decktalk/runtime/src/*.test.ts tests/scripts/*.test.mjs` | npm | Linux | pr, main |
 | `browser` | `uv run pytest -q -rs -m browser --cov --cov-report= --junitxml=tests/out/junit/browser.xml` | chromium | Linux | pr, main |
 | `media` | `uv run pytest -q -rs -m media --cov --cov-report= --junitxml=tests/out/junit/media.xml` | ffmpeg | Linux | pr, main |

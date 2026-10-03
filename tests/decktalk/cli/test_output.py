@@ -148,7 +148,7 @@ Found 1 finding, 1 error.
 Found 1 finding, 1 error.
 """,
         "ConfigSetResult": """\
-build/file15 would set key11 = value12
+build/file15 set key11 = value12
 The environment layer still decides it, at effective16.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
@@ -210,7 +210,7 @@ Found 1 finding, 1 error.
 
  Section   File           Seconds   Frames   Kept
  ────────────────────────────────────────────────
- 12        build/file14   15.2      16       yes
+ 12        build/file14   15.2      16       no
 
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
@@ -235,7 +235,7 @@ Found 1 finding, 1 error.
 
  Section   Key     Plays      Voiced   Recorded   Assembled   Stale
  ──────────────────────────────────────────────────────────────────
- 14        key15   source17   yes      yes        yes         yes
+ 14        key15   source17   no       yes        no          yes
 
 Film   build/film18, 0:19 long
 Live   run20 writing build/events21

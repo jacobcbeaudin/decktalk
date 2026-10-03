@@ -353,13 +353,7 @@ def section_targets(takes: Takes, fps: int) -> dict[int, float]:
     Each length is the difference between two rounded cumulative boundaries rather than one rounded
     length, so the sections add up to the narration exactly and the picture never drifts off it.
     """
-    targets: dict[int, float] = {}
-    for take in takes.sections:
-        start, end = takes.start(take.section), takes.end(take.section)
-        if start is None or end is None:
-            continue
-        targets[take.section] = (round(end * fps) - round(start * fps)) / fps
-    return targets
+    return {section: (round(at.end * fps) - round(at.start * fps)) / fps for section, at in takes.placed.items()}
 
 
 def vfades(total: float, fade_in: bool, fade_out: bool, dip: float) -> str:

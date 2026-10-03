@@ -75,7 +75,7 @@ takes are the only expensive thing in the tree, and caching them by content is w
 edit cheap.
 
 The same rule reaches past the takes. Several page sections record at once, each in its own
-Chromium, as many as the machine's CPU allows. A section cut is kept while the key of its encode,
+Chromium, as many as the machine's CPU allows. A section video is kept while the key of its encode,
 which is the whole argument list and the content of every file it read, is unchanged. A frozen frame
 is kept under a key of everything that draws it, so `check`, `storyboard` and the poster draw each
 state of a page once between them. And a build that finds nothing moved keeps `assemble` and
@@ -99,9 +99,8 @@ The layers are wide enough to be ranked among themselves, so one table gives eve
 one rank and one comparison enforces both the layer and the order inside it. The walk reads the AST
 rather than the imports Python happens to run, so an import inside a function body counts exactly as
 much as one at the top of a file, and a target that no longer exists fails rather than passing by
-being unrankable. `project` ranks above `stages` because it calls a stage by name through
-`import_module`, which is a string no AST walk can see, and declaring the rank the code really has is
-what keeps that one edge honest.
+being unrankable. `project` ranks above `stages` because it calls the stages, through the typed table in
+`stages/table.py` and plain imports inside its methods, so `stages` may never import `project` back.
 
 `scripts/build_contributing.py` writes the module tree in `CONTRIBUTING.md` from the same table, so
 the documentation of the shape and the enforcement of it come from one source.
@@ -147,7 +146,7 @@ rather than on a project, because installing a toolchain and reporting on a mach
 and a project-only stream would leave `--events` silent on the two commands that download two
 hundred megabytes. A project's `events` is that stream filtered to the runs the project opened.
 
-There are twelve event names and the discriminator is `event`. The library mints `event`, `time`,
+The discriminator of an event is its name, `event`. The library mints `event`, `time`,
 `seq` and `run` onto every line, and `run.start` carries the path the lines are being appended to, so
 the stream and the file can never disagree. Kept, skip and fail are not event names: `stage.done`
 and `section.done` carry an `outcome`, because four names for one moment forces four branches where
@@ -158,14 +157,15 @@ lines on stderr as they happen, and every run appends `build/events/<run>.jsonl`
 
 ## The settings
 
-`settings.py` publishes every setting with its default, its safe range, its unit, its scope, its nature,
+The `settings` package publishes every setting with its default, its safe range, its unit, its scope, its nature,
 the judgements it moves and its environment name. The published range is the safe range and the
 loader refuses a value outside it, naming the file and the line that wrote it, because a published
-bound you can cross into nonsense is worse than no bound at all. Five layers can set a key and each
-overrides the ones before it, and `decktalk config explain KEY` prints the value in force and
-the layer it comes from.
+bound you can cross into nonsense is worse than no bound at all. A key has one of two scopes. A
+project key is set by its default, `decktalk.toml`, the environment and `--set`, and a machine key by
+its default, the machine file, the environment and `--set`. Each overrides the ones before it, and
+`decktalk config explain KEY` prints the value in force and the layer it comes from.
 
-No flag duplicates a settings key. `--set table.key=value` is the fifth layer, it is repeatable, it
+No flag duplicates a settings key. `--set table.key=value` is the last layer, it is repeatable, it
 writes nothing, it is validated by the same loader with the same refusal, and the loader routes each
 pair to its own scope, so the command line never has to know which layer a key belongs to.
 

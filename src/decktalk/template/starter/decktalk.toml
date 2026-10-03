@@ -52,7 +52,7 @@ target_lufs = -16
 true_peak_max_dbtp = -1.5
 
 # [output]
-# timestamped_copy = true   # keep the previous cut, as a second mp4 named with the date and time
+# timestamped_copy = true   # keep the previous film, as a second mp4 named with the date and time
 
 # Every other value is a settings key. Run `decktalk config list` to see them with their layers, and
 # `decktalk config explain video.crf` for one of them.

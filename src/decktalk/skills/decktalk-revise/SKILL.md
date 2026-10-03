@@ -1,6 +1,6 @@
 ---
 name: decktalk-revise
-description: Update an existing DeckTalk film after a product, a library, a number or a fact changed, re-voicing as few sections as possible. Use when someone says a demo, tutorial, explainer or lesson is out of date, asks for this week's update, or names a release that changed what the film claims. It covers listing the stale claims, mapping each change to the sentences, cues, slides and images it touches, proving the scope before anything is spent, keeping the cut that was already approved, and writing the change note. Do not use it for a first film, which belongs to decktalk-script.
+description: Update an existing DeckTalk film after a product, a library, a number or a fact changed, re-voicing as few sections as possible. Use when someone says a demo, tutorial, explainer or lesson is out of date, asks for this week's update, or names a release that changed what the film claims. It covers listing the stale claims, mapping each change to the sentences, cues, slides and images it touches, proving the scope before anything is spent, keeping the film that was already approved, and writing the change note. Do not use it for a first film, which belongs to decktalk-script.
 compatibility: This is judgement about scope and cost. Run `decktalk status` for where the project stands and `decktalk --help` for the commands.
 metadata:
   ends_with: The fewest edits, a rebuild of the changed sections alone, and a note saying what changed and what it cost.
@@ -16,7 +16,7 @@ changed sections and a written record of what changed and what it cost. Read
 ## The craft
 
 1. **Read the project as it stands.** Which sections exist, which recordings no longer match and
-   why, whether the takes are voiced or placeholders, and which cut is already built.
+   why, whether the takes are voiced or placeholders, and which film is already built.
 2. **Collect what changed.** Ask for the release notes or the list of changes, and for the date
    beyond which a claim counts as stale. List every changed name, number, price, feature and screen.
 3. **List the stale claims.** Every ledger row older than that date, and every row a change touches.
@@ -31,7 +31,7 @@ changed sections and a written record of what changed and what it cost. Read
 7. **Prove the scope before anything is spent.** Every section that would be voiced should be a
    section you touched. When a section you did not touch would be voiced, stop and find out why:
    its text changed by accident, a voice setting changed, or this checkout holds no takes directory.
-8. **Keep the previous cut.** Ask for a dated second file before rebuilding, so the cut the author
+8. **Keep the previous film.** Ask for a dated second file before rebuilding, so the film the author
    already approved survives.
 9. **Put the price in front of the author and wait**, exactly as a first build does.
 10. **Verify, then write the change note.** The sections changed, the claims updated, the images

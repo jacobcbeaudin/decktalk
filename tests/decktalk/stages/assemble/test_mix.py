@@ -26,6 +26,7 @@ from decktalk.stages.assemble.mix import (
     MixInput,
     MixPlan,
     delay,
+    marker_times,
     max_expr,
     mix_input_args,
     mix_soundtrack,
@@ -33,7 +34,6 @@ from decktalk.stages.assemble.mix import (
     ramp_expr,
     ramp_groups,
     ramps_expr,
-    resolve_marker_time,
     speech_spans,
 )
 from support.media_cards import write_tone_with_tail
@@ -329,10 +329,13 @@ def test_a_marker_resolves_against_the_words_of_its_own_section(tmp_path):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta gamma"))})
     starts = {1: 4.0}
-    assert resolve_marker_time(Marker(name="m", section=1, phrase="$start"), starts, takes, inputs) == 4.0
-    assert resolve_marker_time(Marker(name="m", section=1, phrase="beta"), starts, takes, inputs) == 4.4
-    assert resolve_marker_time(Marker(name="m", section=1, phrase="nowhere"), starts, takes, inputs) is None
-    assert resolve_marker_time(Marker(name="m", section=9, phrase="$start"), starts, takes, inputs) is None
+    markers = [
+        Marker(name="m", section=1, phrase="$start"),
+        Marker(name="m", section=1, phrase="beta"),
+        Marker(name="m", section=1, phrase="nowhere"),
+        Marker(name="m", section=9, phrase="$start"),
+    ]
+    assert marker_times(markers, starts, takes, inputs) == [4.0, 4.4, None, None]
 
 
 def test_the_input_arguments_follow_the_order_the_graph_indexes_them():

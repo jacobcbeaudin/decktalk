@@ -174,6 +174,7 @@ decktalk config set record.concurrency 2 --scope machine
 A `decktalk.toml` that sets any of the four is refused by name, because a project travels and a
 limit that suits one machine is wrong on the next:
 
+{/* sample: decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3 */}
 ```text
 error[INPUT]: decktalk.toml: 'record.concurrency' is machine-scoped, so it belongs in this machine's file, where the machine that runs the build states what it runs.
   hint: Remove it from decktalk.toml and run `decktalk config set record.concurrency <value> --scope machine`.
@@ -323,12 +324,13 @@ together, the same total its result reports.
 decktalk check --json
 ```
 
+{/* sample: decktalk check --json, on a fresh decktalk init my-lesson, the cost object */}
 ```json
 {
   "state": "estimate",
   "sections": [1, 2, 3],
   "characters": 476,
-  "seconds": 31.2,
+  "seconds": 39.9,
   "dollars": 0.14,
   "ceiling_dollars": 0.14,
   "billing": "per_character",
@@ -352,7 +354,7 @@ decktalk check --json
 - `price_key` is the key that states the rate, or null for a voice with no rate to state.
 - `averaged` is true when the price is several rates together, such as a score's music and
   effects, so the rate is their average and `price_key` names the one least surely stated.
-- `price_layer` names which of the five settings layers set the rate, where `default` means nobody did.
+- `price_layer` names the settings layer that set the rate, where `default` means nobody did.
 
 `dollars` and `ceiling_dollars` differ when a section's cache cannot be checked. A take is named by
 its text and its voice, so with no `[voice] id` named no take on disk can be matched to the

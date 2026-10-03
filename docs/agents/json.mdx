@@ -56,10 +56,10 @@ document about schemas is unreadable. Every other command under `--json` prints 
 ```console
 decktalk schema finding     # the Finding model, with its fixes and its codes
 decktalk schema error       # the error object
-decktalk schema event       # the thirteen event lines
+decktalk schema event       # every event line
 decktalk schema settings    # every setting, its default, its range, its unit and its hazard
-decktalk schema page        # the twenty-four page attributes
-decktalk schema cues     # the shape of cues.json
+decktalk schema page        # every page attribute
+decktalk schema cues        # the shape of cues.json
 ```
 
 ## A result that read a project
@@ -476,8 +476,8 @@ and `section.done`. `kept` is a stage the run planned and did not repeat, becaus
 changed since it last ran, `skipped` is a stage the run did not plan or did not reach, and `stopped`
 is a run the caller cancelled or interrupted. One field
 replaces four event names, so a caller reads one field rather than branching four ways to learn the
-same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`,
-and `level` on a log line is `debug`, `info`, `warning` or `error`.
+same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`, because narrate
+counts takes, record sections, score assets, assemble encoding passes and verify probes, and `level` on a log line is `debug`, `info`, `warning` or `error`.
 
 `run.done` carries `error` in the shape a result's `error` takes when the run stopped or failed, and
 null when it finished, so the events file of a failed run says why. A `run.log` line carries `source`,
@@ -488,13 +488,9 @@ sentence, so a reader filters on a value rather than parsing English.
 A `finding.raised` line carries the judgement in the same shape the result will carry, so an agent that
 watches the stream can react before the call returns.
 
-A `cost.priced` line carries `cost`. Its `state` is `estimate` before the run buys anything and
-`charged` after, along with `sections`, `characters`, `seconds`, `dollars`, `ceiling_dollars`,
-`billing`, `dollars_per_1000_characters`, `dollars_per_minute`, `price_key` and `price_layer`.
-`billing` is how the voice declares it bills, `per_character`, `per_second`, `free` or `undeclared`,
-and says which of the two rates the price was worked out at. Both rates are in US dollars, and a
-sound's rate is per minute of audio, the unit its `dollars_per_minute` setting is typed in. A build's
-total is `mixed` when it adds characters of speech to seconds of sound, and then carries both rates.
+A `cost.priced` line carries `cost`, the object a result carries, whose `state` is `estimate` before
+the run buys anything and `charged` after.
+[How the price is worked out](/requirements#how-the-price-is-worked-out) gives each of its fields.
 
 `build/events/` keeps the most recent `output.events_keep_runs` runs and deletes the oldest, and
 that key defaults to 20. Run `decktalk config explain output.events_keep_runs` for its range. One

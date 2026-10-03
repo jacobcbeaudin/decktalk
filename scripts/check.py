@@ -144,8 +144,6 @@ alone. A tool fetched without a version is a different tool on the day it releas
 that changes its mind on its own. Ruff is pinned by the lockfile and Biome by `package.json`.
 """
 
-PYPI_DECKTALK = "https://pypi.org/pypi/decktalk/json"
-
 RUNTIME_TESTS = "tests/decktalk/runtime/src/*.test.ts"
 """Every test of the runtime, named as a pattern because Node 22 runs a directory rather than reading it.
 
@@ -158,111 +156,22 @@ SCRIPT_TESTS = "tests/scripts/*.test.mjs"
 """Every test of a Node script under `scripts/`, named the same way and run beside the runtime's."""
 
 
-# What `install.sh` has to survive: an image with nothing but curl on it. The installer's own
-# promise is that a machine that has never had DeckTalk ends with `decktalk --version` printing one,
-# so the whole check is that line, run in a shell the installer did not write.
-INSTALL_IN_A_BARE_IMAGE = """
-    if command -v apt-get >/dev/null 2>&1; then
-      apt-get update -qq && apt-get install -y -qq curl >/dev/null
-    else
-      dnf install -y -q curl >/dev/null
-    fi
-    sh /install.sh
-    PATH="$HOME/.local/bin:$PATH"
-    export PATH
-    decktalk --version
-"""
-
-# Playwright publishes no musllinux wheels, so the resolver fails on musl whatever the installer does.
-# The check is that the installer says so and stops before installing anything, not that it fails late.
-REFUSE_MUSL = """
-    apk add --no-cache curl >/dev/null
-    set +e
-    out="$(sh /install.sh 2>&1)"
-    code=$?
-    set -e
-    printf "%s\\n" "$out"
-    if [ "$code" -ne 1 ]; then
-      echo "expected exit 1 on musl, got $code"
-      exit 1
-    fi
-    case "$out" in
-    *musl*glibc*) ;;
-    *) echo "the refusal never says musl and glibc, so it teaches nothing"; exit 1 ;;
-    esac
-    if command -v uv >/dev/null 2>&1; then
-      echo "it installed uv before refusing"
-      exit 1
-    fi
-"""
-
-# uv's own image carries uv and no curl, which also proves the installer needs no downloader of its
-# own once uv is there.
-KEEP_THE_UV_THAT_IS_ALREADY_THERE = """
-    out="$(sh /install.sh)"
-    printf "%s\\n" "$out"
-    case "$out" in
-    *"is already installed"*) ;;
-    *) echo "it did not recognise the uv that was already on PATH"; exit 1 ;;
-    esac
-    PATH="$HOME/.local/bin:$PATH"
-    export PATH
-    decktalk --version
-"""
-
-# The release before the current one. Pinning to the latest version would pass on an installer that
-# dropped the pin on the floor and installed the latest anyway.
-INSTALL_THE_PINNED_VERSION = f"""
-    apt-get update -qq && apt-get install -y -qq curl jq >/dev/null
-    DECKTALK_VERSION="$(curl -LsSf {PYPI_DECKTALK} | jq -r '.releases | keys_unsorted[]' | sort -V | tail -2 | head -1)"
-    export DECKTALK_VERSION
-    if [ -z "$DECKTALK_VERSION" ]; then
-      echo "no released version to pin to" >&2
-      exit 1
-    fi
-    sh /install.sh
-    PATH="$HOME/.local/bin:$PATH"
-    export PATH
-    # 0.4 prints `decktalk 0.4.1` and 0.5 prints `0.5.0rc2`, and the pin is whichever release is
-    # second newest, so the name is dropped before the two versions are compared.
-    got="$(decktalk --version)"
-    got="${{got#decktalk }}"
-    if [ "$got" != "$DECKTALK_VERSION" ]; then
-      echo "pinned $DECKTALK_VERSION, installed $got"
-      exit 1
-    fi
-"""
+SHELL = ROOT / "scripts" / "shell"
+"""The shell programs a group runs, kept as files so shellcheck reads them as it reads `install.sh`."""
 
 
-# The lockfile holds every dependency at its newest, so every other row passes whatever a floor in
-# pyproject.toml says. This one installs the package fresh with each direct dependency at the lowest
-# version its floor allows, on the lowest Python, and runs the command line: the version, a project
-# written and judged without a browser, the whole schema, and a refused flag, which reaches the
-# parser's own refusal through the classes the command line subclasses and catches.
-RUN_AT_THE_FLOORS = f"""
-    scratch="$(mktemp -d)"
-    trap 'rm -rf "$scratch"' EXIT
-    uv venv --quiet --python {FLOOR} "$scratch/venv"
-    uv pip install --python "$scratch/venv" --resolution lowest-direct .
-    decktalk="$scratch/venv/bin/decktalk"
-    "$decktalk" --version
-    "$decktalk" init "$scratch/project" --defaults --no-input
-    "$decktalk" check --no-pages -p "$scratch/project"
-    "$decktalk" schema >/dev/null
-    set +e
-    "$decktalk" check --no-such-flag -p "$scratch/project"
-    code=$?
-    set -e
-    if [ "$code" -ne 2 ]; then
-      echo "expected exit 2 for a flag the command does not take, got $code"
-      exit 1
-    fi
-"""
+SHELLCHECKED = tuple(sorted(path.relative_to(ROOT).as_posix() for path in SHELL.glob("*.sh")))
+"""Every program under `scripts/shell/`, which the lint row holds to POSIX sh beside the installer."""
 
 
-def in_image(image: str, script: str) -> tuple[str, ...]:
-    """`script` run by POSIX sh inside `image`, with `install.sh` mounted read only and nothing else."""
-    return ("docker", "run", "--rm", "-v", f"{ROOT / 'install.sh'}:/install.sh:ro", image, "sh", "-euc", script)
+def program(name: str) -> str:
+    """The text of one shell program under `scripts/shell/`, which a group hands to `sh -euc`."""
+    return (SHELL / f"{name}.sh").read_text(encoding="utf-8")
+
+
+def in_image(image: str, name: str) -> tuple[str, ...]:
+    """The program `name` run by POSIX sh inside `image`, with `install.sh` mounted read only and nothing else."""
+    return ("docker", "run", "--rm", "-v", f"{ROOT / 'install.sh'}:/install.sh:ro", image, "sh", "-euc", program(name))
 
 
 NPM_CI = ("npm", "ci")
@@ -565,7 +474,16 @@ GROUPS: tuple[Group, ...] = (
             (*UV, "ruff", "format", "--check", "src", "tests", "scripts"),
             (*UV, "ty", "check", "src", "tests", "scripts"),
             ("npm", "exec", "--no", "--", "biome", "ci", "."),
-            ("uvx", "--from", f"shellcheck-py=={TOOLS['shellcheck']}", "shellcheck", "-s", "sh", "install.sh"),
+            (
+                "uvx",
+                "--from",
+                f"shellcheck-py=={TOOLS['shellcheck']}",
+                "shellcheck",
+                "-s",
+                "sh",
+                "install.sh",
+                *SHELLCHECKED,
+            ),
             ("uvx", f"zizmor@{TOOLS['zizmor']}", ".github/workflows"),
             (*PYTEST, *LINT_TESTS),
         ),
@@ -593,7 +511,7 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="floors",
         why="The command line installed with every direct dependency at the lowest version pyproject.toml allows.",
-        commands=(("sh", "-euc", RUN_AT_THE_FLOORS),),
+        commands=(("sh", "-euc", program("run-at-the-floors"), "sh", FLOOR),),
         runners=(LINUX,),
         pythons=(FLOOR,),
         tools=(),
@@ -714,12 +632,12 @@ GROUPS: tuple[Group, ...] = (
         name="installer",
         why="The one-line installer run for real, on images that start with nothing but a package manager.",
         commands=(
-            in_image("debian:13-slim", INSTALL_IN_A_BARE_IMAGE),
-            in_image("ubuntu:24.04", INSTALL_IN_A_BARE_IMAGE),
-            in_image("fedora:42", INSTALL_IN_A_BARE_IMAGE),
-            in_image("alpine:3.22", REFUSE_MUSL),
-            in_image("ghcr.io/astral-sh/uv:debian-slim", KEEP_THE_UV_THAT_IS_ALREADY_THERE),
-            in_image("debian:13-slim", INSTALL_THE_PINNED_VERSION),
+            in_image("debian:13-slim", "install-in-a-bare-image"),
+            in_image("ubuntu:24.04", "install-in-a-bare-image"),
+            in_image("fedora:42", "install-in-a-bare-image"),
+            in_image("alpine:3.22", "refuse-musl"),
+            in_image("ghcr.io/astral-sh/uv:debian-slim", "keep-the-uv-already-there"),
+            in_image("debian:13-slim", "install-the-pinned-version"),
         ),
         runners=(LINUX,),
         pythons=(FLOOR,),

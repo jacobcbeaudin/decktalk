@@ -95,8 +95,9 @@ def cue_findings(
     for number in sorted(listed):
         if number not in declared:
             continue
+        known = set(declared[number])
         for row in listed[number].cues:
-            if row.id in declared[number]:
+            if row.id in known:
                 continue
             fix, text = _rename_fix(text, row.id, renames.get(number, {}).get(row.id), where=where)
             found.append(_unknown_finding(number, row.id, renames.get(number, {}).get(row.id), where, stage, fix))

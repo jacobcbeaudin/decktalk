@@ -1,6 +1,6 @@
 // The version release-please proposes in each situation of the candidate cycle, computed by
 // scripts/next_version.mjs with the repository's own config. One test per row of the table in
-// CONTRIBUTING.md under "Releases".
+// RELEASING.md under "Candidates and finals".
 
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";

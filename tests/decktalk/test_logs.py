@@ -619,7 +619,7 @@ def test_a_stalled_voice_is_sent_once_and_ends_as_a_provider_refusal_that_says_p
 ) -> None:
     service.expect_request("/speak").respond_with_handler(service.stalls)
     url = service.url_for("/speak")
-    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, secrets=(), timeout=1, retries=1))
+    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, secrets=(), timeout=0.1, retries=1))
     assert [line for line in lines if isinstance(line, RunLog) and line.level is Level.WARNING] == []
     last = lines[-1]
     assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.PROVIDER

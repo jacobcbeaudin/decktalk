@@ -456,7 +456,7 @@ def page_module(data: dict[str, Any]) -> str:
     return generated.ruff("\n".join(parts), PAGE_MODULE)
 
 
-# ---- the code list both tracks land ------------------------------------------------------------
+# ---- the page codes Python and the contract both name ------------------------------------------
 
 
 def code_block(data: dict[str, Any]) -> str:

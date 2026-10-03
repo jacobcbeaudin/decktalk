@@ -26,8 +26,9 @@ decktalk verify --json
 ```
 
 `--section N` narrows every measurement to those sections, taking `3`, `3,5` or `7-9` and repeating.
-`--fail-on error|warning|never` chooses which severity fails the run, and `--allow CODE` carries on
-past one code and repeats. `decktalk verify --help` prints them all.
+`--fail-on` and `--allow` decide what fails the run, as
+[Which findings fail a run](/agents/json#which-findings-fail-a-run) says. `decktalk verify --help`
+prints every flag.
 
 The stage inside `decktalk build` is the same call, so a build measures everything a bare `verify`
 would.

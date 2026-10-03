@@ -129,15 +129,26 @@ def _exits() -> str:
 def _errors() -> str:
     """Every error code with its sentence and the exit code its refusal takes."""
     rows = ["\n| Code | Exit | Meaning |", "|---|---|---|"]
-    rows += [f"| `{row['code']}` | {row['exit']} | {row['sentence']} |" for row in catalog.document()["errors"]]
+    rows += [
+        f"| {_linked('errors', row['code'])} | {row['exit']} | {row['sentence']} |"
+        for row in catalog.document()["errors"]
+    ]
     return "\n".join(rows) + "\n"
 
 
 def _findings() -> str:
     """Every finding code with its severity and its sentence."""
     rows = ["\n| Code | Severity | Meaning |", "|---|---|---|"]
-    rows += [f"| `{row['code']}` | {row['severity']} | {row['sentence']} |" for row in catalog.document()["findings"]]
+    rows += [
+        f"| {_linked('findings', row['code'])} | {row['severity']} | {row['sentence']} |"
+        for row in catalog.document()["findings"]
+    ]
     return "\n".join(rows) + "\n"
+
+
+def _linked(kind: str, code: str) -> str:
+    """A code as a link to its own page, which makes these two tables the index of the code pages."""
+    return f"[`{code}`](/reference/{kind}/{code})"
 
 
 def _schema_names() -> str:

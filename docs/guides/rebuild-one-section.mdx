@@ -40,11 +40,12 @@ What the flag does depends on the stage, and the difference is the point of the 
 - On `record` it is an order. A named section is recorded whether or not its inputs moved, which is
   how you take a bad recording again.
 - On every other stage it is a narrowing. A named section still keeps its take, its generated sound
-  or its cut when nothing about it changed, because naming a section says which sections a run is
-  about and never that its work has to be redone.
+  or its section video when nothing about it changed, because naming a section says which sections a
+  run is about and never that its work has to be redone.
 - On `assemble` it never shortens the film. A film is always whole, so every section is in the
-  answer, and every cut is kept only while its key matches, named or not. `--section` decides which
-  sections the run judges, so a missing file in a section you left out is not reported again.
+  answer, and every section video is kept only while its key matches, named or not. `--section`
+  decides which sections the run judges, so a missing file in a section you left out is not reported
+  again.
 
 A section you leave out of `record` whose recording no longer matches the project is reported by
 name, with the reason, so a run never leaves an out-of-date picture in the film silently. A section
@@ -94,7 +95,10 @@ and agree. It looks in two places, in this order:
    per-user data folder, and `decktalk config set narration.store_dir DIR --scope machine` moves it.
    It is written once per take, so a re-buy with `--replace-voiced` changes this project's takes
    directory and never the take another project plays. It holds the spoken words of every script
-   voiced on this machine, so keep it out of a synced or shared folder.
+   voiced on this machine, so keep it out of a synced or shared folder. Two projects that need the
+   same take at once buy it once: the second waits for the first, up to
+   [`narration.timeout_seconds`](/reference/configuration#narration), and then copies the take in
+   rather than buying it again.
 
 A copy whose words do not read, or whose take does not hold the bytes they recorded, is skipped and
 moved aside as `<name>.unreadable` when a good copy replaces it. DeckTalk never deletes a take.
@@ -180,15 +184,15 @@ Next   decktalk narrate --no-spend
 `--json` gives an agent the same reading as one flat object, and the `sections[]` rows are what a
 loop dispatches on.
 
-{/* sample: decktalk status --json on a fresh starter, the first section row */}
+{/* sample: decktalk status --json on a fresh decktalk init my-lesson, cut to the first section row */}
 ```json
 {
   "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "a383d9c7fdcf",
-  "name": "demo",
+  "run": "46116e0ba657",
+  "name": "my-lesson",
   "script": "script.md",
   "cues": "cues.json",
   "sections": [
@@ -206,6 +210,7 @@ loop dispatches on.
   "film": null,
   "film_seconds": null,
   "runs": [],
+  "unplayed": null,
   "next": "decktalk narrate --no-spend"
 }
 ```
@@ -233,17 +238,27 @@ that made the film did.
 {/* sample: a second decktalk build --no-spend on an unchanged starter named my-lesson */}
 
 ```text
+run 12b57bd04586, events build/events/12b57bd04586.jsonl
+     Narrate    0:00
+         Cue    0:00
+      Record    0:00
+The project declares no score for this run, so there is nothing to generate.
+       Score    0:00
 Assemble kept what it made last time, because nothing it reads has changed.
-    Assemble    0:00
+    Assemble    0:00   kept
 Verify kept what it made last time, because nothing it reads has changed.
-      Verify    0:00
-       Built build/final/my-lesson.mp4, $0.00, nothing found
+      Verify    0:00   kept
+       Built build/final/my-lesson.mp4, $0.00, 3 findings
+script.md: TAKE_MISSING Section 1 plays a placeholder, because only a take without voice exists. Run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because only a take without voice exists. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because only a take without voice exists. Run decktalk narrate --section 3 --spend to buy its take.
+Found 3 findings, 0 errors.
 ```
 
 On the starter that second build took under half a second. What a build compares is a digest of every
 file the two stages read and the options they ran with, kept in
 [`build/kept.json`](/reference/artifacts#build-kept-json), never a file time. Inside `assemble` each
-section video has a key of its own in `build/sections/NN.json`, so an edit to one section cuts that
+section video has a key of its own in `build/sections/NN.json`, so an edit to one section encodes that
 section again and keeps the others.
 
 ## Ask for work you were not offered

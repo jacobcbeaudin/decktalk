@@ -46,9 +46,9 @@ Before anything is spent, read which sections would be voiced.
 - A project that has only ever been built on placeholders is the exception. Every section there is
   new, because no take has been voiced yet, and that is expected rather than a scope failure.
 
-## Keeping the previous cut
+## Keeping the previous film
 
-Ask for a dated second copy of the film before a revision build, so the cut the author already
+Ask for a dated second copy of the film before a revision build, so the film the author already
 approved survives the rebuild.
 
 ## The change note

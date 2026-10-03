@@ -1,7 +1,7 @@
 ---
 title: Reference card for agents
 sidebarTitle: Reference card for agents
-description: "The whole DeckTalk contract on one page: the install, the four input files, all eighteen commands, the JSON contract, the stages, the page vocabulary and the settings."
+description: "The whole DeckTalk contract on one page: the install, the four input files, every command, the JSON contract, the stages, the page vocabulary and the settings."
 ---
 
 This is the page to hand an agent that has no skills loaded. It is usable on its own, and each
@@ -149,7 +149,7 @@ one JSON Lines file per run.
 
 Every path: [Build artifacts](/reference/artifacts).
 
-## The eighteen commands
+## The commands
 
 Every one of them takes `--json`. Run `decktalk <command> --help` for the whole list of its flags.
 
@@ -288,7 +288,7 @@ is `error` or `warning`. `location` carries a required `where` naming the object
 `Project.apply(finding)` applies one.
 
 `--events` prints one JSON line per event on stderr as it happens, and every run of a project also
-appends `build/events/<run>.jsonl`. The discriminator key is `event` and there are thirteen names:
+appends `build/events/<run>.jsonl`. The discriminator key is `event`, and its names are
 `run.start`, `run.done`, `stage.start`, `stage.done`, `section.start`, `section.done`, `stage.progress`,
 `finding.raised`, `cost.priced`, `take.charged`, `sound.charged`, `tool.fetch` and `run.log`. `run.done`, `stage.done` and `section.done` carry an
 `outcome` of `ran`, `kept`, `skipped`, `stopped` or `failed`, and `run.done` carries the `error` of a run

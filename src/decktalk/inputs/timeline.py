@@ -58,12 +58,13 @@ def narration_runs(sections: Sequence[Section], takes: Takes, starts: Mapping[in
         if isinstance(section, PageSection) and section.hold_seconds > 0:
             open_run = False
     last = len(groups) - 1
+    placed = takes.placed
     return tuple(
         NarrationRun(
             sections=tuple(group),
             at=starts[group[0]],
-            start=0.0 if len(groups) == 1 else takes.start(group[0]) or 0.0,
-            end=None if index == last else takes.end(group[-1]),
+            start=0.0 if len(groups) == 1 else placed[group[0]].start,
+            end=None if index == last else placed[group[-1]].end,
         )
         for index, group in enumerate(groups)
     )

@@ -14,7 +14,7 @@ written to be heard rather than to be read.
 
 ## What the file is
 
-A `## N. Title` heading opens section N, and one section is one cut of the film. Bracketed
+A `## N. Title` heading opens section N, and one section is one part of the film. Bracketed
 directions are not spoken: `[beat]` is a short pause and `[pause 4]` is a four second pause. A
 section's number, the scene its `[[section]]` table names, and the slide ids of its cues all agree,
 so section 3 plays scene 3 and its cues are `3.1:open` and `3.2:result`.
