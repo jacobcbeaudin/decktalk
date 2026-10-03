@@ -52,8 +52,9 @@ def test_a_result_that_judges_gains_the_two_finding_flags() -> None:
     assert "fail_on" not in {param.name for param in shared_for(StatusResult)}
 
 
-def test_a_result_that_buys_gains_the_three_spending_flags() -> None:
-    assert {"no_voice", "spend", "max_cost"} <= {param.name for param in shared_for(BuildResult)}
+def test_a_result_that_buys_gains_the_two_spending_flags() -> None:
+    assert {"spend", "max_cost"} <= {param.name for param in shared_for(BuildResult)}
+    assert "no_voice" not in {param.name for param in shared_for(BuildResult)}
     assert "spend" not in {param.name for param in shared_for(WordsResult)}
 
 

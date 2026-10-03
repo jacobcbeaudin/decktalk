@@ -84,7 +84,7 @@ def built_up_to(inputs: Inputs, steps: int) -> None:
     ("steps", "command"),
     [
         # The first move a project is told to make never costs credits.
-        pytest.param(0, "decktalk narrate --no-voice", id="nothing built rehearses the voice"),
+        pytest.param(0, "decktalk narrate --no-spend", id="nothing built rehearses the voice"),
         pytest.param(1, f"decktalk {Stage.CUE.value}", id="takes resolve their cues"),
         pytest.param(2, f"decktalk {Stage.RECORD.value}", id="cue times record"),
         # A project that describes no soundscape is never told to generate one: a stage with nothing

@@ -1,9 +1,11 @@
 """A build artifact as a file: one frozen model per file, read once and written atomically.
 
-Every file under `build/` that a later stage, a user's own script or the page runtime reads is one
-of these. The model is the file's published shape, so the field names are the JSON keys and a
-reader holds members rather than comparing strings, and the same class both reads and writes, so no
-two places can disagree about what a file holds.
+Every file under `build/` that a later stage or the page runtime reads is one of these. The model
+is the file's shape, so the field names are the JSON keys and a reader holds members rather than
+comparing strings, and the same class both reads and writes, so no two places can disagree about
+what a file holds. The shape is DeckTalk's own and not a promise: `build/` is a cache, and the
+contract a caller builds on is the `--json` results, the events file, `build/final/` and the exit
+codes.
 
 A file is written under a temporary name in the same directory and renamed over the target, which
 is atomic on every platform DeckTalk ships on, so a reader never opens a half-written artifact and
@@ -17,8 +19,9 @@ rather than the artifact's default path, because a project may move its build di
 A stage that reads its own earlier output reads it through `previous`, which counts a file it cannot
 read as absent. `build/` is DeckTalk's cache and that stage is about to write the file again, so an
 engine that changed the file's shape builds it again rather than asking a person to delete it. A
-paid record, the take index and the sound ledger, is never read this way, because counting one of
-those as absent would buy what it records again.
+paid record says so with `paid`, and one that does not read is refused with a sentence by `read`
+and `previous` alike and left where it is, because counting it as absent would buy what it records
+again, and that is a decision about money a person takes.
 
 Every fingerprint of a file's content is `file_digest`, and every fingerprint of content held in
 memory is `content_digest`, which are one hash: BLAKE3. The files a build fingerprints are the
@@ -35,12 +38,12 @@ import json
 import logging
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 
 from blake3 import blake3
 from pydantic import ValidationError
 
-from decktalk.errors import NotBuiltError
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.files import replace_all
 from decktalk.findings import Model
 from decktalk.pipeline import Artifact
@@ -105,28 +108,39 @@ def file_digest(path: Path) -> str:
 class Stored(Model):
     """One file under `build/`, which knows how to read itself and how to write itself."""
 
+    paid: ClassVar[bool] = False
+    """True on a record of something bought, which is refused rather than built again when it does not read."""
+
     @classmethod
     def read(cls, path: Path) -> Self | None:
         """The artifact at `path`, or None when nothing has written one there yet.
 
-        A file that is there and cannot be read as this shape is refused as `NOT_BUILT`.
+        A file that is there and cannot be read as this shape is refused. A cache file is refused as
+        `NOT_BUILT`, which its writer builds again. A paid record is refused as `INPUT`, with a sentence
+        that says what reading it again would cost, and nothing here deletes it.
         """
         if not path.is_file():
             return None
         try:
             return cls.model_validate_json(path.read_bytes())
         except (ValidationError, ValueError, OSError) as exc:
-            raise NotBuiltError(
-                f"{path.name} is there and cannot be read as {cls.__name__.lower()} ({_first_line(exc)}).",
-                hint=f"Delete {path.name} and build it again.",
-            ) from exc
+            unread = f"{path.name} is there and cannot be read as {cls.__name__.lower()} ({_first_line(exc)})."
+            if cls.paid:
+                raise InputError(
+                    f"{unread} It records what this project paid for, so DeckTalk neither builds it again "
+                    "nor deletes it.",
+                    hint=f"Run the DeckTalk release that wrote {path.name}, or move it aside knowing that the "
+                    "next run that may spend buys again everything it records.",
+                ) from exc
+            raise NotBuiltError(unread, hint=f"Delete {path.name} and build it again.") from exc
 
     @classmethod
     def previous(cls, path: Path) -> Self | None:
         """What the stage that writes `path` wrote there last, or None when there is none it can read.
 
-        Only the writer reads its own file this way, so a file it cannot read is built again, and the
-        record this leaves is how a person learns why a kept section was made again.
+        Only the writer reads its own file this way, so a cache file it cannot read is built again, and
+        the record this leaves is how a person learns why a kept section was made again. A paid record
+        it cannot read is refused as `read` refuses it, because building it again would buy it again.
         """
         try:
             return cls.read(path)

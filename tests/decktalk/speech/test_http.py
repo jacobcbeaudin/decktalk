@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import http.client
+import socket
+import urllib.error
 import urllib.request
+from collections.abc import Callable
 from http.client import HTTPResponse
+from typing import NoReturn
 
 import pytest
 from pytest_httpserver import HTTPServer
@@ -146,12 +151,18 @@ def test_a_url_in_a_message_carries_no_query_string(httpserver):
     assert _http.shown("https://x.test/a/b?c=d#e") == "https://x.test/a/b"
 
 
-def test_a_host_that_cannot_be_reached_is_worth_trying_again():
-    """Nothing about the request was wrong, so a caller that waits and retries is right to."""
+def test_a_host_that_refused_the_connection_is_asked_again(monkeypatch, waits):
+    """Nothing connected, so nothing was sent and nothing could have been charged."""
+
+    def refuses() -> NoReturn:
+        raise urllib.error.URLError(ConnectionRefusedError(61, "Connection refused"))
+
+    sent = counted_opener(monkeypatch, refuses)
     with pytest.raises(ProviderError) as caught:
-        _http.post_json("http://127.0.0.1:1/never", {}, {}, timeout=1, retries=0)
+        _http.post_json("http://127.0.0.1:1/never", {}, {}, timeout=1, retries=2)
     assert caught.value.retryable is True
     assert "could not reach http://127.0.0.1:1/never" in str(caught.value)
+    assert len(sent) == 3 and len(waits) == 2
 
 
 def test_a_reply_that_is_not_an_object_is_refused_rather_than_read(httpserver, waits):
@@ -162,13 +173,14 @@ def test_a_reply_that_is_not_an_object_is_refused_rather_than_read(httpserver, w
     assert caught.value.retryable is False and waits == []
 
 
-def test_a_reply_that_is_not_json_is_asked_for_again_as_its_flag_promises(httpserver, waits):
-    """A gateway answering for the service is worth asking again, and the retry is made rather than promised."""
+def test_a_reply_that_is_not_json_is_never_asked_for_again_and_says_it_was_possibly_charged(httpserver, waits):
+    """The reply arrived, so the service may have billed it, and asking again could buy it twice."""
     httpserver.expect_request("/html").respond_with_data("<html>not json</html>")
     with pytest.raises(ProviderError, match="not JSON") as caught:
         _http.post_json(httpserver.url_for("/html"), {}, {}, timeout=5, retries=2)
-    assert caught.value.retryable is True
-    assert len(httpserver.log) == 3 and len(waits) == 2
+    assert caught.value.retryable is False
+    assert "possibly charged" in str(caught.value)
+    assert len(httpserver.log) == 1 and waits == []
 
 
 def test_every_call_carries_the_timeout_it_was_given(httpserver, monkeypatch):
@@ -226,21 +238,107 @@ def test_the_wait_a_service_names_is_the_wait_taken_and_held_under_the_longest(h
 # ---- a reply that stops arriving --------------------------------------------------------------------
 
 
-def test_a_reply_that_stalls_is_a_provider_failure_asked_for_again(service, waits):
-    """A read timeout escaped the retry loop as a bare TimeoutError, which the CLI reported as a bug."""
-    service.expect_oneshot_request("/stall").respond_with_handler(service.stalls)
-    service.expect_request("/stall").respond_with_json({"ok": True})
-    assert _http.post_json(service.url_for("/stall"), {}, {}, timeout=1, retries=1) == {"ok": True}
-    assert len(service.log) == 2 and len(waits) == 1
-
-
-def test_a_reply_that_stalls_on_the_last_attempt_ends_as_a_provider_error_rather_than_a_timeout(service):
-    """The retry before it is the test above, so one attempt is the whole of what this one needs."""
+def test_a_reply_that_stalls_after_the_request_was_sent_is_sent_once_and_said_to_be_possibly_charged(service, waits):
+    """A read timeout comes after the service had the whole request, which it may already have billed."""
     service.expect_request("/stall").respond_with_handler(service.stalls)
-    with pytest.raises(ProviderError, match="stopped answering") as caught:
-        _http.post_json(service.url_for("/stall"), {}, {}, timeout=1, retries=0)
-    assert caught.value.retryable is True
-    assert isinstance(caught.value.__cause__, TimeoutError)
+    with pytest.raises(ProviderError) as caught:
+        _http.post_json(service.url_for("/stall"), {}, {}, timeout=1, retries=3)
+    assert len(service.log) == 1 and waits == []
+    assert "possibly charged" in str(caught.value)
+    assert caught.value.retryable is False
+    assert isinstance(caught.value.__cause__, TimeoutError), "it ends as a provider error rather than a bare timeout"
+
+
+class Opened:
+    """A reply whose body breaks part way, the way a socket that dies mid-reply breaks it."""
+
+    status = 200
+
+    def __init__(self, broken: BaseException) -> None:
+        self.broken = broken
+
+    def __enter__(self) -> Opened:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        raise self.broken
+
+
+def counted_opener(monkeypatch: pytest.MonkeyPatch, answer: Callable[[], object]) -> list[str]:
+    """Every request the provider would have been sent, with `answer` standing for the network."""
+    sent: list[str] = []
+
+    def opened(request: urllib.request.Request, **_options: float) -> object:
+        sent.append(request.full_url)
+        return answer()
+
+    monkeypatch.setattr(_http, "urlopen", opened)
+    return sent
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        ConnectionResetError(54, "Connection reset by peer"),
+        http.client.IncompleteRead(b"{", 99),
+        TimeoutError("The read operation timed out"),
+    ],
+    ids=["reset", "cut-short", "timed-out"],
+)
+def test_a_reply_that_broke_while_it_was_read_is_sent_once_and_said_to_be_possibly_charged(monkeypatch, waits, broken):
+    sent = counted_opener(monkeypatch, lambda: Opened(broken))
+    with pytest.raises(ProviderError) as caught:
+        _http.post_bytes("https://api.test/v1/sound", {}, {}, timeout=5, retries=3)
+    assert len(sent) == 1 and waits == []
+    assert "possibly charged" in str(caught.value)
+    assert caught.value.retryable is False
+    assert caught.value.__cause__ is broken
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [http.client.RemoteDisconnected("Remote end closed connection without response"), TimeoutError("timed out")],
+    ids=["hung-up", "timed-out"],
+)
+def test_a_reply_that_never_began_after_the_request_was_sent_is_sent_once(monkeypatch, waits, broken):
+    """urllib raises these bare from waiting on the reply, once the whole request has gone out."""
+
+    def breaks() -> NoReturn:
+        raise broken
+
+    sent = counted_opener(monkeypatch, breaks)
+    with pytest.raises(ProviderError) as caught:
+        _http.post_bytes("https://api.test/v1/sound", {}, {}, timeout=5, retries=3)
+    assert len(sent) == 1 and waits == []
+    assert "possibly charged" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("reason", "asked"),
+    [
+        (socket.gaierror(8, "nodename nor servname provided"), 3),
+        (ConnectionRefusedError(61, "Connection refused"), 3),
+        (TimeoutError("timed out"), 1),
+        (ConnectionResetError(54, "Connection reset by peer"), 1),
+    ],
+    ids=["no-such-host", "refused", "timed-out-connected", "reset-connected"],
+)
+@pytest.mark.usefixtures("waits")
+def test_only_a_request_that_never_connected_is_sent_again(monkeypatch, reason, asked):
+    """A request that connected may have been sent whole before it broke, so only one that never connected is safe."""
+
+    def fails() -> NoReturn:
+        raise urllib.error.URLError(reason)
+
+    sent = counted_opener(monkeypatch, fails)
+    with pytest.raises(ProviderError) as caught:
+        _http.post_bytes("https://api.test/v1/sound", {}, {}, timeout=5, retries=2)
+    assert len(sent) == asked
+    assert caught.value.retryable is (asked > 1)
+    assert ("possibly charged" in str(caught.value)) is (asked == 1)
 
 
 # ---- what a retry leaves behind -----------------------------------------------------------------------

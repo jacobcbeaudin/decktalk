@@ -18,8 +18,10 @@ tests say the same thing on a machine that has Chromium and on one that has neve
 from __future__ import annotations
 
 import ast
+import os
 import re
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -29,7 +31,8 @@ from decktalk.media import browser
 from decktalk.media.environment import children_see
 from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.announce import announcing
-from support.fakes import BareBrowser, FakeChromium
+from decktalk.toolchain.cache import caching_in
+from support.fakes import BROWSERS_VARIABLE, BareBrowser, FakeChromium
 from support.logs import data_of
 from support.paths import REPO
 
@@ -61,10 +64,65 @@ def fake_fetch(monkeypatch: pytest.MonkeyPatch, installs: Path | None, *, code: 
     return seen
 
 
+@pytest.fixture(autouse=True)
+def cache(tmp_path: Path) -> Iterator[Path]:
+    """The tool cache a machine binds for its run, which is where every fetch here lands."""
+    with caching_in(str(tmp_path / "cache")):
+        yield tmp_path / "cache"
+
+
 @pytest.fixture
-def on_disk(tmp_path: Path) -> Path:
+def on_disk(cache: Path) -> Path:
     """Where this machine's Chromium would be, which nothing has written yet."""
-    return tmp_path / "ms-playwright" / "chromium-1243" / "chrome"
+    return cache / "ms-playwright" / "chromium-1243" / "chrome"
+
+
+# ---- one directory for the browser and the encoder ----------------------------------------------
+
+
+def test_the_installer_puts_chromium_in_the_tool_cache_and_not_where_the_host_says(
+    monkeypatch: pytest.MonkeyPatch, cache: Path
+) -> None:
+    """The installer ran with the scrubbed environment, which dropped the variable, so Chromium landed
+    in Playwright's own cache while the driver looked wherever the host's variable said. Now the
+    installer is told the browser directory inside the tool cache, whatever the host set."""
+    handed: list[dict[str, str]] = []
+
+    def run(cmd: list[str], *, env: dict[str, str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        handed.append(dict(env))
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
+    chromium_fetch.fetch_chromium(env={"PATH": "/usr/bin", BROWSERS_VARIABLE: "/the/hosts/own"})
+    [env] = handed
+    assert env[BROWSERS_VARIABLE] == str(cache / "ms-playwright")
+    assert env["PATH"] == "/usr/bin"
+
+
+def test_the_driver_looks_for_chromium_where_the_installer_put_it(monkeypatch: pytest.MonkeyPatch, cache: Path) -> None:
+    """The driver copies this process's environment as it starts, so the browser directory is named
+    there for the start alone, and the host's own value is back once the driver has its copy."""
+    monkeypatch.setenv(BROWSERS_VARIABLE, "/the/hosts/own")
+    executable = cache / "ms-playwright" / "chromium-1243" / "chrome"
+    executable.parent.mkdir(parents=True)
+    executable.write_text("#!/bin/sh\n", encoding="utf-8")
+    chromium = FakeChromium(executable)
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", chromium.started())
+    with browser.chromium(policy=browser.TRUSTED):
+        assert os.environ[BROWSERS_VARIABLE] == "/the/hosts/own"
+    assert chromium.looked_in == [str(cache / "ms-playwright")]
+    assert os.environ[BROWSERS_VARIABLE] == "/the/hosts/own"
+
+
+def test_a_driver_started_where_the_host_named_no_directory_leaves_none_named(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv(BROWSERS_VARIABLE, raising=False)
+    chromium = FakeChromium(tmp_path / "chrome")
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", chromium.started())
+    with chromium_fetch.driver(tmp_path / "browsers"):
+        assert BROWSERS_VARIABLE not in os.environ
+    assert chromium.looked_in == [str(tmp_path / "browsers")]
 
 
 def test_a_missing_chromium_is_fetched_rather_than_refused(monkeypatch, on_disk) -> None:
@@ -160,7 +218,7 @@ def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, 
     """`chromium()` is what every stage calls, so the wiring from it to the fetch is worth one test.
     Playwright itself is replaced here, so this never reaches a real browser either."""
     commands = fake_fetch(monkeypatch, on_disk)
-    monkeypatch.setattr(browser, "sync_playwright", FakeChromium(on_disk).started())
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(on_disk).started())
     with browser.chromium(policy=browser.TRUSTED) as opened:
         assert isinstance(opened, BareBrowser)
     assert opened.closed, "the browser was left running"

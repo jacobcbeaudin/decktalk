@@ -60,7 +60,7 @@ LINE = TypeAdapter(Line)
 BUILD = "build"
 """The command a stale project runs, which redoes what moved and keeps every stage whose inputs did not."""
 
-DRAFT = {Stage.NARRATE: "--no-voice"}
+DRAFT = {Stage.NARRATE: "--no-spend"}
 """The flag that makes a stage's first move the cheap one, which is the unpaid draft of the voice.
 
 A project with no take index at all has never been narrated, so the move it is told to make is the
@@ -275,7 +275,7 @@ def section_rows(inputs: Inputs, run: Run) -> tuple[SectionStatus, ...]:
     rows: list[SectionStatus] = []
     for section in inputs.document.sections:
         take = takes.of(section.number) if takes is not None else None
-        on_disk = take is not None and (inputs.workspace.takes_dir / take.file).is_file()
+        on_disk = take is not None and inputs.workspace.take_path(take.hash).is_file()
         said = spoken.get(section.number)
         # `voiced` is the take's own word, so a placeholder take on disk is not one a voice spoke
         # and the column that says what this project has paid for never counts it.

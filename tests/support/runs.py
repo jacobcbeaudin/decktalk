@@ -8,7 +8,6 @@ from pathlib import Path
 from decktalk.errors import Cancel
 from decktalk.events import Event, Log
 from decktalk.machine import Machine, Run, Toolchain
-from decktalk.results import Voicing
 from decktalk.settings import ToolsConfig
 
 RUN_ID = "r1"
@@ -29,7 +28,7 @@ def a_machine(root: Path, **environ: str) -> Machine:
 def a_run(
     root: Path,
     *,
-    voice: Voicing = Voicing.PLACEHOLDER,
+    spend: bool = False,
     max_cost: float | None = None,
     lines: list[Event] | None = None,
     **environ: str,
@@ -38,7 +37,7 @@ def a_run(
     machine = Machine(environ=environ, tables={}, config_path=root / "machine.toml", cwd=root, toolchain=Toolchain())
     if lines is not None:
         machine.events.subscribe(lines.append)
-    return Run(machine, id=RUN_ID, cancel=Cancel(), voice=voice, max_cost=max_cost, root=root)
+    return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, max_cost=max_cost, root=root)
 
 
 @dataclass

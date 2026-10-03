@@ -1,10 +1,10 @@
 """The per-user cache directory, which is where every tool DeckTalk fetches for a machine lives.
 
-One directory per user holds the pinned ffmpeg build, beside the folder Playwright keeps Chromium
-in, so a second project on the same machine downloads nothing. The machine works out which directory
-that is from its own environment, or takes the one `[tools] cache_dir` names, and binds it for every
-run through `caching_in`, because this layer sits below the machine and the settings it would
-otherwise have to read.
+One directory per user holds the pinned ffmpeg build and the folder Playwright keeps Chromium in,
+so a second project on the same machine downloads nothing and a job caches one directory. The
+machine works out which directory that is from its own environment, or takes the one
+`[tools] cache_dir` names, and binds it for every run through `caching_in`, because this layer sits
+below the machine and the settings it would otherwise have to read.
 
 Nothing here reads the process environment. A fetch outside any binding is refused rather than sent
 to a directory worked out from whatever process it happens to run in, because a host that built its
@@ -25,7 +25,7 @@ ELSEWHERE: ContextVar[str] = ContextVar("decktalk_cache_dir", default="")
 """Where this run keeps what it fetches, which is empty until a machine binds its directory."""
 
 CACHE_NAME = "decktalk"
-"""The folder DeckTalk keeps inside the per-user cache root, beside Playwright's ms-playwright."""
+"""The folder DeckTalk keeps inside the per-user cache root, which holds every tool it fetches."""
 
 
 @contextmanager

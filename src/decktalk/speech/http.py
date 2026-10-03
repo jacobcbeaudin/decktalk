@@ -14,14 +14,16 @@ reader could act on.
 Every call takes a timeout. A provider that stopped answering would otherwise hold a build open for
 as long as the socket stayed up.
 
-Every call also takes a number of retries. A service that answers that it is busy or failed, or that
-could not be reached, is asked again after a wait that doubles each time, or after the wait its own
-`Retry-After` names, up to that many more times. A voice account limits how many requests run at
-once, so without this the first busy answer to one of several concurrent sections failed the run
-after the others had already been paid for. A refusal that says the request itself is wrong is
-never repeated, because it would be refused again. A reply that stopped arriving part way, or that
-arrived and could not be read, is repeated like a busy answer, because nothing about the request was
-wrong, and it becomes a `PROVIDER` error rather than escaping as a bare timeout.
+Every POST here buys something, a take or a sound, so a request the service may have billed is never
+sent twice. Every call takes a number of retries. A service that answers that it is busy or failed,
+which is a 408, a 429 or a 5xx, or that could not be connected to at all, is asked again after a wait
+that doubles each time, or after the wait its own `Retry-After` names, up to that many more times. A
+voice account limits how many requests run at once, so without this the first busy answer to one of
+several concurrent sections failed the run after the others had already been paid for. A refusal
+that says the request itself is wrong is never repeated, because it would be refused again. A reply
+that broke once the request was connected, and a reply that arrived and could not be read, are never
+repeated either, because the service may already have billed the request. Each becomes a `PROVIDER`
+error that says the request was possibly charged, rather than escaping as a bare timeout.
 
 Every attempt leaves a debug record of its path, status, size and time, and every retry leaves a
 warning with the wait it takes and where that wait came from, so a run that took three minutes
@@ -33,6 +35,7 @@ from __future__ import annotations
 
 import http.client
 import logging
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -69,8 +72,24 @@ BROKEN_REPLIES = (TimeoutError, ConnectionError, http.client.HTTPException)
 """Truth: how a reply fails once the request was sent, which urllib raises bare rather than as a `URLError`.
 
 A read that times out raises `TimeoutError`, a service that hangs up raises `ConnectionError`, and a
-reply cut short raises `http.client.IncompleteRead`, which is an `HTTPException`.
+reply cut short raises `http.client.IncompleteRead`, which is an `HTTPException`. urllib wraps the
+same errors in a `URLError` when they come while the request is still being sent, and part of a
+request may already be with the service by then, so those count as broken too. A timeout while
+connecting reads exactly like one while sending, so it counts as broken as well.
 """
+
+UNCONNECTED = (socket.gaierror, ConnectionRefusedError)
+"""Truth: how a request fails when nothing connected, a name that did not resolve or a port nobody serves.
+
+Nothing was sent, so nothing could have been charged, and these are the only failures short of a busy
+answer that are tried again.
+"""
+
+POSSIBLY_CHARGED = "The request was possibly charged, so it is not sent again."
+"""What every failure that came after the service may have billed the request says about the bill."""
+
+CHARGE_HINT = "Check the account's usage before you run the command again, which sends the request once more."
+"""The advice beside a failure that was possibly charged, since running again buys the request again."""
 
 STATED = "retry-after"
 """The source of a wait the service named in its own `Retry-After`."""
@@ -146,14 +165,21 @@ def _http_error(url: str, exc: urllib.error.HTTPError, headers: Mapping[str, str
 
 
 def _unreachable(url: str, exc: urllib.error.URLError, headers: Mapping[str, str]) -> ProviderError:
-    """A host that could not be reached, which is worth trying again by the time a caller reads it."""
-    return ProviderError(f"could not reach {shown(url)}: {scrub(str(exc.reason), headers)}", retryable=True)
+    """A request urllib could not send, worth trying again only when nothing connected at all."""
+    if isinstance(exc.reason, BROKEN_REPLIES) and not isinstance(exc.reason, UNCONNECTED):
+        return _broken(url, exc.reason, headers)
+    return ProviderError(
+        f"could not reach {shown(url)}: {scrub(str(exc.reason), headers)}",
+        retryable=isinstance(exc.reason, UNCONNECTED),
+    )
 
 
-def _broken(url: str, exc: Exception, headers: Mapping[str, str]) -> ProviderError:
-    """A reply that stopped arriving, which is worth trying again because the request itself was fine."""
+def _broken(url: str, exc: BaseException, headers: Mapping[str, str]) -> ProviderError:
+    """A reply that broke once the request was connected, which the service may already have billed."""
     said = scrub(str(exc), headers) or "no reason given"
-    return ProviderError(f"{shown(url)} stopped answering ({type(exc).__name__}: {said})", retryable=True)
+    return ProviderError(
+        f"{shown(url)} stopped answering ({type(exc).__name__}: {said}). {POSSIBLY_CHARGED}", hint=CHARGE_HINT
+    )
 
 
 def pause(seconds: float) -> None:
@@ -201,10 +227,9 @@ def post[T](
 ) -> T:
     """One POST, with its reply read by `parse`, and any failure as a `PROVIDER` error that quotes no key.
 
-    A failure the service marks as worth trying again is tried again up to `retries` more times,
-    and the last failure is the one raised. `parse` runs inside the loop, so a reply it refuses as
-    worth trying again is asked for again like a busy answer, and a flag that says a refusal may be
-    retried is one a retry honours.
+    A failure that says the service was busy or could not be connected to is tried again up to
+    `retries` more times, and the last failure is the one raised. A reply that arrived may have been
+    billed, so whatever `parse` refuses in it is raised at once and never asked for again.
     """
     data = to_json(body)
     path = urllib.parse.urlsplit(url).path
@@ -216,8 +241,6 @@ def post[T](
         try:
             with urlopen(req, timeout=timeout) as resp:
                 status, reply = resp.status, resp.read()
-            _attempted(path, attempt, started, status=status, bytes=len(reply))
-            return parse(reply)
         except urllib.error.HTTPError as exc:
             _attempted(path, attempt, started, status=exc.code)
             failure, asked, cause = _http_error(url, exc, headers), exc.headers.get("Retry-After"), exc
@@ -227,9 +250,9 @@ def post[T](
         except BROKEN_REPLIES as exc:
             _attempted(path, attempt, started, reason=type(exc).__name__)
             failure, cause = _broken(url, exc, headers), exc
-        except ProviderError as refused:
-            # `parse` refused a reply that did arrive, which it has already said in its own words.
-            failure, cause = refused, refused.__cause__
+        else:
+            _attempted(path, attempt, started, status=status, bytes=len(reply))
+            return parse(reply)
         if not failure.retryable or attempt >= retries:
             raise failure from cause
         wait = wait_before(attempt, asked)
@@ -267,9 +290,11 @@ def post_json(
         try:
             answered = from_json(reply or b"{}")
         except ValueError as exc:
-            # A reply that is not JSON is a gateway or a proxy answering for the service, which never
-            # reached it, so asking again is honest.
-            raise ProviderError(f"{shown(url)} answered with something that is not JSON.", retryable=True) from exc
+            # A gateway may have answered for a service that never had the request, and the service may
+            # equally have billed a reply that arrived mangled, so it is reported and never sent again.
+            raise ProviderError(
+                f"{shown(url)} answered with something that is not JSON. {POSSIBLY_CHARGED}", hint=CHARGE_HINT
+            ) from exc
         if not isinstance(answered, dict):
             raise ProviderError(f"{shown(url)} answered with a {type(answered).__name__} rather than an object.")
         return answered

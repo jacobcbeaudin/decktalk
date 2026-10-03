@@ -27,7 +27,6 @@ from decktalk.errors import DeckTalkError, ErrorCode, ErrorInfo, ProviderError
 from decktalk.findings import Applicability, Code, CommandFix, Finding, Location
 from decktalk.machine import Machine
 from decktalk.media import audio
-from decktalk.results import Voicing
 from decktalk.secret import Secret, redact, redacted, register, register_environment, secret_name
 from decktalk.settings import ALLOW_ANY_API_BASE, CONFIG_VARIABLE
 from support.service import Service
@@ -297,6 +296,14 @@ def _chain(error: BaseException | None) -> str:
     return "\n".join(said)
 
 
+def _refused(project: decktalk.Project, voice: HostileVoice, script: list[str]) -> ProviderError:
+    """The refusal a paid narrate raises when the voice answers from `script`."""
+    voice.script = script
+    with pytest.raises(ProviderError) as refused:
+        project.narrate(spend=True)
+    return refused.value
+
+
 @pytest.mark.usefixtures("fake_ffmpeg", "waits")
 def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
     tmp_path: Path,
@@ -331,12 +338,12 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
 
     with caplog.at_level("DEBUG", logger="decktalk"):
         project.check(pages=False, frames=False)
-        voice.script = ["refuse"]
-        with pytest.raises(ProviderError) as refused:
-            project.narrate(voice=Voicing.PAID)
-        raised.append(refused.value)
-        voice.script = ["busy", "gateway", "redirect"]
-        assert project.narrate(voice=Voicing.PAID).ok
+        raised.append(_refused(project, voice, ["refuse"]))
+        # A gateway page arrived where speech was paid for, so it is raised and never asked for again.
+        raised.append(_refused(project, voice, ["gateway"]))
+        assert "possibly charged" in str(raised[-1])
+        voice.script = ["busy", "redirect"]
+        assert project.narrate(spend=True).ok
         # A fix whose command fails and says the key and the host's password on its way out.
         failing = subprocess.CompletedProcess([], 2, b"", f"Traceback\nKeyError: {key} {host}\n".encode())
         monkeypatch.setattr("decktalk.machine.subprocess.run", lambda argv, **_: failing)

@@ -202,6 +202,16 @@ def test_the_tools_cache_is_saved_to_the_key_it_is_restored_from() -> None:
     assert restore["with"]["key"] == "${{ matrix.cache }}"
 
 
+def test_the_tools_cache_is_the_one_directory_doctor_names() -> None:
+    """Chromium and ffmpeg both live in the directory `doctor --json` names, so a leg on any platform keeps one."""
+    restore = next(step for step in steps() if "actions/cache/restore" in step.get("uses", ""))
+    assert restore["with"]["path"] == "${{ env.TOOLS_CACHE }}"
+    named = [step for step in steps() if "TOOLS_CACHE=" in step.get("run", "")]
+    assert len(named) == 1, "no step names the directory the tools are kept in"
+    assert "decktalk doctor" in named[0]["run"] and '["cache"]' in named[0]["run"]
+    assert named[0]["if"] == restore["if"]
+
+
 # ---- cue timing ----------------------------------------------------------------------------------
 
 

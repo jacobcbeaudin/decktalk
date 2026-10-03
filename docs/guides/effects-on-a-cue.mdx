@@ -17,7 +17,7 @@ the closing band lands.
 
 ## Before you start
 
-- Resolve the cues once, with any build or with `decktalk narrate --no-voice` and then
+- Resolve the cues once, with any build or with `decktalk narrate --no-spend` and then
   `decktalk cue`. An effect plays at the second its cue resolved to, so a cue that has never been
   resolved has no second to sit on, and `cue` needs the word clock `narrate` writes.
 - Put `ELEVENLABS_API_KEY` in `.env` to generate the sound. Generating one spends credits at the
@@ -44,14 +44,14 @@ the closing band lands.
   </Step>
 
   <Step title="Read the plan before you buy it">
-    A run without voice reports what it would ask for and buys nothing, so this is how to read the
+    A run with `--no-spend` reports what it would ask for and buys nothing, so this is how to read the
     prompt and the price first.
 
     ```console
-    decktalk soundscape --no-voice --json
+    decktalk soundscape --no-spend --json
     ```
 
-    {/* sample: decktalk soundscape --no-voice --json on the starter with the [soundscape.effects.tick] table above */}
+    {/* sample: decktalk soundscape --no-spend --json on the starter with the [soundscape.effects.tick] table above */}
     ```json
     {
       "schema": 2,

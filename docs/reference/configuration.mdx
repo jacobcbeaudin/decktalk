@@ -113,7 +113,8 @@ These keys govern how the script is turned into audio.
 | `lead_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project |  | Silence before the first word of every spoken section, so the picture changes before the voice speaks. A section's own `lead_seconds` replaces it. |
 | `silent_beat_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project |  | Seconds each beat adds to a section's length in a build without voice. |
 | `tail_min_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project | `CUT_SPEECH` | Silence after the last word of every spoken section, so a cut never falls on speech. The take is placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it. |
-| `cache_dir` | string | `""` | takes any value of its type | path | machine |  | Directory that holds the take files and their words files, each named by its content hash. It is empty for `build/narrate/` inside the project, and a path here keeps the voiced takes when `build/` is deleted and lets many projects share one cache. |
+| `takes_dir` | string | `""` | takes any value of its type | path | project |  | Directory inside the project that holds its takes, their words files and the take index, so a committed copy builds the film on a fresh clone with no key. It is empty for `build/narrate/`. A take is looked for here first and in `cache_dir` second, and a take this project buys or finds elsewhere is written here. |
+| `cache_dir` | string | `""` | takes any value of its type | path | machine |  | Directory this machine keeps takes and their words files in, each named by its content hash, so many projects share one store and a deleted `build/` keeps them. A take is looked for here after the project's `takes_dir`, and a bought take is written here only when the project names no `takes_dir`. |
 | `context_chars` | integer | `1500` | must be between 0 and 5000 | characters | project |  | Characters of each neighbour section sent with a request, for continuous prosody. |
 | `timeout_seconds` | integer | `180` | must be between 10 and 1800 | seconds | project |  | Seconds before a speech request times out. |
 | `sound_end_noise_dbfs` | number | `-35.0` | must be between -60 and -25 | dBFS | project | `CUT_SPEECH` | Level under which the tail of a take counts as silence, which is where the take's sound ends. |
@@ -121,6 +122,8 @@ These keys govern how the script is turned into audio.
 
 <Warning>
 **`narration.concurrency`** A voice provider limits requests per account, and a busy answer is retried rather than paid twice.
+
+**`narration.takes_dir`** A directory outside the project, an absolute path or the project directory itself is refused when the project loads, because a project someone else wrote would otherwise choose where this machine reads and writes its takes.
 
 **`narration.sound_end_noise_dbfs`** Above about -25 dBFS the scan calls quiet speech silence, so the take is placed early and the cut that follows it lands on a word.
 
@@ -229,7 +232,7 @@ These keys are what the speech provider is asked for and what its characters cos
 
 **`voice.speed`** The provider refuses a multiple outside its own range, so a slower read is a script change rather than a knob.
 
-**`voice.price_per_1000_characters`** It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.
+**`voice.price_per_1000_characters`** It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. A zero somebody stated says the voice bills nothing, so a run with neither --spend nor --no-spend buys from it without asking.
 
 </Warning>
 
@@ -304,7 +307,7 @@ These keys name the tools DeckTalk drives, for a machine that supplies its own.
 | `ffmpeg` | string | `""` | takes any value of its type | path | machine |  | ffmpeg executable. It is empty for the build DeckTalk fetches itself. |
 | `ffprobe` | string | `""` | takes any value of its type | path | machine |  | ffprobe executable. It is empty for the build DeckTalk fetches itself. |
 | `timeout_seconds` | number | `600.0` | must be between 10 and 7200 | seconds | machine |  | Longest one ffmpeg or ffprobe call, or one wait on another fetch of ffmpeg, may run before it is stopped. |
-| `cache_dir` | string | `""` | takes any value of its type | path | machine |  | Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache. |
+| `cache_dir` | string | `""` | takes any value of its type | path | machine |  | Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. It is empty for the standard per-user cache. |
 
 ## The numbers that are not knobs
 

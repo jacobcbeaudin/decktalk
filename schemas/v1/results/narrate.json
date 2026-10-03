@@ -72,6 +72,7 @@
         "CUE_OVERLAP",
         "TAKE_PLACEHOLDER",
         "TAKE_SPOKEN_SYMBOL",
+        "TAKE_MISSING",
         "CUT_SPEECH",
         "CUT_POP",
         "MIX_LOUDNESS",
@@ -699,15 +700,6 @@
       ],
       "title": "TakeStatus",
       "type": "string"
-    },
-    "Voicing": {
-      "description": "What a run does about the voice, which replaces a pair of flags that could contradict each other.",
-      "enum": [
-        "placeholder",
-        "paid"
-      ],
-      "title": "Voicing",
-      "type": "string"
     }
   },
   "additionalProperties": false,
@@ -762,9 +754,10 @@
       "title": "Written",
       "type": "array"
     },
-    "voice": {
-      "$ref": "#/$defs/Voicing",
-      "description": "Whether this run spent on speech or wrote placeholders."
+    "spending": {
+      "description": "True when the caller let this run buy what is missing, which spend=True and --spend do. A run that may not plays every take on disk and a placeholder for each missing one.",
+      "title": "Spending",
+      "type": "boolean"
     },
     "sections": {
       "description": "Every section this run considered, in script order.",
@@ -803,7 +796,7 @@
   "required": [
     "ok",
     "run",
-    "voice",
+    "spending",
     "sections",
     "spend",
     "seconds"

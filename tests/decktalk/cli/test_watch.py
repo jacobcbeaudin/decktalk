@@ -10,12 +10,12 @@ from decktalk.cli import watch
 from decktalk.cli.session import Globals, Session
 from decktalk.errors import InputError
 from decktalk.inputs.workspace import Workspace
-from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, Voicing
+from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult
 from support.spends import a_spend
 
 from .conftest import Fake
 
-BUILT = BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=a_spend(), seconds=1.0)
+BUILT = BuildResult(ok=True, run="r", stages=(), spending=False, spend=a_spend(), seconds=1.0)
 
 
 class Origin:
@@ -43,7 +43,7 @@ def test_the_loop_serves_builds_once_and_never_voices(monkeypatch, tmp_path) -> 
     _place(project, tmp_path)
     built = watch.loop(session(), project.project())
     assert built is BUILT
-    assert project.called("build")["voice"] is Voicing.PLACEHOLDER
+    assert project.called("build")["spend"] is False
     assert origin.closed
 
 

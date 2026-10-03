@@ -21,14 +21,14 @@ price before they start.
   `[voice] price_per_1000_characters` from `decktalk.toml` as what your own plan charges.
 - No run spends without being told to. On the command line that is `--spend`, and `--max-cost N`
   refuses the run before the first call if the most it could cost is over N US dollars. In the
-  library it is `voice=decktalk.Voicing.PAID`, and `ApprovalRequired` is raised rather than money
+  library it is `spend=True`, and `ApprovalRequired` is raised rather than money
   being spent.
 
 [Requirements and costs](/requirements) lists every command that spends.
 
 ## Do I need an account to try it?
 
-No. `decktalk init my-deck` and then `decktalk build --no-voice` writes a complete film with
+No. `decktalk init my-deck` and then `decktalk build --no-spend` writes a complete film with
 placeholder narration that carries a real word clock, so the pacing, the cues and the cuts are all
 real. Nothing contacts a speech service, and no key is read.
 
@@ -42,7 +42,7 @@ Not today. ElevenLabs is the one speech provider DeckTalk ships, and the seam ab
 rather than an extension point. There is no plugin path and nothing is read from entry points.
 
 What that does not lock up is your project. `script.md`, `cues.json`, `decktalk.toml` and the deck
-pages name no service, and a build with `--no-voice` needs none, so the files outlive the choice.
+pages name no service, and a build with `--no-spend` needs none, so the files outlive the choice.
 The one thing DeckTalk asks of any voice is a start and an end time for every word, because the cut
 is made on words, and that requirement is what a second provider would have to meet.
 

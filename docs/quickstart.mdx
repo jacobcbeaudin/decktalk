@@ -8,11 +8,11 @@ Three lines take a machine with nothing on it to a finished film.
 ```console
 curl -LsSf https://decktalk.ai/install.sh | sh
 decktalk init my-lesson && cd my-lesson
-decktalk build --no-voice
+decktalk build --no-spend
 ```
 
-The third line spends nothing and needs no account, because `--no-voice` writes placeholder
-narration and a click track in place of a voice. Part 3 of this page adds your own voice, which is
+The third line spends nothing and needs no account, because `--no-spend` buys no take and plays a
+click track wherever a take is missing. Part 3 of this page adds your own voice, which is
 the one thing in DeckTalk that costs money.
 
 ## Part 1: install
@@ -142,7 +142,7 @@ sizes and the cache paths.
 
     ```text
     Wrote my-lesson from the starter example, 16 files.
-    Next   cd my-lesson && decktalk build --no-voice
+    Next   cd my-lesson && decktalk build --no-spend
     ```
 
     On a terminal `init` asks for the name, the example and whether to write the skills. Pass
@@ -163,9 +163,9 @@ sizes and the cache paths.
     The starter is three sections on one page, and none of it is a demo to delete first.
   </Step>
 
-  <Step title="Build it with no voice">
+  <Step title="Build it without spending">
     ```console
-    decktalk build --no-voice
+    decktalk build --no-spend
     ```
 
     ```text
@@ -177,12 +177,19 @@ sizes and the cache paths.
       Soundscape    0:00
     The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
         Assemble    0:02
-          Verify    0:01
-           Built build/final/my-lesson.mp4, $0.00, nothing found
+          Verify    0:02
+           Built build/final/my-lesson.mp4, $0.00, 3 findings
+    script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no take of its current text on disk. Run decktalk narrate --section 1 --spend to buy its take.
+    script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take of its current text on disk. Run decktalk narrate --section 2 --spend to buy its take.
+    script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no take of its current text on disk. Run decktalk narrate --section 3 --spend to buy its take.
+    Found 3 findings, 0 certain.
     ```
 
-    One line per stage, in run order, with the seconds it took. The last line is the one to read:
-    `Built`, the film, what the run spent, and what the measurements found. That run took about 27
+    One line per stage, in run order, with the seconds it took. `Built` is the line to read: the
+    film, what the run spent, and what the run found. Here that is one
+    [`TAKE_MISSING`](/reference/findings/TAKE_MISSING) per section, because no section has a voiced
+    take yet and each plays a placeholder. Each is uncertain, so the build still exits 0, and each
+    names the command that buys its take. That run took about 27
     seconds in all on a MacBook Pro with an Apple M5 Pro and 64 GB of memory, on a machine that
     already had Chromium and ffmpeg. Recording is the long part. It runs in real time, with several
     sections recording at once as the machine's CPU allows, so a longer film takes longer.
@@ -249,14 +256,14 @@ sizes and the cache paths.
     ```
 
     One row per section, with the scene of the page it plays. `Voiced` is true when a voice spoke a
-    take of that section's current text. A build without voice writes a placeholder take instead, so
+    take of that section's current text. A build that does not spend writes a placeholder take instead, so
     it reads `no` here while `Recorded` and `Cut` read `yes`. `Stale` is the column that matters
     after an edit: it marks a section whose inputs have moved since the film was cut. `status` is a
     reading of the project rather than a third opinion beside `check` and `verify`, and the one thing
     it judges is a file the project names and has not got, which is a certain `FILE_MISSING`.
 
     Before the first build the same table reads `no` in every column, and `Next` reads
-    `decktalk narrate --no-voice`.
+    `decktalk narrate --no-spend`.
   </Step>
 </Steps>
 
@@ -403,7 +410,7 @@ film.
 
     ```text
     error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
-      hint: Run decktalk build --spend to approve that spend, or decktalk build --no-voice to finish with placeholder narration.
+      hint: Run decktalk build --spend to approve that spend, or decktalk build --no-spend to play a placeholder wherever a take is missing.
       docs: https://docs.decktalk.ai/reference/errors/APPROVAL
     ```
 

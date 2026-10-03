@@ -1,7 +1,7 @@
 """The command line: eighteen commands, each a thin client of one library call.
 
     decktalk init my-lesson          write a project that already builds
-    decktalk build --no-voice        run every stage with placeholder narration
+    decktalk build --no-spend        run every stage, a placeholder for each missing take
     decktalk check --json            judge the inputs and price a voiced run
     decktalk schema                  read the whole instruction set in one call
 

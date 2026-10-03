@@ -15,7 +15,7 @@ the whole site is one file at [llms-full.txt](https://docs.decktalk.ai/llms-full
 ```console
 curl -LsSf https://decktalk.ai/install.sh | sh
 decktalk init my-lesson && cd my-lesson
-decktalk build --no-voice
+decktalk build --no-spend
 ```
 
 The installer brings uv, and uv brings its own Python, on Linux and macOS. On Windows install with
@@ -194,22 +194,22 @@ credits are spent.
 
 | Command | What it does | Flags that matter |
 |---|---|---|
-| `decktalk narrate` | Voice each section of `script.md` and time every word. | `--section N`, `--force`, `--replace-voiced`, `--no-voice`, `--spend`, `--max-cost N` |
+| `decktalk narrate` | Voice each section of `script.md` and time every word. | `--section N`, `--force`, `--replace-voiced`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk cue` | Turn each cue phrase into a second on its section clock. | `--section N` |
 | `decktalk record` | Record each page section in headless Chromium. | `--section N`, `--force` |
-| `decktalk soundscape` | Generate the music, the ambience bed and the effects. | `--section N`, `--force`, `--no-voice`, `--spend`, `--max-cost N` |
+| `decktalk soundscape` | Generate the music, the ambience bed and the effects. | `--section N`, `--force`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk assemble` | Cut, mix and encode the sections into one mp4. | `--section N`, `--skip STAGE` |
 | `decktalk verify` | Measure the finished mp4: every start, cut, seam and landing. | `--section N` |
 
-`--replace-voiced` is the one flag here that destroys money, because it discards the take it
-replaces. `--force` builds again from nothing and keeps every voiced take. A build that finds nothing
+`--replace-voiced` is the one flag here that buys words you already own: with `--spend` it voices
+each named section again, and with `--no-spend` it plays a placeholder in place of the paid take. `--force` builds again from nothing and keeps every voiced take. A build that finds nothing
 moved keeps `assemble` and `verify` and reports them as `kept`, and `--force` measures again.
 
 ### Run them all, or cut one piece out
 
 | Command | What it does | Flags that matter |
 |---|---|---|
-| `decktalk build` | Run every stage in order, or a span of them. | `--from STAGE`, `--to STAGE`, `--skip STAGE`, `--section N`, `--fix`, `--no-fix`, `--force`, `--replace-voiced`, `--watch`, `--no-voice`, `--spend`, `--max-cost N` |
+| `decktalk build` | Run every stage in order, or a span of them. | `--from STAGE`, `--to STAGE`, `--skip STAGE`, `--section N`, `--fix`, `--no-fix`, `--force`, `--replace-voiced`, `--watch`, `--no-spend`, `--spend`, `--max-cost N` |
 | `decktalk clip` | Cut a span of a built section into its own file. | `--section N`, `--start SECONDS`, `--end SECONDS`, `--out FILE`, `--gain-db DB`, `--hold-seconds SECONDS` |
 
 `build --watch` stays running, rebuilds the changed section and never spends.
@@ -243,11 +243,13 @@ repeats, and it is on `check`, `words`, `storyboard`, `build`, `clip` and every 
 project's own.
 
 **The spend flags** are on the three commands that can buy something, which are `narrate`,
-`soundscape` and `build`. `--no-voice` writes placeholder narration and needs no API key.
-`--spend` voices what needs it without asking first. `--max-cost N` refuses before the first call if
-the most the run can cost is over N US dollars, and it is compared against the spend object's
-`ceiling_dollars`. On a terminal a voiced run prices the spend and asks. Without a terminal it
-refuses with the error code `APPROVAL` unless `--spend` or `--no-voice` is passed.
+`soundscape` and `build`. `--no-spend` plays every take on disk, puts a placeholder where a take is
+missing and reports it as `TAKE_MISSING`, and needs no API key. `--spend` buys what is missing without
+asking first. `--max-cost N` refuses before the first call if the most the run can cost is over N US
+dollars, and it is compared against the spend object's `ceiling_dollars`. With neither flag, a run
+with something to buy prices it and asks on a terminal, and without a terminal it refuses with the
+error code `APPROVAL`. A run with nothing to buy is not asked, and neither is one whose voice's
+stated price is zero, which buys without asking. `--no-spend` never buys, whatever the price.
 
 **The findings flags** are on every command that can judge something, which are `doctor`, `check`,
 `storyboard`, `narrate`, `cue`, `record`, `soundscape`, `assemble`, `verify` and `build`.
@@ -316,7 +318,7 @@ Whole contract: [The JSON contract](/agents/json).
 A non-zero exit with `error` null is a finding, so read `findings`, change the project and run the
 command again. A non-null `error` is an error, so stop and tell the person.
 
-The fifty-two finding codes each have a page of their own, and `decktalk schema` prints them all
+The fifty-three finding codes each have a page of their own, and `decktalk schema` prints them all
 with their sentences, their certainties and the settings keys that move them.
 
 ## Settings
@@ -361,7 +363,7 @@ Nothing in the library prints, and every call returns the same object the CLI se
 import decktalk
 
 project = decktalk.open("my-lesson")
-result = project.build(voice=decktalk.Voicing.PAID, max_cost=5.0)
+result = project.build(spend=True, max_cost=5.0)
 for finding in result.findings:
     print(finding.code, finding.message, finding.location.where)
 ```
@@ -372,7 +374,7 @@ for finding in result.findings:
 or the working directory. `Project` carries the twelve calls `narrate`, `cue`, `record`,
 `soundscape`, `assemble`, `verify`, `build`, `status`, `check`, `words`, `storyboard` and `clip`,
 each taking `cancel`, along with `apply`, `serve`, `reload` and `sections_touching`. No library call
-spends without `voice=Voicing.PAID`, `max_cost` is checked before the first paid call, and
+spends without `spend=True`, `max_cost` is checked before the first paid call, and
 `ApprovalRequired` is raised rather than spending.
 
 Every public name: [Python API](/reference/python-api).

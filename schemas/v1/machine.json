@@ -36,7 +36,7 @@
           "x-environment": "DECKTALK_NARRATION_RETRIES"
         },
         "cache_dir": {
-          "description": "Directory that holds the take files and their words files, each named by its content hash. It is empty for `build/narrate/` inside the project, and a path here keeps the voiced takes when `build/` is deleted and lets many projects share one cache.",
+          "description": "Directory this machine keeps takes and their words files in, each named by its content hash, so many projects share one store and a deleted `build/` keeps them. A take is looked for here after the project's `takes_dir`, and a bought take is written here only when the project names no `takes_dir`.",
           "type": "string",
           "default": "",
           "x-range": "takes any value of its type",
@@ -45,6 +45,7 @@
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-see-also": [
+            "narration.takes_dir",
             "tools.cache_dir"
           ],
           "x-environment": "DECKTALK_NARRATION_CACHE_DIR"
@@ -165,7 +166,7 @@
           "x-environment": "DECKTALK_TOOLS_TIMEOUT_SECONDS"
         },
         "cache_dir": {
-          "description": "Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache.",
+          "description": "Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. It is empty for the standard per-user cache.",
           "type": "string",
           "default": "",
           "x-range": "takes any value of its type",

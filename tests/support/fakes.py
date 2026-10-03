@@ -13,6 +13,7 @@ here to type the fixture it asked for or to build one of its own.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
@@ -26,6 +27,9 @@ from playwright.sync_api import Error as PlaywrightError
 from decktalk.media import browser
 from decktalk.results import Word
 from decktalk.speech import SpeechRequest
+
+BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
+"""The variable Playwright's driver reads for where its browsers live, spelled here as Playwright documents it."""
 
 FAKE_VOICE_NAME = "test-voice"
 """The `[voice] provider` value a project under test names, which `fake_voice` answers for."""
@@ -150,6 +154,7 @@ class FakeChromium:
         self.executable_path = str(executable)
         self.refusal, self.refusals = refusal, refusals
         self.asked: list[dict[str, object]] = []
+        self.looked_in: list[str | None] = []
 
     def launch(self, **options: object) -> BareBrowser:
         self.asked.append(options)
@@ -165,8 +170,17 @@ class FakeChromium:
         return cast("Playwright", SimpleNamespace(chromium=self))
 
     def started(self) -> Callable[[], AbstractContextManager[Playwright]]:
-        """`sync_playwright` as a seam that starts this Chromium's driver, for code that opens its own."""
-        return lambda: nullcontext(self.driver())
+        """`sync_playwright` as a seam that starts this Chromium's driver, for code that opens its own.
+
+        Each start keeps, in `looked_in`, the browser directory a real driver would read from the
+        environment it copies as it starts.
+        """
+
+        def start() -> AbstractContextManager[Playwright]:
+            self.looked_in.append(os.environ.get(BROWSERS_VARIABLE))
+            return nullcontext(self.driver())
+
+        return start
 
 
 class FakeRoute:

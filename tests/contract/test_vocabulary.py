@@ -3,7 +3,7 @@
     uv run python tests/contract/test_vocabulary.py --write   # lower a count the code has shrunk
 
 A stage, an outcome, a finding code, an error code, a certainty, a layer, a scope, a take status, a
-sound status, a section kind, a skip reason, a substitute, a voicing, a spend state, a setting's
+sound status, a section kind, a skip reason, a substitute, a spend state, a setting's
 nature and a setting's source are each a member of a plain enum, and a plain enum never compares
 equal to a string. So a string literal that spells one of them is either
 dead, because it is compared with a member and is always unequal, or it is a second spelling of the
@@ -69,7 +69,6 @@ from decktalk.results import (
     SpendState,
     Substitute,
     TakeStatus,
-    Voicing,
 )
 from support import ratchet
 from support.paths import REPO, SRC, TESTS
@@ -123,7 +122,6 @@ WORD_ENUMS: tuple[type[Enum], ...] = (
     SpendState,
     Substitute,
     TakeStatus,
-    Voicing,
     Nature,
     Source,
 )
@@ -140,7 +138,6 @@ CODE_ENUMS: tuple[type[Enum], ...] = (Code, ErrorCode)
 
 SHARED = {
     "kept": "A take that was not re-voiced and a sound that was not regenerated are the same fact twice.",
-    "placeholder": "A run asks for a placeholder voicing and a row reports one, so it is the request and the outcome.",
     "project": "A layer is where a value was written and a scope is where it may be, and both are the project file.",
     "machine": "A layer is where a value was written and a scope is where it may be, and both are the machine file.",
 }

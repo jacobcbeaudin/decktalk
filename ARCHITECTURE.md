@@ -208,12 +208,14 @@ keep such a deck from reaching what the service holds.
   sandbox on or not at all, every request off the project's origin is refused through every channel
   a page can open, and under both policies the browser is handed a scrubbed environment rather than
   the process's own.
-- **The key never shares a process with a page.** `narrate` and `soundscape` run in a voice process
-  that holds the key and opens no page. `check`, `storyboard`, `record`, `assemble` and `verify` run
-  in a render process that holds no key. The build directory is the only thing that moves between
-  them, and a host never runs a voiced `build`, which would put both in one process. Each paid take
-  is a `take.charged` line on the stream the moment it is bought, which is what a host's own ledger
-  reads.
+- **The key never shares a run with a stranger's page.** Each row of `PIPELINE` says whether its
+  stage `holds_key` or `opens_pages`, and no row is both. A host runs `Stage.voice_part()`, which is
+  `narrate` and `soundscape`, in a voice process that holds the key, and `Stage.render_part()` with
+  `check` and `storyboard` in a render process that holds none. The build directory is the only thing
+  that moves between them. A run that may spend refuses to open an untrusted page, at the one place
+  a browser starts, so a voiced `build` on a host is refused before it buys anything rather than
+  trusted not to happen. Each paid take is a `take.charged` line on the stream the moment it is
+  bought, which is what a host's own ledger reads.
 
 [The Python API](https://docs.decktalk.ai/reference/python-api#running-decktalk-inside-a-service)
 is the contract a host builds on.

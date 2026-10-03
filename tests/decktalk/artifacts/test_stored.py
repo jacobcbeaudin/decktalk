@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from pydantic import Field
@@ -17,7 +19,7 @@ from decktalk.artifacts.stored import (
     engine_version,
     file_digest,
 )
-from decktalk.errors import ErrorCode, NotBuiltError
+from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from decktalk.pipeline import Artifact
 
 
@@ -25,6 +27,12 @@ class Tiny(Stored):
     """The smallest artifact there could be, which is what these tests judge the base on."""
 
     count: int = Field(description="A number, so the file has something in it to read back.")
+
+
+class Bought(Tiny):
+    """The smallest record of something paid for, which is refused rather than built again."""
+
+    paid: ClassVar[bool] = True
 
 
 def test_reading_a_file_nothing_has_written_is_none(tmp_path: Path) -> None:
@@ -125,3 +133,52 @@ def test_a_file_large_enough_to_share_across_threads_digests_as_its_bytes_do(tmp
     film.write_bytes(body)
     assert len(body) >= THREADED_BYTES
     assert file_digest(film) == content_digest(body)
+
+
+@pytest.mark.parametrize("written", ["{not json", '{"count": 1, "version": 2}'])
+def test_a_paid_record_that_does_not_read_is_refused_with_a_sentence_and_never_counted_as_absent(
+    tmp_path: Path, written: str
+) -> None:
+    """Counting a paid record as absent would buy what it records again, so the person decides."""
+    path = tmp_path / "bought.json"
+    path.write_text(written, encoding="utf-8")
+    for reading in (Bought.read, Bought.previous):
+        with pytest.raises(InputError) as refused:
+            reading(path)
+        assert refused.value.code is ErrorCode.INPUT
+        assert str(refused.value).startswith("bought.json is there and cannot be read as bought")
+        assert "paid for" in str(refused.value)
+        assert "buys again" in (refused.value.hint or "")
+    assert path.read_text(encoding="utf-8") == written
+
+
+def test_a_cache_file_that_does_not_read_is_built_again_and_a_paid_one_is_not(tmp_path: Path) -> None:
+    """Everything under `build/` is a cache but the paid records, which a newer release reads or refuses."""
+    for model, rebuilt in ((Tiny, True), (Bought, False)):
+        path = tmp_path / f"{model.__name__}.json"
+        path.write_text("{not json", encoding="utf-8")
+        if rebuilt:
+            assert model.previous(path) is None
+        else:
+            with pytest.raises(InputError):
+                model.previous(path)
+        assert path.is_file()
+
+
+def test_the_ledger_and_the_take_index_are_the_paid_records_and_the_caches_are_not() -> None:
+    """Only a record of what was bought may be paid, which is the ledger and the take index."""
+    assert {model.__name__ for model in every_stored() if model.paid} == {"Ledger", "Takes"}
+
+
+def every_stored() -> list[type[Stored]]:
+    """Every artifact model the package declares, found by importing each module that declares one."""
+    for module in ("decktalk.artifacts", "decktalk.stages.status", "decktalk.stages.soundscape.ledger"):
+        importlib.import_module(module)
+    found: list[type[Stored]] = []
+    pending = list(Stored.__subclasses__())
+    while pending:
+        model = pending.pop()
+        pending.extend(model.__subclasses__())
+        if model.__module__.startswith("decktalk."):
+            found.append(model)
+    return found

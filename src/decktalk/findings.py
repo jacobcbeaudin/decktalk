@@ -338,6 +338,13 @@ class Code(Enum):
         RaisedBy.PYTHON,
         Certainty.UNCERTAIN,
     )
+    TAKE_MISSING = (
+        "TAKE_MISSING",
+        "A section has no take of its current text, so a placeholder plays in its place until a run with "
+        "--spend buys one.",
+        RaisedBy.PYTHON,
+        Certainty.UNCERTAIN,
+    )
     CUT_SPEECH = (
         "CUT_SPEECH",
         "Speech is still sounding at a section cut, so the film slices a word in two.",

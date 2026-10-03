@@ -12,7 +12,6 @@ import pytest
 
 from decktalk.events import Event
 from decktalk.inputs import Inputs
-from decktalk.results import Voicing
 from support.runs import Watched, a_run
 
 
@@ -26,9 +25,9 @@ def run_environ() -> dict[str, str]:
 def make_run(run_environ: dict[str, str]) -> Callable[..., Watched]:
     """A run on a machine that holds nothing but a stream, with every line it emits kept."""
 
-    def build(project: Inputs, *, voice: Voicing = Voicing.PLACEHOLDER, max_cost: float | None = None) -> Watched:
+    def build(project: Inputs, *, spend: bool = False, max_cost: float | None = None) -> Watched:
         lines: list[Event] = []
-        return Watched(a_run(project.root, voice=voice, max_cost=max_cost, lines=lines, **run_environ), lines)
+        return Watched(a_run(project.root, spend=spend, max_cost=max_cost, lines=lines, **run_environ), lines)
 
     return build
 

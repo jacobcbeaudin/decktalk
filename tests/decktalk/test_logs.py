@@ -20,7 +20,7 @@ from pydantic import TypeAdapter
 
 import decktalk
 from decktalk import logs
-from decktalk.errors import ErrorCode, NotBuiltError, ProjectLocked, ProviderError
+from decktalk.errors import Cancel, ErrorCode, NotBuiltError, ProjectLocked, ProviderError
 from decktalk.events import Event, Level, Line, Log, RunDone
 from decktalk.findings import Applicability, Code, CommandFix
 from decktalk.logs import HANDLER, LOGGER, RunHandler, install, level_of, logging_into, within
@@ -32,15 +32,13 @@ from decktalk.results import Scope
 from decktalk.secret import Secret
 from decktalk.settings import ToolsConfig
 from decktalk.speech import http as _http
-from decktalk.stages.narrate import _in_pool
-from decktalk.stages.narrate.plan import TakePlan
+from decktalk.stages.pool import Halt, Pool, nothing_to_open
 from decktalk.toolchain import chromium_fetch
 from support.fakes import FakeChromium, FakeRouter
 from support.logs import data_of
 from support.projects import write_project
 from support.runs import a_machine
 from support.service import Service
-from support.takes import planned
 
 log = logging.getLogger("decktalk.media.ffmpeg")
 
@@ -448,13 +446,15 @@ def router_breaks(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None
 def two_sections_fail(_run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
     both_sent = threading.Barrier(2)
 
-    def work(plan: TakePlan) -> None:
+    def one(_opened: None, section: int, halt: Halt) -> None:
         both_sent.wait(timeout=5)
-        if plan.segment.index == 2:
-            threading.Event().wait(0.1)
-        raise ProviderError(f"section {plan.segment.index} failed")
+        if section == 2:
+            # Section 1 has failed first by the time the pool halts.
+            halt.halted.wait(timeout=5)
+        raise ProviderError(f"section {section} failed")
 
-    _in_pool(work, planned(1, 2), workers=2)
+    with Pool([1, 2], 2, nothing_to_open, one, Cancel()) as pool:
+        pool.result(1)
 
 
 def browser_is_fetched_again(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
@@ -534,9 +534,9 @@ FAILURES: dict[str, tuple[Callable[..., object], Record | None, Ended | None, fl
         None,
         600.0,
     ),
-    "two narration sections fail": (
+    "two sections of one pool fail": (
         two_sections_fail,
-        Record(Level.WARNING, "stages.narrate", frozenset({"section", "error"})),
+        Record(Level.WARNING, "stages.pool", frozenset({"section", "error"})),
         Ended(Outcome.FAILED, ErrorCode.PROVIDER),
         600.0,
     ),
@@ -586,14 +586,16 @@ def test_a_busy_voice_leaves_a_warning_per_retry_and_a_trace_per_attempt(tmp_pat
 
 
 @pytest.mark.usefixtures("waits")
-def test_a_stalled_voice_is_retried_and_ends_as_a_provider_refusal(tmp_path: Path, service: Service) -> None:
+def test_a_stalled_voice_is_sent_once_and_ends_as_a_provider_refusal_that_says_possibly_charged(
+    tmp_path: Path, service: Service
+) -> None:
     service.expect_request("/speak").respond_with_handler(service.stalls)
     url = service.url_for("/speak")
     lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=1, retries=1))
-    retries = [line for line in lines if isinstance(line, Log) and line.level is Level.WARNING]
-    assert len(retries) == 1 and "stopped answering" in retries[0].message
+    assert [line for line in lines if isinstance(line, Log) and line.level is Level.WARNING] == []
     last = lines[-1]
     assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.PROVIDER
+    assert "possibly charged" in last.error.message
 
 
 def test_a_held_project_names_the_lock_on_its_last_line(tmp_path: Path) -> None:

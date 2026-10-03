@@ -21,6 +21,11 @@ off the origin are aborted by the router, and its browser is pointed at a proxy 
 which closes the channels routing never sees: a WebSocket, a DNS lookup and a WebRTC probe. Under
 both policies the browser is given the environment `environment.py` builds rather than the
 process's own, so a key the host holds never reaches the process that runs a page's script.
+
+A run that may spend never opens an untrusted page. The key is in reach of such a run whether or not
+it finds anything to buy, so `launch` refuses before any browser starts, and a host voices in one run
+and renders a stranger's deck in another. A trusted page is the author's own deck on the author's
+own machine, so a voiced build still records it.
 """
 
 from __future__ import annotations
@@ -39,17 +44,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
-from playwright.sync_api import Browser, BrowserContext, Page, Playwright, sync_playwright
+from playwright.sync_api import Browser, BrowserContext, Page, Playwright
 from playwright.sync_api import Error as PlaywrightError
 
-from ..errors import InputError, ToolError
+from ..errors import ApprovalRequired, InputError, ToolError
 from ..page import MILLISECONDS, MOTION_SCALE_PROPERTY
 from ..settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
 from ..toolchain import chromium_fetch
 from ..toolchain.assets import probe_path
 from . import pagereport
 from .encode import css_color
-from .environment import child_environment
+from .environment import child_environment, may_spend
 from .origin import Allowed, Assets, route_pages
 from .pagereport import PageReport, Recording
 
@@ -177,6 +182,18 @@ SANDBOX_HINT = (
 """What a machine that cannot start the sandbox is told, because the sandbox is a property of the machine."""
 
 
+KEY_BESIDE_PAGE = (
+    "this run may spend, and a run that may spend opens no untrusted page, because the voice key would be "
+    "in reach of the process that runs a stranger's script."
+)
+"""What a run that may spend is told when it reaches for a page it does not trust."""
+
+KEY_BESIDE_PAGE_HINT = (
+    "Voice in a run of its own with `decktalk narrate --spend`, then render in a run without --spend."
+)
+"""The next step, which splits the work the refusal would not let one run do."""
+
+
 def page_policy(value: str) -> PagePolicy:
     """The policy a page is opened under, refused here rather than read as the weaker of the two.
 
@@ -252,12 +269,13 @@ def chromium(browser_path: str = "", *, policy: str) -> Iterator[Browser]:
     Under the untrusted policy the browser is sealed as `launch_options` says.
 
     `browser_path` is `[record] browser_path`, the executable a machine that manages its own
-    Chromium names. It is empty on a machine DeckTalk fetches the browser for, which is where
-    `launch` fetches it. `policy` is `[record] page_policy`, which every caller that opens a
-    project's page passes on. It has no default, because a default would be the policy a caller that
-    forgot it gets, and a caller that forgot it is the one most likely to open a stranger's page.
+    Chromium names. It is empty on a machine DeckTalk fetches the browser for, whose driver looks in
+    the browser directory of the run's tool cache, which is where `launch` fetches it. `policy` is
+    `[record] page_policy`, which every caller that opens a project's page passes on. It has no
+    default, because a default would be the policy a caller that forgot it gets, and a caller that
+    forgot it is the one most likely to open a stranger's page.
     """
-    with sync_playwright() as pw:
+    with chromium_fetch.driver(chromium_fetch.browsers_dir()) as pw:
         browser = launch(pw, browser_path, policy=policy)
         _POLICIES[browser] = page_policy(policy)
         try:
@@ -279,9 +297,13 @@ def launch(pw: Playwright, browser_path: str = "", *, policy: str) -> Browser:
     A machine that names its own executable is told about that executable instead. Fetching would
     not help it: the next launch would use the same path again. An untrusted page whose Chromium is
     on disk and will not start is a machine that cannot run the sandbox, which a fetch does not
-    change either, so it is refused and never started without one.
+    change either, so it is refused and never started without one. An untrusted page under a run that
+    may spend is refused before anything starts, which is the one check that keeps a key and a
+    stranger's page out of one run.
     """
     sealed = page_policy(policy)
+    if sealed == UNTRUSTED and may_spend():
+        raise ApprovalRequired(KEY_BESIDE_PAGE, hint=KEY_BESIDE_PAGE_HINT)
     options = launch_options(sealed)
     started = time.monotonic()
     try:

@@ -42,14 +42,17 @@ import re
 import sys
 import tomllib
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from pathlib import Path
 
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import Playwright
 
 import generated
+from decktalk.machine import Machine
+from decktalk.toolchain import chromium_fetch
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
@@ -191,6 +194,11 @@ def bg_rect(pal: dict[str, str], w: int, h: int, background: bool) -> str:
 # ---- measuring --------------------------------------------------------------------------
 
 
+def driver() -> AbstractContextManager[Playwright]:
+    """Playwright's driver, finding Chromium in this machine's tool cache, where `decktalk install` puts it."""
+    return chromium_fetch.driver(chromium_fetch.browsers_in(Machine.from_environment().cache_dir))
+
+
 def word_xs(*lines: list[str]) -> list[list[float]]:
     """Where each word of each line starts, measured in one Chromium with the embedded font.
 
@@ -198,7 +206,7 @@ def word_xs(*lines: list[str]) -> list[list[float]]:
     """
     font = f"600 {MEASURE_PX}px {SANS}"
     starts: list[list[float]] = []
-    with sync_playwright() as pw:
+    with driver() as pw:
         b = pw.chromium.launch()
         p = b.new_page()
         for words in lines:
@@ -1657,7 +1665,7 @@ def tokens_css() -> str:
 
 def render_png(svg: str, target: Path, width: int, height: int) -> None:
     """Rasterize an SVG with Chromium, for the places that cannot show SVG such as link previews."""
-    with sync_playwright() as pw:
+    with driver() as pw:
         b = pw.chromium.launch()
         p = b.new_page(viewport={"width": width, "height": height}, device_scale_factor=1)
         p.set_content(f"<style>html,body{{margin:0}}</style>{svg}")

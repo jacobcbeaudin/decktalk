@@ -7,6 +7,7 @@ import logging
 import socket
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -44,10 +45,10 @@ from decktalk.media.environment import child_environment
 from decktalk.media.ffmpeg import bound_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.project import open as open_project
-from decktalk.results import FixOutcome, Layer, Scope, StatusResult, Voicing
+from decktalk.results import FixOutcome, Layer, Scope, StatusResult
 from decktalk.settings import BY_ID, ToolsConfig
 from decktalk.speech import VoiceContext, get_provider
-from decktalk.toolchain import assets, command_line
+from decktalk.toolchain import assets, chromium_fetch, command_line
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir
 from support.fakes import BareBrowser, FakeChromium, FakeVoice
@@ -65,6 +66,13 @@ SRC = REPO / "src" / "decktalk"
 READERS = ("machine.py", "cli")
 """Where the process environment and the home directory may be read: the machine, and its first client."""
 
+
+DRIVER_START = "toolchain/chromium_fetch.py"
+"""The one module that names a variable in the process, because Playwright's driver copies the process's environment.
+
+It names the machine's browser directory for the moment the driver starts and puts back what was
+there, so what it reads is the host's value it is about to restore and never a setting.
+"""
 
 PROCESS_READS = {("os", "environ"), ("os", "getenv"), ("Path", "home")}
 """The three ways a module reaches past its arguments for the process's environment or home directory."""
@@ -90,7 +98,7 @@ def test_only_the_machine_and_the_command_line_read_the_process() -> None:
         for path in SRC.rglob("*.py")
         if path.relative_to(SRC).parts[0] not in READERS and reads_the_process(path)
     }
-    assert offenders == set()
+    assert offenders == {DRIVER_START}
 
 
 # ---- the toolchain ------------------------------------------------------------------------
@@ -395,12 +403,27 @@ def test_a_result_is_ok_exactly_when_nothing_reaches_the_threshold_it_was_given(
 # ---- the spend gate -------------------------------------------------------------------------
 
 
-def test_nothing_is_bought_without_a_paid_voicing(tmp_path: Path) -> None:
+def test_nothing_is_bought_unless_the_run_may_spend(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     with here.run() as run, pytest.raises(ApprovalRequired) as refused:
         run.approve(a_spend(0.42, 0.42))
     assert refused.value.code is ErrorCode.APPROVAL
     assert "--spend" in (refused.value.hint or "")
+    assert "--no-spend" in (refused.value.hint or "")
+
+
+def test_a_run_that_may_not_spend_refuses_even_a_price_of_zero(tmp_path: Path) -> None:
+    """Whether a voice bills nothing is the command line's question, so the gate holds to `spend` alone."""
+    here = a_machine(tmp_path)
+    free = a_spend(0.0, 0.0).model_copy(update={"price_per_1000_characters": 0.0})
+    assert free.free
+    with here.run() as run, pytest.raises(ApprovalRequired):
+        run.approve(free)
+
+
+def test_a_zero_price_nobody_stated_is_not_free() -> None:
+    unstated = a_spend(0.0, 0.0, layer=Layer.DEFAULT).model_copy(update={"price_per_1000_characters": 0.0})
+    assert not unstated.free
 
 
 def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_path: Path) -> None:
@@ -409,7 +432,7 @@ def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_p
     unmatched = a_spend(0.0, 0.3)
     with here.run() as run, pytest.raises(ApprovalRequired) as unvoiced:
         run.approve(unmatched)
-    with here.run(voice=Voicing.PAID, max_cost=0.1) as run, pytest.raises(ApprovalRequired) as capped:
+    with here.run(spend=True, max_cost=0.1) as run, pytest.raises(ApprovalRequired) as capped:
         run.approve(unmatched)
     for refused in (unvoiced, capped):
         assert str(refused.value).startswith(unmatched.sentence)
@@ -418,21 +441,21 @@ def test_a_refusal_states_the_price_in_the_one_sentence_every_surface_uses(tmp_p
 
 def test_a_paid_run_inside_its_ceiling_goes_through(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
-    with here.run(voice=Voicing.PAID, max_cost=1.0) as run:
+    with here.run(spend=True, max_cost=1.0) as run:
         assert run.approve(a_spend(0.42, 0.9)).dollars == 0.42
 
 
 def test_the_ceiling_is_compared_against_the_most_a_run_can_cost(tmp_path: Path) -> None:
     """Credits go one request at a time, so a cap that stopped a run halfway would be a lie."""
     here = a_machine(tmp_path)
-    with here.run(voice=Voicing.PAID, max_cost=0.5) as run, pytest.raises(ApprovalRequired) as refused:
+    with here.run(spend=True, max_cost=0.5) as run, pytest.raises(ApprovalRequired) as refused:
         run.approve(a_spend(0.42, 0.9))
     assert "0.90" in str(refused.value)
 
 
 def test_a_cap_is_refused_while_nobody_has_stated_the_price(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
-    with here.run(voice=Voicing.PAID, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
+    with here.run(spend=True, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
         run.approve(a_spend(0.42, 0.9, layer=Layer.DEFAULT))
     assert "price_per_1000_characters" in (refused.value.hint or "")
 
@@ -440,7 +463,7 @@ def test_a_cap_is_refused_while_nobody_has_stated_the_price(tmp_path: Path) -> N
 def test_every_priced_request_reaches_the_stream_before_it_is_judged(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run(voice=Voicing.PAID) as run:
+    with here.events.subscribe(seen.append), here.run(spend=True) as run:
         run.approve(a_spend(0.42, 0.42))
     assert [line.event for line in seen if line.event == "spend"] == ["spend"]
 
@@ -570,7 +593,7 @@ def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> N
 
     here = a_host(tmp_path, providers={"elevenlabs": build})
     project = open_project(a_starter(tmp_path, here), machine=here)
-    result = project.narrate(voice=Voicing.PAID)
+    result = project.narrate(spend=True)
     assert result.ok
     assert voice.requests, "the host's voice was never asked for a take"
     assert {request.voice_id for request in voice.requests} == {"house-voice"}
@@ -620,7 +643,7 @@ def test_a_tenants_env_file_is_never_read_under_a_host_machine(tmp_path: Path) -
     (root / ".env").write_text("ELEVENLABS_API_KEY=sk-tenant\nELEVENLABS_VOICE_ID=tenant-voice\n", encoding="utf-8")
     project = open_project(root, machine=here)
     with pytest.raises(InputError, match="ELEVENLABS_VOICE_ID is not set"):
-        project.narrate(voice=Voicing.PAID)
+        project.narrate(spend=True)
 
 
 @pytest.mark.usefixtures("no_network", "fake_ffmpeg")
@@ -629,7 +652,7 @@ def test_the_authors_own_env_file_is_read_under_a_machine_that_allows_it(tmp_pat
     here = a_host(tmp_path, environ={}, providers={"elevenlabs": lambda _context: voice}, dotenv=True)
     root = a_starter(tmp_path, here)
     (root / ".env").write_text("ELEVENLABS_API_KEY=sk-author\nELEVENLABS_VOICE_ID=author-voice\n", encoding="utf-8")
-    assert open_project(root, machine=here).narrate(voice=Voicing.PAID).ok
+    assert open_project(root, machine=here).narrate(spend=True).ok
     assert {request.voice_id for request in voice.requests} == {"author-voice"}
 
 
@@ -710,37 +733,90 @@ def test_a_measured_doctor_reports_the_number_and_keeps_nothing(
     assert not here.config_path.exists()
 
 
-def test_install_fetches_the_browser_and_the_encoder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    fetched: list[str] = []
-    monkeypatch.setattr(machine_module.chromium_fetch, "fetch_chromium", lambda **_kw: fetched.append("chromium"))
+def rows(*answers: InstalledTool) -> Callable[[Machine], InstalledTool]:
+    """`_browser_row` answering each call with the next of `answers`, the last one for every call after."""
+    queue = list(answers)
+    return lambda _self: queue.pop(0) if len(queue) > 1 else queue[0]
+
+
+ABSENT = InstalledTool(tool=CHROMIUM)
+"""The browser row of a machine whose Chromium does not launch."""
+
+PRESENT = InstalledTool(tool=CHROMIUM, version="141.0.1", path=None, fetched=False)
+"""The browser row of a machine whose Chromium launches."""
+
+
+def faked_installer(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[tuple[list[str], dict[str, str]]]:
+    """Stand in for `playwright install` and the ffmpeg download, keeping each installer command and its environment."""
+    ran: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(cmd: list[str], *, env: dict[str, str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        ran.append((list(cmd), dict(env)))
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(machine_module.chromium_fetch.subprocess, "run", run)
     monkeypatch.setattr(
         machine_module, "fetch_ffmpeg", lambda **_: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe"))
     )
+    return ran
+
+
+def test_install_fetches_the_browser_and_the_encoder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ran = faked_installer(monkeypatch, tmp_path)
+    monkeypatch.setattr(Machine, "_browser_row", rows(ABSENT, PRESENT))
     result = a_machine(tmp_path).install()
-    assert fetched == ["chromium"]
+    assert len(ran) == 1
     assert [tool.tool for tool in result.tools] == ["chromium", "ffmpeg", "ffprobe"]
     assert result.tools[1].path == tmp_path / "ffmpeg"
     assert result.ok
 
 
-def test_install_reports_the_browser_it_just_fetched_rather_than_a_blank_row(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_install_puts_chromium_in_the_tool_cache_beside_ffmpeg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`tools.cache_dir` moved ffmpeg alone, and Chromium went wherever Playwright kept it, so a job
+    had to cache six directories. The installer is told the one cache, and `cache` names it."""
+    ran = faked_installer(monkeypatch, tmp_path)
+    monkeypatch.setattr(Machine, "_browser_row", rows(ABSENT, PRESENT))
+    result = a_machine(tmp_path).install()
+    [(_cmd, env)] = ran
+    assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(tmp_path / "cache" / "ms-playwright")
+    assert result.cache == tmp_path / "cache"
+
+
+def test_install_says_fetched_for_a_browser_it_fetched(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The row said version null, so `install` printed the browser as missing while `doctor` run
     straight afterwards read the real version off the very browser the fetch had left behind."""
-    monkeypatch.setattr(machine_module.chromium_fetch, "fetch_chromium", lambda **_kw: None)
-    monkeypatch.setattr(
-        machine_module, "fetch_ffmpeg", lambda **_: (str(tmp_path / "ffmpeg"), str(tmp_path / "ffprobe"))
-    )
-    here = a_machine(tmp_path)
-    monkeypatch.setattr(
-        type(here),
-        "_browser_row",
-        lambda _self: InstalledTool(tool=CHROMIUM, version="141.0.1", path=None, fetched=False),
-    )
-    (browser, *_rest) = here.install().tools
-    assert browser.version == "141.0.1"
-    assert browser.fetched
+    ran = faked_installer(monkeypatch, tmp_path)
+    monkeypatch.setattr(Machine, "_browser_row", rows(ABSENT, PRESENT))
+    (browser, *_rest) = a_machine(tmp_path).install().tools
+    assert (browser.version, browser.fetched) == ("141.0.1", True)
+    [(cmd, _env)] = ran
+    assert (chromium_fetch.WITH_DEPS in cmd) == sys.platform.startswith("linux"), cmd
+
+
+def test_install_says_a_browser_already_there_was_not_fetched_and_fetches_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The guide promises a second run names what was already there, and a warm run said fetched.
+    A browser that launches has its system libraries too, so neither is fetched again."""
+    ran = faked_installer(monkeypatch, tmp_path)
+    monkeypatch.setattr(Machine, "_browser_row", rows(PRESENT))
+    (browser, *_rest) = a_machine(tmp_path).install().tools
+    assert (browser.version, browser.fetched) == ("141.0.1", False)
+    assert ran == [], f"a browser that launches was fetched again: {ran}"
+
+
+def test_doctor_names_one_cache_and_its_driver_looks_inside_it(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`cache` is the one directory a job keeps, so the browser `doctor` reports lives inside it."""
+    executable = tmp_path / "cache" / "ms-playwright" / "chromium-1243" / "chrome"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"")
+    chromium = FakeChromium(executable)
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", chromium.started())
+    result = a_machine(tmp_path).doctor()
+    assert result.cache == tmp_path / "cache"
+    assert chromium.looked_in == [str(result.cache / "ms-playwright")]
+    [browser] = [tool for tool in result.tools if tool.tool == CHROMIUM]
+    assert browser.path is not None and browser.path.is_relative_to(result.cache)
 
 
 # ---- applying a fix ---------------------------------------------------------------------------

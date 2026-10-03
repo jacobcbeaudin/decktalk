@@ -9,6 +9,12 @@ and the next step `status` reports are one table a reader can see whole. `NEEDS`
 table as a graph of stages, so which records a change leaves describing other inputs is derived
 from the edges rather than kept as a rule of its own.
 
+Each row also says which of two trusts its stage needs. `holds_key` is a stage that may buy, and so
+reaches for the provider's key, and `opens_pages` is a stage that launches a browser and runs a
+page's script. No row is both, and a host that runs strangers' decks reads the two parts off the
+table, `Stage.voice_part()` in a process that holds the key and `Stage.render_part()` in one that
+holds none, rather than keeping its own list of which stage is which.
+
 A stage is a member of `Stage` and never its name as a string, so a misspelt stage fails where it is
 written rather than making a comparison quietly false. The value of a member is the one word that
 names it everywhere: the command that runs it alone, the word `--from`, `--to` and `--skip` take,
@@ -45,6 +51,16 @@ class Stage(Enum):
         begin = stages.index(first) if first is not None else 0
         end = stages.index(last) if last is not None else len(stages) - 1
         return tuple(stages[begin : end + 1])
+
+    @staticmethod
+    def voice_part() -> tuple[Stage, ...]:
+        """The stages that hold the key, in run order, which a host runs in a process that opens no page."""
+        return tuple(spec.stage for spec in PIPELINE if spec.holds_key)
+
+    @staticmethod
+    def render_part() -> tuple[Stage, ...]:
+        """The stages that hold no key, in run order, which a host runs in a process the key never reaches."""
+        return tuple(spec.stage for spec in PIPELINE if not spec.holds_key)
 
 
 class Outcome(Enum):
@@ -96,17 +112,23 @@ class Artifact(Enum):
         if writer is Stage.NARRATE:
             # The one stage that spends money on every run has a way to make its artifact for nothing,
             # and a reader stopped by a missing take index should not have to find that flag elsewhere.
-            return f"Run `decktalk {writer.value}` first, or `decktalk {writer.value} --no-voice` to spend nothing."
+            return f"Run `decktalk {writer.value}` first, or `decktalk {writer.value} --no-spend` to spend nothing."
         return f"Run `decktalk {writer.value}` first."
 
 
 @dataclass(frozen=True)
 class StageSpec:
-    """One row of the pipeline: a stage, what it reads, what it writes and why it sits where it does."""
+    """One row of the pipeline: a stage, what it reads and writes, the trust it needs and why it sits there.
+
+    `holds_key` is true on a stage that may buy, and so reaches for the provider's key. `opens_pages`
+    is true on a stage that launches a browser and runs a page's script.
+    """
 
     stage: Stage
     reads: tuple[Artifact, ...]
     writes: tuple[Artifact, ...]
+    holds_key: bool
+    opens_pages: bool
     why: str
 
 
@@ -115,24 +137,32 @@ PIPELINE: tuple[StageSpec, ...] = (
         stage=Stage.NARRATE,
         reads=(),
         writes=(Artifact.TAKES,),
+        holds_key=True,
+        opens_pages=False,
         why="The script becomes spoken takes with a word clock, which every later stage measures against.",
     ),
     StageSpec(
         stage=Stage.CUE,
         reads=(Artifact.TAKES,),
         writes=(Artifact.CUE_TIMES,),
+        holds_key=False,
+        opens_pages=False,
         why="Each cue phrase becomes a second on its section clock, which the recorder plays to.",
     ),
     StageSpec(
         stage=Stage.RECORD,
         reads=(Artifact.CUE_TIMES,),
         writes=(Artifact.RECORDINGS,),
+        holds_key=False,
+        opens_pages=True,
         why="The pages are recorded against those seconds, so the picture lands on its word.",
     ),
     StageSpec(
         stage=Stage.SOUNDSCAPE,
         reads=(Artifact.TAKES,),
         writes=(Artifact.SOUNDSCAPE,),
+        holds_key=True,
+        opens_pages=False,
         why="The music, the ambience and the effects are generated last of the paid work, so the unpaid "
         "draft loop stops at record.",
     ),
@@ -140,16 +170,20 @@ PIPELINE: tuple[StageSpec, ...] = (
         stage=Stage.ASSEMBLE,
         reads=(Artifact.TAKES, Artifact.RECORDINGS, Artifact.SOUNDSCAPE),
         writes=(Artifact.FINAL,),
+        holds_key=False,
+        opens_pages=True,
         why="The recordings, the narration and the soundscape are cut, mixed and encoded into one film.",
     ),
     StageSpec(
         stage=Stage.VERIFY,
         reads=(Artifact.CUE_TIMES, Artifact.FINAL),
         writes=(),
+        holds_key=False,
+        opens_pages=False,
         why="The finished film is measured against the clock the earlier stages promised.",
     ),
 )
-"""Every stage in run order, with the artifacts it reads and writes and the reason it runs there."""
+"""Every stage in run order, with the artifacts it reads and writes, the trust it needs and the reason it runs there."""
 
 SPECS: dict[Stage, StageSpec] = {spec.stage: spec for spec in PIPELINE}
 """Each stage's row, so `Stage.spec` is one lookup rather than a scan."""

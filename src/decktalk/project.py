@@ -60,7 +60,6 @@ from decktalk.results import (
     StatusResult,
     StoryboardResult,
     VerifyResult,
-    Voicing,
     WordsResult,
 )
 from decktalk.settings import Layers, Settings, route, scoped
@@ -274,7 +273,7 @@ class Project:
         self,
         *,
         only: Sequence[int] | None = None,
-        voice: Voicing = Voicing.PLACEHOLDER,
+        spend: bool = False,
         max_cost: float | None = None,
         force: bool = False,
         replace_voiced: bool = False,
@@ -282,16 +281,18 @@ class Project:
     ) -> NarrateResult:
         """Speak each section of the script and time every word in it.
 
-        `voice` set to `Voicing.PAID` buys the takes that need buying, and the default buys nothing
-        and writes a click track and a word clock. `max_cost` is a ceiling in US dollars, checked
-        before the first paid request. `force` makes each take again, and keeps a paid take unless
-        `replace_voiced` is true as well.
+        Every take already on disk is played, paid or placeholder, and the voice is built only when
+        a take must be bought, so a run that buys nothing reads no key. `spend` set to true buys the
+        takes that are missing. The default buys nothing: each missing take is a click track with a
+        word clock, and each such section is a `TAKE_MISSING` finding. `max_cost` is a ceiling in US
+        dollars, checked before the first paid request. `force` makes each take again, and a run
+        that does not spend keeps a paid take unless `replace_voiced` is true as well. A run that
+        spends with `replace_voiced` buys each targeted take again.
 
-        Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`,
-        `InputError` when it would replace a paid take without `replace_voiced`, and `ProviderError`
-        when the voice service fails on a paid run.
+        Raises `ApprovalRequired` when the run would spend over `max_cost`, and `ProviderError` when
+        the voice service fails on a paid run.
         """
-        return self._call(Stage.NARRATE, NarrateResult, cancel=cancel, voice=voice, max_cost=max_cost,
+        return self._call(Stage.NARRATE, NarrateResult, cancel=cancel, spend=spend, max_cost=max_cost,
                           only=only, force=force, replace_voiced=replace_voiced)  # fmt: skip
 
     def cue(
@@ -318,21 +319,21 @@ class Project:
         self,
         *,
         only: Sequence[int] | None = None,
-        voice: Voicing = Voicing.PLACEHOLDER,
+        spend: bool = False,
         max_cost: float | None = None,
         force: bool = False,
         cancel: Cancel | None = None,
     ) -> SoundscapeResult:
         """Generate the music, the ambience bed and the effects this project describes.
 
-        `voice` set to `Voicing.PAID` buys what needs buying, and the default reports the plan and
-        buys nothing. `max_cost` is a ceiling in US dollars, checked before the first paid request.
-        `force` buys every item again, which spends again.
+        `spend` set to true buys what needs buying, and the default reports the plan and buys
+        nothing. `max_cost` is a ceiling in US dollars, checked
+        before the first paid request. `force` buys every item again, which spends again.
 
         Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`, and
         `ProviderError` when the sound service fails on a paid run.
         """
-        return self._call(Stage.SOUNDSCAPE, SoundscapeResult, cancel=cancel, voice=voice,
+        return self._call(Stage.SOUNDSCAPE, SoundscapeResult, cancel=cancel, spend=spend,
                           max_cost=max_cost, only=only, force=force)  # fmt: skip
 
     def assemble(
@@ -360,7 +361,7 @@ class Project:
         stages: Sequence[Stage] | None = None,
         skip: Sequence[Stage] = (),
         only: Sequence[int] | None = None,
-        voice: Voicing = Voicing.PLACEHOLDER,
+        spend: bool = False,
         max_cost: float | None = None,
         force: bool = False,
         replace_voiced: bool = False,
@@ -376,16 +377,17 @@ class Project:
         findings reach `stop_on` stops the run, unless their code is in `allow`, and the result still
         comes back with its findings, its spend and the stage it stopped after in `stopped_at`. None
         as `stop_on` runs every stage whatever it finds. The film carries the soundscape unless
-        `skip` names that stage, which is the one knob for that decision. `voice`, `max_cost`,
+        `skip` names that stage, which is the one knob for that decision. `spend`, `max_cost`,
         `force` and `replace_voiced` mean what they mean to `narrate` and `soundscape`, and `force`
         also measures a film that nothing changed again. `loudness` and `strict` mean what they mean
         to `assemble`.
 
-        Raises `ApprovalRequired`, `InputError` and `ProviderError` as `narrate` does, and `ToolError`
-        when `strict` is true and the mix misses its loudness. A host never calls this on a voiced
-        run, because it draws pages in the process that holds the voice key.
+        Raises `ApprovalRequired` and `ProviderError` as `narrate` does, and `ToolError`
+        when `strict` is true and the mix misses its loudness. Under the untrusted page policy a run
+        that may spend refuses to open a page, so a host voices with `narrate` and builds without
+        `spend`.
         """
-        return self._call("build", BuildResult, cancel=cancel, voice=voice, max_cost=max_cost, stages=stages, skip=skip,
+        return self._call("build", BuildResult, cancel=cancel, spend=spend, max_cost=max_cost, stages=stages, skip=skip,
                           only=only, force=force, replace_voiced=replace_voiced, loudness=loudness, strict=strict,
                           allow=frozenset(allow), stop_on=stop_on)  # fmt: skip
 
@@ -499,7 +501,7 @@ class Project:
         model: type[R],
         *,
         cancel: Cancel | None = None,
-        voice: Voicing = Voicing.PLACEHOLDER,
+        spend: bool = False,
         max_cost: float | None = None,
         writes: bool = True,
         **options: object,
@@ -510,7 +512,7 @@ class Project:
         the one table that says which callable implements which command is the twelve calls above.
         """
         name = stage.value if isinstance(stage, Stage) else stage
-        with self._open(cancel=cancel, voice=voice, max_cost=max_cost, writes=writes) as run:
+        with self._open(cancel=cancel, spend=spend, max_cost=max_cost, writes=writes) as run:
             answered = stage_call(name)(self.inputs, run, **options)
         if not isinstance(answered, model):
             raise TypeError(f"{name} answered with {type(answered).__name__} rather than {model.__name__}")
@@ -521,7 +523,7 @@ class Project:
         self,
         *,
         cancel: Cancel | None = None,
-        voice: Voicing = Voicing.PLACEHOLDER,
+        spend: bool = False,
         max_cost: float | None = None,
         writes: bool = True,
     ) -> Iterator[Run]:
@@ -537,7 +539,7 @@ class Project:
         with self.machine.run(
             id=opening,
             cancel=cancel,
-            voice=voice,
+            spend=spend,
             max_cost=max_cost,
             root=self.root,
             events_dir=self.workspace.events_dir,

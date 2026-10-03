@@ -22,12 +22,12 @@ import pytest
 from filelock import FileLock, Timeout
 
 import decktalk
-from decktalk.errors import Cancel, ErrorCode, InputError, ProjectLocked
+from decktalk.errors import ApprovalRequired, Cancel, ErrorCode, InputError, ProjectLocked
 from decktalk.events import Event, Level, Log
 from decktalk.files import replace_all
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run
+from decktalk.machine import Machine, Run, Toolchain
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
 from decktalk.project import LOCK_FILE, OWNER_FILE, Origin, Project, section_numbers, stage_call
@@ -39,9 +39,11 @@ from decktalk.results import (
     RecordResult,
     Result,
     StatusResult,
-    Voicing,
 )
 from decktalk.results import Layer as SettingLayer
+from decktalk.settings import ToolsConfig
+from decktalk.stages import narrate as narrate_stage
+from support.fakes import FakeChromium
 from support.links import link
 from support.projects import MINIMAL_TOML, write_project
 from support.runs import a_machine
@@ -97,10 +99,10 @@ def _filler(name: str) -> dict[str, Any]:
     """The fields each faked result needs beyond the ones the run fills, and nothing more."""
     priced = a_spend(0.0, 0.0, layer=SettingLayer.DEFAULT)
     return {
-        "narrate": {"voice": Voicing.PLACEHOLDER, "sections": (), "spend": priced, "seconds": 0.0},
+        "narrate": {"spending": False, "sections": (), "spend": priced, "seconds": 0.0},
         "cue": {"sections": (), "seconds": 0.0},
         "record": {"sections": (), "seconds": 0.0},
-        "build": {"stages": (), "voice": Voicing.PLACEHOLDER, "spend": priced, "seconds": 0.0},
+        "build": {"stages": (), "spending": False, "spend": priced, "seconds": 0.0},
         "status": {"name": "t", "script": Path("script.md"), "cues": Path("cues.json"), "sections": ()},
         "check": {"judged": (), "pages": True, "frames": True, "spend": priced},
     }[name]
@@ -490,14 +492,14 @@ def test_a_cancel_token_reaches_the_stage_that_checks_it(tmp_path: Path, fake_st
     assert run.cancel is cancel
 
 
-def test_a_voicing_and_a_ceiling_reach_the_gate_rather_than_the_stage(
+def test_spend_and_a_ceiling_reach_the_gate_rather_than_the_stage(
     tmp_path: Path, fake_stages: dict[str, list[Call]]
 ) -> None:
     project = a_project(tmp_path)
-    project.build(voice=Voicing.PAID, max_cost=2.5)
+    project.build(spend=True, max_cost=2.5)
     _inputs, run, options = fake_stages["build"][0]
-    assert run.voice is Voicing.PAID and run.max_cost == 2.5
-    assert "voice" not in options and "max_cost" not in options
+    assert run.spend is True and run.max_cost == 2.5
+    assert "spend" not in options and "max_cost" not in options
 
 
 def test_the_callers_threshold_reaches_the_build(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
@@ -571,3 +573,23 @@ def test_a_served_preview_reads_its_cue_times_from_the_alias_the_recorder_uses(t
     project = a_project(tmp_path)
     with project.serve(port=0) as origin, urllib.request.urlopen(origin.result.url + PREVIEW_CUE_TIMES) as sent:
         assert json.loads(sent.read()) == project.inputs.preview_cues()
+
+
+def test_a_voiced_build_under_the_untrusted_policy_is_refused_before_it_buys_anything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The storyboard is the first page a voiced build opens, so the refusal lands before narrate is reached."""
+    write_project(tmp_path, MINIMAL_TOML)
+    machine = Machine(
+        environ={},
+        tables={"record": {"page_policy": "untrusted"}},
+        config_path=tmp_path / "config.toml",
+        cwd=tmp_path,
+        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
+    )
+    monkeypatch.setattr(narrate_stage, "narrate", lambda *_a, **_k: pytest.fail("narrate was reached"))
+    chromium = FakeChromium(Path(__file__))
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", chromium.started())
+    with pytest.raises(ApprovalRequired, match="untrusted page"):
+        decktalk.open(tmp_path, machine=machine).build(spend=True, max_cost=1.0)
+    assert chromium.asked == []

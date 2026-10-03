@@ -170,7 +170,7 @@ first word is part of the span like anything else.
     inside the span in seconds after the clip starts. A word the span cuts in two is left out and
     said aloud on the stream, so move `--end` into the silence beside the word to keep it.
 
-    {/* sample: decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 on a starter built with --no-voice */}
+    {/* sample: decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 on a starter built with --no-spend */}
     ```text
     Section 1 carries placeholder narration, so every word time in this clip is an estimate.
     Cut media/open-line.mp4, 1.9 seconds of section 1.
@@ -229,7 +229,7 @@ there. Each refusal names the command that makes what is missing.
 | The refusal | What to do |
 |---|---|
 | The section has no cut | Run `decktalk assemble` first. |
-| The section has no take, or the take file is gone | Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing. |
+| The section has no take, or the take file is gone | Run `decktalk narrate`, or `decktalk narrate --no-spend` to spend nothing. |
 | The section plays a clip the project already has | Cut from a page section, which is one DeckTalk recorded. There is nothing to cut out of a file you supplied. |
 | The span ends before it starts, or starts before zero | Write `--start` at 0 or later and `--end` after it. |
 | The span holds no whole frame | Make it at least one frame long. |

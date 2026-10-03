@@ -84,6 +84,9 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.status", "stages.record"): "the rule that decides a recording is stale",
     # A clip is cut on the section clock, which is the one thing `words` computes.
     ("stages.clip", "stages.words"): "the section clock a clip is cut on",
+    # Every stage that fans its sections out to workers shares one pool, so they all halt alike.
+    ("stages.narrate", "stages.pool"): "the one pool every stage fans out to",
+    ("stages.record", "stages.pool"): "the one pool every stage fans out to",
 }
 """Every import that points sideways between stages, each with the reason it exists.
 

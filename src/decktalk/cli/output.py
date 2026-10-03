@@ -290,7 +290,7 @@ def _init(result: InitResult) -> Iterable[RenderableType]:
     yield Text(
         f"Wrote {result.root.as_posix()} from the {result.example} example, {counted(len(result.written), 'file')}."
     )
-    yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-voice", style=QUIET_STYLE)
+    yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-spend", style=QUIET_STYLE)
 
 
 def _tools(tools: Iterable[Any]) -> Table:
@@ -364,7 +364,7 @@ def _narrate(result: NarrateResult) -> Iterable[RenderableType]:
     for take in result.sections:
         table.add_row(str(take.section), take.status.value, str(take.characters), f"{take.seconds or 0:.1f}")
     yield table
-    yield Text(f"Spent {money(result.spend.dollars)} on {result.voice.value} narration.")
+    yield Text(result.spend.sentence)
 
 
 def _cue(result: CueResult) -> Iterable[RenderableType]:

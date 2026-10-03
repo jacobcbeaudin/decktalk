@@ -34,7 +34,6 @@ from decktalk.results import (
     ServeResult,
     StatusResult,
     StoryboardResult,
-    Voicing,
     WordsResult,
 )
 from support.spends import a_spend
@@ -173,7 +172,7 @@ ANSWERS: dict[str, Result] = {
     "words": WordsResult(ok=True, run="r", sections=()),
     "storyboard": StoryboardResult(ok=True, run="r", storyboard=Path("build/storyboard.html"), panels=()),
     "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000),
-    "build": BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=a_spend(), seconds=1.0),
+    "build": BuildResult(ok=True, run="r", stages=(), spending=False, spend=a_spend(), seconds=1.0),
 }
 """One prepared answer per command, so a client test says what it asked for rather than what it got."""
 

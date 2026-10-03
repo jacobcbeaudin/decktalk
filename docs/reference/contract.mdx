@@ -1,0 +1,88 @@
+---
+title: The contract
+description: What DeckTalk promises a script, a GitHub Action or a service that builds on it, and what it keeps as a private cache.
+---
+
+A caller that builds on DeckTalk reads four things and nothing else: the `--json` result of each
+command, the events file of each run, the files in `build/final/`, and the exit code. Those four
+keep their shape within a `schema` version, and a change to one of them is a new `schema`.
+
+Everything else under `build/` is DeckTalk's private cache. Its files and their shapes are what
+[Build artifacts](/reference/artifacts) describes, which is how the engine works today and not a
+promise. A newer release that cannot read a cache file builds it again, except the paid records
+below.
+
+## The result of a command
+
+Every command prints one flat JSON object with `--json`, and every library call returns the same
+object as a frozen model.
+
+| Key | What it promises |
+|---|---|
+| `schema` | The shape version of the object, which is `2`. A reader checks it before it reads anything else. |
+| `ok` | True exactly when the command exits 0, under the threshold `--fail-on` and `--allow` set. |
+| `findings` | Every judgement the command made, certain first. |
+| `error` | Filled only when the command could not run, with `code`, `message`, `hint` and `docs`. |
+| `run` | The id of the run the command opened, on every command that opens one. It names the events file. |
+| `written` | Every file the run wrote, project-relative, on every command that writes one. |
+
+`decktalk schema NAME` prints the JSON Schema of one command's result, and `decktalk schema` with no
+name prints every command with the result it answers with, the exit codes and the error codes.
+
+```bash
+uv run decktalk build --json | python -c "import json,sys; r=json.load(sys.stdin); print(r['schema'], r['ok'], r['run'])"
+```
+
+## The events file
+
+Every run of a project appends one JSON object per line to `build/events/<run>.jsonl`, where `<run>`
+is the `run` of the result. `--events` prints the same lines on stderr as they happen.
+
+Every line carries `event`, which names its kind, and `time`, `seq` and `run`. `seq` counts within
+the run, so a reader can tell a gap from a lost line. The last line of a run is `run.done`, with the
+run's `outcome` and, when it failed, the same `error` the result carries. `decktalk schema event`
+prints every kind and every field.
+
+## `build/final/`
+
+The deliverables, named after `[project] name`, which is `<name>` below.
+
+| File | What it is |
+|---|---|
+| `<name>.mp4` | The film. It is renamed into place only once it is whole. |
+| `<name>.srt` | The captions, as SubRip. |
+| `<name>.vtt` | The captions, as WebVTT. |
+| `<name>.chapters.txt` | The chapter markers, as ffmetadata. |
+| `<name>-transcript.html` | The whole film as one page, which is the media alternative. |
+| `<name>-poster.png` | The opening slide, as a lossless PNG. |
+| `cuts.json` | Where every section sits in the finished film. |
+
+## Exit codes
+
+| Exit | Meaning |
+|---|---|
+| 0 | The command ran and found nothing at the threshold. `ok` is true. |
+| 1 | The command ran and found something at or above the threshold `--fail-on` set. |
+| 2 | The command was refused, which is `USAGE` or `APPROVAL`, and a retry as written is refused again. |
+| 3 | The command could not run, which is every other error code. |
+| 130 | The caller stopped the run, which is `CANCELLED`. |
+
+## The paid records
+
+Three things under `build/` record money spent, so they are never treated as a cache.
+
+- `build/narrate/takes.json`, the take index.
+- The take audio, one file per take, named by the digest of what was sent.
+
+When `[narration] takes_dir` is set, the take audio and `takes.json` live there instead.
+- `build/soundscape/ledger.json`, what the soundscape has bought.
+
+A newer release reads these or refuses them with a sentence. It never builds one again and never
+deletes one, because counting a paid record as absent would buy what it records again. The refusal
+says so, and leaves the file where it is for the person whose money it is.
+
+## Related
+
+- **Every command, its flags and its output:** [CLI](/reference/cli)
+- **Every field of every event line:** [Python API](/reference/python-api)
+- **What the cache holds today:** [Build artifacts](/reference/artifacts)

@@ -141,7 +141,6 @@ from .results import (
     Substitute,
     TakeStatus,
     VerifyResult,
-    Voicing,
     Word,
     WordsResult,
 )
@@ -296,7 +295,6 @@ __all__ = [
     "VideoConfig",
     "Voice",
     "VoiceConfig",
-    "Voicing",
     "Word",
     "WordsResult",
     "Workspace",

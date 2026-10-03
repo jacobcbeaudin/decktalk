@@ -1,10 +1,11 @@
 """One terminal that serves the deck and rebuilds the section a save changed.
 
-The loop is the draft loop. It starts the local origin itself and prints the URL, builds once with
-placeholder narration, and on every save rebuilds only the sections the changed file touches. It
-never voices, whatever the settings say, and it says so when a save leaves a paid take behind. The
-explicit spend is a different command, `decktalk narrate --section 3`, because the safe default is
-the rule and the named escape is a separate act.
+The loop is the draft loop. It starts the local origin itself and prints the URL, builds once
+without spending, playing every take on disk and a placeholder for each missing one, and on every
+save rebuilds only the sections the changed file touches. It never spends, whatever the settings
+say, and it says so when a save leaves a paid take behind. The explicit spend is a different
+command, `decktalk narrate --section 3 --spend`, because the safe default is the rule and the named
+escape is a separate act.
 
 Files are watched by their modification times rather than by an operating-system channel, because a
 poll a tenth of a second long is indistinguishable to an author and costs no dependency that three
@@ -22,7 +23,7 @@ from decktalk.cli import session as sessions
 from decktalk.errors import Cancelled, DeckTalkError, ErrorInfo
 from decktalk.pipeline import Stage
 from decktalk.project import Project
-from decktalk.results import BuildResult, Layer, Spend, SpendState, Voicing
+from decktalk.results import BuildResult, Layer, Spend, SpendState
 
 POLL_SECONDS = 0.4
 """How long the loop sleeps between two readings of the tree, which is under an author's own pause."""
@@ -86,7 +87,7 @@ def _once(
             return project.build(
                 skip=tuple(skip),
                 only=only,
-                voice=Voicing.PLACEHOLDER,
+                spend=False,
                 force=force,
                 allow=session.allowed,
                 stop_on=session.fail_on.stops_on,
@@ -110,7 +111,7 @@ def _nothing(refusal: ErrorInfo) -> BuildResult:
         error=refusal,
         run="",
         stages=(),
-        voice=Voicing.PLACEHOLDER,
+        spending=False,
         spend=Spend(
             state=SpendState.ESTIMATE,
             sections=(),
@@ -153,7 +154,7 @@ def _stamps(project: Project) -> dict[Path, float]:
     holds. The project's own build and take folders are pruned wherever its settings put them,
     because a build that wrote into a watched folder would start the next build without end.
     """
-    written = {project.workspace.build.resolve(), project.workspace.takes_dir.resolve()}
+    written = {project.workspace.build.resolve(), *(place.resolve() for place in project.workspace.take_places)}
     found: dict[Path, float] = {}
     for folder, dirs, files in os.walk(project.root):
         here = Path(folder)

@@ -1,7 +1,7 @@
 {
   "source": {
     "decktalk": "0.2.0",
-    "build": "decktalk build --no-voice on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
+    "build": "decktalk build --no-spend on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
     "estimated_words": true,
     "rule": "gain = music_db x (1 - (1 - music_duck_db) x max over spans of a linear ramp), from stages/assemble.py plan_mix"
   },

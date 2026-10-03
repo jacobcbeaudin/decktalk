@@ -1,7 +1,7 @@
 {
   "source": {
     "decktalk": "0.2.0",
-    "build": "decktalk build --no-voice on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
+    "build": "decktalk build --no-spend on the scaffold with the test clip from docs/guides/clip-section.mdx in section 5",
     "estimated_words": true
   },
   "narration_seconds": 245.8,

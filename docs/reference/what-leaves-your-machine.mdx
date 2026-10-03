@@ -26,7 +26,7 @@ purpose, and every one of them needs an API key that you supply.
 | api.elevenlabs.io | Sound effects and ambience | `decktalk soundscape` | The prompt string written in the `[soundscape.ambience]` or a `[soundscape.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
 | api.elevenlabs.io | Music | `decktalk soundscape` | The prompt string written in the `[soundscape.music]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
 
-**Narration to `api.elevenlabs.io`.** The request carries the value of `ELEVENLABS_API_KEY` in a header, to the host `[elevenlabs] api_base` names. That value must be an https URL on elevenlabs.io, because the key goes wherever it points. Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-voice` sends nothing at all.
+**Narration to `api.elevenlabs.io`.** The request carries the value of `ELEVENLABS_API_KEY` in a header, to the host `[elevenlabs] api_base` names. That value must be an https URL on elevenlabs.io, because the key goes wherever it points. Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-spend` sends nothing at all.
 
 **Sound effects and ambience to `api.elevenlabs.io`.** The request carries the value of `ELEVENLABS_API_KEY` in a header. The prompt is text you wrote in `decktalk.toml`, so you decide what it describes.
 
@@ -109,13 +109,13 @@ no model.
 A laptop with an intercepting proxy, no administrator rights and a policy review needs five things,
 and none of them is a DeckTalk feature you have to wait for.
 
-- **Build with no voice and no key.** `decktalk build --no-voice` writes placeholder narration and
-  makes a complete video. It contacts no service, so you can show a finished internal video before
-  any approval comes back.
+- **Build with no voice and no key.** `decktalk build --no-spend` plays every take on disk,
+  writes placeholder narration where a take is missing, and makes a complete video. It contacts no
+  service, so you can show a finished internal video before any approval comes back.
 - **Use the browser the machine already has.** Set `record.browser_path` with
-  `decktalk config set record.browser_path PATH --where machine`, or point
-  `PLAYWRIGHT_BROWSERS_PATH` at a location your administrators have already filled. It is a machine
-  key, so a project file that sets it is refused. The pinned build is the reference, and a managed
+  `decktalk config set record.browser_path PATH --where machine`, or point `[tools] cache_dir` at a
+  directory whose `ms-playwright` folder your administrators have already filled. Both are machine
+  keys, so a project file that sets either is refused. The pinned build is the reference, and a managed
   browser is supported and unverified.
 - **Use the ffmpeg the machine already has.** `[tools] ffmpeg` and `[tools] ffprobe` name
   executables directly, and a build that finds them downloads nothing from the second table. Both
@@ -133,7 +133,7 @@ and none of them is a DeckTalk feature you have to wait for.
   says what that policy holds.
 
 [Requirements and costs](/requirements) has the full managed-machine section, with the package index
-mirror, `PLAYWRIGHT_BROWSERS_PATH` and the `[tools]` keys.
+mirror and the `[tools]` keys.
 
 `decktalk doctor` reports what is installed and which browser and media build a run would use,
 without fetching anything, and `decktalk doctor --json` prints the same reading as one object with

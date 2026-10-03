@@ -67,16 +67,16 @@ It is a stage like any other, so `decktalk build` reaches it with `--from sounds
 and `decktalk soundscape` runs it alone.
 
 ```console
-decktalk soundscape --no-voice     # report the whole plan, send nothing and write nothing
+decktalk soundscape --no-spend     # report the whole plan, send nothing and write nothing
 decktalk soundscape --spend        # generate what is missing or has changed, without asking first
 decktalk soundscape --section 3    # only what section 3 needs
 decktalk soundscape --force        # generate again, even where the request has not changed
 ```
 
-A run whose voicing is a placeholder reports what it would ask for and buys nothing, which is the
-plan an author reads before approving a spend. On a terminal a run that would buy something prices it
-and asks. `--max-cost N` refuses before the first call when the most the run can cost is over N
-dollars.
+A run with `--no-spend` reports what it would ask for and buys nothing, which is the plan an author
+reads before approving a spend. With neither flag, a run that would buy something prices it and asks
+on a terminal, and a run with nothing left to buy asks nothing. `--max-cost N` refuses before the
+first call when the most the run can cost is over N dollars.
 
 The price is the prompt characters at `voice.price_per_1000_characters`, because that is the one rate
 a project publishes. A sound request is billed by the service per second of audio, so the figure is

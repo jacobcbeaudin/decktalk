@@ -2,10 +2,11 @@
 
     uv run pytest -m e2e tests/e2e/test_split.py
 
-A host that renders other people's pages runs `narrate` in a voice job that holds the key, and
-`cue`, `record`, `assemble` and `verify` in a render job whose environment holds none, with the
-project directory, build directory included, handed from one to the other. This drives exactly that
-split through the public SDK, each job a real subprocess with an environment the test chose.
+A host that renders other people's pages runs `narrate` in a voice job that holds the key, and the
+whole build in a render job whose environment holds none, with the project directory, build
+directory included, handed from one to the other. The render job's build does not spend, so it plays
+every take the voice job bought and never builds a voice. This drives exactly that split through the
+public SDK, each job a real subprocess with an environment the test chose.
 
 The voice job's provider is a stand-in that asks the machine for the key, checks it is the sentinel,
 and answers with a real tone from the pinned ffmpeg, so no request leaves the machine and nothing is
@@ -25,7 +26,9 @@ from pathlib import Path
 
 import pytest
 
+from decktalk.findings import Code
 from decktalk.machine import Machine, init
+from decktalk.pipeline import Outcome, Stage
 from decktalk.settings import CONFIG_VARIABLE
 
 pytestmark = pytest.mark.e2e
@@ -49,7 +52,7 @@ from pathlib import Path
 import decktalk
 from decktalk.machine import Machine
 from decktalk.media import browser, ffmpeg
-from decktalk.results import TakeStatus, Voicing, Word
+from decktalk.results import TakeStatus, Word
 
 root, cache, out = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 KEY, SENTINEL = "ELEVENLABS_API_KEY", "sk-split-sentinel-not-a-credential"
@@ -90,7 +93,7 @@ here = Machine.of(
     cache_dir=cache,
     providers={"elevenlabs": Tone},
 )
-result = decktalk.open(root, machine=here).narrate(voice=Voicing.PAID)
+result = decktalk.open(root, machine=here).narrate(spend=True)
 voiced = [take.section for take in result.sections if take.status is TakeStatus.VOICED]
 out.write_text(json.dumps({"ok": result.ok, "voiced": voiced}), encoding="utf-8")
 '''
@@ -100,7 +103,9 @@ import json, os, sys
 from pathlib import Path
 
 import decktalk
+from decktalk.artifacts import Takes
 from decktalk.media import browser
+from decktalk.speech import PROVIDERS
 
 root, out = Path(sys.argv[1]), Path(sys.argv[2])
 launched = []
@@ -113,11 +118,25 @@ def watched():
     return given
 
 
+def refuse(_context):
+    raise AssertionError("the render job built a voice")
+
+
 browser.child_environment = watched
-project = decktalk.open(root)
-stages = [(name, getattr(project, name)()) for name in ("cue", "record", "assemble", "verify")]
+PROVIDERS["elevenlabs"] = refuse
+built = decktalk.open(root).build(stop_on=None)
+takes = Takes.read(root / "build" / "narrate" / "takes.json")
 out.write_text(
-    json.dumps({"process": dict(os.environ), "launched": launched, "stages": [name for name, _result in stages]}),
+    json.dumps(
+        {
+            "process": dict(os.environ),
+            "launched": launched,
+            "stages": {row.stage.value: row.outcome.value for row in built.stages},
+            "codes": [found.code.value for found in built.findings],
+            "voiced": [take.voiced for take in takes.sections],
+            "film": built.film is not None,
+        }
+    ),
     encoding="utf-8",
 )
 """
@@ -158,12 +177,19 @@ def test_the_voice_key_never_reaches_the_render_job_or_a_page(tmp_path: Path) ->
     render_root = tmp_path / "render" / "starter"
     shutil.copytree(voice_root, render_root)
     rendered = tmp_path / "render" / "result.json"
-    render_env = carried(**{CONFIG_VARIABLE: str(tmp_path / "render" / "machine.toml")})
+    # The voice is a published name and travels with the project, so the render job is handed it and no key.
+    render_env = carried(
+        **{CONFIG_VARIABLE: str(tmp_path / "render" / "machine.toml"), "ELEVENLABS_VOICE_ID": "house-voice"}
+    )
     assert KEY not in render_env
     job(RENDER_JOB, [str(render_root), str(rendered)], render_env, render_root)
     seen = json.loads(rendered.read_text(encoding="utf-8"))
 
-    assert seen["stages"] == ["cue", "record", "assemble", "verify"]
+    # The whole build runs without spending, so it plays every take the voice job bought and builds no voice.
+    assert seen["stages"][Stage.NARRATE.value] == Outcome.OK.value
+    assert seen["voiced"] and all(seen["voiced"]), "the render job replaced a paid take"
+    assert Code.TAKE_MISSING.value not in seen["codes"]
+    assert seen["film"]
     assert seen["launched"], "the render job never launched a browser, so it proved nothing about one"
     for environment in [seen["process"], *seen["launched"]]:
         assert KEY not in environment

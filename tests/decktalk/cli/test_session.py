@@ -14,7 +14,7 @@ from decktalk.cli.options import FailOn, When
 from decktalk.cli.session import Globals, Session, Terminal
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError
 from decktalk.findings import Certainty, Code
-from decktalk.results import CheckResult, StatusResult, Voicing
+from decktalk.results import CheckResult, Layer, StatusResult
 from support.spends import a_spend
 
 from .conftest import ANSWERS, Fake, finding
@@ -84,8 +84,8 @@ def test_the_exit_code_fails_on_what_the_threshold_names_and_nothing_it_allows(
         (("check", "--fail-on", "never"), (Code.CUE_UNRESOLVED,)),
         (("check", "--allow", Code.CUE_UNRESOLVED.value), (Code.CUE_UNRESOLVED,)),
         (("check", "--allow", Code.CUE_UNRESOLVED.value, "--fail-on", "any"), (Code.CUE_UNRESOLVED,)),
-        (("build", "--no-voice", "--allow", Code.CUE_UNKNOWN.value), (Code.CUE_UNKNOWN,)),
-        (("build", "--no-voice", "--fail-on", "any"), (Code.CUE_THIN_CHANGE,)),
+        (("build", "--no-spend", "--allow", Code.CUE_UNKNOWN.value), (Code.CUE_UNKNOWN,)),
+        (("build", "--no-spend", "--fail-on", "any"), (Code.CUE_THIN_CHANGE,)),
     ],
     ids=["nothing", "unsure", "any-unsure", "sure", "never", "allowed", "allowed-any", "build-allowed", "build-any"],
 )
@@ -169,26 +169,84 @@ def test_a_flag_answers_before_a_terminal_is_asked(monkeypatch: pytest.MonkeyPat
 def test_a_spend_with_no_terminal_refuses_and_names_both_flags() -> None:
     made = session()
     made.terminal = terminal(is_terminal=False)
-    made.spending(no_voice=False, spend=False, max_cost=None)
+    made.spending(spend=None, max_cost=None)
     fake = Fake(check=_check())
     with pytest.raises(ApprovalRequired) as refused:
-        made.voicing(fake.project())
+        made.spends(fake.project())
     assert "No terminal is here to approve it." in str(refused.value)
     assert refused.value.hint is not None
     assert "--spend" in refused.value.hint
-    assert "--no-voice" in refused.value.hint
+    assert "--no-spend" in refused.value.hint
 
 
-def test_no_voice_never_asks_and_never_buys() -> None:
+@pytest.mark.parametrize("is_terminal", [True, False])
+def test_no_spend_never_asks_and_never_buys(monkeypatch: pytest.MonkeyPatch, is_terminal: bool) -> None:
     made = session()
-    made.spending(no_voice=True, spend=False, max_cost=None)
-    assert made.voicing(Fake().project()) is Voicing.PLACEHOLDER
+    made.terminal = terminal(is_terminal=is_terminal)
+    monkeypatch.setattr(made, "confirm", _never_asked)
+    made.spending(spend=False, max_cost=None)
+    fake = Fake(check=_check())
+    assert made.spends(fake.project()) is False
+    assert fake.calls == [], "a run told not to spend was priced as if it might"
 
 
-def test_spend_buys_without_asking() -> None:
+def test_spend_buys_without_asking(monkeypatch: pytest.MonkeyPatch) -> None:
     made = session()
-    made.spending(no_voice=False, spend=True, max_cost=None)
-    assert made.voicing(Fake().project()) is Voicing.PAID
+    monkeypatch.setattr(made, "confirm", _never_asked)
+    made.spending(spend=True, max_cost=None)
+    assert made.spends(Fake().project()) is True
+
+
+@pytest.mark.parametrize("is_terminal", [True, False])
+def test_a_run_with_nothing_to_buy_is_never_asked_and_buys_nothing(
+    monkeypatch: pytest.MonkeyPatch, is_terminal: bool
+) -> None:
+    made = session()
+    made.terminal = terminal(is_terminal=is_terminal)
+    monkeypatch.setattr(made, "confirm", _never_asked)
+    made.spending(spend=None, max_cost=None)
+    assert made.spends(Fake().project(), price=lambda: a_spend(0.0, 0.0, sections=())) is False
+
+
+@pytest.mark.parametrize("is_terminal", [True, False])
+def test_a_voice_that_bills_nothing_is_never_asked_and_is_bought_from(
+    monkeypatch: pytest.MonkeyPatch, is_terminal: bool
+) -> None:
+    made = session()
+    made.terminal = terminal(is_terminal=is_terminal)
+    monkeypatch.setattr(made, "confirm", _never_asked)
+    made.spending(spend=None, max_cost=None)
+    free = a_spend(0.0, 0.0, sections=(1, 2)).model_copy(update={"price_per_1000_characters": 0.0})
+    assert made.spends(Fake().project(), price=lambda: free) is True
+
+
+def test_a_run_told_to_make_its_takes_again_is_asked_even_with_nothing_missing() -> None:
+    made = session()
+    made.terminal = terminal(is_terminal=False)
+    made.spending(spend=None, max_cost=None)
+    with pytest.raises(ApprovalRequired):
+        made.spends(Fake().project(), price=lambda: a_spend(0.0, 0.0, sections=()), forced=True)
+
+
+def test_no_spend_never_buys_from_a_voice_that_bills_nothing() -> None:
+    made = session()
+    made.spending(spend=False, max_cost=None)
+    free = a_spend(0.0, 0.0, sections=(1, 2)).model_copy(update={"price_per_1000_characters": 0.0})
+    assert made.spends(Fake().project(), price=lambda: free) is False
+
+
+def test_a_price_of_zero_nobody_stated_is_still_asked_about() -> None:
+    """The default rate is zero, which says nobody has priced speech, never that it is free."""
+    made = session()
+    made.terminal = terminal(is_terminal=False)
+    made.spending(spend=None, max_cost=None)
+    unstated = a_spend(0.0, 0.0, layer=Layer.DEFAULT).model_copy(update={"price_per_1000_characters": 0.0})
+    with pytest.raises(ApprovalRequired):
+        made.spends(Fake().project(), price=lambda: unstated)
+
+
+def _never_asked(question: str, **_: object) -> bool:
+    raise AssertionError(f"the run asked {question!r} and was meant to ask nothing")
 
 
 def test_a_contract_document_is_written_with_no_envelope(capsys: pytest.CaptureFixture[str]) -> None:

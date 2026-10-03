@@ -1,13 +1,14 @@
 """The eight commands that move a project forward: the six stages, the whole run, and one cut of it.
 
-Every one of them is a thin client. It opens the project, asks the session what this run does about
-the voice, hands the library the options it was given and returns the result the library made. The
+Every one of them is a thin client. It opens the project, asks the session whether this run may
+spend, hands the library the options it was given and returns the result the library made. The
 order of the six is the order of the pipeline, which is the same list `--from`, `--to`, `--skip` and
 the `stage` of an event line all read.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Annotated
 
@@ -40,6 +41,7 @@ from decktalk.results import (
     NarrateResult,
     RecordResult,
     SoundscapeResult,
+    Spend,
     VerifyResult,
     counted,
 )
@@ -81,8 +83,7 @@ OneSection = Annotated[
     ),
 ]
 SOUNDSCAPE_SPENDING = {
-    "no_voice": "Buy nothing: report the plan and write nothing.",
-    "spend": "Buy what needs it without asking first.",
+    "spend": "Buy what needs it without asking first, or buy nothing: report the plan and write nothing.",
     "force": "Buy every item again, even one the ledger already holds, which spends again.",
 }
 """The spending flags as `soundscape` means them, where the thing bought is sound rather than a voice."""
@@ -119,11 +120,12 @@ def narrate(
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
-    voice = session.voicing(project)
+    only = sections_of(section)
+    spend = session.spends(project, price=lambda: session.price(project, only=only), forced=force or replace_voiced)
     with session.watching(project.events):
         return project.narrate(
-            only=sections_of(section),
-            voice=voice,
+            only=only,
+            spend=spend,
             max_cost=session.max_cost,
             force=force,
             replace_voiced=_replacing(session, replace_voiced),
@@ -181,11 +183,12 @@ def soundscape(
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
-    voice = session.voicing(project)
+    only = sections_of(section)
+    spend = session.spends(project, price=lambda: session.sound_price(project, only=only, force=force), forced=force)
     with session.watching(project.events):
         return project.soundscape(
-            only=sections_of(section),
-            voice=voice,
+            only=only,
+            spend=spend,
             max_cost=session.max_cost,
             force=force,
             cancel=session.cancel,
@@ -256,21 +259,32 @@ def build(
 ) -> BuildResult:
     """Run every stage in order, or a span of them with --from and --to.
 
-    A stage whose inputs have not changed is skipped. On a terminal a voiced build prices the spend
-    and asks before it buys. Without a terminal it refuses unless --spend or --no-voice is passed.
+    A stage whose inputs have not changed is skipped. A build with something to buy prices it and
+    asks on a terminal before it buys. Without a terminal it refuses unless --spend or --no-spend is passed.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
     if watch:
         return watching.loop(session, project, skip=tuple(skip or ()), only=only, force=force)
-    voice = session.voicing(project, storyboard=True)
+    stages = _span(from_stage, to_stage)
+    planned = _planned(stages, skip)
+    spend = (
+        session.spends(
+            project,
+            price=_build_price(session, project, planned, only, force),
+            forced=force or replace_voiced,
+            storyboard=True,
+        )
+        if planned & {Stage.NARRATE, Stage.SOUNDSCAPE}
+        else bool(session.spend)
+    )
     with session.watching(project.events, opening=True):
         built = project.build(
-            stages=_span(from_stage, to_stage),
+            stages=stages,
             skip=tuple(skip or ()),
             only=only,
-            voice=voice,
+            spend=spend,
             max_cost=session.max_cost,
             force=force,
             replace_voiced=_replacing(session, replace_voiced),
@@ -286,6 +300,38 @@ def _span(first: Stage | None, last: Stage | None) -> tuple[Stage, ...] | None:
     if first is None and last is None:
         return None
     return Stage.span(first, last)
+
+
+def _planned(stages: Sequence[Stage] | None, skip: Sequence[Stage] | None) -> set[Stage]:
+    """The stages a build with this span and these skips performs."""
+    return set(stages or Stage) - set(skip or ())
+
+
+def _build_price(
+    session: sessions.Session,
+    project: Project,
+    planned: set[Stage],
+    only: Sequence[int] | None,
+    force: bool,
+) -> Callable[[], Spend | None]:
+    """How a build is priced before it is asked about: the narration, else the soundscape it would buy.
+
+    The narration is the price a person approves, so it is the one shown whenever it buys anything.
+    A build whose every take is on disk may still buy its soundscape, so that is priced next. A stage
+    the build does not perform is never priced, so a build that starts past `narrate` asks nothing
+    about narration.
+    """
+
+    def price() -> Spend | None:
+        voiced = session.price(project, only=only) if Stage.NARRATE in planned else None
+        if Stage.SOUNDSCAPE not in planned or (voiced is not None and voiced.buys):
+            return voiced
+        sounds = session.sound_price(project, only=only, force=force)
+        if sounds is not None and (sounds.buys or voiced is None):
+            return sounds
+        return voiced
+
+    return price
 
 
 def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, fix: bool | None) -> BuildResult:
@@ -341,12 +387,12 @@ def clip(
 
 
 def _replacing(session: sessions.Session, asked: bool) -> bool:
-    """Whether paid takes are discarded, confirmed once on a terminal because the answer destroys money.
+    """Whether paid takes are set aside, confirmed once on a terminal because the answer can buy them again.
 
     Without a terminal the flag is the authorisation, because a run that was told to replace a take
     was told so on purpose and the safe default without the flag is to keep every take.
     """
-    return asked and (not session.asks or session.confirm("This discards every take it replaces. Carry on?"))
+    return asked and (not session.asks or session.confirm("This sets aside every paid take it replaces. Carry on?"))
 
 
 __all__ = ["assemble", "build", "clip", "cue", "narrate", "record", "soundscape", "verify"]

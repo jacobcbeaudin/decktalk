@@ -150,6 +150,15 @@ def test_explain_reads_one_knob_whole(run, project_dir) -> None:
     assert written["docs"].endswith("/configuration#video")
 
 
+def test_explain_reads_the_projects_takes_dir(run, project_dir) -> None:
+    ran = run("-p", str(project_dir), "config", "explain", "narration.takes_dir", "--json")
+    assert ran.exit_code == 0
+    written = json.loads(ran.out)
+    assert written["key"] == "narration.takes_dir"
+    assert written["scope"] == "project"
+    assert written["environment"] == "DECKTALK_NARRATION_TAKES_DIR"
+
+
 def test_explain_holds_a_candidate_to_the_same_range(run, project_dir) -> None:
     ran = run("-p", str(project_dir), "config", "explain", "video.crf", "--value", "99")
     assert ran.exit_code == 2

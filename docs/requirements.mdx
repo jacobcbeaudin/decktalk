@@ -59,20 +59,22 @@ nothing on PATH either.
 
 The browser is the large one. DeckTalk announces it as about 200 MB, which is what Playwright fetches
 for the browser and its headless shell together. On macOS on Apple silicon that unpacked to 554 MB in
-Playwright's cache. The pinned ffmpeg arrives as two archives of about 28 MB each on that platform
+the cache. The pinned ffmpeg arrives as two archives of about 28 MB each on that platform
 and unpacks to 125 MB. Budget a gigabyte of cache for a machine that records, and a few minutes on a
 home connection for the first run.
 
 ### Where they land
 
-| Cache | Linux | macOS | Windows |
-|---|---|---|---|
-| Playwright | `~/.cache/ms-playwright` | `~/Library/Caches/ms-playwright` | `%LOCALAPPDATA%\ms-playwright` |
-| DeckTalk | `$XDG_CACHE_HOME/decktalk`, else `~/.cache/decktalk` | `~/Library/Caches/decktalk` | `%LOCALAPPDATA%\decktalk` |
+Both land in one directory, Chromium in its `ms-playwright` folder and ffmpeg in its `ffmpeg` folder.
 
-Both are per user, so a second project on the same machine downloads nothing. Move DeckTalk's with
-`tools.cache_dir`, and move Playwright's with `PLAYWRIGHT_BROWSERS_PATH`, which Playwright reads on
-the download and on every launch.
+| Linux | macOS | Windows |
+|---|---|---|
+| `$XDG_CACHE_HOME/decktalk`, else `~/.cache/decktalk` | `~/Library/Caches/decktalk` | `%LOCALAPPDATA%\decktalk` |
+
+It is per user, so a second project on the same machine downloads nothing. `tools.cache_dir` moves
+the whole directory, browser and encoder together, and `decktalk doctor` names it as `cache`.
+DeckTalk tells Playwright where the browser folder is on the download and on every launch, so a
+`PLAYWRIGHT_BROWSERS_PATH` set in the shell is not used: set `tools.cache_dir` instead.
 
 ### What `decktalk install` is for
 
@@ -112,9 +114,8 @@ is one setting, and none of them changes the project.
 |---|---|
 | The package index | Point uv, pipx or pip at your mirror the way you already do. |
 | The Chromium download host | `PLAYWRIGHT_DOWNLOAD_HOST`, as Playwright documents it. |
-| A write to Playwright's browser directory | `PLAYWRIGHT_BROWSERS_PATH`, set for the download and for every launch. |
 | The ffmpeg download | `[tools] ffmpeg` and `[tools] ffprobe`, naming two executables from one build. They override every other source, so nothing downloads a build. |
-| A write to DeckTalk's cache | `[tools] cache_dir`. |
+| A write to the per-user cache | `[tools] cache_dir`, which moves Chromium and ffmpeg together. |
 
 The `[tools]` keys and `record.browser_path` are
 [machine keys](/reference/configuration#keys-only-a-machine-may-set). They describe this machine, so
@@ -262,15 +263,16 @@ Two things call ElevenLabs. The `narrate` stage sends each section's text and ge
 | `decktalk narrate` | The same sections as a build, for that stage alone. |
 | `decktalk soundscape` | For each part whose request changed or whose file is missing. |
 
-No library or command call spends without approval. On the command line the three flags are
-`--no-voice`, which writes placeholder narration and calls nothing, `--spend`, which approves the
-spend, and `--max-cost N`, which puts a ceiling on it. On a terminal a voiced build prices the run
-and asks. Without a terminal it refuses and names the two flags that answer, so a script or a CI job
-cannot spend by accident.
+No library or command call spends without approval. On the command line the flags are `--no-spend`, which plays every take on disk, writes
+placeholder narration where a take is missing and calls nothing, `--spend`, which approves the spend,
+and `--max-cost N`, which puts a ceiling on it. With neither flag, a build with something to buy
+prices the run and asks on a terminal. Without a terminal it refuses and names the two flags that
+answer, so a script or a CI job cannot spend by accident. A build whose takes are all on disk buys
+nothing, so it asks nothing and reads no key.
 
 Everything else spends nothing: `init`, `install`, `doctor`, `status`, `check`, `words`,
 `storyboard`, `serve`, `config`, `schema`, `cue`, `record`, `assemble`, `verify`, `clip`, and any
-`build` with `--no-voice`.
+`build` with `--no-spend`.
 
 A voiced section costs the characters of its whole text, so an edit costs every changed section in
 full rather than the changed sentence. The starter's three sections are 476 characters and make 50
@@ -279,8 +281,8 @@ few thousand characters. `decktalk check --json` gives the exact figure for your
 is named by the hash of its text and its voice settings, so an unchanged section is read from the
 cache and a new voice id voices every section again.
 
-<Warning>`--replace-voiced` voices a section again and discards the take it replaces. It is the one
-flag on `build` that destroys money rather than spending it.</Warning>
+<Warning>`--replace-voiced` with `--spend` voices a section again and plays the new take in place of
+the one you paid for. It is the one flag on `build` that buys words you already own.</Warning>
 
 ## How the price is worked out
 

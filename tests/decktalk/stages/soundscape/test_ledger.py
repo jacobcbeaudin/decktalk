@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.errors import ErrorCode, NotBuiltError
+from decktalk.errors import ErrorCode, InputError
 from decktalk.results import SoundKind
 from decktalk.stages.soundscape.ledger import (
     DIGEST_DIGITS,
@@ -50,14 +50,19 @@ def test_a_ledger_that_was_never_written_reads_as_nothing(tmp_path: Path) -> Non
     assert Ledger.read(tmp_path / "ledger.json") is None
 
 
-def test_a_ledger_that_will_not_parse_is_refused_rather_than_read_as_an_empty_record(tmp_path: Path) -> None:
-    """A corrupt ledger read as empty would buy every item in it again, which is a charge."""
+@pytest.mark.parametrize("written", ["{not json", '{"version": 1, "items": []}'])
+def test_a_ledger_that_will_not_parse_is_refused_rather_than_read_as_an_empty_record(
+    tmp_path: Path, written: str
+) -> None:
+    """A corrupt or older-shaped ledger read as empty would buy every item in it again, which is a charge."""
     path = tmp_path / "ledger.json"
-    path.write_text("{not json", encoding="utf-8")
-    with pytest.raises(NotBuiltError) as refused:
-        Ledger.read(path)
-    assert refused.value.code is ErrorCode.NOT_BUILT
-    assert "ledger.json" in (refused.value.hint or "")
+    path.write_text(written, encoding="utf-8")
+    for reading in (Ledger.read, Ledger.previous):
+        with pytest.raises(InputError) as refused:
+            reading(path)
+        assert refused.value.code is ErrorCode.INPUT
+        assert "ledger.json" in str(refused.value) and "ledger.json" in (refused.value.hint or "")
+    assert path.read_text(encoding="utf-8") == written
 
 
 def test_a_row_is_found_by_its_name_and_a_name_nobody_bought_is_none() -> None:

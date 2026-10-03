@@ -1,6 +1,8 @@
 """Every path under `build/`, named once.
 
-    build/narrate/      the takes, their words files and the take index
+    build/narrate/      the takes, their words files and the take index, unless
+                        `[narration] takes_dir` keeps them in the project, and the
+                        joined narration and every placeholder take in every case
     build/cue-times.json  every cue resolved against those words
     build/recordings/   one webm and one recording log per page section
     build/soundscape/   the music, the ambience bed and the effects
@@ -25,6 +27,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from decktalk.artifacts import is_placeholder, take_file, words_file
 from decktalk.inputs.paths import confined
 from decktalk.pipeline import Artifact
 
@@ -43,6 +46,9 @@ class Workspace:
     build: Path
     name: str
     takes: Path | None = None
+    """The project's own take directory, which `[narration] takes_dir` names inside the project."""
+    shared: Path | None = None
+    """The machine's take store, which `[narration] cache_dir` names and many projects may read."""
 
     def confine(self) -> None:
         """Refuse this build directory when anything in it leads outside it, before a run writes there.
@@ -54,6 +60,8 @@ class Workspace:
         tree that passes here stays inside the project for the length of the run.
         """
         confined(self.root, self.build)
+        if self.takes is not None:
+            confined(self.root, self.takes, named="the take directory")
 
     def of(self, artifact: Artifact) -> Path:
         """Where this project keeps one artifact the pipeline declares, under its own build directory."""
@@ -61,17 +69,43 @@ class Workspace:
 
     @property
     def narrate_dir(self) -> Path:
-        """The take index and the joined narration, which belong to this project alone."""
+        """The joined narration and every placeholder take, which a build makes again for nothing."""
         return self.build / "narrate"
 
     @property
     def takes_dir(self) -> Path:
-        """Where the take files live, which many projects may share because a digest names each one."""
-        return self.takes or self.narrate_dir
+        """Where a bought take is written: the project's take directory, else the machine's store, else the build."""
+        return self.takes or self.shared or self.narrate_dir
+
+    @property
+    def take_places(self) -> tuple[Path, ...]:
+        """Every directory a take is looked for in, first to last: the project's, the machine's, the build's."""
+        found = (self.takes, self.shared, self.narrate_dir)
+        return tuple(dict.fromkeys(place for place in found if place is not None))
+
+    def holding(self, digest: str) -> Path | None:
+        """The first place that holds both the take of this digest and its words file, or None."""
+        places = (self.narrate_dir,) if is_placeholder(digest) else self.take_places
+        both = (take_file(digest), words_file(digest))
+        return next((place for place in places if all((place / name).exists() for name in both)), None)
+
+    def home_of(self, digest: str) -> Path:
+        """Where the take of this digest is written, which is the build for a placeholder nobody paid for."""
+        return self.narrate_dir if is_placeholder(digest) else self.takes_dir
+
+    def take_path(self, digest: str) -> Path:
+        """The audio file of this take where it is found, or where it would be written when it is nowhere."""
+        return (self.holding(digest) or self.home_of(digest)) / take_file(digest)
+
+    def words_path(self, digest: str) -> Path:
+        """The words file of this take where it is found, or where it would be written when it is nowhere."""
+        return (self.holding(digest) or self.home_of(digest)) / words_file(digest)
 
     @property
     def takes_path(self) -> Path:
-        return self.of(Artifact.TAKES)
+        """The take index, which sits beside the project's own takes and is never in the machine's store."""
+        index = self.of(Artifact.TAKES)
+        return index if self.takes is None else self.takes / index.name
 
     @property
     def narration_path(self) -> Path:

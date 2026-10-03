@@ -9,7 +9,7 @@ belongs to the recording beside it, and a long run can be read while it runs.
     capture.py   the page URL, what a recording is keyed on, and the page cut into its scenes
     start.py     where narration t=0 sits in one recording
     checks.py    the frames, the page's own codes and the origins it reached for
-    pool.py      how many sections record at once, and the workers that record them
+    pool.py      how many sections record at once, on the pool in `decktalk.stages.pool`
 
 Sections are recorded several at a time, each worker with a Chromium of its own, because a
 recording waits for its span in real time and the sections of a film share nothing but the project.
@@ -53,13 +53,14 @@ from decktalk.page import CAPTURE_FPS, SECOND_DIGITS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
 from decktalk.stages import selects
+from decktalk.stages.pool import Halt, Pool
 from decktalk.stages.record.capture import (
     Job,
     plan_job,
     section_hash,
 )
 from decktalk.stages.record.checks import check_recording, recording_findings
-from decktalk.stages.record.pool import Halt, Pool, automatic
+from decktalk.stages.record.pool import automatic
 from decktalk.stages.record.start import find_start
 
 log = logging.getLogger(__name__)

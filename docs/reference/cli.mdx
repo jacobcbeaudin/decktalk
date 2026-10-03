@@ -109,6 +109,7 @@ A finding carries its code, its sentence, its certainty and often a fix an agent
 | `CUE_OVERLAP` | uncertain | Two cues resolve close enough together that a viewer cannot tell them apart. |
 | `TAKE_PLACEHOLDER` | certain | The script still holds an open placeholder, so a voiced run would read it out. |
 | `TAKE_SPOKEN_SYMBOL` | uncertain | The script holds a symbol the voice reads as its name rather than as the thing it means. |
+| `TAKE_MISSING` | uncertain | A section has no take of its current text, so a placeholder plays in its place until a run with --spend buys one. |
 | `CUT_SPEECH` | certain | Speech is still sounding at a section cut, so the film slices a word in two. |
 | `CUT_POP` | certain | The picture steps at a section cut, so the film pops on the seam. |
 | `MIX_LOUDNESS` | uncertain | The mixed film misses the loudness it was mastered to. |
@@ -353,10 +354,9 @@ It answers with the `narrate` result: `decktalk schema narrate`.
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
 | `--force` | Build again from nothing, keeping every voiced take. |
-| `--replace-voiced` | Voice a section again and discard the take it replaces, which is the one flag here that destroys money. |
+| `--replace-voiced` | Set aside each paid take: voice it again with --spend, or play a placeholder with --no-spend. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
-| `--no-voice` | Placeholder narration: no API key and no spend. |
-| `--spend` | Voice what needs it without asking first. |
+| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a take is missing. Unset, a terminal is asked and a run without one is refused. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -411,8 +411,7 @@ It answers with the `soundscape` result: `decktalk schema soundscape`.
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
 | `--force` | Buy every item again, even one the ledger already holds, which spends again. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
-| `--no-voice` | Buy nothing: report the plan and write nothing. |
-| `--spend` | Buy what needs it without asking first. |
+| `--spend`, `--no-spend` | Buy what needs it without asking first, or buy nothing: report the plan and write nothing. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -472,11 +471,10 @@ It answers with the `build` result: `decktalk schema build`.
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
 | `--fix`, `--no-fix` | Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied. |
 | `--force` | Build again from nothing, keeping every voiced take, and measure the film again. |
-| `--replace-voiced` | Voice a section again and discard the take it replaces, which is the one flag here that destroys money. |
+| `--replace-voiced` | Set aside each paid take: voice it again with --spend, or play a placeholder with --no-spend. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--watch` | Stay running, rebuild the changed section, never spend. |
-| `--no-voice` | Placeholder narration: no API key and no spend. |
-| `--spend` | Voice what needs it without asking first. |
+| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a take is missing. Unset, a terminal is asked and a run without one is refused. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
 | `--fail-on` `WHEN` | certain fails on a certain finding, any fails on any finding, never fails on none. Default certain. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |

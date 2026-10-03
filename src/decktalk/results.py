@@ -9,7 +9,7 @@ that do not.
 
 A result also declares two facts about its own command rather than about its own JSON.
 `reports_findings` says the command can report a judgement and `spends` says it can buy something,
-and the command line derives `--fail-on`, `--allow` and the three spending flags from them. They are
+and the command line derives `--fail-on`, `--allow`, `--spend/--no-spend` and `--max-cost` from them. They are
 class facts rather than fields, so the shape a caller reads is unchanged and the command line needs
 no list of its own beside the models.
 
@@ -66,6 +66,12 @@ It is rounded where it is declared, so a run, a stage, a section and a result al
 clocks the same way and no emitter rounds for itself.
 """
 
+SPENDING = (
+    "True when the caller let this run buy what is missing, which spend=True and --spend do. A run that may "
+    "not plays every take on disk and a placeholder for each missing one."
+)
+"""What the `spending` field of a result that can buy says, written once for the two results that carry it."""
+
 NextCommand = Annotated[
     str | None,
     Field(default=None, description="The whole command to run next, or null when nothing is next."),
@@ -82,13 +88,6 @@ SectionKey = Annotated[str, Field(description="The section's key, which names it
 def section_key(number: int) -> str:
     """The key of the section with this number, which is its number in two digits."""
     return f"{number:02d}"
-
-
-class Voicing(Enum):
-    """What a run does about the voice, which replaces a pair of flags that could contradict each other."""
-
-    PLACEHOLDER = "placeholder"
-    PAID = "paid"
 
 
 class SpendState(Enum):
@@ -222,6 +221,20 @@ class Spend(Model):
     price_layer: Layer = Field(description="Which layer set that rate, where default means nobody stated it.")
 
     @property
+    def buys(self) -> bool:
+        """True when this price covers something to buy, which a run whose every take is on disk does not."""
+        return bool(self.sections) or self.characters > 0
+
+    @property
+    def free(self) -> bool:
+        """True when somebody stated that this voice bills nothing, so the command line buys without asking.
+
+        A rate of zero that nobody stated is the default, which means nobody has said what speech costs
+        rather than that it costs nothing, so it is never free.
+        """
+        return self.price_per_1000_characters == 0 and self.price_layer is not Layer.DEFAULT
+
+    @property
     def sentence(self) -> str:
         """This price in one sentence, which tells the figure a run certainly spends from its ceiling.
 
@@ -275,7 +288,7 @@ class Result(Model):
     """True when the command answering with this can report a judgement, so it takes --fail-on and --allow."""
 
     spends: ClassVar[bool] = False
-    """True when the command answering with this can buy something, so it takes the three spending flags."""
+    """True when the command answering with this can buy something, so it takes `--spend` and `--max-cost`."""
 
     schema_: Literal[2] = Field(SCHEMA, alias="schema", description="The shape version of this object.")
     ok: bool = Field(
@@ -674,7 +687,7 @@ class NarrateResult(Result):
 
     run: Run
     written: Written
-    voice: Voicing = Field(description="Whether this run spent on speech or wrote placeholders.")
+    spending: bool = Field(description=SPENDING)
     sections: tuple[SectionTake, ...] = Field(description="Every section this run considered, in script order.")
     spend: Spend = Field(description="What this run cost, or would have cost.")
     takes: ProjectPath | None = Field(None, description="The take index this run wrote, or null on a dry run.")
@@ -755,7 +768,7 @@ class BuildResult(Result):
     run: Run
     written: Written
     stages: tuple[StageRun, ...] = Field(description="Every stage this run planned, in run order.")
-    voice: Voicing = Field(description="Whether this run spent on speech or wrote placeholders.")
+    spending: bool = Field(description=SPENDING)
     spend: Spend = Field(description="What this run cost, or would have cost.")
     film: ProjectPath | None = Field(None, description="The finished film, or null when the run made none.")
     storyboard: ProjectPath | None = Field(None, description="The storyboard this run wrote, or null.")
@@ -858,7 +871,6 @@ __all__ = [
     "Substitute",
     "TakeStatus",
     "VerifyResult",
-    "Voicing",
     "Word",
     "WordsResult",
 ]

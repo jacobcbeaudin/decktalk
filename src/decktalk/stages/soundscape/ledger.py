@@ -12,8 +12,9 @@ record before it prices anything. It is a `Stored` model, so it is written under
 and renamed over the target in one step: a half-written ledger would read as a project that has
 bought nothing, and the next run would buy every item in it again.
 
-A file that is there and will not parse is refused rather than read as an empty record, for the
-same reason. Deleting it is a decision about money, so it is the author's to take.
+A file that is there and will not parse, including one an older release wrote in another shape, is
+refused with a sentence rather than read as an empty record, for the same reason, and it is left
+where it is. Moving it aside is a decision about money, so it is the author's to take.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import Field
 
@@ -69,6 +70,8 @@ class SoundEntry(Model):
 
 class Ledger(Stored):
     """Every item this project has bought, which is what tells a kept item from one to buy again."""
+
+    paid: ClassVar[bool] = True
 
     items: tuple[SoundEntry, ...] = Field((), description="One row per generated item, in the order it was written.")
 

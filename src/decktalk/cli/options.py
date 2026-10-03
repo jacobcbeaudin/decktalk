@@ -3,7 +3,7 @@
 A command's own parameters are written in its own signature. The flags several commands share are
 not copied into each of them: they are derived from the command's return annotation, which is the
 result model, so a command that reports findings takes `--fail-on` and `--allow` by being the sort
-of command that reports findings, and a command that can spend takes `--no-voice`, `--spend` and
+of command that reports findings, and a command that can spend takes `--spend/--no-spend` and
 `--max-cost` by being the sort of command that spends.
 
 The model says which sort it is. `Result.reports_findings` and `Result.spends` are declared beside
@@ -168,20 +168,15 @@ Fix = Annotated[
         help="Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied.",
     ),
 ]
-NoVoice = Annotated[
-    bool,
-    typer.Option(
-        "--no-voice",
-        rich_help_panel=Panel.SPENDING.value,
-        help="Placeholder narration: no API key and no spend.",
-    ),
-]
 Spend = Annotated[
-    bool,
+    bool | None,
     typer.Option(
-        "--spend",
+        "--spend/--no-spend",
         rich_help_panel=Panel.SPENDING.value,
-        help="Voice what needs it without asking first.",
+        help=(
+            "Buy what is missing without asking, or buy nothing and play a placeholder where a take is missing. "
+            "Unset, a terminal is asked and a run without one is refused."
+        ),
     ),
 ]
 MaxCost = Annotated[
@@ -224,7 +219,7 @@ ReplaceVoiced = Annotated[
     typer.Option(
         "--replace-voiced",
         rich_help_panel=Panel.REDOING.value,
-        help="Voice a section again and discard the take it replaces, which is the one flag here that destroys money.",
+        help="Set aside each paid take: voice it again with --spend, or play a placeholder with --no-spend.",
     ),
 ]
 
@@ -247,11 +242,10 @@ FINDING_FAMILY: tuple[tuple[str, Any, Any], ...] = (
 """The two flags a command that reports judgements carries, derived from its result model."""
 
 SPEND_FAMILY: tuple[tuple[str, Any, Any], ...] = (
-    ("no_voice", NoVoice, False),
-    ("spend", Spend, False),
+    ("spend", Spend, None),
     ("max_cost", MaxCost, None),
 )
-"""The three flags a command that can buy something carries, derived from its result model."""
+"""The two flags a command that can buy something carries, derived from its result model."""
 
 SHARED: frozenset[str] = frozenset(name for name, _, _ in (*GLOBALS, *FINDING_FAMILY, *SPEND_FAMILY))
 """Every parameter name the wrapper takes off a command's own call, so a command reads none of them."""
@@ -333,7 +327,6 @@ __all__ = [
     "Json",
     "MaxCost",
     "NoInput",
-    "NoVoice",
     "Overrides",
     "Panel",
     "Project",

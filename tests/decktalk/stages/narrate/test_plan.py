@@ -11,6 +11,7 @@ import pytest
 from decktalk.artifacts import TakeInputs, Takes, take_file, words_file
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
+from decktalk.inputs.workspace import Workspace
 from decktalk.results import Layer, SpendState, TakeStatus
 from decktalk.settings import VoiceConfig
 from decktalk.speech import PROVIDERS
@@ -74,10 +75,11 @@ def test_the_speaker_boost_key_is_the_one_the_provider_reads() -> None:
 
 
 def test_a_take_is_cached_only_when_its_audio_and_its_words_are_both_there(tmp_path: Path) -> None:
+    space = Workspace(root=tmp_path, build=tmp_path, name="demo", takes=tmp_path)
     (tmp_path / take_file("abc")).write_bytes(b"")
-    assert not is_cached("abc", tmp_path)
+    assert not is_cached("abc", space)
     (tmp_path / words_file("abc")).write_text("{}", encoding="utf-8")
-    assert is_cached("abc", tmp_path)
+    assert is_cached("abc", space)
 
 
 def test_a_placeholder_digest_moves_with_the_pace_it_was_sized_at(

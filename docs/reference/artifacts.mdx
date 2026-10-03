@@ -1,19 +1,26 @@
 ---
 title: Build artifacts
-description: Every file DeckTalk writes under build/, what each one is for, and the exact shape of each JSON file.
+description: Every file DeckTalk keeps under build/ today, what each one is for, and how the engine reads it. The promised part is the contract page.
 ---
 
 Everything a run generates lives under one directory. `[project] build` names it, and it is `build/`
 unless the project says otherwise. Nothing under it is written by hand, and deleting the whole of it
-costs only the time to make it again, with one exception: the takes are the only bytes anybody paid
-for, and `[narration] cache_dir` moves them somewhere a `build/` that is deleted cannot take them.
+costs only the time to make it again, except for the paid records: the takes and the sound ledger
+record money spent. `[narration] takes_dir`, committed with the project, and then the machine's
+`[narration] cache_dir` move the takes somewhere a `build/` that is deleted cannot take them.
+
+This page describes the engine as it is, and most of it is a private cache. What DeckTalk promises a
+caller is [the contract](/reference/contract): the `--json` results, the events file, `build/final/`
+and the exit codes. A shape on this page can change in any release, and a script that reads a cache
+file reads something nobody promised it.
 
 Every file a stage writes a shape for is a frozen model, so the field names below are the JSON keys
 and the model both reads and writes the file. A file is written under a temporary name in the same
 directory and renamed over the target, which is atomic on every platform DeckTalk ships on, so a
-reader never opens a half-written artifact and an interrupted run leaves the previous file whole. An
-artifact that is there and will not parse is reported as one that was never built, because the
-recovery is the same.
+reader never opens a half-written artifact and an interrupted run leaves the previous file whole. A
+cache file that is there and will not parse, including one an older release wrote, is built again by
+the stage that writes it. A paid record that will not parse is refused with a sentence and left
+where it is, because building it again would buy it again.
 
 ## Finding an artifact without knowing a path
 
@@ -355,9 +362,10 @@ Every request is paid for, so the one question this file answers is whether the 
 made from the request the project asks for now. A row whose digest still matches is kept rather than
 bought again. It is one file for the whole soundscape rather than a cache file beside every output,
 because the outputs may sit wherever `decktalk.toml` sends them and a run has to read the whole
-record before it prices anything. A ledger that is there and will not parse is refused rather than
-read as a project that has bought nothing, because deleting it is a decision about money and so it
-is the author's to take.
+record before it prices anything. A ledger that is there and will not parse, including one an older
+release wrote in another shape, is refused with a sentence and left on disk rather than read as a
+project that has bought nothing, because moving it aside is a decision about money and so it is the
+author's to take.
 
 ## `build/sections/`
 
@@ -543,6 +551,7 @@ a caller cannot clear a note it was never told about.
 
 ## Related
 
+- **What a caller may rely on:** [The contract](/reference/contract)
 - **Read these files from Python:** [Python API](/reference/python-api)
 - **Run the stages that write them:** [CLI](/reference/cli)
 - **Move the take cache or prune the event files:** [Configuration](/reference/configuration)

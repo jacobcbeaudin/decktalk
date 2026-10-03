@@ -89,7 +89,7 @@ PROMPT_FLAGS = frozenset(
         "--name",
         "--no-fix",
         "--no-skills",
-        "--no-voice",
+        "--no-spend",
         "--overwrite",
         "--replace-voiced",
         "--spend",
@@ -310,8 +310,7 @@ def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
             allow=frozenset(cast("Sequence[Code] | None", shared.get("allow")) or ()),
         )
         session.spending(
-            no_voice=bool(shared.get("no_voice")),
-            spend=bool(shared.get("spend")),
+            spend=cast("bool | None", shared.get("spend")),
             max_cost=cast("float | None", shared.get("max_cost")),
         )
         answered = fn(ctx=context, **arguments)

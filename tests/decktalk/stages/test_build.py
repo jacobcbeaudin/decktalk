@@ -32,7 +32,6 @@ from decktalk.results import (
     SpendState,
     StoryboardResult,
     VerifyResult,
-    Voicing,
 )
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import build as build_module
@@ -144,7 +143,7 @@ def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
             findings=tuple(answers.narrate),
             run=RUN_ID,
             written=(),
-            voice=Voicing.PLACEHOLDER,
+            spending=False,
             sections=(),
             spend=price(answers.narrate_dollars),
             takes=Path("build/narrate/takes.json"),
@@ -337,18 +336,18 @@ def test_a_run_that_does_not_skip_the_soundscape_needs_it(inputs: Inputs, watche
     assert calls.names == []
 
 
-def test_a_paid_run_draws_the_storyboard_before_it_narrates(
+def test_a_run_that_may_spend_draws_the_storyboard_before_it_narrates(
     inputs: Inputs, make_run: Callable[..., Watched], calls: Calls
 ) -> None:
     """The contact sheet is the checkpoint a person reads before a credit is bought."""
-    watched = make_run(inputs, voice=Voicing.PAID)
+    watched = make_run(inputs, spend=True)
     result = build(inputs, watched.run)
     assert calls.names[0] == "storyboard"
     assert calls.names[1] == "narrate"
     assert result.storyboard == Path("build/storyboard.html")
 
 
-def test_a_placeholder_run_draws_no_storyboard(inputs: Inputs, watched: Watched, calls: Calls) -> None:
+def test_a_run_that_may_not_spend_draws_no_storyboard(inputs: Inputs, watched: Watched, calls: Calls) -> None:
     result = build(inputs, watched.run)
     assert "storyboard" not in calls.names
     assert result.storyboard is None
@@ -398,7 +397,7 @@ def test_a_stopped_run_keeps_what_narrate_already_charged(
     """A paid narrate followed by a cue finding still reports the money it spent."""
     answers.narrate_dollars = 1.0
     answers.cue.append(judged(Code.CUE_UNRESOLVED, Stage.CUE))
-    watched = make_run(inputs, voice=Voicing.PAID)
+    watched = make_run(inputs, spend=True)
     result = build(inputs, watched.run)
     assert result.stopped_at is Stage.CUE
     assert result.spend.dollars == pytest.approx(1.0)
@@ -423,6 +422,32 @@ def test_a_threshold_of_any_finding_stops_on_an_uncertain_one(
     assert calls.names == ["narrate", "cue", "record"]
     assert result.stopped_at is Stage.RECORD
     assert result.ok is False
+
+
+@pytest.mark.parametrize(
+    ("stop_on", "allow", "stops_at"),
+    [
+        pytest.param(Certainty.CERTAIN, (), None, id="default carries on"),
+        pytest.param(Certainty.UNCERTAIN, (), Stage.NARRATE, id="any stops at narrate"),
+        pytest.param(Certainty.UNCERTAIN, (Code.TAKE_MISSING,), None, id="any with it allowed carries on"),
+    ],
+)
+def test_a_missing_take_builds_the_film_unless_the_threshold_says_any(
+    inputs: Inputs,
+    watched: Watched,
+    answers: Answers,
+    calls: Calls,
+    stop_on: Certainty,
+    allow: tuple[Code, ...],
+    stops_at: Stage | None,
+) -> None:
+    """A placeholder where a take is missing is a draft, so the default threshold builds the film past it."""
+    answers.narrate.append(judged(Code.TAKE_MISSING, Stage.NARRATE))
+    result = build(inputs, watched.run, stop_on=stop_on, allow=allow)
+    assert result.stopped_at is stops_at
+    assert (calls.names[-1] == Stage.VERIFY.value) is (stops_at is None)
+    assert result.ok is (stops_at is None)
+    assert [found.code for found in result.findings] == [Code.TAKE_MISSING]
 
 
 def test_no_threshold_runs_every_stage_whatever_it_finds(
@@ -508,10 +533,10 @@ def test_a_run_that_priced_nothing_still_reports_a_spend(inputs: Inputs, watched
 
 
 @pytest.mark.usefixtures("calls")
-def test_the_film_and_the_voicing_come_back_on_the_result(inputs: Inputs, watched: Watched) -> None:
+def test_the_film_and_whether_it_could_spend_come_back_on_the_result(inputs: Inputs, watched: Watched) -> None:
     result = build(inputs, watched.run)
     assert result.film == Path("build/final/t.mp4")
-    assert result.voice is Voicing.PLACEHOLDER
+    assert result.spending is False
     assert result.run == RUN_ID
 
 

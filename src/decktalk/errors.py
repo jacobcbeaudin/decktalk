@@ -140,7 +140,7 @@ class ApprovalRequired(DeckTalkError):
 
 
 class Cancelled(DeckTalkError):
-    """The caller stopped the run through its cancel token, between two sections."""
+    """The run stopped before a section started, because its caller cancelled it or its pool halted."""
 
     code = ErrorCode.CANCELLED
 
@@ -148,9 +148,12 @@ class Cancelled(DeckTalkError):
 class Cancel:
     """The token a caller holds to stop a run, which every mutating call takes and checks.
 
-    It is thread safe, because the caller that stops a run is a terminal's interrupt handler or a
-    renderer's own thread and never the thread doing the work. A stage checks it between sections,
-    so a cancelled run leaves whole artifacts behind rather than half of one.
+    It is thread safe, because the caller that stops a run holds it on a thread of its own, such as
+    a service's request handler, and never on the thread doing the work. A stage checks it between
+    sections, and a pool of workers starts no section once it is set, so a cancelled run leaves whole
+    artifacts behind rather than half of one. A terminal's Ctrl-C does not set it: the interrupt
+    reaches the run's own thread as `KeyboardInterrupt`, which `decktalk.stages.pool` answers the
+    same way.
     """
 
     def __init__(self) -> None:

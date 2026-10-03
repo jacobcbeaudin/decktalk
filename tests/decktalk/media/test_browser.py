@@ -16,13 +16,15 @@ import pytest
 from playwright.sync_api import Browser, BrowserContext, Page
 from playwright.sync_api import Error as PlaywrightError
 
-from decktalk.errors import Cancelled, InputError, ToolError
+from decktalk.errors import ApprovalRequired, Cancelled, ErrorCode, InputError, ToolError
 from decktalk.media import browser
 from decktalk.media.environment import child_environment
 from decktalk.media.origin import ORIGIN, Allowed, Assets, page_url
 from decktalk.settings import COLOR_SCHEMES, PAGE_POLICIES, MotionConfig
+from decktalk.toolchain.cache import caching_in
 from support.fakes import BareBrowser, FakeChromium
 from support.logs import data_of
+from support.runs import a_machine
 
 REPORTED = {
     "version": "0.5.0",
@@ -559,14 +561,40 @@ def test_a_machine_that_cannot_run_the_sandbox_is_refused_and_never_falls_back(m
     assert len(chromium.asked) == 1, "the sandbox was never dropped for a second try"
 
 
+def test_a_run_that_may_spend_opens_no_untrusted_page_and_says_why(tmp_path):
+    """The key is in reach of a run that may buy, even one with nothing to buy, so a stranger's page waits."""
+    chromium = FakeChromium(INSTALLED)
+    with a_machine(tmp_path).run(spend=True), pytest.raises(ApprovalRequired) as refused:
+        browser.launch(chromium.driver(), policy=browser.UNTRUSTED)
+    assert chromium.asked == [], "the refusal comes before any browser starts"
+    assert refused.value.code is ErrorCode.APPROVAL
+    assert "may spend" in str(refused.value) and "untrusted page" in str(refused.value)
+    assert "--spend" in (refused.value.hint or "")
+
+
+def test_a_run_that_may_spend_opens_its_authors_own_page(tmp_path):
+    """A trusted page is the author's own deck on the author's own machine, so a voiced build still records it."""
+    chromium = FakeChromium(INSTALLED)
+    with a_machine(tmp_path).run(spend=True):
+        browser.launch(chromium.driver(), policy=browser.TRUSTED)
+    assert len(chromium.asked) == 1
+
+
+def test_a_run_that_may_not_spend_opens_an_untrusted_page(tmp_path):
+    chromium = FakeChromium(INSTALLED)
+    with a_machine(tmp_path).run(spend=False):
+        browser.launch(chromium.driver(), policy=browser.UNTRUSTED)
+    assert len(chromium.asked) == 1
+
+
 def test_every_page_a_browser_opens_is_routed_by_the_policy_it_was_launched_under(monkeypatch, tmp_path):
     seen: list[bool] = []
     monkeypatch.setattr(browser, "route_pages", lambda *_a, trusted, **_k: seen.append(trusted))
     monkeypatch.setattr(browser, "instrument", lambda page: page)
-    monkeypatch.setattr(browser, "sync_playwright", FakeChromium(INSTALLED).started())
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(INSTALLED).started())
     allowed = Allowed.of(tmp_path, ["deck"])
     for policy in (browser.TRUSTED, browser.UNTRUSTED):
-        with browser.chromium(policy=policy) as launched:
+        with caching_in(str(tmp_path / "cache")), browser.chromium(policy=policy) as launched:
             browser.open_page(launched, allowed, width=10, height=10)
     # A browser this module never launched is routed as a stranger's page.
     browser.open_page(BareBrowser().browser(), allowed, width=10, height=10)

@@ -17,11 +17,11 @@ craft of a build is knowing which half you are in.
 1. **Read the project before you change it.** `decktalk status` says which sections exist, which
    recordings no longer match the project and why, whether the takes are placeholders or paid, and
    whether a run is already going. Follow a run that is already going rather than starting a second.
-2. **Rehearse without a voice.** A project whose takes are placeholders costs nothing to build, and
-   the film it gives has estimated timing. Say so whenever you show it.
-3. **Never replace a paid take.** A build without a voice that reaches a section with a paid take
-   is refused, and the only way past throws that take away. That is the refusal working, not an
-   obstacle. A build limited to the sections nobody has paid for is the cheap rehearsal instead.
+2. **Rehearse without spending.** A build told not to spend costs nothing: it plays every take on
+   disk and a placeholder for each section whose take is missing, and reports each of those as
+   `TAKE_MISSING`. A film with placeholders has estimated timing. Say so whenever you show it.
+3. **Never replace a paid take.** A build that does not spend keeps and plays every paid take, and
+   only the flag that discards a take throws one away. Never pass it without an answer from the author.
 4. **Judge before you spend.** `decktalk check` measures the project without producing anything and
    prices what a voiced run would cost. Stop on anything certain. Read the rows it could not measure
    as well as the rows it failed, because a skipped row proves nothing and still leaves a run green.

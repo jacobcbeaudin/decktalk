@@ -225,15 +225,29 @@ class NarrationConfig:
         bounds=Bounds(ge=0, le=10),
         decides=(Code.CUT_SPEECH,),
     )
+    takes_dir: str = tune(
+        "",
+        "Directory inside the project that holds its takes, their words files and the take index, so a "
+        "committed copy builds the film on a fresh clone with no key. It is empty for `build/narrate/`. A take "
+        "is looked for here first and in `cache_dir` second, and a take this project buys or finds elsewhere "
+        "is written here.",
+        unit="path",
+        hazard=(
+            "A directory outside the project, an absolute path or the project directory itself is refused when "
+            "the project loads, because a project someone else wrote would otherwise choose where this machine "
+            "reads and writes its takes."
+        ),
+        see_also=("narration.cache_dir",),
+    )
     cache_dir: str = tune(
         "",
-        "Directory that holds the take files and their words files, each named by its content hash. It is "
-        "empty for `build/narrate/` inside the project, and a path here keeps the voiced takes when `build/` "
-        "is deleted and lets many projects share one cache.",
+        "Directory this machine keeps takes and their words files in, each named by its content hash, so many "
+        "projects share one store and a deleted `build/` keeps them. A take is looked for here after the "
+        "project's `takes_dir`, and a bought take is written here only when the project names no `takes_dir`.",
         unit="path",
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
-        see_also=("tools.cache_dir",),
+        see_also=("narration.takes_dir", "tools.cache_dir"),
     )
     context_chars: int = tune(
         1500,
@@ -657,7 +671,9 @@ class VoiceConfig:
         evidence="the plan page of the account whose key this project uses",
         hazard=(
             "It is zero until somebody states it, and a spend cap refuses a run while the price is still "
-            "the default, because DeckTalk would otherwise be capping a spend against a number it invented."
+            "the default, because DeckTalk would otherwise be capping a spend against a number it invented. "
+            "A zero somebody stated says the voice bills nothing, so a run with neither --spend nor --no-spend "
+            "buys from it without asking."
         ),
     )
 
@@ -834,7 +850,8 @@ class ToolsConfig:
     )
     cache_dir: str = tune(
         "",
-        "Directory the fetched Chromium and ffmpeg builds live in. It is empty for the standard per-user cache.",
+        "Directory the fetched Chromium and ffmpeg builds live in, Chromium in its ms-playwright folder. "
+        "It is empty for the standard per-user cache.",
         unit="path",
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,

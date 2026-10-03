@@ -88,7 +88,7 @@ def decktalk(*args: str, cwd: Path, cache: Path) -> subprocess.CompletedProcess[
 def test_a_packaged_project_builds_and_verifies_without_a_voice(
     tmp_path: Path, example: str | None, pytestconfig: pytest.Config
 ) -> None:
-    """`init`, then `build --no-voice`, then `verify`, on a project straight out of the wheel.
+    """`init`, then `build --no-spend`, then `verify`, on a project straight out of the wheel.
 
     This suite runs whole builds one after another on a runner that renders in software, so its leg
     reports cue timing rather than gating it and `tests/support/timing_policy.py` says what that
@@ -108,7 +108,7 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(
     assert doc["example"] == (example or STARTER), "init reports the packaged project it wrote"
     assert Path(doc["root"]).name == name
 
-    built = decktalk("--project", str(root), "build", "--no-voice", "--json", cwd=home, cache=home)
+    built = decktalk("--project", str(root), "build", "--no-spend", "--json", cwd=home, cache=home)
     report = flat(built.stdout)
     assert_build_finished(built.returncode, codes(report), built.stderr, pytestconfig)
     film = root / report["film"]

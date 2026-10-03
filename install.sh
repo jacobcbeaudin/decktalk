@@ -393,7 +393,7 @@ report() {
 	say ""
 	printf '    %sdecktalk install%s      %s# Chromium and ffmpeg, once per machine. On Linux it asks for sudo.%s\n' "$GOLD" "$RESET" "$DIM" "$RESET"
 	printf '    %sdecktalk init my-film%s\n' "$GOLD" "$RESET"
-	printf '    %scd my-film && decktalk build --no-voice%s\n' "$GOLD" "$RESET"
+	printf '    %scd my-film && decktalk build --no-spend%s\n' "$GOLD" "$RESET"
 	say ""
 	note "That first build needs no account and spends nothing. For your own voice, put an"
 	note "ElevenLabs key and voice id in .env and run: decktalk build"

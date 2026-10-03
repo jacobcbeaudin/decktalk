@@ -40,7 +40,7 @@ Edit one sentence and only its section is voiced and recorded again, so a fix co
 ```console
 uv tool install decktalk==0.5.0
 decktalk init my-lesson && cd my-lesson
-decktalk build --no-voice
+decktalk build --no-spend
 ```
 
 The first line pins 0.5.0, the release this page describes.
@@ -51,10 +51,10 @@ On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECK
 
 <!-- x-release-please-end -->
 
-`decktalk init` writes a starter of three sections that already builds. The build without voice needs no account and spends nothing. It makes the whole film, captions and chapters included, with a click on every word where the voice would be, so the cues, the cuts and the pacing all run as they will when voiced. It prints this line.
+`decktalk init` writes a starter of three sections that already builds. The build with `--no-spend` needs no account and spends nothing. It makes the whole film, captions and chapters included, with a click on every word where the voice would be, so the cues, the cuts and the pacing all run as they will when voiced. It prints this line, and one `TAKE_MISSING` per section that has no voiced take yet, with the command that buys it.
 
 ```text
-       Built build/final/my-lesson.mp4, $0.00, nothing found
+       Built build/final/my-lesson.mp4, $0.00, 3 findings
 ```
 
 The first build downloads Chromium and ffmpeg, one time per machine, and says so as it goes. Recording runs in real time, several sections at once, so on a machine with a few cores to spare the build takes less time than the fifty seconds of film it makes.
@@ -96,13 +96,13 @@ Open your agent in the project and paste this.
 
 ```text
 Read AGENTS.md, then make a three-section lesson on binary search.
-Rehearse with decktalk build --no-voice, show me the storyboard,
+Rehearse with decktalk build --no-spend, show me the storyboard,
 and ask me before any run that spends money.
 ```
 
 The agent reads `decktalk --help` for the commands, `decktalk schema build` for one command's flags and result, and `decktalk config explain KEY` for one setting. Every command prints one JSON object under `--json`, and `--events` streams progress as JSON lines. Exit 0 means nothing was found, 1 a finding, 2 a refused command line and 3 that DeckTalk could not run. The [reference card](https://docs.decktalk.ai/reference/card) puts the whole contract on one page.
 
-Without a terminal, a voiced build refuses to spend unless `--spend` is passed, so an agent left alone cannot buy speech by accident. This is the whole answer from `decktalk --json build` in the starter with a voice named, which exits 2.
+Without a terminal, a build with something to buy refuses unless `--spend` or `--no-spend` is passed, so an agent left alone cannot buy speech by accident. A build whose takes are all on disk buys nothing and needs neither flag nor key. This is the whole answer from `decktalk --json build` in the starter with a voice named, which exits 2.
 
 ```json
 {
@@ -112,7 +112,7 @@ Without a terminal, a voiced build refuses to spend unless `--spend` is passed, 
   "error": {
     "code": "APPROVAL",
     "message": "This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.",
-    "hint": "Run decktalk build --spend to approve that spend, or decktalk build --no-voice to finish with placeholder narration.",
+    "hint": "Run decktalk build --spend to approve that spend, or decktalk build --no-spend to play a placeholder wherever a take is missing.",
     "location": null,
     "docs": "https://docs.decktalk.ai/reference/errors/APPROVAL"
   }
@@ -129,13 +129,13 @@ import decktalk
 project = decktalk.open("my-lesson")
 project.events.subscribe(lambda event: print(event.event, event.run))
 
-result = project.build(voice=decktalk.Voicing.PLACEHOLDER)
+result = project.build()
 print(result.ok, result.film)
 for finding in result.findings:
     print(finding.code.name, finding.message, finding.location.where)
 ```
 
-A voiced call takes `voice=decktalk.Voicing.PAID` and `max_cost`, and the library refuses before the first paid request when the estimate is above the cap. [The Python API](https://docs.decktalk.ai/reference/python-api) documents every call.
+A call that buys takes `spend=True` and `max_cost`, and the library refuses before the first paid request when the estimate is above the cap. Without `spend=True` a call plays every take on disk and builds no voice, so it reads no key. [The Python API](https://docs.decktalk.ai/reference/python-api) documents every call.
 
 ### What a build writes
 

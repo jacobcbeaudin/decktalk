@@ -3,7 +3,7 @@ title: Troubleshooting
 description: Take the code DeckTalk printed from the symptom you saw to the change that clears it.
 ---
 
-DeckTalk answers in codes. There are nine error codes and fifty-two finding codes, every one of them
+DeckTalk answers in codes. There are nine error codes and fifty-three finding codes, every one of them
 carries its own page, and this page is the map from what you saw to which code it was.
 
 Each code's page carries its sentence, its certainty and the settings keys that move it. They are
@@ -18,7 +18,7 @@ stops.
 
 ```text
 error[NOT_BUILT]: takes.json has not been built.
-  hint: Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing.
+  hint: Run `decktalk narrate` first, or `decktalk narrate --no-spend` to spend nothing.
   docs: https://docs.decktalk.ai/reference/errors/NOT_BUILT
 ```
 
@@ -117,7 +117,7 @@ did not reach are reported as skipped, and the run still returns everything it k
 its findings are printed and in the JSON, the money narrate already spent is in `spend`, and
 `stopped_at` names the stage it stopped after.
 
-{/* sample: decktalk build --no-voice on a built starter whose cue 3.1:idea waits for a phrase nobody says */}
+{/* sample: decktalk build --no-spend on a built starter whose cue 3.1:idea waits for a phrase nobody says */}
 
 ```text
      Narrate    0:00
@@ -145,7 +145,7 @@ for a code you mean to keep, and say why, because the film it lets through carri
 A cue a deck under construction has not drawn yet is the usual case:
 
 ```console
-decktalk build --no-voice --allow CUE_UNKNOWN
+decktalk build --no-spend --allow CUE_UNKNOWN
 ```
 
 ## From a symptom to a code
@@ -180,6 +180,7 @@ decktalk build --no-voice --allow CUE_UNKNOWN
 | An equation shows its source, or an error where the maths should be | [PAGE_KATEX_MISSING](/reference/findings/PAGE_KATEX_MISSING), [PAGE_KATEX_ERROR](/reference/findings/PAGE_KATEX_ERROR) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A word-synced line, a count or a stagger has nothing to work on | [PAGE_WORDS_NOT_FOUND](/reference/findings/PAGE_WORDS_NOT_FOUND), [PAGE_STAGGER_EMPTY](/reference/findings/PAGE_STAGGER_EMPTY) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | The script is not ready for a voice to read it | [TAKE_PLACEHOLDER](/reference/findings/TAKE_PLACEHOLDER), [TAKE_SPOKEN_SYMBOL](/reference/findings/TAKE_SPOKEN_SYMBOL) | [A script that is not ready to be voiced](#a-script-that-is-not-ready-to-be-voiced) |
+| A section plays a placeholder because its take is not on disk | [TAKE_MISSING](/reference/findings/TAKE_MISSING) | [A take that is missing](#a-take-that-is-missing) |
 
 Every code links to its own page, which carries that code's sentence, its certainty and the settings
 keys that move it. The rest of this page says what to change.
@@ -205,12 +206,12 @@ fetches both the first time a command needs them and keeps them in a per-user ca
    that will not launch says to run `decktalk install`.
 
 **The knobs.** `[tools] ffmpeg` and `[tools] ffprobe` name binaries the machine already has.
-`[tools] cache_dir` moves what DeckTalk fetches. `[record] browser_path` records with a browser the
+`[tools] cache_dir` moves what DeckTalk fetches, Chromium and ffmpeg together. `[record] browser_path` records with a browser the
 machine already has and skips the Chromium download entirely. All four are machine keys, so set them
 with `decktalk config set KEY VALUE --where machine`, because a `decktalk.toml` that sets one is
 refused. Set
-`PLAYWRIGHT_DOWNLOAD_HOST` to a mirror when a proxy blocks Playwright's own host, and
-`PLAYWRIGHT_BROWSERS_PATH` when the home directory is read-only or the browser is shared.
+`PLAYWRIGHT_DOWNLOAD_HOST` to a mirror when a proxy blocks Playwright's own host, and set
+`[tools] cache_dir` when the home directory is read-only or the browser is shared.
 
 `FILE_MISSING` is also what a stage raises when a file the project names is not on disk, such as an
 effect a `[[mix.effects]]` row cues or a clip a section names. There the fix is to write the file or
@@ -224,11 +225,12 @@ Exit 2 means DeckTalk refused before doing anything, and a retry of the same lin
 `decktalk <command> --help`, or `decktalk schema` for the whole instruction set as one JSON object.
 
 **`APPROVAL`.** A run that would spend money was not approved. `narrate` and `soundscape` are the two
-stages that spend.
+stages that spend. A run with nothing to buy is never asked, so a project whose takes are all on disk
+builds with no flag and no key.
 
 | What you want | What to pass |
 |---|---|
-| No spending at all | `--no-voice`, which writes placeholder narration that still carries a real word clock |
+| No spending at all | `--no-spend`, which plays every take on disk and a placeholder with a real word clock wherever a take is missing |
 | Spend without being asked | `--spend` |
 | Spend up to a ceiling | `--max-cost N`, which refuses before the first call when the most the run could cost is over N US dollars |
 | Know the price first | `decktalk check`, which prices the run and buys nothing |
@@ -236,8 +238,8 @@ stages that spend.
 `--no-input` never prompts. It takes the safe default, or it refuses and names the flag that would
 have answered, which is what makes a non-interactive run deterministic.
 
-In the library there is no terminal to ask, so nothing spends without `voice=decktalk.Voicing.PAID`,
-and `ApprovalRequired` is raised rather than money being spent.
+In the library there is no terminal to ask, so nothing spends without `spend=True`, and
+`ApprovalRequired` is raised rather than money being spent.
 
 ## A stage run before the one it reads
 
@@ -251,7 +253,7 @@ error[NOT_BUILT]: build/narrate/takes.json has not been built.
 
 Each stage reads what an earlier stage wrote, so a stage run on its own before that one fails here.
 Run the command the hint names, or run `decktalk build`, which runs every stage in order.
-`decktalk narrate --no-voice` writes the takes without spending anything. `decktalk status` names the
+`decktalk narrate --no-spend` writes the takes without spending anything, with a placeholder wherever a take is missing. `decktalk status` names the
 next command to run.
 
 ## A voice that did not answer
@@ -629,6 +631,22 @@ on the first.
 
 `TAKE_SPOKEN_SYMBOL` is uncertain because sometimes you do mean the symbol. Write out what the voice
 must say, and [Writing for the ear](/guides/writing-for-the-ear) is the guide for it.
+
+## A take that is missing
+
+| Code | Certainty | The change that clears it |
+|---|---|---|
+| [TAKE_MISSING](/reference/findings/TAKE_MISSING) | uncertain | Run the command the message names, `decktalk narrate --section N --spend`, to buy the take. |
+
+A run without `--spend` plays every take on disk and puts a placeholder in each section whose take is
+missing, which is one `TAKE_MISSING` per section. It is uncertain because the film is still whole and
+only that section's timing is estimated, so a draft build exits 0. Pass `--fail-on any` to make a
+missing take fail a run.
+
+A take is found by its text, its voice and its voice settings, so a section reports it after any of
+those changed, and on a fresh clone whose takes were never committed. Without `ELEVENLABS_VOICE_ID`
+no paid take can be matched at all, and the run says so in one line before the findings. Set the
+voice id, which is a published name rather than a secret, and the takes on disk play again.
 
 ## When the answer is not a code
 

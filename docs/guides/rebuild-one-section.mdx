@@ -74,11 +74,26 @@ Nothing else is in it, and each absence is a decision you can rely on.
   twice.
 
 A take file is named by its digest, so `narrate` sends nothing for a section whose take and words
-file are both on disk. Set [`narration.cache_dir`](/reference/configuration#narration) to keep
-those files outside `build/`, where a fresh clone and a second worktree find them again and several
-projects may share one directory. It is a machine key, so it is set with
-`decktalk config set narration.cache_dir DIR --where machine` and never in `decktalk.toml`. The take index and the joined narration stay under
-`build/narrate/`, because they belong to one project.
+file are both on disk. It looks in three places, in this order:
+
+1. [`narration.takes_dir`](/reference/configuration#narration), a directory inside the project that
+   holds its takes, their words files and the take index. Commit it, and a fresh clone builds the
+   real film with no key. Every take this project buys is written there, and a take found in one of
+   the other two places is copied there, so the directory always holds the whole film.
+2. [`narration.cache_dir`](/reference/configuration#narration), a store this machine keeps for every
+   project, which survives a deleted `build/`. It is a machine key, set with
+   `decktalk config set narration.cache_dir DIR --where machine`. A take is written there only when
+   the project names no `takes_dir`.
+3. `build/narrate/`, where the takes live when neither key is set.
+
+```toml
+[narration]
+takes_dir = "voice"   # commit voice/ and a clone plays these takes
+```
+
+A `takes_dir` outside the project, an absolute path or the project directory itself is refused when
+the project loads. A placeholder take and the joined narration are always under `build/narrate/`,
+because a build makes them again for nothing.
 
 A section that is voiced again costs the characters of its whole text and not only the changed
 sentence, so `decktalk check` is the call that prices an edit before you run it.
@@ -150,7 +165,7 @@ decktalk status
  2         02    deck/index.html?scene=2   no       no         no    no
  3         03    deck/index.html?scene=3   no       no         no    no
 
-Next   decktalk narrate --no-voice
+Next   decktalk narrate --no-spend
 ```
 
 `--json` gives an agent the same reading as one flat object, and the `sections[]` rows are what a
@@ -182,7 +197,7 @@ loop dispatches on.
   "film": null,
   "film_seconds": null,
   "runs": [],
-  "next": "decktalk narrate --no-voice"
+  "next": "decktalk narrate --no-spend"
 }
 ```
 
@@ -206,7 +221,7 @@ reads has moved since the last build ran them, a build keeps both rather than do
 reports each with the outcome `kept` and reports its findings again, so the result reads as the run
 that made the film did.
 
-{/* sample: a second decktalk build --no-voice on an unchanged starter named my-lesson */}
+{/* sample: a second decktalk build --no-spend on an unchanged starter named my-lesson */}
 
 ```text
 Assemble kept what it made last time, because nothing it reads has changed.
@@ -229,23 +244,23 @@ Two flags redo work, and only one of them can cost you anything you cannot get b
 `--force` builds again from nothing and keeps every voiced take. It ignores each stage's own cache,
 so `narrate` plans every section it was given as one to make, `record` records every section it
 planned, `soundscape` asks for every item again, and `assemble` and `verify` run and measure again
-even when nothing they read has moved. On a run with the voice, forcing therefore buys
-the speech again, and it buys the same words, so the take that lands is the take that was there.
+even when nothing they read has moved. On a run with `--spend`, forcing therefore buys the speech
+again, and it buys the same words, so the take that lands is the take that was there. On a run with
+`--no-spend` it remakes the placeholders and plays every paid take as it was.
 
 ```console
-decktalk build --force --no-voice
+decktalk build --force --no-spend
 ```
 
-`--replace-voiced` is the one flag here that destroys money. Without it, a run with no voice refuses
-to write over a section that already holds a paid take, because the placeholder would take that row
-in the take index and the next voiced build would buy the section again. The refusal names the
-sections nobody has paid for, so a film you have already voiced still rehearses its new section for
-nothing.
+`--replace-voiced` is the one flag here that spends money on words you already paid for. With
+`--spend` it voices each section it names again and plays the new take. Without it, a run that does
+not spend plays every paid take on disk and puts a placeholder only where a take is missing, reporting
+each such section as [`TAKE_MISSING`](/reference/findings/TAKE_MISSING), so a film you have already
+voiced rehearses its new section for nothing. `--replace-voiced --no-spend` plays placeholders in
+place of the paid takes for that one run, and the paid takes stay on disk for the next.
 
 ```text
-error[INPUT]: The take index holds paid takes for section(s) 1, and a run without voice would replace them, so the next voiced build would buy all of them again.
-  hint: Rehearse the sections nobody has paid for: --section 2 --section 3. Pass --replace-voiced to replace them anyway.
-  docs: https://docs.decktalk.ai/reference/errors/INPUT
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take of its current text on disk. Run decktalk narrate --section 2 --spend to buy its take.
 ```
 
 On a terminal, `--replace-voiced` is confirmed once before anything is replaced. Without a terminal
@@ -259,7 +274,7 @@ what a run is allowed to buy.
 ## Write with the build running
 
 `decktalk build --watch` is the draft loop. It serves the project itself, prints the URL, builds once
-with placeholder narration, and then rebuilds on every save until you stop it.
+without spending, and then rebuilds on every save until you stop it.
 
 ```console
 decktalk build --watch

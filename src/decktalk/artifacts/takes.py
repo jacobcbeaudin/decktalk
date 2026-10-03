@@ -3,6 +3,9 @@
     build/narrate/<hash>.mp3     one take, named by the content that produced it
     build/narrate/takes.json     which section plays which take, and the clock the join makes
 
+Both sit in the project's `[narration] takes_dir` instead when it names one, so the index travels
+with the takes it lists.
+
 A take is identified by its content hash and by nothing else, so the index maps a section to a piece
 of content and never the other way round. Renumbering a section rewrites one row and moves no file,
 and two sections with the same words share one take.
@@ -26,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import Field
 
@@ -170,8 +173,10 @@ class Takes(Stored):
 
     Nothing here is stored that the rows already say. How long the narration runs and whether any of
     it is a placeholder are read off the rows, so the file cannot hold a total that disagrees with
-    what it lists.
+    what it lists. It is a paid record, so one that does not read is refused and never built again.
     """
+
+    paid: ClassVar[bool] = True
 
     script: str = Field(description="The script these takes were made from, project-relative.")
     model: str = Field(description="The provider model every voiced row was spoken by.")
@@ -194,7 +199,7 @@ class Takes(Stored):
 
     @property
     def voiced(self) -> tuple[int, ...]:
-        """Every section holding a take somebody paid for, which a placeholder run must not replace."""
+        """Every section holding a take somebody paid for."""
         return tuple(take.section for take in self.sections if take.voiced)
 
     @property

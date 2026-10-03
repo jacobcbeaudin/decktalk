@@ -1,18 +1,11 @@
-"""How many sections record at once, and the pool that records them and answers in section order."""
+"""How many sections record at once, chosen from the CPU this process may really use."""
 
 from __future__ import annotations
 
-import contextvars
-import threading
-import time
-from contextlib import ExitStack
-from typing import NoReturn
-
 import pytest
 
-from decktalk.errors import Cancel, Cancelled, ToolError
 from decktalk.stages.record import pool
-from decktalk.stages.record.pool import Halt, Pool, at_once
+from decktalk.stages.record.pool import at_once
 from support.logs import data_of
 
 # ---- how many at once ----------------------------------------------------------------------------
@@ -65,117 +58,6 @@ def test_a_cgroup_v1_quota_is_read_when_there_is_no_v2_file(tmp_path, monkeypatc
     monkeypatch.setattr(pool, "CGROUP_V1_PERIOD", period)
     monkeypatch.setattr(pool.os, "sched_getaffinity", lambda _pid: set(range(64)), raising=False)
     assert pool.available_cpus() == 3.0
-
-
-# ---- the pool ------------------------------------------------------------------------------------
-
-BOUND: contextvars.ContextVar[str] = contextvars.ContextVar("test_bound", default="unbound")
-
-
-def launcher(launched: list[str]):
-    def launch(_stack: ExitStack) -> object:
-        launched.append(threading.current_thread().name)
-        return object()
-
-    return launch
-
-
-def test_rows_come_back_in_section_order_whatever_order_the_workers_finish_in():
-    launched: list[str] = []
-    finished: list[int] = []
-
-    def one(_browser: object, job: int, _halt: Halt) -> str:
-        time.sleep(0.05 * (4 - job))
-        finished.append(job)
-        return f"{job}:{BOUND.get()}"
-
-    BOUND.set("the run's")
-    with Pool([1, 2, 3], 3, launcher(launched), one, Cancel()) as recording:
-        rows = [recording.result(job) for job in (1, 2, 3)]
-    assert rows == ["1:the run's", "2:the run's", "3:the run's"], "each worker sees the caller's context"
-    assert finished == [3, 2, 1]
-    assert len(launched) == 3
-
-
-def test_one_worker_is_one_browser_recording_one_section_after_another():
-    launched: list[str] = []
-    with Pool([1, 2, 3], 1, launcher(launched), lambda _b, job, _h: job, Cancel()) as recording:
-        assert [recording.result(job) for job in (1, 2, 3)] == [1, 2, 3]
-    assert len(launched) == 1
-
-
-def test_the_first_failure_is_the_one_raised_and_it_stops_the_others():
-    """Section 1 was stopped because section 2 failed, and the reason the caller needs is section 2's."""
-    stopped: list[int] = []
-
-    def one(_browser: object, job: int, halt: Halt) -> int:
-        if job == 2:
-            raise ToolError("section 2 would not load")
-        for _ in range(100):
-            try:
-                halt.check()
-            except Cancelled:
-                stopped.append(job)
-                raise
-            time.sleep(0.01)
-        return job
-
-    started = time.monotonic()
-    with Pool([1, 2, 3], 3, launcher([]), one, Cancel()) as recording, pytest.raises(ToolError, match="section 2"):
-        recording.result(1)
-    assert time.monotonic() - started < 0.9
-    assert 1 in stopped
-
-
-def test_a_second_section_that_failed_on_its_own_is_recorded_and_a_halted_one_is_not(caplog):
-    both_running = threading.Barrier(2)
-
-    def one(_browser: object, job: int, halt: Halt) -> int:
-        if job in (1, 2):
-            both_running.wait(timeout=5)
-            if job == 2:
-                time.sleep(0.1)
-            raise ToolError(f"section {job} would not load")
-        halt.check()
-        time.sleep(0.5)
-        halt.check()
-        return job
-
-    with (
-        caplog.at_level("DEBUG", logger="decktalk"),
-        Pool([1, 2, 3], 3, launcher([]), one, Cancel()) as recording,
-        pytest.raises(ToolError, match="section 1"),
-    ):
-        recording.result(3)
-    later = [
-        record
-        for record in caplog.records
-        if record.name == "decktalk.stages.record.pool" and record.levelname == "WARNING"
-    ]
-    assert [data_of(record)["section"] for record in later] == [2]
-    assert later[0].exc_info is not None
-    assert "section 2 would not load" in str(later[0].exc_info[1])
-
-
-def test_a_cancelled_run_stops_every_worker():
-    cancel = Cancel()
-
-    def one(_browser: object, job: int, halt: Halt) -> int:
-        cancel.cancel()
-        halt.check()
-        return job
-
-    with Pool([1, 2], 2, launcher([]), one, cancel) as recording, pytest.raises(Cancelled):
-        recording.result(1)
-
-
-def test_a_browser_that_will_not_launch_fails_the_pool_with_its_own_reason():
-    def refuse(_stack: ExitStack) -> NoReturn:
-        raise ToolError("could not launch Chromium with its sandbox on")
-
-    with Pool([1, 2], 2, refuse, lambda _b, job, _h: job, Cancel()) as recording:
-        with pytest.raises(ToolError, match="sandbox"):
-            recording.result(1)
 
 
 def test_the_number_of_recorders_chosen_is_recorded_beside_the_cpus_it_was_chosen_from(monkeypatch, caplog):

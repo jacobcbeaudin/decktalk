@@ -60,6 +60,7 @@ ALLOW = {
     "contract/test_installer.py": "`install.sh`, the one-line installer.",
     "contract/test_layout.py": "This mirror rule, which belongs to the suite rather than to a module.",
     "contract/test_numbers.py": "`tests/contract/numbers-baseline.json`, every number written outside settings.py.",
+    "contract/test_promise.py": "`docs/reference/contract.mdx`, what DeckTalk promises a caller.",
     "contract/test_probe.py": "`src/decktalk/runtime/decktalk-probe.js`, read as the compiled bundle.",
     "contract/test_prose.py": "Every tracked text file, judged by the two prose rules that are mechanical.",
     "contract/test_release_versions.py": "Every version release-please writes, and the config it reads.",

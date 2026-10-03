@@ -19,12 +19,13 @@ as one section rather than as the whole film.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from decktalk.artifacts import PlaceholderInputs, TakeInputs, Takes, take_file, words_file
+from decktalk.artifacts import PlaceholderInputs, TakeInputs, Takes
+from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import Segment
+from decktalk.inputs.workspace import Workspace
 from decktalk.results import Spend, SpendState, TakeStatus
 from decktalk.settings import VoiceConfig
 from decktalk.speech import SpeechProvider, SpeechRequest, get_provider
@@ -72,9 +73,13 @@ def placeholder_inputs(inputs: Inputs, segment: Segment) -> PlaceholderInputs:
     )
 
 
-def is_cached(digest: str, takes_dir: Path) -> bool:
-    """True when the take of this digest and its words file are both on disk, which is the whole cache."""
-    return (takes_dir / take_file(digest)).exists() and (takes_dir / words_file(digest)).exists()
+def is_cached(digest: str, workspace: Workspace) -> bool:
+    """True when some place a take is looked for holds this take and its words file, which is the whole cache.
+
+    The places are the project's own take directory, then the machine's store, then the build, so a
+    clone that committed its takes and a laptop that keeps them for every project both find them.
+    """
+    return workspace.holding(digest) is not None
 
 
 def speech_provider(inputs: Inputs) -> SpeechProvider:
@@ -90,6 +95,19 @@ def voice_id_of(inputs: Inputs) -> str:
     here because it is a name rather than a secret.
     """
     return inputs.env.require(VOICE_VARIABLE)[0].reveal()
+
+
+def named_voice(inputs: Inputs) -> str:
+    """The voice this project is read in, or nothing when the project has not named one yet.
+
+    A run that buys nothing and a price both plan without a voice, with every paid take unchecked,
+    so neither is refused for a name only a purchase needs.
+    """
+    try:
+        return voice_id_of(inputs)
+    except InputError:
+        # silent: the plan says why the cache could not be checked, and a purchase asks for the name again.
+        return ""
 
 
 VOICE_VARIABLE = "ELEVENLABS_VOICE_ID"
@@ -193,7 +211,7 @@ def plan_takes(
         elif force:
             plans.append(TakePlan(segment, wanted, "this run was told to make it again", chapter, digest, request))
             planned.add(digest)
-        elif is_cached(digest, inputs.workspace.takes_dir):
+        elif is_cached(digest, inputs.workspace):
             plans.append(TakePlan(segment, TakeStatus.KEPT, "", chapter, digest, request))
         else:
             elsewhere = {other.spoken for other in targets if other.index != segment.index}
@@ -239,7 +257,7 @@ def voiced_plan(
 
 
 def placeholder_plan(inputs: Inputs, targets: list[Segment], *, force: bool = False) -> list[TakePlan]:
-    """What a run without voice does, whose placeholder takes are cached by content too."""
+    """The placeholder each of these sections plays in place of a missing take, cached by content too."""
     digests = {segment.index: placeholder_inputs(inputs, segment).digest for segment in targets}
     return plan_takes(inputs, targets, digests, voiced=False, force=force)
 
@@ -272,6 +290,7 @@ __all__ = [
     "TakePlan",
     "is_cached",
     "miss_reason",
+    "named_voice",
     "placeholder_inputs",
     "placeholder_plan",
     "plan_takes",

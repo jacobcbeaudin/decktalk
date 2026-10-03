@@ -32,8 +32,8 @@ TOP_LINES = (
 
 BUILD_SENTENCES = (
     "Run every stage in order, or a span of them with --from and --to.",
-    "Placeholder narration: no API key and no spend.",
-    "Voice what needs it without asking first.",
+    "Buy what is missing without asking, or buy nothing and play a placeholder where a take is missing.",
+    "Unset, a terminal is asked and a run without one is refused.",
     "Start at this stage: narrate, cue, record, soundscape, assemble or verify.",
     "Stop after this stage, inclusive.",
     "Run every stage but this one. Repeats.",
@@ -88,7 +88,7 @@ def test_the_spending_flags_are_exactly_on_the_commands_that_buy(name: str) -> N
     model = _model(row)
     spends = model is not None and model.spends
     assert ("--spend" in flags) is spends
-    assert ("--no-voice" in flags) is spends
+    assert ("--no-spend" in flags) is spends
     assert ("--max-cost" in flags) is spends
 
 

@@ -42,8 +42,8 @@ changed sections and a written record of what changed and what it cost. Read
 - Never change the voice, the model or a voice setting. Each re-voices the whole film.
 - Never renumber or insert a section without saying that every renumbered section is recorded again.
   No take is paid for twice for its position, so only new words cost money.
-- Never replace a paid take. In a project that holds paid takes, rehearse without a voice only on
-  the sections nobody has paid for.
+- Never replace a paid take. Rehearse with a build told not to spend, which plays every paid take on
+  disk and a placeholder, with a `TAKE_MISSING` finding, for each section whose new words have no take.
 - Never leave a claim in the film that the ledger cannot source.
 - Never pass a flag that hides a finding or forces a run past a refusal.
 

@@ -18,8 +18,8 @@ functions of files already on disk, so when nothing they read has moved since th
 them, the film on disk is the one they would make and the measurement is the one they would take.
 The stage is reported as kept, its findings are reported again, and `force` runs it anyway.
 
-A voiced run draws the storyboard before it narrates, because the contact sheet is the checkpoint a
-person reads before any credit is bought, and a run that writes placeholders has nothing to check.
+A run that may spend draws the storyboard before it narrates, because the contact sheet is the
+checkpoint a person reads before any credit is bought, and a run that buys nothing has nothing to check.
 
 A stage whose findings reach the caller's threshold stops the run, and the run still returns its
 result. A finding is a judgement and not an error, so the stages that ran, the findings they made and
@@ -45,7 +45,7 @@ from decktalk.inputs import Inputs
 from decktalk.logs import cache_decision
 from decktalk.machine import Run, Threshold
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
-from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, Voicing, counted
+from decktalk.results import BuildResult, Result, Spend, SpendState, StageRun, counted
 from decktalk.stages import DOLLAR_DIGITS, assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import soundscape as soundscape_stage
 from decktalk.stages.status import (
@@ -117,9 +117,9 @@ def build(
 ) -> BuildResult:
     """Run every stage of the pipeline, or the span of them `stages` names, in run order.
 
-    Whether the run spends is the run's own voicing rather than a parameter, so one gate decides it
-    for the library, the command line and a service alike, and the storyboard is drawn first when it
-    does. A stage that judges something at the `stop_on` threshold stops the run, because a cue whose
+    Whether the run may spend is the run's own rather than a parameter, so one gate decides it for
+    the library, the command line and a service alike, and the storyboard is drawn first when it
+    may. A stage that judges something at the `stop_on` threshold stops the run, because a cue whose
     phrase is never spoken leaves a slide that never appears and a page that threw recorded an empty
     stage, and carrying on would deliver a film that is wrong in a way the run already knows about.
 
@@ -191,7 +191,7 @@ def build(
         BuildResult,
         threshold=threshold,
         stages=tuple(rows),
-        voice=run.voice,
+        spending=run.spend,
         spend=_total(spends, inputs),
         film=film,
         storyboard=board,
@@ -325,8 +325,8 @@ def _where(inputs: Inputs, artifact: Artifact) -> Path:
 
 
 def _storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None) -> Path | None:
-    """The contact sheet a voiced run draws before it narrates, or None when nothing is bought."""
-    if run.voice is not Voicing.PAID:
+    """The contact sheet a run that may spend draws before it narrates, or None when it may not."""
+    if not run.spend:
         return None
     answer = storyboard.storyboard(inputs, run, only=only)
     return None if answer.storyboard is None else Path(answer.storyboard)

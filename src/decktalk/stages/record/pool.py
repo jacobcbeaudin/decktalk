@@ -1,9 +1,8 @@
-"""How many page sections record at once, and the workers that record them.
+"""How many page sections record at once, which is the size of the pool `record` hands them to.
 
 A recording waits for its section's whole span in real time, so a film's recording took as long as
 the film, and the sections of one film share nothing but the project they read. Several of them are
-therefore recorded at once, each by a worker with a Chromium of its own, and the rows come back in
-section order whatever order the workers finish in.
+therefore recorded at once, each by a worker of `decktalk.stages.pool` with a Chromium of its own.
 
 A recording is also the one stage that needs its CPU on time. A reveal that lands a frame late is a
 finding, so the number at once is chosen from the CPU this process may really use, which inside a
@@ -13,19 +12,10 @@ zero chooses it here.
 
 from __future__ import annotations
 
-import contextvars
 import logging
 import os
 import sys
-import threading
-from collections.abc import Callable, Sequence
-from concurrent.futures import Future
-from contextlib import ExitStack
 from pathlib import Path
-
-from playwright.sync_api import Browser
-
-from decktalk.errors import Cancel, Cancelled
 
 log = logging.getLogger(__name__)
 
@@ -122,106 +112,4 @@ def automatic(requested: int, jobs: int) -> int:
     return chosen
 
 
-class Halt:
-    """Whether a worker should stop: the caller cancelled the run, or another section already failed.
-
-    A section that failed fails the stage, so the recordings still running are stopped rather than
-    finished for a film that will not be assembled from them.
-    """
-
-    def __init__(self, cancel: Cancel) -> None:
-        self.cancel = cancel
-        self.halted = threading.Event()
-
-    def check(self) -> None:
-        """Raise `Cancelled` when the run was cancelled or another section failed."""
-        self.cancel.check()
-        if self.halted.is_set():
-            raise Cancelled("another section failed, so this one stopped", hint="Fix what the other section said.")
-
-
-class Pool[R]:
-    """`jobs` recorded on `workers` threads, with each job's row waited for in the order the caller asks.
-
-    Each worker takes the next job, opens its own Chromium the first time it needs one, and keeps it
-    for every job it takes after, so one worker is exactly the recorder that ran one section after
-    another. A worker runs in a copy of the caller's context, because the toolchain and the fetch
-    listener are bound there and a new thread does not inherit them.
-
-    The first failure halts every other worker at its next check, and it is the failure the caller
-    is given, whichever section the caller was waiting on, because a section stopped by the halt
-    has nothing to say about why.
-    """
-
-    def __init__(
-        self,
-        jobs: Sequence[int],
-        workers: int,
-        opening: Callable[[ExitStack], Browser],
-        one: Callable[[Browser, int, Halt], R],
-        cancel: Cancel,
-    ) -> None:
-        self.halt = Halt(cancel)
-        self.rows: dict[int, Future[R]] = {job: Future() for job in jobs}
-        self.queue = list(jobs)
-        self.lock = threading.Lock()
-        self.first: BaseException | None = None
-        self.opening = opening
-        self.one = one
-        self.threads = [
-            threading.Thread(target=contextvars.copy_context().run, args=(self._work,)) for _ in range(workers)
-        ]
-
-    def __enter__(self) -> Pool[R]:
-        for thread in self.threads:
-            thread.start()
-        return self
-
-    def __exit__(self, *_exc: object) -> None:
-        """Stop what is still running when the caller leaves early, and wait for every worker either way."""
-        if any(not row.done() for row in self.rows.values()):
-            self.halt.halted.set()
-        for thread in self.threads:
-            thread.join()
-
-    def _take(self) -> int | None:
-        with self.lock:
-            return self.queue.pop(0) if self.queue else None
-
-    def _work(self) -> None:
-        with ExitStack() as stack:
-            opened: Browser | None = None
-            while (job := self._take()) is not None:
-                row = self.rows[job]
-                try:
-                    self.halt.check()
-                    opened = opened or self.opening(stack)
-                    row.set_result(self.one(opened, job, self.halt))
-                except BaseException as exc:  # handed to the caller, who raises it on its own thread
-                    with self.lock:
-                        later = self.first is not None
-                        self.first = self.first or exc
-                    if later and not isinstance(exc, Cancelled):
-                        # Only the first failure is raised, and a section stopped by the halt has nothing to
-                        # say, but a second section that failed on its own is recorded rather than lost.
-                        log.warning(
-                            "Section %d also failed while the first failure was being raised.",
-                            job,
-                            exc_info=exc,
-                            extra={"data": {"section": job}},
-                        )
-                    self.halt.halted.set()
-                    row.set_exception(exc)
-
-    def result(self, job: int) -> R:
-        """The row of one job, once it is recorded, or the first failure of the whole pool."""
-        try:
-            return self.rows[job].result()
-        except BaseException as exc:  # noqa: BLE001  (re-raised below, as the pool's first failure)
-            self.halt.halted.set()
-            for thread in self.threads:
-                thread.join()
-            raise (self.first or exc) from None
-
-
-__all__ = ["Halt", "Pool", "at_once", "automatic", "available_cpus"]
+__all__ = ["at_once", "automatic", "available_cpus"]

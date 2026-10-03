@@ -56,7 +56,7 @@ from decktalk.stages.check.script import script_findings
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
 from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
-from decktalk.stages.narrate.plan import voice_id_of
+from decktalk.stages.narrate.plan import named_voice
 from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
 from decktalk.stages.verify import opted_out
 from decktalk.template import stale_runtime
@@ -195,19 +195,10 @@ def _plan(inputs: Inputs, run: Run, spoken: Sequence[Segment]) -> list[TakePlan]
     if not spoken:
         return []
     model = inputs.document.voice.model or inputs.settings.narration.model
-    plans, why = voiced_plan(inputs, list(spoken), model=model, voice_id=_voice_id(inputs))
+    plans, why = voiced_plan(inputs, list(spoken), model=model, voice_id=named_voice(inputs))
     if why:
         run.note(why)
     return plans
-
-
-def _voice_id(inputs: Inputs) -> str:
-    """The voice this project would be read in, or nothing when the project has not named one yet."""
-    try:
-        return voice_id_of(inputs)
-    except InputError:
-        # silent: a project that names no voice is judged for that elsewhere.
-        return ""
 
 
 def _resolve(

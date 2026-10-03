@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from graphlib import CycleError
 
 import pytest
 
 from decktalk import pipeline
 from decktalk.pipeline import NEEDS, PIPELINE, Artifact, Outcome, Stage, downstream, required
+from support.paths import SRC
 
 
 def test_the_six_stages_are_declared_in_run_order() -> None:
@@ -52,7 +54,7 @@ def test_the_next_step_names_the_stage_that_writes_the_artifact() -> None:
 def test_the_one_stage_that_spends_names_the_way_to_spend_nothing() -> None:
     """A reader stopped by a missing take index should not have to look up the free way to make one."""
     assert (
-        Artifact.TAKES.next_step == "Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing."
+        Artifact.TAKES.next_step == "Run `decktalk narrate` first, or `decktalk narrate --no-spend` to spend nothing."
     )
     assert Artifact.RECORDINGS.next_step == "Run `decktalk record` first."
 
@@ -131,3 +133,41 @@ def test_one_outcome_field_replaces_four_event_names() -> None:
 def test_every_stage_reaches_its_own_row() -> None:
     for stage in Stage:
         assert stage.spec.stage is stage
+
+
+STAGES = SRC / "stages"
+"""Where each stage's module or package lives, which is what the trust columns are checked against."""
+
+
+def stage_source(stage: Stage) -> str:
+    """Every line of one stage's own code, whether it is one module or a package of them."""
+    package = STAGES / stage.value
+    files = sorted(package.rglob("*.py")) if package.is_dir() else [STAGES / f"{stage.value}.py"]
+    return "\n".join(path.read_text(encoding="utf-8") for path in files)
+
+
+def test_the_key_holders_are_the_stages_that_pass_the_spend_gate() -> None:
+    """A stage holds the key exactly when its code asks the run to approve a price, which is narrate and soundscape."""
+    for stage in Stage:
+        assert stage.spec.holds_key == ("run.approve(" in stage_source(stage)), stage
+    assert Stage.voice_part() == (Stage.NARRATE, Stage.SOUNDSCAPE)
+
+
+def test_the_page_openers_are_the_stages_that_reach_the_browser() -> None:
+    """A stage opens a page exactly when its code reaches the browser: record, and assemble for its poster."""
+    reaches = re.compile(r"from decktalk\.media import [^\n]*\bbrowser\b|from decktalk\.media\.browser import")
+    for stage in Stage:
+        assert stage.spec.opens_pages == bool(reaches.search(stage_source(stage))), stage
+    assert [stage for stage in Stage if stage.spec.opens_pages] == [Stage.RECORD, Stage.ASSEMBLE]
+
+
+def test_no_stage_both_holds_the_key_and_opens_a_page() -> None:
+    for spec in PIPELINE:
+        assert not (spec.holds_key and spec.opens_pages), spec.stage
+
+
+def test_the_two_parts_split_the_pipeline_in_run_order() -> None:
+    """A host runs the voice part where the key is and the render part where it is not, and the two are the pipeline."""
+    assert Stage.render_part() == (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)
+    assert sorted((*Stage.voice_part(), *Stage.render_part()), key=list(Stage).index) == list(Stage)
+    assert not set(Stage.voice_part()) & set(Stage.render_part())

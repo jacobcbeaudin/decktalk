@@ -16,9 +16,9 @@ project that moves its build directory moves its soundscape with it. What has al
 is `ledger.py`, one typed file rather than a cache beside every output, and an item whose request
 still matches its row is kept rather than bought again.
 
-Nothing is bought without `run.approve`, so a run whose voicing is `placeholder` reports the plan
-and writes nothing at all. The voicing is the only thing that says so, because a second flag beside
-it could be set to contradict the gate.
+Nothing is bought without `run.approve`, so a run that may not spend reports the plan and writes
+nothing at all. The run's own `spend` is the only thing that says so, because a second flag beside
+it could be set to contradict the gate. The sound service is built only once something is bought.
 
 `only` names section numbers, because that is what every other stage takes, and the soundscape's own
 items are named rather than numbered. An effect is wanted when a `[[mix.effects]]` row cues it in a
@@ -50,7 +50,6 @@ from decktalk.results import (
     SoundStatus,
     Spend,
     SpendState,
-    Voicing,
 )
 from decktalk.settings import ElevenLabsConfig
 from decktalk.speech import get_provider
@@ -239,20 +238,34 @@ def spend_of(inputs: Inputs, items: Sequence[Planned], only: Sequence[int] | Non
 
     The only rate this project publishes is the one speech is billed at, so the price is the prompt
     characters at that rate. A sound request is billed by the service per second of audio, so this
-    is the figure the spend gate holds and never an invoice.
+    is the figure the spend gate holds and never an invoice. A run with nothing to buy covers no
+    section, so its price says it buys nothing.
     """
     chosen = selects(only)
     characters = sum(item.characters for item in items)
     dollars = round(dollars_for(characters, inputs), DOLLAR_DIGITS)
+    covered = tuple(section.number for section in inputs.document.sections if chosen(section.number)) if items else ()
     return Spend(
         state=SpendState.ESTIMATE,
-        sections=tuple(section.number for section in inputs.document.sections if chosen(section.number)),
+        sections=covered,
         characters=characters,
         dollars=dollars,
         ceiling_dollars=dollars,
         price_per_1000_characters=inputs.settings.voice.price_per_1000_characters,
         price_layer=price_layer(inputs),
     )
+
+
+def price(inputs: Inputs, *, only: Sequence[int] | None = None, force: bool = False) -> Spend:
+    """What a run of this stage with these options would buy, read from the plan and the ledger alone.
+
+    It opens no run and builds no client, so a caller prices a soundscape without touching the
+    project's lock, its events or the service.
+    """
+    keeps = wanted(inputs, only)
+    planned = [item for item in plan_items(inputs) if keeps(item)]
+    ledger = Ledger.read(inputs.workspace.soundscape_dir / LEDGER_FILE) or Ledger()
+    return spend_of(inputs, [item for item in planned if force or stale(ledger, item)], only)
 
 
 def client_for(inputs: Inputs) -> ElevenLabs:
@@ -362,8 +375,8 @@ def soundscape(
 ) -> SoundscapeResult:
     """Generate the music, the ambience bed and the effects this project describes.
 
-    A run whose voicing is `placeholder` reports what it would ask for and buys nothing, which is
-    the plan an author reads before approving a spend. The one judgement this stage makes is
+    A run that may not spend reports what it would ask for and buys nothing, which is the plan an
+    author reads before approving a spend. The one judgement this stage makes is
     `FILE_MISSING`, for an item that is still only planned and whose audio a mix would look for and
     not find. A request the service refuses raises `PROVIDER`, so a run that returns has nothing
     else to judge.
@@ -374,7 +387,7 @@ def soundscape(
     ledger = Ledger.read(path) or Ledger()
     fresh = {item.name for item in planned if force or stale(ledger, item)}
     spend = spend_of(inputs, [item for item in planned if item.name in fresh], only)
-    buying = bool(fresh) and run.voice is Voicing.PAID
+    buying = bool(fresh) and run.spend
     if buying:
         run.approve(spend)
     client = client_for(inputs) if buying else None
@@ -417,6 +430,7 @@ __all__ = [
     "client_for",
     "music_bodies",
     "plan_items",
+    "price",
     "sound_body",
     "soundscape",
     "spend_of",

@@ -31,7 +31,6 @@ from typing import Any
 
 from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words, content_digest, file_digest
 from decktalk.artifacts.stills import Stills, still_key
-from decktalk.artifacts.words import words_file
 from decktalk.errors import InputError
 from decktalk.files import current_text
 from decktalk.inputs.cues import CuedSection, load_cues
@@ -102,13 +101,14 @@ class Inputs:
         document = Document.from_toml(toml, default_name=root.name)
         loaded = load(root, project=toml, machine=machine, environ=environ, overrides=overrides)
         takes_dir = cls._takes_dir(root, loaded.settings)
-        notes = document.notes + tuple(key_warnings(toml, PROJECT_FILE)) + cls._takes_note(root, takes_dir)
+        shared = cls._shared_takes(root, loaded.settings)
+        notes = document.notes + tuple(key_warnings(toml, PROJECT_FILE)) + cls._takes_note(root, shared)
         build = contained(root, document.build)
         cls._refuse_served_build(root, build, document)
         return cls(
             root=root,
             document=document,
-            workspace=Workspace(root=root, build=build, name=document.name, takes=takes_dir),
+            workspace=Workspace(root=root, build=build, name=document.name, takes=takes_dir, shared=shared),
             env=Env(file=root / ENV_FILE, environ=environ),
             settings=loaded.settings,
             layers=loaded.layers,
@@ -137,7 +137,36 @@ class Inputs:
 
     @staticmethod
     def _takes_dir(root: Path, settings: Settings) -> Path | None:
-        """Where the take files live when `[narration] cache_dir` moves them out of the build directory."""
+        """The project's own take directory that `[narration] takes_dir` names, refused unless it is inside.
+
+        The directory is committed and travels with the project, so it is held to the project the way
+        every file the project names is. An absolute path is refused by its spelling even when it
+        happens to point inside, because the same file on another clone would point somewhere else,
+        and the project directory itself is refused because the takes would then sit among the files
+        an author writes.
+        """
+        named = settings.narration.takes_dir
+        if not named:
+            return None
+        refusal = InputError(
+            f"[narration] takes_dir is {named}, which is not a directory inside the project, "
+            "so the takes would not travel with it.",
+            hint='Name a directory inside the project, such as takes_dir = "voice", and commit it.',
+            location=at(root / PROJECT_FILE, root),
+        )
+        if Path(named).is_absolute():
+            raise refusal
+        try:
+            takes = contained(root, named)
+        except InputError as outside:
+            raise refusal from outside
+        if takes.resolve() == root.resolve():
+            raise refusal
+        return takes
+
+    @staticmethod
+    def _shared_takes(root: Path, settings: Settings) -> Path | None:
+        """The machine's take store that `[narration] cache_dir` names, which is read after the project's."""
         named = settings.narration.cache_dir
         return (root / named).resolve() if named else None
 
@@ -260,7 +289,7 @@ class Inputs:
 
     def words(self, section: int, digest: str) -> tuple[Word, ...]:
         """One take's words in seconds after its section starts, which is after that section's lead."""
-        found = Words.read(self.workspace.takes_dir / words_file(digest))
+        found = Words.read(self.workspace.words_path(digest))
         if found is None:
             return ()
         lead = self.lead_seconds(section)

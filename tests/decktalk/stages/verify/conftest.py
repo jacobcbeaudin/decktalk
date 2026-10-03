@@ -20,7 +20,7 @@ from decktalk.errors import Cancel
 from decktalk.inputs import Inputs
 from decktalk.machine import Run
 from decktalk.media import audio, ffmpeg, frames
-from decktalk.results import SectionCues, Voicing
+from decktalk.results import SectionCues
 from support.projects import load_project
 from support.runs import a_machine
 from support.takes import a_take, write_takes
@@ -93,7 +93,7 @@ class FakeDecoded:
 def opened(root: Path) -> Iterator[Run]:
     """One run on a machine that read nothing, which is what the facade would hand the stage."""
     machine = a_machine(root)
-    with machine.run(cancel=Cancel(), voice=Voicing.PLACEHOLDER, root=root) as run:
+    with machine.run(cancel=Cancel(), spend=False, root=root) as run:
         yield run
 
 

@@ -44,7 +44,7 @@ from decktalk.findings import Code
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Artifact, Outcome, Stage
-from decktalk.results import Layer, SectionKind, SpendState, Substitute, Voicing, Word
+from decktalk.results import Layer, SectionKind, SpendState, Substitute, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
 from support.commands import (
     FOUND_NOTHING,
@@ -332,7 +332,7 @@ def built(pytestconfig: pytest.Config) -> Iterator[Project]:
 
     project = Project(root=root, shim=shim, attempts=shim / "attempts.txt", config=pytestconfig)
     try:
-        project.built = project.cli("build", "--no-voice", "--json")
+        project.built = project.cli("build", "--no-spend", "--json")
         # One reading over the sections that carry cues, kept on disk for the CI upload on a failure.
         project.verified = project.cli(
             "verify", "--json", "--fail-on", "never", "--section", "1", "--section", "2", "--section", "4"
@@ -370,7 +370,11 @@ def test_the_build_reports_every_stage_and_the_film_it_wrote(built: Project) -> 
     assert [row["stage"] for row in doc["stages"]] == [stage.value for stage in Stage]
     assert {row["outcome"] for row in doc["stages"]} <= {outcome.value for outcome in Outcome}
     assert doc["film"] == relative(built, built.film)
-    assert doc["voice"] == Voicing.PLACEHOLDER.value, "--no-voice never asks a provider for a take"
+    assert doc["spending"] is False, "--no-spend never asks a provider for a take"
+    takes = Takes.read(built.build_dir / "narrate" / "takes.json")
+    assert takes is not None
+    missing = [row["location"]["section"] for row in doc["findings"] if row["code"] == Code.TAKE_MISSING.value]
+    assert missing == [take.section for take in takes.sections], "every placeholder take is one TAKE_MISSING"
     assert doc["spend"]["dollars"] == 0, doc["spend"]
     assert relative(built, built.film) in set(doc["written"])
     assert doc["run"], "a build opens a run, so its id is on the result an agent reads"
@@ -784,7 +788,7 @@ def test_building_one_section_records_that_section_and_no_other(built: Project) 
     recordings = built.build_dir / "recordings"
     before = {key: (recordings / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
     length = ffmpeg.probe_duration(built.film)
-    run = built.cli("build", "--no-voice", "--section", "4", "--json")
+    run = built.cli("build", "--no-spend", "--section", "4", "--json")
     assert run.certain() == [], run.stderr
     assert run.code in (FOUND_NOTHING, FOUND_SOMETHING), run.stderr
     after = {key: (recordings / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}

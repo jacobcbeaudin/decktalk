@@ -39,8 +39,8 @@ carries and the next step `status` reports are four readings of those six rows.
 second. It runs fourth so that a run stopped at `record` is the unpaid draft loop.
 
 `narrate` and `soundscape` are the two stages that spend money. `narrate` stops spending with
-`--no-voice`, which writes placeholder takes with a real word clock, and `soundscape` is simply not
-reached when a run ends at the recorder. So `decktalk build --no-voice --to record` writes takes,
+`--no-spend`, which plays every take on disk and a placeholder with a real word clock for each
+missing one, and `soundscape` is simply not reached when a run ends at the recorder. So `decktalk build --no-spend --to record` writes takes,
 resolves every cue and records every page for nothing, and it is the loop an author lives in while
 the words and the pictures are still moving. Had `soundscape` run second, the same loop would either
 have to skip a stage by name or buy audio on every pass.

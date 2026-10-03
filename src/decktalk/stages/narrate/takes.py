@@ -19,9 +19,10 @@ on a moment of silence, so its sound ends where its words do and it is placed ex
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
-from decktalk.artifacts import Take, Takes, Words, take_file, words_file
+from decktalk.artifacts import Take, Takes, Words, is_placeholder, take_file, words_file
 from decktalk.events import TakeCharged
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import Segment
@@ -62,7 +63,7 @@ def place(inputs: Inputs, number: int, row: Take) -> Take:
     names holds the same bytes it was measured on.
     """
     end = row.sound_end_seconds
-    path = inputs.workspace.takes_dir / row.file
+    path = inputs.workspace.take_path(row.hash)
     if end is None and path.exists():
         end = sound_end_of(inputs, path)
     return row.model_copy(
@@ -92,8 +93,8 @@ def estimated_words(segment: Segment, duration: float) -> list[Word]:
 
 def take_row(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voiced: bool) -> Take:
     """The take index row for one section, placed, with the fields every kind of take shares."""
-    takes_dir = inputs.workspace.takes_dir
-    written = Words.read(takes_dir / words_file(digest))
+    workspace = inputs.workspace
+    written = Words.read(workspace.words_path(digest))
     row = Take(
         section=segment.index,
         key=segment.key,
@@ -103,7 +104,7 @@ def take_row(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voi
         word_count=segment.word_count,
         characters=len(segment.tts_text),
         estimated_seconds=segment.estimated_seconds(inputs.settings.narration),
-        duration_seconds=ffmpeg.probe_duration(takes_dir / take_file(digest)),
+        duration_seconds=ffmpeg.probe_duration(workspace.take_path(digest)),
         speech_end_seconds=written.end if written is not None else None,
         spoken=segment.spoken,
     )
@@ -113,8 +114,8 @@ def take_row(inputs: Inputs, segment: Segment, chapter: str, digest: str, *, voi
 def write_placeholder_take(inputs: Inputs, segment: Segment, chapter: str, digest: str) -> tuple[Take, list[Path]]:
     """Write one click track and its estimated words, and give back the row and the files."""
     cfg = inputs.settings.narration
-    takes_dir = inputs.workspace.takes_dir
-    out = takes_dir / take_file(digest)
+    home = inputs.workspace.home_of(digest)
+    out = home / take_file(digest)
     duration = segment.silent_seconds(cfg)
     words = estimated_words(segment, duration)
     clicks = [word.start for word in words] + ([words[-1].end] if words else [])
@@ -125,7 +126,7 @@ def write_placeholder_take(inputs: Inputs, segment: Segment, chapter: str, diges
         sample_rate=inputs.settings.video.sample_rate,
         bitrate=cfg.mp3_bitrate,
     )
-    written = takes_dir / words_file(digest)
+    written = home / words_file(digest)
     Words(words=tuple(words)).write(written)
     return take_row(inputs, segment, chapter, digest, voiced=False), [out, written]
 
@@ -145,8 +146,8 @@ def write_voiced_take(
     that could fail writes the take. A host that keeps its own ledger then records every take it
     paid for, even one whose file never reached the disk.
     """
-    takes_dir = inputs.workspace.takes_dir
-    out = takes_dir / take_file(digest)
+    home = inputs.workspace.home_of(digest)
+    out = home / take_file(digest)
     spoken, words = provider.speak(request)
     characters = len(request.text)
     run.emit(
@@ -158,9 +159,28 @@ def write_voiced_take(
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(spoken)
-    written = takes_dir / words_file(digest)
+    written = home / words_file(digest)
     Words(words=tuple(words)).write(written)
     return take_row(inputs, segment, chapter, digest, voiced=True), [out, written]
+
+
+def keep_at_home(inputs: Inputs, digest: str) -> list[Path]:
+    """Copy a paid take found elsewhere, with its words file, to where this project writes its takes.
+
+    A project that names a `takes_dir` commits it, so every take the film plays must be there for a
+    clone to play it too, including one found in the machine's store or in an older build. The copy
+    leaves the place it was found as it was, so a machine's store is read and never moved, and a
+    take already at home, or a placeholder, copies nothing.
+    """
+    workspace = inputs.workspace
+    found, home = workspace.holding(digest), workspace.home_of(digest)
+    if is_placeholder(digest) or found is None or found == home:
+        return []
+    home.mkdir(parents=True, exist_ok=True)
+    copied = [home / take_file(digest), home / words_file(digest)]
+    for kept in copied:
+        shutil.copyfile(found / kept.name, kept)
+    return copied
 
 
 def join_takes(inputs: Inputs, takes: Takes) -> Path:
@@ -177,7 +197,7 @@ def join_takes(inputs: Inputs, takes: Takes) -> Path:
     audio.concat_audio(
         [
             audio.Placement(
-                inputs.workspace.takes_dir / row.file,
+                inputs.workspace.take_path(row.hash),
                 lead=row.lead_seconds,
                 play=row.sound_seconds,
                 tail=row.tail_seconds,
@@ -205,12 +225,12 @@ def planned_words(inputs: Inputs, plan: TakePlan) -> tuple[tuple[Word, ...], flo
     index = inputs.takes()
     row = index.of(number) if index is not None else None
     paid = row if row is not None and row.voiced else None
-    if plan.cached and plan.digest is not None and is_cached(plan.digest, inputs.workspace.takes_dir):
+    if plan.cached and plan.digest is not None and is_cached(plan.digest, inputs.workspace):
         # The take of this exact text is on disk, so the cues land on the words it already carries.
         words = inputs.words(number, plan.digest)
         if paid is not None and paid.hash == plan.digest:
             return words, place(inputs, number, paid).span_seconds, False
-        end = sound_end_of(inputs, inputs.workspace.takes_dir / take_file(plan.digest))
+        end = sound_end_of(inputs, inputs.workspace.take_path(plan.digest))
         return words, round(lead + end + tail, SECOND_DIGITS), False
     if plan.unchecked and paid is not None and paid.spoken == segment.spoken:
         # There is no voice to ask, and the take on disk was voiced from this exact text.
@@ -224,6 +244,7 @@ __all__ = [
     "PLACEHOLDER_CLOSE_SECONDS",
     "estimated_words",
     "join_takes",
+    "keep_at_home",
     "place",
     "planned_words",
     "sound_end_of",

@@ -41,8 +41,11 @@ The wheel test reads a file only `uv build` makes, so the collection hook marks 
 and a fresh clone's bare run never collects a test of a wheel it has not built.
 """
 
-FETCHED = ("media", "platform")
-"""The markers of the tests that run a fetched tool outside a run, so `tests/conftest.py` binds one for each."""
+FETCHED = ("browser", "media", "platform")
+"""The markers of the tests that run a fetched tool outside a run, so `tests/conftest.py` binds one for each.
+
+A browser test needs the binding too, because the driver looks for Chromium in the machine's tool cache.
+"""
 
 FETCH = "uv run decktalk install"
 """The command that fetches every tool a suite needs, which is the command a person runs."""
@@ -76,8 +79,9 @@ def require(tools: tuple[str, ...], cwd: Path) -> None:
 def machine_tools() -> Iterator[None]:
     """Bind this process's machine's cache and tools, as a run does.
 
-    A call to ffmpeg outside a run has no machine to say where the pinned build is kept, so a test,
-    or a fixture that runs the real tool, binds the toolchain of the machine this process would build.
+    A call to ffmpeg or a Chromium launch outside a run has no machine to say where the fetched build
+    is kept, so a test, or a fixture that runs the real tool, binds the toolchain of the machine this
+    process would build.
     """
     from decktalk.machine import Machine  # noqa: PLC0415  (a bare run that fetches nothing never loads it)
 

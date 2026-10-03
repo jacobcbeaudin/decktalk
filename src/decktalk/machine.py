@@ -17,8 +17,8 @@ is what makes the event stream total: `install` and `doctor` hold no project and
 leave a renderer silent through the two commands that download two hundred megabytes.
 
 The spend gate lives here rather than on the command line, because a service refuses the same spend
-for the same reason. No call buys anything without a paid voicing, and a ceiling is checked before
-the first request rather than counted down as the credits go.
+for the same reason. No call buys anything unless its caller said it may spend, and a ceiling is
+checked before the first request rather than counted down as the credits go.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
 from decktalk.logs import WHERE, level_of, logging_into, source_of, within
-from decktalk.media.environment import child_environment, children_see
+from decktalk.media.environment import child_environment, children_see, spending
 from decktalk.media.ffmpeg import installed_paths, using_tools
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
@@ -88,7 +88,6 @@ from decktalk.results import (
     Result,
     Scope,
     Spend,
-    Voicing,
     money,
 )
 from decktalk.secret import register_environment
@@ -278,14 +277,14 @@ class Run:
         *,
         id: str,
         cancel: Cancel,
-        voice: Voicing = Voicing.PLACEHOLDER,
+        spend: bool = False,
         max_cost: float | None = None,
         root: Path | None = None,
     ) -> None:
         self.id = id
         self.machine = machine
         self.cancel = cancel
-        self.voice = voice
+        self.spend = spend
         self.max_cost = max_cost
         self.root = root
         self.written: list[Path] = []
@@ -390,15 +389,15 @@ class Run:
     def approve(self, spend: Spend) -> Spend:
         """Let a priced request through, or refuse it before anything is bought.
 
-        Every paid call passes through here, so no stage can spend without a paid voicing and no
+        Every paid call passes through here, so no stage can spend without its caller's approval and no
         ceiling can be passed halfway. `--max-cost` is compared against the most the run can cost
         and never against the estimate, because credits are consumed one request at a time.
         """
         self.emit(SpendLine, spend=spend)
-        if self.voice is not Voicing.PAID:
+        if not self.spend:
             raise ApprovalRequired(
-                f"{spend.sentence} No voicing approved it.",
-                hint="Pass --spend to approve it, or --no-voice to write placeholder narration.",
+                f"{spend.sentence} Nothing approved it.",
+                hint="Pass --spend to approve it, or --no-spend to play placeholders where a take is missing.",
             )
         if self.max_cost is None:
             return spend
@@ -586,7 +585,7 @@ class Machine:
         *,
         id: str | None = None,
         cancel: Cancel | None = None,
-        voice: Voicing = Voicing.PLACEHOLDER,
+        spend: bool = False,
         max_cost: float | None = None,
         root: Path | None = None,
         events_dir: Path | None = None,
@@ -600,7 +599,7 @@ class Machine:
         id before the first line is written mints it itself and passes it, which is how a project
         adds the run to its own view in time for a renderer to see the run open.
         """
-        run = Run(self, id=id or new_run(), cancel=cancel or Cancel(), voice=voice, max_cost=max_cost, root=root)
+        run = Run(self, id=id or new_run(), cancel=cancel or Cancel(), spend=spend, max_cost=max_cost, root=root)
         events_path = events_dir / f"{run.id}{EVENTS_SUFFIX}" if events_dir is not None else None
         sink, written, pruned = None, None, ()
         if events_path is not None:
@@ -615,14 +614,15 @@ class Machine:
             run.note(note, level=Level.WARNING)
         outcome, error = Outcome.OK, None
         try:
-            # The toolchain, the download listener, the voices, the rule about `.env` and the
-            # environment a launched browser is built from are what this run renders, fetches, speaks,
-            # reads secrets and opens pages with. All of them sit below the event stream, so the run
-            # binds them for its own length rather than threading a machine through every filter,
-            # fetcher, provider lookup and browser launch.
+            # The toolchain, the download listener, the voices, the rule about `.env`, the
+            # environment a launched browser is built from and whether the key is in reach are what
+            # this run renders, fetches, speaks, reads secrets and opens pages with. All of them sit
+            # below the event stream, so the run binds them for its own length rather than threading
+            # a machine through every filter, fetcher, provider lookup and browser launch.
             with (
                 self.toolchain.bound(cancel=run.cancel),
                 children_see(self.environ),
+                spending(run.spend),
                 announcing(run.fetching),
                 voicing(self.voices),
                 reading_dotenv(self.dotenv),
@@ -657,10 +657,16 @@ class Machine:
         browser's system libraries and so the one that may ask for a password.
         """
         with self.run(cancel=cancel) as run:
-            chromium_fetch.fetch_chromium(env=child_environment(), with_deps=sys.platform.startswith("linux"))
-            # The row is asked for the way `doctor` asks for it, by launching what was just fetched,
-            # so `install` cannot print the browser as missing a second after it downloaded one.
-            browser = self._browser_row().model_copy(update={"fetched": True})
+            # Whether the browser already launches is the one answer that decides the fetch, the
+            # system libraries and the row's `fetched`: a browser that launches has its libraries, so
+            # a second `install` fetches nothing and names what was already there.
+            browser = self._browser_row()
+            if browser.version is None:
+                chromium_fetch.fetch_chromium(env=child_environment(), with_deps=sys.platform.startswith("linux"))
+                # The row is asked again the way `doctor` asks for it, by launching what was just
+                # fetched, so `install` cannot print the browser as missing a second after it
+                # downloaded one.
+                browser = self._browser_row().model_copy(update={"fetched": True})
             held = self.toolchain.complete
             tools = (browser, *_encoder_rows(self.toolchain.fetched(cancel=run.cancel), fetched=not held))
             return run.result(InstallResult, tools=tools, cache=self.cache_dir)
@@ -697,16 +703,10 @@ class Machine:
         """What browser this machine can launch, asked by launching it rather than by looking for a file.
 
         The row also names where that browser lives, because a person told the browser is there
-        still has to find it to clear a cache or to hand it to a container.
+        still has to find it to clear a cache or to hand it to a container. The driver looks in the
+        browser directory of this machine's tool cache, which is where `install` fetches it.
         """
-        try:
-            # The browser driver is a heavy import and a machine without one is a row rather than a
-            # refusal, so it is loaded by the one question that needs it.
-            from playwright.sync_api import sync_playwright  # noqa: PLC0415
-        except ImportError:
-            # silent: a machine without the browser driver reports a row with no browser.
-            return InstalledTool(tool=CHROMIUM)
-        with sync_playwright() as playwright:
+        with chromium_fetch.driver(chromium_fetch.browsers_in(self.cache_dir)) as playwright:
             try:
                 browser = playwright.chromium.launch()
                 version = browser.version

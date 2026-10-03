@@ -210,7 +210,7 @@ src/decktalk/
       announce.py        How a download says it is happening, so a run that stops for the network says so as it happens.
       assets.py          What ships inside the wheel: the page runtime, the pinned KaTeX release, and the projects.
       cache.py           The per-user cache directory, which is where every tool DeckTalk fetches for a machine lives.
-      chromium_fetch.py  The headless Chromium Playwright manages: whether this machine has it, and fetching it.
+      chromium_fetch.py  The headless Chromium Playwright manages: where it lives, whether this machine has it, and fetching it.
       ffmpeg_fetch.py    The pinned ffmpeg build: one fixed URL per platform, verified against its SHA-256 before it is opened.
     captions/            Captions, chapters and the files they are written to.
       files.py           The caption, chapter and transcript files `assemble` writes beside the final mp4.
@@ -252,6 +252,7 @@ src/decktalk/
     stages/              The pipeline, one package per stage and one module per call that reports or cuts.
       build.py           The whole pipeline in order, or the span of it one run asked for.
       clip.py            A span of one built section, cut into its own file with its own sound and its own words.
+      pool.py            The one pool every stage fans its sections out to, and the three ways it stops.
       status.py          What the project's files say, what is built from them, what has gone stale, and what to do next.
       storyboard.py      Every slide at every cue, frozen onto one page, which is the checkpoint before credits are spent.
       words.py           Every spoken word with its span, which is how a cue phrase is written.
@@ -274,7 +275,7 @@ src/decktalk/
       record/            Stage 3: record each page section in a headless browser, find narration t=0, and judge the result.
         capture.py       The URL a page section is opened at, and what its recording is keyed on.
         checks.py        What one finished recording is judged on, before anything is assembled from it.
-        pool.py          How many page sections record at once, and the workers that record them.
+        pool.py          How many page sections record at once, which is the size of the pool `record` hands them to.
         start.py         Where narration t=0 sits in a recording.
       soundscape/        Stage 4: the music, the ambience bed and the effects this project describes are generated.
         ledger.py        What this project has already bought from the sound service, as one typed file it reads and writes.

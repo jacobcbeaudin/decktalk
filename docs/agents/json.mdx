@@ -111,7 +111,7 @@ decktalk schema project     # the shape of cues.json
   "film": null,
   "film_seconds": null,
   "runs": [],
-  "next": "decktalk narrate --no-voice"
+  "next": "decktalk narrate --no-spend"
 }
 ```
 
@@ -222,7 +222,7 @@ judgements about the project rather than a reason the command could not run.
 
 A build stops after the stage whose findings reach the threshold, and the stages after it are
 `skipped`. It is still a result and not an error, so it exits 1, `error` is null, and `stopped_at`
-names the stage. This is `decktalk build --no-voice --json` on a starter whose cue waits for a phrase
+names the stage. This is `decktalk build --no-spend --json` on a starter whose cue waits for a phrase
 the script does not speak, cut to the keys a build adds.
 
 ```json
@@ -238,10 +238,16 @@ the script does not speak, cut to the keys a build adds.
     {"stage": "assemble", "outcome": "skipped", "seconds": 0.0},
     {"stage": "verify", "outcome": "skipped", "seconds": 0.0}
   ],
+  "spending": false,
   "film": null,
   "stopped_at": "cue"
 }
 ```
+
+`spending` is true when the caller let the run buy what is missing, which `--spend` does. A run that
+may not plays every take on disk and reports each section whose take is missing as
+[`TAKE_MISSING`](/reference/findings/TAKE_MISSING), an uncertain finding, so a draft build still
+runs through under the default threshold.
 
 `stopped_at` is null on a build that ran through, whatever it found. `--allow CODE` carries a build
 past a code, and `--fail-on` moves the threshold, so both decide what stops a build exactly as they
@@ -299,7 +305,7 @@ its sentence, its certainty and the settings keys that move it.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `code` | string | The stable code a caller dispatches on, such as `CUE_OFF`. There are fifty-two of them. |
+| `code` | string | The stable code a caller dispatches on, such as `CUE_OFF`. There are fifty-three of them. |
 | `message` | string | One sentence, with every measured number and its limit written into it. |
 | `certainty` | `certain` or `uncertain` | Whether this is wrong for sure or only probably wrong. |
 | `location` | object | Where the finding is. |
@@ -467,7 +473,7 @@ with no project behind it, such as `decktalk doctor` outside one, reports `event
 appends nothing.
 
 ```console
-decktalk build --no-voice --events --json
+decktalk build --no-spend --events --json
 ```
 
 ```json
@@ -540,7 +546,7 @@ import decktalk
 
 project = decktalk.open("my-lesson")
 project.events.subscribe(lambda event: print(event.event, getattr(event, "stage", "")))
-result = project.build(voice=decktalk.Voicing.PLACEHOLDER)
+result = project.build()
 for finding in result.findings:
     print(finding.code, finding.location.where, finding.message)
 ```

@@ -21,7 +21,7 @@ Three rules hold over the whole package.
 import decktalk
 
 project = decktalk.open("my-lesson")
-result = project.build(voice=decktalk.Voicing.PAID, max_cost=5.0)
+result = project.build(spend=True, max_cost=5.0)
 for finding in result.findings:
     print(finding.code.name, finding.message, finding.location.where)
 ```
@@ -93,16 +93,16 @@ into `(3, 5, 6, 7)`. The library itself always takes a run of numbers and never 
 Every one of these opens a run, takes `cancel`, and returns the frozen result named after it.
 
 ```python
-project.narrate(*, only=None, voice=Voicing.PLACEHOLDER, max_cost=None,
+project.narrate(*, only=None, spend=False, max_cost=None,
                 force=False, replace_voiced=False, cancel=None) -> NarrateResult
 project.cue(*, only=None, allow_unknown=False, cancel=None) -> CueResult
 project.record(*, only=None, force=False, cancel=None) -> RecordResult
-project.soundscape(*, only=None, voice=Voicing.PLACEHOLDER, max_cost=None,
+project.soundscape(*, only=None, spend=False, max_cost=None,
                    force=False, cancel=None) -> SoundscapeResult
 project.assemble(*, only=None, soundscape=True, loudness=True, strict=False,
                  cancel=None) -> AssembleResult
 project.verify(*, only=None, cancel=None) -> VerifyResult
-project.build(*, stages=None, skip=(), only=None, voice=Voicing.PLACEHOLDER, max_cost=None,
+project.build(*, stages=None, skip=(), only=None, spend=False, max_cost=None,
               force=False, replace_voiced=False, loudness=True, strict=False,
               allow=(), stop_on=Certainty.CERTAIN, cancel=None) -> BuildResult
 project.status(*, cancel=None) -> StatusResult
@@ -136,11 +136,11 @@ stages are members of, in run order: `NARRATE`, `CUE`, `RECORD`, `SOUNDSCAPE`, `
 
 | Parameter | Calls | What it does |
 |---|---|---|
-| `voice` | `narrate`, `soundscape`, `build` | `Voicing.PAID` buys what needs buying. `Voicing.PLACEHOLDER`, the default, buys nothing: `narrate` writes a click track and a word clock, and `soundscape` reports its plan. |
+| `spend` | `narrate`, `soundscape`, `build` | True buys what is missing. False, the default, buys nothing: `narrate` plays every take on disk and a click track with a word clock for each missing one, reported as `TAKE_MISSING`, and `soundscape` reports its plan. The library buys nothing without `spend=True`, whatever the price. |
 | `max_cost` | `narrate`, `soundscape`, `build` | A ceiling in US dollars on the most the run can cost, checked before the first paid request. A run over it raises `ApprovalRequired`. |
 | `only` | every call but `status` and `clip` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. |
-| `force` | `narrate`, `record`, `soundscape`, `build` | Does the work again where what is on disk still matches. A paid take is kept unless `replace_voiced` is true as well, and on `soundscape` every item is bought again, which spends again. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
-| `replace_voiced` | `narrate`, `build` | Voices a section again and discards the paid take it replaces. Without it, a run that would replace a paid take raises `InputError`, which names the unpaid sections to rehearse instead. |
+| `force` | `narrate`, `record`, `soundscape`, `build` | Does the work again where what is on disk still matches. A run that does not spend keeps every paid take unless `replace_voiced` is true as well, and on `soundscape` every item is bought again, which spends again. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
+| `replace_voiced` | `narrate`, `build` | Sets aside the paid take a section holds. A run that spends voices the section again and plays the new take. One that does not plays a placeholder in its place for that run, and the paid take stays on disk. Without it, a run that does not spend plays every paid take on disk. |
 | `stages`, `skip` | `build` | `stages` is the span to run, as `Stage` members in run order, which `Stage.span(first, last)` builds. `skip` leaves stages out of it, and a build whose `skip` names `Stage.SOUNDSCAPE` also leaves the soundscape's audio out of the mix. |
 | `soundscape` | `assemble` | False leaves the soundscape's audio out of the mix. |
 | `loudness` | `assemble`, `build` | False skips the loudness pass, so the soundtrack is encoded as it was mixed. A placeholder narration skips it in any case. |
@@ -168,7 +168,7 @@ if result.stopped_at is not None:
 
 | Exception | Raised by |
 |---|---|
-| `ApprovalRequired` | `narrate`, `soundscape` and `build`, when a run would spend and `voice` did not approve it, or when `max_cost` refuses it. |
+| `ApprovalRequired` | `narrate`, `soundscape` and `build`, when `max_cost` refuses a run that spends. |
 | `ProjectLocked` | Every call that writes, when another writer holds the build directory. |
 | `NotBuiltError` | A call that needs an artifact no earlier run made, such as `cue`, `words` or `verify` before any `narrate`. |
 | `ProviderError` | `narrate`, `soundscape` and `build` on a paid run, when the voice service fails. |
@@ -236,12 +236,18 @@ result = project.clip(2, start=4.0, end=9.5, out=Path("build/final/formula.mp4")
 print(result.film, result.words, result.seconds, result.estimated)
 ```
 
-## Voicing, `max_cost` and `ApprovalRequired`
+## `spend`, `max_cost` and `ApprovalRequired`
 
-No library call buys anything without `voice=Voicing.PAID`. `Voicing` has two members,
-`PLACEHOLDER` and `PAID`, which is one gate rather than a pair of flags that could contradict each
-other. A run whose voicing is `PLACEHOLDER` writes a click track and a word clock for `narrate`, and
-reports the plan without buying it for `soundscape`.
+No library call buys anything without `spend=True`, whatever the price. One switch decides it, so
+there is nothing two flags could contradict. The command line adds one rule of its own: with neither
+`--spend` nor `--no-spend`, a voice whose price somebody stated as zero is bought from without asking.
+The voice is built only when a take must be bought, so a call that buys nothing reads no key.
+
+A call with `spend=False`, the default, plays every take on disk, paid or placeholder. For `narrate`
+each section whose take is missing plays a click track with a word clock and is reported as
+[`TAKE_MISSING`](/reference/findings/TAKE_MISSING), which is uncertain, so the default threshold
+builds the film past it. `soundscape` reports its plan without buying it. A repository that commits
+its takes therefore builds its real film on a machine that holds the voice id and no key.
 
 `max_cost` is a ceiling in US dollars, checked before the first paid request rather than counted
 down as the credits go. It is compared against `spend.ceiling_dollars`, which is the most the run
@@ -252,7 +258,7 @@ a cap that claimed to stop a run halfway would be a lie.
 
 | When | What the message says |
 |---|---|
-| The run would spend and no voicing approved it. | How much the run would spend on speech. |
+| A purchase reached the gate and nothing approved it. | How much the run would spend on speech. |
 | `max_cost` is set and no layer above the default states what speech costs. | That the cap would guard a price nobody stated. |
 | The run's ceiling is over `max_cost`. | The ceiling, the cap, and the value that would let it through. |
 
@@ -261,7 +267,7 @@ import decktalk
 
 project = decktalk.open("my-lesson")
 try:
-    result = project.narrate(voice=decktalk.Voicing.PAID, max_cost=0.01, force=True)
+    result = project.narrate(spend=True, max_cost=0.01, force=True)
 except decktalk.ApprovalRequired as refused:
     print(refused)          # this run can cost up to $0.14, which is over the $0.01 ceiling ...
     print(refused.hint)     # Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
@@ -723,14 +729,21 @@ build directory is the only thing that moves between them.
 
 | Process | Calls | What it holds |
 |---|---|---|
-| Voice | `narrate` and `soundscape`, with `voice=Voicing.PAID` | The key and the voice id. It opens no page. |
+| Voice | `narrate` and `soundscape`, with `spend=True` | The key and the voice id. It opens no page. |
 | Render | `check`, `storyboard`, `record`, `assemble` and `verify` | No key. Its pages run under `record.page_policy = "untrusted"`. |
 
 `cue` reads only files and opens no page, so it runs in either. `assemble` draws the poster from the
 page, which is why it belongs to the render side.
 
-A host never calls `build` on a voiced run. A voiced build draws the storyboard, narrates and records
-in one process, which puts the key and the page side by side.
+The two parts are read off the pipeline rather than kept in a list of the host's own:
+`decktalk.Stage.voice_part()` is every stage whose row `holds_key`, and `decktalk.Stage.render_part()`
+is every other. No row both holds the key and `opens_pages`.
+
+A run that may spend refuses to open a page under `record.page_policy = "untrusted"`, with
+`APPROVAL`, before any browser starts. So a host that sets that policy on both machines cannot put
+the key beside a page: a `build(spend=True)` is refused at its storyboard before it buys anything. A
+render job may call `build()` once the voice job has bought every take, because a build that does not
+spend plays them and never builds the voice, so no key is read in the process that opens the pages.
 
 ```python
 import decktalk
@@ -745,8 +758,9 @@ voice = decktalk.Machine.of(
     config_path=Path("/etc/decktalk/voice.toml"),
     cwd=work,
     cache_dir=cache,
+    overrides=["record.page_policy=untrusted"],
 )
-decktalk.open(work, machine=voice).narrate(voice=decktalk.Voicing.PAID, max_cost=ceiling)
+decktalk.open(work, machine=voice).narrate(spend=True, max_cost=ceiling)
 
 # The render job, in another process whose environment holds no key at all.
 render = decktalk.Machine.of(environ={}, config_path=Path("/etc/decktalk/render.toml"), cwd=work, cache_dir=cache,
@@ -785,7 +799,7 @@ def meter(event):
         ledger.record(job=job_id, section=event.section, take=event.take, dollars=event.dollars)
 
 with project.events.subscribe(meter):
-    project.narrate(voice=decktalk.Voicing.PAID, max_cost=ceiling)
+    project.narrate(spend=True, max_cost=ceiling)
 ```
 
 ## Settings

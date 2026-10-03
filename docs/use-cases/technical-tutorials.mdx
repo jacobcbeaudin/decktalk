@@ -54,9 +54,9 @@ a phrase. `decktalk schema page` prints all twenty-four attributes with their va
     reading with no browser at all and names the judgements it could not reach.
   </Step>
   <Step title="Draft it with no voice">
-    `decktalk build --no-voice` runs the whole pipeline on placeholder narration that still carries
+    `decktalk build --no-spend` runs the whole pipeline on placeholder narration that still carries
     a real word clock. It spends nothing and needs no key, so the pacing is settled before a credit
-    is bought. `decktalk build --no-voice --to record` stops before the stage that generates audio.
+    is bought. `decktalk build --no-spend --to record` stops before the stage that generates audio.
   </Step>
   <Step title="Look at the storyboard, then buy the voice">
     `decktalk storyboard` freezes every slide at every cue onto `build/storyboard.html`, which is
@@ -77,7 +77,7 @@ script, and the first run that needs them downloads Chromium and ffmpeg.
 [What leaves your machine](/reference/what-leaves-your-machine) names every host and every request
 body, and [Requirements and costs](/requirements) covers the package index mirror, the browser path
 and the cache directory a managed machine needs. `decktalk install` fetches the toolchain up front
-rather than in the middle of a build, and a build with `--no-voice` contacts no speech service at
+rather than in the middle of a build, and a build with `--no-spend` contacts no speech service at
 all, so a finished video can exist before any approval does.
 
 ## Where to start
