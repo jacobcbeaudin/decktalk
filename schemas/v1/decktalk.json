@@ -283,7 +283,7 @@
           "x-environment": "DECKTALK_NARRATION_CONTEXT_CHARACTERS"
         },
         "timeout_seconds": {
-          "description": "Seconds before a speech request times out. It is also the longest a run waits while another project on this machine buys the same take, before it is refused as locked.",
+          "description": "Seconds before a speech request times out.",
           "type": "integer",
           "default": 180,
           "minimum": 10,
@@ -294,6 +294,25 @@
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-environment": "DECKTALK_NARRATION_TIMEOUT_SECONDS"
+        },
+        "store_wait_seconds": {
+          "description": "Seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request, `timeout_seconds` times `retries` plus one, with the waits between them. The default covers that at the default `timeout_seconds` and `retries`: four attempts of 180 seconds and three waits of at most 30 seconds, 810 seconds.",
+          "type": "integer",
+          "default": 900,
+          "minimum": 1,
+          "maximum": 36000,
+          "x-range": "must be between 1 and 36000",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-hazard": "Below the length of one take request, a run is refused while another run's healthy request is still being answered.",
+          "x-see-also": [
+            "narration.store_dir",
+            "narration.timeout_seconds",
+            "narration.retries"
+          ],
+          "x-environment": "DECKTALK_NARRATION_STORE_WAIT_SECONDS"
         },
         "sound_end_noise_dbfs": {
           "description": "Level under which the tail of a take counts as silence, which is where the take's sound ends.",

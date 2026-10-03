@@ -6,12 +6,12 @@ import json
 import shutil
 import threading
 from collections.abc import Callable, Iterator, Mapping
-from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, Any
 
 import pytest
+from filelock import FileLock
 
 from decktalk.artifacts import (
     PLACEHOLDER_PREFIX,
@@ -23,9 +23,8 @@ from decktalk.artifacts import (
     take_file,
     words_file,
 )
-from decktalk.artifacts import words as words_module
 from decktalk.cli import main
-from decktalk.errors import ApprovalRequired, ErrorCode, InputError, ProviderError
+from decktalk.errors import ApprovalRequired, ErrorCode, InputError, ProjectLocked, ProviderError
 from decktalk.events import CostPriced, RunLog, SectionDone, SectionStart, StageProgress, TakeCharged, Unit
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
@@ -36,8 +35,7 @@ from decktalk.settings import MACHINE_FILE_VARIABLE
 from decktalk.speech import DECLARED, FREE, PROVIDERS, Piece, SpeechContext, SpeechRequest
 from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import narrate as narrate_stage
-from decktalk.stages.narrate import narrate
-from decktalk.stages.narrate import takes as takes_module
+from decktalk.stages.narrate import narrate, take_states
 from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE
 from support.fakes import FAKE_VOICE_NAME, FakeVoice
 from support.git import committed_clone, git, tracked_copy
@@ -1159,111 +1157,27 @@ def unreadable(directory: Path) -> set[str]:
 
 
 @pytest.mark.usefixtures("counted")
-def test_a_damaged_words_file_in_the_store_is_never_copied_into_the_takes_directory(
-    make_run: Callable[..., Watched], tmp_path: Path
-) -> None:
-    """Seat 3's probe 1a: the committed folder must never receive a copy that does not read."""
-    project, store, (first, *_rest) = on_a_machine_with_a_store(make_run, tmp_path)
-    (store / words_file(first)).write_text("{", encoding="utf-8")
-    (project.workspace.takes / take_file(first, TAKE_SUFFIX)).unlink()
-    (project.workspace.takes / words_file(first)).unlink()
-    with pytest.raises(InputError) as refused:
-        narrate(project, make_run(project).run)
-    assert words_file(first) in str(refused.value)
-    assert "neither" in str(refused.value), "the refusal is the paid sentence, which buys and deletes nothing"
-    assert not (project.workspace.takes / words_file(first)).exists()
-    assert (store / words_file(first)).read_text(encoding="utf-8") == "{", "the damaged copy is left where it is"
-
-
-@pytest.mark.usefixtures("counted")
-@pytest.mark.parametrize("cut", [0, 2], ids=["empty", "truncated"])
-def test_a_store_take_whose_audio_is_cut_short_is_never_copied_and_never_played(
-    make_run: Callable[..., Watched], tmp_path: Path, cut: int
-) -> None:
-    """Seat 3's probe 1b: an empty or truncated mp3 keeps a valid name, and only its fingerprint gives it away."""
-    project, store, (first, *_rest) = on_a_machine_with_a_store(make_run, tmp_path)
-    audio_file = store / take_file(first, TAKE_SUFFIX)
-    audio_file.write_bytes(audio_file.read_bytes()[:cut])
-    for kept in (take_file(first, TAKE_SUFFIX), words_file(first)):
-        (project.workspace.takes / kept).unlink()
-    with pytest.raises(InputError) as refused:
-        narrate(project, make_run(project).run)
-    assert take_file(first, TAKE_SUFFIX) in str(refused.value)
-    assert take_files(project.workspace.takes) == take_files(store) - {
-        take_file(first, TAKE_SUFFIX),
-        words_file(first),
-    }
-
-
-@pytest.mark.usefixtures("counted")
-def test_a_damaged_store_copy_behind_a_good_project_copy_changes_nothing(
-    make_run: Callable[..., Watched], tmp_path: Path
-) -> None:
-    """Seat 3's probe 1c, first half: the takes directory is looked in first, and its good copy plays."""
-    project, store, (first, *_rest) = on_a_machine_with_a_store(make_run, tmp_path)
-    (store / words_file(first)).write_text("{", encoding="utf-8")
-    result = narrate(project, make_run(project).run)
-    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
-    assert result.findings == ()
-
-
-@pytest.mark.parametrize("damage", ["words", "audio", "words-and-no-audio"])
-def test_a_damaged_project_copy_is_moved_aside_and_the_stores_good_copy_plays(
-    make_run: Callable[..., Watched], counted: CountedVoice, tmp_path: Path, damage: str
-) -> None:
-    """Seat 3's probe 1c, second half: a damaged first copy no longer hides a good one further down."""
-    project, store, (first, *_rest) = on_a_machine_with_a_store(make_run, tmp_path)
+def test_a_copy_set_aside_twice_keeps_both_damaged_copies(make_run: Callable[..., Watched], tmp_path: Path) -> None:
+    """Nothing damaged is ever deleted, so a second copy moved aside takes the next number free for both its files."""
+    project, _store, (first, *_rest) = on_a_machine_with_a_store(make_run, tmp_path)
     takes = project.workspace.takes
     audio_name, words_name = take_file(first, TAKE_SUFFIX), words_file(first)
-    if damage != "audio":
-        (takes / words_name).write_text("{", encoding="utf-8")
-    if damage == "audio":
-        (takes / audio_name).write_bytes(b"the same length!"[: (store / audio_name).stat().st_size])
-    if damage == "words-and-no-audio":
-        (takes / audio_name).unlink()
-    sent = len(counted.voice.requests)
-    watched = make_run(project)
-    result = narrate(project, watched.run)
-    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
-    assert len(counted.voice.requests) == sent
-    assert (takes / audio_name).read_bytes() == (store / audio_name).read_bytes()
-    assert (takes / words_name).read_bytes() == (store / words_name).read_bytes()
-    moved = {f"{words_name}.unreadable"} | ({f"{audio_name}.unreadable"} if damage != "words-and-no-audio" else set())
-    assert unreadable(takes) == moved, "a damaged copy is moved aside as a pair, never deleted"
-    assert said(watched).count("moved aside") == 1, "the run says so once"
-
-
-@pytest.mark.usefixtures("counted")
-def test_a_take_is_hashed_whole_once_per_run_however_many_sections_play_it(
-    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The full BLAKE3 reads every byte of a take, so a run pays it once per take and the size check every time."""
-    doubled = "## 1. Open\n\nA bowl.\n\n## 2. Middle\n\nA bowl.\n\n## 3. Close\n\nA ball.\n"
-    project = make_inputs(script=doubled)
-    narrate(project, make_run(project, spend=True).run)
-    hashed: list[Path] = []
-    real = words_module.file_digest
-    monkeypatch.setattr(words_module, "file_digest", lambda path: hashed.append(path) or real(path))
-    result = narrate(project, make_run(project).run)
-    assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
-    assert sorted(path.name for path in hashed) == sorted(
-        {take_file(row.digest, TAKE_SUFFIX) for row in result.sections}
-    )
-
-
-@pytest.mark.usefixtures("counted")
-def test_a_take_left_under_the_build_is_never_looked_for_and_never_promoted_into_the_store(
-    make_run: Callable[..., Watched], tmp_path: Path
-) -> None:
-    """Seat 3's probe 1d: `build/` holds no paid record, so nothing found there can reach the store."""
-    project, store, (first, *_rest) = on_a_machine_with_a_store(make_run, tmp_path)
-    for kept in (take_file(first, TAKE_SUFFIX), words_file(first)):
-        project.workspace.narrate_dir.joinpath(kept).write_text("{", encoding="utf-8")
-        (project.workspace.takes / kept).unlink()
-        (store / kept).unlink()
-    result = narrate(project, make_run(project).run)
-    assert missing_sections(result) == [1]
-    assert take_files(store) == take_files(project.workspace.takes)
+    (takes / words_name).write_text("{", encoding="utf-8")
+    once = make_run(project)
+    narrate(project, once.run)
+    (takes / words_name).write_text("{{", encoding="utf-8")
+    twice = make_run(project)
+    narrate(project, twice.run)
+    assert unreadable(takes) == {
+        f"{audio_name}.unreadable",
+        f"{words_name}.unreadable",
+        f"{audio_name}.1.unreadable",
+        f"{words_name}.1.unreadable",
+    }
+    assert (takes / f"{words_name}.unreadable").read_text(encoding="utf-8") == "{"
+    assert (takes / f"{words_name}.1.unreadable").read_text(encoding="utf-8") == "{{"
+    assert said(once).count("moved aside") == 1
+    assert said(twice).count("moved aside") == 1
 
 
 # ---- the machine's take store ------------------------------------------------------------------------
@@ -1282,83 +1196,195 @@ def a_voice_saying(monkeypatch: pytest.MonkeyPatch, audio: bytes) -> FakeVoice:
     return voice
 
 
-def test_a_bought_take_is_written_through_to_the_store_as_a_verified_pair(
-    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_run_that_does_not_spend_never_buys_and_never_fills_an_empty_store(
+    make_run: Callable[..., Watched], tmp_path: Path, counted: CountedVoice
 ) -> None:
-    """The store is a second copy of every take this machine buys, so an uncommitted purchase survives `git clean`."""
-    a_voice_saying(monkeypatch, b"FIRST")
-    project = in_the_store(tmp_path, "a")
-    result = narrate(project, make_run(project, spend=True).run)
-    store = tmp_path / STORED
-    assert take_files(store) == take_files(project.workspace.takes)
-    for row in result.sections:
-        assert project.workspace.fault_at(store, row.digest, whole=True) is None
-    assert not any(STORED in path.parts for path in result.written), "the store is not one of the project's files"
-
-
-@pytest.mark.usefixtures("counted")
-def test_a_run_that_does_not_spend_never_writes_the_store(make_run: Callable[..., Watched], tmp_path: Path) -> None:
+    """A run that does not spend never buys. It heals a damaged store copy from a whole takes copy, and leaves an
+    empty store empty."""
     project, store, _digests = on_a_machine_with_a_store(make_run, tmp_path)
+    sent = len(counted.voice.requests)
     shutil.rmtree(store)
     store.mkdir()
     result = narrate(project, make_run(project).run)
     assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert take_files(store) == set()
+    assert len(counted.voice.requests) == sent
 
 
-def test_a_re_buy_writes_the_takes_directory_and_the_store_keeps_its_first_pair(
+@pytest.mark.parametrize("replace_voiced", [False, True], ids=["plain", "a-replace-run-whose-section-was-missing"])
+def test_a_take_another_project_voiced_after_this_run_was_priced_is_played_and_not_bought_again(
+    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replace_voiced: bool
+) -> None:
+    """A copy another project bought once this run was priced is a copy the store holds when the lock is won, so it
+    plays. Only a run told to replace this take buys it again, and a section this project never voiced is not one."""
+    a = in_the_store(tmp_path, "a")
+    b = in_the_store(tmp_path, "b")
+    voice_a, voice_b = FakeVoice(audio=b"AUDIO-A"), FakeVoice(audio=b"AUDIO-B")
+    built: list[None] = []
+
+    def factory(_context: SpeechContext) -> FakeVoice:
+        built.append(None)
+        if len(built) == 1:
+            # b's build, after b's plan and approval: project a buys the same take first.
+            narrate(a, make_run(a, spend=True).run, only=[1])
+            return voice_b
+        return voice_a
+
+    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, factory)
+    result = narrate(b, make_run(b, spend=True).run, only=[1], replace_voiced=replace_voiced)
+    digest = result.sections[0].digest
+    assert len(voice_a.requests) == 1
+    assert voice_b.requests == [], "b bought a take a had bought before b took the lock"
+    assert (b.workspace.takes / take_file(digest, TAKE_SUFFIX)).read_bytes() == b"AUDIO-A"
+    assert result.sections[0].outcome is TakeOutcome.KEPT
+
+
+def pair_of(place: Path, digest: str) -> tuple[bytes, bytes]:
+    """The audio and the words of one voiced take in one place, read as they are."""
+    return (place / take_file(digest, TAKE_SUFFIX)).read_bytes(), (place / words_file(digest)).read_bytes()
+
+
+def agrees(place: Path, digest: str) -> bool:
+    """True when one place's words of a voiced take record the size and BLAKE3 of the audio beside them."""
+    words = ProviderWords.read(place / words_file(digest))
+    audio_file = place / take_file(digest, TAKE_SUFFIX)
+    return (
+        words is not None
+        and words.audio is not None
+        and words.audio.bytes == audio_file.stat().st_size
+        and words.audio.blake3 == file_digest(audio_file)
+    )
+
+
+def test_a_take_the_takes_directory_cannot_hold_is_kept_in_the_store_and_copied_in_by_the_next_run(
     make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Seat 3's probe 5c: one project's `--replace-voiced` never changes the take another project plays."""
+    """A take is paid for the moment the voice answers, so the store is written first, and a takes directory that
+    cannot hold it costs one more run and no second purchase."""
+    voice = a_voice_saying(monkeypatch, b"PAID")
+    a = in_the_store(tmp_path, "a")
+    digest = take_states(a)[1].digest
+    assert digest is not None
+    squatter = a.workspace.takes / take_file(digest, TAKE_SUFFIX)
+    squatter.mkdir(parents=True)
+    watched = make_run(a, spend=True)
+    with pytest.raises(InputError, match="A good copy of it is in the take store"):
+        narrate(a, watched.run, only=[1])
+    assert len(watched.of(TakeCharged)) == 1
+    store = tmp_path / STORED
+    assert agrees(store, digest)
+    squatter.rmdir()
+    result = narrate(a, make_run(a).run, only=[1])
+    assert [row.outcome for row in result.sections] == [TakeOutcome.KEPT]
+    assert len(voice.requests) == 1
+    assert pair_of(a.workspace.takes, digest) == pair_of(store, digest)
+
+
+def test_a_re_buy_over_a_damaged_project_copy_sets_it_aside_first(
+    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A copy of the same length passes the size check, so only its BLAKE3 tells it is damaged, and it is set
+    aside before the take voiced again replaces it rather than overwritten."""
     a_voice_saying(monkeypatch, b"FIRST")
     a = in_the_store(tmp_path, "a")
-    narrate(a, make_run(a, spend=True).run)
-    b = in_the_store(tmp_path, "b")
+    digest = narrate(a, make_run(a, spend=True).run, only=[1]).sections[0].digest
+    takes = a.workspace.takes
+    audio_name, words_name = take_file(digest, TAKE_SUFFIX), words_file(digest)
+    (takes / audio_name).write_bytes(b"XXXXX")
+    shutil.rmtree(tmp_path / STORED)
     a_voice_saying(monkeypatch, b"SECOND")
-    narrate(b, make_run(b, spend=True).run, replace_voiced=True)
-    digest = Takes.require(a.workspace.takes_path, Artifact.TAKES).sections[0].digest
-    name = take_file(digest, TAKE_SUFFIX)
-    assert (b.workspace.takes / name).read_bytes() == b"SECOND"
-    assert (tmp_path / STORED / name).read_bytes() == b"FIRST", "the store is written once per take"
-    assert (a.workspace.takes / name).read_bytes() == b"FIRST", "project a's film did not change"
-    c = in_the_store(tmp_path, "c")
-    narrate(c, make_run(c).run)
-    assert (c.workspace.takes / name).read_bytes() == b"FIRST"
+    watched = make_run(a, spend=True)
+    narrate(a, watched.run, only=[1], replace_voiced=True)
+    assert (takes / audio_name).read_bytes() == b"SECOND"
+    assert unreadable(takes) == {f"{audio_name}.unreadable", f"{words_name}.unreadable"}
+    assert (takes / f"{audio_name}.unreadable").read_bytes() == b"XXXXX"
+    assert said(watched).count("moved aside") == 1
 
 
-SECOND_BUYER_SECONDS = 0.5
-"""How long the first buyer pauses between its two writes, which is long enough for a second to buy."""
-
-
-def test_a_second_project_buying_a_take_another_is_buying_waits_and_buys_nothing(
+def test_a_re_buy_replaces_a_store_copy_that_does_not_hold_the_bytes_its_words_recorded(
     make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Seat 3's probe 2a: two projects buying one take at once paid twice. The store's lock on the take
-    makes the second wait for the first, then play the pair the first wrote through."""
-    a_voice_saying(monkeypatch, b"AUDIO-A")
+    """The store keeps its first good pair, and a copy whose audio was swapped for bytes of the same length is not
+    one, so a re-buy writes the store and moves the damaged copy aside."""
+    a_voice_saying(monkeypatch, b"FIRST")
     a = in_the_store(tmp_path, "a")
+    digest = narrate(a, make_run(a, spend=True).run, only=[1]).sections[0].digest
+    store = tmp_path / STORED
+    audio_name = take_file(digest, TAKE_SUFFIX)
+    (store / audio_name).write_bytes(b"XXXXX")
     b = in_the_store(tmp_path, "b")
-    real = takes_module.replace_all
-    asked_b = FakeVoice(audio=b"AUDIO-B")
-    second: list[Future[NarrateResult]] = []
+    a_voice_saying(monkeypatch, b"SECOND")
+    narrate(b, make_run(b, spend=True).run, only=[1], replace_voiced=True)
+    assert (store / audio_name).read_bytes() == b"SECOND"
+    assert (store / f"{audio_name}.unreadable").read_bytes() == b"XXXXX"
 
-    with ThreadPoolExecutor(max_workers=1) as pool:
 
-        def between(texts: Mapping[Path, str | bytes]) -> None:
-            real(texts)
-            if not second:
-                monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: asked_b)
-                second.append(pool.submit(narrate, b, make_run(b, spend=True).run, only=[1]))
-                # Without the lock the second project buys in this pause, and with it the second waits here.
-                wait(second, timeout=SECOND_BUYER_SECONDS)
-
-        monkeypatch.setattr(takes_module, "replace_all", between)
+def test_a_run_kept_waiting_past_store_wait_seconds_is_refused_naming_it_and_buys_nothing(
+    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wait on another run's voicing is its own machine setting, so the refusal names it and no request times."""
+    voice = a_voice_saying(monkeypatch, b"PAID")
+    store = tmp_path / STORED
+    toml = TOML.replace("[narration]\n", "[narration]\ntimeout_seconds = 10\n")
+    machine = {"narration": {"store_dir": str(store), "store_wait_seconds": 1}}
+    a = load_project(tmp_path / "a", toml, script=SCRIPT, environ=ENVIRON, machine=machine)
+    digest = narrate(a, make_run(a, spend=True).run, only=[1]).sections[0].digest
+    for place in (a.workspace.takes, store):
+        (place / take_file(digest, TAKE_SUFFIX)).unlink()
+        (place / words_file(digest)).unlink()
+    with FileLock(store / f"{digest}.lock"), pytest.raises(ProjectLocked, match=r"\[narration\] store_wait_seconds"):
         narrate(a, make_run(a, spend=True).run, only=[1])
-        second[0].result(timeout=SECOND_BUYER_SECONDS * 60)
-    digest = Takes.require(a.workspace.takes_path, Artifact.TAKES).sections[0].digest
-    assert a.workspace.fault_at(tmp_path / STORED, digest, whole=True) is None
-    assert asked_b.requests == [], "the second project bought the take the first was buying"
-    assert (b.workspace.takes / take_file(digest, TAKE_SUFFIX)).read_bytes() == b"AUDIO-A"
+    assert len(voice.requests) == 1
+
+
+def test_a_takes_directory_that_cannot_be_written_is_refused_before_the_voice_is_asked(
+    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A take is paid for the moment the voice answers, so a place that cannot hold it is refused before that."""
+    voice = a_voice_saying(monkeypatch, b"PAID")
+    a = in_the_store(tmp_path, "a")
+    a.workspace.takes.write_bytes(b"")
+    watched = make_run(a, spend=True)
+    with pytest.raises(InputError, match="nothing was paid"):
+        narrate(a, watched.run, only=[1])
+    assert voice.requests == []
+    assert watched.of(TakeCharged) == []
+
+
+def test_a_take_store_that_cannot_be_made_is_refused_naming_store_dir_before_the_voice_is_asked(
+    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    voice = a_voice_saying(monkeypatch, b"PAID")
+    a = in_the_store(tmp_path, "a")
+    (tmp_path / STORED).write_bytes(b"")
+    with pytest.raises(InputError, match=r"\[narration\] store_dir"):
+        narrate(a, make_run(a, spend=True).run, only=[1])
+    assert voice.requests == []
+
+
+def test_a_run_that_keeps_a_take_heals_a_damaged_store_copy_from_the_takes_directory(
+    make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that does not spend never buys, and still replaces a damaged store copy with its own whole one."""
+    voice = a_voice_saying(monkeypatch, b"PAID")
+    a = in_the_store(tmp_path, "a")
+    digest = narrate(a, make_run(a, spend=True).run, only=[1]).sections[0].digest
+    store = tmp_path / STORED
+    (store / words_file(digest)).write_text("{", encoding="utf-8")
+    narrate(a, make_run(a).run, only=[1])
+    assert (store / words_file(digest)).read_bytes() == (a.workspace.takes / words_file(digest)).read_bytes()
+    assert (store / f"{words_file(digest)}.unreadable").read_text(encoding="utf-8") == "{"
+    assert len(voice.requests) == 1
+
+
+@pytest.mark.usefixtures("free_voice")
+def test_a_take_a_free_voice_makes_is_written_through_to_the_store_too(
+    make_run: Callable[..., Watched], tmp_path: Path, counted: CountedVoice
+) -> None:
+    a = in_the_store(tmp_path, "a")
+    narrate(a, make_run(a).run)
+    assert len(counted.voice.requests) == 3
+    assert take_files(tmp_path / STORED) == take_files(a.workspace.takes)
 
 
 # ---- the voices a run carries -------------------------------------------------------------------

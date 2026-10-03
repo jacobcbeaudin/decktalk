@@ -13,13 +13,12 @@ from decktalk.speech import SpeechRequest, canonical_text
 from decktalk.stages.narrate.plan import placeholder_inputs
 from decktalk.stages.narrate.takes import (
     PLACEHOLDER_CLOSE_SECONDS,
+    charge_take,
     estimated_words,
     join_takes,
     place,
     write_placeholder_take,
-    write_voiced_take,
 )
-from support.fakes import FakeVoice
 from support.runs import Watched
 from support.takes import TAKE_SUFFIX
 
@@ -84,27 +83,11 @@ def test_a_placeholder_take_closes_on_silence_so_its_sound_end_can_be_read(
     assert asked == [pytest.approx(section.placeholder_seconds(inputs.settings.narration) + PLACEHOLDER_CLOSE_SECONDS)]
 
 
-@pytest.mark.usefixtures("fake_ffmpeg")
-def test_a_voiced_take_writes_what_the_provider_answered(
-    inputs: Inputs, watched: Watched, fake_voice: FakeVoice
-) -> None:
-    inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
-    (section,) = [s for s in inputs.spoken() if s.number == 1]
-    request = SpeechRequest(pieces=section.pieces, voice_id=VOICE_ID, model="m")
-    row, written = write_voiced_take(inputs, watched.run, fake_voice, section, "Open", "00000000000000af", request)
-    assert (inputs.workspace.takes / take_file("00000000000000af", TAKE_SUFFIX)).read_bytes() == b"take"
-    assert row.voiced is True
-    assert row.speech_end_seconds == pytest.approx(1.0)
-    assert fake_voice.requests == [request]
-    assert len(written) == 2
-
-
-@pytest.mark.usefixtures("fake_ffmpeg")
-def test_a_voiced_take_is_charged_on_the_stream_once(inputs: Inputs, watched: Watched, fake_voice: FakeVoice) -> None:
+def test_a_voiced_take_is_charged_on_the_stream_once(inputs: Inputs, watched: Watched) -> None:
     """The line a host's ledger reads carries the section, the take, its characters and its price."""
     (section,) = [s for s in inputs.spoken() if s.number == 1]
     request = SpeechRequest(pieces=section.pieces, voice_id=VOICE_ID, model="m")
-    write_voiced_take(inputs, watched.run, fake_voice, section, "Open", "00000000000000af", request)
+    charge_take(inputs, watched.run, section, "00000000000000af", request)
     (charged,) = watched.of(TakeCharged)
     assert charged.section == 1
     assert charged.digest == "00000000000000af"

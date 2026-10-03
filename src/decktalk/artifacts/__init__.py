@@ -46,8 +46,6 @@ from decktalk.artifacts.words import (
     EstimatedWords,
     ProviderWords,
     Words,
-    pair_fault,
-    recorded_suffix,
     words_file,
 )
 
@@ -78,8 +76,6 @@ __all__ = [
     "file_digest",
     "input_digest",
     "is_placeholder",
-    "pair_fault",
-    "recorded_suffix",
     "take_file",
     "words_file",
 ]

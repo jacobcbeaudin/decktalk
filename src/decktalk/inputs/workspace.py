@@ -29,7 +29,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import is_placeholder, pair_fault, recorded_suffix, take_file, words_file
+from decktalk.artifacts import take_file
 from decktalk.inputs.paths import confined
 from decktalk.pipeline import Artifact
 
@@ -93,66 +93,9 @@ class Workspace:
         """The joined narration and every placeholder take, which a build makes again for nothing."""
         return self.build / "narrate"
 
-    @property
-    def take_places(self) -> tuple[Path, ...]:
-        """Every directory a take is looked for in, first to last: the project's, then the machine's."""
-        found = (self.takes, self.store)
-        return tuple(dict.fromkeys(place for place in found if place is not None))
-
-    def holding(self, digest: str) -> Path | None:
-        """The first place that holds a good copy of the take of this digest and its words file, or None.
-
-        A placeholder is a cache under the build, so both of its files being there is enough. A voiced
-        take is a paid record, so a place counts only when its words read and its audio holds the bytes
-        they recorded, and a damaged copy in the takes directory never hides a good one in the store.
-        """
-        if is_placeholder(digest):
-            return self.narrate_dir if self.held_at(self.narrate_dir, digest) else None
-        return next((place for place in self.take_places if self.fault_at(place, digest) is None), None)
-
-    def held_at(self, place: Path, digest: str) -> bool:
-        """True when this place holds both files of the take of this digest, whatever they hold."""
-        return all((place / name).is_file() for name in (self.take_file_in(place, digest), words_file(digest)))
-
-    def fault_at(self, place: Path, digest: str, *, whole: bool = False) -> str | None:
-        """What is wrong with this place's copy of a voiced take, or None when it holds a good one.
-
-        A place that does not hold both files has no copy, and that is said too, so only a copy that is
-        there and good reads as None. `whole` also checks the audio's BLAKE3.
-        """
-        if not self.held_at(place, digest):
-            return f"{place} holds no copy of take {digest}."
-        return pair_fault(place / self.take_file_in(place, digest), place / words_file(digest), whole=whole)
-
-    def damaged(self, digest: str) -> tuple[tuple[Path, str], ...]:
-        """Every place holding both files of a voiced take that do not agree, with what is wrong with each."""
-        found = ((place, self.fault_at(place, digest)) for place in self.take_places if self.held_at(place, digest))
-        return tuple((place, fault) for place, fault in found if fault is not None)
-
     def take_file(self, digest: str) -> str:
         """The name a take of this digest is written under, which is the suffix of the voice's own format."""
         return take_file(digest, self.suffix)
-
-    def take_file_in(self, place: Path, digest: str) -> str:
-        """The name of this take's audio in `place`, under the suffix its words recorded, else the voice's own.
-
-        A placeholder is made again for nothing in the voice's own format, so only a voiced take is read for one.
-        """
-        recorded = None if is_placeholder(digest) else recorded_suffix(place / words_file(digest))
-        return take_file(digest, recorded or self.suffix)
-
-    def take_path(self, digest: str) -> Path:
-        """The audio file of this take where it is found, or where it would be written when it is nowhere."""
-        found = self._found(digest)
-        return found / self.take_file_in(found, digest)
-
-    def words_path(self, digest: str) -> Path:
-        """The words file of this take where it is found, or where it would be written when it is nowhere."""
-        return self._found(digest) / words_file(digest)
-
-    def _found(self, digest: str) -> Path:
-        """Where this take is held, or where it is written: the build for a placeholder, the takes directory else."""
-        return self.holding(digest) or (self.narrate_dir if is_placeholder(digest) else self.takes)
 
     @property
     def takes_path(self) -> Path:

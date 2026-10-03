@@ -96,6 +96,13 @@ class TestTheKeyItself:
         assert found.environment == "DECKTALK_VERIFY_CUE_OFFSET_MAX_MS"
         assert found.docs.endswith("/configuration#verify")
 
+    def test_the_take_store_wait_is_a_machine_key_whose_default_covers_one_take_request(self) -> None:
+        found = explain("narration.store_wait_seconds")
+        assert found.default == 900
+        assert found.scope is Scope.MACHINE
+        assert found.nature is Nature.APPARATUS
+        assert found.unit == "seconds"
+
     def test_a_key_with_a_wider_type_range_publishes_both(self) -> None:
         found = explain("verify.onset_rise_points")
         key = BY_ID["verify.onset_rise_points"]

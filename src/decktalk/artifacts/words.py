@@ -29,12 +29,11 @@ own kind, kept under a key of their own and never at a take's `<digest>.words.js
 from __future__ import annotations
 
 import builtins
-from pathlib import Path
 from typing import ClassVar
 
 from pydantic import Field
 
-from decktalk.artifacts.stored import Stored, Unreadable, content_digest, file_digest
+from decktalk.artifacts.stored import Stored, content_digest
 from decktalk.findings import Model
 from decktalk.results import Word
 
@@ -107,42 +106,6 @@ class ClipWords(Words):
     label: ClassVar[str] = "the words of one clip"
 
 
-def pair_fault(audio: Path, words: Path, *, whole: bool = False) -> str | None:
-    """What is wrong with a take and its words file, both on disk, in one sentence, or None when they agree.
-
-    The words must read, and the audio must hold the number of bytes they recorded, which is cheap
-    enough to ask on every lookup. `whole` also takes the audio's BLAKE3, which is what tells a
-    swapped take of the same length, and which a run asks once per take and before every copy. A words
-    file with no fingerprint vouches only that its audio is not empty.
-    """
-    try:
-        said = ProviderWords.parse(words)
-    except Unreadable as unread:
-        return str(unread)
-    size = audio.stat().st_size
-    printed = said.audio if said is not None else None
-    if printed is None:
-        return None if size else f"{audio.name} is empty."
-    if size != printed.bytes:
-        return f"{audio.name} holds {size} bytes where {words.name} recorded {printed.bytes}."
-    if whole and file_digest(audio) != printed.blake3:
-        return f"{audio.name} does not hold the bytes {words.name} recorded."
-    return None
-
-
-def recorded_suffix(words: Path) -> str | None:
-    """The suffix a take's words file says its audio was written under, or None when it says none or cannot be read.
-
-    A words file that cannot be read is judged by `pair_fault`, which says what is wrong with it, so
-    here it only means the take is looked for under the voice's own suffix.
-    """
-    try:
-        said = ProviderWords.parse(words)
-    except Unreadable:  # silent: pair_fault reads the same file and says what is wrong with it
-        return None
-    return said.audio.suffix if said is not None and said.audio is not None else None
-
-
 def words_file(digest: str) -> str:
     """The name of the words file of the take with this digest."""
     return f"{digest}{WORDS_SUFFIX}"
@@ -151,11 +114,9 @@ def words_file(digest: str) -> str:
 __all__ = [
     "WORDS_SUFFIX",
     "AudioPrint",
-    "recorded_suffix",
     "ClipWords",
     "EstimatedWords",
     "ProviderWords",
     "Words",
-    "pair_fault",
     "words_file",
 ]

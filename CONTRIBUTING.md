@@ -167,6 +167,7 @@ src/decktalk/
       markers.py         `media/markers.json` parsed into typed `Marker` rows, which shape the music under the video.
       paths.py           Where a file is, said the one way every result and every finding says it.
       script.py          `script.md` parsed into the sections the voice reads.
+      take_places.py     Every place a voiced take is kept, and every rule about its copies there.
       timeline.py        Where the narration plays in the final film: the joined narration track placed on the film's clock.
       workspace.py       Every path under `build/`, named once.
     machine/             This computer and this process, as one value, and the run every call opens on it.
@@ -199,7 +200,7 @@ src/decktalk/
         plan.py          What a take is named by, and the refusals a run meets before it voices one.
         script_rules.py  What the voice must never receive, and the scans `check` judges a script by.
         state.py         The take state: what the disk holds for each spoken section, and what one narrate run does about it.
-        takes.py         Writing one take, placing it, and joining every take into one narration track.
+        takes.py         Writing a placeholder take, charging a voiced one, placing each, and joining every take into one narration track.
       record/            Stage 3: record each page section in a headless browser, find narration t=0, and judge the result.
         capture.py       The URL a page section is opened at, and what its recording is keyed on.
         checks.py        What one finished recording is judged on, before anything is assembled from it.

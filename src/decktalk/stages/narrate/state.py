@@ -3,7 +3,7 @@
 A take is named by its digest, which is taken over the section's text, the voice, the model and the
 voice settings, so whether a section's take is current is a question about which digests some place
 holds. This module asks it once per reading. It reads the take index, the script and the settings,
-asks `Workspace.holding` once per distinct digest, and judges every spoken section of the script
+asks `TakePlaces.find` once per distinct digest, and judges every spoken section of the script
 against the rest, so one section reads the same whichever run asks. It sends nothing and writes
 nothing.
 
@@ -22,6 +22,7 @@ from decktalk.artifacts import EstimatedWords, ProviderWords, Take
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import ScriptSection
+from decktalk.inputs.take_places import TakeFiles
 from decktalk.page import SECOND_DIGITS
 from decktalk.results import DOLLAR_DIGITS, Cost, CostState, TakeOutcome, TakeState, counted
 from decktalk.settings import PROJECT_FILE
@@ -29,7 +30,6 @@ from decktalk.speech import SpeechRequest, canonical_text, is_free, output_of
 from decktalk.stages import billed, dollars_for, rate_fields, voice_model
 from decktalk.stages.narrate.plan import (
     VOICE_ID_VARIABLE,
-    damaged_refusal,
     named_voice,
     placeholder_inputs,
     take_identity,
@@ -117,7 +117,7 @@ class NarratePlan:
 
 
 class _Reading:
-    """One read of the take index, the script and the settings, with `holding` asked once per digest."""
+    """One read of the take index, the script and the settings, with `TakePlaces.find` asked once per digest."""
 
     def __init__(
         self, inputs: Inputs, *, spoken: Sequence[ScriptSection], rows: Mapping[int, Take], replace_voiced: bool
@@ -132,10 +132,10 @@ class _Reading:
         """The digest of the voiced row each UNCHECKED section matched by its text."""
         self.stand_ins: dict[int, str] = {}
         """The placeholder digest of each judged section."""
-        self._held: dict[str, bool] = {}
+        self.places = inputs.take_places
+        self._files: dict[str, TakeFiles] = {}
         played = {row.digest for row in self.rows.values() if row.voiced}
-        takes = inputs.workspace.takes
-        moved = bool(played) and not any(inputs.workspace.held_at(takes, digest) for digest in played)
+        moved = bool(played) and not any(self.files(digest).in_takes_directory for digest in played)
         self.unheld = sum(not self.held(digest) for digest in played) if moved else 0
         """How many of the index's voiced takes no place holds, when the takes directory holds none of them."""
 
@@ -146,11 +146,15 @@ class _Reading:
         rows = {row.section: row for row in index.sections} if index is not None else {}
         return cls(inputs, spoken=inputs.spoken(), rows=rows, replace_voiced=replace_voiced)
 
+    def files(self, digest: str) -> TakeFiles:
+        """Where this take's files are, found once per reading."""
+        if digest not in self._files:
+            self._files[digest] = self.places.find(digest)
+        return self._files[digest]
+
     def held(self, digest: str) -> bool:
         """True when some place holds a good copy of this take and its words file."""
-        if digest not in self._held:
-            self._held[digest] = self.inputs.workspace.holding(digest) is not None
-        return self._held[digest]
+        return self.files(digest).held
 
     def judge(self, section: ScriptSection) -> SectionTakeState:
         """One section's take state, against every other section of the script."""
@@ -184,11 +188,11 @@ class _Reading:
         """The state of a section whose voiced take the named voice gives a digest."""
         if self.held(digest):
             return TakeState.VOICED, HELD if here is not None and here.digest == digest else UNINDEXED
-        damaged = self.inputs.workspace.damaged(digest)
-        if damaged:
+        refused = self.files(digest).refusal(section.number)
+        if refused is not None:
             if self.replace_voiced:
                 return TakeState.MISSING, REPLACED
-            raise damaged_refusal(self.inputs, section.number, digest, *damaged[0])
+            raise refused
         older = [row for row in self.rows.values() if row.voiced and row.spoken == section.spoken]
         if here is not None and here.voiced and here.spoken not in elsewhere:
             older.append(here)
@@ -211,11 +215,11 @@ class _Reading:
             self.matched[number] = found.digest
             return TakeState.UNCHECKED, WITHOUT_A_VOICE
         for row in same:
-            damaged = self.inputs.workspace.damaged(row.digest)
-            if damaged and self.replace_voiced:
+            refused = self.files(row.digest).refusal(number)
+            if refused is not None and self.replace_voiced:
                 return TakeState.MISSING, REPLACED
-            if damaged:
-                raise _unnamed_refusal(damaged_refusal(self.inputs, number, row.digest, *damaged[0]))
+            if refused is not None:
+                raise _unnamed_refusal(refused)
         older = here is not None and here.voiced and here.spoken not in elsewhere
         if here is not None and older and self.held(here.digest):
             return TakeState.STALE, CHANGED
@@ -250,7 +254,7 @@ class TakeStates(Mapping[int, SectionTakeState]):
     """The take state of every selected spoken section, keyed by section number in script order, read once.
 
     The take index, the script and the settings are read when this is made and never again, and
-    `Workspace.holding` is asked once per distinct digest. Every spoken section of the script is
+    `TakePlaces.find` is asked once per distinct digest. Every spoken section of the script is
     judged against the rest, so a section reads the same whichever run asks, and the selection
     chooses which are returned, planned and refused. It sends nothing and writes nothing.
     """
@@ -432,7 +436,7 @@ def take_states(
 
     An empty selection reads nothing: no script, no index and no take. The voice, the model and the
     provider are read from the settings. A selected voiced take whose every copy is damaged is refused
-    with `damaged_refusal`, unless `replace_voiced`, under which it reads MISSING with the reason
+    with `TakeFiles.refusal`, unless `replace_voiced`, under which it reads MISSING with the reason
     `REPLACED`: a run that voices buys it again, and one that does not plays a placeholder.
     """
     if sections is not None and not sections:

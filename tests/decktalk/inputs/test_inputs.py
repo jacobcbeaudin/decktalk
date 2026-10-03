@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import PLACEHOLDER_PREFIX, CueTimes, Words
+from decktalk.artifacts import PLACEHOLDER_PREFIX, CueTimes, Words, is_placeholder
 from decktalk.artifacts.words import words_file
 from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from decktalk.inputs import PAID_FOLDERS as LOADED_PAID_FOLDERS
@@ -357,7 +357,11 @@ def test_a_take_words_are_shifted_by_their_own_section_lead(tmp_path):
 def test_a_take_words_that_do_not_read_are_paid_exactly_when_the_take_is(tmp_path, digest, refusal, code):
     """Only voicing a take again gives its words back, and a placeholder's cost nothing."""
     inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
-    path = inputs.workspace.words_path(digest)
+    path = (
+        inputs.workspace.narrate_dir / words_file(digest)
+        if is_placeholder(digest)
+        else inputs.workspace.takes / words_file(digest)
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(refusal) as refused:

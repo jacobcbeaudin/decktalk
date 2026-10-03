@@ -96,12 +96,16 @@ and agree. It looks in two places, in this order:
    It is written once per take, so a re-buy with `--replace-voiced` changes this project's takes
    directory and never the take another project plays. It holds the spoken words of every script
    voiced on this machine, so keep it out of a synced or shared folder. Two projects that need the
-   same take at once buy it once: the second waits for the first, up to
-   [`narration.timeout_seconds`](/reference/configuration#narration), and then copies the take in
-   rather than buying it again.
+   same take buy it once: a run that finds a good copy in the store once its turn comes copies it in
+   rather than buying it again, and one that finds another run still buying waits up to
+   [`narration.store_wait_seconds`](/reference/configuration#narration). A run told to replace that take
+   with `--replace-voiced` buys it anyway. A take bought while the takes directory cannot be written
+   is kept in the take store first, and the run stops and says so, so the next run copies it in for
+   nothing.
 
 A copy whose words do not read, or whose take does not hold the bytes they recorded, is skipped and
-moved aside as `<name>.unreadable` when a good copy replaces it. DeckTalk never deletes a take.
+moved aside as `<name>.unreadable`, or as `<name>.<n>.unreadable` with the first number free for both
+files when that name is taken, when a good copy replaces it. DeckTalk never deletes a take.
 
 A `takes_dir` that is empty, outside the project, an absolute path or the project directory itself is
 refused when the project loads, and so is a `store_dir` that is relative, inside the project or inside

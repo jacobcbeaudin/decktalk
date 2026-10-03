@@ -240,8 +240,9 @@ size and BLAKE3 under `audio`, because a take's name says what was asked for and
 can tell a truncated or swapped take from a good one. `audio` also records the suffix the take was
 written under, so a take is still found after the voice moves to another format. A copy whose words do
 not read, or whose take does not match them, is skipped wherever it is found, moved aside as
-`<name>.unreadable` when a good copy replaces it, and never copied or deleted. When no copy anywhere
-is good, the run is refused with a sentence, because the next step would buy the take again. Words
+`<name>.unreadable`, or as `<name>.<n>.unreadable` with the first number free for both files when that
+name is taken, when a good copy replaces it, and never copied or deleted. When no copy anywhere is
+good, the run is refused with a sentence, because the next step would buy the take again. Words
 DeckTalk estimated for a placeholder take are a cache under `build/narrate/`, like the rest of
 `build/`.
 

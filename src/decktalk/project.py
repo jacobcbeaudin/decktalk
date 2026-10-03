@@ -265,7 +265,7 @@ class Project:
         them, because a build that wrote into a watched folder would start the next build without end.
         """
         workspace = self._inputs.workspace
-        written = {workspace.build.resolve(), *(place.resolve() for place in workspace.take_places)}
+        written = {workspace.build.resolve(), workspace.takes.resolve()}
         found: list[Path] = []
         for folder, dirs, files in os.walk(self.root):
             here = Path(folder)

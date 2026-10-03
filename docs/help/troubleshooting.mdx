@@ -288,9 +288,9 @@ than allowed to overwrite the first one's work.
 4. To read the project while a build is running, use `decktalk status` or
    `decktalk check --no-pages`. Neither writes, so neither takes the lock.
 
-The same code names the take store when the message says another run has been buying a take into
+The same code names the take store when the message says another run has been voicing a take into
 it. Two projects on one machine that need the same take buy it once: the second waits for the
-first, and is refused when the wait passes `narration.timeout_seconds`. Let the other run finish,
+first, and is refused when the wait passes `narration.store_wait_seconds`. Let the other run finish,
 then run this again, and it copies the take in rather than buying it.
 
 ## An unresolved cue

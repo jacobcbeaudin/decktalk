@@ -2,6 +2,7 @@
 
     document.py    the frozen decktalk.toml tables and the two kinds of section
     workspace.py   every path under build/, named once
+    take_places.py every place a voiced take is kept, and every rule about its copies
     env.py         the project's .env, with every value handed back as a Secret
     script.py      script.md parsed into the sections the voice reads
     cues.py        cues.json parsed, and phrase matching over a take's words
@@ -63,6 +64,7 @@ from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
 from decktalk.inputs.paths import at, contained, relative
 from decktalk.inputs.script import ScriptSection, read_script
+from decktalk.inputs.take_places import TakePlaces
 from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import Word
@@ -366,6 +368,11 @@ class Inputs:
 
     # ---- the artifacts under build/ ---------------------------------------------------------
 
+    @cached_property
+    def take_places(self) -> TakePlaces:
+        """Every place this project's voiced takes are kept, which one instance serves for this value's whole life."""
+        return TakePlaces(self.workspace, wait_seconds=self.settings.narration.store_wait_seconds)
+
     def take_words(self, digest: str) -> Words | None:
         """One take's words on the take's own clock, or None when it has none yet.
 
@@ -374,7 +381,7 @@ class Inputs:
         again when they do not read, and DeckTalk estimated a placeholder's, which are a cache.
         """
         model = EstimatedWords if is_placeholder(digest) else ProviderWords
-        return model.read(self.workspace.words_path(digest))
+        return model.read(self.take_places.find(digest).words)
 
     def takes(self) -> Takes | None:
         """The take index as narrate last wrote it, or None when there is none that reads.

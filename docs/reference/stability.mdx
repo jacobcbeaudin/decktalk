@@ -82,9 +82,9 @@ and is never deleted by DeckTalk.
 | Score audio | `<name>.mp3` for the ambience bed and each effect, and `music-part<n>.mp3` for each part of the music, named by the item the score stage bought | The score directory, `score/` unless `[score] dir` names another, or the path a sound's own `out` names |
 | Ledger | `ledger.json`, what the score stage has bought, keyed by the request that made it | Beside the score audio, in the score directory, `score/` |
 
-The take store sits outside every project, and a take is copied there once when it is bought. A
-take's suffix is the one its voice declares for the format it asks for, which is `.mp3` for every
-ElevenLabs format.
+The take store sits outside every project, and a take is written there first, once, when it is
+bought. A take's suffix is the one its voice declares for the format it asks for, which is `.mp3` for
+every ElevenLabs format.
 
 A newer release reads the words files and the ledger or refuses them with a sentence. It never
 builds one again and never deletes one, because counting a paid record as absent would buy what it

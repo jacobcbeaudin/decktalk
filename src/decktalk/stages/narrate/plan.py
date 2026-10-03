@@ -14,10 +14,9 @@ timed pause the model would drop, and a purchase with no voice named.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from decktalk.artifacts import PlaceholderInputs, TakeInputs, is_placeholder, words_file
+from decktalk.artifacts import PlaceholderInputs, TakeInputs
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
@@ -61,33 +60,6 @@ def placeholder_inputs(inputs: Inputs, section: ScriptSection) -> PlaceholderInp
         words_per_minute=cfg.placeholder_words_per_minute,
         beat_seconds=cfg.placeholder_beat_seconds,
         text=canonical_text(section.pieces),
-    )
-
-
-def refuse_damaged(inputs: Inputs, number: int, digest: str) -> None:
-    """Refuse a voiced take whose every copy on disk is damaged, before a run plans to make it.
-
-    A take some place holds a good copy of is found and never reaches here. One that no place holds
-    at all is simply missing. One that is there and damaged everywhere is a paid record only voicing it
-    again gives back, so the run stops rather than buying it again or playing a placeholder over it,
-    and the damaged copy is left where it is.
-    """
-    if is_placeholder(digest):
-        return
-    damaged = inputs.workspace.damaged(digest)
-    if damaged:
-        raise damaged_refusal(inputs, number, digest, *damaged[0])
-
-
-def damaged_refusal(inputs: Inputs, number: int, digest: str, place: Path, fault: str) -> InputError:
-    """The sentence a voiced take is refused with when no place holds a good copy and `place` holds a damaged one."""
-    takes = inputs.relative(inputs.workspace.takes).as_posix()
-    return InputError(
-        f"{fault} No place holds a good copy of the take section {number} plays, and only voicing it again "
-        "gives it back, so DeckTalk neither buys it again nor deletes it.",
-        hint=f"Put a good copy of {inputs.workspace.take_file(digest)} and {words_file(digest)} in {takes}, or run "
-        f"decktalk narrate --section {number} --replace-voiced --spend knowing that it buys the take again.",
-        location=at(place / words_file(digest), inputs.root, section=number),
     )
 
 
@@ -177,8 +149,6 @@ __all__ = [
     "VOICE_ID_VARIABLE",
     "DROPPED_PAUSE_HINT",
     "dropped_pauses",
-    "damaged_refusal",
-    "refuse_damaged",
     "refuse_dropped_pauses",
     "named_voice",
     "placeholder_inputs",

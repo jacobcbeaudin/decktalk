@@ -51,7 +51,7 @@ from decktalk.inputs.script import ScriptSection
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Cost, CostState, NarrateResult, SectionTake, TakeOutcome
+from decktalk.results import Cost, CostState, NarrateResult, SectionTake, TakeOutcome, Word
 from decktalk.speech import SpeechProvider, is_free, output_of, start_hint
 from decktalk.stages import selects, voice_model
 from decktalk.stages.narrate.plan import (
@@ -69,16 +69,21 @@ from decktalk.stages.narrate.script_rules import (
     shown,
     symbol_tokens,
 )
-from decktalk.stages.narrate.state import NarratePlan, SectionTakeState, TakePlan, TakeStates, take_states
+from decktalk.stages.narrate.state import (
+    REPLACED,
+    NarratePlan,
+    SectionTakeState,
+    TakePlan,
+    TakeStates,
+    take_states,
+)
 from decktalk.stages.narrate.takes import (
-    buying_alone,
-    copy_from_store,
+    charge_take,
     estimated_words,
     join_takes,
     place,
     take_row,
     write_placeholder_take,
-    write_voiced_take,
 )
 from decktalk.stages.pool import Halt, Pool, nothing_to_open
 
@@ -249,7 +254,7 @@ def _write_takes(
         chapter = chapters.get(number, plan.section.title)
         with run.section(Stage.NARRATE, number) as ending:
             down = progress.down if free else None
-            row, outcome = _one_take(inputs, run, plan, chapter, provider, down, progress.checked)
+            row, outcome = _one_take(inputs, run, plan, chapter, provider, down)
             if outcome is TakeOutcome.KEPT:
                 # A take found on disk did not run, so its section ends as kept, as its row says.
                 ending.outcome = Outcome.KEPT
@@ -259,7 +264,7 @@ def _write_takes(
                 outcome=outcome,
                 characters=plan.characters_sent,
                 seconds=row.duration_seconds,
-                file=inputs.relative(inputs.workspace.take_path(row.digest)),
+                file=inputs.relative(inputs.take_places.find(row.digest).audio),
                 digest=row.digest,
             )
             # The count is reported under the lock that raised it, so a reader of the stream sees one,
@@ -324,8 +329,6 @@ class _Progress:
     lock: threading.Lock = field(default_factory=threading.Lock)
     down: threading.Event = field(default_factory=threading.Event)
     """Set once a free voice did not answer, so no section after it waits on the same voice again."""
-    checked: set[str] = field(default_factory=set)
-    """Every take whose copies this run has verified, so each is hashed whole once however many sections play it."""
 
 
 def _one_take(
@@ -335,7 +338,6 @@ def _one_take(
     chapter: str,
     provider: SpeechProvider | None,
     down: threading.Event | None,
-    checked: set[str],
 ) -> tuple[Take, TakeOutcome]:
     """One section's take, made or found, with what this run did about it.
 
@@ -350,22 +352,21 @@ def _one_take(
             location=at(inputs.workspace.takes_path, inputs.root),
         )
     kept = plan.outcome is TakeOutcome.KEPT
-    hit = kept and inputs.workspace.holding(digest) is not None
+    hit = kept and inputs.take_places.find(digest).held
     # The plan's reason is the sentence `status` prints, and the token is what a reader filters on.
     why = "unchanged" if hit else "take-missing" if kept else "to-make"
     cache_decision(
         log, Unit.TAKE.value, hit=hit, why=why, key=digest, section=plan.section.number, reason=plan.reason or None
     )
     if hit:
-        for path in copy_from_store(inputs, run, plan.section.number, digest, checked):
-            run.wrote(path)
+        inputs.take_places.keep(digest, run, section=plan.section.number)
         voiced = not is_placeholder(digest)
         return take_row(inputs, plan.section, chapter, digest, voiced=voiced), TakeOutcome.KEPT
     if down is not None and down.is_set() and plan.outcome is not TakeOutcome.PLACEHOLDER:
         # A take the voice would make, or one another section was making, cannot come from a voice that is down.
         return _stand_in(inputs, run, plan, chapter)
     if plan.outcome is TakeOutcome.VOICED:
-        return _buy(inputs, run, plan, chapter, digest, provider, down, checked)
+        return _buy(inputs, run, plan, chapter, digest, provider, down)
     row, files = write_placeholder_take(inputs, plan.section, chapter, digest)
     for path in files:
         run.wrote(path)
@@ -380,9 +381,8 @@ def _buy(
     digest: str,
     provider: SpeechProvider | None,
     down: threading.Event | None,
-    checked: set[str],
 ) -> tuple[Take, TakeOutcome]:
-    """Buy one section's take while holding the store's lock on it, or play the copy another run bought meanwhile."""
+    """Voice one section's take through the take places, or play the copy another run voiced meanwhile."""
     request = plan.request
     if provider is None or request is None:
         raise InputError(
@@ -390,31 +390,33 @@ def _buy(
             hint="Run `decktalk narrate` again, or run with --no-spend.",
             location=at(inputs.workspace.takes_path, inputs.root),
         )
-    with buying_alone(inputs, run, digest, wait_seconds=inputs.settings.narration.timeout_seconds) as bought:
-        if bought:
-            # Another project bought this take while this run waited, so it plays that copy.
-            for path in copy_from_store(inputs, run, plan.section.number, digest, checked):
-                run.wrote(path)
-            return take_row(inputs, plan.section, chapter, digest, voiced=True), TakeOutcome.KEPT
-        try:
-            row, files = write_voiced_take(inputs, run, provider, plan.section, chapter, digest, request)
-        except ProviderError as failure:
-            if down is None or failure.reached:
-                raise
-            down.set()
-            return _stand_in(inputs, run, plan, chapter)
-    for path in files:
-        run.wrote(path)
-    return row, TakeOutcome.VOICED
+    voice, ask = provider, request
+
+    def speak() -> tuple[bytes, Sequence[Word]]:
+        return voice.speak(ask)
+
+    def charge() -> None:
+        charge_take(inputs, run, plan.section, digest, ask)
+
+    try:
+        outcome = inputs.take_places.voice(
+            digest, speak, charge, run, section=plan.section.number, replacing=plan.reason == REPLACED
+        )
+    except ProviderError as failure:
+        if down is None or failure.reached:
+            raise
+        down.set()
+        return _stand_in(inputs, run, plan, chapter)
+    return take_row(inputs, plan.section, chapter, digest, voiced=True), outcome
 
 
 def _stand_in(inputs: Inputs, run: Run, plan: TakePlan, chapter: str) -> tuple[Take, TakeOutcome]:
     """The placeholder one section plays because its free voice did not answer, found on disk or made now."""
     digest = placeholder_inputs(inputs, plan.section).digest
-    held = inputs.workspace.holding(digest) is not None
+    held = inputs.take_places.find(digest).held
     outcome = TakeOutcome.KEPT if held else TakeOutcome.PLACEHOLDER
     stand_in = replace(plan, outcome=outcome, digest=digest, request=None)
-    row, _kept = _one_take(inputs, run, stand_in, chapter, None, None, set())
+    row, _kept = _one_take(inputs, run, stand_in, chapter, None, None)
     return row, TakeOutcome.PLACEHOLDER
 
 

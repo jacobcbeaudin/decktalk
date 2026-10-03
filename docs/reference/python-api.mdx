@@ -199,7 +199,7 @@ if result.stopped_at is not None:
 | Exception | Raised by |
 |---|---|
 | `ApprovalRequired` | `narrate`, `score` and `build`, when buying was not approved or `max_cost` refuses it, and every call that opens a page under `record.page_policy = "untrusted"` while it may spend. |
-| `ProjectLocked` | Every call that writes, when another writer holds the build directory, and `narrate` and `build`, when another run on this machine is still buying the same take into the take store after `narration.timeout_seconds`. |
+| `ProjectLocked` | Every call that writes, when another writer holds the build directory, and `narrate` and `build`, when another run on this machine is still voicing the same take into the take store after `narration.store_wait_seconds`. |
 | `NotBuiltError` | A call that needs an artifact no earlier run made, such as `cue`, `words` or `verify` before any `narrate`. |
 | `ProviderError` | `narrate`, `score` and `build` on a paid run, when the voice service fails. |
 | `ToolError` | Every call that opens a page or runs ffmpeg, when Chromium or ffmpeg is missing or fails. |

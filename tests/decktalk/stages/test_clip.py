@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts import Words, words_file
+from decktalk.artifacts import Words, take_file, words_file
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs
 from decktalk.machine.run import Run
@@ -17,7 +17,7 @@ from support.fakes import FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
 from support.runs import a_run, notes
-from support.takes import a_take, write_takes
+from support.takes import TAKE_SUFFIX, a_take, write_takes
 
 TOML = """
 [project]
@@ -56,7 +56,7 @@ def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_
     write_takes(inputs, take)
     Words(words=WORDS).write(inputs.workspace.takes / words_file("0123456789abcdef"))
     if take_on_disk:
-        inputs.workspace.take_path(take.digest).write_bytes(b"")
+        (inputs.workspace.takes / take_file(take.digest, TAKE_SUFFIX)).write_bytes(b"")
     if cut:
         inputs.workspace.section_video("01").parent.mkdir(parents=True, exist_ok=True)
         inputs.workspace.section_video("01").write_bytes(b"")

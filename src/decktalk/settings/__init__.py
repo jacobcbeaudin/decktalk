@@ -223,11 +223,26 @@ class NarrationConfig:
     )
     timeout_seconds: int = tune(
         180,
-        "Seconds before a speech request times out. It is also the longest a run waits while another project "
-        "on this machine buys the same take, before it is refused as locked.",
+        "Seconds before a speech request times out.",
         unit="seconds",
         bounds=Bounds(ge=10, le=1800),
         nature=Nature.APPARATUS,
+    )
+    store_wait_seconds: int = tune(
+        900,
+        "Seconds a run waits while another run on this machine voices the same take into the take store, before "
+        "it is refused as locked. Keep it above one whole take request, `timeout_seconds` times `retries` plus "
+        "one, with the waits between them. The default covers that at the default `timeout_seconds` and "
+        "`retries`: four attempts of 180 seconds and three waits of at most 30 seconds, 810 seconds.",
+        unit="seconds",
+        bounds=Bounds(ge=1, le=36000),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        hazard=(
+            "Below the length of one take request, a run is refused while another run's healthy request is still "
+            "being answered."
+        ),
+        see_also=("narration.store_dir", "narration.timeout_seconds", "narration.retries"),
     )
     sound_end_noise_dbfs: float = tune(
         -35.0,

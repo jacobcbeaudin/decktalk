@@ -182,7 +182,7 @@ def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
             hint=Artifact.TAKES.next_step,
             location=at(inputs.workspace.takes_path, inputs.root, section=number),
         )
-    source = inputs.workspace.take_path(take.digest)
+    source = inputs.take_places.find(take.digest).audio
     if not source.is_file():
         raise NotBuiltError(
             f"section {number} names the take {source.name}, which is not on disk.",

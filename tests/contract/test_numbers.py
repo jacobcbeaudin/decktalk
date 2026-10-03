@@ -38,7 +38,7 @@ from support.paths import REPO, SRC
 BASELINE = Path(__file__).resolve().parent / "numbers-baseline.json"
 """The committed per-file count of literals still waiting for a door, which only ever shrinks."""
 
-WALKED = ("stages", "media", "captions", "speech", "pagescan.py")
+WALKED = ("stages", "media", "captions", "speech", "pagescan.py", "inputs/take_places.py")
 """Where the rule holds today, which is every module that measures a film or decides about one."""
 
 RUNTIME = Path("src") / "decktalk" / "runtime" / "src"

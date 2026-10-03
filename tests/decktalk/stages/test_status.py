@@ -59,8 +59,8 @@ def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: 
     take = a_take(1, seconds=2.0, voiced=voiced, spoken=spoken)
     write_takes(inputs, take)
     inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
-    inputs.workspace.take_path(take.digest).write_bytes(b"audio")
-    inputs.workspace.words_path(take.digest).write_text("{}", encoding="utf-8")
+    (inputs.workspace.takes / take_file(take.digest, TAKE_SUFFIX)).write_bytes(b"audio")
+    (inputs.workspace.takes / words_file(take.digest)).write_text("{}", encoding="utf-8")
     return take
 
 
@@ -407,6 +407,18 @@ def test_takes_no_section_plays_are_counted_with_their_size_and_none_is_deleted(
     assert "git rm" in sentence
     assert sorted(path for path in inputs.workspace.takes.rglob("*")) == before, "the report deletes nothing"
     assert run.written == []
+
+
+def test_a_numbered_copy_set_aside_is_not_listed_as_an_unplayed_take(tmp_path: Path) -> None:
+    """A second damaged copy is set aside under the next number, and it names no take either."""
+    inputs = a_project(tmp_path, toml=VOICED)
+    digest = played_digest(inputs)
+    a_take_pair(inputs, digest)
+    (inputs.workspace.takes / f"{take_file(digest, TAKE_SUFFIX)}.1.unreadable").write_bytes(b"set aside")
+    (inputs.workspace.takes / f"{words_file(digest)}.2.unreadable").write_bytes(b"set aside")
+    unplayed = status(inputs, a_run(tmp_path)).unplayed
+    assert unplayed is not None
+    assert unplayed.takes == 0
 
 
 def test_a_take_the_index_still_plays_is_not_listed_after_the_script_moves_on(tmp_path: Path) -> None:
