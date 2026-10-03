@@ -108,7 +108,7 @@ def test_the_driver_looks_for_chromium_where_the_installer_put_it(monkeypatch: p
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     chromium = FakeChromium(executable)
     monkeypatch.setattr("playwright.sync_api.sync_playwright", chromium.started())
-    with browser.chromium(policy=browser.TRUSTED):
+    with browser.chromium(policy=browser.TRUSTED, spend=False):
         assert os.environ[BROWSERS_VARIABLE] == "/the/hosts/own"
     assert chromium.looked_in == [str(cache / "ms-playwright")]
     assert os.environ[BROWSERS_VARIABLE] == "/the/hosts/own"
@@ -130,7 +130,7 @@ def test_a_missing_chromium_is_fetched_rather_than_refused(monkeypatch, on_disk)
     to go and run `decktalk install`, while ffmpeg had been downloading itself all along."""
     chromium = FakeChromium(on_disk)
     commands = fake_fetch(monkeypatch, on_disk)
-    launched = browser.launch(chromium.driver(), policy=browser.TRUSTED)
+    launched = browser.launch(chromium.driver(), policy=browser.TRUSTED, spend=False)
     assert isinstance(launched, BareBrowser)
     assert len(commands) == 1, f"the browser was not fetched: {commands}"
     assert len(chromium.asked) == 2, "the launch was not tried again after the fetch"
@@ -143,7 +143,7 @@ def test_the_fetch_a_build_runs_never_asks_for_the_system_libraries(monkeypatch,
     reappear anywhere between here and the subprocess."""
     pw = FakeChromium(on_disk).driver()
     commands = fake_fetch(monkeypatch, on_disk)
-    browser.launch(pw, policy=browser.TRUSTED)
+    browser.launch(pw, policy=browser.TRUSTED, spend=False)
     assert commands, "nothing was fetched, so this asserts nothing"
     for cmd in commands:
         assert chromium_fetch.WITH_DEPS not in cmd, f"a build asked for the libraries that need sudo: {cmd}"
@@ -156,7 +156,7 @@ def test_a_launch_that_still_fails_after_the_fetch_names_the_install_command(mon
     pw = FakeChromium(on_disk, refusal=LIBRARIES_MISSING).driver()
     commands = fake_fetch(monkeypatch, on_disk)
     with pytest.raises(ToolError) as caught:
-        browser.launch(pw, policy=browser.TRUSTED)
+        browser.launch(pw, policy=browser.TRUSTED, spend=False)
     assert commands, "it refused without even trying to fetch the browser"
     said = f"{caught.value} {caught.value.hint}"
     assert "decktalk install" in said, said
@@ -177,7 +177,7 @@ def test_the_download_is_announced_before_it_starts(monkeypatch, on_disk) -> Non
 
     monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
     with announcing(lambda tool, done_bytes, total_bytes: heard.append((tool, done_bytes, total_bytes))):
-        browser.launch(pw, policy=browser.TRUSTED)
+        browser.launch(pw, policy=browser.TRUSTED, spend=False)
     # Playwright reports its own progress to its own output, so the start is all this download knows.
     assert heard == [(chromium_fetch.TOOL, 0, None)], heard
 
@@ -188,7 +188,7 @@ def test_a_browser_that_is_already_there_is_launched_without_a_fetch(monkeypatch
     on_disk.write_text("#!/bin/sh\n", encoding="utf-8")
     chromium = FakeChromium(on_disk)
     commands = fake_fetch(monkeypatch, on_disk)
-    browser.launch(chromium.driver(), policy=browser.TRUSTED)
+    browser.launch(chromium.driver(), policy=browser.TRUSTED, spend=False)
     assert commands == [], f"a machine with Chromium fetched it again: {commands}"
     assert len(chromium.asked) == 1
 
@@ -200,7 +200,7 @@ def test_a_machine_that_names_its_own_chromium_is_never_sent_to_download_one(mon
     pw = FakeChromium(on_disk).driver()
     commands = fake_fetch(monkeypatch, on_disk)
     with pytest.raises(ToolError) as caught:
-        browser.launch(pw, str(named), policy=browser.TRUSTED)
+        browser.launch(pw, str(named), policy=browser.TRUSTED, spend=False)
     assert commands == [], f"a named executable triggered a download: {commands}"
     said = f"{caught.value} {caught.value.hint}"
     assert str(named) in said, said
@@ -211,7 +211,7 @@ def test_a_fetch_that_fails_is_a_tool_error_rather_than_a_return_code(monkeypatc
     pw = FakeChromium(on_disk).driver()
     fake_fetch(monkeypatch, on_disk, code=1)
     with pytest.raises(ToolError, match=re.escape("playwright install failed: line 1 | ERROR: host unreachable")):
-        browser.launch(pw, policy=browser.TRUSTED)
+        browser.launch(pw, policy=browser.TRUSTED, spend=False)
 
 
 def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, on_disk) -> None:
@@ -219,7 +219,7 @@ def test_the_context_manager_fetches_too_and_closes_what_it_opened(monkeypatch, 
     Playwright itself is replaced here, so this never reaches a real browser either."""
     commands = fake_fetch(monkeypatch, on_disk)
     monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(on_disk).started())
-    with browser.chromium(policy=browser.TRUSTED) as opened:
+    with browser.chromium(policy=browser.TRUSTED, spend=False) as opened:
         assert isinstance(opened, BareBrowser)
     assert opened.closed, "the browser was left running"
     assert len(commands) == 1, commands
@@ -239,7 +239,7 @@ def test_the_installer_is_handed_the_scrubbed_environment_and_never_the_hosts_cr
     monkeypatch.setattr(chromium_fetch.subprocess, "run", run)
     host = {"PATH": "/usr/bin", "HOST_DB_PASSWORD": "pw_installer_canary_31f0", "AWS_SECRET_ACCESS_KEY": "aws-canary"}
     with children_see(host):
-        browser.launch(FakeChromium(on_disk).driver(), policy=browser.TRUSTED)
+        browser.launch(FakeChromium(on_disk).driver(), policy=browser.TRUSTED, spend=False)
     [env] = handed
     assert env["PATH"] == "/usr/bin"
     assert "HOST_DB_PASSWORD" not in env and "AWS_SECRET_ACCESS_KEY" not in env
@@ -294,4 +294,4 @@ def test_every_command_that_needs_a_browser_goes_through_the_one_function() -> N
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "launch":
                 starts.append(path.relative_to(SRC).as_posix())
-    assert sorted(set(starts)) == ["machine.py", "media/browser.py"], starts
+    assert sorted(set(starts)) == ["machine/__init__.py", "media/browser.py"], starts

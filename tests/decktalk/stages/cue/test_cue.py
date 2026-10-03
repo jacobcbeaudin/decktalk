@@ -70,7 +70,7 @@ def test_every_phrase_becomes_a_second_on_its_own_section_clock(tmp_path: Path) 
     (row,) = block.cues
     lead = inputs.lead_seconds(1)
     assert row.seconds == round(0.5 + lead + 0.25, 3)
-    assert (row.cue, row.phrase, row.nudge_seconds) == ("1.1:a", "there", 0.25)
+    assert (row.id, row.phrase, row.nudge_seconds) == ("1.1:a", "there", 0.25)
     assert block.estimated is False and block.key == "01"
 
 

@@ -51,7 +51,7 @@ const TEXT_MAX = 80;
 // ---- the cover ---------------------------------------------------------------------------------
 
 /**
- * Cover the page in magenta from its first paint until the narration clock starts.
+ * Cover the page in magenta from its first paint until the section clock starts.
  *
  * The first clean frame in the recording is then t=0, no matter when the recorder began capturing.
  * The cover comes with a keep-alive, a two pixel square in the corner that turns for the whole
@@ -89,7 +89,7 @@ export function cover(): void {
 /** The narration origin in `performance.now()` milliseconds, or null while the clock has not started. */
 let origin: number | null = null;
 
-/** The second on the narration clock a `performance.now()` millisecond stands for, rounded to a millisecond. */
+/** The second on the section clock a `performance.now()` millisecond stands for, rounded to a millisecond. */
 function clockAt(ms: number): number | null {
   return origin === null ? null : Number(((ms - origin) / 1000).toFixed(3));
 }

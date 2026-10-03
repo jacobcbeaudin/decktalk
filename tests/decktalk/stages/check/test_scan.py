@@ -8,7 +8,7 @@ import pytest
 
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import page_findings, slide_cues

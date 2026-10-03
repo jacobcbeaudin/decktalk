@@ -50,9 +50,6 @@ from decktalk.pipeline import Artifact
 
 log = logging.getLogger(__name__)
 
-INDENT = 2
-"""How the artifacts are indented, which keeps a diff of one readable in a terminal."""
-
 DIGEST_BYTES = 8
 """How much of a BLAKE3 names some content, sixteen hex characters, which never collide within one project."""
 
@@ -194,7 +191,7 @@ class Stored(Model):
     @property
     def text(self) -> str:
         """This artifact as the file holds it, for a writer that replaces it together with another file."""
-        return json.dumps(self.model_dump(mode="json"), indent=INDENT, allow_nan=False) + "\n"
+        return json.dumps(self.model_dump(mode="json"), indent=2, allow_nan=False) + "\n"
 
 
 _WRONG = {

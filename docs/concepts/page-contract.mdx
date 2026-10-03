@@ -38,9 +38,8 @@ has to recede while another is read, so the page never has to remove something a
 
 ## The cue id
 
-The runtime qualifies a cue name into a cue id, which is the slide id, a colon and the cue
-name. So `data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`, and
-`4.1:expand` is what `cues.json` carries.
+Each moment names a cue, and the runtime qualifies that name with its slide into the
+[cue id](/concepts/cues#the-cue-id) `cues.json` carries. Here it is `4.1:expand`.
 
 ```html deck/index.html
 <div data-scene="4" data-name="The listing">

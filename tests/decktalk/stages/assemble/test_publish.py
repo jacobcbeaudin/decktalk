@@ -13,7 +13,7 @@ from decktalk.artifacts import Placement, Placements, Words
 from decktalk.captions import CaptionCue
 from decktalk.errors import ErrorCode, InputError, ToolError
 from decktalk.inputs import Inputs
-from decktalk.media import browser
+from decktalk.media import browser, pages
 from decktalk.media.pagereport import CueRow, MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
@@ -49,9 +49,8 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
 
 def test_described_cues_sort_on_the_time_alone(tmp_path):
-    """Two lines at one cue used to break the tie on their first letter, which printed a step back
-    before the arrival it belongs to. The runtime composes one sentence per cue in document order,
-    so the second is the whole of the rule."""
+    """Two lines at one cue keep document order, never their first letter, so a step never prints
+    before the arrival it belongs to. The runtime composes one sentence per cue in document order."""
     inputs = write_project(tmp_path)
     arrival = CueRow(id="1.1:a", due=1.0, ran=1.0, describe="the arrival")
     back = CueRow(id="1.1:b", due=1.0, ran=1.0, describe="a step back")
@@ -147,7 +146,7 @@ def test_every_spoken_section_is_captioned_where_its_narration_plays(tmp_path):
     cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
     assert cues
     assert cues[0].start == 0.0
-    # The second section's take starts where the first one ends on the narration clock.
+    # The second section's take starts where the first one ends in the joined narration.
     assert any(cue.start >= 2.0 for cue in cues)
 
 
@@ -279,7 +278,7 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, monkeypatc
             return None
 
     @contextmanager
-    def chromium(_path: str = "", *, policy: str) -> Iterator[object]:
+    def chromium(_path: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
         launched.append(policy)
         yield object()
 
@@ -296,9 +295,9 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, monkeypatc
         return Page(), SimpleNamespace(paths=["deck/index.html"])
 
     monkeypatch.setattr(storyboard, "open_page", open_page)
-    monkeypatch.setattr(browser, "await_ready", lambda _page: None)
-    monkeypatch.setattr(browser, "read_report", lambda *_a: PageReport(catalog=catalog))
-    monkeypatch.setattr(browser, "screenshot", screenshot)
+    monkeypatch.setattr(pages, "await_ready", lambda _page: None)
+    monkeypatch.setattr(pages, "read_report", lambda *_a: PageReport(catalog=catalog))
+    monkeypatch.setattr(pages, "screenshot", screenshot)
     out = inputs.workspace.deliverables()["poster"]
     assert render_poster(inputs, opened.run, out) == out
     out.unlink()
@@ -365,7 +364,7 @@ def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, monkeypatch):
     opened = open_run(tmp_path)
     launched: list[str] = []
 
-    def refuse(_path: str = "", *, policy: str) -> None:
+    def refuse(_path: str = "", *, policy: str, **_launch: object) -> None:
         launched.append(policy)
         raise ToolError("could not launch a browser.")
 

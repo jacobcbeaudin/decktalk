@@ -22,15 +22,8 @@ from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
 from decktalk.media.frames import Size
 from decktalk.page import MILLISECONDS
-from decktalk.settings import (
-    Settings,
-    VerifyConfig,
-    block_height,
-    block_width,
-    probe_height,
-    probe_width,
-    reference_lead_seconds,
-)
+from decktalk.settings import Settings, VerifyConfig
+from decktalk.settings.numbers import block_height, block_width, probe_height, probe_width, reference_lead_seconds
 from decktalk.stages import selects
 
 EPSILON = 1e-6

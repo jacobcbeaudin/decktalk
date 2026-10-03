@@ -6,6 +6,7 @@ import json
 import shutil
 import threading
 from collections.abc import Callable, Iterator, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO, Any
@@ -102,7 +103,7 @@ def test_every_take_kept_or_made_says_why_and_the_worker_count_is_recorded(
         said = sorted(decisions(caplog, "take", "section", "hit", "why"))
         assert said == [(1, True, "unchanged"), (2, True, "unchanged"), (3, True, "unchanged")]
         # A take the plan found and the worker then did not is told apart from one never made.
-        monkeypatch.setattr(narrate_stage, "is_cached", lambda *_: False)
+        monkeypatch.setattr(narrate_stage, "is_held", lambda *_: False)
         placeholder(inputs, watched)
         said = sorted(decisions(caplog, "take", "section", "hit", "why"))
         assert said == [(1, False, "take-missing"), (2, False, "take-missing"), (3, False, "take-missing")]
@@ -1157,33 +1158,39 @@ def test_a_re_buy_writes_the_takes_directory_and_the_store_keeps_its_first_pair(
     assert (c.workspace.takes / name).read_bytes() == b"FIRST"
 
 
-def test_two_projects_buying_one_take_leave_one_whole_pair_in_the_store(
+SECOND_BUYER_SECONDS = 0.5
+"""How long the first buyer pauses between its two writes, which is long enough for a second to buy."""
+
+
+def test_a_second_project_buying_a_take_another_is_buying_waits_and_buys_nothing(
     make_run: Callable[..., Watched], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Seat 3's probe 2a: a second buyer of the same take never pairs one run's audio with another's words."""
+    """Seat 3's probe 2a: two projects buying one take at once paid twice. The store's lock on the take
+    makes the second wait for the first, then play the pair the first wrote through."""
     a_voice_saying(monkeypatch, b"AUDIO-A")
     a = in_the_store(tmp_path, "a")
     b = in_the_store(tmp_path, "b")
     real = takes_module.replace_all
-    interleaved: list[bool] = []
+    asked_b = FakeVoice(audio=b"AUDIO-B")
+    second: list[Future[NarrateResult]] = []
 
-    def between(texts: Mapping[Path, str | bytes]) -> None:
-        real(texts)
-        if not interleaved:
-            interleaved.append(True)
-            a_voice_saying(monkeypatch, b"AUDIO-B")
-            narrate(b, make_run(b, spend=True).run)
+    with ThreadPoolExecutor(max_workers=1) as pool:
 
-    monkeypatch.setattr(takes_module, "replace_all", between)
-    narrate(a, make_run(a, spend=True).run, only=[1])
-    assert interleaved
+        def between(texts: Mapping[Path, str | bytes]) -> None:
+            real(texts)
+            if not second:
+                monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: asked_b)
+                second.append(pool.submit(narrate, b, make_run(b, spend=True).run, only=[1]))
+                # Without the lock the second project buys in this pause, and with it the second waits here.
+                wait(second, timeout=SECOND_BUYER_SECONDS)
+
+        monkeypatch.setattr(takes_module, "replace_all", between)
+        narrate(a, make_run(a, spend=True).run, only=[1])
+        second[0].result(timeout=SECOND_BUYER_SECONDS * 60)
     digest = Takes.require(a.workspace.takes_path, Artifact.TAKES).sections[0].digest
-    store = tmp_path / STORED
-    assert a.workspace.fault_at(store, digest, whole=True) is None, (
-        "the store pairs one run's audio with another's words"
-    )
-    assert (store / take_file(digest, TAKE_SUFFIX)).read_bytes() == b"AUDIO-B", "the first pair in the store is kept"
-    assert (a.workspace.takes / take_file(digest, TAKE_SUFFIX)).read_bytes() == b"AUDIO-A"
+    assert a.workspace.fault_at(tmp_path / STORED, digest, whole=True) is None
+    assert asked_b.requests == [], "the second project bought the take the first was buying"
+    assert (b.workspace.takes / take_file(digest, TAKE_SUFFIX)).read_bytes() == b"AUDIO-A"
 
 
 # ---- the voices a run carries -------------------------------------------------------------------

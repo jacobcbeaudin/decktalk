@@ -14,9 +14,9 @@ RESOLVED = CueTimes(
             key="03",
             estimated=False,
             cues=(
-                CueTime(cue="3.1:expand", phrase="On a typical", seconds=1.2, nudge_seconds=0.0),
-                CueTime(cue="3.2:zero", phrase="Zero", seconds=2.5, nudge_seconds=0.3),
-                CueTime(cue="3.3:never", phrase="nowhere", seconds=None, nudge_seconds=0.0),
+                CueTime(id="3.1:expand", phrase="On a typical", seconds=1.2, nudge_seconds=0.0),
+                CueTime(id="3.2:zero", phrase="Zero", seconds=2.5, nudge_seconds=0.3),
+                CueTime(id="3.3:never", phrase="nowhere", seconds=None, nudge_seconds=0.0),
             ),
         ),
     )

@@ -136,214 +136,68 @@ export type Count = keyof typeof COUNTS;
 
 // ---- the codes the page reports ---------------------------------------------------------------
 
-/** Whether a code fails the default run. An error names something that is wrong, and a warning names a risk. */
-export type Severity = "error" | "warning";
-
-/** Who raises a code. The runtime reports it from the page, and Python measures it from what was recorded. */
-export type RaisedBy = "runtime" | "python";
-
-/** One code the page contract owns, with the sentence a person reads and the fields that fill it. */
-export type CodeRow = {
-  readonly message: string;
-  readonly severity: Severity;
-  readonly raisedBy: RaisedBy;
-};
-
 /**
- * Every code whose subject is the page, keyed by the name Python's `Code` enum carries.
+ * Every code whose subject is the page or its recording, keyed by the name Python's `Code` enum
+ * carries, with the sentence the console prints.
  *
- * The message is a whole sentence that carries its own fix, written for the console and for a
- * person. Nothing parses it, and the documentation URL is derived from the code by whoever prints
- * it, because shipping a URL would bake the documentation host into every deck.
+ * The sentence is whole and carries its own fix, written for the console and for a person, with a
+ * `{field}` for each thing the page knows about the place. Nothing parses it. A code's severity and
+ * the side that raises it belong to `findings.Code` alone, which is what a result serialises, and the
+ * documentation URL is derived from the code by whoever prints it, because shipping a URL would bake
+ * the documentation host into every deck.
  */
 export const CODES = {
-  PAGE_UNKNOWN_ATTR: {
-    message: "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_BAD_VALUE: {
-    message: "{attr}={value} is not one of {allowed}, so write one of those instead.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_MOMENT_UNKNOWN: {
-    message: "{attr}={value} names a cue slide {slide} does not own, so declare it on the slide or correct the name.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_MOMENT_ORDER: {
-    message: "The exit {value} is at or before the entrance on the same element, so give the exit a later cue.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_CUE_UNKNOWN: {
-    message: "The cue {cue} is not one this deck declares, so remove it or name it in a moment attribute.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_NO_OWNER: {
-    message: "No slide owns the cue {cue}, so name it in a moment attribute or list it in data-owns.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_SCENE_EMPTY: {
-    message: "The scene {slide} declares no slide, so add a template to it or remove the scene.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_SLIDE_NO_ID: {
-    message: "A template carries no data-slide, so give it the id a section names.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_SLIDE_DOUBLED: {
-    message: "Two templates claim the slide id {slide}, so every moment local to it has two owners.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_SLIDE_UNUSED: {
-    message: "Slide {slide} is never shown, so nothing it declares reaches a recording.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_TEMPLATE_IGNORED: {
-    message: "A template inside slide {slide} declares no slide of its own, so nothing ever mounts it.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_WORDS_NOT_FOUND: {
-    message: "The line {value} is not among the spoken words, so it cannot be shown word by word.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_KATEX_MISSING: {
-    message: "KaTeX is not loaded, so {attr} is left as the author wrote it.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_KATEX_ERROR: {
-    message: "KaTeX refused {value}, so the element shows its readable fallback text.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_FREEZE_CUE_UNKNOWN: {
-    message: "The cue {cue} is not one of slide {slide}'s cues, so the freeze stopped at nothing.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_RENDER_THREW: {
-    message: "The render handler for slide {slide} threw {value}, so the slide is drawn as its markup stands.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_ENTER_THREW: {
-    message: "The enter handler for slide {slide} threw {value}, so the slide arrived without it.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_SLIDE_HANDLER_THREW: {
-    message: "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_HANDLER_THREW: {
-    message: "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_WAIT_REJECTED: {
-    message: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_WAIT_UNSETTLED: {
-    message: "A promise the page waited for never settled, so the page was drawn without it.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_CLASS_UNDESCRIBED: {
-    message: "data-class names {value} with no description for it in data-describe-class, so the transcript loses it.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_CLASS_NOT_REDUCED: {
-    message: "The class {value} still animates under reduced motion, so the page's own stylesheet must honour it.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_SWAP_AMBIGUOUS: {
-    message: "data-swaps at cue {cue} found {value} elements leaving, so name the one it replaces with a shared cue.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_PREVIEW_AMBIGUOUS: {
-    message: "Two sections name the scene {slide}, so a preview cannot tell which one's cue times to play.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_APPEAR_TOO_LONG: {
-    message: "data-words=appear is on a line of {value} words, so shorten it or use highlight instead.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_STAGGER_EMPTY: {
-    message: "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_SPOTLIGHT_EMPTY: {
-    message:
-      "The spotlight on slide {slide} has no child with data-in, so give its children cues or remove the attribute.",
-    severity: "error",
-    raisedBy: "runtime",
-  },
-  PAGE_MOTION_OVERRUN: {
-    message: "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
-    severity: "error",
-    raisedBy: "python",
-  },
-  PAGE_STAGGER_OVERRUN: {
-    message: "The stagger at cue {cue} runs {value} s in all, which passes the half second a cue may still move.",
-    severity: "error",
-    raisedBy: "python",
-  },
-  PAGE_THIN_DRAW: {
-    message: "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
-    severity: "warning",
-    raisedBy: "python",
-  },
-  PAGE_NO_DESCRIPTION: {
-    message: "The element at cue {cue} has no text and no data-tex, so give it data-describe or an empty one.",
-    severity: "error",
-    raisedBy: "python",
-  },
-  PAGE_SWAP_APART: {
-    message: "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
-    severity: "warning",
-    raisedBy: "python",
-  },
-  PAGE_CDN_ASSET: {
-    message: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
-    severity: "error",
-    raisedBy: "python",
-  },
-  RECORD_STALLED: {
-    message: "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
-    severity: "error",
-    raisedBy: "python",
-  },
-  RECORD_BLACK: {
-    message: "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
-    severity: "error",
-    raisedBy: "python",
-  },
-  RECORD_TRUNCATED: {
-    message: "The recording ends {value} s before the narration does, so the last cues are not in it.",
-    severity: "error",
-    raisedBy: "python",
-  },
-} as const satisfies Record<string, CodeRow>;
+  PAGE_UNKNOWN_ATTR:
+    "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
+  PAGE_BAD_VALUE: "{attr}={value} is not one of {allowed}, so write one of those instead.",
+  PAGE_MOMENT_UNKNOWN:
+    "{attr}={value} names a cue slide {slide} does not own, so declare it on the slide or correct the name.",
+  PAGE_MOMENT_ORDER: "The exit {value} is at or before the entrance on the same element, so give the exit a later cue.",
+  PAGE_CUE_UNKNOWN: "The cue {cue} is not one this deck declares, so remove it or name it in a moment attribute.",
+  PAGE_NO_OWNER: "No slide owns the cue {cue}, so name it in a moment attribute or list it in data-owns.",
+  PAGE_SCENE_EMPTY: "The scene {slide} declares no slide, so add a template to it or remove the scene.",
+  PAGE_SLIDE_NO_ID: "A template carries no data-slide, so give it the id a section names.",
+  PAGE_SLIDE_DOUBLED: "Two templates claim the slide id {slide}, so every moment local to it has two owners.",
+  PAGE_SLIDE_UNUSED: "Slide {slide} is never shown, so nothing it declares reaches a recording.",
+  PAGE_TEMPLATE_IGNORED: "A template inside slide {slide} declares no slide of its own, so nothing ever mounts it.",
+  PAGE_WORDS_NOT_FOUND: "The line {value} is not among the spoken words, so it cannot be shown word by word.",
+  PAGE_KATEX_MISSING: "KaTeX is not loaded, so {attr} is left as the author wrote it.",
+  PAGE_KATEX_ERROR: "KaTeX refused {value}, so the element shows its readable fallback text.",
+  PAGE_FREEZE_CUE_UNKNOWN: "The cue {cue} is not one of slide {slide}'s cues, so the freeze stopped at nothing.",
+  PAGE_RENDER_THREW: "The render handler for slide {slide} threw {value}, so the slide is drawn as its markup stands.",
+  PAGE_ENTER_THREW: "The enter handler for slide {slide} threw {value}, so the slide arrived without it.",
+  PAGE_SLIDE_HANDLER_THREW:
+    "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
+  PAGE_HANDLER_THREW: "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
+  PAGE_WAIT_REJECTED: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
+  PAGE_WAIT_UNSETTLED: "A promise the page waited for never settled, so the page was drawn without it.",
+  PAGE_CLASS_UNDESCRIBED:
+    "data-class names {value} with no description for it in data-describe-class, so the transcript loses it.",
+  PAGE_CLASS_NOT_REDUCED:
+    "The class {value} still animates under reduced motion, so the page's own stylesheet must honour it.",
+  PAGE_SWAP_AMBIGUOUS:
+    "data-swaps at cue {cue} found {value} elements leaving, so name the one it replaces with a shared cue.",
+  PAGE_PREVIEW_AMBIGUOUS:
+    "Two sections name the scene {slide}, so a preview cannot tell which one's cue times to play.",
+  PAGE_APPEAR_TOO_LONG: "data-words=appear is on a line of {value} words, so shorten it or use highlight instead.",
+  PAGE_STAGGER_EMPTY: "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
+  PAGE_SPOTLIGHT_EMPTY:
+    "The spotlight on slide {slide} has no child with data-in, so give its children cues or remove the attribute.",
+  PAGE_MOTION_OVERRUN:
+    "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
+  PAGE_STAGGER_OVERRUN:
+    "The stagger at cue {cue} runs {value} s in all, which passes the half second a cue may still move.",
+  PAGE_THIN_DRAW: "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
+  PAGE_NO_DESCRIPTION:
+    "The element at cue {cue} has no text and no data-tex, so give it data-describe or an empty one.",
+  PAGE_SWAP_APART:
+    "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
+  PAGE_CDN_ASSET: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
+  RECORD_STALLED:
+    "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
+  RECORD_BLACK: "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
+  RECORD_TRUNCATED: "The recording ends {value} s before the narration does, so the last cues are not in it.",
+} as const satisfies Record<string, string>;
 
 export type Code = keyof typeof CODES;
 
@@ -781,6 +635,9 @@ export const TIME_MARK = "@";
 /** What separates two entries of `?cues=` and of `?words=`. */
 export const LIST_SEPARATOR = ",";
 
+/** What `?t0=` says when the recorder starts the clock itself rather than naming a second. */
+export const T0_SIGNAL = "signal";
+
 /**
  * The path under every origin DeckTalk opens a page at that the engine answers itself.
  *
@@ -837,9 +694,7 @@ export function pairs(value: string): { cue: string; value: string }[] {
 
 /** The message a code prints, with each `{field}` replaced by what the caller knows about the page. */
 export function message(code: Code, fields: Readonly<Record<string, string | number>> = {}): string {
-  return CODES[code].message.replace(/\{(\w+)\}/g, (whole, key: string) =>
-    key in fields ? String(fields[key]) : whole,
-  );
+  return CODES[code].replace(/\{(\w+)\}/g, (whole, key: string) => (key in fields ? String(fields[key]) : whole));
 }
 
 /** Whether a `data-` attribute name is one the contract defines, which is what `PAGE_UNKNOWN_ATTR` asks. */
@@ -913,6 +768,7 @@ export const CONTRACT = {
   cueMark: CUE_MARK,
   timeMark: TIME_MARK,
   listSeparator: LIST_SEPARATOR,
+  t0Signal: T0_SIGNAL,
   enginePath: ENGINE_PATH,
   previewCueTimes: PREVIEW_CUE_TIMES,
   motionScaleProperty: MOTION_SCALE_PROPERTY,

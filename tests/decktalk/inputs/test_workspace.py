@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import PLACEHOLDER_PREFIX, take_file, words_file
+from decktalk.artifacts import PLACEHOLDER_PREFIX, AudioPrint, ProviderWords, take_file, words_file
 from decktalk.errors import InputError
 from decktalk.inputs.workspace import EVENTS_SUFFIX, Workspace
 from decktalk.pipeline import Artifact
@@ -95,6 +95,25 @@ def test_a_take_is_looked_for_in_the_project_then_the_machine_and_never_the_buil
     _hold(tmp_path / "voice", digest)
     assert space.holding(digest) == tmp_path / "voice"
     assert space.words_path(digest) == tmp_path / "voice" / words_file(digest)
+
+
+def test_a_take_is_found_under_the_suffix_its_words_recorded_after_the_voice_changes_format(tmp_path: Path) -> None:
+    """A take is played by the name it was written under, which the voice's format today may not give."""
+    space = Workspace(
+        root=tmp_path,
+        build=tmp_path / "build",
+        name="demo",
+        suffix=".mp3",
+        takes=tmp_path / "takes",
+        score_dir=tmp_path / "score",
+    )
+    digest = "0123456789abcdef"
+    space.takes.mkdir()
+    audio = b"a take a provider answered in wav"
+    (space.takes / take_file(digest, ".wav")).write_bytes(audio)
+    ProviderWords(audio=AudioPrint.of(audio, suffix=".wav")).write(space.takes / words_file(digest))
+    assert space.holding(digest) == space.takes
+    assert space.take_path(digest) == space.takes / take_file(digest, ".wav")
 
 
 def test_a_placeholder_lives_in_the_build_directory_wherever_the_takes_are(tmp_path: Path) -> None:

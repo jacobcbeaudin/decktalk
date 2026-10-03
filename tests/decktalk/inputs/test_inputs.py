@@ -381,7 +381,7 @@ def test_the_preview_document_names_the_scene_each_section_plays(tmp_path):
                 section=1,
                 key="01",
                 estimated=False,
-                cues=(CueTime(cue="1.1:open", phrase="hello", seconds=1.5, nudge_seconds=0.0),),
+                cues=(CueTime(id="1.1:open", phrase="hello", seconds=1.5, nudge_seconds=0.0),),
             ),
         )
     ).write(inputs.workspace.cue_times_path)

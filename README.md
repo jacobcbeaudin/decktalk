@@ -65,6 +65,7 @@ On Linux and macOS without uv, `curl -LsSf https://decktalk.ai/install.sh | DECK
 
 `decktalk init` writes a starter of three sections that already builds. The build with `--no-spend` needs no account and spends nothing. It makes the whole film, captions and chapters included, with a click on every word where the voice would be, so the cues, the cuts and the pacing all run as they will when voiced. It prints this line, and one `TAKE_MISSING` per section that has no voiced take yet, with the command that buys it.
 
+<!-- sample: decktalk build --no-spend, on a fresh decktalk init my-lesson, the Built line -->
 ```text
        Built build/final/my-lesson.mp4, $0.00, 3 findings
 ```
@@ -96,7 +97,7 @@ One cue id ties them together. In the starter, the slide `1.1` declares a moment
 { "id": "1.1:title", "phrase": "This is DeckTalk" }
 ```
 
-`data-describe` names the picture for the transcript. No attribute on the page writes a second. [Your first deck](https://docs.decktalk.ai/guides/first-deck) writes one section across all four files, and [the page contract](https://docs.decktalk.ai/concepts/page-contract) lists every attribute.
+`data-describe` names the picture for the transcript. No attribute on the page says when a cue fires. [Your first deck](https://docs.decktalk.ai/guides/first-deck) writes one section across all four files, and [the page contract](https://docs.decktalk.ai/concepts/page-contract) lists every attribute.
 
 ### Using DeckTalk with an agent
 
@@ -116,6 +117,7 @@ The agent reads `decktalk --help` for the commands, `decktalk schema build` for 
 
 Without a terminal, a build with something to buy refuses unless `--spend` or `--no-spend` is passed, so an agent left alone cannot buy speech by accident. A build whose takes are all on disk buys nothing and needs neither flag nor key. This is the whole answer from `decktalk --json build` in the starter with a voice named, which exits 2.
 
+<!-- sample: decktalk --json build, on a fresh decktalk init my-lesson with [voice] id set and no API key -->
 ```json
 {
   "schema": 1,
@@ -124,7 +126,7 @@ Without a terminal, a build with something to buy refuses unless `--spend` or `-
   "error": {
     "code": "APPROVAL",
     "message": "This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.",
-    "hint": "Run decktalk build --spend to approve that spend, or decktalk build --no-spend to play a placeholder wherever a take is missing.",
+    "hint": "Run decktalk build --spend to approve that spend, or decktalk build --no-spend to play a placeholder wherever a take is missing and silence where a sound is unbought.",
     "location": null,
     "docs": "https://docs.decktalk.ai/reference/errors/APPROVAL"
   }
@@ -159,10 +161,10 @@ my-lesson.srt, .vtt        captions
 my-lesson.chapters.txt     one chapter per section
 my-lesson-transcript.html  a transcript page
 my-lesson-poster.png       a poster frame
-placements.json                  where every section sits in the film
+placements.json            where every section sits in the film
 ```
 
-The takes are kept under `build/narrate/`, named by their input digest, and every run's events are kept under `build/events/`. [Build artifacts](https://docs.decktalk.ai/reference/artifacts) lists every path.
+The takes a voice bought are kept in `takes/`, named by their digest, which is the folder to commit. Every run's events are kept under `build/events/`. [Build artifacts](https://docs.decktalk.ai/reference/artifacts) lists every path.
 
 ## Requirements and costs
 

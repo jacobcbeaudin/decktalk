@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from decktalk.artifacts import Placement, Placements, RecordingLog, Takes
-from decktalk.artifacts.placements import CutKey
+from decktalk.artifacts.placements import SectionVideoKey
 from decktalk.artifacts.stills import still_key
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import Level, Unit
@@ -32,13 +32,14 @@ from decktalk.findings import Code, Location, judge
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.document import frame_dip
 from decktalk.logs import cache_decision
-from decktalk.machine import Run
-from decktalk.media import browser, ffmpeg
+from decktalk.machine.run import Run
+from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import SectionKind, Substitute
 from decktalk.stages import selects
+from decktalk.stages.assemble import slate
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ BLACK = "0x000000"
 """Truth: the colour a section with no recording plays, written the way ffmpeg reads a colour."""
 
 KEY_SUFFIX = ".json"
-"""What the key beside a section cut is called after the cut's own name, such as `03.json` beside `03.mp4`."""
+"""What the key beside a section video is called after the video's own name, such as `03.json` beside `03.mp4`."""
 
 DRAWING_SUFFIX = ".drawing.png"
 """What a slate is called while the browser draws it, before the stills keep it under its key."""
@@ -81,7 +82,7 @@ class Rendered:
 
 
 def encode(out: Path, args: Sequence[str], sources: Sequence[Path]) -> bool:
-    """Encode one section cut into `out`, unless the cut there was made by these arguments from these files.
+    """Encode one section video into `out`, unless the video there was made by these arguments from these files.
 
     The key sits beside the cut under the same name. The old key is removed before the encode starts
     and the new one is written only once it has finished, so a run stopped halfway leaves a cut with
@@ -89,8 +90,8 @@ def encode(out: Path, args: Sequence[str], sources: Sequence[Path]) -> bool:
     one on disk was kept.
     """
     where = out.with_suffix(KEY_SUFFIX)
-    key = CutKey.of(args, sources)
-    held = CutKey.previous(where) if out.is_file() else None
+    key = SectionVideoKey.of(args, sources)
+    held = SectionVideoKey.previous(where) if out.is_file() else None
     why = "no-cut" if not out.is_file() else "no-key" if held is None else "unchanged" if held == key else "key-changed"
     cache_decision(log, "cut", hit=why == "unchanged", why=why, file=out.name)
     if why == "unchanged":
@@ -104,7 +105,7 @@ def encode(out: Path, args: Sequence[str], sources: Sequence[Path]) -> bool:
 def _cut(
     out: Path, enc: Encoder, source: Sequence[str], chain: str, sources: Sequence[Path], *, seconds: float | None = None
 ) -> None:
-    """Encode one silent section cut from one input through one video filter chain, cut to `seconds` when given."""
+    """Encode one silent section video from one input through one video filter chain, cut to `seconds` when given."""
     limit = ("-t", f"{seconds}") if seconds is not None else ()
     encode(out, (
         *source, "-filter_complex", f"[0:v]{chain}[v]",
@@ -134,7 +135,7 @@ def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None
         return kept
     drawing = stills.directory / f".{key}{DRAWING_SUFFIX}"
     try:
-        browser.render_slate(
+        slate.render_slate(
             drawing,
             title=title,
             sub=sub,
@@ -145,6 +146,7 @@ def section_slate(inputs: Inputs, run: Run, section: ClipSection) -> Path | None
             background=video.slate_color,
             browser_path=inputs.settings.record.browser_path,
             policy=policy,
+            spend=run.spend,
         )
         return stills.keep(key, drawing, ())
     except ToolError as refused:
@@ -215,7 +217,7 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
         chain = f"{enc.fit},trim=duration={total},setpts=PTS-STARTPTS{vfades(total, *fades, dip)}"
         _cut(out, enc, enc.color_source(BLACK, total), chain, (), seconds=total)
         return Rendered(section, out, ffmpeg.probe_duration(out), source, substitute=Substitute.BLACK)
-    # The recorder covers the page until it starts the narration clock, so the head of the webm is
+    # The recorder covers the page until it starts the section clock, so the head of the webm is
     # trimmed at the moment its own log recorded as narration t=0.
     log = RecordingLog.read(inputs.workspace.recording_log(section.key))
     lead = "" if log is None else f"trim=start={log.trim_seconds},setpts=PTS-STARTPTS,"

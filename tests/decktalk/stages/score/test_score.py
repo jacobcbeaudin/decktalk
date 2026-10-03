@@ -23,6 +23,7 @@ from decktalk.errors import ApprovalRequired, Cancelled, InputError
 from decktalk.events import Event, SoundCharged, StageProgress, Unit
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
+from decktalk.inputs.workspace import LEDGER_FILE
 from decktalk.media import audio
 from decktalk.pipeline import Stage
 from decktalk.results import Billing, CostState, Layer, SoundKind, SoundStatus, rate_money
@@ -30,7 +31,7 @@ from decktalk.speech.sound import SoundContext
 from decktalk.stages import score as stage
 from decktalk.stages.score import ledger as ledger_module
 from decktalk.stages.score import score
-from decktalk.stages.score.ledger import LEDGER_FILE, Ledger
+from decktalk.stages.score.ledger import Ledger
 from support.fakes import FakeVoice
 from support.git import committed_clone, git
 from support.projects import write_project
@@ -156,7 +157,7 @@ def test_a_run_nobody_approved_plans_every_item_and_writes_nothing(tmp_path: Pat
     result = score(inputs, a_run(tmp_path))
     assert {item.status for item in result.items} == {SoundStatus.PLANNED}
     assert result.written == ()
-    assert not (inputs.workspace.score_dir / LEDGER_FILE).exists()
+    assert not (inputs.workspace.ledger_path).exists()
 
 
 def test_an_item_that_is_only_planned_and_has_no_audio_is_an_unbought_sound_that_plays_silence(
@@ -436,7 +437,7 @@ def test_replace_score_without_spend_buys_nothing_and_keeps_every_held_item(
 def test_the_ledger_records_what_each_item_was_bought_with(tmp_path: Path, service: FakeService) -> None:
     inputs = an_inputs(tmp_path)
     score(inputs, a_run(tmp_path, spend=True))
-    ledger = Ledger.read(inputs.workspace.score_dir / LEDGER_FILE)
+    ledger = Ledger.read(inputs.workspace.ledger_path)
     assert ledger is not None
     assert {row.name for row in ledger.items} == {"ambience", "chime", "music"}
     chime = ledger.of("chime")
@@ -651,7 +652,7 @@ def test_a_ledger_that_does_not_read_is_refused_with_a_sentence_and_left_on_disk
 ) -> None:
     """The ledger is what this project paid for, so neither a rebuild nor a delete may decide to buy it again."""
     inputs = an_inputs(tmp_path)
-    path = inputs.workspace.score_dir / LEDGER_FILE
+    path = inputs.workspace.ledger_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(written, encoding="utf-8")
     with pytest.raises(InputError) as refused:

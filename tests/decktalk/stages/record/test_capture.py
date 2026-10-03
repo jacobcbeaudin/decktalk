@@ -71,7 +71,7 @@ def section_of(inputs: Inputs, number: int) -> PageSection:
 
 
 def cue_times() -> CueTimes:
-    row = CueTime(cue="1.1:open", phrase="one", seconds=1.5, nudge_seconds=0.0)
+    row = CueTime(id="1.1:open", phrase="one", seconds=1.5, nudge_seconds=0.0)
     return CueTimes(sections=(SectionCues(section=1, key="01", estimated=False, cues=(row,)),))
 
 

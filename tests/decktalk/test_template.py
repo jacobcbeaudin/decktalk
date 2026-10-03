@@ -170,7 +170,7 @@ def test_init_writes_no_copy_of_the_runtime_or_katex(tmp_path: Path, example_nam
 def test_a_harness_folder_that_could_not_be_a_link_is_a_copy_and_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Windows without developer mode refuses a link, and the copy it gets instead used to go unrecorded."""
+    """Windows without developer mode refuses a link, and the copy it gets instead is recorded."""
 
     def refused(*_args: object, **_kwargs: object) -> None:
         raise OSError("links are not allowed here")

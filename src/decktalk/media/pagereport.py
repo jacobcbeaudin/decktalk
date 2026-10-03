@@ -46,7 +46,7 @@ class PageWarningRow(Model):
 
 
 class CueRow(Model):
-    """One cue as the page ran it, in seconds on the narration clock."""
+    """One cue as the page ran it, in seconds on the section clock."""
 
     id: str = Field(description="The cue id of the cue that fired.")
     due: float = Field(description="The second the cue was due.")
@@ -183,7 +183,7 @@ class PageReport(Model):
 
         Frames before t=0 sit under the cover and are trimmed from the cut, so a scene may warm up
         there. A gap is recorded when it ends, so a gap that began before t=0 counts only what fell
-        after it, and a gap with no time on the narration clock counts nothing.
+        after it, and a gap with no time on the section clock counts nothing.
         """
         visible = (0.0 if gap.at is None else min(gap.ms, gap.at * MILLISECONDS) for gap in self.frame_gaps)
         return int(max((seen for seen in visible if seen > 0), default=0))

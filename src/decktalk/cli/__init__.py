@@ -1,4 +1,4 @@
-"""The command line: eighteen commands, each a thin client of one library call.
+"""The command line, where every command is a thin client of one library call.
 
     decktalk init my-lesson          write a project that already builds
     decktalk build --no-spend        run every stage, a placeholder for each missing take

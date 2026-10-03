@@ -31,14 +31,9 @@ from typing import Any
 
 import generated
 from decktalk.results import Scope
-from decktalk.settings import (
-    DOCUMENT_TABLES,
-    KEYS,
-    NUMBERS,
-    SHARED_TABLES,
-    Settings,
-    json_value,
-)
+from decktalk.settings import DOCUMENT_TABLES, KEYS, SHARED_TABLES, Settings
+from decktalk.settings.layers import json_value
+from decktalk.settings.numbers import NUMBERS
 from decktalk.tomlmap import Key
 
 ROOT = Path(__file__).resolve().parent.parent

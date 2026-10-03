@@ -28,7 +28,7 @@ from decktalk.events import Level
 from decktalk.findings import Finding
 from decktalk.inputs import CuedSection, Inputs
 from decktalk.inputs.cues import Spoken
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import measured_rows, overlap_findings, scene_entry
 from decktalk.pipeline import Artifact, Stage
@@ -147,7 +147,7 @@ def _overlap_findings(inputs: Inputs, sections: Sequence[SectionCues]) -> list[F
         entry = scene_entry(catalogs.get(section.page), section.scene)
         if block is None or entry is None:
             continue
-        times = {row.cue: row.seconds for row in block.cues if row.seconds is not None}
+        times = {row.id: row.seconds for row in block.cues if row.seconds is not None}
         found += [
             judged.model_copy(update={"stage": Stage.CUE})
             for judged in overlap_findings(

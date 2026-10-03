@@ -21,7 +21,7 @@ from decktalk.errors import ToolError
 from decktalk.events import Unit
 from decktalk.inputs import Inputs
 from decktalk.inputs.timeline import narration_offsets
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact, Stage

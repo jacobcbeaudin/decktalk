@@ -37,7 +37,7 @@ from decktalk.findings import Code, Finding, Location, ProjectPath, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.script import Segment
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media.browser import chromium
 from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
@@ -189,7 +189,7 @@ def _resolve(
     for one in found:
         run.found(one)
     times = {
-        block.section: {row.cue: row.seconds for row in block.cues if row.seconds is not None} for block in sections
+        block.section: {row.id: row.seconds for row in block.cues if row.seconds is not None} for block in sections
     }
     return sections, times
 
@@ -240,7 +240,7 @@ def _look(
     looked = Look()
     if not files:
         return looked
-    with chromium(cfg.browser_path, policy=cfg.page_policy) as browser:
+    with chromium(cfg.browser_path, policy=cfg.page_policy, spend=run.spend) as browser:
         opened: dict[str, tuple[Page, Assets]] = {}
         for page in files:
             if not inputs.path(page).exists():

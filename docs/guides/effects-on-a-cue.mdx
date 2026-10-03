@@ -51,7 +51,7 @@ the closing band lands.
     decktalk score --no-spend --json
     ```
 
-    {/* sample: decktalk score --no-spend --json on the starter with the [score.effects.tick] table above */}
+    {/* sample: decktalk score --no-spend --json, on a fresh decktalk init my-lesson with the [score.effects.tick] table above, which exits 0 */}
     ```json
     {
       "schema": 1,
@@ -74,7 +74,7 @@ the closing band lands.
         }
       ],
       "error": null,
-      "run": "85f631ca16b2",
+      "run": "467868184d72",
       "written": [],
       "spend": false,
       "items": [
@@ -101,7 +101,7 @@ the closing band lands.
         "averaged": false,
         "price_layer": "default"
       },
-      "elapsed_seconds": 0.004
+      "elapsed_seconds": 0.005
     }
     ```
 
@@ -126,8 +126,7 @@ the closing band lands.
   </Step>
 
   <Step title="Cue the sound">
-    A `[[mix.effects]]` row names the file, the section and the cue. The cue is a cue id, which is
-    the slide id, a colon and the cue name the page writes.
+    A `[[mix.effects]]` row names the file, the section and the cue. The cue is a [cue id](/concepts/cues#the-cue-id).
 
     ```toml decktalk.toml
     [[mix.effects]]

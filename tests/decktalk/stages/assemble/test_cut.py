@@ -10,10 +10,11 @@ from decktalk.artifacts import Takes
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import FindingRaised
 from decktalk.inputs import Inputs
-from decktalk.media import browser, ffmpeg
+from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.results import SectionKind, Substitute
 from decktalk.settings import BY_ID
+from decktalk.stages.assemble import slate
 from decktalk.stages.assemble.cut import (
     _judge_missing,
     concat,
@@ -316,7 +317,7 @@ def test_an_untrusted_project_draws_its_slate_untrusted(tmp_path, monkeypatch):
         asked.append(named["policy"])
         return draw_slate(out)
 
-    monkeypatch.setattr(browser, "render_slate", draw)
+    monkeypatch.setattr(slate, "render_slate", draw)
     (slot,) = inputs.document.clip_sections
     section_slate(inputs, open_run(tmp_path).run, slot)
     assert asked == ["untrusted"]
@@ -336,7 +337,7 @@ def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch
         draw_slate(out).write_text(picture, encoding="utf-8")
         return out
 
-    monkeypatch.setattr(browser, "render_slate", draw)
+    monkeypatch.setattr(slate, "render_slate", draw)
     base = "[project]\nname = 't'\n{video}[[section]]\nnumber = 1\nclip = 'media/slot.mp4'\nchapter = '{chapter}'\n"
     out = tmp_path / "build" / "sections" / "01.mp4"
     out.parent.mkdir(parents=True)

@@ -41,7 +41,7 @@ from typer.main import get_command
 from decktalk import __version__
 from decktalk.cli.options import DOCS, GLOBALS, SHARED, FailOn, Group, Panel, restated, shared_for
 from decktalk.cli.session import Globals, Session
-from decktalk.errors import Cancelled, DeckTalkError, ErrorCode, ErrorInfo
+from decktalk.errors import Cancelled, DeckTalkError, ErrorCode, ErrorInfo, Exit
 from decktalk.findings import Code
 from decktalk.results import Result
 
@@ -65,14 +65,24 @@ PURPOSE = (
     "into one narrated mp4."
 )
 
-EPILOG = """\
-Every command prints one JSON object with --json, carrying its own fields
-beside schema, ok, run, findings and error. Run decktalk schema for the whole
-contract in one call, and decktalk config explain KEY for a setting's
-sentence, range and default. Exit codes: 0 found nothing at the --fail-on
-threshold, 1 found something at it, 2 refused the command line, 3 could not
-run, 130 interrupted.
-Docs: https://docs.decktalk.ai/reference/cli"""
+EPILOG_WIDTH = 78
+"""How wide a command's closing paragraph is wrapped, which is the width the tree's own footer is written at."""
+
+EPILOG = "\n".join(
+    (
+        textwrap.fill(
+            "Every command prints one JSON object with --json, carrying its own fields beside schema, ok, run, "
+            "findings and error. Run decktalk schema for the whole contract in one call, and decktalk config "
+            "explain KEY for a setting's sentence, range and default. Exit codes: "
+            + ", ".join(f"{code.value} {code.phrase}" for code in Exit)
+            + ".",
+            width=EPILOG_WIDTH,
+            break_on_hyphens=False,
+        ),
+        "Docs: https://docs.decktalk.ai/reference/cli",
+    )
+)
+"""The tree's own footer, whose exit codes are read from the one exit table."""
 
 SHARED_LINE = "-p, --json, --events, --color, --no-input, -v and -q work on every command."
 """The one line a command's help spends on the eight flags every command carries."""
@@ -107,9 +117,6 @@ _current: Session | None = None
 
 _order = itertools.count()
 """Where each command sits in the source, which is the order its group prints it in."""
-
-EPILOG_WIDTH = 78
-"""How wide a command's closing paragraph is wrapped, which is the width the tree's own footer is written at."""
 
 CONTEXT = {"help_option_names": ["-h", "--help"], "show_default": False}
 """Settings every command shares. A default is written into its own sentence, never in brackets."""

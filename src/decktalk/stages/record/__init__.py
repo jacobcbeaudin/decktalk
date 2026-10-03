@@ -45,10 +45,10 @@ from decktalk.events import Level, SectionDone, SectionStart, Unit
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs, PageSection
 from decktalk.logs import cache_decision
-from decktalk.machine import Run
-from decktalk.media import browser
-from decktalk.media.browser import Recording
+from decktalk.machine.run import Run
+from decktalk.media import browser, recording
 from decktalk.media.origin import Allowed
+from decktalk.media.pagereport import Recording
 from decktalk.page import CAPTURE_FPS, SECOND_DIGITS
 from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import RecordResult, SectionRecording
@@ -210,9 +210,9 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, 
     recorder, video = settings.record, settings.video
     allowed = Allowed.of(inputs.root, inputs.served_paths())
     documents = inputs.documents()
-    recording: Recording | None = None
+    taken: Recording | None = None
     for attempt in range(1, recorder.retries + 2):
-        recording = browser.record_page(
+        taken = recording.record_page(
             opened,
             job.url,
             job.seconds,
@@ -228,7 +228,7 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, 
             documents=documents,
             check=check,
         )
-        gap = recording.report.worst_gap_ms
+        gap = taken.report.worst_gap_ms
         if gap <= recorder.frame_gap_max_ms or attempt > recorder.retries:
             break
         # A retry is a standard record, so a host's own logging hears why a section took twice as long.
@@ -248,15 +248,15 @@ def capture(inputs: Inputs, run: Run, opened: Browser, job: Job, sink: LogSink, 
                 }
             },
         )
-    if recording is None:  # pragma: no cover  (the loop runs at least once)
+    if taken is None:  # pragma: no cover  (the loop runs at least once)
         raise InputError(f"section {job.section.number} was not recorded.")
-    for name in recording.page_errors:
+    for name in taken.page_errors:
         run.note(f"Section {job.section.number} threw while it was recorded: {name}", level=Level.ERROR)
-    for name in recording.missing:
+    for name in taken.missing:
         run.note(
             f"Section {job.section.number} asked for {name}, which the project does not have.", level=Level.WARNING
         )
-    return recording
+    return taken
 
 
 def recorded(inputs: Inputs, run: Run, opened: Browser, job: Job, check: Callable[[], None]) -> SectionRecording:
@@ -355,7 +355,9 @@ def record(
     recorder = inputs.settings.record
 
     def opening(stack: ExitStack) -> Browser:
-        return stack.enter_context(browser.chromium(recorder.browser_path, policy=recorder.page_policy))
+        return stack.enter_context(
+            browser.chromium(recorder.browser_path, policy=recorder.page_policy, spend=run.spend)
+        )
 
     def one(opened: Browser, number: int, halt: Halt) -> SectionRecording:
         with run.section(Stage.RECORD, number):

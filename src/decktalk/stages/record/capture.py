@@ -33,13 +33,10 @@ from decktalk.artifacts import CueTimes, RecordingLog, content_digest, input_dig
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
-from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, TIME_MARK, Q
+from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, T0_SIGNAL, TIME_MARK, Q
 from decktalk.results import Word
 
 log = logging.getLogger(__name__)
-
-SIGNAL = "signal"
-"""What `t0` is set to so the page starts its clock on the recorder's signal rather than on a second."""
 
 WORD_DIGITS = 2
 """How precisely a word's start is written into the page URL, which is a hundredth of a second."""
@@ -108,7 +105,7 @@ def scene_url(inputs: Inputs, section: PageSection, params: dict[Q, str]) -> str
     words = words_query(inputs, section)
     if words and Q.WORDS not in query:
         query[Q.WORDS] = words
-    query[Q.T0] = SIGNAL
+    query[Q.T0] = T0_SIGNAL
     return page_url(section.page, query)
 
 

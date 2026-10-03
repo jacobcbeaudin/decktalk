@@ -23,7 +23,7 @@ from decktalk.captions import display_words
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.pipeline import Artifact
 from decktalk.results import SectionWords, WordsResult
 from decktalk.stages import selects

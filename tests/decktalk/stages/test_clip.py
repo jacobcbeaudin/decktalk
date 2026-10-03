@@ -10,7 +10,7 @@ import pytest
 from decktalk.artifacts import Words, words_file
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.results import ClipResult, Word
 from decktalk.stages.clip import clip
 from support.fakes import FakeFfmpeg
@@ -180,7 +180,7 @@ def test_the_filter_graph_carries_what_the_clip_asked_for(
         pytest.param({"start": 0.401, "end": 0.409}, "holds no whole frame", id="a span holding no whole frame"),
         pytest.param({"hold_seconds": -1.0}, "less than no time", id="a hold of less than no time"),
         # A clip written over the cut it reads would leave the film with no section at all.
-        pytest.param({"out": Path("build/sections/01.mp4")}, "which is the section cut", id="an out over the cut"),
+        pytest.param({"out": Path("build/sections/01.mp4")}, "which is the section video", id="an out over the cut"),
     ],
 )
 def test_a_clip_the_project_cannot_cut_is_refused(tmp_path: Path, options: dict[str, object], match: str) -> None:

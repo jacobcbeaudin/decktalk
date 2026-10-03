@@ -12,12 +12,12 @@ from decktalk.events import Level, RunLog
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.page import Q
-from decktalk.pipeline import Artifact, Stage
+from decktalk.pipeline import Stage
 from decktalk.results import SectionKind, StatusResult
+from decktalk.stages import kept, voice_model
 from decktalk.stages import status as stage
-from decktalk.stages import voice_model
 from decktalk.stages.narrate.plan import take_inputs
-from decktalk.stages.status import BUILT, next_command, source_of, status, voiced_text
+from decktalk.stages.status import next_command, source_of, status, voiced_text
 from support.fakes import FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
@@ -63,11 +63,6 @@ def take_on_disk(inputs: Inputs, *, spoken: str = "Hello there again.", voiced: 
 # ---- what to do next ---------------------------------------------------------------------------
 
 
-def test_every_artifact_the_pipeline_declares_says_when_it_is_built() -> None:
-    """A stage added to the pipeline reaches this report, so a new artifact may not be left out."""
-    assert set(BUILT) == set(Artifact)
-
-
 def built_up_to(inputs: Inputs, steps: int) -> None:
     """The first `steps` artifacts on disk in the order a build makes them, with the take speaking the script."""
     made = [
@@ -104,12 +99,12 @@ def test_a_project_is_told_the_next_stage_its_artifacts_leave(tmp_path: Path, st
 def measured(inputs: Inputs) -> None:
     """The record a build leaves after it assembled this film and verified it."""
     options = {"only": None}
-    made = stage.assemble_digest(inputs, options)
+    made = kept.assemble_digest(inputs, options)
     film = inputs.relative(inputs.workspace.film).as_posix()
-    stage.Kept(
-        assemble=stage.KeptStage(digest=made, options=options, outputs={film: file_digest(inputs.workspace.film)}),
-        verify=stage.KeptStage(digest=stage.verify_digest(inputs, made, options), options=options),
-    ).write(stage.kept_path(inputs))
+    kept.Kept(
+        assemble=kept.KeptStage(digest=made, options=options, outputs={film: file_digest(inputs.workspace.film)}),
+        verify=kept.KeptStage(digest=kept.verify_digest(inputs, made, options), options=options),
+    ).write(inputs.workspace.kept_path)
 
 
 def test_a_film_the_last_build_measured_leaves_nothing_next(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

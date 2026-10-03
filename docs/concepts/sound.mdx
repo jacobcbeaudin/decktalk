@@ -227,8 +227,8 @@ without an edit to its audio. `[mix] music_markers` names the file.
   "boost_db": 3,
   "boost_seconds": 2,
   "markers": [
-    { "name": "open", "section": 1, "on": "$start" },
-    { "name": "turn", "section": 3, "on": "the whole idea", "mute_seconds": 0.4 }
+    { "name": "open", "section": 1, "phrase": "$start" },
+    { "name": "turn", "section": 3, "phrase": "the whole idea", "mute_seconds": 0.4 }
   ]
 }
 ```
@@ -240,8 +240,8 @@ without an edit to its audio. `[mix] music_markers` names the file.
 | `markers` | top level | none | The markers. |
 | `name` | marker | none | The name a warning uses for it. |
 | `section` | marker | required | The section that holds the phrase. |
-| `on` | marker | `$start` | A spoken phrase, `$start` or `$end`. |
-| `offset` | marker | 0 | Seconds added to the matched second. |
+| `phrase` | marker | `$start` | A spoken phrase, `$start` or `$end`. |
+| `offset_seconds` | marker | 0 | Seconds added to the matched second. |
 | `occurrence` | marker | 1 | Which match of the phrase to take. |
 | `case_sensitive` | marker | false | Whether the match compares case. |
 | `mute_seconds` | marker | 0 | Seconds of silence before the swell starts. |

@@ -62,7 +62,7 @@ def test_a_providers_words_that_do_not_read_say_only_voicing_the_take_again_give
 def test_a_providers_words_carry_the_fingerprint_of_the_audio_they_were_sent_with(tmp_path: Path) -> None:
     audio = tmp_path / "take.mp3"
     audio.write_bytes(b"the take's own bytes")
-    printed = AudioPrint.of(audio.read_bytes())
+    printed = AudioPrint.of(audio.read_bytes(), suffix=".mp3")
     assert (printed.bytes, printed.blake3) == (audio.stat().st_size, file_digest(audio))
     path = ProviderWords(words=SPOKEN.words, audio=printed).write(tmp_path / words_file("abc123"))
     assert ProviderWords.read(path) == ProviderWords(words=SPOKEN.words, audio=printed)

@@ -1,12 +1,12 @@
 """The one command that prints a contract rather than a result.
 
-Without it the JSON contract is discoverable only by running commands and reading what comes back,
-which fails the thesis outright: an agent must be able to read the whole instruction set before it
-runs anything. Two calls are enough. `decktalk schema` prints every command, every flag, every exit
-code, every error code and every finding code, and `decktalk schema NAME` prints one document whole.
+An agent must be able to read the whole instruction set before it runs anything, rather than finding
+the JSON contract by running commands and reading what comes back. Two calls are enough. `decktalk
+schema` prints every command, every flag, every exit code, every error code and every finding code,
+and `decktalk schema NAME` prints one document whole.
 
 It is the one exemption from the envelope. A JSON Schema document inside an envelope is not that
-document, and a reserved key called `schema` set to 2 inside a document about schemas is unreadable.
+document, and a reserved key called `schema` set to 1 inside a document about schemas is unreadable.
 It reads no project, opens no socket and writes nothing.
 """
 

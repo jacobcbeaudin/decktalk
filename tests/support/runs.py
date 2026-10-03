@@ -9,7 +9,8 @@ from typing import Any
 
 from decktalk.errors import Cancel
 from decktalk.events import Event, RunLog
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Machine, Toolchain
+from decktalk.machine.run import Run
 from decktalk.settings import ToolsConfig
 
 RUN_ID = "r1"

@@ -143,7 +143,8 @@ def _findings() -> str:
 def _schema_names() -> str:
     """Every name `decktalk schema NAME` answers to, which is the whole contract in one list."""
     names = ", ".join(f"`{name}`" for name in catalog.names())
-    return f"\n## The schemas\n\n`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes {names}.\n"
+    whole = "`decktalk schema` prints the whole instruction set."
+    return f"\n## The schemas\n\n{whole} `decktalk schema NAME` takes {names}.\n"
 
 
 def documents() -> dict[Path, str]:

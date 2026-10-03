@@ -60,15 +60,22 @@ class Words(Stored):
 
 
 class AudioPrint(Model):
-    """The size and the BLAKE3 of one take's audio, which is how a good copy of it is told from a damaged one."""
+    """The size, the BLAKE3 and the suffix of one take's audio, which is how a good copy is found and told apart.
+
+    The suffix is the format the take was written in, so a take found after the voice moved to another
+    format is still played under the name it was written with.
+    """
 
     bytes: int = Field(ge=0, description="How many bytes the take's audio file holds.")
     blake3: str = Field(description="The BLAKE3 of the take's audio, as `file_digest` spells it.")
+    suffix: str | None = Field(
+        None, description="The suffix the take's audio file is named with, or null when the file records none."
+    )
 
     @classmethod
-    def of(cls, audio: builtins.bytes) -> AudioPrint:
-        """The fingerprint of these bytes, which is the audio a provider answered with."""
-        return cls(bytes=len(audio), blake3=content_digest(audio))
+    def of(cls, audio: builtins.bytes, *, suffix: str) -> AudioPrint:
+        """The fingerprint of these bytes, which is the audio a provider answered with, written under `suffix`."""
+        return cls(bytes=len(audio), blake3=content_digest(audio), suffix=suffix)
 
 
 class ProviderWords(Words):
@@ -123,6 +130,19 @@ def pair_fault(audio: Path, words: Path, *, whole: bool = False) -> str | None:
     return None
 
 
+def recorded_suffix(words: Path) -> str | None:
+    """The suffix a take's words file says its audio was written under, or None when it says none or cannot be read.
+
+    A words file that cannot be read is judged by `pair_fault`, which says what is wrong with it, so
+    here it only means the take is looked for under the voice's own suffix.
+    """
+    try:
+        said = ProviderWords.parse(words)
+    except Unreadable:  # silent: pair_fault reads the same file and says what is wrong with it
+        return None
+    return said.audio.suffix if said is not None and said.audio is not None else None
+
+
 def words_file(digest: str) -> str:
     """The name of the words file of the take with this digest."""
     return f"{digest}{WORDS_SUFFIX}"
@@ -131,6 +151,7 @@ def words_file(digest: str) -> str:
 __all__ = [
     "WORDS_SUFFIX",
     "AudioPrint",
+    "recorded_suffix",
     "ClipWords",
     "EstimatedWords",
     "ProviderWords",

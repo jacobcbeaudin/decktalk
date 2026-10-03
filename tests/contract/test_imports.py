@@ -9,10 +9,9 @@ order inside it.
 The walk reads the AST rather than the imports Python happens to run, so an import hidden in a
 function body counts exactly as much as one at the top of the file. It also resolves the alias form,
 `from decktalk.stages import record`, which names a module without ever spelling its dotted path:
-that form is how a stage reaches its neighbour and it was invisible to this guard before. The other
-blind spot is closed by `test_every_import_target_resolves_to_a_ranked_module`, which fails on a
-target that no longer exists, because an import of a deleted module used to pass the rank comparison
-by being unrankable rather than by being allowed.
+that form is how a stage reaches its neighbour. `test_every_import_target_resolves_to_a_ranked_module`
+fails on a target that no longer exists, so an import of a deleted module cannot pass the rank
+comparison by being unrankable rather than by being allowed.
 
 The ranks hold between packages and say nothing inside one, so two modules of one package could
 import each other and pass. The imports are also read as a graph of modules, and that graph has no
@@ -48,10 +47,8 @@ LAYERS: dict[str, tuple[str, ...]] = {
 """Every top-level module and package of decktalk under its layer, lowest first, each ranked by where it stands.
 
 A module's rank is its place in the whole table read top to bottom, so a layer is always one run of
-ranks and no two modules share one. `project` ranks above `stages` because it calls a stage by name
-through `import_module`, which is a string and which no AST walk can see. Declaring the rank the
-code really has is what keeps that one edge honest, and it is why `stages` may not import `project`
-back.
+ranks and no two modules share one. `project` ranks above `stages` because it calls the stages,
+which is why `stages` may not import `project` back.
 """
 
 RANKS: dict[str, tuple[str, int]] = {
@@ -61,15 +58,18 @@ RANKS: dict[str, tuple[str, int]] = {
 """Every module's layer and rank, read off `LAYERS` in order."""
 
 ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
-    # build runs the six stages in the order `PIPELINE` gives them.
-    ("stages.build", "stages.narrate"): "by design",
-    ("stages.build", "stages.cue"): "by design",
-    ("stages.build", "stages.record"): "by design",
-    ("stages.build", "stages.score"): "by design",
-    ("stages.build", "stages.assemble"): "by design",
-    ("stages.build", "stages.verify"): "by design",
+    # The stage table holds the six stages' functions, which build calls in the order `PIPELINE` gives them.
+    ("stages.table", "stages.narrate"): "by design",
+    ("stages.table", "stages.cue"): "by design",
+    ("stages.table", "stages.record"): "by design",
+    ("stages.table", "stages.score"): "by design",
+    ("stages.table", "stages.assemble"): "by design",
+    ("stages.table", "stages.verify"): "by design",
+    ("stages.build", "stages.table"): "how each stage is called",
+    ("stages.build", "stages.narrate"): "the price of the takes, held to the run's ceiling before anything is bought",
+    ("stages.build", "stages.score"): "the price of the score, held to the run's ceiling before anything is bought",
     ("stages.build", "stages.storyboard"): "the checkpoint drawn before any credit is spent",
-    ("stages.build", "stages.status"): "an unchanged build keeps what the kept record says it already made",
+    ("stages.build", "stages.kept"): "an unchanged build keeps what the kept record says it already made",
     # check rehearses what the stages downstream of it would judge, without producing any of it.
     ("stages.check", "stages.narrate"): "by design",
     ("stages.check", "stages.cue"): "by design",
@@ -87,8 +87,10 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     # A take is named by narrate's digest alone, so the report that lists the takes no section plays
     # names each section's take the way narrate does rather than spelling a digest of its own.
     ("stages.status", "stages.narrate"): "the digest a section's take is named by",
+    # The film still stands, and the next command is named, by the one rule a build keeps a stage by.
+    ("stages.status", "stages.kept"): "the rule that decides the film and its measurement still stand",
     # The score is ready to mix once its bought music is joined, which the stage that joins it decides.
-    ("stages.status", "stages.score"): "the rule that decides the score is ready to mix",
+    ("stages.kept", "stages.score"): "the rule that decides the score is ready to mix",
     # A clip is cut on the section clock, which is the one thing `words` computes.
     ("stages.clip", "stages.words"): "the section clock a clip is cut on",
     # Every stage that fans its sections out to workers shares one pool, so they all halt alike.

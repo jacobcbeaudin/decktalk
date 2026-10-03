@@ -111,7 +111,7 @@ const DeckTalk = {
   },
   /** Read the page and start it, which a page that loads the runtime late may need to call itself. */
   start: boot,
-  /** Start the narration clock, which is what the recorder sends once its cover has come off. */
+  /** Start the section clock, which is what the recorder sends once its cover has come off. */
   startClock: start,
   /** Hold readiness until a promise of the page's own has settled. */
   waitFor(promise: unknown) {

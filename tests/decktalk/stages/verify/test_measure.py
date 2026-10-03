@@ -9,7 +9,7 @@ import pytest
 from decktalk.events import Event, Level, RunLog
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import frames
 from decktalk.media.frames import Decoded
 from decktalk.media.pagereport import PageReport
@@ -164,7 +164,7 @@ def test_a_cue_that_passed_by_a_thin_margin_is_a_warning(
 def test_a_cue_whose_onset_no_frame_shows_is_reported_and_never_passed_over(
     assembled: Callable[..., Inputs], measured: Measurements
 ) -> None:
-    """A null offset used to read as a passing row, which is the hole CUE_NO_ONSET closes."""
+    """A null offset never reads as a passing row: CUE_NO_ONSET flags it."""
     inputs = assembled(CUES)
     measured.changed = 9.0
     measured.series = []

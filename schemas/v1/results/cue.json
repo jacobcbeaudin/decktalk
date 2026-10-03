@@ -115,9 +115,9 @@
       "additionalProperties": false,
       "description": "One cue resolved against the words its section speaks.",
       "properties": {
-        "cue": {
+        "id": {
           "description": "The cue's cue id, which is its slide and its local name.",
-          "title": "Cue",
+          "title": "Id",
           "type": "string"
         },
         "phrase": {
@@ -147,7 +147,7 @@
         }
       },
       "required": [
-        "cue",
+        "id",
         "phrase"
       ],
       "title": "CueTime",

@@ -22,12 +22,13 @@ from typer.main import get_command
 
 from decktalk import page, settings
 from decktalk.cli.app import PROGRAM, Command, Parameter, app
-from decktalk.errors import ErrorCode
+from decktalk.errors import ErrorCode, Exit
 from decktalk.events import Line
 from decktalk.findings import Code, Finding
 from decktalk.pipeline import PIPELINE
 from decktalk.results import RESULTS, Result, Scope
-from decktalk.settings import json_value
+from decktalk.settings.layers import json_value
+from decktalk.settings.numbers import NUMBERS
 from decktalk.tomlmap import PUBLISHED, Key
 
 PURPOSE_LIMIT = 120
@@ -35,15 +36,6 @@ PURPOSE_LIMIT = 120
 
 SETTINGS_KEYSPACE = "settings"
 """What the `--set` parameter points a reader at, which is the key space rather than a copy of it."""
-
-EXITS: tuple[tuple[int, str], ...] = (
-    (0, "The command ran and found nothing at or above the threshold --fail-on set."),
-    (1, "The command ran and found something at or above the threshold --fail-on set."),
-    (2, "The command line was refused, which is USAGE or APPROVAL."),
-    (3, "The command could not run, which is every other error code."),
-    (130, "The caller stopped the run."),
-)
-"""Every code a run can exit with, which is a two-way branch for an agent and a table for a reader."""
 
 NAMES: dict[type[Result], str] = {model: name for name, model in RESULTS.items()}
 """Each result model by the name `decktalk schema NAME` prints it under, read back off the registry."""
@@ -159,7 +151,7 @@ def globals_() -> list[dict[str, Any]]:
 
 def exits() -> list[dict[str, Any]]:
     """Every exit code with the sentence that says what it means."""
-    return [{"exit": code, "sentence": sentence} for code, sentence in EXITS]
+    return [{"exit": code.value, "sentence": code.sentence} for code in Exit]
 
 
 def deciding(code: Code) -> tuple[str, ...]:
@@ -209,7 +201,7 @@ def settings_schema(*, scope: Scope | None = None) -> dict[str, Any]:
                 "sentence": number.sentence,
                 "decides": [code.value for code in number.decides],
             }
-            for number in settings.NUMBERS
+            for number in NUMBERS
         ],
     }
 

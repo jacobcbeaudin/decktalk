@@ -14,12 +14,12 @@ every picture after it without anyone editing a timeline.
 
 That is the whole design. Each decision below follows from it.
 
-## The thesis this release is shaped by
+## The command line is the instruction set
 
-The command line is the instruction set. The settings and the page attributes are what an agent changes, each
+The settings and the page attributes are what an agent changes, each
 one named, documented, ranged and defaulted. The agent is the implementer. A surface an agent cannot
-discover, read and act on from the command line and the schemas alone is a surface that fails the
-thesis, so every published name has exactly one home in the code and every rendering of it is
+discover, read and act on from the command line and the schemas alone is a surface that fails this
+rule, so every published name has exactly one home in the code and every rendering of it is
 generated from that home.
 
 Three commands make the whole instruction set readable without running a stage. `decktalk --help`

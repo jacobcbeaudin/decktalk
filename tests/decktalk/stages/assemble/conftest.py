@@ -15,7 +15,7 @@ from decktalk.artifacts import CueTimes, Take, Takes, Words
 from decktalk.errors import Cancel
 from decktalk.events import FindingRaised, RunLog, StageProgress
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages.assemble.cut import Rendered
@@ -183,7 +183,7 @@ def cue_times(inputs: Inputs, rows: dict[int, dict[str, float]]) -> CueTimes:
                 section=number,
                 key=f"{number:02d}",
                 estimated=False,
-                cues=tuple(CueTime(cue=cue, phrase=cue, seconds=at) for cue, at in cues.items()),
+                cues=tuple(CueTime(id=cue, phrase=cue, seconds=at) for cue, at in cues.items()),
             )
             for number, cues in rows.items()
         )

@@ -1,7 +1,7 @@
 """Every generator under `scripts/` runs through one runner, so a caller never guesses its flags.
 
 CI writes with `--write` on a release pull request and checks with `--check` everywhere else. A
-generator that wrote when run with no flag broke the release job that passed `--write` to it, so
+generator that guesses a mode when run with no flag disagrees with the job that names one, so
 every `build_*.py` hands its files to `scripts/generated.py`, and running one with neither mode or
 with both is refused before it reads or writes anything.
 """

@@ -1,7 +1,7 @@
 """The surface table: one row per command, and the test is total in both directions.
 
-Four sets used to be asserted against each other here, which meant four places to add a row and four
-ways to forget one. `SURFACE` is that assertion as one table. Each row names a command, the callable
+Four sets asserted against each other would be four places to add a row and four ways to forget
+one. `SURFACE` is that assertion as one table. Each row names a command, the callable
 that implements it, the result that callable returns, whether the command opens a run and whether it
 writes a file, and what drives it. A stage added without a command, a command added without a result,
 or a result added without either, fails here by name.
@@ -29,7 +29,6 @@ import pytest
 from pydantic import TypeAdapter
 
 import decktalk
-from decktalk import settings
 from decktalk.cli import catalog
 from decktalk.errors import DeckTalkError
 from decktalk.events import EVENTS, Event, Line
@@ -66,6 +65,7 @@ from decktalk.results import (
     VerifyResult,
     WordsResult,
 )
+from decktalk.settings import edit
 from support.commands import RESERVED_KEYS
 from support.paths import REPO
 
@@ -79,7 +79,7 @@ HERE = "here"
 """What a row's driver says when this file drives it for real, which needs no tool of any kind."""
 
 CLI_TESTS = "tests/decktalk/cli"
-"""Where a row the command line owns whole is driven, which is a directory because T8 names its own files."""
+"""Where a row the command line owns whole is driven, a directory because the CLI suite names its own files."""
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,14 @@ class Row:
 
 SURFACE: tuple[Row, ...] = (
     Row("init", "decktalk:init", InitResult, True, True, HERE),
-    Row("install", "decktalk.machine:Machine.install", InstallResult, True, False, "tests/decktalk/test_machine.py"),
+    Row(
+        "install",
+        "decktalk.machine:Machine.install",
+        InstallResult,
+        True,
+        False,
+        "tests/decktalk/machine/test_machine.py",
+    ),
     Row("doctor", "decktalk.machine:Machine.doctor", DoctorResult, True, False, HERE),
     Row("status", "decktalk.project:Project.status", StatusResult, True, False, HERE),
     Row("check", "decktalk.project:Project.check", CheckResult, True, True, HERE),
@@ -197,7 +204,7 @@ SURFACE: tuple[Row, ...] = (
     ),
     Row(
         "config set",
-        "decktalk.settings:write",
+        "decktalk.settings.edit:write",
         ConfigSetResult,
         False,
         True,
@@ -206,7 +213,7 @@ SURFACE: tuple[Row, ...] = (
     ),
     Row(
         "config unset",
-        "decktalk.settings:unset",
+        "decktalk.settings.edit:unset",
         ConfigUnsetResult,
         False,
         True,
@@ -350,14 +357,14 @@ def test_a_plain_row_returns_the_result_it_declares(row: Row):
 
 
 def test_serve_returns_an_origin_that_carries_its_result():
-    """R43 gives `serve` an object a caller holds open, so the result is what that object carries."""
+    """`serve` gives a caller an object it holds open, so the result is what that object carries."""
     assert Project.serve.__annotations__.get("return") == Origin.__name__
     assert Origin.__init__.__annotations__.get("result") == ServeResult.__name__
 
 
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_the_run_and_the_written_fields_are_declared_exactly_where_the_table_says(row: Row):
-    """Founder decision 13: four keys on the base, and these two declared by the commands that earn them."""
+    """Four keys on the base, and these two declared only by the commands that earn them."""
     declared = row.model.model_fields
     assert ("run" in declared) == row.opens_run, f"{row.model.__name__} and the table disagree about run"
     assert ("written" in declared) == row.writes, f"{row.model.__name__} and the table disagree about written"
@@ -421,7 +428,7 @@ def test_the_schema_number_is_the_folder_the_schemas_are_published_in():
 
 @pytest.mark.parametrize("row", MODEL_ROWS, ids=IDS)
 def test_the_schema_is_one_flat_object_with_the_four_reserved_keys(row: Row):
-    """The founder's decided contract: its own fields plus four keys, with no envelope around them."""
+    """The JSON contract: a result's own fields plus four keys, with no envelope around them."""
     schema = row.model.model_json_schema(by_alias=True)
     properties = schema["properties"]
     assert set(RESERVED_KEYS) <= set(properties), sorted(set(RESERVED_KEYS) - set(properties))
@@ -435,7 +442,7 @@ def test_the_schema_is_one_flat_object_with_the_four_reserved_keys(row: Row):
     "row", [row for row in MODEL_ROWS if row.opens_run], ids=[r.command or "apply" for r in MODEL_ROWS if r.opens_run]
 )
 def test_the_run_id_is_declared_volatile(row: Row):
-    """R11: a value that differs between two identical runs is declared, so a golden read drops it."""
+    """A value that differs between two identical runs is declared, so a golden read drops it."""
     schema = row.model.model_json_schema(by_alias=True)
     assert schema["properties"]["run"].get("volatile") is True, f"{row.model.__name__}.run is not declared volatile"
 
@@ -451,7 +458,7 @@ def test_a_measured_duration_is_declared_volatile(row: Row):
 
 
 def test_a_finding_carries_everything_a_reader_dispatches_on():
-    """R9: the code, the sentence, the severity, the object judged, the fix and the page that explains it."""
+    """The code, the sentence, the severity, the object judged, the fix and the page that explains it."""
     declared = set(Finding.model_fields)
     assert {"code", "message", "severity", "location", "fix", "docs"} <= declared
     assert "where" in Location.model_fields
@@ -549,7 +556,7 @@ def test_every_event_a_driven_call_emitted_validates_back(project: Project, coll
 def test_the_settings_writer_reports_what_a_config_set_would_change(project: Project, capsys):
     """`config set` is the writer's record rendered, so the writer is what this row really drives."""
     capsys.readouterr()
-    written = settings.write(
+    written = edit.write(
         project.root / "decktalk.toml",
         "video.width",
         "1280",
@@ -567,7 +574,7 @@ def test_the_settings_writer_reports_what_a_config_set_would_change(project: Pro
 
 def test_the_settings_remover_reports_what_a_config_unset_would_change(project: Project):
     """`config unset` takes the layer below back, and writing a validated file is library work."""
-    removed = settings.unset(
+    removed = edit.unset(
         project.root / "decktalk.toml", "video.width", scope=Scope.PROJECT, environ=project.machine.environ
     )
     assert isinstance(removed, ConfigUnsetResult)

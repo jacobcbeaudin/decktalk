@@ -77,10 +77,10 @@ RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
 """Truth: the replies that say to try again, which are a slower pace or a failure on the service's side."""
 
 FIRST_WAIT_SECONDS = 1.0
-"""How long the first retry waits, which is doubled for each one after it."""
+"""Calibration: how long the first retry waits, which is doubled for each one after it."""
 
 LONGEST_WAIT_SECONDS = 30.0
-"""The longest any one retry waits, whatever the doubling or the service's `Retry-After` asks for."""
+"""Calibration: the longest any one retry waits, whatever the doubling or the service's `Retry-After` asks for."""
 
 BROKEN_REPLIES = (TimeoutError, ConnectionError, http.client.HTTPException)
 """Truth: how a reply fails once the request was sent, which urllib raises bare rather than as a `URLError`.

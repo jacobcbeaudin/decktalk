@@ -16,7 +16,7 @@ smoke installs the wheel into an environment with no project and nothing else in
 
 The tag check is a version comparison and never a string comparison. A git tag is semver and a wheel
 is PEP 440, so `v0.5.0-rc1` and `0.5.0rc1` are one version spelled two ways, and comparing the text
-would refuse every release candidate the founder cuts. The tag is read from `--tag`, which the
+would refuse every release candidate. The tag is read from `--tag`, which the
 release workflow passes, and when no tag is named the check says out loud that it judged nothing
 rather than passing quietly.
 

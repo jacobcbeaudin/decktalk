@@ -32,9 +32,6 @@ from decktalk.pagescan import scene_cues, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import counted
 
-JSON_INDENT = 2
-"""How a scaffolded `cues.json` is indented, which keeps a diff of one readable in a terminal."""
-
 EMPTY_PHRASE = ""
 """What a scaffolded row leaves in `phrase`, because the phrase a cue lands on is the author's own line."""
 
@@ -212,7 +209,7 @@ def _create_findings(declared: Mapping[int, Sequence[str]], *, where: Path, stag
             "each waiting for the words you write in its `phrase`."
         ),
         applicability=Applicability.SAFE,
-        edits=(Edit(file=where, line=1, old=None, new=json_text(document, indent=JSON_INDENT)),),
+        edits=(Edit(file=where, line=1, old=None, new=json_text(document, indent=2)),),
     )
     return [
         judge(

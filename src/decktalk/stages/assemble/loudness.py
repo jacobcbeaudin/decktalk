@@ -13,7 +13,7 @@ from pathlib import Path
 
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio
 from decktalk.media.audio import gain
 from decktalk.pipeline import Stage

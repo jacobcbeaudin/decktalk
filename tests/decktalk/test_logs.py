@@ -25,7 +25,9 @@ from decktalk.errors import Cancel, ErrorCode, NotBuiltError, ProjectLocked, Pro
 from decktalk.events import Event, Level, Line, RunDone, RunLog
 from decktalk.findings import Applicability, Code, CommandFix
 from decktalk.logs import HANDLER, LOGGER, RunHandler, install, level_of, logging_into, within
-from decktalk.machine import Machine, Run, Toolchain, apply_fix
+from decktalk.machine import Machine, Toolchain
+from decktalk.machine.fixes import apply_fix
+from decktalk.machine.run import Run
 from decktalk.media import browser, ffmpeg, origin
 from decktalk.media.environment import children_see
 from decktalk.pipeline import Outcome, Stage
@@ -428,7 +430,7 @@ def installer_hangs(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> N
 
 def fix_command_fails(run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
     failed = subprocess.CompletedProcess([], 2, b"", b"OSError: the cache is read-only\n")
-    monkeypatch.setattr("decktalk.machine.subprocess.run", lambda argv, **_kwargs: failed)
+    monkeypatch.setattr("decktalk.machine.fixes.subprocess.run", lambda argv, **_kwargs: failed)
     fix = CommandFix(title="t", applicability=Applicability.SAFE, command=("decktalk", "install"))
     apply_fix(run, Code.FILE_MISSING, fix, root=tmp, scope=Scope.MACHINE, unsafe=False)
 
@@ -464,7 +466,7 @@ def browser_is_fetched_again(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Pa
     chromium = FakeChromium(executable, refusal="error while loading shared libraries: libnss3.so", refusals=1)
     fetched = subprocess.CompletedProcess([], 0, b"", b"")
     monkeypatch.setattr(chromium_fetch.subprocess, "run", lambda cmd, **_kwargs: fetched)
-    browser.launch(chromium.driver(), policy=browser.TRUSTED)
+    browser.launch(chromium.driver(), policy=browser.TRUSTED, spend=False)
 
 
 def run_is_cancelled(run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
@@ -528,7 +530,7 @@ FAILURES: dict[str, tuple[Callable[..., object], Record | None, Ended | None, fl
         Ended(Outcome.FAILED, ErrorCode.TOOL),
         600.0,
     ),
-    "a fix command fails": (fix_command_fails, Record(Level.WARNING, "machine", CALL), None, 600.0),
+    "a fix command fails": (fix_command_fails, Record(Level.WARNING, "machine.fixes", CALL), None, 600.0),
     "the origin cannot answer": (
         router_breaks,
         Record(Level.WARNING, "media.origin", frozenset({"url", "error"})),

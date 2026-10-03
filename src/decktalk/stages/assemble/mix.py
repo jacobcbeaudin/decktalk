@@ -7,9 +7,9 @@ effect lands on its resolved cue. A clip between two page sections, or a hold, p
 narration, so the track plays in the runs `inputs.timeline` splits it into, each from where its
 first section starts.
 
-One function per layer, because the graph used to be one body whose comments were the names these
-functions now carry. A layer that cannot be laid says so through the run and lays nothing, since a
-soundtrack missing its music is still a soundtrack and a film that stopped for one is not.
+One function per layer, each named for the part of the graph it lays. A layer that cannot be laid
+says so through the run and lays nothing, since a soundtrack missing its music is still a soundtrack
+and a film that stopped for one is not.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from decktalk.inputs.cues import SECTION_END, SECTION_START, Spoken
 from decktalk.inputs.document import MixEffect
 from decktalk.inputs.markers import Marker
 from decktalk.inputs.timeline import narration_offsets, narration_runs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.media.audio import gain
 from decktalk.media.encode import Encoder
@@ -208,16 +208,16 @@ def resolve_marker_time(marker: Marker, starts: Mapping[int, float], takes: Take
     """
     if marker.section not in starts:
         return None
-    if marker.on == SECTION_START:
-        return starts[marker.section] + marker.offset
+    if marker.phrase == SECTION_START:
+        return starts[marker.section] + marker.offset_seconds
     take = takes.of(marker.section)
     if take is None:
         return None
     words = inputs.words(marker.section, take.digest)
-    if marker.on == SECTION_END:
-        return starts[marker.section] + words[-1].end + marker.offset if words else None
-    found = Spoken.of(words).find(marker.on, marker.occurrence, marker.case_sensitive)
-    return None if found is None else starts[marker.section] + words[found].start + marker.offset
+    if marker.phrase == SECTION_END:
+        return starts[marker.section] + words[-1].end + marker.offset_seconds if words else None
+    found = Spoken.of(words).find(marker.phrase, marker.occurrence, marker.case_sensitive)
+    return None if found is None else starts[marker.section] + words[found].start + marker.offset_seconds
 
 
 def speech_spans(rows: list[Rendered], takes: Takes, starts: Mapping[int, float]) -> list[Span]:

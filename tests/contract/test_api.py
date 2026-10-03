@@ -37,7 +37,7 @@ ROOT_LIMIT = 32
 """The most names the root may carry, which keeps it the short list of entry points a newcomer reads."""
 
 NOT_PUBLIC = ("catalog", "Catalog")
-"""Names the founder's decisions keep out of every public surface: `decktalk schema` composes its walkers internally."""
+"""Names kept out of every public surface, because `decktalk schema` composes its walkers internally."""
 
 EXPORTED = tuple(decktalk.__all__)
 
@@ -163,7 +163,7 @@ def test_every_public_signature_names_only_public_types(name: str):
     """The closure rule, over fields and over every public method's parameters and return.
 
     A type a caller can receive or must pass, and cannot import from a public module, is a surface
-    that fails the founder's thesis, so it fails here whether a field or a method signature names it.
+    a caller cannot name, so it fails here whether a field or a method signature names it.
     """
     assert leaks(name) == [], "Make each type public in a public module's __all__, or make the member private."
 
@@ -175,8 +175,8 @@ def test_every_result_class_is_public():
 
 
 @pytest.mark.parametrize("name", NOT_PUBLIC)
-def test_the_names_the_founder_kept_internal_are_not_public(name: str):
-    assert all(not key.endswith(f".{name}") for key in PUBLIC), f"{name} is public, against the founder's decision."
+def test_the_names_kept_internal_are_not_public(name: str):
+    assert all(not key.endswith(f".{name}") for key in PUBLIC), f"{name} is public, and only the schema uses it."
 
 
 def test_no_public_enum_publishes_a_member_the_schema_cannot_name():

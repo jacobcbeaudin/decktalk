@@ -35,8 +35,6 @@ PAUSE_RE = re.compile(r"\[\s*pause\s+(?P<seconds>\d+(?:\.\d+)?)\s*\]", re.IGNORE
 BREAK_RE = re.compile(r"""<break\s+time\s*=\s*["'](?P<amount>\d+(?:\.\d+)?)(?P<unit>s|ms)["']\s*/?>""", re.IGNORECASE)
 TAG_RE = re.compile(r"<break\b[^>]*>", re.IGNORECASE)
 """Any break tag, which is refused when `BREAK_RE` cannot read a length from it."""
-MS_PER_SECOND = 1000
-"""How many milliseconds a second holds, which a break tag's length in ms is divided by."""
 BEAT_DASH_RE = re.compile(r"\s+—(?=\s|$)")
 """A dash standing alone, which the voice pauses on rather than says."""
 
@@ -143,7 +141,7 @@ def strip_markdown(text: str) -> tuple[Piece, ...]:
 def _tag_seconds(match: re.Match[str]) -> float:
     """The length of a break tag written by hand, in seconds."""
     amount = float(match.group("amount"))
-    return amount / MS_PER_SECOND if match.group("unit").lower() == "ms" else amount
+    return amount / 1000 if match.group("unit").lower() == "ms" else amount
 
 
 def parse_script(markdown: str) -> list[Segment]:

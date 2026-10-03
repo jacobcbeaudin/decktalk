@@ -1,6 +1,6 @@
 """The house rules for prose, over every file git tracks, held where prose is and nowhere else.
 
-Two of the founder's three rules are mechanical and this file holds them. No semicolon joins two
+Two of the three house rules are mechanical and this file holds them. No semicolon joins two
 clauses, because a full stop is the same sentence with one less thing to read. No em dash appears
 where a reader meets it as punctuation, because a colon or a full stop says the same thing and the
 dash is already spoken for: it is DeckTalk's own beat marker in a script, so a dash in prose and a
@@ -10,8 +10,8 @@ Each rule is one test that lists every offending line in every file, because the
 than behaviour: a test per file made them four fifths of the suite's count and said nothing more.
 They run once, in the lint row, rather than in the unit suite on every Python.
 
-The third rule, that every sentence is complete and declarative, is not held here and the panel said
-so out loud. Any regex over it passes everything or fails every heading, table and code fence, and a
+The third rule, that every sentence is complete and declarative, is not held here, and this
+says so out loud. Any regex over it passes everything or fails every heading, table and code fence, and a
 proxy a contributor learns to satisfy is worse than no mechanism at all. `CONTRIBUTING.md` names it
 as a review item so the gap is designed rather than assumed.
 
@@ -168,7 +168,7 @@ def test_no_tracked_file_joins_two_clauses_with_a_semicolon():
 
 @pytest.mark.parametrize("name", sorted(DATA_FILES))
 def test_every_file_excused_as_data_is_still_tracked_and_still_data(name: str):
-    """A file excused from the rule and no longer there is an exemption that has outlived its reason."""
+    """A file excused from the rule that is not there is an exemption that has outlived its reason."""
     assert (REPO / name).exists(), f"{name} is excused from the prose rules and is not tracked any more."
     assert DATA_FILES[name].endswith("."), name
 

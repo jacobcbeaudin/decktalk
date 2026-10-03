@@ -49,7 +49,7 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
 from decktalk.logs import cache_decision
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.pipeline import Stage
 from decktalk.results import Cost, CostState, NarrateResult, SectionTake, TakeStatus, counted
 from decktalk.speech import SpeechProvider, is_free, output_of, start_hint
@@ -59,7 +59,7 @@ from decktalk.stages.narrate.plan import (
     VOICE_ID_VARIABLE,
     TakePlan,
     cost_of,
-    is_cached,
+    is_held,
     named_voice,
     placeholder_plan,
     refuse_dropped_pauses,
@@ -75,9 +75,10 @@ from decktalk.stages.narrate.script_rules import (
     symbol_tokens,
 )
 from decktalk.stages.narrate.takes import (
+    buying_alone,
+    copy_from_store,
     estimated_words,
     join_takes,
-    keep_at_home,
     place,
     planned_words,
     take_row,
@@ -187,7 +188,7 @@ def _without_buying(
     voiced take, and its finding says why its take could not be played.
     """
     held = inputs.workspace
-    found = {plan.segment.index for plan in paid if plan.digest is not None and is_cached(plan.digest, held)}
+    found = {plan.segment.index for plan in paid if plan.digest is not None and is_held(plan.digest, held)}
     on_disk = {plan.segment.index: plan for plan in paid if plan.segment.index in found and not replace_voiced}
     missing = [plan.segment for plan in paid if plan.segment.index not in on_disk]
     stand_ins = {plan.segment.index: plan for plan in placeholder_plan(inputs, missing, force=force)} if missing else {}
@@ -428,14 +429,14 @@ def _one_take(
             hint=f"Set [voice] id in decktalk.toml or export {VOICE_ID_VARIABLE}, or run with --no-spend.",
             location=at(inputs.workspace.takes_path, inputs.root),
         )
-    hit = plan.cached and is_cached(digest, inputs.workspace)
+    hit = plan.cached and is_held(digest, inputs.workspace)
     # The plan's reason is the sentence `status` prints, and the token is what a reader filters on.
     why = "unchanged" if hit else "take-missing" if plan.cached else "to-make"
     cache_decision(
         log, Unit.TAKE.value, hit=hit, why=why, key=digest, section=plan.segment.index, reason=plan.reason or None
     )
     if hit:
-        for path in keep_at_home(inputs, run, plan.segment.index, digest, checked):
+        for path in copy_from_store(inputs, run, plan.segment.index, digest, checked):
             run.wrote(path)
         voiced = not is_placeholder(digest)
         return take_row(inputs, plan.segment, plan.chapter, digest, voiced=voiced), TakeStatus.KEPT
@@ -443,26 +444,46 @@ def _one_take(
         # A take the voice would make, or one another section was making, cannot come from a voice that is down.
         return _stand_in(inputs, run, plan)
     if plan.status is TakeStatus.VOICED:
-        if provider is None or plan.request is None:
-            raise InputError(
-                f"section {plan.segment.index} would be voiced and this run has no request for it.",
-                hint="Run `decktalk narrate` again, or run with --no-spend.",
-                location=at(inputs.workspace.takes_path, inputs.root),
-            )
+        return _buy(inputs, run, plan, digest, provider, down, checked)
+    row, files = write_placeholder_take(inputs, plan.segment, plan.chapter, digest)
+    for path in files:
+        run.wrote(path)
+    return row, TakeStatus.PLACEHOLDER
+
+
+def _buy(
+    inputs: Inputs,
+    run: Run,
+    plan: TakePlan,
+    digest: str,
+    provider: SpeechProvider | None,
+    down: threading.Event | None,
+    checked: set[str],
+) -> tuple[Take, TakeStatus]:
+    """Buy one section's take while holding the store's lock on it, or play the copy another run bought meanwhile."""
+    request = plan.request
+    if provider is None or request is None:
+        raise InputError(
+            f"section {plan.segment.index} would be voiced and this run has no request for it.",
+            hint="Run `decktalk narrate` again, or run with --no-spend.",
+            location=at(inputs.workspace.takes_path, inputs.root),
+        )
+    with buying_alone(inputs, run, digest, wait_seconds=inputs.settings.narration.timeout_seconds) as bought:
+        if bought:
+            # Another project bought this take while this run waited, so it plays that copy.
+            for path in copy_from_store(inputs, run, plan.segment.index, digest, checked):
+                run.wrote(path)
+            return take_row(inputs, plan.segment, plan.chapter, digest, voiced=True), TakeStatus.KEPT
         try:
-            row, files = write_voiced_take(inputs, run, provider, plan.segment, plan.chapter, digest, plan.request)
+            row, files = write_voiced_take(inputs, run, provider, plan.segment, plan.chapter, digest, request)
         except ProviderError as failure:
             if down is None or failure.reached:
                 raise
             down.set()
             return _stand_in(inputs, run, plan)
-        status = TakeStatus.VOICED
-    else:
-        row, files = write_placeholder_take(inputs, plan.segment, plan.chapter, digest)
-        status = TakeStatus.PLACEHOLDER
     for path in files:
         run.wrote(path)
-    return row, status
+    return row, TakeStatus.VOICED
 
 
 def _stand_in(inputs: Inputs, run: Run, plan: TakePlan) -> tuple[Take, TakeStatus]:
@@ -512,7 +533,7 @@ def _charged(estimate: Cost, made: list[SectionTake]) -> Cost:
 __all__ = [
     "TakePlan",
     "estimated_words",
-    "is_cached",
+    "is_held",
     "narrate",
     "place",
     "placeholder_plan",

@@ -66,18 +66,8 @@ from decktalk.inputs.script import Segment, read_script
 from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.results import Word
-from decktalk.settings import (
-    BY_ID,
-    PROJECT_FILE,
-    Layers,
-    Loaded,
-    Settings,
-    key_warnings,
-    load,
-    machine_folder,
-    read_project_toml,
-    value_of,
-)
+from decktalk.settings import BY_ID, PROJECT_FILE, Layers, Loaded, Settings
+from decktalk.settings.layers import key_warnings, load, machine_folder, read_project_toml, value_of
 from decktalk.speech import output_of
 
 log = logging.getLogger(__name__)

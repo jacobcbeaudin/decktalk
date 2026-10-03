@@ -18,7 +18,7 @@ from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.media.audio import FULL_SCALE, gain
 from decktalk.media.frames import Decoded, Size, Wanted
@@ -26,7 +26,8 @@ from decktalk.page import MILLISECONDS
 from decktalk.pagescan import measured_rows, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, SkipReason, section_key
-from decktalk.settings import CLICK_LEVEL_DBFS, reference_lead_seconds
+from decktalk.settings import CLICK_LEVEL_DBFS
+from decktalk.settings.numbers import reference_lead_seconds
 from decktalk.stages.verify.plan import (
     HALF_FRAME,
     Neighbour,

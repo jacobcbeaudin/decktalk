@@ -57,6 +57,7 @@ __all__ = [
     "SECOND_DIGITS",
     "SLIDE_ENTRANCES",
     "Subject",
+    "T0_SIGNAL",
     "TIME_MARK",
     "WORD_STYLES",
     "measurable",
@@ -106,6 +107,9 @@ TIME_MARK = "@"
 
 LIST_SEPARATOR = ","
 """What separates two entries of that query."""
+
+T0_SIGNAL = "signal"
+"""What `t0` says when the recorder starts the page clock on its own signal rather than at a second."""
 
 ENGINE_PATH = "/__decktalk/"
 """The path the engine answers itself under every origin, which holds the runtime and KaTeX."""

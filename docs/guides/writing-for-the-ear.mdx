@@ -5,7 +5,7 @@ description: Write a script the voice can say, and a cue phrase the spoken words
 
 The script is the clock. `decktalk narrate` turns `script.md` into spoken takes with their words,
 and `decktalk cue` turns each phrase in `cues.json` into a second on its section's clock. Nothing on
-a deck page writes a second, so the only way to move a reveal is to change the words it waits for or
+a deck page says when a cue fires, so the only way to move a reveal is to change the words it waits for or
 to nudge it off them.
 
 This guide is about the two files that decide that timing: the sentences in `script.md` and the
@@ -109,8 +109,8 @@ stands. `SCRIPT_UNFINISHED` is an error, so it fails a run until the blank is fi
 
 ## Choose a phrase the voice really says
 
-A cue row names a cue id and a phrase. The cue id is the slide and the cue name the page wrote,
-joined by a colon, and the phrase is a word or a short phrase from that section of `script.md`.
+A cue row names a [cue id](/concepts/cues#the-cue-id) and a phrase. The phrase is a word or a short phrase from that
+section of `script.md`.
 
 {/* input: src/decktalk/template/examples/lesson/cues.json, section 1 */}
 ```json cues.json

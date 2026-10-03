@@ -17,7 +17,8 @@ from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
 from decktalk.media.frames import Size
 from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS, MILLISECONDS
-from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig, reference_lead_seconds
+from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig
+from decktalk.settings.numbers import reference_lead_seconds
 from decktalk.stages.verify.plan import (
     EPSILON,
     PROBE_TAIL_SECONDS,
@@ -188,14 +189,14 @@ def test_a_factor_of_one_turns_the_second_opinion_off() -> None:
 def test_every_resolved_cue_is_checked_in_section_order_and_then_cue_time(tmp_path: Path) -> None:
     document = {
         "sections": [
-            {"section": 2, "key": "02", "estimated": True, "cues": [{"cue": "b", "phrase": "x", "seconds": 0.5}]},
+            {"section": 2, "key": "02", "estimated": True, "cues": [{"id": "b", "phrase": "x", "seconds": 0.5}]},
             {
                 "section": 1,
                 "key": "01",
                 "estimated": True,
                 "cues": [
-                    {"cue": "late", "phrase": "x", "seconds": 2.0},
-                    {"cue": "early", "phrase": "x", "seconds": 0.5},
+                    {"id": "late", "phrase": "x", "seconds": 2.0},
+                    {"id": "early", "phrase": "x", "seconds": 0.5},
                 ],
             },
         ]
@@ -208,8 +209,8 @@ def test_every_resolved_cue_is_checked_in_section_order_and_then_cue_time(tmp_pa
 def test_a_run_that_names_sections_checks_only_their_cues(tmp_path: Path) -> None:
     document = {
         "sections": [
-            {"section": 1, "key": "01", "estimated": True, "cues": [{"cue": "a", "phrase": "x", "seconds": 0.5}]},
-            {"section": 2, "key": "02", "estimated": True, "cues": [{"cue": "b", "phrase": "x", "seconds": 0.5}]},
+            {"section": 1, "key": "01", "estimated": True, "cues": [{"id": "a", "phrase": "x", "seconds": 0.5}]},
+            {"section": 2, "key": "02", "estimated": True, "cues": [{"id": "b", "phrase": "x", "seconds": 0.5}]},
         ]
     }
     path = tmp_path / "cue-times.json"

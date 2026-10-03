@@ -19,7 +19,12 @@ on a moment of silence, so its sound ends where its words do and it is placed ex
 
 from __future__ import annotations
 
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+
+from filelock import FileLock, Timeout
 
 from decktalk.artifacts import (
     AudioPrint,
@@ -31,17 +36,18 @@ from decktalk.artifacts import (
     is_placeholder,
     words_file,
 )
+from decktalk.errors import ProjectLocked
 from decktalk.events import Level, TakeCharged
 from decktalk.files import replace_all
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import Segment
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
 from decktalk.results import Word
 from decktalk.speech import PUNCT, SpeechProvider, SpeechRequest, canonical_text, is_free
 from decktalk.stages import billed, dollars_for
-from decktalk.stages.narrate.plan import TakePlan, damaged_refusal, is_cached
+from decktalk.stages.narrate.plan import TakePlan, damaged_refusal, is_held
 
 PLACEHOLDER_CLOSE_SECONDS = 0.1
 """Calibration: the silence a click track ends on, which is long enough that where its sound ends can be measured."""
@@ -173,7 +179,10 @@ def write_voiced_take(
             dollars=dollars_for(billed(characters, seconds, voice), inputs),
         )
     written = home / words_file(digest)
-    pair = {out: spoken, written: ProviderWords(words=tuple(words), audio=AudioPrint.of(spoken)).text}
+    pair = {
+        out: spoken,
+        written: ProviderWords(words=tuple(words), audio=AudioPrint.of(spoken, suffix=inputs.workspace.suffix)).text,
+    }
     # The audio and its words are replaced as one pair, and the words are moved last, so a run
     # stopped while it writes leaves both or neither and never audio with no words to vouch for it.
     replace_all(pair)
@@ -209,11 +218,57 @@ def keep_in_store(inputs: Inputs, run: Run, digest: str, pair: dict[str, str | b
         )
 
 
+STORE_LOCK_SUFFIX = ".lock"
+"""What the take store's lock on one take is called after its digest, which a buyer holds while it buys."""
+
+STORE_POLL_SECONDS = 0.1
+"""Calibration: how often a run waiting on another's purchase asks again, which no person waits on."""
+
+
+@contextmanager
+def buying_alone(inputs: Inputs, run: Run, digest: str, *, wait_seconds: float) -> Iterator[bool]:
+    """Hold the take store's lock on this take while this run buys it, and say whether another run bought it first.
+
+    Two projects on one machine that buy the same take at once would pay twice. The lock is the
+    operating system's own, taken through `filelock`, so the system releases it when its holder dies
+    and no stale lock outlives a run. A run that finds the lock held waits in short turns, stopping
+    when it is cancelled and refusing after `wait_seconds`, and once its turn comes it yields True
+    when the store holds a good copy it did not hold before, so the run plays that copy and buys
+    nothing. A machine with no store holds no lock and buys as it would.
+    """
+    store = inputs.workspace.store
+    if store is None:
+        yield False
+        return
+    store.mkdir(parents=True, exist_ok=True)
+    lock = FileLock(store / f"{digest}{STORE_LOCK_SUFFIX}")
+    # A run that replaces a take the store already holds buys it whatever the store holds, so only a
+    # copy that arrived while this run waited is another run's purchase.
+    held_before = inputs.workspace.fault_at(store, digest) is None
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            lock.acquire(timeout=STORE_POLL_SECONDS)
+            break
+        except Timeout:
+            run.check()
+            if time.monotonic() > deadline:
+                raise ProjectLocked(
+                    f"another run has been buying take {digest} into the take store at {store} for longer than "
+                    f"the {wait_seconds:g} seconds narration.timeout_seconds allows, so this run bought nothing.",
+                    hint="Let the other run finish, or stop it, then run this again.",
+                ) from None
+    try:
+        yield not held_before and inputs.workspace.fault_at(store, digest) is None
+    finally:
+        lock.release()
+
+
 UNREADABLE_SUFFIX = ".unreadable"
 """What a damaged copy of a voiced take is renamed to end in, which moves it aside and never deletes it."""
 
 
-def keep_at_home(inputs: Inputs, run: Run, number: int, digest: str, checked: set[str]) -> list[Path]:
+def copy_from_store(inputs: Inputs, run: Run, number: int, digest: str, checked: set[str]) -> list[Path]:
     """Make sure the takes directory holds a verified copy of this voiced take, and give back what it wrote.
 
     The takes directory is committed, so every take the film plays must be there for a clone to play
@@ -235,18 +290,18 @@ def keep_at_home(inputs: Inputs, run: Run, number: int, digest: str, checked: se
             continue
         fault = workspace.fault_at(place, digest, whole=True)
         if fault is None:
-            return [] if place == home else _copy_home(inputs, run, digest, place, damaged)
+            return [] if place == home else _copied_in(inputs, run, digest, place, damaged)
         damaged.append((place, fault))
     if damaged:
         raise damaged_refusal(inputs, number, digest, *damaged[0])
     return []
 
 
-def _copy_home(inputs: Inputs, run: Run, digest: str, found: Path, damaged: list[tuple[Path, str]]) -> list[Path]:
+def _copied_in(inputs: Inputs, run: Run, digest: str, found: Path, damaged: list[tuple[Path, str]]) -> list[Path]:
     """Copy the verified pair in `found` into the takes directory as one pair, moving any copy there aside."""
     workspace = inputs.workspace
     home = workspace.takes
-    names = (workspace.take_file(digest), words_file(digest))
+    names = (workspace.take_file_in(found, digest), words_file(digest))
     moved = [home / name for name in names if (home / name).exists()]
     for stale in moved:
         stale.replace(stale.with_name(stale.name + UNREADABLE_SUFFIX))
@@ -305,7 +360,7 @@ def planned_words(inputs: Inputs, plan: TakePlan) -> tuple[tuple[Word, ...], flo
     index = inputs.takes()
     row = index.of(number) if index is not None else None
     paid = row if row is not None and row.voiced else None
-    if plan.cached and plan.digest is not None and is_cached(plan.digest, inputs.workspace):
+    if plan.cached and plan.digest is not None and is_held(plan.digest, inputs.workspace):
         # The take of this exact text is on disk, so the cues land on the words it already carries.
         words = inputs.words(number, plan.digest)
         if paid is not None and paid.digest == plan.digest:
@@ -324,8 +379,10 @@ __all__ = [
     "PLACEHOLDER_CLOSE_SECONDS",
     "estimated_words",
     "join_takes",
+    "STORE_LOCK_SUFFIX",
     "UNREADABLE_SUFFIX",
-    "keep_at_home",
+    "buying_alone",
+    "copy_from_store",
     "keep_in_store",
     "place",
     "planned_words",

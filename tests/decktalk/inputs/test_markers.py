@@ -20,8 +20,15 @@ def test_the_markers_file_is_parsed_into_rows_and_a_bad_one_names_its_file(tmp_p
                 "boost_db": 4,
                 "boost_seconds": 1.5,
                 "markers": [
-                    {"name": "turn", "section": 3, "on": "$start", "mute_seconds": 0.4},
-                    {"name": "land", "section": 4, "on": "seal", "offset": 0.2, "occurrence": 2, "zebra": 1},
+                    {"name": "turn", "section": 3, "phrase": "$start", "mute_seconds": 0.4},
+                    {
+                        "name": "land",
+                        "section": 4,
+                        "phrase": "seal",
+                        "offset_seconds": 0.2,
+                        "occurrence": 2,
+                        "zebra": 1,
+                    },
                 ],
             }
         ),
@@ -29,7 +36,7 @@ def test_the_markers_file_is_parsed_into_rows_and_a_bad_one_names_its_file(tmp_p
     )
     markers = load_markers(path, tmp_path)
     assert (markers.boost_db, markers.boost_seconds) == (4.0, 1.5)
-    assert [(m.name, m.section, m.on, m.offset, m.occurrence) for m in markers.markers] == [
+    assert [(m.name, m.section, m.phrase, m.offset_seconds, m.occurrence) for m in markers.markers] == [
         ("turn", 3, "$start", 0.0, 1),
         ("land", 4, "seal", 0.2, 2),
     ]

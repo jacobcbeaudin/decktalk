@@ -44,7 +44,7 @@ def runtime_path() -> Path:
 
 
 def probe_path() -> Path:
-    """The recorder's instrumentation, which `media/browser.py` injects and no project ever holds."""
+    """The recorder's instrumentation, which `media/pages.py` injects and no project ever holds."""
     return package_file(f"runtime/{PROBE_FILE}")
 
 

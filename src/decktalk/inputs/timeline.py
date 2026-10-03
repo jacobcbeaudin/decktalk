@@ -1,4 +1,4 @@
-"""Where the narration plays in the final film: the narration clock placed on the film's clock.
+"""Where the narration plays in the final film: the joined narration track placed on the film's clock.
 
 `narration.mp3` holds the spoken sections back to back with no gaps, and the film does not. A clip
 between two page sections, or a page section's `hold_seconds`, pauses the narration, and the next

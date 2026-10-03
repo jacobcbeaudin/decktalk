@@ -9,7 +9,7 @@ import pytest
 from decktalk.errors import Cancelled
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
-from decktalk.machine import apply_fix
+from decktalk.machine.fixes import apply_fix
 from decktalk.results import CheckResult, CostState, Scope
 from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import shutil
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
@@ -21,7 +21,7 @@ from decktalk.errors import ApprovalRequired, ErrorCode, InputError, NotBuiltErr
 from decktalk.events import CostPriced, RunLog, StageDone, StageStart
 from decktalk.findings import Code, Finding, Location, Severity
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
@@ -41,10 +41,10 @@ from decktalk.results import (
 )
 from decktalk.settings import MACHINE_FILE_VARIABLE
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
-from decktalk.stages import build as build_module
 from decktalk.stages import score as score_stage
 from decktalk.stages.build import build
-from decktalk.stages.status import read_kept
+from decktalk.stages.kept import read_kept
+from decktalk.stages.table import CALLS
 from support.fakes import FakeVoice
 from support.logs import decisions
 from support.projects import load_project
@@ -174,6 +174,14 @@ class Answers:
     """What the faked assemble writes as the film, or None when it writes nothing, as most tests want."""
 
 
+def _replace(monkeypatch: pytest.MonkeyPatch, module: object, name: str, fake: Callable[..., Result]) -> None:
+    """`fake` in place of a stage's row in the table, or of a module's function for a call that is no stage."""
+    if name in {stage.value for stage in Stage}:
+        monkeypatch.setitem(CALLS, Stage(name), replace(CALLS[Stage(name)], call=fake))
+    else:
+        monkeypatch.setattr(module, name, fake)
+
+
 def _results(answers: Answers) -> dict[str, Callable[[], Result]]:
     """One result per stage, each the model that stage's own command answers with."""
     return {
@@ -277,7 +285,7 @@ def calls(monkeypatch: pytest.MonkeyPatch, answers: Answers) -> Iterator[Calls]:
                 _run.found(found)
             return answer
 
-        monkeypatch.setattr(module, name, fake)
+        _replace(monkeypatch, module, name, fake)
     yield seen
 
 
@@ -456,7 +464,7 @@ def purchases(monkeypatch: pytest.MonkeyPatch, fake_voice: FakeVoice, answers: A
     monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
     made = _results(answers)
     for name, module in {"cue": cue, "record": record, "assemble": assemble, "verify": verify}.items():
-        monkeypatch.setattr(module, name, lambda _inputs, _run, _name=name, **_options: made[_name]())
+        _replace(monkeypatch, module, name, lambda _inputs, _run, _name=name, **_options: made[_name]())
     monkeypatch.setattr(storyboard, "storyboard", lambda _inputs, _run, **_options: made["storyboard"]())
     return bought
 
@@ -838,9 +846,8 @@ def test_a_run_that_makes_no_film_reports_none(inputs: Inputs, watched: Watched)
 
 
 def test_every_stage_of_the_pipeline_declares_the_options_it_takes() -> None:
-    """A stage added to the pipeline with no row here would be called with no options at all."""
-    assert set(build_module.OPTIONS) == set(Stage)
-    assert set(build_module.MODULES) == set(Stage)
+    """A stage added to the pipeline with no row in the table would be called with no options at all."""
+    assert set(CALLS) == set(Stage)
 
 
 # ---- keeping what has not changed --------------------------------------------------------------

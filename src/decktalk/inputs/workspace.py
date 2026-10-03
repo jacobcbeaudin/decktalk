@@ -14,6 +14,7 @@
     build/final/        the deliverables: the film, its captions, chapters, placements,
                         transcript page and poster
     build/events/       one JSON lines file per run, which is what a run says it is doing
+    build/kept.json     what the last build's assemble and verify read, wrote and found
 
 A new artifact gets a property here and nowhere else, so a reader who wants to know what a build
 leaves behind opens one module and no stage ever spells a build path by hand. The five paths the
@@ -27,7 +28,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from decktalk.artifacts import is_placeholder, pair_fault, take_file, words_file
+from decktalk.artifacts import is_placeholder, pair_fault, recorded_suffix, take_file, words_file
 from decktalk.inputs.paths import confined
 from decktalk.pipeline import Artifact
 
@@ -36,6 +37,12 @@ SECTION_CUT = re.compile(r"(\d+)\.(?:mp4|json)")
 
 EVENTS_SUFFIX = ".jsonl"
 """What a run's event file is called after its run id, which is one JSON object per line."""
+
+KEPT_FILE = "kept.json"
+"""What the record of the last assemble and verify is called, under the project's build directory."""
+
+LEDGER_FILE = "ledger.json"
+"""What the record of bought audio is called, in the score directory beside the audio it records."""
 
 
 @dataclass(frozen=True)
@@ -95,7 +102,7 @@ class Workspace:
 
     def held_at(self, place: Path, digest: str) -> bool:
         """True when this place holds both files of the take of this digest, whatever they hold."""
-        return all((place / name).is_file() for name in (self.take_file(digest), words_file(digest)))
+        return all((place / name).is_file() for name in (self.take_file_in(place, digest), words_file(digest)))
 
     def fault_at(self, place: Path, digest: str, *, whole: bool = False) -> str | None:
         """What is wrong with this place's copy of a voiced take, or None when it holds a good one.
@@ -105,7 +112,7 @@ class Workspace:
         """
         if not self.held_at(place, digest):
             return f"{place} holds no copy of take {digest}."
-        return pair_fault(place / self.take_file(digest), place / words_file(digest), whole=whole)
+        return pair_fault(place / self.take_file_in(place, digest), place / words_file(digest), whole=whole)
 
     def damaged(self, digest: str) -> tuple[tuple[Path, str], ...]:
         """Every place holding both files of a voiced take that do not agree, with what is wrong with each."""
@@ -113,12 +120,21 @@ class Workspace:
         return tuple((place, fault) for place, fault in found if fault is not None)
 
     def take_file(self, digest: str) -> str:
-        """The name of the audio file of the take with this digest, under the suffix of what it holds."""
+        """The name a take of this digest is written under, which is the suffix of the voice's own format."""
         return take_file(digest, self.suffix)
+
+    def take_file_in(self, place: Path, digest: str) -> str:
+        """The name of this take's audio in `place`, under the suffix its words recorded, else the voice's own.
+
+        A placeholder is made again for nothing in the voice's own format, so only a voiced take is read for one.
+        """
+        recorded = None if is_placeholder(digest) else recorded_suffix(place / words_file(digest))
+        return take_file(digest, recorded or self.suffix)
 
     def take_path(self, digest: str) -> Path:
         """The audio file of this take where it is found, or where it would be written when it is nowhere."""
-        return self._found(digest) / self.take_file(digest)
+        found = self._found(digest)
+        return found / self.take_file_in(found, digest)
 
     def words_path(self, digest: str) -> Path:
         """The words file of this take where it is found, or where it would be written when it is nowhere."""
@@ -177,6 +193,14 @@ class Workspace:
     def storyboard_path(self) -> Path:
         """The contact sheet a person reads before any credit is spent."""
         return self.build / "storyboard.html"
+
+    @property
+    def kept_path(self) -> Path:
+        return self.build / KEPT_FILE
+
+    @property
+    def ledger_path(self) -> Path:
+        return self.score_dir / LEDGER_FILE
 
     @property
     def events_dir(self) -> Path:

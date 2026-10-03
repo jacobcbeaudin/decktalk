@@ -97,7 +97,7 @@ def test_a_row_carries_its_phrase_and_its_nudge_so_the_word_behind_it_is_arithme
     block = CuedSection(number=1, cues=(Cue(id="1.1:a", phrase="ten", offset_seconds=0.25),))
     sections, _found = resolve_sections([block], {1: WORDS}, clips=set(), estimated=set())
     (row,) = sections[0].cues
-    assert (row.cue, row.phrase, row.seconds, row.nudge_seconds) == ("1.1:a", "ten", 1.75, 0.25)
+    assert (row.id, row.phrase, row.seconds, row.nudge_seconds) == ("1.1:a", "ten", 1.75, 0.25)
     assert row.seconds is not None
     assert round(row.seconds - row.nudge_seconds, 3) == 1.5
 

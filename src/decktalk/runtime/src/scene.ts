@@ -9,7 +9,7 @@
  *
  * Ownership is declared and never inferred. A slide owns exactly the cues its moment attributes
  * name plus the local names it lists, which is what lets a cue id carry any characters an author
- * likes and what replaced the longest-prefix rule that used to guess.
+ * likes, with no prefix rule guessing which slide a cue belongs to.
  */
 
 import {

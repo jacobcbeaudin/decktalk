@@ -329,10 +329,10 @@ def test_a_marker_resolves_against_the_words_of_its_own_section(tmp_path):
     inputs = write_project(tmp_path)
     takes = take_index(inputs, {1: ("A", 2.0, 1.6, spoken("alpha beta gamma"))})
     starts = {1: 4.0}
-    assert resolve_marker_time(Marker(name="m", section=1, on="$start"), starts, takes, inputs) == 4.0
-    assert resolve_marker_time(Marker(name="m", section=1, on="beta"), starts, takes, inputs) == 4.4
-    assert resolve_marker_time(Marker(name="m", section=1, on="nowhere"), starts, takes, inputs) is None
-    assert resolve_marker_time(Marker(name="m", section=9, on="$start"), starts, takes, inputs) is None
+    assert resolve_marker_time(Marker(name="m", section=1, phrase="$start"), starts, takes, inputs) == 4.0
+    assert resolve_marker_time(Marker(name="m", section=1, phrase="beta"), starts, takes, inputs) == 4.4
+    assert resolve_marker_time(Marker(name="m", section=1, phrase="nowhere"), starts, takes, inputs) is None
+    assert resolve_marker_time(Marker(name="m", section=9, phrase="$start"), starts, takes, inputs) is None
 
 
 def test_the_input_arguments_follow_the_order_the_graph_indexes_them():

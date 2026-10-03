@@ -7,6 +7,7 @@
     assemble/    the recordings, the narration and the score become one film
     verify/      the finished film is measured against the clock it was promised
     build.py     the six stages in order, or the span of them a caller named
+    table.py     each stage's function, its result and the options it takes
     check.py     what a build would spend and show, judged before anything is spent
     status.py    what is written, what is built, what is stale and what to do next
     words.py     every spoken word with its span, which is how a cue phrase is written
@@ -15,9 +16,9 @@
 
 Every one of them satisfies the same convention: the module named after the call holds a function
 of that name, taking the project's `Inputs` and the `Run` the facade opened, and returning the
-result model named after it. That is the whole seam between `project.py` and the stages, so a test
-fakes a stage by replacing one attribute and no stage ever sees a project, a machine or a run
-opener.
+result model named after it. The six stages are called through their rows in `table.py`, which
+`build` and `project.py` share, so a test fakes a stage by replacing one row and no stage ever sees
+a project, a machine or a run opener.
 
 A stage therefore cannot read the environment and cannot print. It reports through the run: one
 sentence with `run.note`, one judgement with `run.found`, one count with `run.progress`, one file
@@ -34,9 +35,6 @@ from typing import Any
 from decktalk.inputs import Inputs
 from decktalk.results import Billing, Layer
 from decktalk.speech import DECLARED, SpeechContext, base_of, billing_of, table_of
-
-CHARACTERS_PER_PRICE = 1000
-"""Truth: a per-character rate is stated per thousand characters, which is how a declared rate key reads."""
 
 SECONDS_PER_PRICE = 60
 """Truth: a bill per second states its rate per minute of audio, which is how a declared rate key reads."""
@@ -81,7 +79,7 @@ def dollars_for(amount: float, inputs: Inputs, provider: str | None = None) -> f
     rounded once, after the sum.
     """
     name = provider or inputs.settings.voice.provider
-    per = CHARACTERS_PER_PRICE if billing_of(name).by is Billing.PER_CHARACTER else SECONDS_PER_PRICE
+    per = 1000 if billing_of(name).by is Billing.PER_CHARACTER else SECONDS_PER_PRICE
     return amount / per * rate_of(inputs, name)
 
 
@@ -139,7 +137,6 @@ def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
 
 
 __all__ = [
-    "CHARACTERS_PER_PRICE",
     "SECONDS_PER_PRICE",
     "SECTION_START_SECONDS",
     "billed",

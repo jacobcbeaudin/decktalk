@@ -1,7 +1,7 @@
 /*! The four things a DeckTalk page can be doing, and the one URL that decides which.
  *
  * A page with no query lists its scenes. `?scene=` plays one at the speed a person reads it.
- * `?cues=` plays one against the narration clock, which is the mode a recording is made in.
+ * `?cues=` plays one against the section clock, which is the mode a recording is made in.
  * `?slide=` freezes one slide with its cues already fired, which is what a screenshot opens.
  *
  * Every key this module reads is one the contract publishes, and each is read once here so no other
@@ -19,6 +19,7 @@ import {
   PREVIEW_CUE_TIMES,
   type Q,
   SLIDE_ENTRANCES,
+  T0_SIGNAL,
   TIME_MARK,
 } from "./contract.ts";
 import { typeset, ready as typesetterReady } from "./katex.ts";
@@ -65,9 +66,6 @@ const T0: Q = "t0";
 const SPEED: Q = "speed";
 const HUD: Q = "hud";
 
-/** What `?t0=` says when the recorder means to start the clock itself rather than name a second. */
-const SIGNAL = "signal";
-
 /** What `?hud=` says when a page is asked to draw its own clock, which a recording never is. */
 const ON = "1";
 
@@ -97,8 +95,8 @@ const params = new URLSearchParams(location.search);
 /** Whether the page is a still, which every effect asks before it starts moving anything. */
 const frozen = params.has(SLIDE);
 
-/** The second on the narration clock the page starts at, which the recorder names or sends. */
-const signalled = params.get(T0) === SIGNAL;
+/** The second on the section clock the page starts at, which the recorder names or sends. */
+const signalled = params.get(T0) === T0_SIGNAL;
 const origin = signalled ? 0 : Number.parseFloat(params.get(T0) ?? "") || 0;
 
 /** How much faster than life a preview runs, which a recording ignores. */
@@ -263,7 +261,7 @@ function parseWords(raw: string): Spoken[] {
 }
 
 /**
- * Play one scene against the narration clock, which is the mode every recording is made in.
+ * Play one scene against the section clock, which is the mode every recording is made in.
  *
  * The first cued slide is mounted before the clock starts and before the recorder's cover comes off,
  * so no frame of a recording is ever drawn on an empty stage, and its own reveals still wait for

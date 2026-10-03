@@ -15,23 +15,16 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from decktalk.settings import Loaded, Settings, key_named
+from decktalk.settings.edit import nested
+from decktalk.settings.layers import effective, json_value, load, value_of
+from decktalk.settings.numbers import NUMBERS, NUMBERS_BY_ID
+
 from .errors import DeckTalkError, InputError
 from .findings import DOCS
 from .inputs import Inputs
 from .machine import Machine
 from .results import ConfigExplainResult, Layer, NumberView, Scope, SectionCues
-from .settings import (
-    NUMBERS,
-    NUMBERS_BY_ID,
-    Loaded,
-    Settings,
-    effective,
-    json_value,
-    key_named,
-    load,
-    nested,
-    value_of,
-)
 from .tomlmap import Key
 
 log = logging.getLogger(__name__)
@@ -190,7 +183,7 @@ def _cues(project: Inputs) -> tuple[tuple[str, tuple[Cue, ...]], ...]:
 
 def _block(section: SectionCues) -> tuple[str, tuple[Cue, ...]]:
     """One section of the artifact as the explainer reads it, which is its key and its resolved cues."""
-    return section.key, tuple(sorted((row.seconds, row.cue) for row in section.cues if row.seconds is not None))
+    return section.key, tuple(sorted((row.seconds, row.id) for row in section.cues if row.seconds is not None))
 
 
 __all__ = ["explain"]

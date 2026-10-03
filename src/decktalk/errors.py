@@ -18,7 +18,7 @@ than a table beside the list that a new code can miss.
 from __future__ import annotations
 
 import threading
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Any, ClassVar
 
 from pydantic import Field, model_validator
@@ -26,12 +26,38 @@ from pydantic import Field, model_validator
 from decktalk.findings import DOCS, Location, Model
 from decktalk.secret import redact, redacted
 
-REFUSED = 2
-"""A command line DeckTalk refused, which a retry as written would refuse again."""
-BROKEN = 3
-"""Something DeckTalk needs is missing or wrong, so the run could not start or could not finish."""
-INTERRUPTED = 130
-"""The caller stopped the run, which is the shell's own code for a signalled process."""
+
+class Exit(IntEnum):
+    """Every code a run can exit with, with the sentence that says what it means and the phrase help prints.
+
+    It is the one exit table: the error codes take theirs from it, a judged run takes the first two,
+    and `decktalk schema` and the help epilog are both written from it. 130 is the shell's own code
+    for a signalled process.
+    """
+
+    sentence: str
+    phrase: str
+
+    def __new__(cls, code: int, sentence: str, phrase: str) -> Exit:
+        member = int.__new__(cls, code)
+        member._value_ = code
+        member.sentence = sentence
+        member.phrase = phrase
+        return member
+
+    FOUND_NOTHING = (
+        0,
+        "The command ran and found nothing at or above the threshold --fail-on set.",
+        "found nothing at the --fail-on threshold",
+    )
+    FOUND_SOMETHING = (
+        1,
+        "The command ran and found something at or above the threshold --fail-on set.",
+        "found something at it",
+    )
+    REFUSED = 2, "The command line was refused, which is USAGE or APPROVAL.", "refused the command line"
+    BROKEN = 3, "The command could not run, which is every other error code.", "could not run"
+    INTERRUPTED = 130, "The caller stopped the run.", "interrupted"
 
 
 class ErrorCode(Enum):
@@ -42,9 +68,9 @@ class ErrorCode(Enum):
     """
 
     sentence: str
-    exit_code: int
+    exit_code: Exit
 
-    def __new__(cls, code: str, exit_code: int, sentence: str) -> ErrorCode:
+    def __new__(cls, code: str, exit_code: Exit, sentence: str) -> ErrorCode:
         member = object.__new__(cls)
         member._value_ = code
         member.exit_code = exit_code
@@ -59,15 +85,15 @@ class ErrorCode(Enum):
         """The docs page for this code, which every printed error block carries."""
         return f"{DOCS}/errors/{self.name}"
 
-    INPUT = "INPUT", BROKEN, "A file the author writes is missing, unreadable or malformed."
-    NOT_BUILT = "NOT_BUILT", BROKEN, "A file a stage needs was never built."
-    PROVIDER = "PROVIDER", BROKEN, "The voice could not be reached, refused the request, or failed it."
-    TOOL = "TOOL", BROKEN, "ffmpeg or Chromium is missing, or one of them failed."
-    LOCKED = "LOCKED", BROKEN, "Another writer holds this project's build directory."
-    APPROVAL = "APPROVAL", REFUSED, "A spend needed an approval that no flag and no terminal gave."
-    CANCELLED = "CANCELLED", INTERRUPTED, "The caller stopped the run."
-    USAGE = "USAGE", REFUSED, "The command line was refused, and a retry as written fails again."
-    INTERNAL = "INTERNAL", BROKEN, "A bug in DeckTalk, with a traceback under -v."
+    INPUT = "INPUT", Exit.BROKEN, "A file the author writes is missing, unreadable or malformed."
+    NOT_BUILT = "NOT_BUILT", Exit.BROKEN, "A file a stage needs was never built."
+    PROVIDER = "PROVIDER", Exit.BROKEN, "The voice could not be reached, refused the request, or failed it."
+    TOOL = "TOOL", Exit.BROKEN, "ffmpeg or Chromium is missing, or one of them failed."
+    LOCKED = "LOCKED", Exit.BROKEN, "Another writer holds this project's build directory."
+    APPROVAL = "APPROVAL", Exit.REFUSED, "A spend needed an approval that no flag and no terminal gave."
+    CANCELLED = "CANCELLED", Exit.INTERRUPTED, "The caller stopped the run."
+    USAGE = "USAGE", Exit.REFUSED, "The command line was refused, and a retry as written fails again."
+    INTERNAL = "INTERNAL", Exit.BROKEN, "A bug in DeckTalk, with a traceback under -v."
 
 
 class DeckTalkError(Exception):

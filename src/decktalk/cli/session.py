@@ -26,16 +26,14 @@ from typer import Context
 from decktalk import project as projects
 from decktalk.cli import output
 from decktalk.cli.options import FailOn, When, pairs
-from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorInfo
+from decktalk.errors import ApprovalRequired, Cancel, DeckTalkError, ErrorInfo, Exit
 from decktalk.events import Events
 from decktalk.files import json_text
 from decktalk.findings import Code, Finding
-from decktalk.machine import Machine, Threshold
+from decktalk.machine import Machine
+from decktalk.machine.run import Threshold
 from decktalk.project import Project
 from decktalk.results import Cost, ErrorResult, Result, counted
-
-FOUND_SOMETHING = 1
-"""What a run exits with when it judged something at or above the threshold `--fail-on` set."""
 
 TAKES_PLAY = "a placeholder wherever a take is missing"
 """What a run that may not spend plays in place of a take it would buy, which a spend refusal names."""
@@ -292,8 +290,8 @@ class Session:
     def storyboard_line(self, project: Project) -> str:
         """The storyboard this checkpoint points at, drawn now so that the path names a real page.
 
-        It prints the path and never opens a browser, which is what the founder decided: a side
-        effect no flag asked for cannot be honoured by a remote session.
+        It prints the path and never opens a browser, because a side effect no flag asked for cannot
+        be honoured by a remote session.
         """
         written = project.storyboard()
         where = written.storyboard.as_posix() if written.storyboard else "nothing"
@@ -334,7 +332,7 @@ class Session:
         """Write one contract document on stdout, which is the one output that carries no envelope.
 
         A JSON Schema document inside an envelope is not that document, and a reserved key called
-        `schema` set to 2 inside a document about schemas is unreadable.
+        `schema` set to 1 inside a document about schemas is unreadable.
         """
         self._said = True
         self._stdout(json_text(contract, indent=2))
@@ -349,7 +347,7 @@ class Session:
         """0 found nothing at the threshold, 1 found something at it, and the code's own when it could not run."""
         if result.error is not None:
             return result.error.code.exit_code
-        return FOUND_SOMETHING if self.threshold.fails(result.findings) else 0
+        return Exit.FOUND_SOMETHING if self.threshold.fails(result.findings) else Exit.FOUND_NOTHING
 
     def failed(self, error: DeckTalkError) -> int:
         """Report a refusal as the one error block, or as the one error object under `--json`."""

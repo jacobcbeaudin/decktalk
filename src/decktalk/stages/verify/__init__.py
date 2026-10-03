@@ -25,7 +25,7 @@ from collections.abc import Callable, Sequence
 from decktalk.errors import NotBuiltError
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import ffmpeg, frames
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import VerifyResult
@@ -102,7 +102,7 @@ def _placed(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
     for block in inputs.cues():
         if not wanted(block.number):
             continue
-        rows = {row.cue: row for row in times.rows(block.number)} if times is not None else {}
+        rows = {row.id: row for row in times.rows(block.number)} if times is not None else {}
         for cue in block.cues:
             row = rows.get(cue.id)
             here = Location(where=cue.id, file=where, section=block.number, cue=cue.id)

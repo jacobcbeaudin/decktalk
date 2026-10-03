@@ -6,7 +6,7 @@
     uv run scripts/rehearse_release.py    # bump a scratch copy of this checkout, regenerate, check
 
 The release path runs for real only on release-please's own pull request, so a generator that cannot
-write, or a file the bump makes stale that nothing regenerates, used to surface on the release and
+write, or a file the bump makes stale that nothing regenerates, would surface on the release and
 nowhere earlier. This script makes the same bump on every pull request instead. It copies the
 checkout into a temporary directory, so the checkout itself is never touched and nothing is ever
 committed or pushed. In the copy it writes the version release-please would propose next everywhere

@@ -8,9 +8,9 @@ import pytest
 
 from decktalk.errors import InputError, NotBuiltError, ToolError
 from decktalk.events import StageProgress
-from decktalk.media import audio, browser
+from decktalk.media import audio
 from decktalk.results import AssembleResult, Substitute, Word
-from decktalk.stages.assemble import assemble
+from decktalk.stages.assemble import assemble, slate
 
 from .conftest import TITLED_TOML, draw_slate, open_run, spoken, take_index, write_project
 
@@ -121,7 +121,7 @@ def test_a_film_that_stood_a_frame_in_for_a_missing_file_is_not_ok(tmp_path, mon
     """`ok` is false when any judgement is an error, and a missing file is an error."""
     inputs = write_project(tmp_path, TITLED_TOML)
     opened = open_run(tmp_path)
-    monkeypatch.setattr(browser, "render_slate", draw_slate)
+    monkeypatch.setattr(slate, "render_slate", draw_slate)
     take_index(inputs, GAPPED, voiced=False)
     result = assemble(inputs, opened.run)
     assert not result.ok
@@ -133,7 +133,7 @@ def test_strict_refuses_a_placeholder_frame_where_the_file_is_missing(tmp_path, 
     """A strict run stops at the file it has not got, naming it, rather than publishing a stand-in."""
     inputs = write_project(tmp_path, TITLED_TOML)
     opened = open_run(tmp_path)
-    monkeypatch.setattr(browser, "render_slate", draw_slate)
+    monkeypatch.setattr(slate, "render_slate", draw_slate)
     inputs.workspace.recordings_dir.mkdir(parents=True)
     for number in (1, 3, 4):
         inputs.workspace.recording(f"{number:02d}").write_bytes(b"a recording")
@@ -159,7 +159,7 @@ def test_a_run_that_asks_for_no_score_lays_no_bed(tmp_path, rendering, monkeypat
         tmp_path, TITLED_TOML.replace("[narration]", '[mix]\nmusic = "media/bed.mp3"\n\n[narration]')
     )
     opened = open_run(tmp_path)
-    monkeypatch.setattr(browser, "render_slate", draw_slate)
+    monkeypatch.setattr(slate, "render_slate", draw_slate)
     take_index(inputs, GAPPED, voiced=False)
     result = assemble(inputs, opened.run, score=False)
     assert "media/bed.mp3" not in {row.location.where for row in result.findings}

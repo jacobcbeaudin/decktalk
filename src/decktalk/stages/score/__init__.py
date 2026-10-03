@@ -54,7 +54,7 @@ from typing import Any
 from decktalk.events import Level, SoundCharged, Unit
 from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, MusicSpec, SoundSpec
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Stage
@@ -73,7 +73,6 @@ from decktalk.settings import AmbienceConfig, EffectsConfig, MusicConfig
 from decktalk.speech.sound import SOUND_DECLARED, SoundContext, SoundProvider, endpoint
 from decktalk.stages import selects
 from decktalk.stages.score.ledger import (
-    LEDGER_FILE,
     UNFINISHED_DIGEST,
     Ledger,
     SoundEntry,
@@ -360,7 +359,7 @@ def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_score: b
     """
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
-    ledger = Ledger.read(inputs.workspace.score_dir / LEDGER_FILE) or Ledger()
+    ledger = Ledger.read(inputs.workspace.ledger_path) or Ledger()
     return cost_of(inputs, [item for item in planned if replace_score or stale(ledger, item)], only)
 
 
@@ -531,7 +530,7 @@ def score(
     """
     keeps = wanted(inputs, only)
     planned = [item for item in plan_items(inputs) if keeps(item)]
-    path = inputs.workspace.score_dir / LEDGER_FILE
+    path = inputs.workspace.ledger_path
     ledger = Ledger.read(path) or Ledger()
     replace = run.spend and replace_score
     fresh = {item.name for item in planned if replace or stale(ledger, item)}

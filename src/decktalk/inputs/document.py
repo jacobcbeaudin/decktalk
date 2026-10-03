@@ -6,7 +6,7 @@
     [mix]                    music, ambience, music_markers, effects and their levels
     [score]                  the prompts `decktalk score` generates from
 
-Everything here changes per presentation. What a setting changes is tuning and lives in `settings.py`,
+Everything here changes per presentation. What a setting changes is tuning and lives in `settings`,
 which is also where `[voice]` lives, and secrets live only in `.env`. `[mix]` and `[score]` are
 shared: this module reads the content half and the settings layer reads the settings, so neither
 warns about the other's keys. Every value is
@@ -22,9 +22,11 @@ from types import NoneType
 from typing import Any, cast, get_args, get_type_hints
 
 from decktalk.errors import InputError
+from decktalk.page import Q
 from decktalk.results import SectionKind, section_key
 from decktalk.settings import BY_ID, PROJECT_FILE, Settings
-from decktalk.tomlmap import Table, unknown_key_message
+from decktalk.tomlmap.read import Table
+from decktalk.tomlmap.suggest import unknown_key_message
 
 
 @dataclass(frozen=True)
@@ -55,8 +57,8 @@ class ClipSection:
         return True
 
 
-# The query keys DeckTalk's own runtime sets on a still, which a section's params may not name.
-FREEZE_QUERY_KEYS = ("cues", "t0", "slide", "after", "before")
+FREEZE_QUERY_KEYS = frozenset(key.value for key in (Q.CUES, Q.T0, Q.SLIDE, Q.AFTER, Q.BEFORE))
+"""The query keys DeckTalk sets itself on a still, so a section's own params never override them."""
 
 
 @dataclass(frozen=True)

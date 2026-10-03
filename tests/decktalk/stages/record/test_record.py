@@ -21,9 +21,9 @@ from decktalk.errors import NotBuiltError
 from decktalk.events import Event, Level, RunLog, StageProgress
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.media import browser, ffmpeg, frames
-from decktalk.media.browser import Recording, RecordingSink
-from decktalk.media.pagereport import PageReport
+from decktalk.media import browser, ffmpeg, frames, recording
+from decktalk.media.pagereport import PageReport, Recording
+from decktalk.media.recording import RecordingSink
 from decktalk.stages.record import pool, record, stale_recording
 from support.logs import decisions
 from support.pages import TWO_SCENE_PAGE, a_report
@@ -83,7 +83,7 @@ class Driven:
         self.counting = threading.Lock()
 
     @contextmanager
-    def chromium(self, _browser_path: str = "", *, policy: str = "trusted") -> Iterator[object]:
+    def chromium(self, _browser_path: str = "", *, policy: str = "trusted", **_launch: object) -> Iterator[object]:
         if self.launches_together is not None:
             self.launches_together.wait()
         with self.counting:
@@ -135,7 +135,7 @@ def driven(monkeypatch: pytest.MonkeyPatch) -> Driven:
     # One recording at a time, so the order a test reads is the order a single recorder writes in.
     monkeypatch.setattr(pool, "available_cpus", lambda: float(pool.CPUS_PER_RECORDING))
     monkeypatch.setattr(browser, "chromium", fake.chromium)
-    monkeypatch.setattr(browser, "record_page", fake.record_page)
+    monkeypatch.setattr(recording, "record_page", fake.record_page)
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: SPAN_SECONDS)
     monkeypatch.setattr(frames, "luma_at", lambda _path, _at, **_kwargs: (90.0, BRIGHT_LUMA))
     monkeypatch.setattr(

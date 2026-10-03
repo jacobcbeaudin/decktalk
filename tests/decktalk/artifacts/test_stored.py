@@ -227,7 +227,7 @@ def test_a_field_deep_in_a_file_is_named_by_its_path(tmp_path: Path) -> None:
 
 def every_stored() -> list[type[Stored]]:
     """Every artifact model the package declares, found by importing each module that declares one."""
-    for module in ("decktalk.artifacts", "decktalk.stages.status", "decktalk.stages.score.ledger"):
+    for module in ("decktalk.artifacts", "decktalk.stages.kept", "decktalk.stages.score.ledger"):
         importlib.import_module(module)
     found: list[type[Stored]] = []
     pending = list(Stored.__subclasses__())

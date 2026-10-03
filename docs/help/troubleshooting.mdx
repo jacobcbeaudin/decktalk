@@ -3,8 +3,8 @@ title: Troubleshooting
 description: Take the code DeckTalk printed from the symptom you saw to the change that clears it.
 ---
 
-DeckTalk answers in codes. There are nine error codes and fifty-three finding codes, every one of them
-carries its own page, and this page is the map from what you saw to which code it was.
+DeckTalk answers in codes. Every error code and every finding code carries its own page, and this
+page is the map from what you saw to which code it was.
 
 Each code's page carries its sentence, its severity and the settings keys that move it. They are
 generated from the same enums the tool prints from, so they are the authority on what a code means.
@@ -16,6 +16,7 @@ appear as data, and what to change.
 An **error** means DeckTalk could not run, so nothing was judged. It prints one block and the command
 stops.
 
+{/* sample: decktalk words, on a fresh decktalk init my-lesson, which exits 3 */}
 ```text
 error[NOT_BUILT]: takes.json has not been built.
   hint: Run `decktalk narrate` first, or `decktalk narrate --no-spend` to spend nothing.
@@ -23,9 +24,13 @@ error[NOT_BUILT]: takes.json has not been built.
 ```
 
 A **finding** is a judgement DeckTalk made about your files or your film. The command ran, and this
-is what it measured. It prints one line per judgement, then one count line.
+is what it measured. It prints its own sentences, then one line per judgement, then one count line.
 
+{/* sample: decktalk check, on a fresh decktalk init my-lesson with cues.json deleted, which exits 1 */}
 ```text
+No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+Checking script.md, deck/index.html.
+This run costs $0.14 for 476 characters at $0.30 per 1,000 characters.
 cues.json: CUE_MISSING the deck declares 12 moment(s) and there is no cues.json, so nothing gives any of them a second.
   fix (safe): Write cues.json with a row for each of the 12 moment(s) the deck declares, each waiting for the words you write in its `phrase`.
 Found 1 finding, 1 error. 1 fixable with --fix.
@@ -37,14 +42,7 @@ judges when it does not. The `fix` line under it appears only when the finding c
 Under `--json`, `error` is filled for the first and null for the second, and `findings` carries the
 second as an array of objects.
 
-| Exit | What it means |
-|---|---|
-| 0 | The command ran and found nothing at or above the threshold. |
-| 1 | The command ran and found something at or above the threshold. |
-| 2 | The command line was refused, which is `USAGE` or `APPROVAL`. |
-| 3 | The command could not run, which is every other error code. |
-| 130 | The caller stopped the run, which is `CANCELLED`. |
-
+An error exits 2 or 3 and a finding at or above the threshold exits 1.
 [Exit codes](/reference/cli#exit-codes), [Error codes](/reference/cli#error-codes) and
 [Finding codes](/reference/cli#finding-codes) list all of them in one place.
 
@@ -60,10 +58,9 @@ None of the three produces a film and none of them spends. `decktalk check --no-
 and opens no browser at all, which makes it the one to run on a machine with no Chromium and inside a
 commit hook. It names every judgement it could not reach rather than passing quietly.
 
+{/* sample: decktalk check --no-pages, on a fresh decktalk init my-lesson, the line about what it skipped */}
 ```text
-no page was opened, so these judgements were not reached: CUE_MISSING, CUE_UNKNOWN, CUE_OVERLAP,
-PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET,
-CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
+no page was opened, so these judgements were not reached: CUE_MISSING, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
 ```
 
 `decktalk check --no-frames` keeps the browser and drops the freeze comparison, which is the faster
@@ -99,15 +96,8 @@ Fill in the phrases and run it again.
 
 ## Carry on past a code, or change what fails a run
 
-| Flag | What it does |
-|---|---|
-| `--allow CODE` | Carry on past this code. It repeats, so `--allow CUE_OVERLAP --allow PAGE_SLIDE_UNUSED` forgives both. |
-| `--fail-on error` | The default. An error fails the run and a warning does not. |
-| `--fail-on warning` | Any finding fails the run. |
-| `--fail-on never` | No finding fails the run, so the exit code reports only whether the command could run. |
-
-Both work on every command that judges, which is `doctor`, `check`, `storyboard`, `narrate`, `cue`,
-`record`, `score`, `assemble`, `verify` and `build`.
+`--allow CODE` carries on past one code, and `--fail-on` chooses which severity fails a run.
+[Which findings fail a run](/agents/json#which-findings-fail-a-run) is the table of both.
 
 `build` also stops on what fails it. When a stage inside a build judges something at the `--fail-on`
 threshold, the build stops after that stage rather than carry the finding into the film, because a
@@ -116,20 +106,25 @@ did not reach are reported as skipped, and the run still returns everything it k
 its findings are printed and in the JSON, the money narrate already spent is in `cost`, and
 `stopped_at` names the stage it stopped after.
 
-{/* sample: decktalk build --no-spend on a built starter whose cue 3.1:idea waits for a phrase nobody says */}
-
+{/* sample: decktalk build --no-spend, on a fresh decktalk init my-lesson whose cue 3.1:idea waits for "a phrase nobody says", which exits 1 */}
 ```text
+run 9227734468d0, events build/events/9227734468d0.jsonl
      Narrate    0:00
          Cue    0:00
-Cue made one finding that the build stops on, so the build stopped before record rather than carry it into the film.
-      Record    0:00
-  Score    0:00
-    Assemble    0:00
-      Verify    0:00
-     Stopped at cue, $0.00, 1 finding
+Cue made 1 finding that the build stops on, so the build stopped before record rather than carry it into the film.
+      Record    0:00   skipped
+       Score    0:00   skipped
+    Assemble    0:00   skipped
+      Verify    0:00   skipped
+     Stopped at cue, $0.00, 4 findings
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no take yet. Run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take yet. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no take yet. Run decktalk narrate --section 3 --spend to buy its take.
 cues.json:30: CUE_UNRESOLVED the cue 3.1:idea waits for 'a phrase nobody says' and section 3 speaks 25 words, none of which is that phrase.
-Found 1 finding, 1 error.
+Found 4 findings, 1 error.
 ```
+
+The three `TAKE_MISSING` lines are warnings, so they do not stop the build. The one error does.
 
 The two flags that decide what fails a run decide what stops a build, because a build that carried
 on past a finding its exit fails on would spend on a film already called wrong.
@@ -247,9 +242,10 @@ In the library there is no terminal to ask, so nothing spends without `spend=Tru
 
 **What you see.** `error[NOT_BUILT]`, naming the file that is not there and the command that writes it.
 
+{/* sample: decktalk words, on a fresh decktalk init my-lesson, which exits 3 */}
 ```text
-error[NOT_BUILT]: build/narrate/takes.json has not been built.
-  hint: Run `decktalk narrate` first.
+error[NOT_BUILT]: takes.json has not been built.
+  hint: Run `decktalk narrate` first, or `decktalk narrate --no-spend` to spend nothing.
   docs: https://docs.decktalk.ai/reference/errors/NOT_BUILT
 ```
 
@@ -294,10 +290,9 @@ than allowed to overwrite the first one's work.
 
 ## An unresolved cue
 
-A cue is one thing written in two files. The page declares a moment with a cue name, and the
-runtime qualifies it into a cue id, which is the slide id, a colon and the cue name. So
-`data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`, and that is
-what `cues.json` carries in its `id` field. Four codes say which half is missing.
+A cue is one thing written in two files. The page declares a moment with a cue name, and `cues.json`
+carries its [cue id](/concepts/cues#the-cue-id), such as `4.1:expand`, in its `id` field. Four codes
+say which half is missing.
 
 | Code | Which half is missing | Where the change goes |
 |---|---|---|
@@ -309,8 +304,9 @@ what `cues.json` carries in its `id` field. Four codes say which half is missing
 **Reading `CUE_UNRESOLVED`.** The message names the phrase and how many words the section actually
 speaks.
 
+{/* sample: decktalk check --no-pages, on a fresh decktalk init my-lesson whose cue 1.1:title waits for "a phrase nobody says", the finding line */}
 ```text
-cues.json: CUE_UNRESOLVED the cue 1.1:title waits for 'a phrase nobody says' and section 1 speaks 38 words, none of which is that phrase.
+cues.json:13: CUE_UNRESOLVED the cue 1.1:title waits for 'a phrase nobody says' and section 1 speaks 38 words, none of which is that phrase.
 ```
 
 Run `decktalk words --section 1` to see every spoken word with its start and its end, which is the
@@ -322,10 +318,9 @@ fires, and `verify` set to false leaves the cue out of the measurement.
 **Reading `CUE_STALE`.** `verify` measures the film on disk against the cue times the last build
 placed. Edit `cues.json` and run `verify` alone, and the times no longer match the file:
 
-{/* sample: decktalk verify on a built starter after changing the phrase of 3.1:idea and back */}
-
+{/* sample: decktalk verify, on a built starter rebuilt with 3.1:idea on "Change a word" and then set back to "the whole idea", the finding line */}
 ```text
-cues.json: CUE_STALE cues.json asks for 3.1:idea on 'the whole idea' and the cue times hold a second placed for 'a phrase nobody says', so the cue times are older than cues.json and the film was cut to moments nobody asks for now. Run `decktalk build` to place them again.
+cues.json: CUE_STALE cues.json asks for 3.1:idea on 'the whole idea' and the cue times hold a second placed for 'Change a word', so the cue times are older than cues.json and the film was cut to moments nobody asks for now. Run `decktalk build` to place them again.
 ```
 
 The phrase is not the problem, so leave it alone. Run `decktalk build`. It places every cue again,
@@ -363,6 +358,7 @@ measure that, all of them by comparing frames.
 
 **What you see.** The message carries the measured share of the frame and the floor it is under.
 
+{/* sample: decktalk check, on a fresh decktalk init my-lesson whose 1.1:title element is styled visibility: hidden, the finding line */}
 ```text
 build/frames/01/slide-1.1-after-1.1_title.png: CUE_NO_CHANGE freezing the slide either side of 1.1:title changes 0.00 percent of the frame, which is under the 0.10 percent floor, so the reveal would not be measured at all.
 ```
@@ -404,8 +400,9 @@ t=0. When the scan finds no cover frames, the run falls back to the first painte
 settle, and failing that to `record.fallback_first_paint_seconds` plus the settle. It says so when it
 does:
 
+{/* sample: decktalk record --section 2 --force --set record.cover_chroma_min=255, on a starter after narrate --no-spend and cue, the warning line */}
 ```text
-Section 2 shows no cover, so narration t=0 is a guess at 1.6s (the first painted frame and the settle), and every reveal in the section moves with it.
+Section 2 shows no cover, so narration t=0 is a guess at 1.434s (the first painted frame and the settle), and every reveal in the section moves with it.
 ```
 
 Treat that warning as the first thing to fix, because a guessed start moves every reveal in the
@@ -509,6 +506,7 @@ on it. [Sound](/concepts/sound#loudness) says exactly when `MIX_LOUDNESS` is rai
 1. Check whether the loudness pass ran at all. On a build with placeholder narration it does not,
    and the run says so.
 
+   {/* sample: decktalk build --no-spend, on a fresh decktalk init my-lesson, the assemble line */}
    ```text
    The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
    ```
@@ -524,6 +522,7 @@ on it. [Sound](/concepts/sound#loudness) says exactly when `MIX_LOUDNESS` is rai
 
 **What you see.** `PAGE_CDN_ASSET`, once per other origin the page reached for, naming that origin.
 
+{/* sample: decktalk check, on a fresh decktalk init my-lesson whose page links https://fonts.example.com/inter.css, the finding line */}
 ```text
 deck/index.html: PAGE_CDN_ASSET the page loaded an asset from https://fonts.example.com, which the project does not own, so the film depends on a host that may change or stop answering.
 ```

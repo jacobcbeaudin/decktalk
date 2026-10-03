@@ -454,16 +454,13 @@ class LiveRun(Model):
 BYTES_PER_MB = 1_000_000
 """How many bytes a megabyte is in a sentence that sizes files, which is the decimal unit a file browser shows."""
 
-BYTES_PER_KB = 1_000
-"""How many bytes a kilobyte is, for files too small to read as a tenth of a megabyte."""
-
 
 def sized(count: int) -> str:
     """A number of bytes as a file browser shows it: megabytes to one place, then kilobytes, then bytes."""
-    if count < BYTES_PER_KB:
+    if count < 1000:
         return counted(count, "byte")
     if count * 10 < BYTES_PER_MB:
-        return f"{count / BYTES_PER_KB:.0f} KB"
+        return f"{count / 1000:.0f} KB"
     return f"{count / BYTES_PER_MB:.1f} MB"
 
 
@@ -511,7 +508,7 @@ class SectionTake(Model):
 class CueTime(Model):
     """One cue resolved against the words its section speaks."""
 
-    cue: str = Field(description="The cue's cue id, which is its slide and its local name.")
+    id: str = Field(description="The cue's cue id, which is its slide and its local name.")
     phrase: str = Field(description="The phrase in the script this cue lands on.")
     seconds: float | None = Field(None, ge=0, description="When it lands, in seconds after its section starts.")
     nudge_seconds: float = Field(0.0, description="The author's own nudge in seconds, added to the resolved second.")

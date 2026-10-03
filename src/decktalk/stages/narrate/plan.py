@@ -30,7 +30,7 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
 from decktalk.inputs.script import Segment
 from decktalk.inputs.workspace import Workspace
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.page import SECOND_DIGITS
 from decktalk.results import DOLLAR_DIGITS, Cost, CostState, TakeStatus
 from decktalk.settings import BY_ID, PROJECT_FILE
@@ -86,7 +86,7 @@ def placeholder_inputs(inputs: Inputs, segment: Segment) -> PlaceholderInputs:
     )
 
 
-def is_cached(digest: str, workspace: Workspace) -> bool:
+def is_held(digest: str, workspace: Workspace) -> bool:
     """True when some place a take is looked for holds a good copy of this take and its words file.
 
     The places are the project's takes directory, then the machine's take store, so a clone that committed
@@ -293,7 +293,7 @@ def plan_takes(
         elif again:
             plans.append(TakePlan(segment, wanted, "this run was told to make it again", chapter, digest, request))
             planned.add(digest)
-        elif is_cached(digest, inputs.workspace):
+        elif is_held(digest, inputs.workspace):
             plans.append(TakePlan(segment, TakeStatus.KEPT, "", chapter, digest, request))
         else:
             refuse_damaged(inputs, segment.index, digest)
@@ -392,7 +392,7 @@ __all__ = [
     "damaged_refusal",
     "refuse_damaged",
     "refuse_dropped_pauses",
-    "is_cached",
+    "is_held",
     "miss_reason",
     "named_voice",
     "placeholder_inputs",

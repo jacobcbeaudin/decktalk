@@ -1,7 +1,7 @@
-"""The placements: where every section sits in the finished film, and what each section cut was made from.
+"""The placements: where every section sits in the finished film, and what each section video was made from.
 
     build/final/placements.json   one row per section, in the order they play
-    build/sections/NN.json        the key of the section cut beside it, which decides whether it is kept
+    build/sections/NN.json        the key of the section video beside it, which decides whether it is kept
 
 This is the one record of the shape of a film. The transcript page, a caption reader and anything
 that wants to jump to a section read it instead of adding up section files, and `substitute` says
@@ -50,8 +50,8 @@ class Placements(Stored):
         return self.sections[-1].end if self.sections else 0.0
 
 
-class CutKey(Stored):
-    """What one section cut was encoded from, which is how an unchanged cut is told from a stale one.
+class SectionVideoKey(Stored):
+    """What one section video was encoded from, which is how an unchanged video is told from a stale one.
 
     The key is the whole argument list of the encode and the content of every file it read, so a
     change to any filter, any encoder setting, the trim, the fades or the recording itself moves it.
@@ -60,14 +60,14 @@ class CutKey(Stored):
     well, because a newer engine may encode the same arguments differently.
     """
 
-    label: ClassVar[str] = "the key one section's cut was encoded from"
+    label: ClassVar[str] = "the key one section's video was encoded from"
 
     digest: str = Field(description="The sha256 of the encode's arguments, its inputs' content digests and the engine.")
 
     @classmethod
-    def of(cls, args: Sequence[str], sources: Sequence[Path]) -> CutKey:
+    def of(cls, args: Sequence[str], sources: Sequence[Path]) -> SectionVideoKey:
         """The key of one encode, from the arguments it would run with and the files it would read."""
         return cls(digest=engine_digest(*args, *(f"{path.name}:{file_digest(path)}" for path in sources)))
 
 
-__all__ = ["CutKey", "Placement", "Placements"]
+__all__ = ["SectionVideoKey", "Placement", "Placements"]

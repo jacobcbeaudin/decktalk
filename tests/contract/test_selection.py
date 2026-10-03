@@ -1,4 +1,4 @@
-"""The collection hook in `tests/conftest.py`, run against a suite of its own.
+"""The collection hook and the Hypothesis profile in `tests/conftest.py`, run against a suite of its own.
 
 The hook decides what every command in `scripts/check.py` runs, and a hook nobody reads rots, so it
 is driven here through `pytester` rather than described. The suite below is the real conftest and
@@ -45,6 +45,9 @@ def test_asks_this_machine():
 """
 
 
+DRAWN = "from hypothesis import given, strategies\n\n@given(strategies.text())\ndef test_drawn(text):\n    pass\n"
+"""A property test over text, which makes Hypothesis build and cache its unicode tables."""
+
 WHEEL = "def test_reads_the_built_wheel():\n    pass\n"
 """A test at the wheel test's own path, which carries no marker and is marked by where it is."""
 
@@ -64,9 +67,9 @@ def suite(pytester):
     [
         pytest.param((), id="a bare run is the tests that need no tool"),
         pytest.param(("-m", "media"), id="a suite is reached by naming its marker"),
-        # A bare run on a fresh machine used to collect the platform suite and fail on a tool nobody had fetched.
+        # A bare run on a fresh machine leaves the platform suite out, because it needs a tool nobody has fetched.
         pytest.param(("-m", "platform"), id="the platform suite is reached the same way"),
-        # `-m "not e2e"` used to collect every other suite, including the five-minute scaffold build.
+        # `-m "not e2e"` collects no other marked suite, so it never starts the five-minute scaffold build.
         pytest.param(("-m", "not e2e"), id="naming one marker never admits another"),
     ],
 )
@@ -86,3 +89,13 @@ def test_an_empty_selection_is_an_error_naming_the_markers(suite):
     result = suite.runpytest("-m", "browser", "-k", "nothing_matches_this")
     assert result.ret != 0
     result.stderr.fnmatch_lines(["*no test was selected*browser, media, e2e, scaffold, platform, wheel*"])
+
+
+def test_a_property_test_writes_under_the_suite_output_and_never_in_the_directory_it_runs_in(suite, monkeypatch):
+    """Hypothesis keeps its unicode tables and constants in a folder of its own, which defaults to the
+    working directory. The conftest points it at `tests/out/`, which git already ignores."""
+    suite.makepyfile(test_drawn=DRAWN)
+    monkeypatch.setenv("PYTHONPATH", str(TESTS))
+    suite.runpytest_subprocess("test_drawn.py").assert_outcomes(passed=1)
+    assert not (suite.path / ".hypothesis").exists()
+    assert (suite.path / "out" / "hypothesis").is_dir()

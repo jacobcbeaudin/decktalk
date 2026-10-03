@@ -16,7 +16,7 @@ from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
 from decktalk.inputs.timeline import narration_offsets
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, frames
 from decktalk.media.frames import Decoded, Size, Wanted
 from decktalk.pipeline import Stage

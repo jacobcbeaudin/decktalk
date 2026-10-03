@@ -20,7 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.settings import ENV_PREFIX, env_warnings
+from decktalk.settings.layers import env_warnings
+from decktalk.tomlmap import ENV_PREFIX
 from support.paths import REPO, SRC, TESTS
 from support.tools import SUITE_MARKERS
 
@@ -57,7 +58,7 @@ ALLOW = {
     "contract/test_imports.py": "The layer rank of every module in `src/decktalk`.",
     "contract/test_installer.py": "`install.sh`, the one-line installer.",
     "contract/test_layout.py": "This mirror rule, which belongs to the suite rather than to a module.",
-    "contract/test_numbers.py": "`tests/contract/numbers-baseline.json`, every number written outside settings.py.",
+    "contract/test_numbers.py": "`tests/contract/numbers-baseline.json`, every number written outside settings.",
     "contract/test_promise.py": "`docs/reference/stability.mdx`, what DeckTalk promises a caller.",
     "contract/test_probe.py": "`src/decktalk/runtime/decktalk-probe.js`, read as the compiled bundle.",
     "contract/test_prose.py": "Every tracked text file, judged by the two prose rules that are mechanical.",
@@ -67,9 +68,9 @@ ALLOW = {
     ),
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
-    "contract/test_selection.py": "The collection hook in `tests/conftest.py`.",
+    "contract/test_selection.py": "The collection hook and the Hypothesis profile in `tests/conftest.py`.",
     "contract/test_silent.py": "Every except block and every child process in `src/decktalk`, read as its AST.",
-    "contract/test_take_hash.py": "`tests/data/take_hash.json`, the golden digests of the founder's film.",
+    "contract/test_take_hash.py": "`tests/data/take_hash.json`, the golden digests of two paid films.",
     "contract/test_timing_policy.py": "`tests/support/timing_policy.py`, the suite's own timing rule.",
     "contract/test_vocabulary.py": (
         "`tests/contract/vocabulary-baseline.json`, every literal still spelling a closed vocabulary."
@@ -201,7 +202,7 @@ def test_the_project_registers_exactly_the_markers_that_name_what_a_run_needs():
     for row in rows:
         name, description = row.split(":", 1)
         assert description.strip().startswith("needs "), (
-            f"the {name} marker must say what it needs first, so `pytest --markers` answers what a table used to."
+            f"the {name} marker must say what it needs first, so `pytest --markers` says what each suite needs."
         )
 
 
@@ -263,7 +264,7 @@ def named_in_the_settings_namespace(path: Path) -> set[str]:
     writes the shim that subprocess imports as a string, and a name inside that string reaches the
     real environment exactly as a name outside it does.
     """
-    return set(re.findall(rf"{ENV_PREFIX.upper()}_[A-Z0-9_]+", path.read_text(encoding="utf-8")))
+    return set(re.findall(rf"{ENV_PREFIX}[A-Z0-9_]+", path.read_text(encoding="utf-8")))
 
 
 def test_no_end_to_end_test_names_a_variable_decktalk_does_not_read():
@@ -277,7 +278,7 @@ def test_no_end_to_end_test_names_a_variable_decktalk_does_not_read():
         warnings = env_warnings(dict.fromkeys(named_in_the_settings_namespace(path), ""))
         assert warnings == [], (
             f"{path.relative_to(REPO).as_posix()}: {warnings} A variable a suite owns is spelled outside "
-            f"the {ENV_PREFIX.upper()}_ namespace, because every name inside that one is a key or a typo."
+            f"the {ENV_PREFIX} namespace, because every name inside that one is a key or a typo."
         )
 
 

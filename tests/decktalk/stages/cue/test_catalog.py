@@ -8,7 +8,7 @@ from pathlib import Path
 from decktalk.findings import Applicability, Code
 from decktalk.inputs.cues import Cue, CuedSection
 from decktalk.inputs.document import PageSection
-from decktalk.machine import apply_fix
+from decktalk.machine.fixes import apply_fix
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pipeline import Stage
 from decktalk.results import Scope

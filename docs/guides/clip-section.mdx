@@ -64,9 +64,9 @@ A section's number is its place in the film, so adding a clip in the middle renu
    upward, then add the clip section's own table.
 2. In `script.md`, renumber the same headings. The clip section needs no heading of its own, and a
    heading there is never voiced, because the voice reads every section that does not play a clip.
-3. In `cues.json`, rename each later section key, from the last one upward. The cue ids do not move.
-   A cue id is the slide id, a colon and the cue name the page writes, and the slides of the page
-   are untouched by a renumbering of the film.
+3. In `cues.json`, rename each later section key, from the last one upward. The [cue id](/concepts/cues#the-cue-id)s do not
+   move, because they name slides, and the slides of the page are untouched by a renumbering of the
+   film.
 4. Run `decktalk build`.
 
 A renumbered section is voiced again by nothing. A take is named by the digest of what was sent to
@@ -170,7 +170,7 @@ first word is part of the span like anything else.
     inside the span in seconds after the clip starts. A word the span cuts in two is left out and
     said aloud on the stream, so move `--end` into the silence beside the word to keep it.
 
-    {/* sample: decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 on a starter built with --no-spend */}
+    {/* sample: decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4, on a starter built with --no-spend */}
     ```text
     Section 1 carries placeholder narration, so every word time in this clip is an estimate.
     Cut media/open-line.mp4, 1.9 seconds of section 1.
@@ -197,14 +197,14 @@ first word is part of the span like anything else.
 
 The JSON is one flat object, so a caller reads what was written without parsing a line.
 
-{/* sample: decktalk clip --section 1 --json, the fields the result declares */}
+{/* sample: decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4 --json, on a starter built with --no-spend */}
 ```json
 {
   "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "aad1d3514574",
+  "run": "78d56eab7905",
   "written": ["media/open-line.mp4", "media/open-line.words.json"],
   "section": 1,
   "file": "media/open-line.mp4",
@@ -234,7 +234,7 @@ there. Each refusal names the command that makes what is missing.
 | The span ends before it starts, or starts before zero | Write `--start` at 0 or later and `--end` after it. |
 | The span holds no whole frame | Make it at least one frame long. |
 | The span ends past the section | Write `--end` at the section's own length or earlier, which the refusal states. |
-| `--out` names the section cut itself | Write the clip somewhere else, such as under `media/`. |
+| `--out` names the section video itself | Write the clip somewhere else, such as under `media/`. |
 
 ## Related
 

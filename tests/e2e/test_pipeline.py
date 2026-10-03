@@ -7,18 +7,16 @@ blocked. The fixture is copied under tests/out/e2e, which CI uploads when a test
 directory is one per machine, so a session takes a lock on it and skips rather than deleting another
 session's build, and E2E_OUT names another directory for a second session.
 
-This suite is the panel's integration sample rather than a policy test. It proves no proposition on
+This suite is an integration sample rather than a policy test. It proves no proposition on
 its own and samples the joint behaviour of Chromium, ffmpeg and the filesystem on one machine, so
 every assertion here is an exit code, an artifact, a JSON shape or a path, and never a pixel and
 never a millisecond of wall time. Every test is one property of the finished build, so a failure
 names what broke.
 
 The command line is driven as a real subprocess of `python -m decktalk`, so nothing about the CLI's
-internal module layout is assumed and nothing is faked. The commands and flags are spelled from
-`~/Documents/decktalk-plan/gen5/synthesis/design.md` section 3, the final vocabulary, with the flag
-families of `~/Documents/decktalk-plan/gen5/panels/cli/design.md` section 2 and the resolutions R7,
-R10, R24 and R26 applied. T8 had not landed when this was written, so a failure that names a missing
-command or an unknown flag is T8's spelling and not a broken property.
+internal module layout is assumed and nothing is faked. The commands and flags are spelled as
+`docs/reference/cli.mdx` documents them, so a failure that names a missing command or an unknown flag
+is a drift between the two and not a broken property.
 """
 
 from __future__ import annotations
@@ -39,6 +37,7 @@ from typing import IO, Any
 import pytest
 
 from decktalk.artifacts import CueTimes, Placements, RecordingLog, Takes, Words
+from decktalk.errors import Exit
 from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart, StageDone, StageStart
 from decktalk.findings import Code
 from decktalk.media import audio, ffmpeg, frames
@@ -47,8 +46,6 @@ from decktalk.pipeline import Artifact, Outcome, Stage
 from decktalk.results import CostState, Layer, SectionKind, Substitute, Word
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing
 from support.commands import (
-    FOUND_NOTHING,
-    FOUND_SOMETHING,
     HOSTILE_DIRECTORY,
     clean_environ,
     codes,
@@ -443,7 +440,7 @@ def test_a_second_record_run_keeps_every_section(built: Project) -> None:
     before = {key: (built.build_dir / "recordings" / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
     again = built.cli("record", "--json")
     doc = again.json
-    assert again.code == FOUND_NOTHING, again.stderr
+    assert again.code == Exit.FOUND_NOTHING, again.stderr
     rows = {row["key"]: row for row in doc["sections"]}
     assert set(rows) == set(SPOKEN)
     assert all(row["kept"] for row in rows.values()), rows
@@ -722,7 +719,7 @@ def test_the_take_index_and_the_cue_times_agree_with_what_was_built(built: Proje
     assert takes.estimated, "every take of an unvoiced build is a placeholder"
     cue_times = CueTimes.read(built.root / Artifact.CUE_TIMES.value)
     assert cue_times is not None
-    resolved = [f"{section.section}:{cue.cue}" for section in cue_times.sections for cue in section.cues]
+    resolved = [f"{section.section}:{cue.id}" for section in cue_times.sections for cue in section.cues]
     assert resolved == list(CUES)
     assert all(cue.seconds is not None for section in cue_times.sections for cue in section.cues)
 
@@ -773,9 +770,9 @@ def test_cues_resolve_by_occurrence_and_by_phrase_on_uneven_word_timestamps(buil
 
     run = project.cli("cue", "--json", "--section", "1")
     doc = run.json
-    assert run.code == FOUND_NOTHING, run.stderr
+    assert run.code == Exit.FOUND_NOTHING, run.stderr
     [section] = [row for row in doc["sections"] if row["key"] == "01"]
-    resolved = {row["cue"]: row["seconds"] for row in section["cues"]}
+    resolved = {row["id"]: row["seconds"] for row in section["cues"]}
     lead = first.lead_seconds
     assert resolved["1.1:first"] == pytest.approx(0.81 + lead, abs=1e-2)
     assert resolved["1.1:second"] == pytest.approx(4.05 + lead, abs=1e-2), "the third `a` is the one named"
@@ -791,7 +788,7 @@ def test_building_one_section_records_that_section_and_no_other(built: Project) 
     length = ffmpeg.probe_duration(built.film)
     run = built.cli("build", "--no-spend", "--section", "4", "--json")
     assert run.errors() == [], run.stderr
-    assert run.code in (FOUND_NOTHING, FOUND_SOMETHING), run.stderr
+    assert run.code in (Exit.FOUND_NOTHING, Exit.FOUND_SOMETHING), run.stderr
     after = {key: (recordings / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
     assert after["01"] == before["01"] and after["02"] == before["02"], "only section 4 is recorded again"
     assert after["04"] > before["04"]

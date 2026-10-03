@@ -170,7 +170,7 @@ def resolve_sections(
         for cue in block.cues:
             place = Location(where=cue.id, file=cues_file, line=cue.line, section=block.number, cue=cue.id)
             seconds = None if spoken is None else resolve_cue(cue, spoken)
-            rows.append(CueTime(cue=cue.id, phrase=cue.phrase, seconds=seconds, nudge_seconds=cue.offset_seconds))
+            rows.append(CueTime(id=cue.id, phrase=cue.phrase, seconds=seconds, nudge_seconds=cue.offset_seconds))
             if seconds is None:
                 found += _unresolved(cue, block, spoken, place, clips=clips, stage=stage, lines=lines)
                 continue

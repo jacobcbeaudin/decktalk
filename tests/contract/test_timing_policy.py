@@ -1,20 +1,20 @@
 """When a build that exited non-zero still counts as finished, case by case, and what a budget is.
 
 `tests/support/timing_policy.py` holds the rule every suite that drives a real build follows, and
-this holds the rule to each case without a build, because the rule is the thing that went wrong: a
-late reveal on a hosted macOS runner failed a test whose subject was which sections got recorded
+this holds the rule to each case without a build, because the rule is where a mistake costs most: a
+late reveal on a hosted macOS runner would fail a test whose subject is which sections get recorded
 again.
 
 Each case here is one decision the rule makes. The message `tolerated` returns is read only for the
 code it names and never for its wording, so the sentence can be rewritten without touching these.
 
 The middle section holds the seam, which is the one reading every suite that drives a real build
-gets its errors from. Applying the rule test by test is what let a second test fail a
-merge on the same reveal, so the rule being right matters less than every test asking it.
+gets its errors from. A rule applied test by test lets a second test fail a merge on the same
+reveal, so the rule being right matters less than every test asking it.
 
 The last section holds the other half of the rule, which is that a leg reaches the suite with it.
-The rule read `--timing` correctly from the day it was written and no row of `GROUPS` ever passed
-that flag, so every hosted runner gated and the founder's decision lived only in a docstring.
+A rule that reads `--timing` correctly does nothing unless a row of `GROUPS` passes that flag,
+because without it every hosted runner gates and the decision lives only in a docstring.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ REPORTS_TIMING = (
     "scaffold",
     *(() if check.LINUX_GATES_TIMING else ("e2e",)),
 )
-"""Every leg whose compositor is not trustworthy, which is the founder's decision written as names.
+"""Every leg whose compositor is not trustworthy, which is the decision written as names.
 
 The three `-platforms` rows are the hosted macOS and Windows runners, which composite through a
 stack DeckTalk does not own. `scaffold` is a hosted Linux runner rendering five whole projects in
@@ -116,7 +116,7 @@ def test_a_gated_run_holds_the_project_to_the_limit_it_states() -> None:
 
 
 def test_an_ungated_run_adds_the_declared_slack_and_nothing_else() -> None:
-    """The `4` and the `5` this replaces were the settings plus two, written as literals in the suite."""
+    """The slack is the declared frames over the stated limit, so no literal in the suite restates it."""
     widened = offset_limit_ms(STATED_LIMIT_MS, gate=False)
     assert widened > STATED_LIMIT_MS
     assert (widened - STATED_LIMIT_MS) / UNGATED_EXTRA_FRAMES == pytest.approx(
@@ -227,7 +227,7 @@ def suites(group: check.Group) -> list[tuple[str, ...]]:
     return [command for command in group.commands if "pytest" in command]
 
 
-def test_the_table_passes_the_flag_on_every_leg_the_founder_named_and_on_no_other() -> None:
+def test_the_table_passes_the_flag_on_every_named_leg_and_on_no_other() -> None:
     """One assertion in both directions, because a flag on a trusted runner is as wrong as none here."""
     for group in check.GROUPS:
         for command in suites(group):

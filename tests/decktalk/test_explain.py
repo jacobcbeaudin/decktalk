@@ -13,7 +13,9 @@ from decktalk.explain import explain as explained
 from decktalk.findings import Code
 from decktalk.machine import Machine, Toolchain
 from decktalk.results import ConfigExplainResult, CueTime, Layer, Nature, Scope, SectionCues, Source
-from decktalk.settings import BY_ID, NUMBERS_BY_ID, load
+from decktalk.settings import BY_ID
+from decktalk.settings.layers import load
+from decktalk.settings.numbers import NUMBERS_BY_ID
 
 CUES = CueTimes(
     sections=(
@@ -22,10 +24,10 @@ CUES = CueTimes(
             key="01",
             estimated=False,
             cues=(
-                CueTime(cue="1.1:first", phrase="first", seconds=1.0),
-                CueTime(cue="1.1:close", phrase="close", seconds=1.1),
-                CueTime(cue="1.1:far", phrase="far", seconds=5.0),
-                CueTime(cue="1.1:never", phrase="never", seconds=None),
+                CueTime(id="1.1:first", phrase="first", seconds=1.0),
+                CueTime(id="1.1:close", phrase="close", seconds=1.1),
+                CueTime(id="1.1:far", phrase="far", seconds=5.0),
+                CueTime(id="1.1:never", phrase="never", seconds=None),
             ),
         ),
     )

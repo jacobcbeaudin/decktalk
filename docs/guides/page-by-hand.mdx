@@ -9,7 +9,7 @@ deck belongs to a design that neither packaged example fits.
 
 Everything here is the same contract the starter obeys. A `[data-scene]` wrapper is one scene, each
 `<template data-slide>` inside it is one slide, an element has four moments and each moment is a
-cue name. No attribute ever writes a second, because `cues.json` owns seconds.
+cue name. No attribute says when a cue fires, because `cues.json` owns that.
 
 ## The skeleton
 
@@ -152,10 +152,9 @@ const step = (left) => (slide) => {
 DeckTalk.on("1.5:long", step("1500px")).on("1.5:short", step("90px"));
 ```
 
-<Note>`DeckTalk.on` takes a cue id, which is the slide id, a colon and the cue name, because a
-handler may be registered anywhere in the deck and nothing around the call says which slide it means.
-A slide's own `owns` and `on` keys are cue names, because the slide they belong to already says
-which slide that is.</Note>
+<Note>`DeckTalk.on` takes a [cue id](/concepts/cues#the-cue-id), because a handler may be registered anywhere in the deck
+and nothing around the call says which slide it means. A slide's own `owns` and `on` keys are cue
+names, because the slide they belong to already says which slide that is.</Note>
 
 A handler receives the mounted slide element, or null when no slide is mounted, and a context of
 `id`, the cue id of the cue, `at`, the second on the page clock, `frozen`, whether the page is a

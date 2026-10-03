@@ -9,8 +9,7 @@ keys a code depends on come from the enum member and from the keys that name it,
 say something the code does not.
 
 It also writes the table of the codes the page raises into the runtime reference, between two
-markers, because that table was once typed by hand and described eleven codes differently from the
-pages this script writes.
+markers, because a table typed by hand drifts from the pages this script writes.
 """
 
 from __future__ import annotations

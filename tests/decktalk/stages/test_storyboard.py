@@ -57,7 +57,7 @@ def opened(monkeypatch: pytest.MonkeyPatch) -> Opened:
     made = Opened()
 
     @contextmanager
-    def chromium(_browser_path: str = "", *, policy: str) -> Iterator[object]:
+    def chromium(_browser_path: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
         made.policies.append(policy)
         yield object()
 

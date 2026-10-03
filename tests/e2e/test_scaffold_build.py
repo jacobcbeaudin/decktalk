@@ -9,11 +9,9 @@ leaves out. `tests/decktalk/template/test_template.py` judges the same projects 
 pull request without building them, and this file is what proves they build.
 
 The command line is driven as a real subprocess of `python -m decktalk`, so nothing about the CLI's
-internal module layout is assumed and nothing is faked. The commands and flags are spelled from
-`~/Documents/decktalk-plan/gen5/synthesis/design.md` section 3, the final vocabulary, with the flag
-families of `~/Documents/decktalk-plan/gen5/panels/cli/design.md` section 2 applied. T8 had not
-landed when this was written, so a failure that names a missing command or an unknown flag is T8's
-spelling and not a broken project.
+internal module layout is assumed and nothing is faked. The commands and flags are spelled as
+`docs/reference/cli.mdx` documents them, so a failure that names a missing command or an unknown flag
+is a drift between the two and not a broken project.
 """
 
 from __future__ import annotations
@@ -26,9 +24,10 @@ from typing import Any
 import pytest
 
 from decktalk.artifacts import RecordingLog
+from decktalk.errors import Exit
 from decktalk.findings import Code
 from decktalk.template import EXAMPLES, STARTER
-from support.commands import FOUND_NOTHING, HOSTILE_DIRECTORY, clean_environ, codes, flat
+from support.commands import HOSTILE_DIRECTORY, clean_environ, codes, flat
 from support.timing_policy import (
     EVERY_PACKAGED_PROJECT_SECONDS,
     FIRST_FETCH_SECONDS,
@@ -103,7 +102,7 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(
 
     chosen = ("--example", example) if example is not NO_EXAMPLE else ()
     made = decktalk("init", str(root), "--name", name, "--json", *chosen, cwd=home, cache=home)
-    assert made.returncode == FOUND_NOTHING, made.stderr
+    assert made.returncode == Exit.FOUND_NOTHING, made.stderr
     doc = flat(made.stdout)
     assert doc["example"] == (example or STARTER), "init reports the packaged project it wrote"
     assert Path(doc["root"]).name == name

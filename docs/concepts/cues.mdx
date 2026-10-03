@@ -14,12 +14,21 @@ A cue id is the slide id, a colon, and then the cue name the page writes. So
 `data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`, and `4.1:expand`
 is what `cues.json` carries. The author writes a short cue name that means something inside its own
 slide, and the runtime qualifies it with the slide it was written in, so two slides may each have a
-moment called `expand` and no cue is ever ambiguous.
+moment called `expand` and no cue is ever ambiguous. Every other page names this rule and links here.
+
+The slide id, not the section number, is the first half. A section can play a scene whose slides are
+numbered differently, and the cue id follows the slide. Section 1 of the starter plays scene 1,
+whose two slides are `1.1` and `1.2`, which is why its rows begin with both.
+
+Each of the four moments an element declares is a cue id of its own: `data-in` when it arrives,
+`data-back` when it steps back, `data-front` when it comes forward, and `data-out` when it leaves. A
+handler registered with `DeckTalk.on` takes the cue id too, because it may be registered anywhere in
+the deck, while a slide's own `on` map takes the bare cue name, because the slide is already known.
 
 That split is the whole design. `cues.json` owns the seconds and the page owns the moments. No page
-attribute writes a second, and no row of `cues.json` says what a reveal looks like. Each file can be
-edited without reading the other, and a rename in one is a finding against the other rather than a
-silent miss.
+attribute says when a cue fires, and no row of `cues.json` says what a reveal looks like. Each file
+can be edited without reading the other, and a rename in one is a finding against the other rather
+than a silent miss.
 
 The starter's section 1 shows one cue, `1.2:script`, in all three files.
 

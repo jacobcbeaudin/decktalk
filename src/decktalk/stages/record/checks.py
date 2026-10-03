@@ -14,7 +14,7 @@ from pathlib import Path
 from decktalk.artifacts import Luma, RecordingChecks
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.media import ffmpeg, frames
-from decktalk.media.browser import Recording
+from decktalk.media.pagereport import Recording
 from decktalk.pagescan import asset_findings, page_findings
 from decktalk.pipeline import Stage
 from decktalk.settings import Settings

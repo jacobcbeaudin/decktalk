@@ -7,8 +7,8 @@ sound status, a section kind, a skip reason, a substitute, a spend state, a sett
 nature and a setting's source are each a member of a plain enum, and a plain enum never compares
 equal to a string. So a string literal that spells one of them is either
 dead, because it is compared with a member and is always unequal, or it is a second spelling of the
-vocabulary that the enum cannot see. Either way it is how a test once compared a JSON object with a
-code and passed without testing anything. This walk reads the AST of every Python file under `src/`
+vocabulary that the enum cannot see. Either way a test that compares a JSON object with such a
+code passes without testing anything. This walk reads the AST of every Python file under `src/`
 and `tests/` and fails on a string literal equal to a member of any of them, wherever the literal
 stands for the thing itself.
 
@@ -33,7 +33,7 @@ does not pass today and a rule that fails on day one is suppressed on day two. A
 the baseline may spell no word at all, a file on it may never spell more than the count beside it,
 and `--write` can lower a count and never raise one.
 
-`ALSO_NAMES` is the other half of the rule, and it is the founder's one-word design rather than a
+`ALSO_NAMES` is the other half of the rule, and it is the one-word design rather than a
 suppression. One word names the stage, its module, its `decktalk.toml` table, its directory under
 `build/` and its event, so a literal spelling one of those names the table or the path and not the
 member. Each such word carries the sentence saying what else it names, and a test holds the list to
@@ -83,14 +83,14 @@ DEFINING = {
     "src/decktalk/page.py",
     "src/decktalk/results.py",
     "src/decktalk/events.py",
-    "src/decktalk/tomlmap.py",
+    "src/decktalk/tomlmap/__init__.py",
     "tests/decktalk/test_pipeline.py",
     "tests/decktalk/test_findings.py",
     "tests/decktalk/test_errors.py",
     "tests/decktalk/test_page.py",
     "tests/decktalk/test_results.py",
     "tests/decktalk/test_events.py",
-    "tests/decktalk/test_tomlmap.py",
+    "tests/decktalk/tomlmap/test_tomlmap.py",
 }
 """The modules that define the enums, where every word of the vocabulary is written once.
 
@@ -164,7 +164,7 @@ ALSO_NAMES = {
 }
 """Every word the one-word design gives a second job, and the sentence saying what that job is.
 
-This is not a suppression. The founder's design has one word name the stage, its module, its table,
+This is not a suppression. The design has one word name the stage, its module, its table,
 its directory and its event, so a literal spelling one of them names the table or the path rather
 than the member. A word leaves this list by leaving the enums, which the test below holds.
 """

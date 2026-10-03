@@ -1,4 +1,4 @@
-/*! The narration clock and its queue, tested without a browser.
+/*! The section clock and its queue, tested without a browser.
  *
  * Everything the clock owns but the frame loop is arithmetic over a sorted list, so `node --test`
  * reads the module directly. The loop itself belongs to a browser and is held by the browser tests

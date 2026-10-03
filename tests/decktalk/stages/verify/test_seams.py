@@ -8,7 +8,7 @@ import pytest
 
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, frames
 from decktalk.stages.verify.seams import SEAM_SEARCH_FRAMES, cut_checks, planned_seams, seam_checks, start_checks
 

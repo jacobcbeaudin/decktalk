@@ -38,14 +38,15 @@ from support.paths import REPO, SRC
 BASELINE = Path(__file__).resolve().parent / "numbers-baseline.json"
 """The committed per-file count of literals still waiting for a door, which only ever shrinks."""
 
-WALKED = ("stages", "media", "captions", "pagescan.py")
+WALKED = ("stages", "media", "captions", "speech", "pagescan.py")
 """Where the rule holds today, which is every module that measures a film or decides about one."""
 
 RUNTIME = Path("src") / "decktalk" / "runtime" / "src"
 """The TypeScript the recorder loads, walked for the same rule by a scan of its text."""
 
-FREE = (0, 1, 2)
-"""Truth: the literals that carry no judgement, which are an empty count, a single thing and a pair."""
+FREE = (0, 1, 2, 100, 1000)
+"""Truth: the literals that carry no judgement, which are an empty count, a single thing, a pair and the
+two unit conversions, a percentage and a thousand (milliseconds in a second, characters in a priced block)."""
 
 COUNTING = ("range", "enumerate")
 """The two calls whose arguments are a count and never a measurement."""
@@ -238,7 +239,7 @@ def measure(frames, sample_rate=48000):
     head = frames[3:7]
     later = [f for f in range(0, 9)]
     scaled = round(head[0] * 1.5, 3)
-    return scaled + later[-1] + 0.25
+    return scaled * 100 + later[-1] + 0.25
 '''
 """One module holding every door and every failure, so each clause is shown rather than assumed."""
 
@@ -255,6 +256,7 @@ def test_each_door_admits_its_own_number_and_nothing_else(tmp_path: Path) -> Non
     assert "42" not in found, "a name with its own sentence is the third door"
     assert "3" not in found and "7" not in found, "a slice bound carries no judgement"
     assert "9" not in found, "a range argument is a count"
+    assert "100" not in found, "a unit conversion carries no judgement"
 
 
 TYPESCRIPT = """
@@ -264,7 +266,7 @@ export const SPANS: Record<string, number> = {
 };
 
 export function late(ms: number): boolean {
-  return ms > 100;
+  return ms > 250;
 }
 """
 """One TypeScript module whose registry goes through the binding door and whose cap does not."""
@@ -274,7 +276,7 @@ def test_the_typescript_scan_finds_the_cap_a_python_walk_cannot_see(tmp_path: Pa
     """The limit capped dead inside the bundle is the number this half of the rule exists for."""
     path = tmp_path / "sample.ts"
     path.write_text(TYPESCRIPT, encoding="utf-8")
-    assert [bare.value for bare in bare_typescript(path)] == ["100"]
+    assert [bare.value for bare in bare_typescript(path)] == ["250"]
 
 
 def test_the_baseline_only_shrinks() -> None:

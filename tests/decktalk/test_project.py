@@ -16,7 +16,7 @@ import types
 import urllib.request
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -29,11 +29,12 @@ from decktalk.events import Event, Level, RunLog
 from decktalk.files import replace_all
 from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run, Toolchain
+from decktalk.machine import Machine, Toolchain
+from decktalk.machine.run import Run
 from decktalk.media import audio
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
-from decktalk.project import LOCK_FILE, OWNER_FILE, Origin, Project, section_numbers, stage_call
+from decktalk.project import LOCK_FILE, OWNER_FILE, Origin, Project, section_numbers
 from decktalk.results import (
     BuildResult,
     CheckResult,
@@ -46,8 +47,8 @@ from decktalk.results import (
 )
 from decktalk.results import Layer as SettingLayer
 from decktalk.settings import ToolsConfig
-from decktalk.stages import narrate as narrate_stage
 from decktalk.stages import storyboard as storyboard_stage
+from decktalk.stages.table import CALLS
 from support.costs import a_cost
 from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice
 from support.links import link
@@ -66,10 +67,10 @@ Call = tuple[Any, Run, dict[str, Any]]
 
 @pytest.fixture
 def fake_stages(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Call]]:
-    """Every stage replaced by a module holding the one function the convention names.
+    """Every call the facade makes replaced, so nothing of a real stage runs.
 
-    The facade imports `decktalk.stages.<name>` and calls `<name>(inputs, run, **options)`, so a
-    fake module at that path is the whole seam and nothing of a real stage runs.
+    A stage is replaced in its row of the stage table and every other call by a module at
+    `decktalk.stages.<name>`, which together are the whole seam.
     """
     calls: dict[str, list[Call]] = {}
     answers: dict[str, type[Result]] = {
@@ -94,7 +95,10 @@ def fake_stages(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Call]]:
 
 
 def a_stage(monkeypatch: pytest.MonkeyPatch, name: str, call: object) -> None:
-    """A module at `decktalk.stages.<name>` holding `call` under the stage's name, which is the whole seam."""
+    """`call` in place of the stage or the call named `name`, wherever the facade reaches it."""
+    if name in {stage.value for stage in Stage}:
+        monkeypatch.setitem(CALLS, Stage(name), replace(CALLS[Stage(name)], call=call))
+        return
     module = types.ModuleType(f"decktalk.stages.{name}")
     setattr(module, name, call)
     monkeypatch.setitem(sys.modules, module.__name__, module)
@@ -331,11 +335,6 @@ def test_a_result_that_is_not_the_one_the_command_is_named_after_is_a_bug(
     a_stage(monkeypatch, "cue", lambda _inputs, run, **_options: run.result(StatusResult, **answer))
     with pytest.raises(TypeError, match="cue answered with StatusResult"):
         a_project(tmp_path).cue()
-
-
-def test_the_stage_seam_is_one_function_named_after_its_own_stage(monkeypatch: pytest.MonkeyPatch) -> None:
-    a_stage(monkeypatch, "verify", "the one function")
-    assert stage_call(Stage.VERIFY.value) == "the one function"
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -674,7 +673,7 @@ def test_a_voiced_build_under_the_untrusted_policy_is_refused_before_it_buys_any
         cwd=tmp_path,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
     )
-    monkeypatch.setattr(narrate_stage, "narrate", lambda *_a, **_k: pytest.fail("narrate was reached"))
+    a_stage(monkeypatch, "narrate", lambda *_a, **_k: pytest.fail("narrate was reached"))
     chromium = FakeChromium(Path(__file__))
     monkeypatch.setattr("playwright.sync_api.sync_playwright", chromium.started())
     with pytest.raises(ApprovalRequired, match="untrusted page"):

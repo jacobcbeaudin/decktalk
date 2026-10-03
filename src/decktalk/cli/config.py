@@ -37,7 +37,8 @@ from decktalk.results import (
     SettingValue,
     counted,
 )
-from decktalk.settings import json_value
+from decktalk.settings import edit, layers
+from decktalk.settings.layers import json_value
 from decktalk.tomlmap import Key as KeyRecord
 
 SENTENCE_ENDS = (".", "?", "!")
@@ -97,7 +98,7 @@ def get_key(ctx: Context, key: Named) -> ConfigGetResult:
         ok=True,
         key=SettingValue(
             key=known.id,
-            value=json_value(settings.value_of(here.settings, known.id)),
+            value=json_value(layers.value_of(here.settings, known.id)),
             default=json_value(known.default),
             layer=winner.layer,
             file=winner.file,
@@ -122,7 +123,7 @@ def set_key(
     path = _file(session, scope)
     try:
         with _told(session):
-            return settings.write(path, key, value, scope=scope, environ=session.machine.environ, dry_run=dry_run)
+            return edit.write(path, key, value, scope=scope, environ=session.machine.environ, dry_run=dry_run)
     except InputError as refused:
         raise _refused(refused, "KEY") from refused
 
@@ -155,7 +156,7 @@ def unset_key(
         )
     going = _stating(path, key, asked=session.approve(whole or None, f"Remove everything {key} sets?"))
     with _told(session):
-        return settings.unset(path, *going, scope=scope, environ=session.machine.environ)
+        return edit.unset(path, *going, scope=scope, environ=session.machine.environ)
 
 
 @command("explain", group=Group.CONTRACTS, to=config)
@@ -193,9 +194,9 @@ def _told(session: sessions.Session) -> Iterator[None]:
     what it noticed and where a renderer is listening.
     """
     root = _root(session)
-    project = settings.read_project_toml(root) if (root / settings.PROJECT_FILE).is_file() else {}
+    project = layers.read_project_toml(root) if (root / settings.PROJECT_FILE).is_file() else {}
     with session.watching(session.machine.events), session.machine._run() as run:
-        for note in settings.key_warnings(project, settings.PROJECT_FILE):
+        for note in layers.key_warnings(project, settings.PROJECT_FILE):
             run.note(note, level=Level.WARNING)
         yield
 
@@ -218,7 +219,7 @@ def _rows(session: sessions.Session, table: str | None, *, defaults: bool, chang
         rows.append(
             SettingValue(
                 key=key.id,
-                value=json_value(key.default) if defaults else json_value(settings.value_of(here.settings, key.id)),
+                value=json_value(key.default) if defaults else json_value(layers.value_of(here.settings, key.id)),
                 default=json_value(key.default),
                 layer=Layer.DEFAULT if defaults else winner.layer,
                 file=winner.file,
@@ -257,7 +258,7 @@ def _loaded(session: sessions.Session) -> settings.Loaded:
     """Every layer resolved for this directory, which answers about the machine when no project is here."""
     root = _root(session)
     machine = session.machine
-    return settings.load(
+    return layers.load(
         root if (root / settings.PROJECT_FILE).exists() else None,
         machine=machine.tables,
         machine_path=machine.config_path,
@@ -271,11 +272,9 @@ def _stating(path: Path, key: str, *, asked: bool) -> tuple[str, ...]:
     A caller names one key or one table, and a table is refused until `--all` or a person says so,
     because a table is many keys at once and a person who typed one word meant one thing.
     """
-    document = settings.read_toml(path)
+    document = layers.read_toml(path)
     going = tuple(
-        one.id
-        for one in settings.KEYS
-        if _under(one.id, key) and settings.stated(document, one.id) is not settings.ABSENT
+        one.id for one in settings.KEYS if _under(one.id, key) and layers.stated(document, one.id) is not layers.ABSENT
     )
     if not going:
         raise InputError(f"{path.name} sets nothing under '{key}'.", hint="Run decktalk config list --changed.")

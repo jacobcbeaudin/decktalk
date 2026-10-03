@@ -34,9 +34,6 @@ from decktalk.results import SoundKind
 DIGEST_DIGITS = 16
 """Truth: sixteen hex characters of a sha256, which two requests of one project never collide within."""
 
-LEDGER_FILE = "ledger.json"
-"""What the record of bought audio is called, in the score directory beside the audio it records."""
-
 UNFINISHED_DIGEST = ""
 """What a row carries while the parts of one piece are still being bought, which matches no request.
 
@@ -91,4 +88,4 @@ class Ledger(Stored):
         return Ledger(items=(*kept, entry))
 
 
-__all__ = ["DIGEST_DIGITS", "LEDGER_FILE", "UNFINISHED_DIGEST", "Ledger", "SoundEntry", "request_digest"]
+__all__ = ["DIGEST_DIGITS", "UNFINISHED_DIGEST", "Ledger", "SoundEntry", "request_digest"]

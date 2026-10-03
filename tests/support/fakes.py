@@ -24,7 +24,7 @@ from typing import cast
 from playwright.sync_api import Browser, Page, Playwright
 from playwright.sync_api import Error as PlaywrightError
 
-from decktalk.media import browser
+from decktalk.media import pages
 from decktalk.results import Word
 from decktalk.speech import SpeechRequest
 
@@ -89,9 +89,9 @@ class FakePage:
 
     def evaluate(self, script: str, *_args: object) -> object:
         self.scripts.append(script)
-        if browser.REPORT_JS in script:
+        if pages.REPORT_JS in script:
             return dict(self.report)
-        if browser.HAS_CATALOG_JS in script:
+        if pages.HAS_CATALOG_JS in script:
             return True
         return None
 

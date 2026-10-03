@@ -1,19 +1,19 @@
-"""The golden take digests of the founder's own films, held against the script they were voiced from.
+"""The golden take digests of two voiced films, held against the script they were voiced from.
 
-`tests/data/take_hash.json` carries, for every take the founder has really paid for, the markdown of
+`tests/data/take_hash.json` carries, for every take that was really paid for, the markdown of
 its section, the text that markdown parses to and the digest that text was bought under. So this file
 holds the whole path from what an author writes to what names an audio file: the script parser, the
 canonical text of its pieces, the take inputs and the digest. If any of them moves, the next
 `narrate` run buys that take again.
 
 `tests/data/take_hash_pauses.json` carries the same three columns for sections that pause, from the
-gen4 `uv-tutorial` and `halfway` scripts and from synthetic sections that hold every kind of pause a
-script can ask for. Its digests were computed by the code from before pauses were data, so they say
-what a take of each section is named today, and no change to how pauses are carried may move them.
+`uv-tutorial` and `halfway` scripts and from synthetic sections that hold every kind of pause a
+script can ask for. Its digests say what a take of each section is named, so no change to how
+pauses are carried may move them.
 
-It no longer skips. The voice id is one of the take inputs and it is a published name rather than a
+Nothing here skips. The voice id is one of the take inputs and it is a published name rather than a
 secret, so it sits in the data file beside the digests it produced, and the digests that protect
-every voiced take are proved on every machine and in CI rather than on the founder's laptop alone.
+every voiced take are proved on every machine and in CI rather than on one laptop alone.
 Nothing here needs audio, a network or a credential, because a digest is arithmetic over text, and
 the one request the ElevenLabs adapter is asked to send goes to a stand-in for the socket.
 
@@ -52,11 +52,11 @@ EVERY = [*TAKES, *PAUSES]
 EVERY_ID = [*IDS, *PAUSE_IDS]
 
 EXPECTED_FILMS = ("halfway", "halfway/hero")
-"""The two films the founder has really paid to voice, which are the only source of a golden digest."""
+"""The two films whose takes were really paid for, which are the only source of a golden digest."""
 
 
 def digest_of(text: str, *, voice: str = INPUTS["voice"]) -> str:
-    """The digest the founder's takes were bought under, built from the inputs the data file names."""
+    """The digest the paid takes were bought under, built from the inputs the data file names."""
     return TakeInputs.of(
         provider=INPUTS["provider"],
         voice=voice,

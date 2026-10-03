@@ -18,7 +18,7 @@ import pytest
 from decktalk.artifacts import Placement, Placements
 from decktalk.errors import Cancel
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg, frames
 from decktalk.results import SectionCues
 from support.projects import load_project
@@ -125,9 +125,7 @@ def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> N
             section=number,
             key=f"{number:02d}",
             estimated=True,
-            cues=tuple(
-                {"cue": cue, "phrase": "hello", "seconds": at, "nudge_seconds": 0.0} for cue, at in rows.items()
-            ),
+            cues=tuple({"id": cue, "phrase": "hello", "seconds": at, "nudge_seconds": 0.0} for cue, at in rows.items()),
         )
         for number, rows in cue_times.items()
     )

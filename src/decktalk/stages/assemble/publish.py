@@ -37,8 +37,8 @@ from decktalk.errors import DeckTalkError, ToolError
 from decktalk.events import Level
 from decktalk.files import replace_all
 from decktalk.inputs import ClipSection, Inputs, PageSection
-from decktalk.machine import Run
-from decktalk.media import browser, ffmpeg
+from decktalk.machine.run import Run
+from decktalk.media import browser, ffmpeg, pages
 from decktalk.media.encode import iso_639_2
 from decktalk.media.origin import page_url
 from decktalk.media.pagereport import MeasuredScene
@@ -341,16 +341,17 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
         shutil.copyfile(kept, out)
         return out
     try:
-        with browser.chromium(inputs.settings.record.browser_path, policy=inputs.settings.record.page_policy) as chrome:
+        record = inputs.settings.record
+        with browser.chromium(record.browser_path, policy=record.page_policy, spend=run.spend) as chrome:
             page, assets = open_project_page(chrome, inputs)
             page.goto(page_url(section.page))
-            browser.await_ready(page)
-            query = poster_query(browser.read_report(page, out.stem).catalog, section)
+            pages.await_ready(page)
+            query = poster_query(pages.read_report(page, out.stem).catalog, section)
             if query is None:
                 run.note(f"{section.page} declares no slide for scene {section.scene}, so no poster is written.",
                          level=Level.WARNING)  # fmt: skip
                 return None
-            browser.screenshot(page, page_url(section.page, query), out)
+            pages.screenshot(page, page_url(section.page, query), out)
             inputs.stills.keep(key, out, assets.paths)
     except DeckTalkError as refused:
         run.note(f"The poster could not be drawn ({refused}), so the film is published without one.",

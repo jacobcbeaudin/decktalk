@@ -100,9 +100,8 @@ An element has four moments, and each names a cue local to its slide.
 | front | `data-front` | It comes to the front, over 0.2 seconds. |
 | out | `data-out` | It leaves. |
 
-The runtime qualifies a cue name into a cue id, which is the slide id, a colon and the cue
-name. `data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`, and that
-is what `cues.json` carries. No attribute writes a second.
+`data-in="expand"` inside `<template data-slide="4.1">` is the [cue id](/concepts/cues#the-cue-id) `4.1:expand`, and that
+is what `cues.json` carries. No attribute says when a cue fires.
 
 Twenty-four attributes are published by `decktalk schema page`, with each one's values, default,
 range, warning code and motion span. They fall on three rows.
@@ -299,47 +298,25 @@ Whole contract: [The JSON contract](/agents/json).
 
 ## Exit codes and error codes
 
-| Exit | Meaning |
-|---|---|
-| 0 | The command ran and found nothing at or above the threshold. |
-| 1 | The command ran and found something at or above the threshold `--fail-on` set. |
-| 2 | The command line was refused, which is `USAGE` or `APPROVAL`. |
-| 3 | The command could not run, which is every other error code. |
-| 130 | The caller stopped the run. |
-
-| Error code | Exit | Meaning |
-|---|---|---|
-| `INPUT` | 3 | A file the author writes is missing, unreadable or malformed. |
-| `NOT_BUILT` | 3 | A file a stage needs was never built. |
-| `PROVIDER` | 3 | The voice could not be reached, refused the request, or failed it. |
-| `TOOL` | 3 | ffmpeg or Chromium is missing, or one of them failed. |
-| `LOCKED` | 3 | Another writer holds this project's build directory. |
-| `APPROVAL` | 2 | A spend needed an approval that no flag and no terminal gave. |
-| `CANCELLED` | 130 | The caller stopped the run. |
-| `USAGE` | 2 | The command line was refused, and a retry as written fails again. |
-| `INTERNAL` | 3 | A bug in DeckTalk, with a traceback under `-v`. |
+0 is a clean run, 1 is a finding at or above the `--fail-on` threshold, 2 is a refused command line
+or spend, which is `USAGE` or `APPROVAL`, 3 is every other error, and 130 is a run the caller
+stopped. [Exit codes](/reference/cli#exit-codes) and [Error codes](/reference/cli#error-codes) are
+the tables.
 
 A non-zero exit with `error` null is a finding, so read `findings`, change the project and run the
 command again. A non-null `error` is an error, so stop and tell the person.
 
-The fifty-three finding codes each have a page of their own, and `decktalk schema` prints them all
-with their sentences, their severities and the settings keys that move them.
+Every finding code has a page of its own, and `decktalk schema` prints them all with their
+sentences, their severities and the settings keys that move them.
 
 ## Settings
 
-Five layers set a key, each overriding the ones before it.
-
-1. The default DeckTalk declares.
-2. The same table in the per-machine settings file.
-3. The same table in the project's `decktalk.toml`.
-4. The environment variable `DECKTALK_<TABLE>_<KEY>`.
-5. `--set table.key=value` given for one run.
-
-The per-machine file is `machine.toml` under `~/Library/Application Support/decktalk/` on macOS,
-under `%APPDATA%\decktalk\` on Windows, and under `$XDG_CONFIG_HOME/decktalk/` or
-`~/.config/decktalk/` otherwise. `DECKTALK_MACHINE_FILE` names a different one. `decktalk schema settings
---scope machine` prints the keys a per-machine file may hold, which are the ones about this machine rather
-than about the film.
+A project key is set by its default, then `decktalk.toml`, then `DECKTALK_<TABLE>_<KEY>`, then
+`--set table.key=value` for one run. A machine key, about this machine rather than the film, takes
+the per-machine file `machine.toml` in place of `decktalk.toml`, and a project file that sets one is
+refused. `decktalk schema settings --scope machine` prints those keys, and
+[Which value wins](/reference/configuration#which-value-wins) has the rule and the file's path on
+each platform.
 
 The settings sit in `[video]`, `[narration]`, `[record]`, `[audio]`, `[verify]`, `[voice]`, `[mix]`,
 `[motion]`, `[elevenlabs]`, `[score]`, `[output]` and `[tools]`. `decktalk.toml` also carries

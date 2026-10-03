@@ -15,12 +15,11 @@ from pathlib import Path
 from decktalk.artifacts.stored import Stored
 from decktalk.artifacts.takes import Takes
 from decktalk.artifacts.words import WORDS_SUFFIX, ProviderWords
-from decktalk.cli.session import FOUND_SOMETHING
-from decktalk.errors import ErrorCode
-from decktalk.inputs.workspace import EVENTS_SUFFIX
+from decktalk.errors import Exit
+from decktalk.inputs.workspace import EVENTS_SUFFIX, LEDGER_FILE
 from decktalk.results import SCHEMA
 from decktalk.settings import BY_ID
-from decktalk.stages.score.ledger import LEDGER_FILE, Ledger
+from decktalk.stages.score.ledger import Ledger
 from support.paths import REPO
 from support.projects import load_project
 
@@ -43,7 +42,7 @@ def test_the_page_names_the_schema_every_result_carries() -> None:
 
 
 def test_the_page_names_every_exit_code_there_is() -> None:
-    exits = {0, FOUND_SOMETHING} | {code.exit_code for code in ErrorCode}
+    exits = {code.value for code in Exit}
     rows = {int(found) for found in re.findall(r"^\| (\d+) \|", page(), re.MULTILINE)}
     assert rows == exits
 

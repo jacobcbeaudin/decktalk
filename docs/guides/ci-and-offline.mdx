@@ -51,7 +51,7 @@ agent cannot answer and a flag that does not exist are the same failure.
 
 The refusal is the whole of what a caller needs.
 
-{/* sample: decktalk narrate --no-input on a starter with a voice id set, and no --spend and no --no-spend */}
+{/* sample: decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voice] id set and no API key, which exits 2 */}
 ```text
 error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
   hint: Run decktalk narrate --spend to approve that spend, or decktalk narrate --no-spend to play a placeholder wherever a take is missing.
@@ -78,18 +78,16 @@ decktalk build --no-spend --no-input --json > build.json
 each event occurs, so `--json` and `--events` together are the answer on stdout and the progress on
 stderr with neither in the other's way.
 
-{/* sample: the stderr of decktalk status --json --events on a starter */}
+{/* sample: decktalk status --json --events, its stderr, on a fresh decktalk init my-lesson */}
 ```json
-{"event":"run.start","time":"2026-09-24T10:24:34.641901Z","seq":0,"run":"200d55f26212","events_path":"build/events/200d55f26212.jsonl"}
-{"event":"run.done","time":"2026-09-24T10:24:34.649525Z","seq":1,"run":"200d55f26212","outcome":"ok","seconds":0.008,"error":null,"dropped":0}
+{"event":"run.start","time":"2026-10-02T07:36:06.301156Z","seq":0,"run":"0208b197a5c7","events_path":"build/events/0208b197a5c7.jsonl"}
+{"event":"run.done","time":"2026-10-02T07:36:06.312588Z","seq":1,"run":"0208b197a5c7","outcome":"ran","elapsed_seconds":0.012,"error":null,"dropped":0}
 ```
 
-`event` is the discriminator, and there are thirteen names: `run.start`, `run.done`, `stage.start`,
-`stage.done`, `section.start`, `section.done`, `stage.progress`, `finding.raised`, `cost.priced`, `take.charged`,
-`sound.charged`, `tool.fetch` and `run.log`. A
-`stage.done` and a `section.done` each carry an `outcome` of `ran`, `kept`, `skipped`, `stopped` or
-`failed`, so a job can tell work that was done from work that was kept, and a failed run's
-`run.done` carries its `error`.
+`event` is the discriminator. A `stage.done` and a `section.done` each carry an `outcome` of `ran`,
+`kept`, `skipped`, `stopped` or `failed`, so a job can tell work that was done from work that was
+kept, and a failed run's `run.done` carries its `error`. [The event stream](/agents/json#the-event-stream)
+lists every event and its fields.
 
 Every run appends the same lines to `build/events/<run>.jsonl` whether `--events` was passed or not,
 and the first line names that file. So a job that backgrounds a build can follow the file, and
@@ -99,26 +97,9 @@ and the first line names that file. So a job that backgrounds a build can follow
 ## The exit codes a job gates on
 
 Every command shares one exit rule, so a pipeline asserts on the code rather than on the output.
-
-| Code | What it means |
-|---|---|
-| 0 | The command ran and found nothing at or above the threshold. |
-| 1 | The command found something at or above the threshold. |
-| 2 | The command line was refused, and a retry as written fails again. |
-| 3 | DeckTalk could not run. |
-| 130 | The run was interrupted. |
-
-The codes above 1 come from the error's own code, so a caller that wants to know what broke reads
-`error.code` rather than the number.
-
-| Exit | Error codes |
-|---|---|
-| 2 | `USAGE`, `APPROVAL` |
-| 3 | `INPUT`, `NOT_BUILT`, `PROVIDER`, `TOOL`, `LOCKED`, `INTERNAL` |
-| 130 | `CANCELLED` |
-
-The rule an agent follows is one line. A non-zero exit with `error` null is a finding, and the job may
-fix the project and run again. A non-null `error` is an error, and the job stops and says so.
+[Exit codes](/reference/cli#exit-codes) is the table, and the rule a job follows is
+[one line](/agents/json#errors-and-exit-codes): a non-zero exit with `error` null is a finding the job
+may fix, and a non-null `error` means DeckTalk could not run.
 
 A build that stops on a finding follows the same rule. It exits 1 with `error` null, and its result
 carries `stopped_at`, the stage it stopped after, beside its findings and the spend so far. A job
@@ -128,13 +109,9 @@ never measured.
 
 ### Choose what fails the pipeline
 
-Two flags decide which findings count, on every command that reports them.
-
-- `--fail-on error` is the default and fails on an error. `--fail-on warning` fails on any
-  finding, including the warnings. `--fail-on never` fails on none, which is how a
-  job reads the JSON and decides for itself.
-- `--allow CODE` carries on past one finding code, and it repeats. The code is still reported and
-  still in the JSON. It only stops counting toward the exit.
+`--fail-on` names the least severe finding that fails a run, and `--allow CODE` carries on past one
+code, which is still reported and still in the JSON.
+[Which findings fail a run](/agents/json#which-findings-fail-a-run) is the table of both.
 
 ```console
 decktalk verify --fail-on warning --allow CUE_THIN_CHANGE
@@ -156,13 +133,13 @@ decktalk check --no-pages
 voiced build would buy. `--no-pages` drops the browser entirely and says which judgements it could not
 reach, so a docs-only job, a pre-commit hook and a container with no Chromium can all still run it.
 
-{/* sample: the output of decktalk check --no-pages on a starter with no ElevenLabs key and no voice id */}
+{/* sample: decktalk check --no-pages, on a fresh decktalk init my-lesson with no API key and no voice id */}
 ```text
 No voice is named, so the cache cannot be checked, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 no page was opened, so these judgements were not reached: CUE_MISSING, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
 frames were asked for and no page was opened, so no frame was frozen either.
 Checking script.md, cues.json.
-The takes on disk could not be matched to a voice, so this run costs up to $0.14 at $0.30 per 1,000 characters.
+This run costs $0.14 for 476 characters at $0.30 per 1,000 characters.
 ```
 
 The run is never quiet about what it skipped, so a hook that runs `--no-pages` cannot be mistaken for

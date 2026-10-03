@@ -15,10 +15,11 @@ them opens a run on the machine's event stream, takes a cancel token, and return
 whose findings carry a code, a place, a severity and often a fix.
 
 This module is the facade and nothing below it may import it. It is also the only module that
-reaches down into the stages, and it does so by name when a call is made rather than by an import at
-the top, because a stage opens a browser and an encoder and importing the command line must load
-neither. `Inputs` is what a stage is handed, so a stage never sees a project, a machine or a run
-opener and can neither read the environment nor print.
+reaches down into the stages, and it imports them when a call is made rather than at the top,
+because a stage opens a browser and an encoder and importing the command line must load neither. A
+verb calls its stage through `stages.table.CALLS`, the same row `build` calls. `Inputs` is what a
+stage is handed, so a stage never sees a project, a machine or a run opener and can neither read the
+environment nor print.
 """
 
 from __future__ import annotations
@@ -30,9 +31,8 @@ import threading
 from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from contextlib import contextmanager, nullcontext
 from http.server import ThreadingHTTPServer
-from importlib import import_module
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from filelock import FileLock, Timeout
 
@@ -42,7 +42,9 @@ from decktalk.files import replace_all
 from decktalk.findings import Code, Finding, Severity
 from decktalk.inputs import Inputs
 from decktalk.inputs.paths import at
-from decktalk.machine import Machine, Run, apply_fixes, new_run
+from decktalk.machine import Machine
+from decktalk.machine.fixes import apply_fixes
+from decktalk.machine.run import Run, new_run
 from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
@@ -62,19 +64,10 @@ from decktalk.results import (
     VerifyResult,
     WordsResult,
 )
-from decktalk.settings import Layers, Settings, route, scoped
+from decktalk.settings import PROJECT_VARIABLE, Layers, Settings
+from decktalk.settings.layers import route, scoped
 
 log = logging.getLogger(__name__)
-
-STAGES = "decktalk.stages"
-"""The package every stage lives in, named rather than imported so the facade loads none of them.
-
-This is the one edge from the facade down into the stages. A stage opens a browser and an encoder,
-and the command line imports this module, so the module a call needs is loaded by that call.
-"""
-
-PROJECT_VARIABLE = "DECKTALK_PROJECT"
-"""The variable that names the project when a caller names none, read only through the machine."""
 
 LOCK_FILE = ".lock"
 """What the file a writer holds is called, under the build directory it is writing into."""
@@ -136,16 +129,6 @@ def section_numbers(selection: str) -> tuple[int, ...]:
             )
         found.extend(range(first, last + 1))
     return tuple(dict.fromkeys(found))
-
-
-def stage_call(name: str) -> Callable[..., Any]:
-    """The one function a stage publishes, which is the module-level function named after the stage.
-
-    Every stage satisfies the same convention: `decktalk.stages.<name>` holds `<name>(inputs, run,
-    **options)`, which returns the result model named after it. That is the whole seam between the
-    facade and the stages, so a test fakes a stage by replacing one attribute.
-    """
-    return getattr(import_module(f"{STAGES}.{name}"), name)
 
 
 class ProjectEvents(Events):
@@ -290,7 +273,7 @@ class Project:
         Raises `ApprovalRequired` when the run would spend over `max_cost`, and `ProviderError` when
         a voice that bills fails, or when a free voice answers and fails.
         """
-        return self._call(Stage.NARRATE, NarrateResult, cancel=cancel, spend=spend, max_cost=max_cost,
+        return self._stage(Stage.NARRATE, NarrateResult, cancel=cancel, spend=spend, max_cost=max_cost,
                           only=only, force=force, replace_voiced=replace_voiced)  # fmt: skip
 
     def cue(
@@ -300,7 +283,7 @@ class Project:
         cancel: Cancel | None = None,
     ) -> CueResult:
         """Turn each cue phrase into a second on its own section's clock."""
-        return self._call(Stage.CUE, CueResult, cancel=cancel, only=only)
+        return self._stage(Stage.CUE, CueResult, cancel=cancel, only=only)
 
     def record(
         self,
@@ -310,7 +293,7 @@ class Project:
         cancel: Cancel | None = None,
     ) -> RecordResult:
         """Record each page section in a headless browser, against the seconds the cues named."""
-        return self._call(Stage.RECORD, RecordResult, cancel=cancel, only=only, force=force)
+        return self._stage(Stage.RECORD, RecordResult, cancel=cancel, only=only, force=force)
 
     def score(
         self,
@@ -332,7 +315,7 @@ class Project:
         Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`, and
         `ProviderError` when the sound service fails on a paid run.
         """
-        return self._call(Stage.SCORE, ScoreResult, cancel=cancel, spend=spend,
+        return self._stage(Stage.SCORE, ScoreResult, cancel=cancel, spend=spend,
                           max_cost=max_cost, only=only, replace_score=replace_score)  # fmt: skip
 
     def assemble(
@@ -345,12 +328,12 @@ class Project:
         cancel: Cancel | None = None,
     ) -> AssembleResult:
         """Cut, mix and encode the sections into one film."""
-        return self._call(Stage.ASSEMBLE, AssembleResult, cancel=cancel, only=only, score=score,
+        return self._stage(Stage.ASSEMBLE, AssembleResult, cancel=cancel, only=only, score=score,
                           loudness=loudness, strict=strict)  # fmt: skip
 
     def verify(self, *, only: Sequence[int] | None = None, cancel: Cancel | None = None) -> VerifyResult:
         """Measure the finished film: every start, every cut, every seam and every landing."""
-        return self._call(Stage.VERIFY, VerifyResult, cancel=cancel, only=only)
+        return self._stage(Stage.VERIFY, VerifyResult, cancel=cancel, only=only)
 
     # ---- the whole run ----------------------------------------------------------------------
 
@@ -391,7 +374,9 @@ class Project:
         that may spend refuses to open a page, so a host voices with `narrate` and builds without
         `spend`.
         """
-        return self._call("build", BuildResult, cancel=cancel, spend=spend, max_cost=max_cost, stages=stages, skip=skip,
+        from decktalk.stages.build import build  # noqa: PLC0415
+
+        return self._call(build, BuildResult, cancel=cancel, spend=spend, max_cost=max_cost, stages=stages, skip=skip,
                           only=only, force=force, replace_voiced=replace_voiced, replace_score=replace_score,
                           loudness=loudness, strict=strict,
                           allow=frozenset(allow), stop_on=stop_on)  # fmt: skip
@@ -400,7 +385,9 @@ class Project:
 
     def status(self, *, cancel: Cancel | None = None) -> StatusResult:
         """Report what is written, what is built, what is stale, and what to do next."""
-        return self._call("status", StatusResult, cancel=cancel, writes=False)
+        from decktalk.stages.status import status  # noqa: PLC0415
+
+        return self._call(status, StatusResult, cancel=cancel, writes=False)
 
     def check(
         self,
@@ -421,12 +408,16 @@ class Project:
         over them, so it holds the build lock for as long as a stage that produces would. A check
         with no pages reads and judges alone, so it takes nothing and runs beside a build.
         """
-        return self._call("check", CheckResult, cancel=cancel, writes=pages, paths=tuple(paths), only=only,
+        from decktalk.stages.check import check  # noqa: PLC0415
+
+        return self._call(check, CheckResult, cancel=cancel, writes=pages, paths=tuple(paths), only=only,
                           pages=pages, frames=frames)  # fmt: skip
 
     def words(self, *, only: Sequence[int] | None = None, cancel: Cancel | None = None) -> WordsResult:
         """Every spoken word with its start and its end, which is how a cue phrase is written."""
-        return self._call("words", WordsResult, cancel=cancel, writes=False, only=only)
+        from decktalk.stages.words import words  # noqa: PLC0415
+
+        return self._call(words, WordsResult, cancel=cancel, writes=False, only=only)
 
     def storyboard(
         self,
@@ -445,7 +436,9 @@ class Project:
         an author compares to see what a reveal changed, and `at` names a second of the section's
         own clock. Each one repeats, and one that matches nothing draws nothing.
         """
-        return self._call("storyboard", StoryboardResult, cancel=cancel, only=only, slide=slide, after=after,
+        from decktalk.stages.storyboard import storyboard  # noqa: PLC0415
+
+        return self._call(storyboard, StoryboardResult, cancel=cancel, only=only, slide=slide, after=after,
                           before=before, at=at)  # fmt: skip
 
     def clip(
@@ -460,7 +453,9 @@ class Project:
         cancel: Cancel | None = None,
     ) -> ClipResult:
         """Cut a span of one built section into its own file."""
-        return self._call("clip", ClipResult, cancel=cancel, section=section, start=start, end=end, out=out,
+        from decktalk.stages.clip import clip  # noqa: PLC0415
+
+        return self._call(clip, ClipResult, cancel=cancel, section=section, start=start, end=end, out=out,
                           gain_db=gain_db, hold_seconds=hold_seconds)  # fmt: skip
 
     def apply(self, fix: Finding | Iterable[Finding], *, unsafe: bool = False) -> ApplyResult:
@@ -500,9 +495,15 @@ class Project:
 
     # ---- how every call is made -----------------------------------------------------------------
 
+    def _stage[R: Result](self, stage: Stage, model: type[R], **options: Any) -> R:
+        """Call one stage through the row `build` calls it through, so a replaced row is obeyed by both."""
+        from decktalk.stages.table import CALLS  # noqa: PLC0415
+
+        return self._call(CALLS[stage].call, model, **options)
+
     def _call[R: Result](
         self,
-        stage: Stage | str,
+        call: Callable[..., Result],
         model: type[R],
         *,
         cancel: Cancel | None = None,
@@ -511,17 +512,17 @@ class Project:
         writes: bool = True,
         **options: object,
     ) -> R:
-        """Open a run, hold the build directory when the call writes, and hand the stage its inputs.
+        """Open a run, hold the build directory when the call writes, and hand the call its inputs.
 
         `model` is the result this command answers with, which is named after the command itself, so
-        the one table that says which callable implements which command is the twelve calls above.
+        a call that answers with another is a bug caught here rather than in the caller.
         """
-        name = stage.value if isinstance(stage, Stage) else stage
         with self._open(cancel=cancel, spend=spend, max_cost=max_cost, writes=writes) as run:
-            answered = stage_call(name)(self._inputs, run, **options)
+            answered = call(self._inputs, run, **options)
         if not isinstance(answered, model):
-            raise TypeError(f"{name} answered with {type(answered).__name__} rather than {model.__name__}")
-        return cast("R", answered)
+            command = model.__name__.removesuffix("Result").lower()
+            raise TypeError(f"{command} answered with {type(answered).__name__} rather than {model.__name__}")
+        return answered
 
     @contextmanager
     def _open(

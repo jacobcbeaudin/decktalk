@@ -132,7 +132,7 @@ def placed(inputs: Inputs, rows: dict[str, tuple[str, float | None]]) -> None:
                 section=1,
                 key="01",
                 estimated=True,
-                cues=tuple(CueTime(cue=cue, phrase=phrase, seconds=at) for cue, (phrase, at) in rows.items()),
+                cues=tuple(CueTime(id=cue, phrase=phrase, seconds=at) for cue, (phrase, at) in rows.items()),
             ),
         )
     ).write(inputs.workspace.cue_times_path)

@@ -16,7 +16,7 @@ import pytest
 
 from decktalk.errors import ToolError
 from decktalk.media import origin
-from decktalk.media.browser import TRUSTED, UNTRUSTED, chromium, open_page
+from decktalk.media.browser import TRUSTED, UNTRUSTED, chromium
 from decktalk.media.origin import (
     HIDDEN,
     OFF_ORIGIN,
@@ -33,6 +33,7 @@ from decktalk.media.origin import (
     route_pages,
     served_url,
 )
+from decktalk.media.pages import open_page
 from decktalk.page import ENGINE_PATH, Q
 from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
 from support.fakes import FakeRouter
@@ -303,7 +304,7 @@ def test_a_page_fetches_a_file_beside_it_from_the_origin(tmp_path):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "facts.json").write_text(json.dumps({"answer": 42}), encoding="utf-8")
     (tmp_path / "page.html").write_text(FETCH_PAGE, encoding="utf-8")
-    with chromium(policy=TRUSTED) as browser:
+    with chromium(policy=TRUSTED, spend=False) as browser:
         allowed = Allowed.of(tmp_path, ["page.html", "data"])
         page, assets = open_page(browser, allowed, width=400, height=300)
         page.goto(page_url("page.html"), wait_until="load")
@@ -589,7 +590,7 @@ def test_a_page_with_no_copy_of_the_runtime_gets_the_engines(tmp_path):
         f'<script src="{ENGINE_PATH}decktalk-runtime.js"></script>',
         encoding="utf-8",
     )
-    with chromium(policy=UNTRUSTED) as browser:
+    with chromium(policy=UNTRUSTED, spend=False) as browser:
         page, assets = open_page(browser, Allowed.of(tmp_path, ["deck"]), width=400, height=300)
         page.goto(page_url("deck/index.html"), wait_until="load")
         assert page.evaluate("() => window.DeckTalk.version") == page.evaluate("() => window.__decktalk.version")

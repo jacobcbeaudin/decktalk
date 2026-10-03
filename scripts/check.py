@@ -83,8 +83,8 @@ LINT_TESTS = (
 )
 """The house rules for prose, vocabulary and numbers, which read the repository's files as text.
 
-They are lint rather than behaviour, so they run once in the lint row. In the unit suite they ran
-on three Pythons for one answer and counted as a fifth of the tests the suite claimed.
+They are lint rather than behaviour, so they run once in the lint row. In the unit suite they would
+run on three Pythons for one answer and count as a fifth of the tests the suite claims.
 """
 
 ELSEWHERE: dict[str, str] = dict.fromkeys(LINT_TESTS, "lint")
@@ -278,8 +278,8 @@ class Need:
 
     `prepare` is the command at the head of the row that provides it, or None when the workflow
     provides it before the row starts, which ci.yml does by reading the need's name from the matrix.
-    A need that neither a command nor the workflow provides is a promise nothing keeps, which is how
-    the browser and e2e rows once passed in CI with every test skipped.
+    A need that neither a command nor the workflow provides is a promise nothing keeps, and a row
+    whose tools are missing passes in CI with every test skipped.
     """
 
     def __post_init__(self) -> None:
@@ -478,9 +478,8 @@ def reports_timing(command: tuple[str, ...]) -> tuple[str, ...]:
 LINUX_GATES_TIMING = False
 """Whether a late reveal fails the Linux e2e row, which is the one row meant to gate cue timing.
 
-It reports for now. Until every row fetched the tools it declares, that row skipped every test, so
-cue timing has never been measured on a GitHub Linux runner and nobody knows yet whether its
-compositor is trustworthy. When three runs of ci in a row on `main` show the row's log with no late
+It reports until the row's own runs show whether a GitHub Linux runner's compositor is
+trustworthy. When three runs of ci in a row on `main` show the row's log with no late
 reveal, this becomes True and the row gates from then on, as `REPORT_TIMING` describes.
 """
 
@@ -646,8 +645,8 @@ GROUPS: tuple[Group, ...] = (
     Group(
         name="rehearsal",
         why="The version bump release-please makes, rehearsed in a copy, then every generator written and checked.",
-        # The release path otherwise runs only on release-please's own pull request, which is where
-        # every failure of the first release candidate surfaced. The script bumps a throwaway copy of
+        # The release path otherwise runs only on release-please's own pull request, which is the
+        # last place a failure should surface. The script bumps a throwaway copy of
         # the checkout, so a contributor who runs this row locally keeps the tree they had. The next
         # version is computed by release-please's own code from the history since the last tag, so
         # the row needs the Node packages in the checkout and the whole history, which `history`
@@ -696,7 +695,7 @@ GROUPS: tuple[Group, ...] = (
         name="scaffold",
         why="Every packaged project recorded and verified without a voice, which is the scaffold's promise.",
         # The row judges what was already released rather than gating the release: it runs weekly,
-        # because seven minutes on every merge bought one answer that the template's own data tests
+        # because seven minutes on every merge buys one answer that the template's own data tests
         # give on every pull request. A release is never more than a week from its first scaffold run.
         #
         # This row records five projects in one job, so the runner renders in software throughout and

@@ -1,19 +1,19 @@
 """When a late frame is a failure and when it is only news, and how long a slow runner may take.
 
-Three numbers used to be typed into the tests that needed them, and each one was a magic number
-inside the suite that enforces the no-magic-numbers rule. They live here instead, each derived from
-the project's own settings or written once with the sentence that says why.
+A number typed into each test that needs it would be a magic number inside the suite that enforces
+the no-magic-numbers rule. So the numbers live here, each derived from the project's own settings or
+written once with the sentence that says why.
 
-**The timing default inverts.** It used to read `sys.platform`, which is the wrong predicate: the
-property is that this runner's compositor is not trustworthy, not that this is macOS, so the
-founder's own Mac was permanently weaker than a Linux runner. `--timing=gate` is the default
-everywhere now, and the legs that own a weak runner pass `--timing=report` themselves, so the
-weakening lives in the `GROUPS` table that owns them rather than in every test that measures a cue.
+**The timing default gates everywhere.** `sys.platform` is the wrong predicate: the property is that
+this runner's compositor is not trustworthy, not that this is macOS, and a platform check would hold
+a Mac to a weaker standard than a Linux runner. `--timing=gate` is the default everywhere, and the
+legs that own a weak runner pass `--timing=report` themselves, so the weakening lives in the
+`GROUPS` table that owns them rather than in every test that measures a cue.
 
 **The policy is one seam rather than a habit.** A suite that drives a real build reads its errors
 through `held_to`, so a test written next year is on the policy by reading a run the way
-every other test reads one. Applying the rule test by test left a test whose subject was which
-sections got recorded again failing a whole merge on a reveal that this runner was told to report.
+every other test reads one. A rule applied test by test lets a test whose subject is which sections
+get recorded again fail a whole merge on a reveal that this runner was told to report.
 
 **A report is printed rather than swallowed.** A leg that does not gate timing still measures it,
 so `note_late_reveals` writes what it tolerated into the run's own log. A test that reported
@@ -43,10 +43,10 @@ LATE_FRAME = (Code.CUE_OFF,)
 UNGATED_EXTRA_FRAMES = 2
 """How many extra frames of slack a runner whose compositor is not trustworthy is given.
 
-Two frames is what the recorded failures needed: every one of them was a reveal under a hundred
-milliseconds late, and the capture runs at twenty five frames a second. It is written once here and
-added to the project's own limit, because the `4` and the `5` this replaces were the settings plus
-two, spelled as literals inside the suite that is supposed to enforce the rule.
+Two frames covers a reveal under a hundred milliseconds late, which is how late a weak compositor
+presents one, and the capture runs at twenty five frames a second. It is written once here and
+added to the project's own limit, so no literal inside the suite that enforces the rule restates
+the settings plus two.
 """
 
 BASE_BUDGET_SECONDS = 180

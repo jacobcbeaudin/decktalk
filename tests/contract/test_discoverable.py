@@ -26,7 +26,8 @@ from decktalk.cli import catalog
 from decktalk.errors import ErrorCode
 from decktalk.findings import Code, RaisedBy
 from decktalk.results import RESULTS, Result
-from decktalk.settings import KEYS, NUMBERS
+from decktalk.settings import KEYS
+from decktalk.settings.numbers import NUMBERS
 
 DOCS = "https://docs.decktalk.ai"
 """Where every published address resolves, which is the one host a printed URL may name."""

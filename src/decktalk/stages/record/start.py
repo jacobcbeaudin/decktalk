@@ -1,6 +1,6 @@
 """Where narration t=0 sits in a recording.
 
-The recorder covers the page in magenta from its first paint until it starts the narration clock, so
+The recorder covers the page in magenta from its first paint until it starts the section clock, so
 the first clean frame after the magenta run is narration t=0 no matter when Chromium's capture
 actually began. Without a cover the fallback is the first painted frame plus the settle, and failing
 that a fixed guess, and both fallbacks say so, because a guessed start moves every reveal in the

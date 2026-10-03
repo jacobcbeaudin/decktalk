@@ -33,7 +33,7 @@ from decktalk.findings import Location
 from decktalk.inputs.document import fill
 from decktalk.inputs.paths import at
 from decktalk.results import Word
-from decktalk.tomlmap import Table
+from decktalk.tomlmap.read import Table
 
 SECTION_START = "$start"
 """The phrase that anchors a cue or a marker to its section's own beginning rather than to a spoken word."""

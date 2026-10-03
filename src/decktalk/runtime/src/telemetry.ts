@@ -15,7 +15,7 @@
 
 import type { Code, PageWarning, ReportField } from "./contract.ts";
 
-/** One cue, as the runtime alone can describe it, in seconds on the narration clock. */
+/** One cue, as the runtime alone can describe it, in seconds on the section clock. */
 export type CueEvent = {
   /** The cue id of the cue that fired. */
   readonly id: string;

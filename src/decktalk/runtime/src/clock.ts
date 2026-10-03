@@ -1,4 +1,4 @@
-/*! The narration clock and the queue of everything the page has still to do.
+/*! The section clock and the queue of everything the page has still to do.
  *
  * Every second a DeckTalk page reasons in is a second after narration t=0, which is the frame the
  * recorder's cover came off or the moment a preview started. This module owns that origin, the
@@ -15,7 +15,7 @@ import { MILLISECONDS, SECOND_DIGITS } from "./contract.ts";
 /** What a queued task is, which decides the order two tasks due at the same second run in. */
 export type Kind = "mount" | "cue" | "reveal";
 
-/** One piece of work the page owes the clock, with the second on the narration clock it is due at. */
+/** One piece of work the page owes the clock, with the second on the section clock it is due at. */
 export type Task = {
   readonly at: number;
   readonly kind: Kind;
@@ -45,7 +45,7 @@ let queue: Task[] = [];
 let looping = false;
 
 /**
- * Start the narration clock, which fixes the second every later call reads time against.
+ * Start the section clock, which fixes the second every later call reads time against.
  *
  * The recorder calls this through `DeckTalk.startClock` on the frame its cover came off, and a page
  * nobody is recording calls it for itself once the document has loaded. A second call is ignored,
@@ -60,7 +60,7 @@ export function started(): boolean {
   return origin !== null;
 }
 
-/** The second on the narration clock, or minus infinity before the clock has started. */
+/** The second on the section clock, or minus infinity before the clock has started. */
 export function now(): number {
   return origin === null ? Number.NEGATIVE_INFINITY : (performance.now() - origin) / MILLISECONDS;
 }
@@ -70,7 +70,7 @@ export function frameAt(): number | null {
   return origin === null ? null : round((frame - origin) / MILLISECONDS);
 }
 
-/** A second on the narration clock at the precision every report and every log row carries. */
+/** A second on the section clock at the precision every report and every log row carries. */
 export function round(seconds: number): number {
   return Number(seconds.toFixed(SECOND_DIGITS));
 }

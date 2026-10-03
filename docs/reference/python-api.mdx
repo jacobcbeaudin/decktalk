@@ -10,7 +10,8 @@ the same way and returns the same object the command prints.
 Three rules hold over the whole package.
 
 - **Nothing in the library prints.** A run reports through its event stream, and a renderer
-  subscribes to it. There is no logger to attach and no output to capture.
+  subscribes to it. Its log records go to the standard `decktalk` logger, and
+  [three readers of one account](#three-readers-of-one-account) says where they reach.
 - **`Machine.from_environment()` is the only function that reads the environment, the per-machine
   settings file or the working directory.** Everything below it takes what it needs as an argument,
   so two projects held in one process cannot reach each other.

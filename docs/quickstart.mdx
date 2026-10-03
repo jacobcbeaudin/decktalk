@@ -75,30 +75,37 @@ the one thing in DeckTalk that costs money.
     decktalk doctor
     ```
 
+    {/* sample: decktalk doctor, on a Mac that has recorded before, with the home folder written as ~ and the source checkout it ran from as ~/workspace/decktalk */}
     ```text
      Tool       Version         Where
-     ──────────────────────────────────────────────────────────────────────────────────
-     chromium   153.0.8010.12
+     ──────────────────────────────────────────────────────────────────────────────────────────────────
+     chromium   153.0.8010.12   ~/Library/Caches/decktalk/ms-playwright/chromium-1243/chrom…
+                                Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing
      ffmpeg     8.1.2           ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffmpeg
      ffprobe    8.1.2           ~/Library/Caches/decktalk/ffmpeg/8.1.2-darwin-arm64/ffprobe
-     katex      0.18.7          ~/.local/share/uv/tools/decktalk/lib/python3.13/site-p…
+     katex      0.18.7          ~/workspace/decktalk/src/decktalk/katex
 
-    Python    3.13.1 (~/.local/share/uv/tools/decktalk/bin/python)
+    Python    3.13.1 (~/workspace/decktalk/.venv/bin/python)
     Platform  macOS-26.6.2-arm64-arm-64bit-Mach-O (darwin)
     API key   missing
     ```
 
     `API key   missing` means `ELEVENLABS_API_KEY` is unset, which is the right state for everything up to
-    part 3. KaTeX is not a download: the pinned release ships inside the wheel, and `decktalk init`
-    copies it into the project.
+    part 3. KaTeX is not a download: the pinned release ships inside the package, and DeckTalk serves
+    it to the page.
 
     `doctor` fetches nothing itself, so on a machine that has never recorded the `chromium`, `ffmpeg`
     and `ffprobe` rows read `missing`, and each one comes with a finding.
 
+    {/* sample: DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk doctor, the findings under the table, which exits 1 */}
     ```text
     chromium: FILE_MISSING chromium is not on this machine, so a build that needs it cannot run.
       fix (safe): Fetch chromium into the cache.
-    Found 1 finding, 1 error. 1 fixable with --fix.
+    ffmpeg: FILE_MISSING ffmpeg is not on this machine, so a build that needs it cannot run.
+      fix (safe): Fetch ffmpeg into the cache.
+    ffprobe: FILE_MISSING ffprobe is not on this machine, so a build that needs it cannot run.
+      fix (safe): Fetch ffprobe into the cache.
+    Found 3 findings, 3 errors. 3 fixable with --fix.
     ```
 
     The fix is the command `decktalk install`, so `decktalk doctor --fix` fetches what is absent. You
@@ -113,9 +120,9 @@ both itself, one time per machine, the first time a command needs one. The run a
 download as it starts and reports the bytes as they arrive, so a long first build says what it is
 waiting on. Under `--events` the same thing is one `tool.fetch` line per step on stderr.
 
-```text
-{"event":"fetch","time":"2026-09-24T10:36:18.527286Z","seq":1,"run":"85725c3fff31","tool":"chromium","bytes":0,"total_bytes":null}
-{"event":"fetch","time":"2026-09-24T10:36:19.030032Z","seq":2,"run":"85725c3fff31","tool":"ffmpeg","bytes":0,"total_bytes":28196358}
+{/* sample: DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk install --events --no-input, the first tool.fetch line of stderr */}
+```json
+{"event":"tool.fetch","time":"2026-10-02T07:44:35.905950Z","seq":2,"run":"769c5119cd83","tool":"chromium","bytes":0,"total_bytes":null}
 ```
 
 `decktalk install` makes both downloads up front instead, and does nothing else.
@@ -140,8 +147,9 @@ sizes and the cache paths.
     decktalk init my-lesson && cd my-lesson
     ```
 
+    {/* sample: decktalk init my-lesson, in an empty folder */}
     ```text
-    Wrote my-lesson from the starter example, 16 files.
+    Wrote my-lesson from the starter example, 14 files.
     Next   cd my-lesson && decktalk build --no-spend
     ```
 
@@ -168,16 +176,17 @@ sizes and the cache paths.
     decktalk build --no-spend
     ```
 
+    {/* sample: decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0 */}
     ```text
-    run 9c218864ca64, events build/events/9c218864ca64.jsonl
+    run 3ffc9cf27001, events build/events/3ffc9cf27001.jsonl
          Narrate    0:00
              Cue    0:00
           Record    0:22
     The project declares no score for this run, so there is nothing to generate.
            Score    0:00
     The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
-        Assemble    0:02
-          Verify    0:02
+        Assemble    0:03
+          Verify    0:04
            Built build/final/my-lesson.mp4, $0.00, 3 findings
     script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no take yet. Run decktalk narrate --section 1 --spend to buy its take.
     script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no take yet. Run decktalk narrate --section 2 --spend to buy its take.
@@ -211,9 +220,11 @@ sizes and the cache paths.
     ls build/final
     ```
 
+    {/* sample: ls build/final, after the build above */}
     ```text
-    placements.json             my-lesson-transcript.html  my-lesson.mp4  my-lesson.vtt
-    my-lesson-poster.png  my-lesson.chapters.txt     my-lesson.srt
+    my-lesson-poster.png       my-lesson.mp4  placements.json
+    my-lesson-transcript.html  my-lesson.srt
+    my-lesson.chapters.txt     my-lesson.vtt
     ```
 
     `my-lesson.mp4` is the film. The name comes from `[project] name` in `decktalk.toml`. The
@@ -244,6 +255,7 @@ sizes and the cache paths.
     decktalk status
     ```
 
+    {/* sample: decktalk status, after the build above */}
     ```text
      Section   Key   Plays                     Voiced   Recorded   Assembled   Stale
      ───────────────────────────────────────────────────────────────────────────────
@@ -252,7 +264,6 @@ sizes and the cache paths.
      3         03    deck/index.html?scene=3   no       yes        yes         no
 
     Film   build/final/my-lesson.mp4, 0:50 long
-    Next   decktalk verify
     ```
 
     One row per section, with the scene of the page it plays. `Voiced` is true when a voice spoke a
@@ -262,8 +273,9 @@ sizes and the cache paths.
     reading of the project rather than a third opinion beside `check` and `verify`, and the one thing
     it judges is a file the project names and has not got, which is a `FILE_MISSING` error.
 
-    Before the first build the same table reads `no` in every column, and `Next` reads
-    `decktalk narrate --no-spend`.
+    Before the first build the same table reads `no` in every column, and a `Next` line under it
+    reads `decktalk narrate --no-spend`. Once the film on disk is the one the last build measured,
+    there is nothing next, so the line is gone.
   </Step>
 </Steps>
 
@@ -289,8 +301,9 @@ with the cues it declares.
 decktalk serve
 ```
 
+{/* sample: decktalk serve, in the starter */}
 ```text
-Serving http://127.0.0.1:64517
+Serving http://127.0.0.1:52203
 ```
 
 `serve` answers from the project directory on 127.0.0.1, which is the origin the recorder uses, so
@@ -361,12 +374,13 @@ film.
     The result is one flat object carrying `run`, `written`, `judged`, `pages`, `frames`, `cost` and
     `storyboard` beside the four keys every result reserves. Its `cost` is the price:
 
+    {/* sample: decktalk check --json, on a fresh decktalk init my-lesson, the cost object */}
     ```json
     {
       "state": "estimate",
       "sections": [1, 2, 3],
       "characters": 476,
-      "seconds": 31.2,
+      "seconds": 39.9,
       "dollars": 0.14,
       "ceiling_dollars": 0.14,
       "billing": "per_character",
@@ -392,6 +406,7 @@ film.
     decktalk storyboard
     ```
 
+    {/* sample: decktalk storyboard, on the starter */}
     ```text
     Wrote build/storyboard.html, 16 panels.
     ```
@@ -413,7 +428,9 @@ film.
     when the most it can cost is over N US dollars, and the refusal names the figure that would let
     it through. A ceiling of five cents on this project reads:
 
+    {/* sample: decktalk build --spend --max-cost 0.05, on the starter with [voice] id set and no API key, which exits 2 before any request */}
     ```text
+    run d93b083d90d5, events build/events/d93b083d90d5.jsonl
     error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.14, is over the $0.05 ceiling --max-cost set.
       hint: Raise the ceiling to --max-cost 0.14, or narrow the run with --section.
       docs: https://docs.decktalk.ai/reference/errors/APPROVAL
@@ -423,9 +440,10 @@ film.
     there is nobody to ask, so it refuses rather than guessing, and the refusal carries the price, so
     one call prices the run.
 
+    {/* sample: decktalk build --no-input, on the starter with [voice] id set and no API key, which exits 2 */}
     ```text
     error[APPROVAL]: This run costs $0.14 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
-      hint: Run decktalk build --spend to approve that spend, or decktalk build --no-spend to play a placeholder wherever a take is missing.
+      hint: Run decktalk build --spend to approve that spend, or decktalk build --no-spend to play a placeholder wherever a take is missing and silence where a sound is unbought.
       docs: https://docs.decktalk.ai/reference/errors/APPROVAL
     ```
 

@@ -30,8 +30,8 @@ PAGE_MODULE = ROOT / "src" / "decktalk" / "page.py"
 GENERATOR = ROOT / "scripts" / "build_runtime.py"
 ESBUILD = ROOT / "node_modules" / ".bin" / "esbuild"
 
-# How many rows the design froze for each subject a row is written on, which is the count a reviewer
-# checks against the attribute table in the synthesis. An element and a container are one subject
+# How many rows the page contract holds for each subject a row is written on, so a new row is a
+# deliberate change to this count. An element and a container are one subject
 # here, because both are rows an author writes many times a deck.
 ROWS_PER_SUBJECT: dict[tuple[Subject, ...], int] = {
     (Subject.ELEMENT, Subject.CONTAINER): 18,
@@ -100,9 +100,9 @@ def test_the_table_holds_the_rows_the_design_froze():
 
 def test_no_code_spells_its_own_severity_and_every_one_is_a_sentence():
     """A reader dispatches on the code and reads the severity beside it, never out of the word."""
-    for name, row in contract_codes().items():
-        assert row["message"].endswith("."), f"{name} does not print a whole sentence"
-        assert "?" not in row["message"]
+    for name, sentence in contract_codes().items():
+        assert sentence.endswith("."), f"{name} does not print a whole sentence"
+        assert "?" not in sentence
         assert "warning" not in name.lower() and "certain" not in name.lower()
     assert Code.PAGE_STAGGER_OVERRUN.severity is Severity.ERROR, "the stagger arithmetic is exact"
     assert Code.PAGE_SWAP_APART.severity is Severity.WARNING
@@ -137,8 +137,8 @@ def test_the_committed_contract_is_what_the_typescript_says():
     assert done.returncode == 0, done.stdout + done.stderr
 
 
-def contract_codes() -> dict[str, dict[str, str]]:
-    """Every page code the TypeScript contract publishes, with its sentence, severity and side."""
+def contract_codes() -> dict[str, str]:
+    """Every page code the TypeScript contract publishes, with the sentence its console prints."""
     return json.loads(CONTRACT_JSON.read_text(encoding="utf-8"))["codes"]
 
 
@@ -146,14 +146,6 @@ def test_the_page_codes_are_the_same_list_the_finding_codes_carry():
     """One `Code` enum is written by hand, and this is the check that keeps its page half honest."""
     written = {code.name for code in Code if code.subject in CONTRACT_SUBJECTS}
     assert written == set(contract_codes())
-
-
-def test_the_page_codes_carry_the_severity_and_the_side_the_finding_codes_carry():
-    """A result serialises what `findings.py` holds and the console prints what the page holds, so a
-    reader who saw both would otherwise be told two different things about the same code."""
-    for name, row in contract_codes().items():
-        assert row["severity"] == Code[name].severity.value, f"{name} has a different severity in each registry"
-        assert row["raisedBy"] == Code[name].raised_by.value, f"{name} is raised by two sides"
 
 
 CONTRACT_CASES = ROOT / "tests" / "data" / "contract_cases.json"

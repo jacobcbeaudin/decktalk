@@ -4,8 +4,7 @@ The release pull request regenerates with `--group generated --write`, and the r
 same command on every pull request. A write that skipped a generator the check runs would leave a
 file stale on the one branch nobody else pushes to, so the derivation is held here row by row. A row
 that declares a tool has to fetch it before its checks run, and a suite that still finds no tool has
-to fail, because a declared need with nothing behind it once let three suites pass with every test
-skipped.
+to fail, because a declared need with nothing behind it lets a suite pass with every test skipped.
 """
 
 from __future__ import annotations
@@ -97,7 +96,7 @@ def test_a_row_that_runs_the_generators_fetches_chromium_only_when_one_launches_
 
 @pytest.mark.parametrize("group", check.GROUPS, ids=lambda group: group.name)
 def test_every_tool_a_row_declares_is_prepared_before_its_checks(group) -> None:
-    """A declared tool with no command behind it is how the browser and e2e rows once skipped every test."""
+    """A declared tool with no command behind it would leave a row's suite to skip every test it holds."""
     for tool in group.tools:
         prepare = check.NEEDS[tool].prepare
         if prepare is not None:
@@ -300,9 +299,15 @@ def doctor_reports(monkeypatch: pytest.MonkeyPatch, rows: list[dict[str, object]
             id="reported with no version",
         ),
         pytest.param([], ("ffmpeg",), ["ffmpeg"], id="never named"),
+        pytest.param(
+            [{"tool": "chromium", "version": "153"}, {"tool": "ffmpeg", "version": "8.1.2"}],
+            ("chromium", "ffmpeg"),
+            [],
+            id="every tool held",
+        ),
     ],
 )
-def test_a_tool_doctor_cannot_vouch_for_is_missing(
+def test_a_tool_is_missing_exactly_when_doctor_cannot_vouch_for_it(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     rows: list[dict[str, object]],
@@ -320,11 +325,6 @@ def test_a_missing_tool_fails_the_run_and_names_the_command_that_fetches_it(
     with pytest.raises(pytest.fail.Exception, match="ffmpeg") as failed:
         tools.require(("chromium", "ffmpeg"), tmp_path)
     assert tools.FETCH in str(failed.value)
-
-
-def test_a_machine_that_holds_every_tool_passes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    doctor_reports(monkeypatch, [{"tool": "chromium", "version": "153"}, {"tool": "ffmpeg", "version": "8.1.2"}])
-    tools.require(("chromium", "ffmpeg"), tmp_path)
 
 
 def test_a_named_suite_whose_fixture_finds_no_tool_fails_rather_than_skips(pytester: pytest.Pytester) -> None:

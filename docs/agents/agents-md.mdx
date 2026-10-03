@@ -5,7 +5,7 @@ description: The short file decktalk init writes so a coding agent knows where i
 
 `AGENTS.md` is a plain Markdown file that a coding agent loads at the start of every session. Codex,
 Cursor, Copilot, VS Code, Zed, Aider and many others read it. It is the one agent surface that costs
-context in every session, so DeckTalk's is three short paragraphs and points at the instruction set
+context in every session, so DeckTalk's is four short paragraphs and points at the instruction set
 rather than repeating it.
 
 The reason is the shape of the product. The command line is the instruction set, the settings and
@@ -17,6 +17,7 @@ is a fact that can disagree with the tool, and a fact the agent reads from `deck
 `decktalk init DIR` writes `AGENTS.md` only when the directory has none, and it never replaces one
 that is already there. The project's title fills the heading.
 
+{/* sample: AGENTS.md as decktalk init my-lesson writes it */}
 ```markdown AGENTS.md
 # My Lesson
 
@@ -80,7 +81,7 @@ line.
 ## Adding DeckTalk to an `AGENTS.md` you already have
 
 A project that already has an `AGENTS.md` keeps it untouched, so the DeckTalk lines are yours to
-add. Add a heading of your own and the three paragraphs above under it, and leave the rest alone.
+add. Add a heading of your own and the four paragraphs above under it, and leave the rest alone.
 The file is read as plain Markdown, so a heading and a paragraph are enough.
 
 Keep the same discipline in your own file. Name the calls, and do not copy a flag, a default or a

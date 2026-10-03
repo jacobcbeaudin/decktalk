@@ -232,7 +232,7 @@ def test_markup_slides_join_a_scene_declared_in_script(page, tmp_path):
     [("data-in", "arrive"), ("data-back", "dim"), ("data-front", "lift"), ("data-out", "go")],
 )
 def test_every_moment_attribute_joins_the_cue_order(page, tmp_path, attribute, local):
-    """An exit that never reached the cue order was a cue no check could see, which is the whole repair."""
+    """Every moment joins the cue order, because a moment outside it is a cue no check can see."""
     scene = f"""
     <div data-scene="2">
       <template data-slide="2.1">
@@ -502,7 +502,7 @@ def test_the_crossfade_holds_the_outgoing_slide_at_full_opacity(page, tmp_path):
     leaving, arriving = pair
     assert leaving == 1.0
     assert 0 < arriving < 1
-    # The composite of an opaque slide under a half-faded one is opaque, which is the whole repair.
+    # The composite of an opaque slide under a half-faded one is opaque, so nothing shows through mid-fade.
     assert leaving + (1 - leaving) * arriving == pytest.approx(1.0)
 
 

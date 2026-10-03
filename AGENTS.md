@@ -62,7 +62,8 @@ the tests that belong to no module.
 Run `uv run scripts/check.py` before calling anything done, which runs lint, types, every suite and
 every generated-file check. `--fast` runs lint, types and the unit tests alone.
 
-Never edit a generated file. Change its source and run its script, which `CONTRIBUTING.md` lists.
+Never edit a generated file. Change its source and run its `scripts/build_*.py --write`, or
+`uv run scripts/check.py --group generated --write` to update them all.
 
 Every public sentence a key, a code, a command or a field publishes lives once, in the model or the
 registry the generators read.

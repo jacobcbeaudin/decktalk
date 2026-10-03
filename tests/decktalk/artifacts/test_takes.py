@@ -1,6 +1,6 @@
 """The take index, and the frozen inputs a take's name is taken over.
 
-The golden digests of the founder's voiced takes live once, in `tests/data/take_hash.json`, and
+The golden digests of the voiced takes live once, in `tests/data/take_hash.json`, and
 `tests/contract/test_take_hash.py` holds every one of them against the markdown it was voiced from,
 which proves the text this file would hold them against and the digest together. What stays here is
 the shape of the inputs, which is what a change to `TakeInputs` or its order would move.
@@ -34,11 +34,11 @@ from support.projects import MINIMAL_TOML, load_project
 from support.takes import a_take
 
 INPUTS = json.loads((DATA / "take_hash.json").read_text(encoding="utf-8"))["inputs"]
-"""The inputs the founder's takes were bought under, which the golden digests are held to."""
+"""The inputs the golden takes were bought under, which the golden digests are held to."""
 
 
 def inputs_for(text: str) -> TakeInputs:
-    """The inputs of one of the founder's takes, built the way `narrate` builds them."""
+    """The inputs of one golden take, built the way `narrate` builds them."""
     return TakeInputs.of(**INPUTS, text=text)
 
 

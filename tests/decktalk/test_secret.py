@@ -344,7 +344,7 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
         assert project.narrate(spend=True).ok
         # A fix whose command fails and says the key and the host's password on its way out.
         failing = subprocess.CompletedProcess([], 2, b"", f"Traceback\nKeyError: {key} {host}\n".encode())
-        monkeypatch.setattr("decktalk.machine.subprocess.run", lambda argv, **_: failing)
+        monkeypatch.setattr("decktalk.machine.fixes.subprocess.run", lambda argv, **_: failing)
         fix = CommandFix(title="t", applicability=Applicability.SAFE, command=("decktalk", "install"))
         found = Finding(code=Code.FILE_MISSING, message="m", location=Location(where="ffmpeg"), fix=fix)
         applied = project.apply(found)

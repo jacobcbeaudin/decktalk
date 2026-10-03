@@ -25,7 +25,7 @@ from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
 from decktalk.inputs import Inputs, PageSection
 from decktalk.inputs.paths import at
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
@@ -221,11 +221,11 @@ def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds
 
 
 def _out_path(inputs: Inputs, out: Path, video: Path) -> Path:
-    """Where the clip is written, refusing a name that is the section cut it reads."""
+    """Where the clip is written, refusing a name that is the section video it reads."""
     film = out if out.is_absolute() else inputs.root / out
     if film.resolve() == video.resolve():
         raise InputError(
-            f"--out names {inputs.relative(video)}, which is the section cut this clip is read from.",
+            f"--out names {inputs.relative(video)}, which is the section video this clip is read from.",
             hint="Write the clip somewhere else, such as under media/.",
             location=at(video, inputs.root),
         )

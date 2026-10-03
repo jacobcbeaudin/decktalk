@@ -1,13 +1,11 @@
 """The run declared once: the six stages in order, the artifacts they pass between them, and how a
 moment ended.
 
-The pipeline used to be described in three places, which were the stage order, an if-chain that
-worked out what a partial run still needed, and about ten sentences across the stages telling a
-reader to run an earlier command first. `PIPELINE` is the one declaration all three are read from,
-so the precondition check, the `--from` and `--to` validation, the hint a `NOT_BUILT` error carries
-and the next step `status` reports are one table a reader can see whole. `NEEDS` reads the same
-table as a graph of stages, so which records a change leaves describing other inputs is derived
-from the edges rather than kept as a rule of its own.
+`PIPELINE` is the one declaration the stage order, what a partial run still needs and the command a
+reader runs first are read from, so the precondition check, the `--from` and `--to` validation, the
+hint a `NOT_BUILT` error carries and the next step `status` reports are one table a reader can see
+whole. `NEEDS` reads the same table as a graph of stages, so which records a change leaves
+describing other inputs is derived from the edges rather than kept as a rule of its own.
 
 Each row also says which of two trusts its stage needs. `holds_key` is a stage that may buy, and so
 reaches for the provider's key, and `opens_pages` is a stage that launches a browser and runs a

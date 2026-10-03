@@ -18,13 +18,15 @@ lookup an agent makes is for a setting that does not exist.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import tomlkit
 
 import build_settings_schema
 import generated
+from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE
+from decktalk.settings.layers import machine_config_path
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "docs" / "reference" / "configuration.mdx"
@@ -50,27 +52,6 @@ Bind the schema to your project file and an editor completes every key as you ty
 [verify]
 cue_offset_max_ms = 120
 ```
-
-## Which value wins
-
-Five layers can set a key. Each one overrides the layers before it.
-
-1. The default in the table below.
-2. The same table in the per-machine settings file.
-3. The same table in the project's `decktalk.toml`.
-4. The environment variable each key publishes, such as `DECKTALK_VIDEO_PRESET`.
-5. `--set table.key=value`, on any command, for one run.
-
-`decktalk config explain KEY` prints the value in force and the layer it comes from, so you never
-have to work out which one that is.
-
-The per-machine settings file holds machine keys alone. A key about the film in that file is
-refused by name, because the file that ships has to carry whatever the machine running it believes.
-`DECKTALK_MACHINE_FILE` names a different per-machine file.
-
-| Linux | macOS | Windows |
-|---|---|---|
-| `$XDG_CONFIG_HOME/decktalk/machine.toml`, or `~/.config/decktalk/machine.toml` | `~/Library/Application Support/decktalk/machine.toml` | `%APPDATA%\\decktalk\\machine.toml` |
 """
 
 FOOTER = """## Related
@@ -101,6 +82,36 @@ as its expression, so it follows the keys it reads at every frame size and every
 a fact about a codec, a standard, or a tool DeckTalk drives, and it is fixed for the same reason a
 sample rate is. Neither can be set, and both are here so that a setting you cannot find is a number you
 can read.
+"""
+
+
+def layers() -> str:
+    """Which value wins, naming the variables and the machine file's place on each system as the code does."""
+    home = Path("~")
+    xdg = machine_config_path({"XDG_CONFIG_HOME": "$XDG_CONFIG_HOME"}, home, "linux").as_posix()
+    linux = machine_config_path({}, home, "linux").as_posix()
+    mac = machine_config_path({}, home, "darwin").as_posix()
+    windows = PureWindowsPath(machine_config_path({"APPDATA": "%APPDATA%"}, home, "win32"))
+    return f"""## Which value wins
+
+Five layers can set a key. Each one overrides the layers before it.
+
+1. The default in the table below.
+2. The same table in the per-machine settings file.
+3. The same table in the project's `decktalk.toml`.
+4. The environment variable each key publishes, such as `{BY_ID["video.preset"].environment}`.
+5. `--set table.key=value`, on any command, for one run.
+
+`decktalk config explain KEY` prints the value in force and the layer it comes from, so you never
+have to work out which one that is.
+
+The per-machine settings file holds machine keys alone. A key about the film in that file is
+refused by name, because the file that ships has to carry whatever the machine running it believes.
+`{MACHINE_FILE_VARIABLE}` names a different per-machine file.
+
+| Linux | macOS | Windows |
+|---|---|---|
+| `{xdg}`, or `{linux}` | `{mac}` | `{windows}` |
 """
 
 
@@ -201,7 +212,7 @@ def render() -> str:
     """The whole page, which is the header, the index, one section per table, the numbers and the links."""
     document = build_settings_schema.document(machine=False)
     rows = keys(document)
-    parts = [HEADER, *machine(rows), *index(rows), *tables(document, rows), *numbers(document), FOOTER]
+    parts = [HEADER, layers(), *machine(rows), *index(rows), *tables(document, rows), *numbers(document), FOOTER]
     return "\n".join(parts).rstrip() + "\n"
 
 

@@ -17,7 +17,7 @@ from decktalk.results import Billing, CostState, Layer, TakeStatus
 from decktalk.speech import DECLARED, FREE, PROVIDERS, Bill, canonical_text
 from decktalk.stages.narrate.plan import (
     cost_of,
-    is_cached,
+    is_held,
     placeholder_inputs,
     placeholder_plan,
     seconds_of,
@@ -31,7 +31,7 @@ from support.takes import TAKE_SUFFIX
 from .conftest import TOML, VOICE_ID, a_paid_take
 
 GOLDEN = json.loads((DATA / "take_hash.json").read_text(encoding="utf-8"))
-"""The two films the founder has really paid for, with the digest of every take he bought."""
+"""The two golden films, with the digest of every take bought for them."""
 
 ROWS = [(row["film"], row["section"], row["markdown"], row["hash"]) for row in GOLDEN["takes"]]
 IDS = [f"{film}-{section}" for film, section, _markdown, _digest in ROWS]
@@ -66,20 +66,20 @@ def test_the_digest_of_a_paid_take_is_the_one_its_film_was_billed_for(
     assert made.digest == digest, f"{film} section {section} would be voiced again"
 
 
-def test_a_take_is_cached_only_when_its_audio_and_its_words_are_both_there_and_agree(tmp_path: Path) -> None:
+def test_a_take_is_held_only_when_its_audio_and_its_words_are_both_there_and_agree(tmp_path: Path) -> None:
     space = Workspace(
         root=tmp_path, build=tmp_path, name="demo", suffix=TAKE_SUFFIX, takes=tmp_path, score_dir=tmp_path
     )
     (tmp_path / take_file("abc", TAKE_SUFFIX)).write_bytes(b"take")
-    assert not is_cached("abc", space)
+    assert not is_held("abc", space)
     (tmp_path / words_file("abc")).write_text("{}", encoding="utf-8")
-    assert is_cached("abc", space)
-    ProviderWords(audio=AudioPrint.of(b"another take")).write(tmp_path / words_file("abc"))
-    assert not is_cached("abc", space), "the audio does not hold the bytes its words recorded"
-    ProviderWords(audio=AudioPrint.of(b"take")).write(tmp_path / words_file("abc"))
-    assert is_cached("abc", space)
+    assert is_held("abc", space)
+    ProviderWords(audio=AudioPrint.of(b"another take", suffix=TAKE_SUFFIX)).write(tmp_path / words_file("abc"))
+    assert not is_held("abc", space), "the audio does not hold the bytes its words recorded"
+    ProviderWords(audio=AudioPrint.of(b"take", suffix=TAKE_SUFFIX)).write(tmp_path / words_file("abc"))
+    assert is_held("abc", space)
     (tmp_path / take_file("abc", TAKE_SUFFIX)).write_bytes(b"")
-    assert not is_cached("abc", space), "an empty take is no take"
+    assert not is_held("abc", space), "an empty take is no take"
 
 
 def test_a_placeholder_digest_moves_with_the_pace_it_was_sized_at(

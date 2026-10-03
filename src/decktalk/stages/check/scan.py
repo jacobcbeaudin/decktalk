@@ -19,7 +19,7 @@ from dataclasses import asdict
 
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs.document import PageSection
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import frames
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Attr

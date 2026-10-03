@@ -6,12 +6,13 @@ stream, its lines are appended to `build/events/<run>.jsonl` by the machine's ow
 file the stages wrote is already recorded on the run. The one file a build writes itself is the
 record `status` keeps of the last assemble and verify, so the next build can keep them.
 
-Which stages a run performs is read from `PIPELINE` and never worked out here. `Stage.span` gives
-the run of stages between two ends, `required` gives the artifacts that run reads but does not
-write, and `Artifact.next_step` names the stage that would have written each one, so a run that
-starts past a missing artifact is refused with the file and the command named, and this module
-carries no "run this first" sentence of its own. Whether an artifact is built is `status`'s rule,
-asked of `status`, so a build never goes ahead on a directory the report calls unfinished.
+Which stages a run performs is read from `PIPELINE`, and how each is called from `CALLS`, and
+neither is worked out here. `Stage.span` gives the run of stages between two ends, `required` gives
+the artifacts that run reads but does not write, and `Artifact.next_step` names the stage that would
+have written each one, so a run that starts past a missing artifact is refused with the file and the
+command named, and this module carries no "run this first" sentence of its own. Whether an artifact
+is built is `status`'s rule, asked of `status`, so a build never goes ahead on a directory the
+report calls unfinished.
 
 An unchanged build keeps `assemble` and `verify` rather than repeating them. Both are pure
 functions of files already on disk, so when nothing they read has moved since the last build ran
@@ -31,12 +32,10 @@ stage the run stopped after.
 
 from __future__ import annotations
 
-import inspect
 import logging
 import time
 from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
-from types import ModuleType
 
 from pydantic import JsonValue, TypeAdapter
 
@@ -45,12 +44,12 @@ from decktalk.events import Level, StageDone
 from decktalk.findings import Code, Finding, Severity
 from decktalk.inputs import Inputs
 from decktalk.logs import cache_decision
-from decktalk.machine import Run, Threshold
+from decktalk.machine.run import Run, Threshold
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
 from decktalk.results import DOLLAR_DIGITS, Billing, BuildResult, Cost, CostState, Layer, Result, StageRun, counted
-from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
+from decktalk.stages import narrate, storyboard
 from decktalk.stages import score as score_stage
-from decktalk.stages.status import (
+from decktalk.stages.kept import (
     BUILT,
     Kept,
     KeptStage,
@@ -58,49 +57,13 @@ from decktalk.stages.status import (
     assembled,
     holds_film,
     intact,
-    kept_path,
     outputs_of,
     read_kept,
     verify_digest,
 )
+from decktalk.stages.table import CALLS
 
 log = logging.getLogger(__name__)
-
-NOTHING = 0.0
-"""What a stage that never opened took, which is the elapsed time a skipped row reports."""
-
-FIRST = 1
-"""Where a run's first stage sits in its own plan, because a person counts stages from one."""
-
-MODULES: dict[Stage, ModuleType] = {
-    Stage.NARRATE: narrate,
-    Stage.CUE: cue,
-    Stage.RECORD: record,
-    Stage.SCORE: score_stage,
-    Stage.ASSEMBLE: assemble,
-    Stage.VERIFY: verify,
-}
-"""Each stage against the module that implements it, which is the one seam a test replaces.
-
-The module is held rather than the function, so the function is looked up when the stage is called
-and a test that replaces `decktalk.stages.record.record` is obeyed by a build exactly as it is by
-the facade. One word therefore names the stage, its module, its function and its event.
-"""
-
-OPTIONS: dict[Stage, tuple[str, ...]] = {
-    stage: tuple(
-        name
-        for name, parameter in inspect.signature(getattr(module, stage.value)).parameters.items()
-        if parameter.kind is inspect.Parameter.KEYWORD_ONLY
-    )
-    for stage, module in MODULES.items()
-}
-"""Which of a build's options each stage takes, read off the keywords each stage function declares.
-
-The options are selected per stage rather than passed whole, because a stage handed keywords it does
-not read would accept a flag that changes nothing, which is the false entry in the instruction set
-the founder's thesis exists to prevent. They are read at import, before a test replaces a stage.
-"""
 
 
 def build(
@@ -165,7 +128,7 @@ def build(
             continue
         run.check()
         opened = time.monotonic()
-        taken = {name: options[name] for name in OPTIONS[stage]}
+        taken = {name: options[name] for name in CALLS[stage].options}
         digest = _digest(stage, inputs, kept, fresh, taken)
         standing = None
         if stage in KEEPS:
@@ -178,8 +141,8 @@ def build(
             if stage is Stage.ASSEMBLE:
                 film = inputs.relative(inputs.workspace.film)
         else:
-            with run.stage(stage, index=plan.index(stage) + FIRST, count=len(plan)):
-                answer = _call(stage, run, inputs, taken)
+            with run.stage(stage, index=plan.index(stage) + 1, count=len(plan)):
+                answer = CALLS[stage].call(inputs, run, **taken)
             rows.append(StageRun(stage=stage, outcome=Outcome.RAN, elapsed_seconds=time.monotonic() - opened))
             spends += _cost_of(answer)
             findings = [found for found in answer.findings if found.stage is stage]
@@ -190,7 +153,7 @@ def build(
         if stage is not Stage.VERIFY and _stopped(stage, findings, run, plan, threshold):
             stopped_at = stage
     if fresh:
-        run.wrote(_kept_after(kept, fresh).write(kept_path(inputs)))
+        run.wrote(_kept_after(kept, fresh).write(inputs.workspace.kept_path))
     return run.result(
         BuildResult,
         threshold=threshold,
@@ -254,7 +217,7 @@ def _standing(stage: Stage, inputs: Inputs, kept: Kept, digest: str | None) -> t
 def _keep(stage: Stage, run: Run, record: KeptStage) -> list[Finding]:
     """Report a stage this run keeps, and report again what it found when it last ran."""
     run.note(f"{stage.value.capitalize()} kept what it made last time, because nothing it reads has changed.")
-    run.emit(StageDone, stage=stage, outcome=Outcome.KEPT, elapsed_seconds=NOTHING)
+    run.emit(StageDone, stage=stage, outcome=Outcome.KEPT, elapsed_seconds=0.0)
     for found in record.findings:
         run.found(found)
     return list(record.findings)
@@ -340,8 +303,8 @@ def _storyboard(inputs: Inputs, run: Run, *, only: Sequence[int] | None) -> Path
 
 def _skipped(run: Run, stage: Stage) -> StageRun:
     """Close a stage this run leaves out, so a renderer meets every stage of the pipeline once."""
-    run.emit(StageDone, stage=stage, outcome=Outcome.SKIPPED, elapsed_seconds=NOTHING)
-    return StageRun(stage=stage, outcome=Outcome.SKIPPED, elapsed_seconds=NOTHING)
+    run.emit(StageDone, stage=stage, outcome=Outcome.SKIPPED, elapsed_seconds=0.0)
+    return StageRun(stage=stage, outcome=Outcome.SKIPPED, elapsed_seconds=0.0)
 
 
 def _hold_to_ceiling(
@@ -368,11 +331,6 @@ def _hold_to_ceiling(
         spends.append(score_stage.price(inputs, only=only, replace_score=replace_score))
     if spends:
         run.approve_whole(total(spends))
-
-
-def _call(stage: Stage, run: Run, inputs: Inputs, taken: Mapping[str, object]) -> Result:
-    """Hand one stage its inputs, its run and the options it declares, and nothing else."""
-    return getattr(MODULES[stage], stage.value)(inputs, run, **taken)
 
 
 def _cost_of(answer: Result) -> list[Cost]:

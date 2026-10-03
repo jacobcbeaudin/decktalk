@@ -43,7 +43,7 @@ class CueTimes(Stored):
 
     def times(self, section: int) -> dict[str, float]:
         """One section's resolved cues, keyed by cue id, with the unresolved ones left out."""
-        return {row.cue: row.seconds for row in self.rows(section) if row.seconds is not None}
+        return {row.id: row.seconds for row in self.rows(section) if row.seconds is not None}
 
     def query(self, section: int) -> str | None:
         """The `cues` query value for one section, or None when it has no resolved cue."""
@@ -61,7 +61,7 @@ class CueTimes(Stored):
                 {
                     "key": block.key,
                     "scene": scenes[block.section],
-                    "cues": [{"cue": row.cue, "at": row.seconds} for row in block.cues if row.seconds is not None],
+                    "cues": [{"cue": row.id, "at": row.seconds} for row in block.cues if row.seconds is not None],
                 }
                 for block in self.sections
                 if block.section in scenes

@@ -28,6 +28,7 @@ from decktalk.results import (
     Layer,
     Result,
     Scope,
+    ScoreResult,
     SettingValue,
     VerifyResult,
 )
@@ -159,9 +160,9 @@ Found 1 finding, 1 error.
 """,
         "CueResult": """\
 
- Section   Cue     Phrase     Seconds
- ────────────────────────────────────
- 12        cue14   phrase15   16.25
+ Section   Cue    Phrase     Seconds
+ ───────────────────────────────────
+ 12        id14   phrase15   16.25
 
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
@@ -225,7 +226,8 @@ Found 1 finding, 1 error.
  ───────────────────────────────────────
  name12   ambience   generated   16.2
 
-Would spend $22.25 on the score.
+This run costs $22.25 for the sections that certainly need a take, and up to $23.25 if the takes that could not be
+matched to a voice need one too, at the rates each stage states.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,
@@ -476,3 +478,9 @@ def test_a_settings_value_prints_in_the_spelling_config_set_accepts(value: JsonV
         ok=True, key=SettingValue(key="verify.strict", value=value, default=value, layer=Layer.DEFAULT)
     )
     assert recorded(got) == f"verify.strict = {shown} (default)\n"
+
+
+def test_the_score_states_its_price_in_the_one_money_sentence() -> None:
+    """A price has one sentence, which tells what a run certainly spends from its ceiling."""
+    result = sample(ScoreResult, every=True)
+    assert result.cost.sentence in recorded(result, width=len(result.cost.sentence))

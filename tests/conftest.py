@@ -5,9 +5,8 @@ selection and nothing else does. A bare `pytest` runs everything that needs no t
 six suite markers is reached by naming it: `pytest -m browser`, `pytest -m media`, `pytest -m e2e`,
 `pytest -m scaffold`, `pytest -m platform`, `pytest -m wheel`. A file that carries no marker of its
 own and still needs something beyond Python is marked by its path as it is collected. The rule
-lives in a hook rather than in `addopts` because an `-m` written in `addopts` is replaced whole by
-the `-m` a person types, so `-m "not e2e"` used to admit the five-minute scaffold build and
-`-m unit` used to select nothing and exit green.
+lives in a hook rather than in `addopts`, because an `-m` written in `addopts` is replaced whole by
+the `-m` a person types, and `-m "not e2e"` would then admit the five-minute scaffold build.
 """
 
 from __future__ import annotations
@@ -17,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from hypothesis import settings
+from hypothesis.configuration import set_hypothesis_home_dir
 
 from decktalk import machine
 from support.tools import FETCHED, MARKED_BY_PATH, SUITE_MARKERS, machine_tools
@@ -29,9 +29,12 @@ HERE = Path(__file__).parent
 # A property test draws its examples from a seed derived from the test itself and keeps no example
 # database, so every machine and every CI run tries the same examples in the same order and a
 # failure seen once is seen again. No deadline is set, because under `-n auto` a slow worker would
-# turn the time an example took into a failure that says nothing about the code.
+# turn the time an example took into a failure that says nothing about the code. What Hypothesis
+# still caches, its unicode tables and the constants it reads from the code, goes under `tests/out/`
+# rather than into the directory the run started in.
 settings.register_profile("decktalk", derandomize=True, database=None, deadline=None, print_blob=True)
 settings.load_profile("decktalk")
+set_hypothesis_home_dir(HERE / "out" / "hypothesis")
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

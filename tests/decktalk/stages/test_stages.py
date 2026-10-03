@@ -24,7 +24,7 @@ from support.paths import DATA
 from support.projects import MINIMAL_TOML, load_project
 
 GOLDEN = json.loads((DATA / "take_hash.json").read_text(encoding="utf-8"))["inputs"]
-"""The inputs every voiced take of the founder's films was bought under, which no regroup may move."""
+"""The inputs every voiced take of the golden films was bought under, which no regroup may move."""
 
 
 def test_a_run_that_names_no_section_selects_every_one() -> None:

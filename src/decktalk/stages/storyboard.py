@@ -29,10 +29,11 @@ from decktalk.events import Level
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
 from decktalk.inputs.workspace import Workspace
-from decktalk.machine import Run
-from decktalk.media.browser import await_ready, chromium, open_page, read_report, screenshot
+from decktalk.machine.run import Run
+from decktalk.media.browser import chromium
 from decktalk.media.origin import Allowed, Assets, page_url
 from decktalk.media.pagereport import MeasuredScene, PageReport
+from decktalk.media.pages import await_ready, open_page, read_report, screenshot
 from decktalk.page import SECOND_DIGITS, Q
 from decktalk.pagescan import Slides, scene_entry, slide_cues
 from decktalk.results import Panel, StoryboardResult, counted
@@ -363,7 +364,7 @@ def _draw(inputs: Inputs, run: Run, sections: Sequence[PageSection], chosen: Sel
     """Every panel of every named section, drawn by one browser holding one page open."""
     cfg = inputs.settings.record
     times = inputs.cue_times()
-    with chromium(cfg.browser_path, policy=cfg.page_policy) as browser:
+    with chromium(cfg.browser_path, policy=cfg.page_policy, spend=run.spend) as browser:
         page, assets = open_project_page(browser, inputs)
         reports = reports_of(page, inputs, [one.page for one in sections])
         sheet = Sheet(inputs, run, {one.page: (page, assets) for one in sections}, inputs.workspace.storyboard_dir)

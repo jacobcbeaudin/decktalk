@@ -344,6 +344,7 @@ def page_module(data: dict[str, Any]) -> str:
         "Range",
         "SECOND_DIGITS",
         "SLIDE_ENTRANCES",
+        "T0_SIGNAL",
         "Subject",
         "TIME_MARK",
         "CUE_MARK",
@@ -381,6 +382,8 @@ def page_module(data: dict[str, Any]) -> str:
         f"TIME_MARK = {data['timeMark']!r}\n"
         '"""What joins a cue\'s cue id, or a spoken word, to its second in the query a recorded page reads."""\n',
         f'LIST_SEPARATOR = {data["listSeparator"]!r}\n"""What separates two entries of that query."""\n',
+        f"T0_SIGNAL = {data['t0Signal']!r}\n"
+        '"""What `t0` says when the recorder starts the page clock on its own signal rather than at a second."""\n',
         f"ENGINE_PATH = {data['enginePath']!r}\n"
         '"""The path the engine answers itself under every origin, which holds the runtime and KaTeX."""\n',
         f"PREVIEW_CUE_TIMES = {data['previewCueTimes']!r}\n"

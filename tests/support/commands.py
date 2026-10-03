@@ -13,9 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from decktalk.findings import Code
-from decktalk.project import PROJECT_VARIABLE
 from decktalk.results import SCHEMA
-from decktalk.settings import MACHINE_FILE_VARIABLE
+from decktalk.settings import MACHINE_FILE_VARIABLE, PROJECT_VARIABLE
 from decktalk.speech import DECLARED
 from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE
 
@@ -23,14 +22,11 @@ HOSTILE_DIRECTORY = "jacob's fïlms 2"
 """The name every temporary root of these suites sits under, because a path is an input like any other.
 
 An apostrophe and a diacritic reach every shell quote, every ffmpeg concat list and every served URL
-a build writes, and the founder's own films live under a name like this one.
+a build writes, and real projects live under names like this one.
 """
 
 RESERVED_KEYS = ("schema", "ok", "findings", "error")
-"""The four keys every result carries, which is the founder's decided JSON contract."""
-
-FOUND_NOTHING, FOUND_SOMETHING = 0, 1
-"""What the CLI exits when it judged nothing and when it judged something, from the CLI design."""
+"""The four keys every result carries, which is the JSON contract."""
 
 
 def flat(stdout: str, args: tuple[str, ...] = ()) -> dict[str, Any]:

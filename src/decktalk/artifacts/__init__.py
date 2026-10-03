@@ -6,11 +6,11 @@ page runtime all read them, and the reference page documents them as JSON. The c
 name is the JSON key, and `Stored` is the one place a file is read from disk or written to it.
 
     build/narrate/<digest>.words.json  words.py       the time base everything shares
-    build/narrate/takes.json           takes.py       the take index and the narration clock
+    build/narrate/takes.json           takes.py       the take index and where each take sits in the narration
     build/cue-times.json               cue_times.py   every cue resolved against those words
     build/recordings/NN.json           recordings.py  what `record` did, judged and measured
     build/final/placements.json        placements.py  where every section sits in the finished film
-    build/sections/NN.json             placements.py  what each section cut was encoded from
+    build/sections/NN.json             placements.py  what each section video was encoded from
 
 What a run is doing while it does it is not an artifact. That is the event stream, and a run's
 lines are appended to `build/events/<run>.jsonl` by a subscriber rather than written here.
@@ -47,6 +47,7 @@ from decktalk.artifacts.words import (
     ProviderWords,
     Words,
     pair_fault,
+    recorded_suffix,
     words_file,
 )
 
@@ -78,6 +79,7 @@ __all__ = [
     "input_digest",
     "is_placeholder",
     "pair_fault",
+    "recorded_suffix",
     "take_file",
     "words_file",
 ]
