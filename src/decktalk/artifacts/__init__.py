@@ -5,7 +5,8 @@ page runtime all read them, and the reference page documents them as JSON. The c
 `decktalk.__all__` leaves them out. One module owns each file, every model is frozen, every field
 name is the JSON key, and `Stored` is the one place a file is read from disk or written to it.
 
-    build/narrate/<digest>.words.json  words.py       the time base everything shares
+    takes/<digest>.words.json          words.py       the time base everything shares, beside its take (a placeholder's
+                                                      under build/narrate/)
     build/narrate/takes.json           takes.py       the take index and where each take sits in the narration
     build/cue-times.json               cue_times.py   every cue resolved against those words
     build/recordings/NN.json           recordings.py  what `record` did, judged and measured
@@ -27,7 +28,7 @@ from decktalk.artifacts.recordings import (
     Start,
     input_digest,
 )
-from decktalk.artifacts.stored import Stored, Unreadable, content_digest, file_digest
+from decktalk.artifacts.stored import Stored, Unreadable, UnreadablePaidRecord, content_digest, file_digest
 from decktalk.artifacts.takes import (
     PLACEHOLDER_PREFIX,
     PLACEHOLDER_SUFFIX,
@@ -69,6 +70,7 @@ __all__ = [
     "Start",
     "Stored",
     "Unreadable",
+    "UnreadablePaidRecord",
     "Take",
     "TakeInputs",
     "Takes",

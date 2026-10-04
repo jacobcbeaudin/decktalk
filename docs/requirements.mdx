@@ -72,7 +72,7 @@ Both land in one directory, Chromium in its `ms-playwright` folder and ffmpeg in
 | `$XDG_CACHE_HOME/decktalk`, else `~/.cache/decktalk` | `~/Library/Caches/decktalk` | `%LOCALAPPDATA%\decktalk\cache` |
 
 It is per user, so a second project on the same machine downloads nothing. `tools.cache_dir` moves
-the whole directory, browser and encoder together, and `decktalk doctor` names it as `cache`. Anyone
+the whole directory, browser and encoder together, and `decktalk doctor --json` names it as `cache`. Anyone
 may empty it.
 
 The take store, a second copy of every take this machine buys, is kept apart from it in the per-user
@@ -153,7 +153,7 @@ machine](/reference/what-leaves-your-machine) is the whole list of hosts DeckTal
 
 ### How hard a machine is driven
 
-Four keys say how much work this machine takes on at once and how long it waits. They describe the
+Five keys say how much work this machine takes on at once and how long it waits. They describe the
 machine rather than the film, so they are machine keys like the ones above.
 
 | Key | Default | What it decides |
@@ -161,6 +161,7 @@ machine rather than the film, so they are machine keys like the ones above.
 | `record.concurrency` | `0` | How many page sections `record` records at once. Zero chooses from the CPU this process may use: one recording per two CPUs, at most four, and one on Windows. Inside a container that is the container's CPU quota, not the host's core count. |
 | `narration.concurrency` | `2` | How many sections `narrate` voices at once. |
 | `narration.retries` | `3` | How many more times `narrate` asks when the voice answers that it is busy or failed, which is an HTTP 429 or a 5xx. A busy answer is retried and never paid twice. |
+| `narration.store_wait_seconds` | `900` | How many seconds a run waits while another run on this machine voices the same take into the take store, before it is refused as locked. Keep it above one whole take request. |
 | `tools.timeout_seconds` | `600` | The longest one ffmpeg or ffprobe call may run before DeckTalk stops it. |
 
 A recording needs its CPU on time, because a frame drawn late lands its reveal late. So
@@ -171,7 +172,7 @@ starved recording stalls, or reports reveals that land after their words.
 decktalk config set record.concurrency 2 --scope machine
 ```
 
-A `decktalk.toml` that sets any of the four is refused by name, because a project travels and a
+A `decktalk.toml` that sets any of the five is refused by name, because a project travels and a
 limit that suits one machine is wrong on the next:
 
 {/* sample: decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3 */}
@@ -248,7 +249,8 @@ belongs.
 
 A build that does not spend needs no account, no API key and no network once the tools are on the machine.
 A build voiced by ElevenLabs, the cloud voice, needs two values from ElevenLabs. The local voice,
-`dtsp`, needs only `[voice] id` and a server on this machine, and no key.
+`dtsp`, needs only `[voice] id` and `decktalk-voice`, a separate speech server running on this
+machine, and no key. [The `[dtsp]` keys](/reference/configuration#dtsp) say where it listens.
 
 | Value | What it is | Read by |
 |---|---|---|
@@ -280,8 +282,9 @@ Two things call ElevenLabs. The `narrate` stage sends each section's text and ge
 | `decktalk score` | For each part whose request changed or whose file is missing. |
 
 No library or command call spends without approval. On the command line the flags are `--no-spend`, which plays every take on disk, writes
-placeholder narration where a take is missing and calls nothing, `--spend`, which approves the spend,
-and `--max-cost N`, which puts a ceiling on it. With neither flag, a build with something to buy
+placeholder narration where a take is missing and buys nothing, `--spend`, which approves the spend,
+and `--max-cost N`, which puts a ceiling on it. A free provider such as `dtsp` makes its takes under
+either flag once a voice is named, because it costs nothing. With neither flag, a build with something to buy
 prices the run and asks on a terminal, once, about its takes and its sounds added together. Without a
 terminal it refuses and names the two flags that answer, so a script or a CI job cannot spend by
 accident. A build whose takes are all on disk buys nothing, so it asks nothing and reads no key, and
@@ -398,7 +401,7 @@ apart.
 | After a voiced run | `This run spent $0.15 on 476 characters at $0.30 per 1,000 characters.` |
 | After a voiced run that bought nothing | `This run bought nothing.` |
 | Two stages buy | `This run costs $0.14: $0.02 for the narration's 39 characters at $0.30 per 1,000 characters, and $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio.` |
-| A free voice and a paid score | `This run costs $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio, and voices 39 characters for nothing, because the voice is free.` |
+| A free provider and a paid score | `This run costs $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio, and voices 39 characters for nothing, because the voice is free.` |
 | Takes nobody could match and a score | `This run costs $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio, and up to $0.26 if the takes on disk that could not be matched to a voice need making again, at $0.30 per 1,000 characters.` |
 
 A run that is stopped or fails returns no cost. The `take.charged` and `sound.charged` lines it wrote

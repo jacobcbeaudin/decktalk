@@ -1463,6 +1463,74 @@ def test_a_take_a_free_voice_makes_is_written_through_to_the_store_too(
     assert take_files(tmp_path / STORED) == take_files(a.workspace.takes)
 
 
+def joined_from(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """Every file the narration is joined from, recorded at the seam the join writes through."""
+    sources: list[Path] = []
+    real = audio.concat_audio
+
+    def concat(placements: list[audio.Placement], out: Path, **options: Any) -> None:
+        sources.extend(placement.path for placement in placements)
+        real(placements, out, **options)
+
+    monkeypatch.setattr(audio, "concat_audio", concat)
+    return sources
+
+
+def test_a_take_a_section_the_run_did_not_select_finds_only_in_the_store_is_copied_in_and_joined_from_there(
+    make_run: Callable[..., Watched], tmp_path: Path, counted: CountedVoice, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The take store is never played from directly, so a clone of the project holds every take its film plays."""
+    project, store, (first, *_rest) = on_a_machine_with_a_store(make_run, tmp_path)
+    sent = len(counted.voice.requests)
+    takes = project.workspace.takes
+    (takes / take_file(first, TAKE_SUFFIX)).unlink()
+    (takes / words_file(first)).unlink()
+    sources = joined_from(monkeypatch)
+    result = narrate(project, make_run(project).run, only=[2])
+    assert pair_of(takes, first) == pair_of(store, first)
+    assert sources and all(source.parent == takes for source in sources), sources
+    assert Path("takes") / take_file(first, TAKE_SUFFIX) in result.written
+    assert len(counted.voice.requests) == sent
+
+
+def test_a_take_a_section_the_run_did_not_select_finds_damaged_in_every_place_is_refused_naming_that_section(
+    make_run: Callable[..., Watched], tmp_path: Path, counted: CountedVoice
+) -> None:
+    """The narration would join a take no place holds a good copy of, so the run is refused before it buys or
+    moves anything, with the sentence a damaged take of a selected section is refused with."""
+    project, store, (first, second, _third) = on_a_machine_with_a_store(make_run, tmp_path)
+    takes = project.workspace.takes
+    for place in (takes, store):
+        (place / words_file(first)).write_text("{", encoding="utf-8")
+        (place / take_file(second, TAKE_SUFFIX)).unlink()
+        (place / words_file(second)).unlink()
+    sent = len(counted.voice.requests)
+    with pytest.raises(InputError, match="the take section 1 plays") as refused:
+        narrate(project, make_run(project, spend=True).run, only=[2])
+    assert refused.value.location is not None
+    assert refused.value.location.section == 1
+    assert "--section 1 --replace-voiced" in (refused.value.hint or "")
+    assert len(counted.voice.requests) == sent
+    assert unreadable(takes) == unreadable(store) == set()
+
+
+@pytest.mark.usefixtures("counted")
+def test_a_run_whose_every_take_is_in_the_takes_directory_writes_no_take(
+    make_run: Callable[..., Watched], tmp_path: Path
+) -> None:
+    project, store, _digests = on_a_machine_with_a_store(make_run, tmp_path)
+    places = (project.workspace.takes, store)
+    before = {path: path.stat() for place in places for path in place.iterdir()}
+    result = narrate(project, make_run(project).run, only=[2])
+    after = {path: path.stat() for place in places for path in place.iterdir()}
+    assert {path.name for path in after} == {path.name for path in before}
+    assert all(
+        (seen.st_ino, seen.st_mtime_ns) == (after[path].st_ino, after[path].st_mtime_ns)
+        for path, seen in before.items()
+    )
+    assert {path.parent for path in result.written} == {Path("build/narrate")}
+
+
 # ---- the voices a run carries -------------------------------------------------------------------
 
 

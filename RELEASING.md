@@ -20,8 +20,9 @@ Every action is pinned to a commit SHA with its version in a comment, every work
 `lint` group. The name `release.yml` and the environment name `pypi` are registered with PyPI's
 trusted publisher, so neither may be renamed.
 
-Timing gates everywhere by default. A leg on a hosted runner whose compositor presents frames late
-passes `--timing=report`, which is the three `-platforms` rows and the weekly `scaffold` row. Such a
+A leg on a hosted runner whose compositor presents frames late passes `--timing=report`, which is
+the three `-platforms` rows and the weekly `scaffold` row. The Linux `e2e` row passes it too, until
+its own runs show the runner can be trusted, which `LINUX_GATES_TIMING` in `scripts/check.py` holds. Such a
 leg still measures and prints what it tolerated, and any finding that is not a late landing fails
 it. `tests/support/timing_policy.py` holds the slack.
 
@@ -33,7 +34,8 @@ name.
 ## How the version moves
 
 release-please keeps a release pull request open against `main`. It bumps the version in
-`pyproject.toml`, `uv.lock` and `src/decktalk/runtime/src/index.ts`, writes `CHANGELOG.md`, and
+`pyproject.toml`, `uv.lock`, `src/decktalk/runtime/src/index.ts` and the pinned blocks of
+`README.md`, writes `CHANGELOG.md`, and
 picks the bump from the commits since the last release. That pull request runs `ci` like any other,
 and a job in `ci.yml` runs `uv run scripts/check.py --group generated --write` on its branch and
 commits every file that changed, so no bot ever writes to `main`. The `rehearsal` group runs the same
@@ -47,7 +49,7 @@ what it bumps and what it refuses.
 | A `BREAKING CHANGE:` footer | minor, because `bump-minor-pre-major` is set | major |
 
 The wheel is `src/decktalk` alone, so `exclude-paths` in `release-please-config.json` lists `docs`,
-`assets`, `scripts`, `tests` and `.github`, and a commit confined to those bumps nothing. The option
+`assets`, `scripts`, `site`, `tests` and `.github`, and a commit confined to those bumps nothing. The option
 matches directory prefixes only, so a commit that edits a root file such as `README.md` counts in
 full under its own type.
 

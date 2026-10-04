@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+import math
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import fields, is_dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import UnionType
@@ -159,12 +160,18 @@ def _is_optional(annotation: Any) -> bool:
     return origin in (Union, UnionType) and len(args) == 2 and args[1] is type(None)
 
 
+def stated_in(dotted: str, from_env: bool) -> str:
+    """Where a value was read, for a caller that knows no more than the mapping and the environment."""
+    return variable(dotted) if from_env else "the mapping"
+
+
 def from_mapping[T](
     cls: type[T],
     *,
     base: Mapping[str, Any] | None = None,
     path: tuple[str, ...] = (),
     environ: Mapping[str, str],
+    said: Callable[[str, bool], str] = stated_in,
 ) -> T:
     """Build a dataclass tree from its own defaults, a nested mapping, and the environment.
 
@@ -172,6 +179,8 @@ def from_mapping[T](
     name, such as a parsed TOML file with one table per nested dataclass), then the variable in
     `environ` that `variable` names for the field's dotted key. `environ` is
     required and never the process's own, because the machine is the one reader of the process.
+    `said` names the layer a key's value came from, given its dotted key and whether `environ`
+    carried it, which is what a refusal ends on.
     """
     table = base or {}
     env = environ
@@ -186,6 +195,7 @@ def from_mapping[T](
                 base=nested if isinstance(nested, dict) else None,
                 path=(*path, f.name),
                 environ=environ,
+                said=said,
             )
             continue
         where = ".".join((*path, f.name))
@@ -196,12 +206,27 @@ def from_mapping[T](
         if raw is None:
             continue
         bounds, hazard = f.metadata.get("bounds"), f.metadata.get("hazard")
-        args[f.name] = read_value(annotation, raw, where=where, bounds=bounds, hazard=hazard, from_env=from_env)
+        args[f.name] = read_value(
+            annotation,
+            raw,
+            where=where,
+            bounds=bounds,
+            hazard=hazard,
+            from_env=from_env,
+            said=said(where, from_env),
+        )
     return cls(**args)
 
 
 def read_value(
-    annotation: Any, raw: Any, *, where: str, bounds: Bounds | None, hazard: str | None, from_env: bool
+    annotation: Any,
+    raw: Any,
+    *,
+    where: str,
+    bounds: Bounds | None,
+    hazard: str | None,
+    from_env: bool,
+    said: str,
 ) -> Any:
     """One value read as its type and measured against its safe range, or a refusal.
 
@@ -210,15 +235,29 @@ def read_value(
     which is what keeps `[video] fps = "25"` and `[video] fps = 25.7` from becoming a
     number nobody typed. `config set` and `--set` hand over the string a command line carried, so
     both read it the way an environment variable is read, and the loader and the writer meet one rule.
+
+    A number that is not finite is refused before any range is, whatever the key's range, because
+    NaN compares false against both ends of a range and an infinity is no amount at all. TOML spells
+    both and a float reads both from a string, so every layer can carry one. The refusal names the
+    layer `said` gives, so a reader knows which file, variable or flag to correct.
     """
     try:
         value = _coerce(annotation, raw) if from_env else _as_written(annotation, raw)
     except (TypeError, ValueError) as exc:
         wanted = getattr(annotation, "__name__", str(annotation))
         raise InputError(f"{where}: expected {wanted}, got {raw!r} ({exc}).") from exc
+    if not finite(value):
+        raise InputError(f"{where}: must be a finite number, got {value!r} in {said}.", hint=hazard)
     if bounds is not None and not bounds.holds(value):
         raise InputError(f"{where}: {bounds.sentence}, got {value!r}.", hint=hazard)
     return value
+
+
+def finite(value: Any) -> bool:
+    """False when a number, or any item of an array, is NaN or an infinity, and True for every other value."""
+    if isinstance(value, (tuple, list)):
+        return all(finite(item) for item in value)
+    return not isinstance(value, float) or math.isfinite(value)
 
 
 SWITCHED_OFF = frozenset(("", "0", "no", "false"))

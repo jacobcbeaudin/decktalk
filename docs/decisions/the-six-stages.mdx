@@ -29,7 +29,7 @@ can name.
 
 The split is by artifact rather than by activity. Two steps are one stage when the second only ever
 reads what the first has just written, because two commands that always run together are one command
-with a confusing name. Finding narration t=0 in a recording is the clearest case: it belongs to
+with a confusing name. Finding the start of the section clock in a recording is the clearest case: it belongs to
 `record`, which owns the file it reads, so no run can judge a recording and then assemble it anyway.
 
 `PIPELINE` is read rather than repeated, which is the reason the table above is the only one. The

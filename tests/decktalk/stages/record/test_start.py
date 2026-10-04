@@ -1,4 +1,4 @@
-"""Where narration t=0 sits in a recording, and what happens when nothing marks it.
+"""Where the section clock starts in a recording, and what happens when nothing marks it.
 
 The recorder's cover is the only measurement of the start there is. Every other answer is an
 estimate, so every test here also asserts that an estimate says so, because a guessed start moves

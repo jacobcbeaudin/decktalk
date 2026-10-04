@@ -116,7 +116,7 @@ def test_a_project_that_has_never_been_built_has_no_stray_cut(tmp_path: Path) ->
 
 
 def test_a_committed_take_linked_out_of_the_project_is_refused_before_a_run(tmp_path: Path) -> None:
-    """A clone chose every name in its take directory, so a link out of it is refused as one in `build/` is."""
+    """A clone chose every name in its takes directory, so a link out of it is refused as one in `build/` is."""
     root = tmp_path / "proj"
     (root / "voice").mkdir(parents=True)
     (tmp_path / "secret").write_text("not a take", encoding="utf-8")
@@ -124,5 +124,5 @@ def test_a_committed_take_linked_out_of_the_project_is_refused_before_a_run(tmp_
     space = Workspace(
         root=root, build=root / "build", name="demo", suffix=TAKE_SUFFIX, takes=root / "voice", score_dir=root / "score"
     )
-    with pytest.raises(InputError, match="leads outside the take directory"):
+    with pytest.raises(InputError, match="leads outside the takes directory"):
         space.confine()

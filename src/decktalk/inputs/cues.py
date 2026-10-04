@@ -5,8 +5,8 @@
                                  {"id": "3.2:zero", "phrase": "Zero", "occurrence": 2},
                                  {"id": "3.4:end", "phrase": "$end", "offset_seconds": 0.3}]}}}
 
-`id` is the cue id of a moment the page declares, which is its slide and the local name the slide
-wrote. `phrase` is a word or a short phrase from that section's narration, matched on its first
+`id` is the cue id of a moment the page declares, which is its slide id, a colon and the cue name
+the slide wrote. `phrase` is a word or a short phrase from that section's narration, matched on its first
 occurrence, without case and with punctuation ignored, and `$start` and `$end` name the section's
 own two ends. A time counts from the section start, so a section's lead moves every word cue later
 and `$start` stays at zero. `occurrence`, `case_sensitive` and `offset_seconds` refine one match, and

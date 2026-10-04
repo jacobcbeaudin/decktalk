@@ -8,8 +8,9 @@ digest of its own.
 The digest is over the provider's name, the voice id, the model, the output format and the take
 identity its adapter declares, and the text, and none of those is a secret, so a take is named, and
 a run priced, from `[voice] provider` without building the provider or reading its key. What a run
-refuses before it voices anything is here too: a voiced take damaged in every place that holds it, a
-timed pause the model would drop, and a purchase with no voice named.
+refuses before it voices anything is here too: a timed pause the model would drop, and a voiced run
+with no voice named. A voiced take damaged in every place that holds it is refused by the take
+state.
 """
 
 from __future__ import annotations
@@ -113,7 +114,7 @@ VOICE_ID_VARIABLE = BY_ID["voice.id"].environment
 """The variable that overrides `[voice] id`, for anyone who keeps the id out of the file."""
 
 UNNAMED = f"[voice] id is empty and {VOICE_ID_VARIABLE} is not set"
-"""Why no voice is named, which the plan, the run's line and the finding all say in these words."""
+"""Why no voice is named, in the words `NO_VOICE_NOTE` says."""
 
 NO_VOICE_NOTE = (
     f"No voice is named, so no take on disk can be matched, because [voice] id is empty and {VOICE_ID_VARIABLE} "

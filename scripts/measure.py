@@ -10,9 +10,9 @@ that file, so the page can say only what a run said.
 It measures three things, each with the command a reader can run to see the same:
 
 - **Landing error.** The starter `decktalk init` writes is built with `--no-spend`, so every section
-  plays the placeholder voice, whose words have a real clock. `decktalk verify` then decodes the
+  plays a placeholder, whose words have a real clock. `decktalk verify` then decodes the
   film and reports how far each reveal sits from its word, and the limit is the project's own
-  `verify.cue_offset_max_ms`. The placeholder has no voice of its own to misplace a word, so these
+  `verify.cue_offset_max_ms`. The placeholder has no voice to misplace a word, so these
   numbers measure the cue, the recorder and the cut, and not a voice's timing.
 - **Build times.** A cold build in a fresh project, the same build again with nothing changed, and
   the build after one word of one section changed, each timed as the wall time of the whole
@@ -22,7 +22,7 @@ It measures three things, each with the command a reader can run to see the same
 
 It is not a row of the check table, because it takes minutes and its numbers belong to the machine
 it ran on. The file names that machine, the tool versions, the commit and the command, and keeps
-every landing row another measurement wrote, so the aligner bench can add its row beside this one.
+every landing row another measurement wrote, so another measurement can add its row beside this one.
 """
 
 from __future__ import annotations
@@ -276,7 +276,7 @@ def main() -> int:
 
     doctor, _ = decktalk("doctor", cwd=ROOT)
     run = {
-        "what": "the starter `decktalk init` writes, built with the placeholder voice",
+        "what": "the starter `decktalk init` writes, built with placeholders",
         "command": command,
         "commit": text(["git", "rev-parse", "HEAD"]).strip(),
         "source_changed": bool(text(["git", "status", "--porcelain", "--", "src", "pyproject.toml", "uv.lock"])),

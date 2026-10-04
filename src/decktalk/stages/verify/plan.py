@@ -9,8 +9,6 @@ The neighbour allowance is asymmetric. Backward it is the reference lead, which 
 plus the grid guard plus whatever extra lead the project asked for, because a reveal may land that
 early and still pass. Forward it is the neighbouring effect's own declared span, taken from the page
 contract, because an effect stops moving when its own animation ends and not a fixed distance later.
-One symmetric constant was wrong in both directions at once: too short for a draw and too long for a
-cut.
 """
 
 from __future__ import annotations
@@ -186,7 +184,7 @@ def thin_change(changed: float, margin: float, settings: VerifyConfig) -> bool:
 
 
 def opted_out(inputs: Inputs) -> set[tuple[int, str]]:
-    """(section number, cue id) for every cue that `cues.json` marks `verify = false`.
+    """(section number, cue id) for every cue whose row in `cues.json` sets `"verify": false`.
 
     A reveal too small or too slow for a frame difference to see is the author's own call, so the
     row is skipped rather than measured and failed.

@@ -100,7 +100,7 @@ class Code(Enum):
 
     A code does not list the settings that move it. Each settings key names the codes it decides,
     beside its range, and every rendering that shows a code's keys reads that one declaration in
-    reverse, because two lists of one relation had drifted apart.
+    reverse, so the relation is written once.
     """
 
     sentence: str
@@ -341,7 +341,7 @@ class Code(Enum):
     )
     CUE_OFF = (
         "CUE_OFF",
-        "The change lands further from its word than the offset limit allows.",
+        "The change lands further from its word than verify.cue_offset_max_ms allows.",
         RaisedBy.PYTHON,
         (Stage.VERIFY.value,),
     )

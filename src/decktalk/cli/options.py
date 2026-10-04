@@ -189,8 +189,8 @@ Spend = Annotated[
         rich_help_panel=Panel.SPEND.value,
         help=(
             "Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. "
-            "A free voice such as dtsp makes its takes either way. Unset, a terminal is asked and a run without one "
-            "is refused."
+            "A free provider such as dtsp makes its takes either way once a voice is named. Unset, a terminal is "
+            "asked and a run without one is refused."
         ),
     ),
 ]

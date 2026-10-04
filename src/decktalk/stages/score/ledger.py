@@ -1,6 +1,6 @@
 """What this project has already bought from the sound service, as one typed file it reads and writes.
 
-    score/ledger.json   one row per generated item, keyed by the request that made it
+    score/ledger.json   one row per generated item, named by its item, with the digest of the request that made it
 
 Every request is paid for, so the one question this file answers is whether the audio on disk was
 made from the request the project asks for now. The answer is a digest of the request body and the
@@ -46,7 +46,7 @@ def request_digest(endpoint: str, body: Mapping[str, Any]) -> str:
     The endpoint is part of it because the same body sent to the music service and to the sound
     service is two different pieces of audio, and the ledger is keyed by what was bought. It is the
     endpoint as the provider publishes it and never the base a project sends to, so another host of
-    the same service is the same purchase.
+    the same service buys the same sound.
     """
     payload = f"{endpoint}\n{json.dumps(body, sort_keys=True)}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:DIGEST_DIGITS]

@@ -1,7 +1,8 @@
 """One walk over the parser, joined onto what the library publishes about itself.
 
-Three renderings read this and no other source: `--help` through Click's own formatter, the
-generated reference page, and `decktalk schema`. The command half is walked from the parser, so a
+Two renderings read this and no other source: the generated reference page and `decktalk schema`.
+`--help` is drawn by Click's own formatter from the same parser, so all three name the same flags.
+The command half is walked from the parser, so a
 flag on a page is a flag the command takes, and the contract half is read off the library's own
 registries, so a sentence a code or a key publishes has one home in the model that declares it.
 That is every result's schema, every finding code, every error code with its exit, the event

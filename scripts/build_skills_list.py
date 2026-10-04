@@ -3,9 +3,10 @@
     uv run scripts/build_skills_list.py --write    # write the table
     uv run scripts/build_skills_list.py --check    # exit 1 if the committed page would change
 
-Each row is one packaged skill: its name, when it starts and what it leaves behind. The first two
-come from the skill's own `description`, whose second sentence is the trigger the skill was written
-to be chosen by, so the page and the skill cannot say different things about when to reach for it.
+Each row is one packaged skill: its name, when it starts and what it leaves behind. The name is the
+skill's own `name`, and when it starts is the sentence of its `description` that opens "Use when ",
+or its first sentence when none does, so the page and the skill cannot say different things about
+when to reach for it.
 The last column is the skill's `metadata.ends_with`, which is the one line the page needs and a
 reader of the skill does not.
 

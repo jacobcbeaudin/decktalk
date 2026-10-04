@@ -1,8 +1,8 @@
 """Every spoken word with its span, which is how a cue phrase is written.
 
 The clock is the section's own, which is the clock `?words=` passes to a page and the one
-`cue-times.json` resolves against: zero is where the section starts, which is narration t=0 of its
-recording and the first frame of its cut. A section's lead of silence counts, so its first word
+`cue-times.json` resolves against: zero is where the section starts, which is the start of its
+recording's section clock and the first frame of its cut. A section's lead of silence counts, so its first word
 starts after the lead.
 
 The words come back from the voice with their punctuation stripped, and the take index records the

@@ -70,8 +70,8 @@ class PageSection:
 
     `lead_seconds` replaces `[narration] lead_seconds`, the silence in the narration before the
     section's first word, and `tail_seconds` replaces `[narration] tail_seconds`, the silence
-    after its last. Both are placed when the takes are joined, not sent to the voice, so a held
-    take stays held. `hold_seconds` holds the section's
+    after its last. Both are placed when the takes are joined and never sent to the voice, so
+    changing either never makes a take stale. `hold_seconds` holds the section's
     last frame after its narration, and the narration pauses for it.
     """
 
@@ -97,7 +97,7 @@ class PageSection:
 
     @property
     def freeze_params(self) -> dict[str, str]:
-        """The params a still of this section carries, which is every one the runtime does not set itself.
+        """The params a still of this section carries, which is every one DeckTalk does not set itself.
 
         A frozen frame and the poster both ask the page for a state rather than for the film, so they
         set `freeze`, `after` and `before` themselves and pass the author's own params through.

@@ -8,7 +8,7 @@ renders it. Every number on the page and in the README's block is read from that
 can say what no run measured, and a new measurement changes both by being written.
 
 The prose around the tables lives in scripts/measured.mdx.j2, which reads as the page does. Each
-landing row renders as its own row, so the aligner bench adds a row to the file and to the page
+landing row renders as its own row, so a measurement that adds a row to the file adds it to the page
 without a change here.
 """
 
@@ -129,13 +129,14 @@ def readme_block(data: dict[str, Any]) -> str:
     cold, unchanged, changed = builds["rows"]
     run = shown["runs"][row["run"]]
     over = row["over_limit"]
+    limit = f"{row['limit']} plus half a frame"
     landed = (
-        f"Every reveal of the starter landed within {row['worst']} of its word, against a limit of {row['limit']}, "
+        f"Every reveal of the starter landed within {row['worst']} of its word, against a limit of {limit}, "
         f"with a median of {row['median']} over {row['reveals']} reveals in {run['repeats']} builds."
         if not over
         else f"The starter's reveals landed a median of {row['median']} from their word over {row['reveals']} "
-        f"reveals in {run['repeats']} builds. The worst was {row['worst']} against a limit of {row['limit']}, "
-        f"and {over} of {row['reveals']} reveals landed past the limit."
+        f"reveals in {run['repeats']} builds. The worst was {row['worst']} against a limit of {limit}, "
+        f"and {over} of {row['reveals']} reveals landed past {row['limit']} alone."
     )
     lines = [
         f"- **Landing.** {landed}",
@@ -145,7 +146,7 @@ def readme_block(data: dict[str, Any]) -> str:
         f"- **Coverage.** The suites reach {shown['coverage']['percent']} percent of the package's statements.",
         "",
         f"Measured on {run['machine']['platform']} ({run['machine']['cpu']}) with DeckTalk "
-        f"{run['versions']['decktalk']} and the placeholder voice. "
+        f"{run['versions']['decktalk']} and placeholder takes. "
         f"[Every number and how it was measured]({PAGE_URL}).",
     ]
     return "\n" + "\n".join(lines) + "\n"

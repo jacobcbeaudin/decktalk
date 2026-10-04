@@ -3,8 +3,7 @@
 The frames say how long the recording ran and how bright it is, so a black or truncated section is
 caught while the page is still on screen rather than in the final mp4. The page says what it could
 not honour, and every one of those arrives as a code the media layer already validated, so nothing
-here reads a sentence to work out what happened. The channel this replaces was prose classified by
-matching substrings, with the sentence spelled in the runtime, in the recorder and in a test.
+here reads a sentence to work out what happened.
 """
 
 from __future__ import annotations
@@ -79,7 +78,7 @@ def stall_finding(gap_ms: int, *, where: Path, section: int, settings: Settings)
         return None
     return judge(
         Code.RECORD_STALLED,
-        f"the picture held still for {gap_ms} ms after narration t=0, which is over the {limit} ms "
+        f"the picture held still for {gap_ms} ms after the section clock started, which is over the {limit} ms "
         "a recorded section may ever stall for.",
         Location(where=where.as_posix(), file=where, section=section),
         stage=Stage.RECORD,

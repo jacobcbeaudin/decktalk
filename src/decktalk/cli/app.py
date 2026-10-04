@@ -4,7 +4,7 @@ A command's row is the function itself. Its parameters are its own flags, its re
 answers with, and the flags it shares with other commands are derived from that annotation, so there
 is no side table to drift from the functions it describes.
 
-One walker over the parser feeds three renderings, which are `--help`, the generated reference page
+One parser feeds three renderings, which are `--help`, the generated reference page
 and `decktalk schema`. A command never prints: it returns its result and the session renders it, so
 the table, the JSON object and the exit code are one decision made in one place.
 
@@ -338,7 +338,7 @@ _GLOBAL_NAMES = frozenset(name for name, _, _ in GLOBALS)
 def _yes_refused(context: Context) -> UsageError:
     """The refusal `--yes` earns, which names this command's own prompt flags rather than a topic.
 
-    One token that authorises a spend, an overwrite and a lost take is how an agent spends money it
+    One token that authorises buying, an overwrite and a lost take is how an agent spends money it
     was told to ask about, so the flag is recognised and refused rather than left unknown.
     """
     named = sorted(

@@ -6,7 +6,7 @@ events: a transient live region on a terminal, plain stage lines in a pipe, and 
 `--events` writes on stderr. The file under `build/events/` is the library's, so it is written
 whichever of these is on.
 
-Colour is the only difference between a terminal and a pipe. The tables are the same tables, the
+Colour and the live region are the only differences between a terminal and a pipe. The tables are the same tables, the
 error block is the same block, and nothing prints a second vocabulary for a reader who piped it.
 """
 
@@ -59,7 +59,8 @@ from decktalk.results import (
 )
 
 STAGE_COLUMN = 12
-"""How wide the stage name sits in a progress line, which is the longest of the six plus a space."""
+"""How wide the stage name sits in a progress line, right-aligned, which is wider than every stage name and every
+word that shares the column."""
 
 REFRESH_PER_SECOND = 8
 """How often the live region redraws, which is fast enough to read and slow enough not to flicker."""

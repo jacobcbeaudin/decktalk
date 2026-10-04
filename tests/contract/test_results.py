@@ -6,7 +6,7 @@ that implements it, the result that callable returns, whether the command opens 
 writes a file, and what drives it. A stage added without a command, a command added without a result,
 or a result added without either, fails here by name.
 
-Nothing in this file fakes a tool. A row whose command needs ffmpeg, Chromium or a paid voice names
+Nothing in this file fakes a tool. A row whose command needs ffmpeg, Chromium or a provider that bills names
 the mirrored test that drives it through its real stage instead, and a test holds that file to
 naming the result, so the table stays total without a second copy of the stage suite and without
 reaching into fixtures this directory cannot see. Every other row is driven here for real, and each

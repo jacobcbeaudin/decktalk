@@ -43,8 +43,9 @@ from decktalk.stages.verify.plan import (
 def film_starts(inputs: Inputs, film: Path) -> tuple[dict[int, float], float]:
     """(where each section starts in the film, how long the film runs), read from the placements.
 
-    The placements are the film's own record of its shape, so nothing here adds up section files a
-    second time and reaches a total the film does not have.
+    When the film has no placements file, the lengths of the section videos on disk are added up
+    instead. The placements are the film's own record of its shape, so they are read first and the
+    section files are counted only when they are missing.
     """
     placements = inputs.placements()
     if placements is not None and placements.sections:
@@ -64,8 +65,8 @@ def declared_spans(inputs: Inputs, section: int) -> dict[str, float]:
     """How long each cue of one section keeps moving after it fires, from the catalog the page published.
 
     The page declares the span of every effect it draws, and the recording log keeps that catalog
-    whole, so the forward half of the neighbour allowance is the neighbour's own arithmetic rather
-    than one constant that was wrong for a draw and wrong again for a cut.
+    whole, so the forward half of the neighbour allowance is the neighbour's own arithmetic, which
+    is long for a draw and nothing for a cut.
     """
     found = inputs.document.section(section)
     log = inputs.recording_log(section_key(section))

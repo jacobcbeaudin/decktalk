@@ -35,7 +35,7 @@ import { count as countUp, type Spoken, line as spokenLine } from "./text.ts";
 /**
  * The verb each moment gives the noun phrase its author wrote, which is the whole of the composition.
  *
- * These five sentences are the transcript's own words. They live here once, because the registry
+ * These four sentences are the transcript's own words. They live here once, because the registry
  * publishes what an attribute means to an agent and this is what a moment sounds like read aloud.
  */
 const SENTENCE: Record<string, (subject: string) => string> = {

@@ -19,7 +19,10 @@ from support.recorder import BARE, THROWS, FakeBrowser, FakeContext, Said, Sink,
 
 
 def test_the_log_is_cleared_before_anything_is_captured_and_written_once_the_webm_is_in_place(tmp_path):
-    """A webm replaced under an older log keeps its digest and moves t=0, which is what this order prevents."""
+    """A webm replaced under an older log keeps its digest and moves where the section clock starts.
+
+    That is what this order prevents.
+    """
     out = tmp_path / "build" / "recordings" / "01.webm"
     out.parent.mkdir(parents=True)
     out.write_bytes(b"the recording from yesterday")

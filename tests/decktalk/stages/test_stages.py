@@ -4,7 +4,7 @@ These helpers are the only code the stage package holds above its own stages, so
 promise is held here rather than in each of the twelve modules that call them.
 
 The voice helpers read `[voice]` and the speech provider's own table and never name a vendor. The
-paid-take rule is held here from the other side of `tests/contract/test_take_hash.py`: the settings
+voiced-take rule is held here from the other side of `tests/contract/test_take_hash.py`: the settings
 and the model a take's digest is taken over, assembled from the provider's own table at its
 defaults, are byte for byte the inputs every voiced take was bought under.
 """

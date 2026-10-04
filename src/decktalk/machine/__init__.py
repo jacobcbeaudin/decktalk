@@ -1,11 +1,11 @@
 """This computer and this process, as one value, and the run every call opens on it.
 
 Three things are ambient in a tool that reads the environment wherever it likes: which ffmpeg a
-project uses, which speech provider answers to a name, and which directory is the project. All
-three leak between two projects held in one process. `Machine.from_environment()` is the only place
-in the package that reads `os.environ`, the per-machine settings file or the working directory, and
-everything below it takes what it needs as an argument, so two projects in one process cannot reach
-each other and a service can hold one machine per request.
+project uses, which speech provider answers to a name, and which directory is the project. All three
+leak between two projects held in one process. `Machine.from_environment()` is the one place below
+the command line that reads the environment, the per-machine settings file or the working directory
+to build a machine, and everything below it takes what it needs as an argument, so two projects in
+one process cannot reach each other and a service can hold one machine per request.
 
 A host that runs other people's projects builds its machine with `Machine.of` instead, from values
 it chose: the environment a job may see, the per-machine file, the cache, and the voices it answers
@@ -115,11 +115,11 @@ class Toolchain:
     """What this machine renders with: the keys that name it, the pair they resolve to, and its cache.
 
     The pair is a field rather than a cached lookup, so the first project opened in a process cannot
-    pin the toolchain for every project after it, which is what a module-level cache over the
-    environment did. The keys travel with it because a run binds them for the length of the run, and
-    every call between the machine and an audio filter reads them from there. The cache is the
-    directory the machine worked out from its own environment, so a fetch lands where this machine
-    keeps its tools rather than where the process that happens to run it would.
+    pin the toolchain for every project after it. The keys travel with it because a run binds them
+    for the length of the run, and every call between the machine and an audio filter reads them
+    from there. The cache is the directory the machine worked out from its own environment, so a
+    fetch lands where this machine keeps its tools rather than where the process that happens to run
+    it would.
     """
 
     tools: ToolsConfig = field(default_factory=ToolsConfig)
@@ -520,8 +520,8 @@ class Machine:
     def _bias(*, measure: bool) -> float | None:
         """This host's presentation bias, measured only when asked, because measuring drives a browser.
 
-        It is reported and never kept, because no stage reads it: it is what an author reads a
-        section's offsets against to tell a machine that presents late from a deck that cues late.
+        It is reported and never kept, because no stage reads it: an author reads what `verify` measures
+        against it, to tell a machine that presents late from a deck that cues late.
         """
         if not measure:
             return None

@@ -1,14 +1,14 @@
 """What the voice must never receive, and the scans `check` judges a script by.
 
-The voice reads what it is given, so a placeholder nobody filled becomes "open brace chars close
-brace characters" in a take that has already been bought, and a note in square brackets inside a
+The voice reads what it is given, so a brace becomes "open brace chars close brace
+characters" in a take that has already been bought, and a note in square brackets inside a
 paragraph is worse than read out, because the parser turns it into a silent pause nobody asked for.
 `narrate` refuses each of those with the line it sits on, before it plans anything, because a run
 that has already paid cannot take the money back.
 
-`narrate` judges nothing beyond that refusal. A digit or a symbol the voice may misread, and an open
-placeholder a voiced run would read out, are findings rather than refusals, and they are raised by
-`check`, which is the command that reports what a build would spend and show. This module is
+`narrate` judges nothing beyond that refusal. A digit or a symbol the voice may misread, and an unfilled
+blank a voiced run would read out, are findings rather than refusals, and they are raised by
+`check`, which is the command that reports what a build would cost and show. This module is
 therefore the one home of both rules, and `stages/check/script.py` reads them from here.
 """
 
@@ -26,11 +26,12 @@ INLINE_DIRECTION_RE = re.compile(r"^(?:beat|pause\s+\d+(?:\.\d+)?)$", re.IGNOREC
 """The two directions a paragraph may hold, which the parser turns into a pause the author asked for.
 
 A bracket that is a whole line is a direction. Inside a paragraph only a beat and a timed
-pause are, and a placeholder is refused by its own rule under its own flag.
+pause are, and an unfilled blank such as `[NUMBER]` is left to its own rule, which `check`
+reports.
 """
 
 PLACEHOLDER_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
-"""What an unfilled placeholder such as `[NUMBER]` looks like, which has a rule of its own."""
+"""What an unfilled blank such as `[NUMBER]` looks like, which has a rule of its own."""
 
 BRACKET_RE = re.compile(r"\[([^\]\n]*)\](\()?")
 """One bracketed span, with the opening parenthesis that would make it a markdown link."""

@@ -1,11 +1,11 @@
 """Audio work on top of ffmpeg, so nothing above this module spells an audio filter by hand.
 
-The narration stages build silence, click tracks, padding and joins here, `assemble` measures and
+The narration stages build silence, placeholder audio, padding and joins here, `assemble` measures and
 corrects loudness here, and `verify` reads the samples of one span here. Every call goes through
 `ffmpeg.run`, `ffmpeg.stderr` or `ffmpeg.raw`, each of which checks the return code, so a failed
 edit says what ffmpeg said rather than leaving an empty file behind.
 
-Every number a verdict depends on arrives as an argument. The sample rate comes from `[video]`, the
+Every number a verdict depends on arrives as an argument. The sample rate comes from `[audio]`, the
 two bounds that decide where a take stops sounding come from `[narration]`, the click level is the
 published number `verify.click_floor_dbfs` is derived from, and what is left here is a fact about
 audio rather than a choice about a film.
@@ -104,7 +104,7 @@ def sound_end(path: Path, *, noise_dbfs: float, min_run_seconds: float) -> float
 
 
 def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate: int, bitrate: str) -> None:
-    """A placeholder track for builds without voice: silence with a soft click at each word start.
+    """The audio of a placeholder: silence with a soft click at each word start.
 
     The clicks let `verify` measure the finished file's audio against its picture, and
     they make a silent draft reviewable for pacing.

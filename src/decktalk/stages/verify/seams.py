@@ -66,7 +66,7 @@ def start_checks(inputs: Inputs, run: Run, film: Path, starts: dict[int, float])
 def cut_checks(
     inputs: Inputs, run: Run, film: Path, takes: Takes | None, starts: dict[int, float]
 ) -> tuple[CutCheck, ...]:
-    """One row per spoken section: the narration is quiet before its cut, and the waveform does not step.
+    """One row per spoken section: whether the narration is quiet before its cut, and how far the waveform steps.
 
     The speech level is read from the narration track alone, so music or an effect at a boundary is
     never taken for a word, and a clip, which carries its own audio, is exempt. The step is read from

@@ -5,9 +5,8 @@ that a deck's own script shares a window with. Every row therefore arrives here 
 model before anything above uses it, and a row this contract cannot read is dropped with the reason
 rather than carried into an artifact or into a verdict.
 
-Every warning carries the finding code the page named, because `record` dispatches on the code. The
-channel this replaces was a sentence classified by matching substrings, with the sentence itself
-spelled in the runtime, in the recorder and in a test. A code the finding vocabulary does not hold
+Every warning carries the finding code the page named, because `record` dispatches on the code and
+never matches a sentence against a substring. A code the finding vocabulary does not hold
 is a page and a library that have drifted apart, so the row is refused rather than raised.
 
 The page speaks camelCase and the artifacts are snake_case, so this is the one boundary where the
@@ -54,7 +53,7 @@ class CueRow(Model):
     frame: float | None = Field(None, description="The second the frame that ran it began, or null before t=0.")
     describe: str | None = Field(None, description="What this cue's reveals describe themselves as, or null.")
     next: float | None = Field(None, description="The second the frame after that one began, or null.")
-    after: float | None = Field(None, description="The second the frame after that one began, or null.")
+    after: float | None = Field(None, description="The second the frame after the next one began, or null.")
 
 
 class WordRow(Model):
@@ -128,8 +127,8 @@ class ElementRow(Model):
         judgement that tells an author the scale they chose has made their own cues unmeasurable.
         A staggered container's span is its step times the children after the first plus one
         entrance, which is exact arithmetic rather than an estimate, so its judgement is an error.
-        The number of children is what the probe counted on the page, because `data-spotlight` is a flag
-        that says the children come forward in turn, and a flag carries no count.
+        The number of children is what the probe counted on the page, because `data-stagger` gives the
+        step between children and says nothing about how many there are.
         """
         entrance = self.entrance * scale
         step = self.attrs.get(Attr.STAGGER.value)
@@ -201,7 +200,7 @@ ROWS: dict[str, type[Model]] = {
 
 
 class Recording(Model):
-    """One section recorded: what the page loaded, what it said, and where narration t=0 sits in the webm.
+    """One section recorded: what the page loaded, what it said, and where the section clock starts in the webm.
 
     This is what the recorder knows. Whether the recording still matches the project, and what the
     frames of it show, are the stage's to add when it writes the log. It is declared beside the
@@ -216,7 +215,9 @@ class Recording(Model):
     requested_seconds: float = Field(ge=0, description="How long the page was recorded for after the clock started.")
     load_seconds: float = Field(ge=0, description="How long the page took to load.")
     settle_seconds: float = Field(ge=0, description="How long the page was left to settle after it loaded.")
-    clock_start_seconds: float = Field(ge=0, description="Seconds from the recorder's start to narration t=0.")
+    clock_start_seconds: float = Field(
+        ge=0, description="Seconds from the recorder's start to the start of the section clock."
+    )
     page_errors: tuple[str, ...] = Field(description="Uncaught exceptions, or the one line for no runtime at all.")
     report: PageReport = Field(description="What the page said about itself, read once.")
 

@@ -1,5 +1,5 @@
 """The run declared once: the six stages in order, the artifacts they pass between them, and how a
-moment ended.
+stage or a section ended.
 
 `PIPELINE` is the one declaration the stage order, what a partial run still needs and the command a
 reader runs first are read from, so the precondition check, the `--from` and `--to` validation, the
@@ -62,7 +62,7 @@ class Stage(Enum):
 
 
 class Outcome(Enum):
-    """How a stage or a section ended, which is the one field that replaces four event names.
+    """How a stage or a section ended, read from one field rather than from four event names.
 
     A caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`
     and `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the
@@ -109,8 +109,8 @@ class Artifact(Enum):
         if writer is None:
             return f"Nothing in the pipeline writes {self.value}."
         if writer is Stage.NARRATE:
-            # The one stage that spends money on every run has a way to make its artifact for nothing,
-            # and a reader stopped by a missing take index should not have to find that flag elsewhere.
+            # Narrate is the first stage that may buy, and it can make its artifact without buying, and a
+            # reader stopped by a missing take index should not have to find that flag elsewhere.
             return f"Run `decktalk {writer.value}` first, or `decktalk {writer.value} --no-spend` to spend nothing."
         return f"Run `decktalk {writer.value}` first."
 

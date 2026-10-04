@@ -11,8 +11,8 @@ neither is worked out here. `Stage.span` gives the run of stages between two end
 the artifacts that run reads but does not write, and `Artifact.next_step` names the stage that would
 have written each one, so a run that starts past a missing artifact is refused with the file and the
 command named, and this module carries no "run this first" sentence of its own. Whether an artifact
-is built is `status`'s rule, asked of `status`, so a build never goes ahead on a directory the
-report calls unfinished.
+is built is the `BUILT` rule in `kept.py`, which `status` reads too, so a build never goes ahead on
+a directory the report calls unfinished.
 
 An unchanged build keeps `assemble` and `verify` rather than repeating them. Both are pure
 functions of files already on disk, so when nothing they read has moved since the last build ran
@@ -22,12 +22,12 @@ The stage is reported as kept, its findings are reported again, and `force` runs
 A run that may spend and would open a page under the untrusted policy is refused before its first
 stage, so it buys nothing it then cannot use. A run with a ceiling is then priced whole, every stage
 that buys added together, so a build whose takes and sounds together pass `--max-cost` is refused
-before it buys anything. The storyboard a person reads before a credit is bought is the command
+before it buys anything. The storyboard a person reads before anything is bought is the command
 line's checkpoint, drawn before the run opens, and a build draws none of its own.
 
 A stage whose findings reach the caller's threshold stops the run, and the run still returns its
 result. A finding is a judgement and not an error, so the stages that ran, the findings they made and
-the money narrate already spent reach the caller as fields it can read, and `stopped_at` names the
+the money narrate and score already spent reach the caller as fields it can read, and `stopped_at` names the
 stage the run stopped after.
 """
 
@@ -319,7 +319,7 @@ def _hold_to_ceiling(
 ) -> None:
     """Refuse a run whose every stage that buys, added together, is over its ceiling, before any of them runs.
 
-    The cap is held against the whole run's `price` before the first purchase rather than stage by
+    The cap is held against the whole run's `price` before the first buy rather than stage by
     stage as the run goes. A run with no ceiling, or one that may not spend, is never priced here.
     """
     if not run.spend or run.max_cost is None:
@@ -340,7 +340,7 @@ def price(
 
     Each stage that buys is priced from its plan the way it prices itself, sending nothing, and the
     prices are added by `total`. So the price a caller asks about before a run, the ceiling the run
-    is held to and the spend its result reports are one sum of the same stages.
+    is held to and the cost its result reports are one sum of the same stages.
     """
     spends: list[Cost] = []
     if Stage.NARRATE in stages:

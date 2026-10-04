@@ -10,10 +10,11 @@
     timeline.py    where the joined narration plays in the finished film
     paths.py       how a path and a place are published, which is project-relative
 
-`Inputs` is the thin composer of the parsed document, the workspace, the project's secrets and the
-tuning in force. It resolves relative paths against the project root, answers the questions that
-need more than one of the four, and reads the artifacts under `build/`. Every rule lives in one of
-the modules above, so a reader who wants the rule rather than the answer opens that module.
+`Inputs` is the thin composer of the parsed document, the workspace, the project's secrets, the
+settings in force and the voice in force. It resolves relative paths against the project root,
+answers the questions that need more than one of them, and reads the artifacts under `build/`. Every
+rule lives in one of the modules above, so a reader who wants the rule rather than the answer opens
+that module.
 
 This layer sits below the stages, which is why a stage is handed one of these and never a `Project`.
 It knows nothing about a run, a machine, an event or a result. Each loader takes a path rather than

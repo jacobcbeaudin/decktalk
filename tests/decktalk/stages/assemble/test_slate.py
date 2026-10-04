@@ -1,4 +1,4 @@
-"""The titled placeholder frame a section whose clip is missing is cut from."""
+"""The slate: the titled frame a section whose clip is missing is cut from."""
 
 from __future__ import annotations
 

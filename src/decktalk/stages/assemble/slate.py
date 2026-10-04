@@ -1,4 +1,4 @@
-"""The titled placeholder frame a section whose clip is missing is cut from."""
+"""The slate a section whose clip is missing is cut from."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def render_slate(
     policy: str,
     spend: bool,
 ) -> Path:
-    """A titled placeholder frame, for a section whose clip is missing.
+    """The slate, which is a titled frame, for a section whose clip is missing.
 
     `background` is `[video] slate_color`, written as ffmpeg writes a colour, because the plain
     frame this stands in for is drawn by ffmpeg from the same setting.

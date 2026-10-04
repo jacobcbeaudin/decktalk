@@ -2,7 +2,7 @@
 
 A module below the stages holds no run, in the same way a fetcher holds none, so it writes a
 standard logging record with `logging.getLogger(__name__)`. One handler on the `decktalk` logger
-turns every such record into a `Log` line of the run bound to the current context, and then hands
+turns every such record into a `RunLog` line of the run bound to the current context, and then hands
 the record on to whatever logging a host configured, so a host reads the same sentence either way.
 
 The run's file hears every record, debug included, so the package logger admits every level. A

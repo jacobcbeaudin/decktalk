@@ -1,9 +1,9 @@
 """The refusals DeckTalk makes on purpose: nine codes, seven classes and the exit code each one takes.
 
 An error means DeckTalk could not run, so nothing was judged and something is broken. A finding is
-the other thing entirely, which is a judgement about a film that did get made. Keeping the two apart
-is why `except DeckTalkError` is worth writing: it catches an environment DeckTalk cannot work in
-and never catches a bug in DeckTalk itself.
+the other thing entirely, which is a judgement DeckTalk made about the project. Keeping the two
+apart is why `except DeckTalkError` is worth writing: it catches an environment DeckTalk cannot work
+in and never catches a bug in DeckTalk itself.
 
 The count of classes is the count of distinct recoveries and not the count of codes. `USAGE` and
 `INTERNAL` are codes with no class, because no library call produces either: a command line the
@@ -85,9 +85,9 @@ class ErrorCode(Enum):
         """The docs page for this code, which every printed error block carries."""
         return f"{DOCS}/errors/{self.name}"
 
-    INPUT = "INPUT", Exit.BROKEN, "A file the author writes is missing, unreadable or malformed."
+    INPUT = "INPUT", Exit.BROKEN, "An input is missing, unreadable or malformed."
     NOT_BUILT = "NOT_BUILT", Exit.BROKEN, "A file a stage needs was never built."
-    PROVIDER = "PROVIDER", Exit.BROKEN, "The voice could not be reached, refused the request, or failed it."
+    PROVIDER = "PROVIDER", Exit.BROKEN, "A provider could not be reached, refused the request, or failed it."
     TOOL = "TOOL", Exit.BROKEN, "ffmpeg or Chromium is missing, or one of them failed."
     LOCKED = "LOCKED", Exit.BROKEN, "Another writer holds this project's build directory."
     APPROVAL = "APPROVAL", Exit.REFUSED, "A spend needed an approval that no flag and no terminal gave."
@@ -114,7 +114,10 @@ class DeckTalkError(Exception):
 
 
 class InputError(DeckTalkError):
-    """One of the four files the author writes is missing, unreadable or inconsistent."""
+    """An input is missing, unreadable or inconsistent.
+
+    The input is a file the author writes, the machine file, a setting or an argument.
+    """
 
     code = ErrorCode.INPUT
 
@@ -126,7 +129,7 @@ class NotBuiltError(DeckTalkError):
 
 
 class ProviderError(DeckTalkError):
-    """The voice could not be reached, refused the request, or failed it."""
+    """A provider could not be reached, refused the request, or failed it."""
 
     code = ErrorCode.PROVIDER
 

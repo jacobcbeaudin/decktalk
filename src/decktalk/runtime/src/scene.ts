@@ -8,7 +8,7 @@
  * `pitch.listing` and its cue id is `pitch.listing:expand`.
  *
  * Ownership is declared and never inferred. A slide owns exactly the cues its moment attributes
- * name plus the local names it lists, which is what lets a cue id carry any characters an author
+ * name plus the cue names it lists, which is what lets a cue id carry any characters an author
  * likes, with no prefix rule guessing which slide a cue belongs to.
  */
 
@@ -124,10 +124,10 @@ const scenes = new Map<string, Scene>();
 /** Every handler the deck registered outside a slide, keyed by the cue id of its cue. */
 const handlers = new Map<string, Handler[]>();
 
-/** The scale every declared span is multiplied by, which a reduced-motion render lowers. */
+/** The scale every declared span is multiplied by, which `motion.scale` sets. */
 let motionScale = 1;
 
-/** Tell the reader how far a reduced render slows the page down, before it reads any markup. */
+/** Tell the reader how far `motion.scale` slows the page down, before it reads any markup. */
 export function setMotionScale(scale: number): void {
   motionScale = scale;
 }

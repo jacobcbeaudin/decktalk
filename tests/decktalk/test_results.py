@@ -170,6 +170,12 @@ def money_of(dollars: float) -> str:
     return results.money(dollars)
 
 
+@pytest.mark.parametrize(("dollars", "written"), [(-0.0, "$0.00"), (-0.004, "$0.00"), (0.0, "$0.00"), (1.5, "$1.50")])
+def test_money_never_prints_a_negative_zero(dollars: float, written: str) -> None:
+    """A zero, or an amount that rounds to one, reads as $0.00 whatever its sign."""
+    assert results.money(dollars) == written
+
+
 def test_the_cost_of_a_rebuild_that_was_never_priced_is_unpriced() -> None:
     """A run that never opened bought nothing, on a bill nobody declared, at a rate nobody stated."""
     assert results.UNPRICED.buys is False

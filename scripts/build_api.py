@@ -1,4 +1,4 @@
-"""Generate src/decktalk/__init__.py, the root of the public API: about thirty entry points and the errors.
+"""Generate src/decktalk/__init__.py, the root of the public API: about twenty entry points and the errors.
 
     uv run scripts/build_api.py --write    # write the package's __init__.py
     uv run scripts/build_api.py --check    # exit 1 if the committed file would change
@@ -25,7 +25,7 @@ ROOT: dict[str, tuple[str, ...]] = {
     # The calls a caller starts from: open or make a project, explain a code, and read section numbers.
     "project": ("open", "Project", "Origin", "section_numbers"),
     "explain": ("explain",),
-    # The machine a project runs on, the tools it drives and the way to stop a run it opened.
+    # The machine a project runs on, the tools it drives, and `init`, which writes a new project.
     "machine": ("Machine", "Toolchain", "init"),
     # The stage names every verb, every result and every event is told by.
     "pipeline": ("Stage",),

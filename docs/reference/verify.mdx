@@ -123,7 +123,7 @@ has no row here and its cut is never judged for the picture.
 
 When the two do not match, the next three frames are read as well, because a picture that arrives a
 frame or two late is a section whose clock has slipped rather than a section showing something else.
-The row's `drift` is how far past the cut the outgoing picture was found, in seconds, and it is zero
+The row's `drift_seconds` is how far past the cut the outgoing picture was found, in seconds, and it is zero
 when the seam matched straight away.
 
 ## Cues
@@ -289,7 +289,7 @@ DeckTalk generates its own click at -24 dBFS, so a floor at or above that finds 
 
 - When a click is found, it becomes the row's `Spoken`, and `Offset` is the onset less the click.
   That measures the picture against the film's own audio, so it covers the recording, the trim at
-  narration t=0, the cut, the join and the mix in one number.
+  the start of the section clock, the cut, the join and the mix in one number.
 - When no click is found, and after a voiced build, `Spoken` is the cue's own second in the film and
   `Offset` is the onset less that.
 
@@ -383,9 +383,9 @@ of its own.
 |---|---|---|
 | `film` | string | The film this call measured, relative to the project. |
 | `film_seconds` | number | How long that film runs. |
-| `starts[]` | array | One object per section the film plays, with `section`, `at` for where the frame was read and `luma` for its brightest pixel. |
-| `cuts[]` | array | One object per section with a take, with `section`, `at` for where its narration ends in the film, `speech_dbfs` for the level in the window before it and `step_dbfs` for the jump across it. |
-| `seams[]` | array | One object per assembled section that sets `seamless`, with `section`, `at` and `drift`. |
+| `starts[]` | array | One object per section the film plays, with `section`, `at_seconds` for where the frame was read and `luma` for its brightest pixel. |
+| `cuts[]` | array | One object per section with a take, with `section`, `at_seconds` for where its narration ends in the film, `speech_dbfs` for the level in the window before it and `step_dbfs` for the jump across it. |
+| `seams[]` | array | One object per assembled section that sets `seamless`, with `section`, `at_seconds` and `drift_seconds`. |
 | `cues[]` | array | One object per cue, with the columns of the printed table plus `change_percent` and `skipped`. |
 | `elapsed_seconds` | number | How long this call took. |
 

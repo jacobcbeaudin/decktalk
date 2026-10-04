@@ -222,8 +222,8 @@ export function reduced(): boolean {
  * How far this render slows every length down, read from the root element's own custom property.
  *
  * `motion.scale` reaches the page as one declaration on `:root`, which the recorder adds and an
- * author may write for themselves, and it is clamped here so a slowed page cannot slow itself past
- * the point where its own cues stop being measurable.
+ * author may write for themselves, and `scaled()` clamps every length it multiplies so a slowed page
+ * cannot slow itself past the point where its own cues stop being measurable.
  */
 export function motionScale(): number {
   const written = getComputedStyle(document.documentElement).getPropertyValue(MOTION_SCALE_PROPERTY).trim();
@@ -303,7 +303,7 @@ export function slideSeconds(word: SlideEntrance): number {
   return scaled(SLIDE_ENTRANCES[word].seconds, motionScale());
 }
 
-/** How long a count runs, which the registry owns and a reduced render scales like any other length. */
+/** How long a count runs, which the registry owns and `motion.scale` scales like any other length. */
 export function countSeconds(word: keyof typeof COUNTS): number {
   return scaled(COUNTS[word].seconds, motionScale());
 }

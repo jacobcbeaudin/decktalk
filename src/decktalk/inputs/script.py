@@ -1,9 +1,10 @@
 """`script.md` parsed into the sections the voice reads.
 
-The script is markdown with "## N. Title" headings and an optional "— 0:40 to 1:10" budget after
-the title. Bracketed directions such as [Deck. The curve draws.] or [beat] are not spoken and
+The script is markdown with "## N. Title" headings and an optional "- 0:40 to 1:10" budget after
+the title, after a hyphen or a dash. Bracketed directions such as [Deck. The curve draws.] or [beat] are not spoken and
 become a beat, a [pause N] direction or a `<break time="Ns" />` tag becomes a pause of N seconds,
-markdown formatting is stripped, and an ALL-CAPS placeholder like [NUMBER] refuses a real run.
+markdown formatting is stripped, and ALL-CAPS unfinished text like [NUMBER] stays in the text, which
+`check` reports as `SCRIPT_UNFINISHED`.
 
 A section is pieces of text with the pause after each, and never markup. What a take is named by
 is `speech.canonical_text` over those pieces, so nothing here may change what they are without
@@ -24,7 +25,8 @@ from decktalk.settings import NarrationConfig
 from decktalk.speech import BEAT, Piece
 
 DIRECTION_MARK = "\x00DIR\x00"
-# "## 3. The demo — 1:40 to 3:40"  (the dash and time range are optional)
+# "## 3. The demo - 1:40 to 3:40"  (the dash and time range are optional, and a hyphen, an en dash or an
+# em dash all read)
 SECTION_RE = re.compile(
     r"^##\s+(?P<num>\d+)\.\s+(?P<title>.+?)(?:\s+[—–-]+\s+(?P<start>\d+:\d{2})\s+to\s+(?P<end>\d+:\d{2}))?\s*$"
 )

@@ -452,3 +452,63 @@ def test_a_run_told_to_replace_voiced_takes_is_priced_at_the_takes_it_replaces(r
     made = project(**{command: MOVING[command]}, price=a_cost())
     run(command, "--replace-voiced")
     assert made.called("price")["replace_voiced"] is True
+
+
+# ---- one run asks once ---------------------------------------------------------------------------
+
+PROMPT = "[y/N]"
+"""What a yes or no question ends with on a terminal, so a count of it is a count of the questions asked."""
+
+SETS_ASIDE = "sets aside every voiced take"
+BUYS_AGAIN = "every bought sound it replaces again"
+PAID = a_cost(2.14, 2.14, sections=(1, 2))
+FREE = a_cost(0.0, 0.0, sections=(1, 2), billing=BillingBasis.FREE)
+
+
+def _said(err: str) -> str:
+    return " ".join(STYLING.sub("", err).split())
+
+
+@pytest.mark.parametrize("command", ["narrate", "build"])
+@pytest.mark.parametrize("answer", ["y", "n"])
+def test_a_priced_run_told_to_replace_voiced_takes_asks_once_and_the_spend_question_carries_the_warning(
+    run, project, command: str, answer: str
+) -> None:
+    made = project(**{command: MOVING[command]}, price=PAID, storyboard=ANSWERS["storyboard"])
+    said = _said(run(command, "--replace-voiced", tty=True, stdin=f"{answer}\n").err)
+    assert said.count(PROMPT) == 1, said
+    question = said[: said.index(PROMPT)]
+    assert SETS_ASIDE in question and "Spend that now?" in question, said
+    called = made.called(command)
+    assert called["spend"] is (answer == "y")
+    assert called["replace_voiced"] is (answer == "y"), "one answer settles the spend and the replacing together"
+
+
+@pytest.mark.parametrize("command", ["narrate", "build"])
+@pytest.mark.parametrize(
+    ("flags", "price", "spend"),
+    [(("--spend",), PAID, True), (("--no-spend",), PAID, False), ((), FREE, True)],
+    ids=["spend", "no-spend", "voice-bills-nothing"],
+)
+@pytest.mark.parametrize("answer", ["y", "n"])
+def test_a_run_not_asked_to_spend_asks_the_replace_question_alone(
+    run, project, command: str, flags: tuple[str, ...], price, spend: bool, answer: str
+) -> None:
+    made = project(**{command: MOVING[command]}, price=price, storyboard=ANSWERS["storyboard"])
+    said = _said(run(command, *flags, "--replace-voiced", tty=True, stdin=f"{answer}\n").err)
+    assert said.count(PROMPT) == 1, said
+    assert SETS_ASIDE in said and "Spend that now?" not in said, said
+    called = made.called(command)
+    assert called["spend"] is spend
+    assert called["replace_voiced"] is (answer == "y")
+
+
+@pytest.mark.parametrize("flags", [(), ("--spend",)], ids=["unset", "spend"])
+def test_a_build_told_to_replace_takes_and_sounds_asks_once_with_both_warnings(run, project, flags) -> None:
+    made = project(build=ANSWERS["build"], price=PAID, storyboard=ANSWERS["storyboard"])
+    argv = ("build", *flags, "--replace-voiced", "--replace-score")
+    said = _said(run(*argv, tty=True, stdin="y\n").err)
+    assert said.count(PROMPT) == 1, said
+    assert SETS_ASIDE in said and BUYS_AGAIN in said, said
+    called = made.called("build")
+    assert called["replace_voiced"] is True and called["replace_score"] is True

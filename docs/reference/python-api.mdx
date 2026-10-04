@@ -241,8 +241,8 @@ print(result.ok, result.judged, result.cost.ceiling_dollars)
 
 ### `storyboard` selectors
 
-`slide` names the slides, `after` and `before` name the state just after and just before one cue,
-which are the pair an author compares to see what a reveal changed, and `at` names a second of the
+`slides` names the slides, `after` and `before` name the state just after and just before one cue,
+which are the pair an author compares to see what a reveal changed, and `times` names seconds of the
 section's own clock. Each one takes a sequence, and one that matches nothing draws nothing.
 
 ```python
@@ -251,7 +251,7 @@ import decktalk
 project = decktalk.open("my-lesson")
 result = project.storyboard(only=[2], after=["2.1:formula"])
 for panel in result.panels:
-    print(panel.slide, panel.cue, panel.at, panel.image)
+    print(panel.slide, panel.cue, panel.at_seconds, panel.image)
 print(result.storyboard)
 ```
 
@@ -263,7 +263,7 @@ from pathlib import Path
 
 project = decktalk.open("my-lesson")
 result = project.clip(2, start=4.0, end=9.5, out=Path("build/final/formula.mp4"), hold_seconds=1.0)
-print(result.film, result.words, result.seconds, result.estimated)
+print(result.file, result.words_file, result.seconds, result.estimated)
 ```
 
 ## `spend`, `max_cost` and `ApprovalRequired`
@@ -366,7 +366,7 @@ declares `run`, and one whose command writes files also declares `written`.
 
 | Key | Meaning |
 |---|---|
-| `schema` | The shape version of the object, which is always `2`. It is spelled `schema_` in Python and `schema` in JSON. |
+| `schema` | The shape version of the object, which is always `1`. It is spelled `schema_` in Python and `schema` in JSON. |
 | `ok` | True when the call ran and judged nothing that reaches its threshold. Its threshold is the one the project was opened with, which fails on an error by default. On the command line the threshold is the one `--fail-on` and `--allow` set, so `ok` is true exactly when the command exits 0. |
 | `findings` | Every judgement this call made, in the order it made them. |
 | `error` | An `ErrorInfo`, filled only when the command could not run at all. |
@@ -669,7 +669,7 @@ strings, spelled as `--set` spells them.
 | `tables` | The per-machine settings file as tables. |
 | `machine_file` | Where that file is. |
 | `cwd` | The directory the process started in. |
-| `toolchain` | A `Toolchain`, with `tools`, `ffmpeg`, `ffprobe`, `cache_dir`, `complete`, `paths()` and `fetched()`. |
+| `toolchain` | A `Toolchain`, with `tools`, `ffmpeg`, `ffprobe`, `cache_dir`, `complete`, `paths()` and `fetch()`. |
 | `events` | The stream every run on this machine writes to. |
 | `cache_dir` | Where this machine keeps the browser and the encoder it fetches. |
 | `api_key_state` | `ApiKeyState.SET`, `MISSING` or `NOT_NEEDED`: whether the API key a voiced run would use is set, which is asked and never revealed. `doctor` reports it as `api_key`. |

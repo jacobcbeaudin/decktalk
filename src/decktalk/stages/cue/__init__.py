@@ -7,8 +7,9 @@
     catalog.py   `cues.json` read against the catalog the page published, and the fixes
 
 The page owns what a moment looks like and the project file owns when it happens, so the page names
-a moment and `cues.json` gives it a phrase. This stage joins the two: it reads the words each
-section speaks off the take index and writes the second every moment fires at.
+a moment and `cues.json` gives it a phrase. This stage joins the two: it reads the words of each
+section's take, found by the digest its take index row names, and writes the second every moment
+fires at.
 
 The two files are read against each other as well, because a cue and the moment it fires are one
 thing written twice. The page's side is the catalog the runtime published, which the recordings

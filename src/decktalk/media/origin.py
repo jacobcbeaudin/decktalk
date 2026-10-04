@@ -10,9 +10,9 @@ resolves the way the author wrote it.
 One rule decides what may leave the project directory, and `Allowed` is that rule, which both halves
 of this module apply. A request is answered only when the names it asks for are the ones a project
 declared or sit under a directory it declared, and only when the file those names open is inside the
-project and carries no name that begins with a dot. Everything else in a project is refused, which
-is the change this release makes: the script, the cues, the build directory and the `.env` holding
-the speech key are beside the deck and are not part of it, and a page that could fetch them could
+project and carries no name that begins with a dot. Everything else in a project is refused, because
+the script, the cues, the build directory and the `.env` holding the API key are beside the deck
+and are not part of it, and a page that could fetch them could
 put them on screen or send them to whoever it liked.
 
 The origin is also where a page gets the runtime and KaTeX. Every path under `ENGINE_PATH` is the
@@ -72,10 +72,10 @@ RESERVED = f"that path is the engine's own, and the engine serves only its runti
 ENGINE_DIR = ENGINE_PATH.strip("/")
 """The first name of every path the engine answers itself, which no project file is ever served under."""
 TEXT = "text/plain; charset=utf-8"
+"""What a refusal is answered as, because a page that asked for a file is given a sentence instead."""
 
 QUERY = re.compile(r"\?[^\s\"]*")
 """The query of a URL inside a request line, up to the space or quote that ends it."""
-"""What a refusal is answered as, because a page that asked for a file is given a sentence instead."""
 # A type the standard table gets wrong or does not know, and which a deck loads often enough to matter.
 EXTRA_TYPES = {
     ".js": "text/javascript; charset=utf-8",
@@ -106,7 +106,7 @@ def page_url(page: str | Path, query: Mapping[Q, str] | None = None) -> str:
     The path is the page as `decktalk.toml` spells it, so `deck/index.html` is served at
     `http://project.localhost/deck/index.html` and every relative URL inside it still resolves. The
     keys are the contract's own query vocabulary, so a key a page does not read cannot be written
-    here, which is what the six hand-spelled query strings became.
+    here.
     """
     rel = Path(page).as_posix().lstrip("/")
     url = f"{ORIGIN}/{quote(rel)}"
@@ -172,7 +172,7 @@ class Allowed:
     """What one project's origin may answer with, which is the deck directory and its declared assets.
 
     A project is a directory of things a person wrote, and only some of them are the page. Serving
-    the rest gave a deck, and anyone who could reach an author's preview server, the script, the
+    the rest would give a deck, and anyone who could reach an author's preview server, the script, the
     cues, everything under `build/` and every key in `.env`.
     """
 

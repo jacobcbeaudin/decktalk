@@ -1,7 +1,8 @@
 """One key written into, or removed from, a settings file, judged whole before the file is replaced.
 
-`config set`, `config unset`, `--set` and a fix that sets a key all read a value here, so each one
-meets the same refusal, and a file is never left in a shape the loader would refuse.
+`config set`, `config unset` and a fix that sets a key all write a file here. A value is read by
+`read_value`, the rule `--set` and an environment variable meet too, so each one meets the same
+refusal, and a file is never left in a shape the loader would refuse.
 """
 
 from __future__ import annotations
@@ -39,10 +40,18 @@ from decktalk.tomlmap.read import read_value
 def parse_value(key: Key, text: str) -> object:
     """One value as a command line spells it, read as the key's own type and held to its range.
 
-    A value that reaches `config set` and a value that reaches `--set` are the same string, so both
-    are read here and both meet the same refusal.
+    It is read the way an environment variable is, through `read_value`, which is the rule `--set`
+    meets too, so both meet the same refusal.
     """
-    return read_value(key.annotation, text, where=key.id, bounds=key.bounds, hazard=key.hazard, from_env=True)
+    return read_value(
+        key.annotation,
+        text,
+        where=key.id,
+        bounds=key.bounds,
+        hazard=key.hazard,
+        from_env=True,
+        said="config set",
+    )
 
 
 def _scoped_key(key: str, scope: Scope, *, action: str, rerun: str) -> Key:

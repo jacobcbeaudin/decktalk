@@ -14,7 +14,7 @@ beforeEach(() => {
   clear();
 });
 
-test("a page has no narration second until its clock has started", () => {
+test("a page has no second on the section clock until its clock has started", () => {
   assert.equal(started(), false);
   assert.equal(now(), Number.NEGATIVE_INFINITY);
 });

@@ -23,9 +23,17 @@ credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header,
 note = "Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-spend` sends nothing at all."
 
 [[service]]
+host = "127.0.0.1:8765"
+name = "Narration by the local voice"
+sent_by = "`decktalk narrate` and `decktalk build`, when `[voice] provider = \"dtsp\"`"
+body = "The section's spoken text, the voice id, the model name, the speed and the audio format."
+credential = "No key is sent. The host is the one `[dtsp] base_url` names, `127.0.0.1:8765` by default, and only this machine's own file, environment or `--set` can name another. A project file that sets it is refused."
+note = "The local voice bills nothing, so a run with `--no-spend` still sends the text. At the default address the text never leaves the machine."
+
+[[service]]
 host = "api.elevenlabs.io"
 name = "Sound effects and ambience"
-sent_by = "`decktalk score`"
+sent_by = "`decktalk score`, and `decktalk build` when it may spend"
 body = "The prompt string written in the `[score.ambience]` or a `[score.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent."
 credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header."
 note = "The prompt is text you wrote in `decktalk.toml`, so you decide what it describes."
@@ -33,10 +41,10 @@ note = "The prompt is text you wrote in `decktalk.toml`, so you decide what it d
 [[service]]
 host = "api.elevenlabs.io"
 name = "Music"
-sent_by = "`decktalk score`"
+sent_by = "`decktalk score`, and `decktalk build` when it may spend"
 body = "The prompt string written in the `[score.music]` table, the length you asked for and the audio format. No part of `script.md` is sent."
 credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header."
-note = "The music file is generated once and then reused from `build/`."
+note = "Each part of the music is bought once into the score directory, `score/` unless `[score] dir` names another, and the ledger there keeps it from being bought again. Deleting `build/` sends nothing."
 
 [[download]]
 host = "cdn.playwright.dev"

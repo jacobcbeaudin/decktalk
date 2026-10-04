@@ -14,8 +14,9 @@ spelling, and a link is what that spelling cannot see: a `script.md` that links 
 on the machine would have its lines voiced, captioned and published. So the rule resolves every link
 before it compares, and it lives here, where every reader of a project path already reaches.
 
-The build directory and a project's own take directory are the places DeckTalk writes in the
-project, and a project that arrives with either tree already in it chose every name in that tree.
+The build directory, the takes directory and the score directory are the places DeckTalk writes in
+the project, and a project that arrives with any of those trees already in it chose every name in that
+tree.
 `confined` is the rule for such a tree: it resolves every entry under the directory and refuses the
 tree when one leads out of it, so a link at `build/narrate` or a committed take file linked to a file
 elsewhere cannot turn a read, a write or a prune into one outside the project.

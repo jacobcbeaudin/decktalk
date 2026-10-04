@@ -52,7 +52,7 @@ text, and the other three print JSON.
 | Call | What it answers |
 |---|---|
 | `decktalk --help` | The command tree, the global flags and the five exit codes. |
-| `decktalk schema` | Every command with every flag, its type and its default, plus the globals, the exit codes, the nine error codes, the fifty-three finding codes and the six stages, as one object. |
+| `decktalk schema` | Every command with every flag, its type and its default, plus the globals, the exit codes, the nine error codes, the fifty-five finding codes and the six stages, as one object. |
 | `decktalk schema setting` and `decktalk config explain KEY` | Every setting with its default, its safe range, its unit, the findings it moves and its hazard, and then one setting whole with the layer that set it. |
 | `decktalk status --json` and `decktalk doctor --json` | Where this project stands, and what this machine has installed. |
 
@@ -67,7 +67,8 @@ Read `AGENTS.md`, then run the four calls, then act. In practice that is one ord
 
 1. Run `decktalk status --json` to learn the project's name, its script, its cue file, every section
    with what is voiced, recorded and cut, and the `next` field, which is the whole command to run
-   next, or null when the film is built and measured.
+   next. It is null when the film is built and measured, and null when the takes directory holds
+   none of the project's takes, which a warning line on stderr says.
 2. Run `decktalk check --json` before anything that spends. It judges the written files and the
    pages, makes no film, and its `cost` object prices the narration a voiced build would buy. The
    score is not in it: `decktalk score --no-spend --json` prices that.

@@ -12,7 +12,7 @@ decktalk init my-lesson
 ```
 
 The skills live inside the Python package, so the skills a project gets always match the CLI that
-wrote them. `decktalk init --json` reports which way it went in its `skills` field, and every file
+wrote them. `decktalk init --json` reports which way it went in its `skills_written` field, and every file
 it wrote in `written`.
 
 ## The two folders
@@ -37,7 +37,7 @@ two copies of one skill is the case where a harness has to guess which one it is
 ## Leaving the skills out
 
 `decktalk init DIR --no-skills` writes neither folder. Nothing else about the project changes, so a
-project written that way still builds, and `skills` is `false` in the result.
+project written that way still builds, and `skills_written` is `false` in the result.
 
 Use it when your repository installs skills its own way, or when the project is built by a person
 and read by no agent at all.

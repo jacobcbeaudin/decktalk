@@ -1,4 +1,4 @@
-"""The one pool every stage fans its sections out to, and the three ways it stops.
+"""The one pool `narrate` and `record` fan their sections out to, and the three ways it stops.
 
 A stage hands the pool the section numbers it must make, the function that makes one, and the tool a
 worker opens once and keeps for every section it makes after, and then waits for each section's row

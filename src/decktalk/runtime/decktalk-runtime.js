@@ -6,9 +6,10 @@
    * URL and a report are spelled with.
    *
    * An element on a slide has four moments and one value type. It arrives, it steps back, it comes to
-   * the front, and it leaves, and each of those is the local name of a cue. Everything else is either
+   * the front, and it leaves, and each of those is the cue name of a cue. Everything else is either
    * how a moment looks, which is a closed word this file owns, or what a moment means, which is a
-   * sentence for the transcript. Seconds are never written on the page, because cues.json owns them.
+   * sentence for the transcript. A cue's second is never written on the page, because the cue stage
+   * resolves it from the phrase `cues.json` pairs with it.
    *
    * This module is the one home of that grammar. Every other runtime module reads its attribute names
    * from here rather than spelling a "data-" literal of its own, `scripts/build_runtime.py` prints
@@ -668,7 +669,7 @@
   // src/decktalk/runtime/src/clock.ts
   /*! The section clock and the queue of everything the page has still to do.
    *
-   * Every second a DeckTalk page reasons in is a second after narration t=0, which is the frame the
+   * Every second a DeckTalk page reasons in is a second on the section clock, whose start is the frame the
    * recorder's cover came off or the moment a preview started. This module owns that origin, the
    * queue of work sorted by the second it is due, and the one animation frame loop that drains it.
    *
@@ -762,7 +763,7 @@
    * `pitch.listing` and its cue id is `pitch.listing:expand`.
    *
    * Ownership is declared and never inferred. A slide owns exactly the cues its moment attributes
-   * name plus the local names it lists, which is what lets a cue id carry any characters an author
+   * name plus the cue names it lists, which is what lets a cue id carry any characters an author
    * likes, with no prefix rule guessing which slide a cue belongs to.
    */
   var NAMES = Object.keys(ATTRS);
@@ -1782,7 +1783,7 @@
     div.appendChild(heading(title, note));
     for (const scene of all().values()) {
       const head = document.createElement("h2");
-      head.textContent = `Scene ${scene.id} — ${scene.name} `;
+      head.textContent = `Scene ${scene.id}: ${scene.name} `;
       head.appendChild(link(`?${SCENE}=${encodeURIComponent(scene.id)}`, "▶ play"));
       div.appendChild(head);
       const row = document.createElement("div");
@@ -1898,7 +1899,7 @@
    *     </template>
    *   </div>
    *
-   * An element has four moments, each the local name of a cue that `cues.json` gives a second to: it
+   * An element has four moments, each the cue name of a cue whose phrase `cues.json` names: it
    * arrives, it steps back, it comes to the front and it leaves. A page that wants behaviour of its
    * own adds it beside the markup, and a page that would rather build a slide in script gives that
    * slide a render function instead of a template.

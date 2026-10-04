@@ -2,13 +2,14 @@
 
     my-lesson/.env   the key the voice's adapter declares (never committed)
 
-A variable already in the environment wins over the file, and a value that still looks like the
-placeholder `<your key>` counts as unset. No value ever reaches a log line, an error message or a
+A variable already in the environment wins over the file, and a value that is still unfilled,
+such as `<your key>`, counts as unset. No value ever reaches a log line, an error message or a
 JSON payload, because a secret is named by its variable name and never by its value, so every value
 this module hands back is a `Secret` that has to be revealed on purpose.
 
 The environment is an argument rather than something this module reaches for, so two projects in one
-process cannot read each other's, and the machine stays the only reader of `os.environ`.
+process cannot read each other's, and the machine stays the only place that reads a value from
+`os.environ`.
 
 Whether `.env` is read at all is the machine's decision, bound for each run through `reading_dotenv`.
 A machine built from the process reads it, because it belongs to the author at the keyboard. A
@@ -32,7 +33,7 @@ from decktalk.inputs.paths import at
 from decktalk.secret import Secret
 
 PLACEHOLDER_MARK = "<"
-"""What an unfilled placeholder such as `<your key>` opens with, which counts as no value at all."""
+"""What an unfilled value such as `<your key>` opens with, which counts as no value at all."""
 
 COMMENT_MARK = " #"
 """What ends an unquoted value, so a trailing note never becomes part of a credential."""
@@ -102,7 +103,7 @@ class Env:
         return read_dotenv(self.file)
 
     def get(self, name: str) -> Secret:
-        """The value of one variable, or an empty `Secret` when it is unset or still a placeholder.
+        """The value of one variable, or an empty `Secret` when it is unset or still unfilled.
 
         The machine's decision about `.env` is asked at every lookup rather than when the project was
         opened, because a project is opened before the run whose machine decides it.

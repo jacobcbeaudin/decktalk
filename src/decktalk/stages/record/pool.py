@@ -1,7 +1,7 @@
 """How many page sections record at once, which is the size of the pool `record` hands them to.
 
-A recording waits for its section's whole span in real time, so a film's recording took as long as
-the film, and the sections of one film share nothing but the project they read. Several of them are
+A recording waits for its section's whole span in real time, so recording one section at a time would
+take as long as the film, and the sections of one film share nothing but the project they read. Several of them are
 therefore recorded at once, each by a worker of `decktalk.stages.pool` with a Chromium of its own.
 
 A recording is also the one stage that needs its CPU on time. A reveal that lands a frame late is a

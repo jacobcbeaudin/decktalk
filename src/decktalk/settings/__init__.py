@@ -8,11 +8,12 @@ edge risks and which other key or published number it relates to. Nothing about 
 anywhere else, so the JSON Schema, the reference page, `config explain` and a finding that names
 a setting are four renderings of one row.
 
-Five layers set a key, lowest to highest: the default here, the same table in the per-machine
-file, the same table in the project's `decktalk.toml`, the environment variable named
-`DECKTALK_<TABLE>_<KEY>`, and a `--set table.key=value` given for one run. `load()` returns both
-the resolved tree and the record of which layer set each key, because a caller that is told a
-value and not its layer cannot tell a deliberate choice from a default.
+A project key is set by four layers, lowest to highest: the default here, the project's
+`decktalk.toml`, the environment variable named `DECKTALK_<TABLE>_<KEY>`, and a `--set
+table.key=value` given for one run. A machine key is set by its default, the per-machine file, its
+variable and `--set`. `load()` returns both the resolved tree and the record of which layer set each
+key, because a caller that is told a value and not its layer cannot tell a deliberate choice from a
+default.
 
 Two rules keep the published range honest. The published range is the safe range: a bound is here
 because a value past it deletes a check, corrupts the evidence a later stage measures or breaks a
@@ -185,7 +186,7 @@ class NarrationConfig:
         "Directory inside the project that holds every take the film plays and the words its voice sent with "
         "each, which you commit so a fresh clone builds the film with no key. The take index stays under the "
         "build, because it is a cache built again from the takes. A take is looked for here first and in the "
-        "machine's take store, `store_dir`, second, and a take this project buys or finds there is written here.",
+        "machine's take store, `store_dir`, second, and a take this project voices or finds there is written here.",
         unit="path",
         bounds=Bounds(pattern=SOME_PATH),
         hazard=(
@@ -198,8 +199,8 @@ class NarrationConfig:
     )
     store_dir: str = tune(
         "",
-        "The take store: a folder outside every project where this machine keeps a second copy of every take "
-        "it buys and the words its voice sent with it, each named by its input digest. A take is looked for "
+        "The take store: a folder outside every project where this machine keeps a second copy of every voiced "
+        "take it makes and its provider words, each named by its digest. A take is looked for "
         "here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the "
         "same words as another plays it without buying it, and a take nobody committed yet survives a "
         "`git clean`. Each take is written here once, and a store that already holds a good copy keeps it. "
@@ -268,17 +269,17 @@ class NarrationConfig:
 
 @dataclass(frozen=True)
 class RecordConfig:
-    """These keys tune the headless Chromium recording and how narration t=0 is found in it."""
+    """These keys tune the headless Chromium recording and how the start of the section clock is found in it."""
 
     settle_seconds: float = tune(
         0.5,
-        "Shortest wait after the page is ready and before narration t=0.",
+        "Shortest wait after the page is ready and before the start of the section clock.",
         unit="seconds",
         bounds=Bounds(ge=0, le=30),
     )
     cover_min_seconds: float = tune(
         1.5,
-        "Shortest time from the start of the recorder to narration t=0.",
+        "Shortest time from the start of the recorder to the start of the section clock.",
         unit="seconds",
         bounds=Bounds(ge=0, le=30),
     )
@@ -379,7 +380,8 @@ class RecordConfig:
     )
     frame_gap_max_ms: int = tune(
         150,
-        "Longest gap between two presented frames after narration t=0. A longer gap makes `record` try again.",
+        "Longest gap between two presented frames after the start of the section clock. A longer gap makes "
+        "`record` try again.",
         unit="milliseconds",
         bounds=Bounds(ge=REPORT_FRAME_GAP_MS, le=2000),
         requires="record.frame_gap_max_ms >= REPORT_FRAME_GAP_MS",
@@ -625,8 +627,9 @@ class VoiceConfig:
     provider: str = tune(
         "elevenlabs",
         "The speech provider that reads the script, which is a name the machine's own map answers. An "
-        "unregistered name fails when `narrate` runs rather than at load. DeckTalk ships `elevenlabs`, the "
-        "cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a voice served by a local server, whose "
+        "unregistered name loads, and fails only when a run asks it for a take, which a run that does not "
+        "spend never does. DeckTalk ships `elevenlabs`, the "
+        "cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose "
         "own keys are `[dtsp]`.",
     )
     id: str = tune(
@@ -710,8 +713,8 @@ class MotionConfig:
 
 
 BASE_URL_HAZARD = (
-    "The script, and for a paid voice the key, travels to whatever host this names, so only the machine names "
-    "it and a project file that sets it is refused."
+    "The script, and for a provider that bills the API key, travels to whatever host this names, so only the "
+    "machine names it and a project file that sets it is refused."
 )
 """Why a speech or sound base URL is the machine's to set, said once for every table that holds one."""
 
@@ -768,7 +771,7 @@ class ElevenLabsConfig:
         source=Source.STATED,
         evidence="the plan page of the account whose key this project uses",
         hazard=(
-            "It is zero until somebody states it, and a spend cap refuses a run while the price is still "
+            "It is zero until somebody states it, and `--max-cost` refuses a run while the price is still "
             "the default, because DeckTalk would otherwise be capping a spend against a number it invented. "
             "ElevenLabs bills per character, so a zero somebody stated still asks before it buys."
         ),
@@ -791,7 +794,7 @@ class ElevenLabsConfig:
 
 @dataclass(frozen=True)
 class DtspConfig:
-    """These keys are the `dtsp` voice's own: where its local server listens and the model it reads with.
+    """These keys are the `dtsp` provider's own: where its local server listens and the model it reads with.
 
     `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is
     not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.
@@ -811,7 +814,7 @@ class DtspConfig:
 
 
 SOUND_PRICE_HAZARD = (
-    "It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is "
+    "It is zero until somebody states it, and `--max-cost` refuses a score while any rate it buys at is "
     "still the default, because DeckTalk would otherwise be capping a spend against a number it invented."
 )
 """Why a sound rate nobody stated refuses a cap, said once for the three tables that state one."""
@@ -834,7 +837,7 @@ def sound_rate(kind: SoundKind) -> float:
 
 @dataclass(frozen=True)
 class AmbienceConfig:
-    """The settings half of `[score.ambience]`: how the bed is asked for. Its prompt and file are content."""
+    """The settings half of `[score.ambience]`: how the ambience bed is asked for. Its prompt and file are content."""
 
     model: str = tune("eleven_text_to_sound_v2", "Model the ambience bed is asked for from.")
     duration_seconds: float = tune(
@@ -874,7 +877,7 @@ class EffectConfig:
 
 @dataclass(frozen=True)
 class MusicConfig:
-    """The settings half of `[score.music]`: how the bed is asked for and joined. Its prompt is content."""
+    """The settings half of `[score.music]`: how the music is asked for and joined. Its prompt is content."""
 
     model: str = tune("music_v2", "Model the music is asked for from.")
     duration_seconds: int = tune(
@@ -937,7 +940,7 @@ class ScoreConfig:
     output_format: str = tune(
         "mp3_44100_128",
         "Audio format the music, the ambience and the effects are asked for in. A take's format is its "
-        "voice's own, such as `[elevenlabs] output_format`.",
+        "provider's own, such as `[elevenlabs] output_format`.",
         see_also=("elevenlabs.output_format",),
     )
     timeout_seconds: int = tune(
@@ -980,8 +983,9 @@ class EventsConfig:
     )
     max_bytes: int = tune(
         8_388_608,
-        "Bytes one run's events file may reach before debug and info lines are left out of it. "
-        "Lines about the run, its stages, its sections, its findings and its costs are always kept.",
+        "Bytes one run's events file may reach before progress lines, download lines and debug and info lines "
+        "are left out of it. Warnings and errors are left out once it reaches twice this. Lines about the run, "
+        "its stages, its sections, its findings and its costs are always kept.",
         unit="bytes",
         bounds=Bounds(ge=65_536, le=1_073_741_824),
         scope=Scope.MACHINE,
@@ -1040,7 +1044,7 @@ class ToolsConfig:
 
 @dataclass(frozen=True)
 class Settings:
-    """Every tunable with its default, in the order the reference and the schema publish them."""
+    """Every setting with its default, in the order the reference and the schema publish them."""
 
     video: VideoConfig = field(default_factory=VideoConfig)
     narration: NarrationConfig = field(default_factory=NarrationConfig)

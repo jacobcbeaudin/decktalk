@@ -211,7 +211,8 @@ def numbers(document: dict[str, Any]) -> list[str]:
 
 
 def render() -> str:
-    """The whole page, which is the header, the index, one section per table, the numbers and the links."""
+    """The whole page: the header, which value wins, the keys only a machine may set, the index, one section per
+    table, the numbers and the links."""
     document = build_settings_schema.document(machine=False)
     rows = keys(document)
     parts = [HEADER, layers(), *machine(rows), *index(rows), *tables(document, rows), *numbers(document), FOOTER]

@@ -20,16 +20,19 @@ reader could act on.
 Every call takes a timeout. A provider that stopped answering would otherwise hold a build open for
 as long as the socket stayed up.
 
-Every POST here buys something, a take or a sound, so a request the service may have billed is never
-sent twice. Every call takes a number of retries. A service that answers that it is busy or failed,
-which is a 408, a 429 or a 5xx, or that could not be connected to at all, is asked again after a wait
-that doubles each time, or after the wait its own `Retry-After` names, up to that many more times. A
-voice account limits how many requests run at once, so without this the first busy answer to one of
-several concurrent sections failed the run after the others had already been paid for. A refusal
-that says the request itself is wrong is never repeated, because it would be refused again. A reply
-that broke once the request was connected, and a reply that arrived and could not be read, are never
-repeated either, because the service may already have billed the request. Each becomes a `PROVIDER`
-error that says the request was possibly charged, rather than escaping as a bare timeout.
+A POST to a provider that bills buys something, a take or a sound, so a request the service may have
+billed is never sent twice. Every call takes a number of retries. A service that answers that it is
+busy or failed, which is a 408, a 429 or a 5xx, or that could not be connected to at all, is asked
+again after a wait that doubles each time, or after the wait its own `Retry-After` names, up to that
+many more times. A voice account limits how many requests run at once, and without this the first
+busy answer to one of several concurrent sections would fail the run after the others were bought. A
+refusal that says the request itself is wrong is never repeated, because it would be refused again.
+A reply that broke once the request was connected, and a reply that arrived and could not be read,
+are never repeated either, because the service may already have billed the request. Each becomes a
+`PROVIDER` error that says the request was possibly charged, rather than escaping as a bare timeout.
+A request whose adapter says it bills nothing, the `dtsp` provider on a local server, is the one
+exception: its broken reply costs nothing to send again, so it is tried again under the same retries
+and waits.
 
 Every attempt leaves a debug record of its path, status, size and time, and every retry leaves a
 warning with the wait it takes and where that wait came from, so a run that took three minutes
@@ -95,8 +98,8 @@ connecting reads exactly like one while sending, so it counts as broken as well.
 UNCONNECTED = (socket.gaierror, ConnectionRefusedError)
 """Truth: how a request fails when nothing connected, a name that did not resolve or a port nobody serves.
 
-Nothing was sent, so nothing could have been charged, and these are the only failures short of a busy
-answer that are tried again.
+Nothing was sent, so nothing could have been charged, and these are tried again like a busy answer,
+as is a broken reply from a provider that bills nothing.
 """
 
 POSSIBLY_CHARGED = "The request was possibly charged, so it is not sent again."
@@ -264,10 +267,16 @@ def _unreachable(url: str, exc: urllib.error.URLError, carried: Collection[str],
 
 
 def _broken(url: str, exc: BaseException, carried: Collection[str], *, free: bool) -> ProviderError:
-    """A reply that broke once the request was connected, which the service may already have billed."""
+    """A reply that broke once the request was connected, which a provider that bills may already have charged.
+
+    A request that bills nothing costs nothing to send again, so its broken reply is tried again like
+    a busy answer, and one that bills never is.
+    """
     said = scrub(str(exc), carried) or "no reason given"
     bill, hint = _after_sending(free)
-    return ProviderError(f"{shown(url)} stopped answering ({type(exc).__name__}: {said}).{bill}", hint=hint)
+    return ProviderError(
+        f"{shown(url)} stopped answering ({type(exc).__name__}: {said}).{bill}", hint=hint, retryable=free
+    )
 
 
 def pause(seconds: float) -> None:
@@ -322,9 +331,10 @@ def post[T](
     `secrets` are every secret the URL, the body or the headers carry, which is what is scrubbed out
     of every message and what no redirect to another origin is handed, whatever header holds it.
 
-    A failure that says the service was busy or could not be connected to is tried again up to
-    `retries` more times, and the last failure is the one raised. A reply that arrived may have been
-    billed, so whatever `parse` refuses in it is raised at once and never asked for again.
+    A failure that says the service was busy or could not be connected to, or a broken reply to a
+    `free` request, is tried again up to `retries` more times, and the last failure is the one raised.
+    A reply that arrived may have been billed, so whatever `parse` refuses in it is raised at once and
+    never asked for again.
     """
     data = to_json(body)
     path = urllib.parse.urlsplit(url).path

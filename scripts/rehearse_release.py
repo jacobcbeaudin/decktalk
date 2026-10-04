@@ -10,18 +10,20 @@ write, or a file the bump makes stale that nothing regenerates, would surface on
 nowhere earlier. This script makes the same bump on every pull request instead. It copies the
 checkout into a temporary directory, so the checkout itself is never touched and nothing is ever
 committed or pushed. In the copy it writes the version release-please would propose next everywhere
-release-please would write one, runs `uv run scripts/check.py --group generated --write`, and then
-runs `uv run scripts/check.py --group generated`. It fails when a file cannot take the version,
+release-please would write one, runs `uv lock`, then `uv run scripts/check.py --group generated
+--write`, and then `uv run scripts/check.py --group generated`. It fails when a file cannot take the version,
 when a generator cannot write, or when anything is still stale afterwards.
 
 The version comes from `node scripts/next_version.mjs`, which runs release-please's own code over
 the history since the last release tag. When nothing releasable has landed it is the version one fix
 would bring, so every pull request rehearses a real bump. Before any bump the version is held to the
-rules of the candidate cycle, and the rehearsal refuses three things.
+rules of the candidate cycle, and the rehearsal refuses four things.
 
 - A final version that no `Release-As` footer named, because a final release is a person's decision.
 - A candidate with no number, such as `0.6.0-rc`, which a `prerelease-type` without one produces.
 - A `Release-As` footer release-please never reads, because its commit touched only excluded paths.
+- A version in the tree that release-please's rules would not give for the commits since the last
+  release, because the release pull request and the rehearsal would then disagree.
 
 On release-please's own pull request the tree already carries the version it proposes. The rehearsal
 then checks that version against the same rules and bumps nothing, because the regenerate job in

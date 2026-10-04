@@ -600,7 +600,7 @@
     "freeze": "Freeze this slide with its cues already fired, which is what a screenshot opens.",
     "cues": "The cue times to fire at, as id@seconds pairs separated by a comma.",
     "words": "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
-    "t0": "The narration second the page starts at, or the word signal when the recorder starts the clock.",
+    "t0": "The second on the section clock the page starts at, or the word signal when the recorder starts the clock.",
     "speed": "Multiply the preview clock, so a long section is reviewed quickly.",
     "hud": "Draw the on-page clock and cue list, which is for an author and never for a recording.",
     "after": "Freeze after this cue, so the cues up to and including it fire and later ones stay hidden.",

@@ -2,17 +2,19 @@
 
     uv run scripts/check_docs_links.py    # every problem, or what was checked when there is none
 
-It exits 1 when something is wrong. Four things are checked, and no network is used.
+It exits 1 when something is wrong. Five things are checked, and no network is used.
 
 - Every page opens with front matter that YAML parses into a title and a description. The docs
   host parses it the same way and refuses the whole deploy when one page fails, and a plain value
   cannot hold a colon followed by a space, so a description with a colon in it is quoted.
-- Every internal link resolves: `/reference/cli` is a page, `/images/hero-light.svg` is a file,
+- Every internal link resolves, and no page holds an HTML comment, which MDX cannot parse:
+  `/reference/cli` is a page, `/images/hero-light.svg` is a file,
   and `#a-heading` is a heading on the page that links to it.
 - Every page under docs/ appears exactly once in the navigation, and every navigation entry is a
   page that exists. An error or finding page is the exception: the code tables in the CLI
   reference are its index, so that page links it instead.
 - Every redirect points at a page that exists, from a path that is no longer one.
+- Every logo and favicon docs/docs.json names is a file under docs/.
 
 Links inside a code fence, inside an inline code span and inside an MDX comment are page content,
 not links, so they are skipped. An external link is not fetched.

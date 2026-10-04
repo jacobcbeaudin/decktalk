@@ -2,7 +2,7 @@
 
     build/cue-times.json   one block per section, each holding every cue that section declares
 
-A row's `cue` is the cue id the page understands, `phrase` is the script phrase it was matched
+A row's `id` is the cue id the page understands, `phrase` is the script phrase it was matched
 against, `seconds` is where it lands after its section starts, and `nudge_seconds` is the author's
 own nudge, which is already inside `seconds`. The rows are the same `SectionCues` and `CueTime` a
 `cue` result carries, so the file the stage writes and the JSON a caller reads are one shape.

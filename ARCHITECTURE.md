@@ -50,9 +50,9 @@ one table.
 
 | Stage | One job | Writes |
 |---|---|---|
-| `narrate` | Voice each section and get a time for every word. | `build/narrate/takes.json`, one take and one words file per section |
+| `narrate` | Voice each section and get a time for every word. | one take and one words file per section, a voiced take in `takes/` and a placeholder in `build/narrate/`, and `build/narrate/takes.json` |
 | `cue` | Turn each cue phrase into a second on that section's clock. | `build/cue-times.json` |
-| `record` | Record each page section in headless Chromium and find narration t=0 in the frames. | `build/recordings/` |
+| `record` | Record each page section in headless Chromium and find where the section clock starts in the frames. | `build/recordings/` |
 | `score` | Compose the music, the ambience bed and the effects. | `score/`, the bought sounds and their ledger, and `build/score/` |
 | `assemble` | Cut each section to its span, join them, mix the sound and publish. | `build/final/<name>.mp4`, captions, chapters, transcript, poster |
 | `verify` | Measure the finished film against what it was supposed to be. | nothing |
@@ -63,7 +63,7 @@ spends money and writes an artifact has to be reachable by `--from`, `--to`, `--
 and the event stream rather than hidden inside another stage.
 
 Six more calls report on a project, cut a piece out of it or serve it: `status`, `check`, `words`,
-`storyboard`, `serve` and `clip`. `check` judges without producing anything and prices what a build
+`storyboard`, `serve` and `clip`. `check` judges without writing anything a stage reads and prices what a build
 would cost, so an author sees the findings and the money before a single second is bought.
 `storyboard` freezes every slide at every cue onto one page, which is the checkpoint a person looks
 at before anything is bought.
@@ -192,7 +192,7 @@ check runs on three platforms.
 ## Why the cuts land
 
 Chromium begins recording at a moment nobody can predict. The recorder covers the page in magenta
-until the page says it is ready, and the first frame after the cover is narration t=0. The cover
+until the page says it is ready, and the section clock starts on the first frame after the cover. The cover
 holds something that always moves, so frames keep coming while a still page waits. Everything after
 that is arithmetic on frames, and no part of it reads a wall clock.
 

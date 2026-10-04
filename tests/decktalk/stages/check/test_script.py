@@ -36,7 +36,7 @@ def test_a_filled_paragraph_holds_no_placeholder() -> None:
 
 
 def test_an_open_placeholder_is_an_error_naming_its_line() -> None:
-    """A voiced run reads the placeholder's own name out, and the take has already been paid for."""
+    """A voiced run reads unfinished text out, and the take has already been paid for."""
     (found,) = placeholder_findings(SCRIPT, script=WHERE)
     assert found.code is Code.SCRIPT_UNFINISHED
     assert found.severity is Severity.ERROR

@@ -50,7 +50,7 @@ class RecordingSink(Protocol):
     """Where the log of one recording is kept, which the recorder clears before it captures and fills after.
 
     The pair on disk has to be complete or absent. A webm replaced under the log of the recording
-    before it keeps its digest and moves narration t=0, so the next assemble trims the new picture at
+    before it keeps its digest and moves the start of the section clock, so the next assemble trims the new picture at
     the old moment and every reveal in the section lands wrong. Clearing first and writing last
     leaves a crash with no log, which the next run reads as a section it has not recorded.
     """
@@ -183,7 +183,7 @@ def record_page(
 
     The order is the whole point of `log_sink`. The old log goes before anything is captured, the
     webm is replaced next, and the log of what was just recorded is written last, so the pair on
-    disk is either complete or absent and a crash can never leave a new picture under an old t=0.
+    disk is either complete or absent and a crash can never leave a new picture under an old start.
 
     `check` raises when the recording should stop, and the section's span is waited for in slices so
     it is asked at least once a second. A recording stopped that way places nothing and writes no log.
@@ -259,7 +259,9 @@ def _log_what_the_page_reported(recording: Recording, label: str) -> None:
     after_start = [gap for gap in recording.report.frame_gaps if gap.at is not None and gap.at > 0]
     if after_start:
         worst = max(gap.ms for gap in after_start)
-        log.debug("[page] %s  %d frame stall(s) after narration t=0, worst %d ms", label, len(after_start), worst)
+        log.debug(
+            "[page] %s  %d frame stall(s) after the section clock started, worst %d ms", label, len(after_start), worst
+        )
     under_cover = len(recording.report.frame_gaps) - len(after_start)
     if under_cover:
         log.debug("[page] %s  %d frame stall(s) under the cover", label, under_cover)

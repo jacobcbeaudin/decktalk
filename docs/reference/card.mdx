@@ -46,7 +46,8 @@ Full rules: [script.md](/reference/script-md).
 
 ### `decktalk.toml`
 
-The project file. `[project]` holds `name` and the optional `script`, `cues` and `build` paths. One
+The project file. `[project]` holds `name`, the optional `script`, `cues` and `build` paths, and the
+optional `language`. One
 `[[section]]` per script section, in order, each with a `number` and an optional `chapter`. A page
 section adds `page` and `scene`, and a clip section adds `clip` and plays a video file of your own.
 `[voice]`, `[transition]`, `[mix]` and `[score]` follow, and every tuning table is optional.
@@ -240,15 +241,16 @@ flags that answer that command's prompts. Every prompt DeckTalk asks has a flag 
 blanket yes would be a flag that agreed to things nobody named.
 
 **The scope flags** narrow what a command works on. `--section N` takes `3`, `3,5` or `7-9` and
-repeats, and it is on `check`, `words`, `storyboard`, `build`, `clip` and every stage command.
+repeats, and it is on `check`, `words`, `storyboard`, `build` and every stage command. On `clip` it
+names exactly one section.
 `build` adds `--from`, `--to` and `--skip`, `assemble` adds `--skip`, `storyboard` adds `--slide`,
 `--after`, `--before` and `--at`, and `check` takes deck pages as positional arguments beside the
 project's own.
 
 **The spend flags** are on the three commands that can buy something, which are `narrate`,
 `score` and `build`. `--no-spend` plays every take on disk, puts a placeholder where a take from a
-voice that bills is missing and reports it as `TAKE_MISSING`, and needs no API key. A free voice such as `dtsp`
-makes its takes either way. `--spend` buys what is missing without asking first. `--max-cost N` refuses before the first call if the most the run can cost is over N US
+voice that bills is missing and reports it as `TAKE_MISSING`, and needs no API key. A free provider such as `dtsp`
+makes its takes either way once a voice is named. `--spend` buys what is missing without asking first. `--max-cost N` refuses before the first call if the most the run can cost is over N US
 dollars, and it is compared against the spend object's `ceiling_dollars`. With neither flag, a run
 with something to buy prices it and asks on a terminal, and without a terminal it refuses with the
 error code `APPROVAL`. A run with nothing to buy is not asked, and neither is one whose voice
@@ -276,15 +278,15 @@ Every command's `--json` is one flat object. There is no wrapper, no `command` k
 | `findings` | Every judgement, in the order it was made. |
 | `error` | Filled only when the command could not run, and null otherwise. |
 | `run` | The run id, on every result whose command opens a run. |
-| `written` | Every file written, project-relative, on every result that writes. |
+| `written` | Every file written, in the order it was written, on every result that writes. A stage writes project-relative paths, and `config set` and `config unset` write the absolute path of the settings file. |
 
 `decktalk schema` is the one exemption: it prints the contract document itself with no reserved keys
 around it, because a JSON Schema document inside a wrapper is not that document.
 
 A finding carries `code`, `message`, `severity`, `location`, `stage`, `fix` and `docs`. `severity`
 is `error` or `warning`. `location` carries a required `where` naming the object judged, plus
-`file`, `line`, `section` and `cue`. `fix` is one of `edit`, `setting` or `command`, each with a
-`title` and an `applicability` of `safe`, `unsafe` or `display`. In the library
+`file`, `line`, `section` and `cue`. `fix` is one of `edit` or `command`, each with a `title` and
+an `applicability` of `safe`, `unsafe` or `display`. An `edit` that changes a setting names its `key`. In the library
 `Project.apply(finding)` applies one.
 
 `--events` prints one JSON line per event on stderr as it happens, and every run of a project also
@@ -319,7 +321,7 @@ refused. `decktalk schema setting --scope machine` prints those keys, and
 each platform.
 
 The settings sit in `[video]`, `[narration]`, `[record]`, `[audio]`, `[verify]`, `[voice]`, `[mix]`,
-`[motion]`, `[elevenlabs]`, `[score]`, `[output]` and `[tools]`. `decktalk.toml` also carries
+`[motion]`, `[elevenlabs]`, `[dtsp]`, `[score]`, `[output]`, `[events]` and `[tools]`. `decktalk.toml` also carries
 the tables that are project content rather than tuning, which are `[project]`, `[[section]]`,
 `[transition]`, the prompts of `[score]` with `[score.effects.<name>]`, and
 `[[mix.effect]]`. `[mix]` and `[score]` are each both things at once, because each holds
@@ -349,7 +351,8 @@ for finding in result.findings:
     print(finding.code, finding.message, finding.location.where)
 ```
 
-`decktalk.open(path, *, machine=None, overrides=())` returns a `Project`, and
+`decktalk.open(path, *, machine=None, overrides=(), threshold=Threshold())` returns a `Project`,
+whose `Threshold` decides which findings fail its calls, and
 `decktalk.init(path, *, machine, name, example, skills, overwrite)` writes one.
 `Machine.from_environment()` is the only function that reads the environment, the per-machine file
 or the working directory. `Project` carries the twelve calls `narrate`, `cue`, `record`,

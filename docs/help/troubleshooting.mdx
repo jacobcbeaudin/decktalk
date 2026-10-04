@@ -42,7 +42,8 @@ judges when it does not. The `fix` line under it appears only when the finding c
 Under `--json`, `error` is filled for the first and null for the second, and `findings` carries the
 second as an array of objects.
 
-An error exits 2 or 3 and a finding at or above the threshold exits 1.
+An error exits 2 or 3, or 130 when the run was interrupted, and a finding at or above the threshold
+exits 1.
 [Exit codes](/reference/cli#exit-codes), [Error codes](/reference/cli#error-codes) and
 [Finding codes](/reference/cli#finding-codes) list all of them in one place.
 
@@ -173,7 +174,7 @@ decktalk build --no-spend --allow CUE_UNKNOWN
 | Two elements claim one thing | [PAGE_SWAP_AMBIGUOUS](/reference/findings/PAGE_SWAP_AMBIGUOUS), [PAGE_PREVIEW_AMBIGUOUS](/reference/findings/PAGE_PREVIEW_AMBIGUOUS), [PAGE_SWAP_APART](/reference/findings/PAGE_SWAP_APART) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | A change reaches the picture and not the transcript | [PAGE_NO_DESCRIPTION](/reference/findings/PAGE_NO_DESCRIPTION), [PAGE_CLASS_UNDESCRIBED](/reference/findings/PAGE_CLASS_UNDESCRIBED), [PAGE_CLASS_NOT_REDUCED](/reference/findings/PAGE_CLASS_NOT_REDUCED) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | An equation shows its source, or an error where the maths should be | [PAGE_KATEX_MISSING](/reference/findings/PAGE_KATEX_MISSING), [PAGE_KATEX_ERROR](/reference/findings/PAGE_KATEX_ERROR) | [A page the contract refuses](#a-page-the-contract-refuses) |
-| A word-synced line, a count or a stagger has nothing to work on | [PAGE_WORDS_NOT_FOUND](/reference/findings/PAGE_WORDS_NOT_FOUND), [PAGE_STAGGER_EMPTY](/reference/findings/PAGE_STAGGER_EMPTY) | [A page the contract refuses](#a-page-the-contract-refuses) |
+| A word-synced line, a count, a stagger or a spotlight has nothing to work on | [PAGE_WORDS_NOT_FOUND](/reference/findings/PAGE_WORDS_NOT_FOUND), [PAGE_STAGGER_EMPTY](/reference/findings/PAGE_STAGGER_EMPTY), [PAGE_SPOTLIGHT_EMPTY](/reference/findings/PAGE_SPOTLIGHT_EMPTY) | [A page the contract refuses](#a-page-the-contract-refuses) |
 | The script is not ready for a voice to read it | [SCRIPT_UNFINISHED](/reference/findings/SCRIPT_UNFINISHED), [SCRIPT_SPOKEN_SYMBOL](/reference/findings/SCRIPT_SPOKEN_SYMBOL), [SCRIPT_PAUSE_DROPPED](/reference/findings/SCRIPT_PAUSE_DROPPED) | [A script that is not ready to be voiced](#a-script-that-is-not-ready-to-be-voiced) |
 | A section plays a placeholder because its take is not on disk | [TAKE_MISSING](/reference/findings/TAKE_MISSING) | [A take that is missing](#a-take-that-is-missing) |
 
@@ -190,8 +191,8 @@ fetches both the first time a command needs them and keeps them in a per-user ca
 
 **What to do.**
 
-1. Run `decktalk doctor`. It prints a row per component with its version and where it came from, and
-   it never fetches anything.
+1. Run `decktalk doctor`. It prints a row per component with its version and where it came from. On
+   a terminal it then offers once to fetch what is missing, and with `--no-input` it fetches nothing.
 2. Run `decktalk install`, or `decktalk doctor --fix`, which applies the safe `command` fix that
    each `FILE_MISSING` carries. Both fetch the toolchain up front rather than in the middle of a
    build.
@@ -263,8 +264,8 @@ the reason when it could not be reached.
 
 1. Read the status in the message. A 401 is a key ElevenLabs does not accept, and a 429 or a 5xx is
    ElevenLabs being busy, which a later run usually gets past.
-2. Run the same command again. The take index is written after every section, so the sections
-   already voiced are found on disk and the run pays only for the rest.
+2. Run the same command again. Each take is written to the takes directory as soon as it is voiced,
+   so the sections already voiced are found on disk and the run pays only for the rest.
 3. A key that is not set at all is not this code. It is an `INPUT` error naming
    `ELEVENLABS_API_KEY`, raised before any request is sent.
 
@@ -273,8 +274,8 @@ the reason when it could not be reached.
 **What you see.** `error[LOCKED]`, naming the process and the run that holds the directory, with the
 hint to wait for that run or stop it.
 
-One writing run at a time holds an operating system lock on `build/.lock`, and the file names the
-process id and the run id of the writer while it holds it. A second writing run is refused rather
+One writing run at a time holds an operating system lock on `build/.lock`. While it holds it,
+`build/.lock.owner` names its process id and its run id. A second writing run is refused rather
 than allowed to overwrite the first one's work.
 
 **What to do.**
@@ -283,8 +284,8 @@ than allowed to overwrite the first one's work.
 2. Let it finish, or stop it. The system releases the lock the moment the run ends, including when
    it is killed. The empty file stays in `build/`, and that is expected.
 3. A lock is never left behind by a process that is gone, because the lock belongs to the process
-   and not to the file. When a killed run left its name in the file, the next run takes the lock,
-   prints a warning saying so, and carries on. Deleting the file is never needed.
+   and not to the file. When a killed run left `build/.lock.owner` behind, the next run takes the
+   lock, prints a warning saying so, and carries on. Deleting the file is never needed.
 4. To read the project while a build is running, use `decktalk status` or
    `decktalk check --no-pages`. Neither writes, so neither takes the lock.
 
@@ -401,13 +402,13 @@ film.
 
 **Where the black usually comes from.** The recorder covers the page in magenta from its first paint
 until the section clock starts, and takes the first clean frame after that run of cover frames as
-t=0. When the scan finds no cover frames, the run falls back to the first painted frame plus the
+the start of the section clock. When the scan finds no cover frames, the run falls back to the first painted frame plus the
 settle, and failing that to `record.fallback_first_paint_seconds` plus the settle. It says so when it
 does:
 
 {/* sample: decktalk record --section 2 --force --set record.cover_min_chroma=255, on a starter after narrate --no-spend and cue, the warning line */}
 ```text
-Section 2 shows no cover, so narration t=0 is a guess at 1.434s (the first painted frame and the settle), and every reveal in the section moves with it.
+Section 2 shows no cover, so the start of the section clock is a guess at 1.434s (the first painted frame and the settle), and every reveal in the section moves with it.
 ```
 
 Treat that warning as the first thing to fix, because a guessed start moves every reveal in the
@@ -511,7 +512,7 @@ on it. [Sound](/concepts/sound#loudness) says exactly when `MIX_LOUDNESS` is rai
 
    {/* sample: decktalk build --no-spend, on a fresh decktalk init my-lesson, the assemble line */}
    ```text
-   The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
+   The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
    ```
 
    Judge loudness on a voiced build.
@@ -571,7 +572,8 @@ and the fix is the one above: put the file beside the page.
 
 ## A page the contract refuses
 
-These come out whenever `record` or `check` opens the page. Most of them the page reports about
+These come out when `check` opens the page, and all but `PAGE_NO_DESCRIPTION` and
+`PAGE_SWAP_APART` also when `record` does. Most of them the page reports about
 itself, through the probe, and the rest DeckTalk reads off the catalog the page published. All of
 them are about markup rather than about timing, so all of them can be cleared before a single credit
 is spent. One of them, `PAGE_SWAP_APART`, is a warning, and the rest are errors because the
@@ -592,6 +594,7 @@ contract either declares a thing or it does not.
 | [PAGE_SWAP_AMBIGUOUS](/reference/findings/PAGE_SWAP_AMBIGUOUS) | Give the arriving element and the one it replaces a cue they share. |
 | [PAGE_PREVIEW_AMBIGUOUS](/reference/findings/PAGE_PREVIEW_AMBIGUOUS) | Give the two sections different scenes. |
 | [PAGE_STAGGER_EMPTY](/reference/findings/PAGE_STAGGER_EMPTY) | Give the container children, or take `data-stagger` off it. |
+| [PAGE_SPOTLIGHT_EMPTY](/reference/findings/PAGE_SPOTLIGHT_EMPTY) | Give a child of the container a cue, or take `data-spotlight` off it. |
 | [PAGE_WORDS_NOT_FOUND](/reference/findings/PAGE_WORDS_NOT_FOUND) | Make the element's text words the script really speaks in that section. |
 | [PAGE_KATEX_MISSING](/reference/findings/PAGE_KATEX_MISSING) | Link `/__decktalk/katex/katex.min.css` and `/__decktalk/katex/katex.min.js`, which DeckTalk serves on the page's origin. |
 | [PAGE_KATEX_ERROR](/reference/findings/PAGE_KATEX_ERROR) | Correct the TeX the message quotes. The element's own text is the fallback a reader sees meanwhile. |
@@ -622,7 +625,7 @@ separated by a vertical bar, and the transcript prints it.
 
 | Code | Severity | The change that clears it |
 |---|---|---|
-| [SCRIPT_UNFINISHED](/reference/findings/SCRIPT_UNFINISHED) | error | Replace the placeholder on the line the message names with the words you mean. |
+| [SCRIPT_UNFINISHED](/reference/findings/SCRIPT_UNFINISHED) | error | Fill in the unfinished text on the line the message names with the words you mean. |
 | [SCRIPT_SPOKEN_SYMBOL](/reference/findings/SCRIPT_SPOKEN_SYMBOL) | warning | Write the symbol out as the voice must say it. |
 | [SCRIPT_PAUSE_DROPPED](/reference/findings/SCRIPT_PAUSE_DROPPED) | error | Set `[elevenlabs] model` to one that renders `[pause N]`, such as `eleven_multilingual_v2`, or take the timed pauses out of the section. |
 
@@ -630,10 +633,9 @@ All three come from `decktalk check` reading `script.md`, so all three are free 
 three are found before a credit is spent. This is the cheapest check there is, and running it in a
 commit hook with `--no-pages` costs nothing.
 
-Run it before you voice anything, because `narrate` refuses on the same condition. A run that has
-already paid cannot take the money back, so a script the voice must not receive is refused rather
-than read out. `check` reports every such line at once with its line number, where `narrate` stops
-on the first.
+Run it before you voice anything. `narrate` refuses a comment, a brace or a bracket inside a
+paragraph, and it lists every such line at once. It does not refuse an unfilled blank such as
+`[NUMBER]`, so a voiced run reads it out. Only `check` reports that.
 
 `SCRIPT_SPOKEN_SYMBOL` is a warning because sometimes you do mean the symbol. Write out what the voice
 must say, and [Writing for the ear](/guides/writing-for-the-ear) is the guide for it.
@@ -647,14 +649,14 @@ models.
 
 | Code | Severity | The change that clears it |
 |---|---|---|
-| [TAKE_MISSING](/reference/findings/TAKE_MISSING) | warning | Run the command the message names, `decktalk narrate --section N --spend`, to buy the take. |
+| [TAKE_MISSING](/reference/findings/TAKE_MISSING) | warning | Run the command the message names. For a provider that bills it is `decktalk narrate --section N --spend`. For a free provider that could not be reached, start its server, then run `decktalk narrate --section N`. |
 
 A run with `--no-spend` plays every take on disk and puts a placeholder in each section whose take is
 missing, which is one `TAKE_MISSING` per section. It is a warning because the film is still whole and
 only that section's timing is estimated, so a draft build exits 0. Pass `--fail-on warning` to make a
 missing take fail a run.
 
-A take is found by its text, its voice and its voice settings, so a section reports it after any of
+A take is found by its text, its voice, its model and its voice settings, so a section reports it after any of
 those changed, and on a fresh clone whose takes were never committed. Without a voice id no voiced take
 can be matched at all, and the run says so in one line before the findings. Set `[voice] id` in
 `decktalk.toml`, which is a published name rather than a secret and is committed with the project,

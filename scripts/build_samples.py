@@ -61,7 +61,7 @@ WORD_SECONDS = 1 / 3
 """Calibration: the fake voice reads three words a second, near a person reading aloud."""
 
 TONE_HZ = 220
-"""Calibration: the fake voice's tone, low enough that nobody mistakes the take for a click track."""
+"""Calibration: the fake voice's tone, low enough that nobody mistakes the take for a placeholder."""
 
 KEPT_VARIABLES = (BY_ID["tools.cache_dir"].environment,)
 """The only DeckTalk variables a run keeps from this process: where the fetched tools are."""
@@ -186,7 +186,7 @@ def fake_voice(environ: dict[str, str], scratch: Path) -> Iterator[str]:
 def environment(scratch: Path) -> dict[str, str]:
     """What every run sees: this process's environment with no DeckTalk variable but the tools' cache.
 
-    That leaves out the voice key, the voice id and any machine file, so the run is a fresh
+    That leaves out the API key, the voice id and any machine file, so the run is a fresh
     machine's, and its take store is a folder of its own rather than this user's.
     """
     kept = {name: value for name, value in os.environ.items() if not name.startswith("DECKTALK_")}

@@ -252,7 +252,7 @@ function parseCues(raw: string): { id: string; at: number }[] {
     .sort((a, b) => a.at - b.at);
 }
 
-/** `?words=` as `narrate` wrote it, which is every spoken word and the second the voice reaches it. */
+/** `?words=` as the recorder writes it, which is every spoken word and the second the voice reaches it. */
 function parseWords(raw: string): Spoken[] {
   return raw
     .split(LIST_SEPARATOR)
@@ -402,7 +402,7 @@ function index(note?: string): void {
   div.appendChild(heading(title, note));
   for (const scene of all().values()) {
     const head = document.createElement("h2");
-    head.textContent = `Scene ${scene.id} — ${scene.name} `;
+    head.textContent = `Scene ${scene.id}: ${scene.name} `;
     head.appendChild(link(`?${SCENE}=${encodeURIComponent(scene.id)}`, "▶ play"));
     div.appendChild(head);
     const row = document.createElement("div");

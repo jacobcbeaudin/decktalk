@@ -44,7 +44,7 @@ from decktalk.media.origin import page_url
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import SECOND_DIGITS, Q
 from decktalk.pagescan import scene_entry, slide_cues
-from decktalk.results import SectionKind, Word, section_key
+from decktalk.results import SectionKind, Substitute, Word, section_key
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
 from decktalk.stages.assemble.mix import effect_second
 from decktalk.stages.storyboard import open_project_page
@@ -248,9 +248,8 @@ def described_cues(inputs: Inputs, section: int, at: float) -> tuple[tuple[float
     The page records its own description beside each cue it ran, so a reveal a viewer cannot see is
     written down in the words its author chose rather than as a cue id.
 
-    The rows sort on the second alone. Sorting on the sentence as well broke a tie on its first
-    letter, which printed a step back before the arrival it belongs to, and the runtime now composes
-    one sentence per cue in document order, so the order the page gave them in is already right.
+    The rows sort on the second alone, and the sort is stable, so cues that share a second keep the
+    order the runtime wrote them in, which is one sentence per cue in document order.
     """
     log = inputs.recording_log(section_key(section))
     if log is None:
@@ -282,7 +281,7 @@ def clip_speech(inputs: Inputs, section: int) -> str:
 def placement_note(placement: Placement) -> str:
     """What plays in a section that spoke nothing, in one sentence, or nothing when it spoke."""
     if placement.substitute is not None:
-        return f"A placeholder {placement.substitute.value} frame plays here."
+        return "A slate plays here." if placement.substitute is Substitute.SLATE else "A black frame plays here."
     return f"A clip plays here: {placement.source.as_posix()}." if placement.kind is SectionKind.CLIP else ""
 
 
@@ -315,7 +314,7 @@ def poster_query(catalog: tuple[MeasuredScene, ...], section: PageSection) -> di
     """The freeze query for a section's opening slide with every one of its reveals already fired.
 
     A poster is the one picture that has to stand for the film, and a cue-driven slide before its
-    first cue is an empty stage, so the slide is frozen in the state it ends in.
+    first cue is an empty canvas, so the slide is frozen in the state it ends in.
     """
     slides = slide_cues(scene_entry(catalog, section.scene))
     return None if not slides else {Q.FREEZE: next(iter(slides))}

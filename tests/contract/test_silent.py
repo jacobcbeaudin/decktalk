@@ -11,7 +11,7 @@ comment on the `except` line or the first line inside it.
 
 A child process is started in exactly three places, each of which traces its command, its exit
 code, its time and its output: `ffmpeg._spawn`, `chromium_fetch.fetch_chromium` and
-`machine._run_command`. A call that starts one anywhere else fails here.
+`machine.fixes._run_command`. A call that starts one anywhere else fails here.
 """
 
 from __future__ import annotations

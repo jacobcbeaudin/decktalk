@@ -1,13 +1,13 @@
 ---
 title: The recorder covers the page in magenta
-description: How the recorder finds narration t=0 in a recording, by covering the page in magenta until the clock starts.
+description: How the recorder finds the start of the section clock in a recording, by covering the page in magenta until the clock starts.
 ---
 
 ## Decision
 
 `decktalk-probe.js` covers the whole viewport in magenta from the page's first paint until the
 section clock starts, and the recorder reads the first clean frame after that run of covered
-frames as narration t=0. The cover carries a keep-alive, a two pixel square in a corner that turns
+frames as the start of the section clock. The cover carries a keep-alive, a two pixel square in a corner that turns
 for the whole recording and outlives the cover itself.
 
 The probe is the recorder's instrument and never a tag in a deck. It is added as an init script, so

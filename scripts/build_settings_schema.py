@@ -134,7 +134,8 @@ def document_table(name: str) -> dict[str, Any]:
     """One table that is project content, declared so the top level can be closed without owning its keys.
 
     The document parser owns what is inside, so the schema names the table and leaves it open. The
-    closure that matters is at the top level, where an unknown table passes silently today.
+    closure that matters is at the top level, where an editor bound to the schema flags an unknown
+    table that the loader would refuse.
     """
     body: dict[str, Any] = {
         "type": "object",

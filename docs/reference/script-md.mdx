@@ -212,7 +212,7 @@ stopping on the first, and prices what a voiced run would cost. Three codes cove
 | `SCRIPT_PAUSE_DROPPED` | error | One section holds a `[pause N]` and the model in the voice provider's own table, such as `[elevenlabs] model`, renders no timed pause, which on ElevenLabs is every model outside its v2 family, v3 and v4 among them. One finding is raised per section, and `narrate` refuses to buy the take. |
 | `SCRIPT_SPOKEN_SYMBOL` | warning | One section speaks a word holding a digit or one of the currency signs for dollar, euro and pound, or one of `%`, `&`, `@`, `#`, `*`, `/`, `+`, `=`, `<`, `>`, `~`, `^` and the vertical bar. One finding is raised per section, naming the first five such words. |
 
-{/* sample: decktalk check --no-pages, starter with [IDEA] added to section 3 */}
+{/* sample: decktalk check --no-pages, starter with [IDEA] added to section 3, the finding line and the count */}
 
 ```text
 script.md:29: SCRIPT_UNFINISHED script.md line 29 holds something a voiced run would read out or swallow, which is that [IDEA] is still open, so a voiced run would read 'IDEA' out.

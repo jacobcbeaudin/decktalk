@@ -1,6 +1,6 @@
 /*! The section clock and the queue of everything the page has still to do.
  *
- * Every second a DeckTalk page reasons in is a second after narration t=0, which is the frame the
+ * Every second a DeckTalk page reasons in is a second on the section clock, whose start is the frame the
  * recorder's cover came off or the moment a preview started. This module owns that origin, the
  * queue of work sorted by the second it is due, and the one animation frame loop that drains it.
  *
@@ -32,7 +32,7 @@ export type Task = {
 const MOUNT_FIRST = 0;
 const AFTER_THE_MOUNT = 1;
 
-/** The narration origin in `performance.now()` milliseconds, or null while the clock has not started. */
+/** The section clock's origin in `performance.now()` milliseconds, or null while the clock has not started. */
 let origin: number | null = null;
 
 /** The `performance.now()` stamp of the animation frame the queue last ran in, which stamps every cue. */

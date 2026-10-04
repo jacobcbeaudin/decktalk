@@ -29,7 +29,7 @@ DIGEST = "00000000000000af"
 """The voiced take every test here keeps, voices or finds."""
 
 PLACEHOLDER = f"{PLACEHOLDER_PREFIX}00000000000000af"
-"""A placeholder's digest, which names a click track under the build and never a voiced take."""
+"""A placeholder's digest, which names a placeholder under the build and never a voiced take."""
 
 WAIT = 10.0
 """How long a run here waits on another's voicing, which no test reaches unless it says so."""

@@ -1,6 +1,7 @@
 """The words of one take, which is the time base every other artifact is measured against.
 
-    takes/<digest>.words.json   one row per spoken word, in seconds after the take starts
+    takes/<digest>.words.json          one row per spoken word of a voiced take, in seconds after the take starts
+    build/narrate/<digest>.words.json  the same for a placeholder, with estimated words
 
 Every cut DeckTalk makes is made on a word, so this is the smallest artifact and the one every
 other reads: a cue resolves against it, the captions are built from it, and the clicks of a
@@ -21,9 +22,9 @@ keeps a valid name forever, and only this fingerprint tells a damaged copy from 
 file with no fingerprint is read as it is and never filled in, because that would rewrite a paid
 record. A clip's
 words file is the author's own input once a `[[section]] words` key names it, so `Inputs.clip_words`
-refuses one that does not read as `INPUT`, naming that key, and never asks for it to be deleted. Words
-DeckTalk can time again for nothing, such as an aligner reading a take's audio, are a cache of their
-own kind, kept under a key of their own and never at a take's `<digest>.words.json`. A copy moved onto a
+refuses one that does not read as `INPUT`, naming that key, and never asks for it to be deleted. Aligned
+words under the takes directory's `aligned/` are read by no stage and never stand in for a take's
+`<digest>.words.json`. A copy moved onto a
 section's clock is made by `on_section_clock` and is a reading, which no writer puts on disk.
 """
 

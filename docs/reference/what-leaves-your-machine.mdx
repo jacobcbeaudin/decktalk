@@ -18,27 +18,31 @@ browser unless the machine sets `record.page_policy = "untrusted"`.
 ## Requests that carry your content
 
 These requests carry text from your project. Every one of them is made only by a command you run on
-purpose, and every one of them needs an API key that you supply.
+purpose. Every one sent to a cloud service needs an API key that you supply, and the local voice
+needs none.
 
 | Host | Request | Sent by | What DeckTalk sends |
 |---|---|---|---|
 | api.elevenlabs.io | Narration | `decktalk narrate`, and `decktalk build` on a voiced run | The section's spoken text, the voice id, the model name and the audio format, together with up to `narration.context_characters` characters of the previous section and up to the same of the next section as speaking context. The default is 1500 characters, and `narration.context_characters = 0` keeps the neighbouring sections on your machine. |
-| api.elevenlabs.io | Sound effects and ambience | `decktalk score` | The prompt string written in the `[score.ambience]` or a `[score.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
-| api.elevenlabs.io | Music | `decktalk score` | The prompt string written in the `[score.music]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
+| 127.0.0.1:8765 | Narration by the local voice | `decktalk narrate` and `decktalk build`, when `[voice] provider = "dtsp"` | The section's spoken text, the voice id, the model name, the speed and the audio format. |
+| api.elevenlabs.io | Sound effects and ambience | `decktalk score`, and `decktalk build` when it may spend | The prompt string written in the `[score.ambience]` or a `[score.effects.<name>]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
+| api.elevenlabs.io | Music | `decktalk score`, and `decktalk build` when it may spend | The prompt string written in the `[score.music]` table, the length you asked for and the audio format. No part of `script.md` is sent. |
 
 **Narration to `api.elevenlabs.io`.** The request carries the value of `ELEVENLABS_API_KEY` in a header, to the host `[elevenlabs] base_url` names. Only this machine's own file, environment or `--set` can name it, and a project file that sets it is refused, because the key goes wherever it points. Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-spend` sends nothing at all.
 
+**Narration by the local voice to `127.0.0.1:8765`.** No key is sent. The host is the one `[dtsp] base_url` names, `127.0.0.1:8765` by default, and only this machine's own file, environment or `--set` can name another. A project file that sets it is refused. The local voice bills nothing, so a run with `--no-spend` still sends the text. At the default address the text never leaves the machine.
+
 **Sound effects and ambience to `api.elevenlabs.io`.** The request carries the value of `ELEVENLABS_API_KEY` in a header. The prompt is text you wrote in `decktalk.toml`, so you decide what it describes.
 
-**Music to `api.elevenlabs.io`.** The request carries the value of `ELEVENLABS_API_KEY` in a header. The music file is generated once and then reused from `build/`.
+**Music to `api.elevenlabs.io`.** The request carries the value of `ELEVENLABS_API_KEY` in a header. Each part of the music is bought once into the score directory, `score/` unless `[score] dir` names another, and the ledger there keeps it from being bought again. Deleting `build/` sends nothing.
 
 ### Reading a request before you make it
 
 `decktalk check --json` prices the narration of a voiced run with no API key and no request. Its `cost` object
 reports the sections a voiced run would pay for, their character count, the price per thousand
 characters and the layer that set it, so a reviewer can read exactly what would be sent before
-anything is sent. `decktalk build` stops at the same point and names the price before it spends a
-credit, and `--max-cost N` refuses the whole run before the first call when the ceiling is above N.
+anything is sent. `decktalk build` stops at the same point and names the price before it buys
+anything, and `--max-cost N` refuses the whole run before the first call when the ceiling is above N.
 
 Set `narration.context_characters = 0` when the neighbouring sections must stay on the machine. Each
 section is then sent on its own, with no surrounding text.

@@ -16,7 +16,7 @@ import build_measured
 from decktalk.results import TakeOutcome
 
 RUN: dict[str, Any] = {
-    "what": "the starter `decktalk init` writes, built with the placeholder voice",
+    "what": "the starter `decktalk init` writes, built with placeholders",
     "command": "uv run python scripts/measure.py",
     "commit": "0123456789abcdef0123456789abcdef01234567",
     "source_changed": False,
@@ -100,7 +100,7 @@ def test_reveals_past_the_limit_are_named_on_the_page_and_in_the_readme() -> Non
     data = copy.deepcopy(DATA)
     data["landing"][0] |= {"worst_ms": 83.0, "over_limit": 2}
     assert "| 2 |" in build_measured.page(data)
-    assert "2 of 6 reveals landed past the limit" in build_measured.readme_block(data)
+    assert "2 of 6 reveals landed past 80 ms alone." in build_measured.readme_block(data)
 
 
 def test_a_recount_that_differs_between_repeats_is_shown_as_a_range() -> None:

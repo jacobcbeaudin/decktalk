@@ -7,8 +7,9 @@
 
 The order is fixed. Each section is cut to its span and the sections are joined with no gaps. The
 soundtrack is mixed over a silent anchor of the picture's length. The mix is normalized to the EBU
-R128 target unless the narration is a placeholder, whose clicks the a/v check listens for. Then
-everything a viewer receives is written, and the finished film is renamed into place in one step.
+R128 target unless any take is a placeholder, whose clicks the a/v check listens for, or the run
+asks for no loudness pass. Then the captions, the chapters, the placements and the transcript are
+written, the finished film is renamed into place in one step, and the poster is drawn last.
 """
 
 from __future__ import annotations
@@ -133,9 +134,9 @@ def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *,
     been through AAC twice.
     """
     if takes.estimated or not loudness:
-        # A placeholder narration is clicks and silence, and normalizing them would move the clicks
-        # the a/v check listens for, so the pass is skipped and the result reports no loudness.
-        why = "the narration is a placeholder" if takes.estimated else "the run asked for no loudness pass"
+        # A placeholder take is clicks and silence, and normalizing a narration that holds one would move
+        # the clicks the a/v check listens for, so the pass is skipped and the result reports no loudness.
+        why = "a take is a placeholder" if takes.estimated else "the run asked for no loudness pass"
         run.note(f"The loudness pass is skipped because {why}, so the soundtrack is encoded as it was mixed.")
         encode_soundtrack(inputs, mixed, work)
         return None

@@ -12,25 +12,26 @@ retitling one moves no file and voices nothing, and two sections with the same w
 Every take a voice spoke lives in the takes directory, `[narration] takes_dir`, which is `takes/`
 inside the project and which the author commits, so a fresh clone plays them with no key and
 deleting `build/` costs nothing. A take is looked for there first and then in the machine's
-`[narration] store_dir`, and one found in the second place is copied into the first. A placeholder,
-the take index and the joined track stay under `build/narrate/`, because a build makes them again
-for nothing.
+`[narration] store_dir`, and one found in the second place is copied into the first, for every section
+the narration plays whether or not the run selected it, so the narration is joined from the takes
+directory alone. A placeholder, the take index and the joined track stay under `build/narrate/`,
+because a build makes them again for nothing.
 
-Every take on disk is played, paid or placeholder, and the voice is built only when a take must be
+Every take on disk is played, voiced or placeholder, and the voice is built only when a take must be
 made, so a run that makes nothing reads no key. Spend gates money and nothing else. A voice that
-declares it bills nothing makes every missing take whether or not the run may spend, and a run that
-may not spend never calls a voice that bills. Such a run plays a placeholder for each section whose
-take is missing: a click track sized at `placeholder_words_per_minute` plus the declared pauses, with
-evenly spaced estimated words, so the whole pipeline runs offline. Each such section is one
-`TAKE_MISSING` finding, which says why its take did not play in the words the plan found, and names
-the command that buys it. A takes directory holding none of the takes the project played before is
-said as that, because a renamed or missing folder is not a script edit. A project that has paid for
-eight sections therefore builds its film with no key, and rehearses its ninth for nothing. A free
-voice that nothing answers is a server that is not running, so its sections play placeholders too,
-and their findings say to start it rather than to buy anything.
+declares it bills nothing, once it is named, makes every missing take whether or not the run may
+spend, and a run that may not spend never calls a voice that bills. Such a run plays a placeholder
+for each section whose take is missing: click audio sized at `placeholder_words_per_minute` plus the
+declared pauses, with evenly spaced estimated words, so the whole pipeline runs offline. Each such
+section is one `TAKE_MISSING` finding, which says why its take did not play in the words the plan
+found, and names the command that buys it. A takes directory holding none of the takes the project
+played before is said as that, because a renamed or missing folder is not a script edit. A project
+that has paid for eight sections therefore builds its film with no key, and rehearses its ninth for
+nothing. A free voice that nothing answers is a server that is not running, so its sections play
+placeholders too, and their findings say to start it rather than to buy anything.
 
 `TAKE_MISSING` is the one judgement this stage makes. What a script says badly is `check`'s to
-report, because a judgement belongs where an author can act on it before any credit is spent, and
+report, because a judgement belongs where an author can act on it before anything is bought, and
 what the voice must not receive at all is refused here before a single request is sent.
 """
 
@@ -105,11 +106,11 @@ def narrate(
     """Speak every targeted section of the script, and time every word in it.
 
     Whether the run may buy is the run's own and never a parameter here, so one gate decides it for
-    the library, the command line and a service alike. A run that may buy, or whose voice bills
-    nothing, makes each missing take, and nothing is sent until `run.approve` has seen the price. One
+    the library, the command line and a service alike. A run that may buy, or whose named voice
+    bills nothing, makes each missing take, and nothing is sent until `run.approve` has seen the price. One
     that may not buy from a voice that bills plays every take on disk, and a placeholder with a
     `TAKE_MISSING` finding for each take that is missing. `force` makes each placeholder again and
-    never buys a take, and `replace_voiced` is the one way a take on disk is made again. The voice is
+    never buys a take, and `replace_voiced` is the one way a voiced take on disk is made again. The voice is
     built only once a take must be made, and the index is written again after every take, so a run
     that is stopped keeps everything it has already paid for.
     """
@@ -122,16 +123,17 @@ def narrate(
     previous = inputs.takes()
     if not plan.voiced and not inputs.voice.id and previous is not None and previous.voiced_sections:
         # Voiced takes are on disk and cannot be matched without the voice, so the run says why once. A
-        # project that never bought a take has nothing to match.
+        # project with no voiced take has nothing to match.
         run.note(NO_VOICE_NOTE)
     if any(take.outcome is TakeOutcome.VOICED and take.digest is None for take in plan.takes):
-        # A purchase needs the voice named, so this raises the refusal that says where to name it.
+        # A voiced take needs the voice named, so this raises the refusal that says where to name it.
         voice_id_of(inputs)
     missing = [
         _take_missing(inputs, take.section, take.reason, takes_dir_gone=states[take.section.number].takes_dir_gone)
         for take in plan.takes
         if take.digest is not None and is_placeholder(take.digest)
     ]
+    _keep_unselected(inputs, run, previous, targets)
     provider: SpeechProvider | None = None
     sending = [take.section for take in plan.takes if take.outcome is TakeOutcome.VOICED]
     if sending:
@@ -414,6 +416,22 @@ def _stand_in(inputs: Inputs, run: Run, plan: TakePlan, chapter: str) -> tuple[T
     stand_in = replace(plan, outcome=outcome, digest=digest, request=None, buy=None)
     row, _kept = _one_take(inputs, run, stand_in, chapter, None, None)
     return row, TakeOutcome.PLACEHOLDER
+
+
+def _keep_unselected(inputs: Inputs, run: Run, previous: Takes | None, targets: Sequence[ScriptSection]) -> None:
+    """Keep every take a section this run did not select plays into the takes directory, before anything is bought.
+
+    The narration is joined from the takes directory alone, so a take only the take store holds is
+    copied in, a take whose every copy is damaged is refused naming its section, and a take no place
+    holds is left for the join to report. Keeping never buys, so a run that does not spend keeps too.
+    """
+    if previous is None:
+        return
+    selected = {section.number for section in targets}
+    spoken = {section.number for section in inputs.spoken()}
+    for row in previous.sections:
+        if row.section in spoken and row.section not in selected:
+            inputs.take_places.keep(row.digest, run, section=row.section)
 
 
 def _placed(inputs: Inputs, rows: dict[int, Take], touched: set[int]) -> dict[int, Take]:

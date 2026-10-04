@@ -9,8 +9,8 @@ for that section again. An edit that changes only the picture pays nothing and r
 | --- | --- | --- | --- |
 | A word in a section's spoken text | That section | That section | The whole section's text is the unit, so a one-word change costs the section |
 | A bracketed direction inside a paragraph | That section | That section | A bracket changes the text that is sent |
-| An HTML comment in the script | That section | That section | The comment is sent to the voice, so remove it |
-| A section heading's title | Nothing | Nothing | The heading names the take file and the chapter, not the spoken text |
+| An HTML comment in the script | That section | That section | `narrate` refuses a comment in the spoken text, because the voice would read it out, so remove it |
+| A section heading's title | Nothing | Nothing | The take is named by the spoken text, not the heading. The heading names the chapter when the project file names none |
 | A section's chapter in the project file | Nothing | Nothing | It names the chapter and the slate |
 | A slide, a style or an image on a page | Nothing | Every section that plays that page | A page change is free and still needs the picture again |
 | A cue phrase | Nothing | That section | The reveal moves, so the recording moves |

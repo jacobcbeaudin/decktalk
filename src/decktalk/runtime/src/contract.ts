@@ -2,9 +2,10 @@
  * URL and a report are spelled with.
  *
  * An element on a slide has four moments and one value type. It arrives, it steps back, it comes to
- * the front, and it leaves, and each of those is the local name of a cue. Everything else is either
+ * the front, and it leaves, and each of those is the cue name of a cue. Everything else is either
  * how a moment looks, which is a closed word this file owns, or what a moment means, which is a
- * sentence for the transcript. Seconds are never written on the page, because cues.json owns them.
+ * sentence for the transcript. A cue's second is never written on the page, because the cue stage
+ * resolves it from the phrase `cues.json` pairs with it.
  *
  * This module is the one home of that grammar. Every other runtime module reads its attribute names
  * from here rather than spelling a "data-" literal of its own, `scripts/build_runtime.py` prints
@@ -567,7 +568,7 @@ export type Attr = keyof typeof ATTRS;
  * An attribute survives when its value can change the verdict of some check or be named by some
  * finding. These five carry text a person wrote, or a preview length nothing records, so no
  * value of them can change a verdict. The list is closed and a test counts it, because an open field
- * saying what a row affects would readmit every attribute the panel cut.
+ * saying what a row affects would admit an attribute whose value changes no verdict.
  */
 export const EXEMPT = {
   "data-describe": "Any description clears the finding, so no value of it can change a verdict.",
@@ -585,7 +586,7 @@ export const QUERY = {
   freeze: "Freeze this slide with its cues already fired, which is what a screenshot opens.",
   cues: "The cue times to fire at, as id@seconds pairs separated by a comma.",
   words: "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
-  t0: "The narration second the page starts at, or the word signal when the recorder starts the clock.",
+  t0: "The second on the section clock the page starts at, or the word signal when the recorder starts the clock.",
   speed: "Multiply the preview clock, so a long section is reviewed quickly.",
   hud: "Draw the on-page clock and cue list, which is for an author and never for a recording.",
   after: "Freeze after this cue, so the cues up to and including it fire and later ones stay hidden.",
@@ -614,7 +615,7 @@ export type ReportField = keyof typeof REPORT;
 
 // ---- the derived views every other module reads -------------------------------------------------
 
-/** Every attribute whose value is the local name of a cue, which is what puts a moment in the cue order. */
+/** Every attribute whose value is a cue name, which is what puts a moment in the cue order. */
 export const MOMENTS: readonly Attr[] = Object.keys(ATTRS).filter(
   (name) => ATTRS[name as Attr].kind === "moment",
 ) as Attr[];
@@ -626,7 +627,7 @@ export const MOMENT_SELECTOR = MOMENTS.map((name) => `[${name}]`).join(",");
 export const PAIR_SEPARATOR = "|";
 export const PAIR_MARK = ":";
 
-/** The separator between a slide id and a local moment name in the cue id that cues.json carries. */
+/** The separator between a slide id and a cue name in the cue id that cues.json carries. */
 export const CUE_MARK = ":";
 
 /** What joins a cue's cue id, or a spoken word, to its second in `?cues=` and `?words=`. */
@@ -671,13 +672,13 @@ export const RUNTIME_MARK = "decktalk-runtime";
 
 // ---- the pure readers -----------------------------------------------------------------------
 
-/** The cue id of a local moment, which is the slide it was written in and the name the author wrote. */
+/** The cue id of a cue name, which is the slide it was written in and the name the author wrote. */
 export function cueId(slide: string, local: string): string {
   return `${slide}${CUE_MARK}${local}`;
 }
 
 /**
- * The local cue name and the value of each pair in a `data-class` or a `data-describe-class` value.
+ * The cue name and the value of each pair in a `data-class` or a `data-describe-class` value.
  *
  * A pair with no mark, an empty cue or an empty value is dropped rather than guessed at, because
  * a half-written pair is a spelling mistake and `PAGE_CLASS_UNDESCRIBED` is the code that names it.
@@ -743,7 +744,7 @@ export function measurable(span: number): boolean {
 }
 
 /**
- * A declared span under a reduced-motion render, clamped so no scaled span passes the playable span.
+ * A declared span under `motion.scale`, clamped so no scaled span passes the playable span.
  *
  * The scale multiplies the declared span as well as the duration, so a project that slows its motion
  * down cannot slow it past the point where its own cues stop being measurable. Every span the

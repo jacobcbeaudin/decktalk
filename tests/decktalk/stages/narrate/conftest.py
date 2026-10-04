@@ -1,7 +1,8 @@
 """A small project, a run that records its own stream, and the shapes the narrate tests share.
 
-Every test here runs the real stage. What it must not run is a paid voice or ffmpeg, and both are
-faked at the seam the stage imports, by `fake_voice` and `fake_ffmpeg` in the suite's own conftest.
+Every test here runs the real stage. What it must not run is a provider that bills or ffmpeg, so
+`fake_voice` registers a voice in the table the test's runs are opened with and `fake_ffmpeg`
+replaces the seam the stage imports, both in the suite's own conftest.
 The run is a real `Run` on a machine with nothing on it but an event stream, because a stage reports
 through the run and a test that replaced the run would measure a fake instead of the stage.
 """

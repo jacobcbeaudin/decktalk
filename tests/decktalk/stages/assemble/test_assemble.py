@@ -114,7 +114,7 @@ def test_a_placeholder_narration_is_never_normalized(tmp_path, monkeypatch):  # 
     result = assemble(inputs, opened.run)
     assert called == []
     assert result.loudness is None
-    assert any("the narration is a placeholder" in note for note in opened.notes())
+    assert any("a take is a placeholder" in note for note in opened.notes())
 
 
 def test_a_film_that_stood_a_frame_in_for_a_missing_file_is_not_ok(tmp_path, monkeypatch):  # fmt: skip

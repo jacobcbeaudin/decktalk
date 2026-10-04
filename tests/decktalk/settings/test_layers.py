@@ -257,6 +257,36 @@ class TestTheOverrideLayer:
             load(machine={}, project={}, environ={}, overrides=("verify.onset_rise_points=20",))
 
 
+RATE = "elevenlabs.dollars_per_1000_characters"
+"""A float key with a range, which a number that is not finite compares false against at both ends."""
+
+
+class TestANumberThatIsNotFinite:
+    """Every float key refuses NaN and infinity, by the key and the layer that wrote it, whatever its range."""
+
+    def test_nan_written_in_the_project_file_is_refused_naming_the_file(self, tmp_path: Path) -> None:
+        (tmp_path / "decktalk.toml").write_text("[elevenlabs]\ndollars_per_1000_characters = nan\n", encoding="utf-8")
+        with pytest.raises(InputError, match=rf"^{RATE}: must be a finite number, got nan in decktalk\.toml\.$"):
+            load(tmp_path, machine={}, environ={})
+
+    def test_nan_in_the_environment_is_refused_naming_the_variable(self) -> None:
+        variable = BY_ID[RATE].environment
+        with pytest.raises(InputError, match=rf"^{RATE}: must be a finite number, got nan in {variable}\.$"):
+            load(machine={}, project={}, environ={variable: "nan"})
+
+    def test_nan_in_an_override_is_refused_naming_the_override(self) -> None:
+        with pytest.raises(InputError, match=rf"^{RATE}: must be a finite number, got nan in --set {RATE}\.$"):
+            load(machine={}, project={}, environ={BY_ID[RATE].environment: "1"}, overrides=(f"{RATE}=nan",))
+
+    def test_infinity_is_refused_by_the_same_rule_rather_than_by_the_range(self) -> None:
+        with pytest.raises(InputError, match=r"must be a finite number, got inf in --set"):
+            load(machine={}, project={}, environ={}, overrides=(f"{RATE}=inf",))
+
+    def test_an_item_of_an_array_is_held_to_the_same_rule(self) -> None:
+        with pytest.raises(InputError, match=r"verify\.probe_delays_seconds: must be a finite number"):
+            load(machine={}, project={"verify": {"probe_delays_seconds": [0.5, float("nan")]}}, environ={})
+
+
 class TestCrossTableRelations:
     """A relation an editor cannot check is enforced by the loader, which is the only place it can be."""
 

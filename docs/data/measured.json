@@ -2,7 +2,7 @@
   "schema": 1,
   "runs": {
     "measure": {
-      "what": "the starter `decktalk init` writes, built with the placeholder voice",
+      "what": "the starter `decktalk init` writes, built with placeholders",
       "command": "uv run python scripts/measure.py",
       "commit": "b649b8089e5ec61ef453564771bfc069da656ebd",
       "source_changed": false,

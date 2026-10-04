@@ -45,8 +45,8 @@ def loop(
     origin = project.serve()
     session.say(f"Serving {origin.result.url}")
     session.say(
-        "Watching for saves. Nothing here spends: a free voice reads each change, and a take a voice bills for goes "
-        "stale rather than being bought again."
+        "Watching for saves. Nothing here spends: a free provider reads each change once a voice is named, "
+        "and a take a voice bills for goes stale rather than being bought again."
     )
     built = _once(session, project, skip=skip, only=only, force=force)
     seen = _stamps(project)

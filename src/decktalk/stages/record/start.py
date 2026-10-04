@@ -1,7 +1,7 @@
-"""Where narration t=0 sits in a recording.
+"""Where the section clock starts in a recording.
 
 The recorder covers the page in magenta from its first paint until it starts the section clock, so
-the first clean frame after the magenta run is narration t=0 no matter when Chromium's capture
+the first clean frame after the magenta run is where the section clock starts no matter when Chromium's capture
 actually began. Without a cover the fallback is the first painted frame plus the settle, and failing
 that a fixed guess, and both fallbacks say so, because a guessed start moves every reveal in the
 section.
@@ -43,7 +43,7 @@ def frame_seconds(rows: list[frames.FrameStats]) -> float:
 
 
 def find_start(webm: Path, settle: float, settings: RecordConfig) -> Start:
-    """Narration t=0 in `webm`, which is the frame after the last cover frame or the best estimate of it."""
+    """Where the section clock starts in `webm`: the frame after the last cover frame, or the best estimate of it."""
     rows = frames.frame_stats(webm, settings.cover_scan_seconds)
     if not rows:
         fallback = round(settings.fallback_first_paint_seconds + settle, SECOND_DIGITS)

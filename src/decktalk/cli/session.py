@@ -42,6 +42,30 @@ PLAYS = {
 """What a run that may not spend plays in place of what each stage that buys would buy, which a spend refusal names."""
 
 
+SETS_ASIDE = "This sets aside every voiced take it replaces."
+"""The warning a run told to replace voiced takes is asked under, because a replaced take may be bought again."""
+
+BUYS_AGAIN = "This buys every bought sound it replaces again."
+"""The warning a run told to replace bought sounds is asked under, because every one of them is bought again."""
+
+
+@dataclass(frozen=True)
+class Spending:
+    """What one run may buy and what it may set aside, settled by at most one question."""
+
+    spend: bool
+    """Whether the run may buy what is missing."""
+    replace_voiced: bool = False
+    """Whether the run sets aside the voiced takes it was told to replace."""
+    replace_score: bool = False
+    """Whether the run buys again the sounds it was told to replace, which only a run that may spend does."""
+
+
+def _warnings(replace_voiced: bool, replace_score: bool) -> list[str]:
+    """The warnings a question carries for what this run was told to replace, in the order the stages run."""
+    return [warning for warning, told in ((SETS_ASIDE, replace_voiced), (BUYS_AGAIN, replace_score)) if told]
+
+
 @dataclass(frozen=True)
 class Globals:
     """Every flag that works on every command, in force for this run."""
@@ -228,17 +252,53 @@ class Session:
         replace_voiced: bool = False,
         replace_score: bool = False,
         storyboard: bool = False,
-    ) -> bool:
-        """Whether this run of `stages` may buy what is missing, asked once before anything is bought.
+    ) -> Spending:
+        """What this run of `stages` may buy and set aside, with at most one question on a terminal.
+
+        The spend is settled by `_spend`. When that asks, its question carries the warning for each
+        thing the run was told to replace, and the one answer settles all of them. When it does not
+        ask, a run told to replace something asks the replace question alone on a terminal, with every
+        warning in it. A bought sound is only replaced by a run that may spend, so a run that may not
+        is asked nothing about it and keeps every one. Without a terminal the flag is the authorisation,
+        because a run told to replace was told so on purpose and the default without the flag keeps
+        everything.
+        """
+        spend, asked = self._spend(
+            project,
+            stages,
+            only=only,
+            replace_voiced=replace_voiced,
+            replace_score=replace_score,
+            storyboard=storyboard,
+        )
+        if asked:
+            return Spending(spend, replace_voiced=replace_voiced and spend, replace_score=replace_score and spend)
+        voiced, score = replace_voiced, replace_score and spend
+        if self.asks and (voiced or score):
+            agreed = self.confirm(" ".join([*_warnings(voiced, score), "Carry on?"]))
+            voiced, score = voiced and agreed, score and agreed
+        return Spending(spend, replace_voiced=voiced, replace_score=score)
+
+    def _spend(
+        self,
+        project: Project,
+        stages: Collection[Stage],
+        *,
+        only: Sequence[int] | None,
+        replace_voiced: bool,
+        replace_score: bool,
+        storyboard: bool,
+    ) -> tuple[bool, bool]:
+        """Whether this run of `stages` may buy what is missing, and whether a person was asked.
 
         `--spend` and `--no-spend` answer it outright. Unset, a run of no stage that buys buys nothing
         and is never priced. Any other is priced first by `Project.price`, the sum `build` itself holds
         the ceiling against. A run with nothing to buy is asked nothing and buys nothing, unless it was
         told to replace a voiced take or a bought sound, which buys it again.
-        `--force` never reaches here, because it rebuilds what is free and so buys nothing. A run
+        `--force` does not change the answer, because it rebuilds what is free and so buys nothing. A run
         whose voice declares itself free is asked nothing either, and is let buy, because buying from
-        it costs nothing. Spend gates money alone, so `--no-spend` still lets a free voice make its
-        takes. Otherwise, on a terminal the checkpoint is the storyboard and the price: the run
+        it costs nothing. Spend gates money alone, so `--no-spend` still lets a free provider make its
+        takes once a voice is named. Otherwise, on a terminal the checkpoint is the storyboard and the price: the run
         says what it will cost and where to look at what it is about to narrate, and then it asks.
         Without a terminal there is nobody to ask, so the run refuses and names the two flags that
         answer, and the refusal carries the price so that one call prices the run. Its hint says what
@@ -252,10 +312,10 @@ class Session:
         if self.spend is not None:
             if self.spend:
                 self._checkpoint(project, storyboard=storyboard)
-            return self.spend
+            return self.spend, False
         buying = [stage for stage in Stage.keyed_stages() if stage in stages]
         if not buying:
-            return False
+            return False, False
         try:
             priced, unpriced = (
                 project.price(stages=buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score),
@@ -265,14 +325,14 @@ class Session:
             priced, unpriced = None, refused
         if priced is not None and priced.free:
             self._checkpoint(project, storyboard=storyboard)
-            return True
+            return True, False
         if priced is not None and not priced.buys and not (replace_voiced or replace_score):
-            return False
+            return False, False
         if not self.asks:
             raise ApprovalRequired(_cost_sentence(priced, unpriced), hint=_spend_hint(self.command, buying))
         self._checkpoint(project, storyboard=storyboard)
         self.say(priced.sentence if priced is not None else _unpriced_sentence(unpriced))
-        return self.confirm("Spend that now?")
+        return self.confirm(" ".join([*_warnings(replace_voiced, replace_score), "Spend that now?"])), True
 
     def _checkpoint(self, project: Project, *, storyboard: bool) -> None:
         """Draw the storyboard this checkpoint points at, when it is one, and say where it is.
@@ -371,7 +431,7 @@ def _spend_hint(command: str, buying: Sequence[Stage]) -> str:
     The second says what `--no-spend` plays in place of what each stage that buys would buy.
     """
     plays = " and ".join(PLAYS[stage] for stage in buying)
-    return f"Run decktalk {command} --spend to approve that spend, or decktalk {command} --no-spend to play {plays}."
+    return f"Run decktalk {command} --spend to approve that cost, or decktalk {command} --no-spend to play {plays}."
 
 
 def of(ctx: Context) -> Session:

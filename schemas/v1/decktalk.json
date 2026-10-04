@@ -238,7 +238,7 @@
           "x-environment": "DECKTALK_NARRATION_TAIL_SECONDS"
         },
         "takes_dir": {
-          "description": "Directory inside the project that holds every take the film plays and the words its voice sent with each, which you commit so a fresh clone builds the film with no key. The take index stays under the build, because it is a cache built again from the takes. A take is looked for here first and in the machine's take store, `store_dir`, second, and a take this project buys or finds there is written here.",
+          "description": "Directory inside the project that holds every take the film plays and the words its voice sent with each, which you commit so a fresh clone builds the film with no key. The take index stays under the build, because it is a cache built again from the takes. A take is looked for here first and in the machine's take store, `store_dir`, second, and a take this project voices or finds there is written here.",
           "type": "string",
           "default": "takes",
           "pattern": "^.+$",
@@ -254,7 +254,7 @@
           "x-environment": "DECKTALK_NARRATION_TAKES_DIR"
         },
         "store_dir": {
-          "description": "The take store: a folder outside every project where this machine keeps a second copy of every take it buys and the words its voice sent with it, each named by its input digest. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a take nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS.",
+          "description": "The take store: a folder outside every project where this machine keeps a second copy of every voiced take it makes and its provider words, each named by its digest. A take is looked for here after `takes_dir`, and one found here is checked and copied into `takes_dir`, so a deck with the same words as another plays it without buying it, and a take nobody committed yet survives a `git clean`. Each take is written here once, and a store that already holds a good copy keeps it. It is empty for the `takes` folder in the per-user data folder, such as `~/Library/Application Support/decktalk/takes` on macOS.",
           "type": "string",
           "default": "",
           "x-range": "takes any value of its type",
@@ -359,11 +359,11 @@
     },
     "record": {
       "type": "object",
-      "description": "These keys tune the headless Chromium recording and how narration t=0 is found in it.",
+      "description": "These keys tune the headless Chromium recording and how the start of the section clock is found in it.",
       "x-kind": "tuning",
       "properties": {
         "settle_seconds": {
-          "description": "Shortest wait after the page is ready and before narration t=0.",
+          "description": "Shortest wait after the page is ready and before the start of the section clock.",
           "type": "number",
           "default": 0.5,
           "minimum": 0,
@@ -376,7 +376,7 @@
           "x-environment": "DECKTALK_RECORD_SETTLE_SECONDS"
         },
         "cover_min_seconds": {
-          "description": "Shortest time from the start of the recorder to narration t=0.",
+          "description": "Shortest time from the start of the recorder to the start of the section clock.",
           "type": "number",
           "default": 1.5,
           "minimum": 0,
@@ -559,7 +559,7 @@
           "x-environment": "DECKTALK_RECORD_TRUNCATED_SLACK_SECONDS"
         },
         "frame_gap_max_ms": {
-          "description": "Longest gap between two presented frames after narration t=0. A longer gap makes `record` try again.",
+          "description": "Longest gap between two presented frames after the start of the section clock. A longer gap makes `record` try again.",
           "type": "integer",
           "default": 150,
           "minimum": 100,
@@ -1033,7 +1033,7 @@
       "x-kind": "tuning",
       "properties": {
         "provider": {
-          "description": "The speech provider that reads the script, which is a name the machine's own map answers. An unregistered name fails when `narrate` runs rather than at load. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a voice served by a local server, whose own keys are `[dtsp]`.",
+          "description": "The speech provider that reads the script, which is a name the machine's own map answers. An unregistered name loads, and fails only when a run asks it for a take, which a run that does not spend never does. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose own keys are `[dtsp]`.",
           "type": "string",
           "default": "elevenlabs",
           "x-range": "takes any value of its type",
@@ -1262,7 +1262,7 @@
           "x-nature": "taste",
           "x-source": "stated",
           "x-evidence": "the plan page of the account whose key this project uses",
-          "x-hazard": "It is zero until somebody states it, and a spend cap refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. ElevenLabs bills per character, so a zero somebody stated still asks before it buys.",
+          "x-hazard": "It is zero until somebody states it, and `--max-cost` refuses a run while the price is still the default, because DeckTalk would otherwise be capping a spend against a number it invented. ElevenLabs bills per character, so a zero somebody stated still asks before it buys.",
           "x-environment": "DECKTALK_ELEVENLABS_DOLLARS_PER_1000_CHARACTERS"
         },
         "output_format": {
@@ -1292,7 +1292,7 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-hazard": "The script, and for a paid voice the key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
+          "x-hazard": "The script, and for a provider that bills the API key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
           "x-environment": "DECKTALK_ELEVENLABS_BASE_URL"
         }
       },
@@ -1300,7 +1300,7 @@
     },
     "dtsp": {
       "type": "object",
-      "description": "These keys are the `dtsp` voice's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.",
+      "description": "These keys are the `dtsp` provider's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.",
       "x-kind": "tuning",
       "properties": {
         "base_url": {
@@ -1311,7 +1311,7 @@
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
-          "x-hazard": "The script, and for a paid voice the key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
+          "x-hazard": "The script, and for a provider that bills the API key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
           "x-environment": "DECKTALK_DTSP_BASE_URL"
         },
         "model": {
@@ -1362,7 +1362,7 @@
           "x-environment": "DECKTALK_SCORE_PROVIDER"
         },
         "output_format": {
-          "description": "Audio format the music, the ambience and the effects are asked for in. A take's format is its voice's own, such as `[elevenlabs] output_format`.",
+          "description": "Audio format the music, the ambience and the effects are asked for in. A take's format is its provider's own, such as `[elevenlabs] output_format`.",
           "type": "string",
           "default": "mp3_44100_128",
           "x-range": "takes any value of its type",
@@ -1389,7 +1389,7 @@
         },
         "ambience": {
           "type": "object",
-          "description": "The settings half of `[score.ambience]`: how the bed is asked for. Its prompt and file are content.",
+          "description": "The settings half of `[score.ambience]`: how the ambience bed is asked for. Its prompt and file are content.",
           "x-kind": "mixed",
           "properties": {
             "model": {
@@ -1439,7 +1439,7 @@
               "x-nature": "taste",
               "x-source": "stated",
               "x-evidence": "the plan page of the account whose key buys the sound",
-              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
+              "x-hazard": "It is zero until somebody states it, and `--max-cost` refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
               "x-see-also": [
                 "score.provider"
               ],
@@ -1500,7 +1500,7 @@
               "x-nature": "taste",
               "x-source": "stated",
               "x-evidence": "the plan page of the account whose key buys the sound",
-              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
+              "x-hazard": "It is zero until somebody states it, and `--max-cost` refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
               "x-see-also": [
                 "score.provider"
               ],
@@ -1511,7 +1511,7 @@
         },
         "music": {
           "type": "object",
-          "description": "The settings half of `[score.music]`: how the bed is asked for and joined. Its prompt is content.",
+          "description": "The settings half of `[score.music]`: how the music is asked for and joined. Its prompt is content.",
           "x-kind": "mixed",
           "properties": {
             "model": {
@@ -1593,7 +1593,7 @@
               "x-nature": "taste",
               "x-source": "stated",
               "x-evidence": "the plan page of the account whose key buys the sound",
-              "x-hazard": "It is zero until somebody states it, and a spend cap refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
+              "x-hazard": "It is zero until somebody states it, and `--max-cost` refuses a score while any rate it buys at is still the default, because DeckTalk would otherwise be capping a spend against a number it invented.",
               "x-see-also": [
                 "score.provider"
               ],
@@ -1642,7 +1642,7 @@
           "x-environment": "DECKTALK_EVENTS_KEEP_RUNS"
         },
         "max_bytes": {
-          "description": "Bytes one run's events file may reach before debug and info lines are left out of it. Lines about the run, its stages, its sections, its findings and its costs are always kept.",
+          "description": "Bytes one run's events file may reach before progress lines, download lines and debug and info lines are left out of it. Warnings and errors are left out once it reaches twice this. Lines about the run, its stages, its sections, its findings and its costs are always kept.",
           "type": "integer",
           "default": 8388608,
           "minimum": 65536,

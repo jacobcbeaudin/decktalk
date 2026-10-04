@@ -82,9 +82,9 @@ class TestLoading:
 
     def test_one_value_answers_the_same_way_from_a_file_and_from_the_environment(self) -> None:
         bounds = next(f for f in Inner.__dataclass_fields__.values() if f.name == "count").metadata["bounds"]
-        assert read_value(int, "5", where="inner.count", bounds=bounds, hazard=None, from_env=True) == 5
+        assert read_value(int, "5", where="inner.count", bounds=bounds, hazard=None, from_env=True, said="a test") == 5
         with pytest.raises(InputError, match="must be between 1 and 10"):
-            read_value(int, "11", where="inner.count", bounds=bounds, hazard=None, from_env=True)
+            read_value(int, "11", where="inner.count", bounds=bounds, hazard=None, from_env=True, said="a test")
 
 
 class TestTable:

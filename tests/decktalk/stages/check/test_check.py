@@ -1,4 +1,4 @@
-"""What a build would spend and show, judged before a single second of it is bought."""
+"""What a build would cost and show, judged before a single second of it is bought."""
 
 from __future__ import annotations
 

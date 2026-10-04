@@ -1,6 +1,6 @@
 """What one finished recording is judged on, and that every judgement arrives as a code.
 
-The channel these tests hold open is the one the code review's must 7 named: the page reports a
+The channel these tests hold open is this one: the page reports a
 code, the recorder dispatches on that code, and no sentence is matched against a substring anywhere
 between them.
 """

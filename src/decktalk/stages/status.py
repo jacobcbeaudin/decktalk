@@ -23,8 +23,8 @@ nothing would change a take. A take damaged in every place that holds it is one 
 section's row carries no take state. A takes directory that holds none of the takes the project
 played is one warning line, and no build is named next, because a build would buy them again.
 
-The takes directory keeps every take the project ever bought, so after a voice change or an edit it
-holds takes no section plays. This report lists them with their size and never removes one, because
+The takes directory keeps every voiced take the project ever made, so after a voice change or an
+edit it holds takes no section plays. This report lists them with their size and never removes one, because
 each is a paid record and its author decides with `git rm`. A take counts as played when the take
 index or a section's current digest names it, so a report that cannot name the digests, with no
 voice named, claims nothing about any take.
@@ -45,7 +45,7 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from decktalk.artifacts import WORDS_SUFFIX, is_placeholder
+from decktalk.artifacts import WORDS_SUFFIX, UnreadablePaidRecord, is_placeholder
 from decktalk.artifacts.takes import TAKE_DIGEST
 from decktalk.errors import DeckTalkError
 from decktalk.events import AnyEvent, Level, StageStart
@@ -125,34 +125,43 @@ def source_of(section: Section) -> str:
     return section.clip
 
 
-def _states(inputs: Inputs, run: Run) -> TakeStates | None:
-    """Every spoken section's take state, or None when the script cannot be read.
+def _states(inputs: Inputs, run: Run) -> tuple[TakeStates | None, frozenset[int]]:
+    """Every spoken section's take state, or None when the script cannot be read, and the sections refused.
 
     A take damaged in every place that holds it is refused for its section alone, so that refusal is
     one error line, its section is left out, and the rest are read again. Each pass leaves out the
-    section the refusal named, so the reading ends. A script that will not parse is reported by
-    `judgements`, and every row then carries no take state, which is all this report can honestly say.
+    section the refusal named, so the reading ends, and the sections it named come back beside the
+    states so no other reading reports the same damaged take again. A script that will not parse is
+    reported by `judgements`, and every row then carries no take state, which is all this report can
+    honestly say.
     """
+    refused_sections: set[int] = set()
     try:
         sections = list(inputs.spoken())
     except DeckTalkError as unread:
         log.debug("The script did not parse, so no take state is read.", exc_info=unread)
-        return None
+        return None, frozenset()
     while True:
         try:
-            return take_states(inputs, sections)
+            return take_states(inputs, sections), frozenset(refused_sections)
         except DeckTalkError as refused:
             where = refused.location.section if refused.location is not None else None
             if where is None or all(section.number != where for section in sections):
                 log.debug("The take states could not be read.", exc_info=refused)
-                return None
+                return None, frozenset(refused_sections)
+            refused_sections.add(where)
             hint = f" {refused.hint}" if refused.hint else ""
             run.note(f"{refused}{hint}", level=Level.ERROR)
             sections = [section for section in sections if section.number != where]
 
 
-def section_rows(inputs: Inputs, run: Run, states: TakeStates | None) -> tuple[SectionStatus, ...]:
-    """One row per section: what it plays, what is on disk for it, and whether that is still true."""
+def section_rows(
+    inputs: Inputs, run: Run, states: TakeStates | None, refused: frozenset[int] = frozenset()
+) -> tuple[SectionStatus, ...]:
+    """One row per section: what it plays, what is on disk for it, and whether that is still true.
+
+    `refused` names the sections whose take was refused as one line already, which is not said twice.
+    """
     rows: list[SectionStatus] = []
     for section in inputs.document.sections:
         state = states.get(section.number) if states is not None else None
@@ -167,17 +176,28 @@ def section_rows(inputs: Inputs, run: Run, states: TakeStates | None) -> tuple[S
                 take_reason=state.reason if state is not None else None,
                 recorded=recorded,
                 assembled=inputs.workspace.section_video(section.key).is_file(),
-                recording_stale=_stale(inputs, run, section, recorded=recorded),
+                recording_stale=_stale(inputs, run, section, recorded=recorded, said=section.number in refused),
             )
         )
     return tuple(rows)
 
 
-def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool) -> bool:
-    """Whether this section's recording no longer matches the project, with the reason as a line."""
+def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool, said: bool = False) -> bool:
+    """Whether this section's recording no longer matches the project, with the reason as a line.
+
+    A section whose provider words do not read cannot be judged, so the refusal is one error line, with
+    its own sentence and hint, and the row says nothing stale rather than ending the report. `said`
+    is true when the take's own refusal is already a line, which then stands for this one.
+    """
     if not recorded or not isinstance(section, PageSection):
         return False
-    why = stale_recording(inputs, section)
+    try:
+        why = stale_recording(inputs, section)
+    except UnreadablePaidRecord as unread:
+        if not said:
+            hint = f" {unread.hint}" if unread.hint else ""
+            run.note(f"{unread}{hint}", level=Level.ERROR)
+        return False
     if why is None:
         return False
     run.note(f"{why[0].upper()}{why[1:]}, so it would be recorded again.", level=Level.WARNING)
@@ -337,8 +357,8 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
     about its own bytes and the placements beside it are a record of what a run meant to write.
     """
     judgements(inputs, run)
-    states = _states(inputs, run)
-    rows = section_rows(inputs, run, states)
+    states, refused = _states(inputs, run)
+    rows = section_rows(inputs, run, states, refused)
     gone = next((state for state in states.values() if state.takes_dir_gone), None) if states is not None else None
     if gone is not None:
         reason = gone.reason

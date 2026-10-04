@@ -13,8 +13,8 @@
  * What the recorder calls
  *   window.__decktalkProbe.cover()   draw the magenta cover and the keep-alive from the first paint
  *   window.__decktalkProbe.lift()    remove the cover and start the page clock on the next animation
- *                                    frame, resolving to the performance.now() of that frame, which is
- *                                    the recording's narration t=0
+ *                                    frame, whose stamp is the recording's t=0 on the section clock, and
+ *                                    resolving to performance.now() read in that frame
  *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
  *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
  *
@@ -86,7 +86,7 @@ export function cover(): void {
   else document.addEventListener("DOMContentLoaded", add, { once: true });
 }
 
-/** The narration origin in `performance.now()` milliseconds, or null while the clock has not started. */
+/** The section clock's origin in `performance.now()` milliseconds, or null while the clock has not started. */
 let origin: number | null = null;
 
 /** The second on the section clock a `performance.now()` millisecond stands for, rounded to a millisecond. */
@@ -270,8 +270,8 @@ function rowFor(el: Element, slideId: string, frame: DOMRect, scale: number): Se
     moments,
     text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, TEXT_MAX),
     box: boxOf(el, frame, scale),
-    // The count a stagger's span is worked out from, which no attribute carries, because the flag
-    // that says the children step says nothing about how many of them there are.
+    // The count a stagger's span is worked out from, which no attribute carries, because `data-stagger`
+    // gives the step between children and says nothing about how many of them there are.
     children: el.hasAttribute(STAGGER) ? el.children.length : 0,
   };
 }

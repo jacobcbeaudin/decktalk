@@ -270,14 +270,14 @@ sequenceDiagram
     R->>P: await document.fonts.ready, then window.__decktalk.ready
     Note over R: recorder wait
     R->>P: remove the cover, then start the clock on the next animation frame
-    Note over P: narration t=0, and every cue fires from here
+    Note over P: the section clock starts, and every cue fires from here
     Note over R: record the section span plus record_margin_seconds
     R->>P: read the page's one report back
 ```
 
 With `t0=signal` in the URL the page starts its clock only when the recorder says so. A browser
 preview has no `t0=signal`, so its clock starts when the page loads. A page that starts a clock of
-its own at load fires every cue early, by the whole time between load and t=0, and every reveal in
+its own at load fires every cue early, by the whole time between load and the start of the section clock, and every reveal in
 the film then comes before its word.
 
 The recorder wait sits between readiness and the cover coming off, and two settings decide it.
@@ -288,8 +288,8 @@ elapsed       = seconds since the recorder opened its browser context
 ```
 
 The defaults are 0.5 and 1.5 seconds, and the cover hides the page throughout.
-[How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains why the first clean frame
-after the cover is narration t=0.
+[How it works](/concepts/how-it-works#why-the-cuts-are-exact) explains why the section clock
+starts on the first clean frame after the cover.
 
 The probe reads the whole page back in one call, and the recording log keeps what it answered.
 [One `report()` call](/reference/runtime#one-report-call) lists its fields.

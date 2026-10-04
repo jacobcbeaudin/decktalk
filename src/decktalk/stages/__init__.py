@@ -9,13 +9,15 @@
     build.py     the six stages in order, or the span of them a caller named
     cost.py      what every stage that buys costs, priced at the bill its provider declares
     table.py     each stage's function, its result and the options it takes
-    check.py     what a build would spend and show, judged before anything is spent
+    check/       what a build would cost and show, judged before anything is bought
+    kept.py      what the last build made, and whether the film and its measurement still stand
+    pool.py      the one pool narrate and record fan their sections out to
     status.py    what is written, what is built, what is stale and what to do next
     words.py     every spoken word with its span, which is how a cue phrase is written
     storyboard.py  every slide at every cue, frozen onto one page
     clip.py      a span of one built section, cut into its own file
 
-Every one of them satisfies the same convention: the module named after the call holds a function
+Every call above satisfies the same convention: the module named after the call holds a function
 of that name, taking the project's `Inputs` and the `Run` the facade opened, and returning the
 result model named after it. The six stages are called through their rows in `table.py`, which
 `build` and `project.py` share, so a test fakes a stage by replacing one row and no stage ever sees

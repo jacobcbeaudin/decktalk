@@ -18,7 +18,8 @@ browser unless the machine sets `record.page_policy = "untrusted"`.
 ## Requests that carry your content
 
 These requests carry text from your project. Every one of them is made only by a command you run on
-purpose, and every one of them needs an API key that you supply.
+purpose. Every one sent to a cloud service needs an API key that you supply, and the local voice
+needs none.
 
 | Host | Request | Sent by | What DeckTalk sends |
 |---|---|---|---|
@@ -31,8 +32,8 @@ purpose, and every one of them needs an API key that you supply.
 `decktalk check --json` prices the narration of a voiced run with no API key and no request. Its `cost` object
 reports the sections a voiced run would pay for, their character count, the price per thousand
 characters and the layer that set it, so a reviewer can read exactly what would be sent before
-anything is sent. `decktalk build` stops at the same point and names the price before it spends a
-credit, and `--max-cost N` refuses the whole run before the first call when the ceiling is above N.
+anything is sent. `decktalk build` stops at the same point and names the price before it buys
+anything, and `--max-cost N` refuses the whole run before the first call when the ceiling is above N.
 
 Set `narration.context_characters = 0` when the neighbouring sections must stay on the machine. Each
 section is then sent on its own, with no surrounding text.

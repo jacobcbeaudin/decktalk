@@ -12,8 +12,9 @@ number and a source of secrets.
 
 The sound adapters DeckTalk ships are a closed set, declared once in `SOUND_DECLARED`, and `SOUNDS`
 is their factories, which a machine a host built by hand replaces with its own table.
-Every run carries its machine's `SoundProviders`, and the score stage asks the run's `sounds.provider` for its
-provider, so a host that handed its machine a fake table is never billed through the shipped one.
+Every run carries its machine's `SoundProviders`, and the score stage asks
+`run.machine.sound_providers` for its provider, so a host that handed its machine a fake table is
+never billed through the shipped one.
 
 What an adapter declares before it is built is in `SOUND_DECLARED`: the variable its key is read
 from, the table its `base_url` is read from, the endpoint each kind of sound is bought from as the

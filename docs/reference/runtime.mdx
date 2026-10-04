@@ -50,7 +50,7 @@ Eleven modules make the runtime. Each owns one thing, and nothing imports the fa
 | `modes.ts` | The four things a page can be doing, and the one URL that decides which. It is the only module that touches the URL. |
 | `reveal.ts` | The four moments, the class moment, the swap, and the sentence each of them writes into the transcript. |
 | `canvas.ts` | The canvas a deck is drawn on, the fit into the window, the heads-up display and the one generated stylesheet. |
-| `clock.ts` | The narration origin, the queue of work sorted by the second it is due, and the animation frame loop that drains it. It holds no DOM. |
+| `clock.ts` | The section clock's origin, the queue of work sorted by the second it is due, and the animation frame loop that drains it. It holds no DOM. |
 | `text.ts` | The two effects that rewrite an element's own text, which are the count up and the line shown on the voice. |
 | `katex.ts` | Typesetting, the wait for the typesetter, and the readable text an equation falls back to. |
 | `telemetry.ts` | The seam between the page and the recorder, which is one interface, one no-op default and one setter. |
@@ -169,7 +169,7 @@ uv run python -c "from decktalk import page; print(page.QUERY)"
 | `freeze` | Freeze this slide with its cues already fired, which is what a still opens. |
 | `cues` | The cue times to fire at, as `id@seconds` pairs separated by a comma. |
 | `words` | The spoken words to sync a line against, as `word@seconds` pairs separated by a comma. |
-| `t0` | The narration second the page starts at, or the word `signal` when the recorder starts the clock. |
+| `t0` | The second on the section clock the page starts at, or the word `signal` when the recorder starts the clock. |
 | `speed` | Multiply the preview clock, so a long section is reviewed quickly. |
 | `hud` | Set to `1`, draws the on-page clock and cue list, which is for an author and never for a recording. |
 | `after` | Freeze after this cue, so the cues up to and including it fire and later ones stay hidden. |
@@ -225,7 +225,7 @@ than save one.
 `window.__decktalk` is the live view whoever is reading the page back uses. Every field is a getter,
 so a reader sees the page as it stands: `version`, `ready`, `mode`, `scene`, `slide`, `cues`,
 `fired`, `warnings`, `catalog`, `frozen` and `signalled`. `now()` and `started()` are the clock's own
-two functions, which say the narration second and whether the clock has begun.
+two functions, which say the second on the section clock and whether the clock has begun.
 
 ## The probe
 
@@ -244,7 +244,7 @@ The recorder holds it as `window.__decktalkProbe`.
 | Call | What it does |
 |---|---|
 | `cover()` | Draw the magenta cover and the keep-alive from the first paint. |
-| `lift()` | Remove the cover and start the page clock on the next animation frame, resolving to the moment of that frame, which is the recording's narration t=0. |
+| `lift()` | Remove the cover and start the page clock on the next animation frame, resolving to the moment of that frame, which is where the recording's section clock starts. |
 | `ready()` | The page's fonts and `window.__decktalk.ready`, whichever exist. |
 | `report()` | Everything the recorder reads back off the page, in one call. |
 
@@ -266,7 +266,7 @@ uv run python -c "from decktalk import page; print(page.REPORT)"
 | Field | What it carries |
 |---|---|
 | `version` | The runtime version the page carries. |
-| `mode` | Which of index, preview, cue and freeze the page is in. |
+| `mode` | Which of index, preview, record and freeze the page is in. |
 | `scene` | The scene the page is playing, or null on the index page. |
 | `slide` | The slide on screen, or null when none is mounted. |
 | `warnings` | Every distinct warning the page reported, as code, message, slide, cue and attr. |

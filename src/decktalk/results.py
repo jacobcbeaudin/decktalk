@@ -73,8 +73,8 @@ clocks the same way and no emitter rounds for itself.
 
 SPEND = (
     "True when the caller let this run buy what is missing, which spend=True and --spend do. A run that may "
-    "not buys nothing: a free voice still makes each missing take, a take that must be bought plays as a "
-    "placeholder, and a sound that must be bought plays silence."
+    "not buys nothing: a free provider still makes each missing take once a voice is named, a take that must "
+    "be bought plays as a placeholder, and a sound that must be bought plays silence."
 )
 """What the `spend` field of a result that can buy says, written once for every result that carries it."""
 
@@ -82,13 +82,13 @@ NextCommand = Annotated[
     str | None,
     Field(default=None, description="The whole command to run next, or null when nothing is next."),
 ]
-"""A reading of project state that goes stale, so only the two objects a caller takes fresh carry it."""
+"""A reading of project state that goes stale, so only `StatusResult`, which a caller takes fresh, carries it."""
 
 SectionNumber = Annotated[int, Field(ge=0, description="The section this row is about, as the author numbered it.")]
 """A section's number, which is how the author numbers sections in decktalk.toml, counting from zero or one."""
 
 SectionKey = Annotated[str, Field(description="The section's key, which names its files under build/.")]
-"""A section's key, which is the stable name its recording, its take and its cut are filed under."""
+"""A section's key, which is the stable name its recording and its section video are filed under."""
 
 
 def section_key(number: int) -> str:
@@ -104,10 +104,10 @@ class CostState(Enum):
 
 
 class BillingBasis(Enum):
-    """How a voice bills what it makes, which its adapter declares and every price is worked out by.
+    """How a provider bills what it makes, which its adapter declares and every price is worked out by.
 
     A provider DeckTalk does not ship declares nothing, so its bill is `undeclared`: its price is
-    nothing anybody stated, and a spend cap refuses to guard it. A build's total that adds a bill per
+    nothing anybody stated, and `--max-cost` refuses to guard it. A build's total that adds a bill per
     character to a bill per second is `mixed`, and carries the rate of each.
     """
 
@@ -261,7 +261,10 @@ class _Priced(Model):
             "below what the run can pay and may sit up to a cent per stage above it."
         ),
     )
-    billing: BillingBasis = Field(description="How the voice bills, which its adapter declares and the rate is per.")
+    billing: BillingBasis = Field(
+        description="How the provider bills, which its adapter declares and the rate is per, or mixed for a run "
+        "whose stages bill two ways."
+    )
     dollars_per_1000_characters: float = Field(
         ge=0, description="The rate a per-character bill was worked out at, in US dollars per 1,000 characters."
     )
@@ -269,7 +272,7 @@ class _Priced(Model):
         ge=0, description="The rate a per-second bill was worked out at, in US dollars per minute of audio."
     )
     price_key: str | None = Field(
-        description="The dotted key that states the rate, or null when the voice declares none to state."
+        description="The dotted key that states the rate, or null when the provider declares none to state."
     )
     averaged: bool = Field(
         description=(
@@ -470,8 +473,12 @@ UNPRICED: Cost = Cost(
 
 
 def money(dollars: float) -> str:
-    """An amount in US dollars as a price is written, to the cent."""
-    return f"${dollars:.2f}"
+    """An amount in US dollars as a price is written, to the cent, and never as a negative zero.
+
+    The amount is rounded to the cent first and then has 0.0 added, which turns -0.0 into 0.0, so a
+    zero or an amount that rounds to one reads $0.00 whatever its sign.
+    """
+    return f"${round(dollars, DOLLAR_DIGITS) + 0.0:.{DOLLAR_DIGITS}f}"
 
 
 CENT = 0.01
@@ -512,11 +519,20 @@ def rate_money(dollars: float) -> str:
 
 
 class Word(Model):
-    """One spoken word with its span, in seconds after its section starts."""
+    """One spoken word with its start and its end, on its take's own clock in a words file and on its section clock
+    in a result."""
 
     word: str = Field(description="The word as the script spells it.")
-    start: float = Field(ge=0, description="When the word starts, in seconds after its section starts.")
-    end: float = Field(ge=0, description="When the word ends, in seconds after its section starts.")
+    start: float = Field(
+        ge=0,
+        description="When the word starts, in seconds: on the take's own clock in a words file, on the section clock "
+        "in a result.",
+    )
+    end: float = Field(
+        ge=0,
+        description="When the word ends, in seconds: on the take's own clock in a words file, on the section clock "
+        "in a result.",
+    )
 
 
 class Result(Model):
@@ -648,7 +664,7 @@ class SectionTake(Model):
 class CueTime(Model):
     """One cue resolved against the words its section speaks."""
 
-    id: str = Field(description="The cue's cue id, which is its slide and its local name.")
+    id: str = Field(description="The cue's cue id, which is its slide id, a colon and its cue name.")
     phrase: str = Field(description="The phrase in the script this cue lands on.")
     seconds: float | None = Field(None, ge=0, description="When it lands, in seconds after its section starts.")
     nudge_seconds: float = Field(0.0, description="The author's own nudge in seconds, added to the resolved second.")
@@ -675,7 +691,7 @@ class SectionRecording(Model):
 
 
 class SoundItem(Model):
-    """One piece of the score, which is a music bed, an ambience bed or an effect."""
+    """One score item, which is the music, an ambience bed or a sound effect."""
 
     name: str = Field(description="What the author calls this item in decktalk.toml.")
     kind: SoundKind = Field(description="Whether this item is music, ambience or an effect.")
@@ -748,7 +764,7 @@ class StageRun(Model):
     """One stage of one build, and how it ended."""
 
     stage: Stage = Field(description="The stage this row is about.")
-    outcome: Outcome = Field(description="Whether the stage ran, was kept from the last run, was skipped, or failed.")
+    outcome: Outcome = Field(description="Whether the stage ran, was kept from the last run, or was skipped.")
     elapsed_seconds: Elapsed
 
 
@@ -774,7 +790,7 @@ class LayerValue(Model):
 class NumberView(Model):
     """One published number a key feeds, with its inputs at the values in force."""
 
-    id: str = Field(description="The number's name, which is the key it replaced or the constant it is.")
+    id: str = Field(description="The number's dotted name, such as verify.probe_width.")
     formula: str = Field(description="The expression this number is, which is what it is published as.")
     reads: dict[str, JsonValue] = Field(description="Every key and constant the formula reads, at its value here.")
     value: JsonValue = Field(description="What the formula works out to at the values in force.")
@@ -998,7 +1014,7 @@ class NarrateResult(Result):
     spend: bool = Field(description=SPEND)
     sections: tuple[SectionTake, ...] = Field(description="Every section this run considered, in script order.")
     cost: Cost = Field(description="What this run cost, or would have cost.")
-    takes: ProjectPath | None = Field(None, description="The take index this run wrote, or null on a dry run.")
+    takes: ProjectPath | None = Field(None, description="The take index this run wrote, project-relative.")
     elapsed_seconds: Elapsed
 
 
@@ -1026,7 +1042,7 @@ class RecordResult(Result):
 
 
 class ScoreResult(Result):
-    """Every piece of the score this run planned or generated."""
+    """Every score item, and whether this run planned, kept or generated it."""
 
     reports_findings: ClassVar[bool] = True
     spends: ClassVar[bool] = True

@@ -40,7 +40,7 @@ SENTENCE_ENDS = (".", "?", "!")
 """The marks a refusal's own sentence may already end on, which is when no full stop is added."""
 
 PURPOSE = "List, get, set, explain or unset a setting."
-"""What the command tree says about the group, which is the five verbs in the order they are met."""
+"""What the command tree says about the group, which names the five verbs."""
 
 config = typer.Typer(
     cls=DeckTalkGroup,

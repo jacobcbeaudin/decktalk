@@ -1,4 +1,4 @@
-"""One stream of progress: thirteen moments, the four fields the library mints onto each, and the
+"""One stream of progress: thirteen events, the four fields the library mints onto each, and the
 subscribers that render them.
 
 Every call opens a run and writes to this stream. The Rich live region, the JSON lines `--events`
@@ -6,8 +6,8 @@ prints on stderr, the per-run file under `build/events/` and any later dashboard
 to it, so a renderer never computes a fraction and there is only one channel to keep in step.
 
 `event` is the discriminator and there are thirteen names. Skip, keep and fail are not names:
-`stage.done` and `section.done` carry an `outcome`, because four names for one moment would force four
-branches where one field read will do.
+`stage.done` and `section.done` carry an `outcome`, because four names for one event would force
+four branches where one field read will do.
 
 The library mints `event`, `time`, `seq` and `run`, so an emitter states only what it measured.
 `seq` counts per run rather than per machine, because a machine-wide counter would leave gaps in
@@ -57,7 +57,7 @@ class Level(Enum):
 
 
 class Event(Model):
-    """What every line of the stream carries, whichever moment it reports."""
+    """What every line of the stream carries, whichever event it is."""
 
     event: str = Field(description=MOMENT)
     time: datetime = Field(description="When this happened, as an instant.", json_schema_extra={"volatile": True})
@@ -110,7 +110,7 @@ class StageDone(Event):
     event: Literal["stage.done"] = Field("stage.done", description=MOMENT)
     stage: Stage = Field(description="The stage this line is about.")
     outcome: Outcome = Field(
-        description="Whether the stage ran, was skipped, kept what an earlier run made, or failed."
+        description="Whether the stage ran, was skipped, kept what an earlier run made, was stopped, or failed."
     )
     elapsed_seconds: Elapsed
 
@@ -130,7 +130,7 @@ class SectionDone(Event):
     stage: Stage = Field(description="The stage this line is about.")
     section: SectionNumber
     outcome: Outcome = Field(
-        description="Whether the section ran, was skipped, kept what an earlier run made, or failed."
+        description="Whether the section ran, was skipped, kept what an earlier run made, was stopped, or failed."
     )
     elapsed_seconds: Elapsed
 
@@ -138,7 +138,7 @@ class SectionDone(Event):
 class StageProgress(Event):
     """How far through its own work one stage is, counted in the thing it is working on.
 
-    Narrate emits one per take, record one per section, score one per asset, assemble one per
+    Narrate emits one per take, record one per section, score one per score item, assemble one per
     encoding pass and verify one per probe, so every stage that takes time reports the same shape.
     """
 
@@ -171,12 +171,12 @@ class TakeCharged(Event):
     A `cost.priced` event prices a whole run, before or after it. This one is written at the moment a take
     is bought, once per take, so a host that keeps its own ledger can record every charge as it
     happens and can tell by the take's digest that a retried run did not buy the same take twice. A
-    voice that declares it bills nothing is paid nothing, so its takes write no line.
+    provider that declares it bills nothing is paid nothing, so its takes write no line.
     """
 
     event: Literal["take.charged"] = Field("take.charged", description=MOMENT)
     section: SectionNumber
-    digest: str = Field(pattern=r"^[0-9a-f]+$", description="The take's input digest, which names its files.")
+    digest: str = Field(pattern=r"^[0-9a-f]+$", description="The take's digest, which names its files.")
     characters: int = Field(ge=0, description="How many characters were sent for this take.")
     dollars: float = Field(ge=0, description="What this take cost at the price in force, in US dollars.")
 
@@ -198,7 +198,7 @@ class SoundCharged(Event):
 
 
 class ToolFetch(Event):
-    """A tool is being downloaded, which is the one moment a run stops for the network."""
+    """A tool is being downloaded, which is the one time a run waits on the network."""
 
     event: Literal["tool.fetch"] = Field("tool.fetch", description=MOMENT)
     tool: str = Field(description="What is being fetched, such as ffmpeg or chromium.")
@@ -340,9 +340,9 @@ class Events:
     """Every event of every run, and the renderers watching them.
 
     The stream lives on the machine rather than on a project, because installing a toolchain and
-    reporting on a machine hold no project and would otherwise leave `--events` silent on the two
-    commands that download two hundred megabytes. A project's own view is one of these that hands
-    every subscription to the machine's stream, filtered to the runs that project opened.
+    reporting on a machine hold no project, and `install` downloads two hundred megabytes with nothing
+    else to report it. A project's own view is one of these that hands every subscription to the
+    machine's stream, filtered to the runs that project opened.
     """
 
     def __init__(self, *, source: Events | None = None) -> None:
@@ -426,7 +426,7 @@ DROPPED_PAST_THE_BOUND = (StageProgress, ToolFetch, RunLog)
 
 Every other line is the run's own shape, a judgement or a dollar it spent, which is bounded by the
 stages and sections of the run and is the ledger a host bills from, so it is always written. The
-list names what may go rather than what stays, so a moment added later is kept until someone
+list names what may go rather than what stays, so an event added later is kept until someone
 decides otherwise.
 """
 

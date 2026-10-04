@@ -234,14 +234,15 @@ def total(costs: Sequence[Cost]) -> Cost:
     `stages`, counted or not, in pipeline order, so the price of a stage that was not counted is
     still there to read, and one stage in two of the costs is refused.
 
-    The total is billed the way the counted stages that buy something at a price bill, so a free
-    voice beside a paid score leaves the sound's bill and rate to the total. When those are one bill,
-    its rate is the total's. When a bill per character meets a bill per second the total is `mixed`
-    and carries each rate, and the rate it names is the least surely stated. A stage whose bill
-    nobody declared makes the whole total undeclared, because no part of DeckTalk can price it. The
-    total adds only what each stage is billed on: the characters of a per-character stage and the
-    seconds of a per-second one, and a free or undeclared stage's counts as they are. Its figures are
-    the stages' rounded figures added to the nearest cent and never rounded up again.
+    The total is billed the way the counted stages that buy something at a price bill, so a free voice
+    beside a paid score leaves the sound's bill and rate to the total. When those are one bill, its rate
+    is the total's. When a bill per character meets a bill per second the total is `mixed` and carries
+    each rate, and the rate it names is the first one no layer stated, or the first when every one is
+    stated. A stage whose bill nobody declared makes the whole total undeclared, because no part of
+    DeckTalk can price it. The total adds only what each stage is billed on: the characters of a
+    per-character stage and the seconds of a per-second one, and a free or undeclared stage's counts as
+    they are. Its figures are the stages' rounded figures added to the nearest cent and never rounded up
+    again.
     """
     if not costs:
         raise ValueError("a total adds at least one cost.")

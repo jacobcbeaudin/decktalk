@@ -49,7 +49,7 @@ pytestmark = pytest.mark.browser
 
 
 # The three-slide scene every markup test uses: attributes only, no JavaScript anywhere. Its moments
-# are local names, so the cue ids the recorder sees are "1.1:ball" and the rest.
+# write cue names, so the cue ids the recorder sees are "1.1:ball" and the rest.
 MARKUP_SCENE = """
 <div data-scene="1" data-name="Open">
   <template data-slide="1.1" data-preview-seconds="6">

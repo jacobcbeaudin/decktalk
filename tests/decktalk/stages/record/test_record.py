@@ -2,7 +2,7 @@
 
 The rule these tests exist for is the pair on disk. The log of the recording being replaced goes
 before anything is captured and the log of what was recorded is written last, so a run that stops in
-between leaves a webm with no log or a log with no narration t=0, and the next run records the
+between leaves a webm with no log or a log with no start, and the next run records the
 section again rather than trimming a new picture at an old moment.
 """
 
@@ -16,20 +16,21 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts import RecordingLog
-from decktalk.errors import NotBuiltError
+from decktalk.artifacts import RecordingLog, words_file
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Event, Level, RunLog, StageProgress
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
 from decktalk.media import browser, ffmpeg, frames, recording
 from decktalk.media.pagereport import PageReport, Recording
 from decktalk.media.recording import RecordingSink
+from decktalk.results import Word
 from decktalk.stages.record import pool, record, stale_recording
 from support.logs import decisions
 from support.pages import TWO_SCENE_PAGE, a_report
 from support.projects import load_project
 from support.runs import a_run
-from support.takes import a_take, write_takes
+from support.takes import a_take, narrated, write_takes
 
 TOML = """
 [project]
@@ -252,6 +253,38 @@ def test_a_section_the_run_passed_over_with_no_recording_at_all_is_a_missing_fil
     assert [row.code for row in result.findings] == [Code.FILE_MISSING]
     assert result.findings[0].location.section == 2
     assert not result.ok
+
+
+def voiced_project_with_damaged_words(tmp_path: Path, damaged: int) -> tuple[Inputs, Path]:
+    """Both sections voiced and recorded, then one section's provider words file damaged on disk."""
+    inputs = a_project(tmp_path, takes=False)
+    said = (Word(word="a", start=0.0, end=0.4),)
+    takes = narrated(inputs, *(a_take(n, seconds=SPAN_SECONDS) for n in (1, 2)), words={1: said, 2: said})
+    record(inputs, a_run(inputs.root))
+    take = takes.of(damaged)
+    assert take is not None
+    path = inputs.workspace.takes / words_file(take.digest)
+    path.write_text("{damaged", encoding="utf-8")
+    return inputs, path
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_run_is_never_refused_over_the_provider_words_of_a_section_it_passes_over(tmp_path: Path) -> None:
+    """Section 2's damaged words refused `record --section 1`, which neither reads nor writes them."""
+    inputs, damaged = voiced_project_with_damaged_words(tmp_path, 2)
+    lines: list[Event] = []
+    result = record(inputs, a_run(inputs.root, lines=lines), only=[1])
+    assert [row.section for row in result.sections] == [1]
+    said = [line.message for line in lines if isinstance(line, RunLog) and line.level is Level.WARNING]
+    assert len(said) == 1 and damaged.name in said[0] and said[0].startswith("Section 2 "), said
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_run_that_records_the_section_with_damaged_provider_words_is_refused(tmp_path: Path) -> None:
+    inputs, damaged = voiced_project_with_damaged_words(tmp_path, 2)
+    with pytest.raises(InputError, match="Only voicing this take again gives these words back") as refused:
+        record(inputs, a_run(inputs.root), only=[2])
+    assert damaged.name in str(refused.value)
 
 
 def test_a_page_that_stalls_is_recorded_again_while_the_machine_is_quieter(

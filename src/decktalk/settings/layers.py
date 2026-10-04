@@ -39,7 +39,7 @@ from decktalk.settings import (
     key_named,
 )
 from decktalk.settings.numbers import NUMBERS_BY_ID
-from decktalk.tomlmap import ENV_PREFIX
+from decktalk.tomlmap import ENV_PREFIX, variable
 from decktalk.tomlmap.read import from_mapping
 from decktalk.tomlmap.suggest import named_key, unknown_key_message, unknown_key_warnings
 
@@ -270,7 +270,8 @@ def load(
 
     The environment is required and never read from the process, because the machine is the one
     reader of the process and a host that built its machine by hand chose what it holds. The machine
-    layer is the tables given, or the file at `machine_path`, or nothing when neither is named.
+    layer is the tables given, or the file at `machine_path`, or nothing when neither is named. A
+    refusal of one value names the layer that wrote it: the file, the variable or the `--set`.
     """
     env = dict(environ)
     from_machine = dict(machine) if machine is not None else (read_machine_toml(machine_path) if machine_path else {})
@@ -281,7 +282,15 @@ def load(
     pairs = route(overrides)
     base = merge_tables(from_machine, from_project)
     env_and_overrides = {**env, **{BY_ID[key].environment: value for key, value in pairs.items()}}
-    settings = from_mapping(Settings, base=base, environ=env_and_overrides)
+
+    def said(dotted: str, from_env: bool) -> str:
+        if from_env:
+            return f"--set {dotted}" if dotted in pairs else variable(dotted)
+        if stated(from_project, dotted) is not ABSENT:
+            return project_file.name
+        return machine_path.name if machine_path else "the machine's tables"
+
+    settings = from_mapping(Settings, base=base, environ=env_and_overrides, said=said)
     _require(settings)
     files = {
         Layer.MACHINE: machine_path,

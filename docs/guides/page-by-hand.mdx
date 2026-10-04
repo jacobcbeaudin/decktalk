@@ -241,8 +241,9 @@ A page opened from a `file://` URL draws nothing. The browser resolves `/__deckt
 against the root of the disk, finds no file there, and the page has no runtime to mount its slides.
 
 It serves the deck directory and the files `decktalk.toml` declares, and nothing else. It prints
-where the deck is served and then closes its output, so a caller that captured it reads one object
-and is not left waiting on a stream that never ends. `--host` and `--port` choose the interface and
+where the deck is served as one object, flushed at once, and then serves until you stop it. Its
+output stays open while it serves, so a caller reads the object as it arrives rather than waiting for
+the stream to end. `--host` and `--port` choose the interface and
 the port, and a port of 0 takes any free one.
 
 The deck directory is every directory a `page` sits in, so every name under it is served however the

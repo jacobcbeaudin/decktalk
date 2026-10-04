@@ -59,8 +59,8 @@ The suite mirrors the source tree: `src/decktalk/media/audio.py` is tested by
 `tests/decktalk/media/test_audio.py` and by nothing else, and `tests/contract/` is a closed list of
 the tests that belong to no module.
 
-Run `uv run scripts/check.py` before calling anything done, which runs lint, types, every suite and
-every generated-file check. `--fast` runs lint, types and the unit tests alone.
+Run `uv run scripts/check.py` before calling anything done. It runs every group a pull request gates
+on: lint and types, the suites and every generated-file check. `--fast` runs lint, types and the unit tests alone.
 
 Never edit a generated file. Change its source and run its `scripts/build_*.py --write`, or
 `uv run scripts/check.py --group generated --write` to update them all.

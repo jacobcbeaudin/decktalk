@@ -437,6 +437,71 @@ def test_only_a_request_that_never_connected_is_sent_again(monkeypatch, reason, 
     assert ("possibly charged" in str(caught.value)) is (asked == 1)
 
 
+class Answered:
+    """A reply that arrived whole."""
+
+    status = 200
+
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def __enter__(self) -> Answered:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self.body
+
+
+BROKEN_REPLY_CASES = [
+    ConnectionResetError(54, "Connection reset by peer"),
+    http.client.IncompleteRead(b"{", 99),
+    TimeoutError("The read operation timed out"),
+]
+"""How a reply breaks once the request was sent, which bills a paid request and nothing for a free one."""
+
+
+@pytest.mark.parametrize("broken", BROKEN_REPLY_CASES, ids=["reset", "cut-short", "timed-out"])
+def test_a_free_request_whose_reply_broke_is_asked_again_until_the_retries_are_spent(monkeypatch, waits, broken):
+    """A request that bills nothing costs nothing to send again, so its broken reply is retried like a busy one."""
+    sent = counted_opener(monkeypatch, lambda: Opened(broken))
+    with pytest.raises(ProviderError) as caught:
+        _http.post_json("http://127.0.0.1:9/v1/speech", {}, {}, secrets=(), timeout=5, retries=2, free=True)
+    assert len(sent) == 3 and len(waits) == 2
+    assert caught.value.retryable is True
+    assert "charged" not in f"{caught.value} {caught.value.hint}"
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [*BROKEN_REPLY_CASES, urllib.error.URLError(ConnectionResetError(54, "Connection reset by peer"))],
+    ids=["reset", "cut-short", "timed-out", "reset-while-sending"],
+)
+@pytest.mark.usefixtures("waits")
+def test_a_free_request_whose_reply_broke_once_is_answered_by_the_next_attempt(monkeypatch, broken):
+    answers = iter([broken, None])
+
+    def once() -> object:
+        failed = next(answers)
+        if isinstance(failed, urllib.error.URLError):
+            raise failed
+        return Opened(failed) if failed is not None else Answered(b'{"ok": true}')
+
+    sent = counted_opener(monkeypatch, once)
+    reply = _http.post_json("http://127.0.0.1:9/v1/speech", {}, {}, secrets=(), timeout=5, retries=1, free=True)
+    assert reply == {"ok": True} and len(sent) == 2
+
+
+def test_a_free_reply_that_arrived_and_could_not_be_read_is_not_asked_for_again(monkeypatch, waits):
+    """Only a broken reply is retried: one that arrived and is not JSON would arrive the same way again."""
+    sent = counted_opener(monkeypatch, lambda: Answered(b"<html>"))
+    with pytest.raises(ProviderError):
+        _http.post_json("http://127.0.0.1:9/v1/speech", {}, {}, secrets=(), timeout=5, retries=2, free=True)
+    assert len(sent) == 1 and waits == []
+
+
 # ---- what a retry leaves behind -----------------------------------------------------------------------
 
 

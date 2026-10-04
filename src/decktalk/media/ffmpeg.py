@@ -21,7 +21,7 @@ one stuck encode can hold a worker for no longer than the machine allows.
 `audio.py` and `frames.py` build on the calls here: `run`, `stderr`, `raw`, `stream`,
 `probe_duration`, `probe_rate` and `has_audio`.
 
-A file a project supplies is untrusted input. A clip or a music bed is a container that can name
+A file a project supplies is untrusted input. A clip or a sound the score bought is a container that can name
 other files and other hosts, as an HLS playlist or a concat list does, and ffmpeg follows those names
 by default. So every input a caller opens goes through `source`, which allows the file protocol alone
 and a closed set of demuxers that read one file and name nothing else.
@@ -399,7 +399,7 @@ def concat_line(path: Path | str) -> str:
     The demuxer reads a single-quoted path, so an apostrophe inside one ends the quoting and the rest
     of the name becomes arguments. It is written as `'\''`, which closes the quote, escapes one
     apostrophe and opens the quote again, and that is the one form both of ffmpeg's readings accept.
-    A build under `jacob's films/` died at the concatenation step without it.
+    A build under a folder such as `jacob's films/` would die at the concatenation step without it.
     """
     quoted = str(path).replace("'", "'\\''")
     return f"file '{quoted}'\n"

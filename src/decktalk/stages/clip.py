@@ -72,9 +72,10 @@ def clip(
 ) -> ClipResult:
     """Cut the span from `start` to `end` of one built page section into `out`, with its words beside it.
 
-    The span is rounded outward to whole frames, because a clip that began mid-frame would play its
-    first frame twice. `hold_seconds` holds the last frame in silence after the span, which is how a
-    clip ends on the picture it made rather than on the next thing the film did.
+    Each end of the span is rounded to the nearest whole frame, because a clip that began mid-frame
+    would play its first frame twice, and a span that rounds to no frame is refused. `hold_seconds`
+    holds the last frame in silence after the span, which is how a clip ends on the picture it made
+    rather than on the next thing the film did.
     """
     played = _page_section(inputs, section)
     video = _section_video(inputs, played)

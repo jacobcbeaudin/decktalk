@@ -8,10 +8,12 @@ ones. The end-to-end test drives the real command line against it, with no key a
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import socket
 import sys
 import urllib.request
+from http.client import HTTPResponse
 from pathlib import Path
 from typing import Any
 
@@ -167,6 +169,25 @@ def test_a_failure_of_a_voice_that_bills_nothing_never_says_the_request_was_char
     said = f"{caught.value} {caught.value.hint}"
     assert "charged" not in said, said
     assert "usage" not in said, said
+
+
+def test_a_reply_from_the_free_voice_that_broke_is_asked_for_again(
+    service: Service, server: LocalServer, monkeypatch: pytest.MonkeyPatch, waits: list[float]
+) -> None:
+    """The adapter says the voice bills nothing, so a server that hung up once is asked again and answers."""
+    real = speech_http.urlopen
+    hung_up: list[str] = []
+
+    def hangs_up_once(req: urllib.request.Request, **options: float) -> HTTPResponse:
+        if not hung_up:
+            hung_up.append(req.full_url)
+            raise http.client.RemoteDisconnected("Remote end closed connection without response")
+        return real(req, **options)
+
+    monkeypatch.setattr(speech_http, "urlopen", hangs_up_once)
+    audio_bytes, _words = Dtsp(context(service.url_for(""), retries=1)).speak(request())
+    assert audio_bytes == AUDIO
+    assert len(hung_up) == 1 and len(server.requests) == 1 and len(waits) == 1
 
 
 def test_a_request_to_this_machine_never_goes_through_a_proxy(

@@ -123,14 +123,14 @@ def narrate(
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
-    spend = session.spends(project, (Stage.NARRATE,), only=only, replace_voiced=replace_voiced)
+    spending = session.spends(project, (Stage.NARRATE,), only=only, replace_voiced=replace_voiced)
     with session.watching(project.events):
         return project.narrate(
             only=only,
-            spend=spend,
+            spend=spending.spend,
             max_cost=session.max_cost,
             force=force,
-            replace_voiced=_replacing(session, replace_voiced),
+            replace_voiced=spending.replace_voiced,
             cancel=session.cancel,
         )
 
@@ -182,13 +182,13 @@ def score(
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
-    spend = session.spends(project, (Stage.SCORE,), only=only, replace_score=replace_score)
+    spending = session.spends(project, (Stage.SCORE,), only=only, replace_score=replace_score)
     with session.watching(project.events):
         return project.score(
             only=only,
-            spend=spend,
+            spend=spending.spend,
             max_cost=session.max_cost,
-            replace_score=_replacing_score(session, replace_score, spend=spend),
+            replace_score=spending.replace_score,
             cancel=session.cancel,
         )
 
@@ -256,8 +256,9 @@ def build(
 ) -> BuildResult:
     """Run every stage in order, or a span of them with --from and --to.
 
-    A stage whose inputs have not changed is skipped. A build with something to buy prices it and
-    asks on a terminal before it buys. Without a terminal it refuses unless --spend or --no-spend is passed.
+    A stage whose inputs have not changed is skipped. A build that would buy from a provider that bills
+    prices it and asks on a terminal before it buys, and without a terminal it refuses unless --spend or
+    --no-spend is passed. A free provider makes its takes without asking once a voice is named.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
@@ -265,7 +266,7 @@ def build(
     if watch:
         return watching.loop(session, project, skip=tuple(skip or ()), only=only, force=force)
     stages = _span(from_stage, to_stage)
-    spend = session.spends(
+    spending = session.spends(
         project,
         _planned(stages, skip),
         only=only,
@@ -278,11 +279,11 @@ def build(
             stages=stages,
             skip=tuple(skip or ()),
             only=only,
-            spend=spend,
+            spend=spending.spend,
             max_cost=session.max_cost,
             force=force,
-            replace_voiced=_replacing(session, replace_voiced),
-            replace_score=_replacing_score(session, replace_score, spend=spend),
+            replace_voiced=spending.replace_voiced,
+            replace_score=spending.replace_score,
             cancel=session.cancel,
         )
     return _offered(session, project, built, fix)
@@ -350,25 +351,6 @@ def clip(
             hold_seconds=hold_seconds,
             cancel=session.cancel,
         )
-
-
-def _replacing(session: sessions.Session, asked: bool) -> bool:
-    """Whether voiced takes are set aside, confirmed once on a terminal because the answer can buy them again.
-
-    Without a terminal the flag is the authorisation, because a run that was told to replace a take
-    was told so on purpose and the safe default without the flag is to keep every take.
-    """
-    return asked and (not session.asks or session.confirm("This sets aside every voiced take it replaces. Carry on?"))
-
-
-def _replacing_score(session: sessions.Session, asked: bool, *, spend: bool) -> bool:
-    """Whether every bought sound is bought again, confirmed once on a terminal because the answer spends.
-
-    A run that may not spend has nothing to replace a bought sound with, so it is asked nothing and
-    keeps every one. Without a terminal the flag is the authorisation, as it is for a voiced take.
-    """
-    question = "This buys every bought sound it replaces again. Carry on?"
-    return asked and spend and (not session.asks or session.confirm(question))
 
 
 __all__ = ["assemble", "build", "clip", "cue", "narrate", "record", "score", "verify"]

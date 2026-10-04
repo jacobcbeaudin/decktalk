@@ -37,7 +37,7 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
 
 def test_a_path_with_an_apostrophe_in_it_survives_the_concat_list(tmp_path, monkeypatch):
-    """A build under `jacob's films/` died at the join, so the list is written by the one escaper."""
+    """A build under `jacob's films/` has an apostrophe to escape, so the list is written by the one escaper."""
     written: list[str] = []
 
     def run(*args: str) -> None:
@@ -403,9 +403,9 @@ MANIFEST = (
 )
 @pytest.mark.usefixtures("real_ffmpeg")
 def test_a_planted_cut_that_names_another_tenants_film_is_never_followed(tmp_path, planted):
-    """0.5.0 joined a supplied `build/sections/01.mp4` that was a DASH manifest, and so read the film it named.
+    """A supplied `build/sections/01.mp4` that is a DASH manifest names another tenant's film, and is never joined.
 
-    The refusal is the measure, since 0.5.0 made a film out of the other tenant's where this makes none.
+    The refusal is the measure, since joining it would make a film out of the other tenant's.
     """
     outside = _film(tmp_path / "tenant-b" / "film.mp4")
     sections = tmp_path / "tenant-a" / "build" / "sections"

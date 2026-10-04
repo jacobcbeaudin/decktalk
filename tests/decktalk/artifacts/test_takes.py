@@ -134,7 +134,7 @@ NEAR_MISS = (
 @given(hostile=NEAR_MISS)
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 def test_a_take_index_that_names_a_file_by_anything_but_a_digest_is_refused(tmp_path: Path, hostile: str) -> None:
-    """The digest becomes a file name under the take directory, so a path in it would read anywhere.
+    """The digest becomes a file name under the takes directory or build/narrate, so a path in it would read anywhere.
 
     One index file is written over again for every example, which is why the shared directory is safe.
     """

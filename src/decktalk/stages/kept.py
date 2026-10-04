@@ -110,7 +110,7 @@ def outputs_of(inputs: Inputs, paths: Iterable[Path]) -> dict[str, str]:
 def intact(inputs: Inputs, stage: KeptStage) -> bool:
     """Whether every file a kept stage wrote is still on disk with the bytes it wrote.
 
-    A stage run on its own after the build, such as `decktalk assemble --no-loudness`, rewrites the
+    A stage run on its own after the build, such as `decktalk assemble --skip score`, rewrites the
     film without touching the record, and this is what stops the next build keeping that film.
     """
     return all(file_digest(inputs.root / name) == digest for name, digest in stage.outputs.items())

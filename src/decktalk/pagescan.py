@@ -56,7 +56,7 @@ def slide_cues(entry: MeasuredScene | None) -> Slides | None:
 
     Ownership is declared: a slide owns exactly the cues the catalog lists against it, which are the
     moments its own elements name plus whatever `data-owns` adds. Nothing here reads an id prefix,
-    because a cue id is a slide and a local name and never an arithmetic about a number.
+    because a cue id is a slide id, a colon and a cue name and never an arithmetic about a number.
     """
     if entry is None:
         return None

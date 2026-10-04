@@ -11,7 +11,7 @@ Nothing about a neighbour, and nothing about whether this run voiced the take or
 reaches those numbers, which is what lets a change to one sentence rebuild one section and no other.
 None of them is part of the input digest either, so changing a lead or a tail voices nothing.
 
-A run without voice writes a click track of the length the words and the declared pauses come to,
+A run without voice writes a placeholder, click audio of the length the words and the declared pauses come to,
 with evenly spaced estimated words, so cues resolve to plausible times and the whole pipeline runs
 with no credential. It clicks at every word's start and once where the last word ends, then closes
 on a moment of silence, so its sound ends where its words do and it is placed exactly as a voice is.
@@ -38,7 +38,7 @@ from decktalk.speech import PUNCT, canonical_text
 from decktalk.stages.cost import Buy, charge_of
 
 PLACEHOLDER_CLOSE_SECONDS = 0.1
-"""Calibration: the silence a click track ends on, which is long enough that where its sound ends can be measured."""
+"""Calibration: the silence a placeholder's click audio ends on, long enough to measure where its sound ends."""
 
 WORD_GAP_SECONDS = 0.02
 """Calibration: the gap an estimated word leaves before the next one, so two clicks are never one sound."""
@@ -116,7 +116,7 @@ def take_row(inputs: Inputs, section: ScriptSection, chapter: str, digest: str, 
 def write_placeholder_take(
     inputs: Inputs, section: ScriptSection, chapter: str, digest: str
 ) -> tuple[Take, list[Path]]:
-    """Write one click track and its estimated words, and give back the row and the files."""
+    """Write one placeholder's click audio and its estimated words, and give back the row and the files."""
     cfg = inputs.settings.narration
     home = inputs.workspace.narrate_dir
     out = home / inputs.workspace.take_file(digest)

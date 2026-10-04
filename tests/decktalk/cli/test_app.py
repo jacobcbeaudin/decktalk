@@ -33,7 +33,7 @@ TOP_LINES = (
 BUILD_SENTENCES = (
     "Run every stage in order, or a span of them with --from and --to.",
     "Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing.",
-    "A free voice such as dtsp makes its takes either way.",
+    "A free provider such as dtsp makes its takes either way once a voice is named.",
     "Unset, a terminal is asked and a run without one is refused.",
     "Start at this stage: narrate, cue, record, score, assemble or verify.",
     "Stop after this stage, inclusive.",

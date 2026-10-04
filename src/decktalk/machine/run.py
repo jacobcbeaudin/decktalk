@@ -223,14 +223,15 @@ class Run:
     def approve(self, cost: Cost) -> Cost:
         """Let a priced request through, or refuse it before anything is bought.
 
-        Every call to a provider passes through here, so no stage can spend without its caller's
-        approval and no ceiling can be passed halfway. Spend gates money and nothing else, so a price
-        whose provider declares it bills nothing passes whatever the run may spend, and is never asked
-        about. `--max-cost` caps the whole run. A build holds its whole price against it first, through
-        `approve_whole`, and each approval here then adds the most it can cost to what this run already
-        approved, so a stage that asks for more than the build was priced at is refused before anything
-        in it is bought. The ceiling is summed and never the estimate, because a provider charges one
-        request at a time. What the run bought before such a refusal stays bought and kept.
+        Every stage that buys passes its price through here before its first request, so no stage
+        can spend without its caller's approval and no ceiling can be passed halfway. Spend gates
+        money and nothing else, so a price whose provider declares it bills nothing passes whatever
+        the run may spend, and is never asked about. `--max-cost` caps the whole run. A build holds
+        its whole price against it first, through `approve_whole`, and each approval here then adds
+        the most it can cost to what this run already approved, so a stage that asks for more than
+        the build was priced at is refused before anything in it is bought. The ceiling is summed
+        and never the estimate, because a provider charges one request at a time. What the run
+        bought before such a refusal stays bought and kept.
         """
         self.emit(CostPriced, cost=cost)
         if cost.free:

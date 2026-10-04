@@ -1,7 +1,7 @@
 """The URL a page section is opened at, and what its recording is keyed on.
 
 The page is opened on the local origin with the section's scene, the cues `cue` resolved and the
-words the voice spoke, and it is recorded for its span in the narration plus its record margin. A
+section's words, and it is recorded for its span in the narration plus its record margin. A
 section whose frames stall is recorded again while the machine is quieter, up to `[record] retries`
 times.
 
@@ -15,7 +15,7 @@ the same pixels, so `record` keeps the recording it has.
 The key is cut that way because a page holds every scene of a film. A digest of the whole file would
 call all nine sections of a nine-scene page stale for one slide's edit, which on the one-page project
 `decktalk init` writes is every section there is. The scene slice is taken from the page source and
-never from the browser, because `status` and `record --only` ask whether a recording still stands and
+never from the browser, because `status` and `record --section` ask whether a recording still stands and
 neither may open Chromium to find out. The asset list is what keeps the key honest in the other
 direction: a page that swaps one picture for another changes no line of HTML, so the markup alone
 would say nothing had moved.
@@ -265,7 +265,7 @@ class Job:
     def unchanged(self) -> bool:
         """Whether the recording on disk was made from these exact inputs, and is finished.
 
-        A log with no narration t=0 in it belongs to a run that was stopped between placing the webm
+        A log with no start in it belongs to a run that was stopped between placing the webm
         and measuring it, so the section is recorded again rather than assembled from a picture whose
         first frame nobody found.
         """

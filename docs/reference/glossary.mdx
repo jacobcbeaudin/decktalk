@@ -50,7 +50,7 @@ They run in this order, and each is both a command and a call on a `Project`.
 
 | Word | Meaning | Not | Explained in |
 |---|---|---|---|
-| narrate | The stage that turns the script into one take per section and its words. It writes the takes into the takes directory and `build/narrate/takes.json`. | | [How it works](/concepts/how-it-works) |
+| narrate | The stage that turns the script into one take per section and its words. It writes a voiced take into the takes directory, a placeholder into `build/narrate/`, and the take index `build/narrate/takes.json`. | | [How it works](/concepts/how-it-works) |
 | cue | The stage that turns each cue phrase into a second on its section clock. It writes `build/cue-times.json`. | | [Cues](/concepts/cues) |
 | record | The stage that records each page section in headless Chromium against those seconds. It writes `build/recordings/`. | | [How it works](/concepts/how-it-works) |
 | score | The music, the ambience bed and the effects beside the narration, and the stage that composes them. It keeps what it buys in the score directory and joins the music under `build/score/`. | soundscape | [Sound](/concepts/sound) |

@@ -45,6 +45,12 @@ class TestTheWriter:
             write(path, "verify.onset_rise_points", "20", scope=Scope.PROJECT, environ={})
         assert path.read_text(encoding="utf-8") == "[verify]\ncue_offset_max_ms = 100\n"
 
+    def test_a_number_that_is_not_finite_never_reaches_the_disk(self, tmp_path: Path) -> None:
+        rate = "elevenlabs.dollars_per_1000_characters"
+        with pytest.raises(InputError, match=rf"^{rate}: must be a finite number, got nan in config set\.$"):
+            write(tmp_path / "decktalk.toml", rate, "nan", scope=Scope.PROJECT, environ={})
+        assert not (tmp_path / "decktalk.toml").exists()
+
     def test_a_key_nobody_knows_is_refused_with_the_nearest_one(self, tmp_path: Path) -> None:
         with pytest.raises(InputError, match="Did you mean 'verify.cue_offset_max_ms'"):
             write(tmp_path / "decktalk.toml", "verify.cue_offset_maks_ms", "120", scope=Scope.PROJECT, environ={})

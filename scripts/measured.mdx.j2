@@ -13,18 +13,18 @@ run reported.
 
 `decktalk verify` decodes the finished film, finds the frame where each reveal starts to change, and
 measures how far that frame sits from the word its cue names. A reveal passes when it lands within
-`verify.cue_offset_max_ms` of its word, early or late, and the table grades every reveal against
-that limit.
+`verify.cue_offset_max_ms` of its word plus half a frame, early or late, and the table grades every
+reveal against `verify.cue_offset_max_ms` alone.
 
-| Voice | Reveals | Median | Worst | Limit | Past the limit |
+| Takes | Reveals | Median | Worst | Limit | Past the limit |
 |---|---|---|---|---|---|
 {% for row in landing %}| {{ row.voice }} | {{ row.reveals }} | {{ row.median }} | {{ row.worst }} | {{ row.limit }} | {{ row.over_limit }} |
 {% endfor %}
-The placeholder voice plays a click on every word of real word times, so its row measures the cue,
+A placeholder plays a click on every word of real word times, so its row measures the cue,
 the recording and the film it is assembled into. It has no voice of its own to misplace a word, so a voiced take's timing
 is not part of it.
 
-{% for row in landing %}### Every reveal, {{ row.voice }} voice
+{% for row in landing %}### Every reveal, {{ row.voice }} takes
 
 Each offset is one build, in milliseconds. A positive offset is late and a negative one is early.
 

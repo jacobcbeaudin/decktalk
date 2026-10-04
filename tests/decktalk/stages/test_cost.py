@@ -689,7 +689,7 @@ def test_takes_nobody_could_match_beside_a_score_name_the_whole_ceiling(tmp_path
 
 
 def test_a_score_is_never_called_takes_on_disk(tmp_path: Path) -> None:
-    """Only takes are matched to a voice, so no clause about the score borrows the words of an unmatched take."""
+    """Only takes are matched to a voice, so no clause about the score borrows the words of an unchecked take."""
     inputs = project(tmp_path, SOUND)
     unmatched = cost_of(inputs, [Buy(characters=466, seconds=39.0, sections=(1,), certain=False)])
     scored = cost_of(inputs, [an_effect(2.0)])

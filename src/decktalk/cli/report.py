@@ -100,7 +100,7 @@ def check(
 ) -> CheckResult:
     """Judge script.md, cues.json and the pages before a build.
 
-    It produces nothing and prices what a voiced build would cost, so an agent that wants the price
+    It writes nothing a stage reads and prices what a voiced build would cost, so an agent that wants the price
     of a run makes this one call.
     """
     session = sessions.of(ctx)

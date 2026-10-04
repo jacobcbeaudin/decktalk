@@ -17,7 +17,7 @@ and the pinned Biome that lints it. Run every command in this file from the repo
 ```console
 git clone https://github.com/jacobcbeaudin/decktalk.git
 cd decktalk
-uv sync --group dev           # Python 3.12 and every dependency, into .venv
+uv sync --group dev           # Python 3.12 or later and every dependency, into .venv
 npm ci                        # esbuild and Biome, pinned by package-lock.json
 uv run decktalk install       # headless Chromium and ffmpeg, once per machine
 uvx pre-commit install        # the lint hooks and the commit message hook
@@ -104,7 +104,7 @@ other edge, and the tree below is generated from the same table.
 src/decktalk/
   vocabulary             the names every layer above shares, which import nothing but each other
     files.py             How DeckTalk replaces files a person owns, which is all of them together or none of them.
-    pipeline.py          The run declared once: the six stages in order, the artifacts they pass between them, and how a moment ended.
+    pipeline.py          The run declared once: the six stages in order, the artifacts they pass between them, and how a stage or a section ended.
     findings.py          A finding: the code a caller dispatches on, the sentence a reader meets, where it is, and the fix.
     secret.py            A value that may be used and never shown: an API key, and every other value read from `.env`.
     errors.py            The refusals DeckTalk makes on purpose: nine codes, seven classes and the exit code each one takes.
@@ -112,7 +112,7 @@ src/decktalk/
     page.py              The page contract as Python reads it: every attribute, the code that judges it and every query key.
   models                 the frozen models and the settings tree, which every layer above reads
     results.py           What every call returns: one frozen result per command, each a flat object a reader can dispatch on.
-    events.py            One stream of progress: thirteen moments, the four fields the library mints onto each, and the subscribers that render them.
+    events.py            One stream of progress: thirteen events, the four fields the library mints onto each, and the subscribers that render them.
     logs.py              The bridge from Python's standard logging to the run's event stream, which is the one output there is.
     tomlmap/             One loader from a mapping to typed values, with located errors and "did you mean" hints.
       read.py            One mapping read into typed values, with the file, the table and the line named in every refusal.
@@ -179,7 +179,7 @@ src/decktalk/
       clip.py            A span of one built section, cut into its own file with its own sound and its own words.
       cost.py            What DeckTalk pays a provider for what a stage buys, priced once at the bill the provider declares.
       kept.py            What the last build made, and whether the film and its measurement on disk still stand.
-      pool.py            The one pool every stage fans its sections out to, and the three ways it stops.
+      pool.py            The one pool `narrate` and `record` fan their sections out to, and the three ways it stops.
       status.py          What the project's files say, what is built from them, what has gone stale, and what to do next.
       storyboard.py      Every slide at every cue, frozen onto one page, which is the checkpoint before anything is bought.
       table.py           The six stages against the functions that run them, which `build` and the facade both call through.
@@ -189,8 +189,8 @@ src/decktalk/
         loudness.py      EBU R128 loudness: measure, apply one gain, limit the true peaks, and measure again.
         mix.py           The whole soundtrack as one ffmpeg filter graph, one `MixInput` per layer.
         publish.py       Everything a viewer receives beside the picture: captions, chapters, the transcript and the poster.
-        slate.py         The titled placeholder frame a section whose clip is missing is cut from.
-      check/             Judge without producing, and price the narration a build would buy, before a single second is bought.
+        slate.py         The slate a section whose clip is missing is cut from.
+      check/             Judge without writing what a stage reads, and price the narration a build would buy, before any second is bought.
         freeze.py        Which two frozen states each cue is measured between, worked out with no browser and no file.
         scan.py          Freezing the states a check compares, and reading what the difference between two of them means.
         script.py        What the script would sound like, judged before a single second of it is bought.
@@ -202,11 +202,11 @@ src/decktalk/
         script_rules.py  What the voice must never receive, and the scans `check` judges a script by.
         state.py         The take state: what the disk holds for each spoken section, and what one narrate run does about it.
         takes.py         Writing a placeholder take, charging a voiced one, placing each, and joining every take into one narration track.
-      record/            Stage 3: record each page section in a headless browser, find narration t=0, and judge the result.
+      record/            Stage 3: record each page section in a headless browser, find where the section clock starts, and judge the result.
         capture.py       The URL a page section is opened at, and what its recording is keyed on.
         checks.py        What one finished recording is judged on, before anything is assembled from it.
         pool.py          How many page sections record at once, which is the size of the pool `record` hands them to.
-        start.py         Where narration t=0 sits in a recording.
+        start.py         Where the section clock starts in a recording.
       score/             Stage 4: the music, the ambience bed and the effects this project describes are generated.
         ledger.py        What this project has already bought from the sound service, as one typed file it reads and writes.
       verify/            Stage six: the one read-only stage, over the finished film and the logs that made it.
@@ -240,7 +240,7 @@ src/decktalk/
 The test for `src/decktalk/stages/verify/plan.py` is `tests/decktalk/stages/verify/test_plan.py`,
 and `tests/contract/test_layout.py` fails on a module that has no mirrored file. A test that belongs
 to no module goes in `tests/contract/`, which is a closed list. `tests/platform/` holds what exists
-only because there are three platforms, `tests/e2e/` the two suites that build a whole project, and
+only because there are three platforms, `tests/e2e/` the three suites that build a whole project, and
 `tests/support/` what several tests share. [ARCHITECTURE.md](ARCHITECTURE.md) says why the package
 has this shape, and [RELEASING.md](RELEASING.md) says how CI judges a change and how a release ships.
 
@@ -262,8 +262,8 @@ Review holds the rules no mechanism can.
   `tests/contract/test_prose.py` holds the two mechanical rules, no semicolon and no em dash outside
   data, over every tracked file.
 - **A comment says why, never what.** The code says what, and a comment that narrates it goes stale.
-- **Dead code is a reading.** `ruff` and a call-graph test catch most of it, and a reviewer judges
-  the rest.
+- **Dead code is a reading.** `ruff` catches unused names and arguments, and a reviewer judges the
+  rest.
 - **A rebuilt module reads like its siblings.**
 - **No deploy note in the repository.** Hosting configuration, a dashboard setting and an account
   name are given in review rather than committed.

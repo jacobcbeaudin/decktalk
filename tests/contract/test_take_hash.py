@@ -56,7 +56,7 @@ EXPECTED_FILMS = ("halfway", "halfway/hero")
 
 
 def digest_of(text: str, *, voice: str = INPUTS["voice"]) -> str:
-    """The digest the paid takes were bought under, built from the inputs the data file names."""
+    """The digest the voiced takes were bought under, built from the inputs the data file names."""
     return TakeInputs.of(
         provider=INPUTS["provider"],
         voice=voice,

@@ -1,4 +1,4 @@
-"""One price, built one way for every test that hands a run, a result or an event something to spend."""
+"""One cost, built one way for every test that hands a run, a result or an event a price to carry."""
 
 from __future__ import annotations
 

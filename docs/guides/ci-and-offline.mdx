@@ -29,7 +29,7 @@ there and fetches nothing, so it is safe to leave in a job forever.
   `cache` field is the directory to cache, read from the machine rather than guessed.
 
 After `install`, DeckTalk itself reaches the network only to buy speech or sound, and a build with
-`--no-spend` never does. A free local voice such as `dtsp` is still called under `--no-spend`, on the
+`--no-spend` never does. A free provider such as `dtsp` is still called under `--no-spend` once a voice is named, on the
 address the machine names, a loopback address by default, because spend gates money and nothing else. A page that loads a font or a library from another host still reaches for
 it, as [What leaves your machine](/reference/what-leaves-your-machine#requests-a-page-makes) explains.
 
@@ -54,7 +54,7 @@ The refusal is the whole of what a caller needs.
 {/* sample: decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voice] id set and no API key, which exits 2 */}
 ```text
 error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
-  hint: Run decktalk narrate --spend to approve that spend, or decktalk narrate --no-spend to play a placeholder wherever a take is missing.
+  hint: Run decktalk narrate --spend to approve that cost, or decktalk narrate --no-spend to play a placeholder wherever a take is missing.
   docs: https://docs.decktalk.ai/reference/errors/APPROVAL
 ```
 
@@ -86,7 +86,8 @@ stderr with neither in the other's way.
 
 `event` is the discriminator. A `stage.done` and a `section.done` each carry an `outcome` of `ran`,
 `kept`, `skipped`, `stopped` or `failed`, so a job can tell work that was done from work that was
-kept, and a failed run's `run.done` carries its `error`. [The event stream](/agents/json#the-event-stream)
+not. `record` reports a section whose recording it kept as `skipped`, so a job counts `kept` and
+`skipped` together as work that was not done again. A failed run's `run.done` carries its `error`. [The event stream](/agents/json#the-event-stream)
 lists every event and its fields.
 
 Every run appends the same lines to `build/events/<run>.jsonl` whether `--events` was passed or not,
@@ -129,8 +130,8 @@ threshold covers it.
 decktalk check --no-pages
 ```
 
-`check` judges `script.md`, `cues.json` and the pages, produces nothing, and prices the narration a
-voiced build would buy. `--no-pages` drops the browser entirely and says which judgements it could not
+`check` judges `script.md`, `cues.json` and the pages, writes nothing a stage reads, and prices the
+narration a voiced build would buy. `--no-pages` drops the browser entirely and says which judgements it could not
 reach, so a docs-only job, a pre-commit hook and a container with no Chromium can all still run it.
 
 {/* sample: decktalk check --no-pages, on a fresh decktalk init my-lesson with no API key and no voice id */}
@@ -239,7 +240,7 @@ the same run that made it and its findings already decide the build's exit code.
 a second command to gate on the film.
 
 `--no-spend` plays every take the repository holds and a placeholder for each section whose take a
-paid voice would sell, so the measurement covers the recording, the encode and the mix and not only the
+provider that bills would sell, so the measurement covers the recording, the encode and the mix and not only the
 cue times, on a job that spends nothing and holds no key. A job whose voice is the free `dtsp` and
 that runs `decktalk-voice` beside it gets every missing take voiced under the same flag.
 
@@ -275,7 +276,7 @@ job is handed nothing at all. A project that keeps the id out of the file hands 
 A run with `--no-spend` plays every take on disk and never builds a voice that bills, so it reads no
 key. Each section whose take is missing plays a placeholder and is reported as
 [`TAKE_MISSING`](/reference/findings/TAKE_MISSING), once per section, with the command that buys its
-take. A free voice is the exception: it makes the missing takes, and when its server is not running
+take. A free provider is the exception: once a voice is named it makes the missing takes, and when its server is not running
 each section plays a placeholder whose finding says to start it rather than to buy anything. That finding is a warning, because the film is still a whole film with estimated timing in that
 section, so the default `--fail-on error` builds it and exits 0 and the finding sits in
 `build.json` for the job summary. A job that must fail on a missing take passes `--fail-on warning`, and

@@ -19,12 +19,12 @@ one from a `SpeechContext`, and the `Secrets` it reads its credential from.
 
 A provider is built from a `SpeechContext`, which carries values and never a project, so this layer
 knows nothing about `decktalk.toml`, the build directory or the stages, and a provider is built in a
-test from four numbers and a source of secrets.
+test from a URL, three numbers and a source of secrets.
 
-Every run carries its machine's `SpeechProviders`, and a stage asks the run's `voices.provider` for a voice, so
-the voice is the one the machine running it answers with on whatever thread asks, and two machines in
-one process cannot swap each other's voice. No module-level variable holds the table a run reads, so
-nothing can fall back to a shipped paid voice.
+Every run carries its machine's `SpeechProviders`, and a stage asks `run.machine.speech_providers`
+for a voice, so the voice is the one the machine running it answers with on whatever thread asks,
+and two machines in one process cannot swap each other's voice. No module-level variable holds the
+table a run reads, so nothing can fall back to a shipped voice that bills.
 
 Where a provider sends its requests is its table's `base_url`, which is the machine's to set, so a
 project someone else wrote can send neither the key nor the script anywhere the machine did not name.
@@ -136,7 +136,7 @@ class SpeechProvider(Protocol):
     """Reads one section and returns the audio and a time for every word.
 
     What a take is named by is not the provider's to say. The digest is taken in one place above this
-    boundary, from the take identity and the output format its adapter declares in `DECLARED`.
+    boundary, from the take's `TakeInputs`, which hold the output format its adapter declares in `DECLARED`.
     """
 
     name: str
@@ -149,11 +149,11 @@ SpeechFactory = Callable[[SpeechContext], SpeechProvider]
 
 @dataclass(frozen=True)
 class Billing:
-    """How one adapter bills a take, which every price, every spend and every cap reads.
+    """How one adapter bills a take, which every price, the spend gate and `--max-cost` read.
 
     `by` is per character, per second of audio, or free. The rate is read from the adapter's own
     table under the key `rate` names, stated per 1,000 characters for a per-character bill and per
-    second for a per-second one, so no layer above this one assumes how speech is billed.
+    minute of audio for a per-second one, so no layer above this one assumes how speech is billed.
     """
 
     by: BillingBasis
@@ -176,10 +176,9 @@ class Output:
 
 
 HOST_OUTPUT = Output(format="mp3_44100_128", suffix=".mp3")
-"""What a provider a host registered is asked for and its takes are named by, which declares no format of its own.
+"""What a provider a host registered is asked for and its takes are named by, since it declares no format of its own.
 
-It is the format every provider was asked for before an adapter declared its own, so a take a host's
-provider was already paid for keeps its digest and is written `.mp3`, as every audio file DeckTalk reads is.
+Its takes are written `.mp3`, as every audio file DeckTalk reads is.
 """
 
 
@@ -284,7 +283,7 @@ DECLARED: Mapping[str, Declared] = MappingProxyType(
 A provider a host registered itself is not here. It owns no table, needs no key DeckTalk knows of,
 is handed the pieces and renders their pauses its own way, is asked for `HOST_OUTPUT`, and its takes are named
 by `[voice] speed` alone among the settings. Its bill is undeclared, so DeckTalk prices it at nothing
-anybody stated and a spend cap refuses to guard it.
+anybody stated and `--max-cost` refuses to guard it.
 """
 
 
@@ -294,8 +293,8 @@ class VoiceInForce:
 
     It is resolved once from the settings, which already hold `[voice]`, the provider's own table and
     `DECKTALK_VOICE_ID`, and from the closed set in `DECLARED`. It holds no factory and no secret, so it
-    can never build the provider or read its key. `SpeechProviders.provider` builds it, as it always has.
-    A provider DeckTalk does not declare is one a host registered: it owns no table, its takes are named
+    can never build the provider or read its key. `SpeechProviders.provider` builds the provider. A
+    provider DeckTalk does not declare is one a host registered: it owns no table, its takes are named
     by `[voice] speed` alone, and its bill is undeclared.
     """
 
@@ -304,7 +303,7 @@ class VoiceInForce:
     id: str
     """`[voice] id`, which `DECKTALK_VOICE_ID` overrides, or empty when neither names one."""
     model: str
-    """The `model` of the provider's own table (N12), the model asked for and never the one served.
+    """The `model` of the provider's own table, the model asked for and never the one served.
 
     It is empty for a provider with no table.
     """

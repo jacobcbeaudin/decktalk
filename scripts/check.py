@@ -288,7 +288,8 @@ def generator(name: str) -> tuple[str, ...]:
 
 
 FIRST_GENERATOR = "build_runtime"
-"""The generator that runs before the others, because it writes `page.py`, which every other one imports."""
+"""The generator that runs before the others, because it writes `page.py`, which every generator that imports the
+package reads."""
 
 SAMPLES = "build_samples"
 """The generator that runs DeckTalk on a starter for the docs samples, which needs ffmpeg and runs in the e2e row."""

@@ -217,7 +217,7 @@ def tune[T](
     source: Source = Source.CHOSEN,
     evidence: str | None = None,
 ) -> T:
-    """One tunable key, declared once, with everything any surface publishes about it.
+    """One setting, declared once, with everything any surface publishes about it.
 
     The record lives beside the default because every other spelling of a key is generated from it:
     the loader reads `bounds`, the schema reads all of it, the reference page renders it and a

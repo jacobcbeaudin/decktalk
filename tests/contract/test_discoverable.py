@@ -8,7 +8,7 @@ one place that sentence is a test rather than an intention.
 Four surfaces are walked and each is total in both directions. The command line has to publish a
 command for every result the library returns and help for every command and every option it takes.
 The settings tree has to publish, for every key, a sentence, a default, a safe range, a unit, a
-scope and a nature. `tests/decktalk/test_settings.py` holds that record, the generator check
+scope and a nature. `tests/decktalk/settings/test_settings.py` holds that record, the generator check
 `build_settings_schema.py --check` holds the committed schema to the same keys, and this file holds
 only the range rule neither of them does. The finding codes and the error codes have to publish a
 sentence, a severity where one applies and a documentation address that follows the published
@@ -53,7 +53,7 @@ def test_every_numeric_settings_key_publishes_a_safe_range():
     """A number with no range is a setting an agent cannot change safely, because nothing says how far is too far.
 
     The rest of each key's record, its sentence, default, scope and nature, is held once in
-    `tests/decktalk/test_settings.py`, and the published schema is held to the keys by
+    `tests/decktalk/settings/test_settings.py`, and the published schema is held to the keys by
     `build_settings_schema.py --check`. This is the one rule of the record that neither holds.
     """
     unranged = sorted(key.id for key in KEYS if key.annotation in NUMERIC and key.bounds is None)

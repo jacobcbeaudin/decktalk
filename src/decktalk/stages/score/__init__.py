@@ -2,11 +2,11 @@
 
     score/<name>.mp3          one bought file per ambience bed and effect, named by its item
     score/music-part<n>.mp3   each part of the music, bought in turn
-    score/ledger.json         what this project has already bought, keyed by the request
+    score/ledger.json         what this project has already bought, one row per item with its request's digest
     build/score/music.mp3     the music joined from its parts, which is a cache
 
-It runs after `record`, so the unpaid draft loop still stops at a recording and every credit a run
-spends is already spent by the time the film is cut. `narrate` is the other stage that buys, with
+It runs after `record`, so the unpaid draft loop still stops at a recording and every sound a run
+buys is already bought by the time the film is cut. `narrate` is the other stage that buys, with
 `cue` and `record` between the two, so a run that reaches here has nothing left to pay for.
 
 Ambience and effects are one sound request each, and music is asked for in chunks of at most
@@ -25,21 +25,22 @@ cache under the build, joined again by any run that finds its parts and not the 
 
 What has already been bought is `ledger.py`, one typed file beside the audio rather than a cache
 beside every output, and an item whose request still matches its row is kept rather than bought
-again. Every purchase here is paid, so this stage takes no `force`, which never spends. An item is
-bought again only once its request moves or its bought audio is gone, or when `replace_score` says
-to buy every item again, which a run that may not spend ignores because it has nothing to replace a
-bought sound with.
+again. Everything bought here is paid for, so this stage takes no `force`, which never spends. An
+item is bought again only once its request moves or its bought audio is gone, or when
+`replace_score` says to buy every item again, which a run that may not spend ignores because it has
+nothing to replace a bought sound with.
 
-Nothing is bought without `run.approve`, so a run that may not spend reports the plan and writes
-nothing at all. The run's own `spend` is the only thing that says so, because a second flag beside
-it could be set to contradict the gate. The sound provider is built only once something is bought,
-every paid request is a `sound.charged` line the moment the provider answers, and the spend a run
-that bought something reports is marked charged.
+Nothing is bought without `run.approve`, so a run that may not spend reports the plan and buys
+nothing. The one file it may write is the music joined again from kept parts, which costs nothing.
+The run's own `spend` is the only thing that says so, because a second flag beside it could be set
+to contradict the gate. The sound provider is built only once something is bought, every paid
+request is a `sound.charged` line the moment the provider answers, and the cost a run that bought
+something reports is marked charged.
 
 `only` names section numbers, because that is what every other stage takes, and the score's own
 items are named rather than numbered. An effect is wanted when a `[[mix.effect]]` row cues it in a
 selected section, the ambience bed is wanted when a selected page section asks for one, and the
-music is wanted whenever any section is selected, because one bed plays under the whole film.
+music is wanted whenever any section is selected, because one piece of music plays under the whole film.
 """
 
 from __future__ import annotations
@@ -73,7 +74,7 @@ AMBIENCE_NAME = "ambience"
 """What the ambience bed is called, which is the one item the `[score]` table does not name."""
 
 MUSIC_NAME = "music"
-"""What the music bed is called, which the `[score]` table does not name either."""
+"""What the music is called, which the `[score]` table does not name either."""
 
 
 def requested_seconds(kind: SoundKind, body: Mapping[str, Any]) -> float:
@@ -103,7 +104,7 @@ class Planned:
 
     @property
     def bought(self) -> tuple[Path, ...]:
-        """The files this item's purchase wrote, which are its parts for the music and its one file for a sound."""
+        """The files buying this item wrote, which are its parts for the music and its one file for a sound."""
         return self.parts or (self.out,)
 
     @property
@@ -126,7 +127,7 @@ def sound_body(spec: SoundSpec, cfg: AmbienceConfig | EffectConfig, *, loop: boo
         "model_id": spec.model or cfg.model,
     }
     if loop:
-        # A bed plays under whole sections, so the service is asked for audio that meets its own end.
+        # An ambience bed plays under whole sections, so the service is asked for audio that meets its own end.
         body["loop"] = True
     return body
 
@@ -134,7 +135,7 @@ def sound_body(spec: SoundSpec, cfg: AmbienceConfig | EffectConfig, *, loop: boo
 def music_bodies(spec: MusicSpec, cfg: MusicConfig) -> list[dict[str, Any]]:
     """One request per chunk of the music, each carrying the same prompt and its place in the piece.
 
-    The service writes at most `chunk_max_seconds` in one answer, so a longer bed is asked for in
+    The service writes at most `chunk_max_seconds` in one answer, so longer music is asked for in
     equal parts and each part is told which one it is, which is what keeps the key and the tempo.
     """
     parts = max(1, math.ceil(cfg.duration_seconds / cfg.chunk_max_seconds))
@@ -523,7 +524,7 @@ def score(
     """Compose the music, the ambience bed and the effects this project describes.
 
     A run that may not spend reports what it would ask for and buys nothing, which is the plan an
-    author reads before approving a spend. `replace_score` is the one way a bought sound is bought
+    author reads before approving a cost. `replace_score` is the one way a bought sound is bought
     again: a run that may spend buys every item it selects again, and one that may not keeps every
     item on disk, because it has nothing to replace a bought sound with.
 

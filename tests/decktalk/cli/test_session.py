@@ -202,14 +202,14 @@ def test_no_spend_never_asks_and_never_buys(monkeypatch: pytest.MonkeyPatch, is_
     made.terminal = terminal(is_terminal=is_terminal)
     monkeypatch.setattr(made, "confirm", _never_asked)
     fake = Fake(price=a_cost())
-    assert made.spends(fake.project(), (Stage.NARRATE,)) is False
+    assert made.spends(fake.project(), (Stage.NARRATE,)).spend is False
     assert fake.calls == [], "a run told not to spend was priced as if it might"
 
 
 def test_spend_buys_without_asking(monkeypatch: pytest.MonkeyPatch) -> None:
     made = session(spend=True)
     monkeypatch.setattr(made, "confirm", _never_asked)
-    assert made.spends(Fake().project(), (Stage.NARRATE,)) is True
+    assert made.spends(Fake().project(), (Stage.NARRATE,)).spend is True
 
 
 @pytest.mark.parametrize("is_terminal", [True, False])
@@ -219,7 +219,7 @@ def test_a_run_with_nothing_to_buy_is_never_asked_and_buys_nothing(
     made = session()
     made.terminal = terminal(is_terminal=is_terminal)
     monkeypatch.setattr(made, "confirm", _never_asked)
-    assert made.spends(Fake(price=a_cost(0.0, 0.0, sections=())).project(), (Stage.NARRATE,)) is False
+    assert made.spends(Fake(price=a_cost(0.0, 0.0, sections=())).project(), (Stage.NARRATE,)).spend is False
 
 
 @pytest.mark.parametrize("is_terminal", [True, False])
@@ -230,7 +230,7 @@ def test_a_voice_that_bills_nothing_is_never_asked_and_is_bought_from(
     made.terminal = terminal(is_terminal=is_terminal)
     monkeypatch.setattr(made, "confirm", _never_asked)
     free = a_cost(0.0, 0.0, sections=(1, 2), billing=BillingBasis.FREE)
-    assert made.spends(Fake(price=free).project(), (Stage.NARRATE,)) is True
+    assert made.spends(Fake(price=free).project(), (Stage.NARRATE,)).spend is True
 
 
 def test_a_run_told_to_replace_its_paid_takes_is_asked_even_with_nothing_missing() -> None:
@@ -243,7 +243,7 @@ def test_a_run_told_to_replace_its_paid_takes_is_asked_even_with_nothing_missing
 def test_no_spend_never_buys_from_a_voice_that_bills_nothing() -> None:
     made = session(spend=False)
     free = a_cost(0.0, 0.0, sections=(1, 2), billing=BillingBasis.FREE)
-    assert made.spends(Fake(price=free).project(), (Stage.NARRATE,)) is False
+    assert made.spends(Fake(price=free).project(), (Stage.NARRATE,)).spend is False
 
 
 @pytest.mark.parametrize("layer", [Layer.DEFAULT, Layer.PROJECT])
@@ -297,7 +297,7 @@ def test_the_fix_prompt_counts_one_fix_in_the_singular(monkeypatch: pytest.Monke
 
 def test_the_storyboard_line_counts_one_panel_in_the_singular(capsys: pytest.CaptureFixture[str]) -> None:
     drawn = SimpleNamespace(storyboard=Path("build/storyboard.html"), panels=("one",))
-    assert session(spend=True).spends(Fake(storyboard=drawn).project(), (Stage.NARRATE,), storyboard=True)
+    assert session(spend=True).spends(Fake(storyboard=drawn).project(), (Stage.NARRATE,), storyboard=True).spend
     assert "Storyboard build/storyboard.html, 1 panel." in capsys.readouterr().err
 
 
@@ -310,7 +310,7 @@ def test_a_spend_flag_draws_the_storyboard_once_and_only_when_the_run_will_spend
     spend: bool, storyboard: bool, drawn: int
 ) -> None:
     fake = Fake(storyboard=SimpleNamespace(storyboard=None, panels=()))
-    assert session(spend=spend).spends(fake.project(), (Stage.NARRATE,), storyboard=storyboard) is spend
+    assert session(spend=spend).spends(fake.project(), (Stage.NARRATE,), storyboard=storyboard).spend is spend
     assert [name for name, _, _ in fake.calls].count("storyboard") == drawn
 
 
@@ -324,7 +324,7 @@ def test_a_terminal_names_the_storyboard_before_the_price_and_the_question(
     monkeypatch.setattr(made, "confirm", lambda question, **_: asked.append(capsys.readouterr().err) or True)
     drawn = SimpleNamespace(storyboard=Path("build/storyboard.html"), panels=("one",))
     fake = Fake(storyboard=drawn, price=a_cost(2.14, 2.14, sections=(1,)))
-    assert made.spends(fake.project(), (Stage.NARRATE,), storyboard=True)
+    assert made.spends(fake.project(), (Stage.NARRATE,), storyboard=True).spend
     said = " ".join(asked[0].split())
     assert said.index("Storyboard build/storyboard.html") < said.index("$2.14")
     assert [name for name, _, _ in fake.calls].count("storyboard") == 1

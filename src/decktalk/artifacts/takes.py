@@ -1,13 +1,14 @@
 """The take index, and the frozen inputs a take's name is taken over.
 
-    build/narrate/<digest>.<suffix>  one take, named by the content that produced it and by what it holds
-    build/narrate/takes.json       which section plays which take, and the clock the join makes
+    takes/<digest>.<suffix>          one voiced take, named by the content that produced it, in the takes directory
+    build/narrate/<digest>.mp3       one placeholder, which DeckTalk makes again for nothing
+    build/narrate/takes.json         which section plays which take, and the clock the join makes
 
 The suffix is the one the voice's adapter declares for its output format, so a take asked for in
 `mp3_44100_128` is `<digest>.mp3`, and a placeholder, which DeckTalk writes itself, is always `.mp3`.
 
-A take sits in the project's `[narration] takes_dir` instead when it names one, and the index stays
-under the build either way. The index is a cache over the takes, which narrate builds again from them
+A voiced take sits in the takes directory, `takes/` unless `[narration] takes_dir` names another, and
+the take index stays under the build. The take index is a cache over the takes, which narrate builds again from them
 when it does not read, so a checkout that commits its takes never sees it change, and the takes are
 what a project keeps.
 
@@ -52,7 +53,7 @@ PLACEHOLDER_PREFIX = "placeholder-"
 """What marks the digest of a placeholder, so a placeholder and a voiced take never share a file name."""
 
 PLACEHOLDER_SUFFIX = ".mp3"
-"""What a placeholder take is written under, which is the mp3 click track DeckTalk writes itself."""
+"""What a placeholder is written under, which is the mp3 of click audio DeckTalk writes itself."""
 
 FIELD_SEPARATOR = "\n"
 """What joins the fields of a digest's payload, which no field but the last may hold."""
@@ -63,8 +64,8 @@ PLACEHOLDER_DIGITS = 10
 TAKE_DIGEST = rf"^(?:[0-9a-f]{{{TAKE_DIGITS}}}|{PLACEHOLDER_PREFIX}[0-9a-f]{{{PLACEHOLDER_DIGITS}}})$"
 """Every digest a take may be named by, which is the head of a sha256 in hex and nothing else.
 
-A take's digest becomes a file name under the take directory, so an index a user supplied could
-otherwise name `../` and have the narration read a file from anywhere on the machine.
+A take's digest becomes a file name under the takes directory or build/narrate, so an index a user
+supplied could otherwise name `../` and have the narration read a file from anywhere on the machine.
 """
 
 
@@ -138,7 +139,7 @@ class TakeInputs(_Digested):
 class PlaceholderInputs(_Digested):
     """Everything that decides what a placeholder take sounds like, which is its length and its clicks.
 
-    No credit is spent on one, so its digest exists only to let an unchanged section be skipped, and
+    Nothing is bought for one, so its digest exists only to let an unchanged section be skipped, and
     its prefix keeps it out of the voiced takes a run must never overwrite.
     """
 

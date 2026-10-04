@@ -223,6 +223,28 @@ def test_whether_a_recording_still_stands_is_asked_of_record(tmp_path: Path, mon
     assert any("its page changed" in line.message and line.level is Level.WARNING for line in said)
 
 
+@pytest.mark.parametrize(
+    "script",
+    [SCRIPT, "# Demo\n\nNo section heading anywhere.\n"],
+    ids=["the take's refusal says it", "the recording's judgement says it"],
+)
+def test_a_damaged_provider_words_file_is_one_line_and_every_row_is_kept(tmp_path: Path, script: str) -> None:
+    """A recorded section's damaged provider words refused the whole report, which reports and never raises."""
+    inputs = a_project(tmp_path, script=script)
+    take = take_on_disk(inputs)
+    damaged = inputs.workspace.takes / words_file(take.digest)
+    damaged.write_text("{damaged", encoding="utf-8")
+    inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.recording("01").write_bytes(b"")
+    run = a_run(tmp_path)
+    said: list[RunLog] = []
+    run.machine.events.subscribe(lambda event: said.append(event) if isinstance(event, RunLog) else None)
+    result = status(inputs, run)
+    assert [row.section for row in result.sections] == [1, 2]
+    naming = [line for line in said if damaged.name in line.message]
+    assert len(naming) == 1 and naming[0].level is Level.ERROR, "\n".join(line.message for line in said)
+
+
 def test_a_section_with_no_recording_is_never_stale(tmp_path: Path) -> None:
     """Nothing on disk cannot have stopped matching the project, so the row says what it has."""
     result = status(a_project(tmp_path), a_run(tmp_path))

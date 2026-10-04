@@ -73,6 +73,8 @@ refusal names what it read and would not accept.
 - A required key is missing, such as a `[[section]]` with no `number`.
 - A value has the wrong type. `seconds = 120.5` under `[score.music]` fails, because that key is
   an integer and a mapping carries the type its author wrote.
+- A number is `nan` or `inf`, which TOML spells and no range can hold. The same refusal meets one in
+  a `DECKTALK_` variable or a `--set`, and it names the file, the variable or the flag that wrote it.
 - Two `[[section]]` tables share a `number`.
 - A section has both `page` and `clip`, or neither.
 - `record_margin_seconds`, `hold_seconds`, `lead_seconds` or `tail_seconds` is below 0.
@@ -218,7 +220,7 @@ voice, so changing `provider` never sends one vendor's fields or model to anothe
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `provider` | string | `elevenlabs` | The speech provider this project is read by. It is a name the machine's own map answers, and an unregistered name fails when `narrate` runs rather than at load. DeckTalk ships `elevenlabs` and `dtsp`. |
+| `provider` | string | `elevenlabs` | The speech provider this project is read by. It is a name the machine's own map answers. An unregistered name loads, and it fails when a run asks that voice for a take. A run that does not spend plays placeholders and never asks. DeckTalk ships `elevenlabs` and `dtsp`. |
 | `id` | string | empty | The voice that reads the script. It is a published name rather than a credential, so it is committed with the project, and `DECKTALK_VOICE_ID` in the environment overrides it for anyone who keeps it out of the file. |
 | `speed` | number | `1.0` | How fast the voice speaks, as a multiple of its natural pace. |
 
@@ -275,14 +277,16 @@ duration_seconds = 360
 | `duration_seconds` | number | `25` | A setting: how long a bed to ask for. The bed loops under every section that sets `with_ambience = true`. |
 | `prompt_influence` | number | `0.3` | A setting: how closely the sound follows the prompt. |
 | `model` | string | `eleven_text_to_sound_v2` | A setting: the sound model to ask. |
+| `dollars_per_minute` | number | `0` | A setting: what your plan charges for a minute of this audio. A spend cap refuses a score while it is still `0`. |
 
 ### `[score.effects]` and `[score.effects.<name>]`
 
-`[score.effects]` holds three settings for every effect: `duration_seconds`, which is `0.5`,
-`prompt_influence`, which is `0.5`, and `model`. One `[score.effects.<name>]` table per effect
+`[score.effects]` holds four settings for every effect: `duration_seconds`, which is `0.5`,
+`prompt_influence`, which is `0.5`, `model`, and `dollars_per_minute`, which is what your plan
+charges for a minute of effect audio. One `[score.effects.<name>]` table per effect
 names it, and `<name>` is the name the file is written under. It takes `prompt`, which is required, and
-`out`, which is `score/<name>.mp3` by default, and it may set any of the three settings for
-itself. A `[[mix.effect]]` row is what places the finished sound in the film.
+`out`, which is `score/<name>.mp3` by default, and it may set `duration_seconds`, `prompt_influence` or
+`model` for itself. A `[[mix.effect]]` row is what places the finished sound in the film.
 
 ### `[score.music]`
 
@@ -296,6 +300,7 @@ itself. A `[[mix.effect]]` row is what places the finished sound in the film.
 | `bitrate` | string | `192k` | A setting: the bitrate of the file joined from the parts. |
 | `chunk_max_seconds` | integer | `300` | A setting: the longest one request asks for. |
 | `crossfade_seconds` | integer | `2` | A setting: the crossfade between two parts. |
+| `dollars_per_minute` | number | `0` | A setting: what your plan charges for a minute of this audio. A spend cap refuses a score while it is still `0`. |
 
 A piece longer than `chunk_max_seconds` is asked for in parts and joined with a crossfade, because the
 service will not write a long piece in one answer.
@@ -395,14 +400,16 @@ its hazard by `decktalk schema setting` and documented in full on
 | [`[narration]`](/reference/configuration#narration) | The pacing, the lead and the tail, the take folders and where a take's sound ends. |
 | [`[voice]`](/reference/configuration#voice) | The three keys every voice has: its provider, its id and its speed. |
 | [`[elevenlabs]`](/reference/configuration#elevenlabs) | ElevenLabs's own keys: the fields its speech takes, its default model, what your plan charges and its API. |
-| [`[record]`](/reference/configuration#record) | How the recorder drives Chromium, finds narration t=0 and judges a stalled or short recording. |
+| [`[dtsp]`](/reference/configuration#dtsp) | The local voice's own keys: its model and where its server listens. |
+| [`[record]`](/reference/configuration#record) | How the recorder drives Chromium, finds the start of the section clock and judges a stalled or short recording. |
 | [`[video]`](/reference/configuration#video) | The frame size, the frame rate and the video encoding of every recording and of the final mp4. |
 | [`[audio]`](/reference/configuration#audio) | The final audio: its bitrate, its sample rate, its channels, and the loudness, the true peak and the range it is mastered to. |
 | [`[mix]`](/reference/configuration#mix) | The ramps of the music duck, the ambience bed and each marker. |
 | [`[score]`](/reference/configuration#score) | How each sound and the music are asked for: their models, their lengths and how the music is joined. |
 | [`[verify]`](/reference/configuration#verify) | Every limit the finished film is measured against. |
 | [`[motion]`](/reference/configuration#motion) | Reduced motion and the multiplier on every declared motion span. |
-| [`[output]`](/reference/configuration#output) | The timestamped copy and how many runs of event files are kept. |
+| [`[output]`](/reference/configuration#output) | The timestamped copy of the final mp4. |
+| [`[events]`](/reference/configuration#events) | How many runs of event files are kept, and how large one may grow. |
 
 `decktalk config list` prints every key with the layer that set it.
 

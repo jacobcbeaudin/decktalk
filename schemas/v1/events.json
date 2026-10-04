@@ -13,7 +13,7 @@
       "type": "string"
     },
     "BillingBasis": {
-      "description": "How a voice bills what it makes, which its adapter declares and every price is worked out by.\n\nA provider DeckTalk does not ship declares nothing, so its bill is `undeclared`: its price is\nnothing anybody stated, and a spend cap refuses to guard it. A build's total that adds a bill per\ncharacter to a bill per second is `mixed`, and carries the rate of each.",
+      "description": "How a provider bills what it makes, which its adapter declares and every price is worked out by.\n\nA provider DeckTalk does not ship declares nothing, so its bill is `undeclared`: its price is\nnothing anybody stated, and `--max-cost` refuses to guard it. A build's total that adds a bill per\ncharacter to a bill per second is `mixed`, and carries the rate of each.",
       "enum": [
         "per_character",
         "per_second",
@@ -25,7 +25,7 @@
       "type": "string"
     },
     "Code": {
-      "description": "Every judgement DeckTalk can make, with its sentence, its severity, who raises it and where.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
+      "description": "Every judgement DeckTalk can make, with its sentence, its severity, who raises it and where.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, so the relation is written once.",
       "enum": [
         "PAGE_ATTR_UNKNOWN",
         "PAGE_BAD_VALUE",
@@ -167,7 +167,7 @@
         },
         "billing": {
           "$ref": "#/$defs/BillingBasis",
-          "description": "How the voice bills, which its adapter declares and the rate is per."
+          "description": "How the provider bills, which its adapter declares and the rate is per, or mixed for a run whose stages bill two ways."
         },
         "dollars_per_1000_characters": {
           "description": "The rate a per-character bill was worked out at, in US dollars per 1,000 characters.",
@@ -190,7 +190,7 @@
               "type": "null"
             }
           ],
-          "description": "The dotted key that states the rate, or null when the voice declares none to state.",
+          "description": "The dotted key that states the rate, or null when the provider declares none to state.",
           "title": "Price Key"
         },
         "averaged": {
@@ -678,7 +678,7 @@
       "type": "object"
     },
     "Outcome": {
-      "description": "How a stage or a section ended, which is the one field that replaces four event names.\n\nA caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`\nand `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the\nrun planned and did not repeat, because nothing it reads had changed since it last ran, and\n`skipped` is a stage the run did not plan at all. `stopped` is a run, a stage or a section the\ncaller cancelled or interrupted, which is kept apart from `failed` because nothing went wrong.",
+      "description": "How a stage or a section ended, read from one field rather than from four event names.\n\nA caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`\nand `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the\nrun planned and did not repeat, because nothing it reads had changed since it last ran, and\n`skipped` is a stage the run did not plan at all. `stopped` is a run, a stage or a section the\ncaller cancelled or interrupted, which is kept apart from `failed` because nothing went wrong.",
       "enum": [
         "ran",
         "kept",
@@ -977,7 +977,7 @@
         },
         "outcome": {
           "$ref": "#/$defs/Outcome",
-          "description": "Whether the section ran, was skipped, kept what an earlier run made, or failed."
+          "description": "Whether the section ran, was skipped, kept what an earlier run made, was stopped, or failed."
         },
         "elapsed_seconds": {
           "description": "How long this call took, in seconds.",
@@ -1197,7 +1197,7 @@
         },
         "billing": {
           "$ref": "#/$defs/BillingBasis",
-          "description": "How the voice bills, which its adapter declares and the rate is per."
+          "description": "How the provider bills, which its adapter declares and the rate is per, or mixed for a run whose stages bill two ways."
         },
         "dollars_per_1000_characters": {
           "description": "The rate a per-character bill was worked out at, in US dollars per 1,000 characters.",
@@ -1220,7 +1220,7 @@
               "type": "null"
             }
           ],
-          "description": "The dotted key that states the rate, or null when the voice declares none to state.",
+          "description": "The dotted key that states the rate, or null when the provider declares none to state.",
           "title": "Price Key"
         },
         "averaged": {
@@ -1291,7 +1291,7 @@
         },
         "outcome": {
           "$ref": "#/$defs/Outcome",
-          "description": "Whether the stage ran, was skipped, kept what an earlier run made, or failed."
+          "description": "Whether the stage ran, was skipped, kept what an earlier run made, was stopped, or failed."
         },
         "elapsed_seconds": {
           "description": "How long this call took, in seconds.",
@@ -1314,7 +1314,7 @@
     },
     "StageProgress": {
       "additionalProperties": false,
-      "description": "How far through its own work one stage is, counted in the thing it is working on.\n\nNarrate emits one per take, record one per section, score one per asset, assemble one per\nencoding pass and verify one per probe, so every stage that takes time reports the same shape.",
+      "description": "How far through its own work one stage is, counted in the thing it is working on.\n\nNarrate emits one per take, record one per section, score one per score item, assemble one per\nencoding pass and verify one per probe, so every stage that takes time reports the same shape.",
       "properties": {
         "event": {
           "const": "stage.progress",
@@ -1456,7 +1456,7 @@
     },
     "TakeCharged": {
       "additionalProperties": false,
-      "description": "The voice provider was paid for one take, which is the line a ledger of real charges reads.\n\nA `cost.priced` event prices a whole run, before or after it. This one is written at the moment a take\nis bought, once per take, so a host that keeps its own ledger can record every charge as it\nhappens and can tell by the take's digest that a retried run did not buy the same take twice. A\nvoice that declares it bills nothing is paid nothing, so its takes write no line.",
+      "description": "The voice provider was paid for one take, which is the line a ledger of real charges reads.\n\nA `cost.priced` event prices a whole run, before or after it. This one is written at the moment a take\nis bought, once per take, so a host that keeps its own ledger can record every charge as it\nhappens and can tell by the take's digest that a retried run did not buy the same take twice. A\nprovider that declares it bills nothing is paid nothing, so its takes write no line.",
       "properties": {
         "event": {
           "const": "take.charged",
@@ -1491,7 +1491,7 @@
           "type": "integer"
         },
         "digest": {
-          "description": "The take's input digest, which names its files.",
+          "description": "The take's digest, which names its files.",
           "pattern": "^[0-9a-f]+$",
           "title": "Digest",
           "type": "string"
@@ -1523,7 +1523,7 @@
     },
     "ToolFetch": {
       "additionalProperties": false,
-      "description": "A tool is being downloaded, which is the one moment a run stops for the network.",
+      "description": "A tool is being downloaded, which is the one time a run waits on the network.",
       "properties": {
         "event": {
           "const": "tool.fetch",

@@ -22,8 +22,9 @@ offered.
 ## Name the sections with `--section`
 
 `--section` is the one selector, and it means the same thing on `build`, `narrate`, `cue`, `record`,
-`score`, `assemble`, `verify`, `words`, `storyboard`, `check` and `clip`. It takes one number, a
-comma list or a range, and it repeats, so these four lines name the same kind of thing.
+`score`, `assemble`, `verify`, `words`, `storyboard` and `check`. It takes one number, a comma list
+or a range, and it repeats, so these four lines name the same kind of thing. `clip` takes
+`--section N` too, and there it names exactly one section.
 
 ```console
 decktalk build --section 3
@@ -33,7 +34,12 @@ decktalk build --section 3 --section 5
 ```
 
 A value that is not a number or a run of them is refused as a usage error, which exits 2. A number
-that no section carries is not: it simply selects nothing, and each stage says so in its own words.
+that no section carries is not a usage error. `narrate`, `record`, `words` and `build` refuse it as an
+`INPUT` error, which exits 3, and the hints of `narrate`, `words` and `build` name the spoken sections
+there are. With neither spend flag and no terminal to ask on, `narrate` and `build` refuse it first as
+`APPROVAL`, which exits 2, because a section that does not exist cannot be priced. `cue`, `check` and `storyboard`
+select nothing and exit 0. `assemble` joins the whole film as it always does, and `verify` measures
+every cue of the film as though no section were named, and both exit 0.
 
 What the flag does depends on the stage, and the difference is the point of the flag.
 
@@ -107,8 +113,8 @@ A copy whose words do not read, or whose take does not hold the bytes they recor
 moved aside as `<name>.unreadable`, or as `<name>.<n>.unreadable` with the first number free for both
 files when that name is taken, when a good copy replaces it. DeckTalk never deletes a take.
 
-A `takes_dir` that is empty, outside the project, an absolute path or the project directory itself is
-refused when the project loads, and so is a `store_dir` that is relative, inside the project or inside
+A `takes_dir` that is empty, outside the project, an absolute path, the project directory itself,
+inside the build directory or a directory that holds it is refused when the project loads, and so is a `store_dir` that is relative, inside the project or inside
 the tool cache. A placeholder take, the take index and the joined narration are always under
 `build/narrate/`, because a build makes them again for nothing.
 
@@ -147,6 +153,10 @@ another changes no line of HTML, so the markup alone would say that nothing had 
 
 One function answers this question, so what `record` skips and what `status` calls stale can never
 disagree, and neither of them compares file times.
+
+A section whose provider words do not read cannot be judged, because its words are in the page URL.
+`record --section` names it in one line, with the file, when the run passes it over, and records the
+sections it was asked for. Only a run that records that section is refused over them.
 
 ### What each edit does again
 
@@ -230,8 +240,10 @@ Two fields carry the two caches.
   still told which of the several things moved.
 
 `next` is the whole command to run next, read off the pipeline rather than guessed. It is
-`decktalk build` whenever anything on disk is stale, and null once the film on disk is the one the
-last build measured, because then there is nothing to do. `runs` lists any run whose events file is
+`decktalk build` whenever anything on disk is stale, and `decktalk verify` when the film on disk has
+not been measured. It is null once the film on disk is the one the last build measured, because then
+there is nothing to do. It is also null when the takes directory holds none of the takes the project
+played, which `status` says in one warning line, because a build would buy those takes again. `runs` lists any run whose events file is
 still open, which is how a caller finds a build it started in the background.
 
 ## A build that finds nothing changed
@@ -323,7 +335,7 @@ decktalk build --watch
 {/* sample: the two lines decktalk build --watch prints before its first build */}
 ```text
 Serving http://127.0.0.1:53017
-Watching for saves. Nothing here spends: a free voice reads each change, and a take a voice bills for goes stale rather than being bought again.
+Watching for saves. Nothing here spends: a free provider reads each change once a voice is named, and a take a voice bills for goes stale rather than being bought again.
 ```
 
 The origin listens on this machine alone and takes whichever port was free, so the number changes
@@ -331,7 +343,7 @@ from run to run and the line is the one place it is printed.
 
 Four things are worth knowing about it.
 
-- It never spends, whatever the settings say. A free voice such as `dtsp` still voices each change,
+- It never spends, whatever the settings say. A free provider such as `dtsp` still voices each change once a voice is named,
   because spend gates money and nothing else. Buying from a voice that bills is a different command,
   because the safe default is the rule and the named escape is a separate act.
 - It rebuilds the sections the saved file touches. A page belongs to the sections that play it, a
@@ -339,7 +351,7 @@ Four things are worth knowing about it.
   every section at once. A file that belongs to no section, such as a stylesheet, rebuilds all of
   them, because nothing can say which sections it reached.
 - A section whose words changed under a voice that bills plays a placeholder until you voice it, and
-  `decktalk status` shows it as not voiced. `decktalk narrate --section N --spend` voices it.
+  `decktalk status` shows its take as `stale`. `decktalk narrate --section N --spend` voices it.
 - A save that breaks a file is printed as one error block and the loop keeps watching, so you fix the
   file and save again rather than restarting the loop.
 

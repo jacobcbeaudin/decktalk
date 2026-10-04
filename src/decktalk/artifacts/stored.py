@@ -26,8 +26,8 @@ Every fingerprint of a file's content is `file_digest`, and every fingerprint of
 memory is `content_digest`, which are one hash: BLAKE3. The files a build fingerprints are the
 recordings, the section videos and the film, which grow with the film, and BLAKE3 spreads one large
 file across every core where SHA-256 reads it on one. The keys taken over those fingerprints stay
-the SHA-256 of `engine_digest`, because a key is a few lines of text, and the paid voice takes keep
-the SHA-256 their names are published as, because a changed take name would buy the take again.
+the SHA-256 of `engine_digest`, because a key is a few lines of text, and voiced takes keep the
+SHA-256 their names are published as, because a changed take name would buy the take again.
 """
 
 from __future__ import annotations
@@ -111,6 +111,19 @@ class Unreadable(Exception):
     """
 
 
+class UnreadablePaidRecord(InputError):
+    """A paid record that is there and does not read, refused as `INPUT` and never built again or deleted.
+
+    It carries the file, so a reader that only asks about a section it is not making, such as whether
+    a recording still stands, can say which file it could not read and go on rather than refuse.
+    """
+
+    def __init__(self, message: str, *, path: Path, hint: str | None = None) -> None:
+        super().__init__(message, hint=hint)
+        self.path = path
+        """The paid record that does not read."""
+
+
 class Stored(Model):
     """One file under `build/`, which knows how to read itself and how to write itself."""
 
@@ -135,18 +148,19 @@ class Stored(Model):
         """The artifact at `path`, or None when nothing has written one there yet.
 
         A file that is there and cannot be read as this shape is refused. A cache file is refused as
-        `NOT_BUILT`, which its writer builds again. A paid record is refused as `INPUT`, with a sentence
-        that says what alone gives it back, and nothing here deletes it.
+        `NOT_BUILT`, which its writer builds again. A paid record is refused as `INPUT` with
+        `UnreadablePaidRecord`, whose sentence says what alone gives it back, and nothing here deletes it.
         """
         try:
             return cls.parse(path)
         except Unreadable as exc:
             if cls.paid:
-                raise InputError(
+                raise UnreadablePaidRecord(
                     f"{exc} {cls.regained[:1].upper()}{cls.regained[1:]}, so DeckTalk neither builds it "
                     "again nor deletes it.",
                     hint=f"Run the DeckTalk release that wrote {path.name}, or move it aside knowing that "
                     "making again what it records costs money on a paid provider.",
+                    path=path,
                 ) from exc
             raise NotBuiltError(str(exc), hint=f"Delete {path.name} and build it again.") from exc
 

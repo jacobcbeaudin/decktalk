@@ -7,7 +7,8 @@ first. The rules themselves live in `stages/narrate/script_rules.py` and are rea
 the scan has one home and the judgement has one raiser.
 
 Three codes cover it. `SCRIPT_UNFINISHED` is an error and names everything a voiced run would read out
-or silently swallow, which is the one condition `narrate` refuses on. `SCRIPT_SPOKEN_SYMBOL` is a
+or silently swallow: what `narrate` refuses, and unfinished text such as `[NUMBER]`, which `narrate`
+sends as it stands. `SCRIPT_SPOKEN_SYMBOL` is a
 warning and names a word holding a digit or a symbol, because "41" may be exactly what the author
 wants the voice to try. `SCRIPT_PAUSE_DROPPED` is an error and names a section whose timed pause the
 voice's model does not render, which `narrate` refuses to build the voice for.
@@ -32,9 +33,9 @@ from decktalk.stages.narrate.script_rules import (
 
 
 def placeholder_rows(markdown: str) -> list[tuple[int, str]]:
-    """(line, name) for every open placeholder in the spoken text, such as `[NUMBER]`.
+    """(line, name) for every unfilled blank in the spoken text, such as `[NUMBER]`.
 
-    A placeholder nobody filled becomes its own name read aloud in a take that has already been
+    An unfilled blank becomes its own name read aloud in a take that has already been
     bought, so it is named one at a time rather than counted.
     """
     out: list[tuple[int, str]] = []
@@ -50,9 +51,9 @@ def placeholder_rows(markdown: str) -> list[tuple[int, str]]:
 def placeholder_findings(markdown: str, *, script: Path) -> list[Finding]:
     """One error per thing in the spoken text that a voiced run must not receive.
 
-    The open placeholders and the refusals are one condition under one code, because they are the
-    one rule `narrate` refuses on: the script still holds something the voice would read out or turn
-    into a pause nobody asked for.
+    The unfinished text and what `narrate` refuses are one condition under one code, because both are
+    something the voice would read out or turn into a pause nobody asked for. `narrate` refuses only
+    the second, so the first is met here.
     """
     inside = {number: section for number, section, _line in spoken_lines(markdown)}
     where = script.as_posix()

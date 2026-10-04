@@ -77,7 +77,7 @@ SANDBOX_HINT = (
 
 
 KEY_BESIDE_PAGE = (
-    "this run may spend, and a run that may spend opens no untrusted page, because the voice key would be "
+    "this run may spend, and a run that may spend opens no untrusted page, because the API key would be "
     "in reach of the process that runs a stranger's script."
 )
 """What a run that may spend is told when it reaches for a page it does not trust."""

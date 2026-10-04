@@ -78,9 +78,9 @@ Any other key is refused by name, so a typo can never move a cue in silence.
 
 ### `phrase`
 
-The phrase is matched against the words of that section and nothing else, which `narrate` wrote
-beside the take as `<digest>.words.json`, each with its start and its end in seconds after the section
-starts. `decktalk words` prints them. [Matching rules](/concepts/cues#matching-rules) says how a phrase
+The phrase is matched against the words of that section and nothing else. `narrate` wrote them
+beside the take as `<digest>.words.json`, in seconds after the take starts. `cue` moves them onto the
+section's own clock, which begins at its lead. `decktalk words` prints them on that clock. [Matching rules](/concepts/cues#matching-rules) says how a phrase
 meets a spoken word: case, punctuation, a hyphenated word and a word the voice spells out.
 
 `occurrence` picks which match, counting from 1, and with no `occurrence` the cue takes the first and

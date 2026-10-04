@@ -38,14 +38,14 @@ from decktalk.stages import score as score_stage
 from decktalk.stages.assemble.cut import Rendered, concat, rendered_starts
 
 CLIP_FADE_SECONDS = 0.02
-"""Truth: half a frame of fade at each edge of a clip's own audio, so a cut into it never clicks."""
+"""Calibration: twenty milliseconds of fade at each edge of a clip's own audio, so a cut into it never clicks."""
 
 
 ONCE = "once"
 """An input read from its start, once, such as the narration track or one sound effect."""
 
 LOOP = "loop"
-"""An input repeated until the picture ends, such as a music bed or an ambience bed."""
+"""An input repeated until the picture ends, such as the music or an ambience bed."""
 
 LAVFI = "lavfi"
 """A generated input, which is the silent anchor that fixes the length of the mix."""
@@ -321,7 +321,7 @@ def _music_shape(inputs: Inputs, run: Run, starts: Mapping[int, float],
 
 def _music(chain: Chain, inputs: Inputs, run: Run, starts: Mapping[int, float],
            speech: list[Span], total: float) -> None:  # fmt: skip
-    """The music bed, ducked under every span that carries speech and shaped by the markers."""
+    """The music, ducked under every span that carries speech and shaped by the markers."""
     mix = inputs.document.mix
     if not mix.music:
         return

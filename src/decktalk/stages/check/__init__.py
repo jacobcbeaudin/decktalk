@@ -1,10 +1,10 @@
-"""Judge without producing, and price the narration a build would buy, before a single second is bought.
+"""Judge without writing what a stage reads, and price the narration a build would buy, before any second is bought.
 
     script.py   what the voice would read out or swallow, and what it may misread
     freeze.py   which two frozen states each cue is measured between
     scan.py     drawing those states and reading what the difference between two of them means
 
-`check` is the one command that says what a voiced build's narration would spend and what the build
+`check` is the one command that says what a voiced build's narration would cost and what the build
 would show while both can still be changed for nothing. It plans the takes the way `narrate` would,
 prices them, resolves every cue against the words those takes will carry, reads the catalog each
 page publishes, and freezes the frames either side of every cue so a reveal that would not be

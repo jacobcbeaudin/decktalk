@@ -1,7 +1,7 @@
 """Chromium on demand: a build fetches the browser, and only `decktalk install` may ask for sudo.
 
-ffmpeg has always arrived by itself, and Chromium did not: every command that needed a browser died
-with "Run `decktalk install`" until someone ran it. `media/browser.py` is the one place a browser is
+A build fetches Chromium the way it fetches ffmpeg, so no command that needs a browser stops to ask
+for `decktalk install`. `media/browser.py` is the one place a browser is
 launched, so the fetch lives there and every command has it.
 
 The one thing the fetch must never do is ask for a root password. `playwright install chromium

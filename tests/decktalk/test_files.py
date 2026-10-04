@@ -5,7 +5,7 @@ library's bytes. `json_text` puts no space between items, sorts no keys, escapes
 character and writes a small float as `1e-7`, so a key taken over it would move, and a moved key
 re-records a section, rebuilds a cut or buys a voiced take again. Each serialisation that names a take,
 a recording, a cut, a still, a sound or a kept stage is fed the one value on which the two spellings
-part, and its bytes are held to what `json.dumps` wrote before the helper existed.
+part, and its bytes are held to what `json.dumps` writes.
 """
 
 from __future__ import annotations

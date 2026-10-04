@@ -69,7 +69,7 @@ class Workspace:
     score_dir: Path
     """The project's score directory, which `[score] dir` names inside the project and holds what the score bought."""
     store: Path | None = None
-    """The machine's take store, a second copy of every take it bought, which many projects may read."""
+    """The machine's take store, a second copy of every voiced take this machine makes, which many projects read."""
 
     def confine(self) -> None:
         """Refuse this build directory when anything in it leads outside it, before a run writes there.
@@ -81,7 +81,7 @@ class Workspace:
         tree that passes here stays inside the project for the length of the run.
         """
         confined(self.root, self.build)
-        confined(self.root, self.takes, named="the take directory")
+        confined(self.root, self.takes, named="the takes directory")
         confined(self.root, self.score_dir, named="the score directory")
 
     def of(self, artifact: Artifact) -> Path:
@@ -149,7 +149,7 @@ class Workspace:
 
     @property
     def storyboard_path(self) -> Path:
-        """The contact sheet a person reads before any credit is spent."""
+        """The storyboard, which a person reads before anything is bought."""
         return self.build / "storyboard.html"
 
     @property

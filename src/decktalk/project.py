@@ -5,14 +5,15 @@
       script.md          the narration, in "## N. Title" sections
       cues.json          which spoken phrase each moment lands on
       deck/index.html    the slides, which the runtime gives its query contract
-      media/             the author's own clips, beds and markers
+      media/             the author's own clips, ambience beds and markers
       .env               the speech credential, which is never committed
       build/             everything generated
 
-`decktalk.open(path)` returns a `Project`. Six verbs move it forward, six more calls report on it or
-cut a piece out of it, `serve` puts it on a local origin and `apply` carries out a fix. Every one of
-them opens a run on the machine's event stream, takes a cancel token, and returns a frozen result
-whose findings carry a code, a place, a severity and often a fix. `price` alone opens no run, because
+`decktalk.open(path)` returns a `Project`. Six verbs move it forward, `build` runs them in order,
+five more calls report on it or cut a piece out of it, `serve` puts it on a local origin and `apply`
+carries out a fix. Every one of them opens a run on the machine's event stream. Every one but
+`serve` returns a frozen result whose findings carry a code, a place, a severity and often a fix,
+and every one but `serve` and `apply` takes a cancel token. `price` alone opens no run, because
 it says what a run would buy before anybody approves it.
 
 This module is the facade and nothing below it may import it. It is also the only module that
@@ -287,20 +288,20 @@ class Project:
     ) -> NarrateResult:
         """Speak each section of the script and time every word in it.
 
-        Every take already on disk is played, paid or placeholder, and the voice is built only when
-        a take must be made, so a run that makes nothing reads no key. `spend` gates money and nothing
-        else: set to true it buys the takes that are missing, and the default buys nothing, so each
-        take a voice that bills would sell is a click track with a word clock and a `TAKE_MISSING`
-        finding. A voice that declares it bills nothing, such as `dtsp`, makes every missing take
+        Every take already on disk is played, voiced or placeholder, and the voice is built only when a
+        take must be made, so a run that makes nothing reads no key. `spend` gates money and nothing
+        else: set to true it buys the takes that are missing, and the default buys nothing, so each take
+        a provider that bills would sell is a placeholder with estimated words and a `TAKE_MISSING`
+        finding. A provider that declares it bills nothing, such as `dtsp`, makes every missing take
         either way, and one that cannot be reached plays a placeholder with a `TAKE_MISSING` finding
         that says to start it. `max_cost` is a ceiling in US dollars, checked before the first paid
         request. `force` makes each placeholder again and never buys: every voiced take on disk is kept.
-        `replace_voiced` is the one way a voiced take is made again. A run that may call the voice
-        makes each targeted take again, and one that may not plays a placeholder in its place and
-        keeps the voiced take on disk.
+        `replace_voiced` is the one way a voiced take is made again. A run that may call the voice makes
+        each targeted take again, and one that may not plays a placeholder in its place and keeps the
+        voiced take on disk.
 
         Raises `ApprovalRequired` when the run would spend over `max_cost`, and `ProviderError` when
-        a voice that bills fails, or when a free voice answers and fails.
+        a provider that bills fails, or when a free provider answers and fails.
         """
         return self._stage(Stage.NARRATE, NarrateResult, cancel=cancel, spend=spend, max_cost=max_cost,
                           only=only, force=force, replace_voiced=replace_voiced)  # fmt: skip
@@ -341,8 +342,9 @@ class Project:
         on disk, unless `replace_score` says to buy every bought sound again. A run that may not
         spend ignores it and keeps every bought sound on disk.
 
-        Raises `ApprovalRequired` when the run would spend without approval or over `max_cost`, and
-        `ProviderError` when the sound service fails on a paid run.
+        Raises `ApprovalRequired` when the run would spend over `max_cost`, or when `max_cost` is given
+        and nothing states the rate, and `ProviderError` when the sound provider fails on a run that may
+        spend.
         """
         return self._stage(Stage.SCORE, ScoreResult, cancel=cancel, spend=spend,
                           max_cost=max_cost, only=only, replace_score=replace_score)  # fmt: skip
@@ -430,7 +432,7 @@ class Project:
         return build.price(self._inputs, tuple(stages if stages is not None else Stage), only=only,
                            replace_voiced=replace_voiced, replace_score=replace_score)  # fmt: skip
 
-    # ---- the six that report or cut ---------------------------------------------------------
+    # ---- the five that report or cut, and apply ---------------------------------------------
 
     def status(self, *, cancel: Cancel | None = None) -> StatusResult:
         """Report what is written, what is built, what is stale, and what to do next."""
@@ -480,7 +482,7 @@ class Project:
     ) -> StoryboardResult:
         """Freeze every slide at every cue onto one page, which is the checkpoint before anything is bought.
 
-        The four selectors beside `only` narrow which moments are drawn. `slides` names the slides,
+        The four selectors beside `only` narrow which panels are drawn. `slides` names the slides,
         `after` and `before` name the state just after and just before one cue, which are the pair
         an author compares to see what a reveal changed, and `times` names seconds of the section's
         own clock. Each one repeats, and one that matches nothing draws nothing.

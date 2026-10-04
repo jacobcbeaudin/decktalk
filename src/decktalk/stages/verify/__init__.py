@@ -4,9 +4,10 @@
     measure.py   the measurements behind the plan, the onset scan and the cue loop
     seams.py     the start, cut and seam checks
 
-The film is decoded once. The cues and the seams first say which frames they will read, the film is
-streamed through that one plan at each size a comparison needs, and every comparison is then made in
-this process on the frames that were kept.
+The cue and seam frames are decoded once. The cues and the seams first say which frames they will
+read, the film is streamed through that one plan at each size a comparison needs, and every
+comparison is then made in this process on the frames that were kept. Each section start reads its
+one frame on its own.
 
 `verify` measures four things. Every section must open on a real picture past its dip to black. The
 narration must be quiet in the window before each cut, so no cut lands on a word. A section that

@@ -6,7 +6,7 @@ on colored edges that did not change.
 
 A film is measured by decoding it once per size and keeping only the frames a measurement planned
 to read. `Wanted` is that plan, `decode` streams the film through it, and `Decoded` answers every
-comparison in this process. One ffmpeg call per frame compared read the same frame up to six times,
+comparison in this process. One ffmpeg call per frame compared would read the same frame up to six times,
 and holding every frame of a long film would cost more memory than the render it checks.
 """
 

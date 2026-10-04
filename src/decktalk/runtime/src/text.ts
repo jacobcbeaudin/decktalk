@@ -60,7 +60,7 @@ const EASE_POWER = 3;
 /** Every group of digits a thousands separator goes in front of, which is how the author wrote it. */
 const THOUSANDS = /\B(?=(\d{3})+(?!\d))/g;
 
-/** The share of the count still to run after a given share of its length, which is a cubic ease out. */
+/** The share of the count already run after a given share of its length, which is a cubic ease out. */
 function eased(part: number): number {
   return 1 - (1 - part) ** EASE_POWER;
 }

@@ -37,15 +37,16 @@ from the schema which commands do those things rather than meeting a null on the
 | Key | Type | Carried by |
 |---|---|---|
 | `run` | string | Every result whose command opens a run, which is every command except the five under `config`. It is the run id, and it names the run's events file. |
-| `written` | array of strings | Every result whose command writes a file, as project-relative POSIX paths in the order they were written. |
+| `written` | array of strings | Every result whose command writes a file, in the order the files were written. A stage writes project-relative POSIX paths. `config set` and `config unset` write the absolute path of the settings file, because a machine file sits outside the project. |
 
 `init`, `check`, `storyboard`, `narrate`, `cue`, `record`, `score`, `assemble`, `build`,
 `clip`, `config set` and `config unset` declare `written`. `doctor`, `install`, `status`, `words`,
 `serve`, `verify`, `config list`, `config get` and `config explain` do not, because they write
 nothing.
 
-A result that carries an error and nothing else carries neither field, because a command that was
-refused before it reached its own implementation opened no run and wrote no file.
+A result that carries an error carries neither field. A command refused before its run opened has no
+run to name. A command whose run opened and then failed has one, and its events file still says why:
+`run.done` carries the error.
 
 ## The one exemption
 
@@ -121,7 +122,10 @@ decktalk schema cues        # the shape of cues.json
 ```
 
 `next` is the whole command to run next, so an agent that has just read the project already knows
-what to run. It is null once the film on disk is the one the last build measured. `runs` lists every
+what to run. It is null once the film on disk is the one the last build measured. It is also null
+when the takes directory holds none of the takes the project played, because a build would buy them
+again. Status then prints a warning line that says to point `[narration] takes_dir` at the folder
+that holds them. `runs` lists every
 run of this project whose events file is still open. `unplayed` lists the takes on disk that no
 section plays, and is null when no voice is named, because then no take can be matched to a section.
 `take_state` is what the disk holds for each spoken section: `voiced`, `unchecked`, `stale`,
@@ -184,7 +188,7 @@ cost, so it is the one call an agent makes to learn the price of a run.
 }
 ```
 
-`pages` and `frames` say how far the judgement reached. Both are true on a plain `decktalk check`,
+`pages_opened` and `frames_compared` say how far the judgement reached. Both are true on a plain `decktalk check`,
 `--no-frames` drops the freeze comparison alone, and `--no-pages` drops both and names on stderr
 every code it could not reach. `dollars` is the price at the rate the voice publishes, and
 `ceiling_dollars` is the most the run could cost. `--max-cost` is compared against `ceiling_dollars`
@@ -317,8 +321,9 @@ decide what fails it.
 ## A result that could not run
 
 `decktalk words --json` before anything has been narrated. `findings` is empty and `error` is
-filled, because nothing was judged. This result carries neither `run` nor `written`, because the
-command opened no run and wrote nothing.
+filled, because nothing was judged. This result carries neither `run` nor `written`, because an
+error result carries only the four reserved keys. The run it opened still has its events file, and
+that file's `run.done` carries the same error.
 
 {/* sample: decktalk words --json, on a fresh decktalk init my-lesson */}
 ```json
@@ -493,8 +498,10 @@ appends nothing.
 ```
 
 Under `--events` every line of stderr is one JSON object. The sentences DeckTalk would otherwise
-print are `run.log` lines among them, the first line is `run.start`, which names the file the events are
-appended to, and a refusal is written as the one object `{"ok": false, "error": {...}}`.
+print are `run.log` lines among them, and the first line of a run is `run.start`, which names the file
+the events are appended to. A refusal is written as one line holding the whole error result,
+`{"schema": 1, "ok": false, "findings": [], "error": {...}}`. A refusal before the run opens is that
+line alone.
 
 The discriminator key is `event`, and every line carries `event`, `time`, `seq` and `run`. `seq`
 counts from zero inside its run, so a reader can order lines that arrived out of order.
@@ -510,7 +517,7 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `stage.progress` | How far through its own work a stage is. | `stage`, `section`, `done`, `total`, `unit`, `label` |
 | `finding.raised` | A judgement was made, carried as it was found. | `finding` |
 | `cost.priced` | A cost was worked out. | `cost` |
-| `take.charged` | The provider was paid for one take. A free voice writes none. | `section`, `digest`, `characters`, `dollars` |
+| `take.charged` | The provider was paid for one take. A free provider writes none. | `section`, `digest`, `characters`, `dollars` |
 | `sound.charged` | The sound provider was paid for one request. | `name`, `kind`, `digest`, `seconds`, `dollars` |
 | `tool.fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
 | `run.log` | One sentence the library would have printed. | `level`, `message`, `source`, `stage`, `section`, `data` |
@@ -518,7 +525,8 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 `outcome` is `ran`, `kept`, `skipped`, `stopped` or `failed`, and it is on `run.done`, `stage.done`
 and `section.done`. `kept` is a stage the run planned and did not repeat, because nothing it reads had
 changed since it last ran, or a section whose take narrate found on disk. `skipped` is a stage the
-run did not plan or did not reach, and `stopped` is a run the caller cancelled or interrupted. One
+run did not plan or did not reach, or a section `record` kept because its recording still stands.
+`stopped` is a run the caller cancelled or interrupted. One
 field replaces four event names, so a caller reads one field rather than branching four ways to learn the
 same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`, because narrate
 counts takes, record sections, score assets, assemble encoding passes and verify probes, and `level` on a log line is `debug`, `info`, `warning` or `error`.
@@ -565,4 +573,4 @@ for finding in result.findings:
 - [CLI](/reference/cli) for every command, flag, error code and finding code.
 - [Reference card](/reference/card) for the whole contract on one page.
 - [Python API](/reference/python-api) for the library that returns these same objects.
-- [Configuration](/reference/configuration) for every settings key a `setting` fix can name.
+- [Configuration](/reference/configuration) for every settings key an edit fix can name in its `key`.

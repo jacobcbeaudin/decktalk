@@ -44,9 +44,9 @@ entirely, which is a judgement about a film that did get made.
 
 | Code | Exit | Meaning |
 |---|---|---|
-| [`INPUT`](/reference/errors/INPUT) | 3 | A file the author writes is missing, unreadable or malformed. |
+| [`INPUT`](/reference/errors/INPUT) | 3 | An input is missing, unreadable or malformed. |
 | [`NOT_BUILT`](/reference/errors/NOT_BUILT) | 3 | A file a stage needs was never built. |
-| [`PROVIDER`](/reference/errors/PROVIDER) | 3 | The voice could not be reached, refused the request, or failed it. |
+| [`PROVIDER`](/reference/errors/PROVIDER) | 3 | A provider could not be reached, refused the request, or failed it. |
 | [`TOOL`](/reference/errors/TOOL) | 3 | ffmpeg or Chromium is missing, or one of them failed. |
 | [`LOCKED`](/reference/errors/LOCKED) | 3 | Another writer holds this project's build directory. |
 | [`APPROVAL`](/reference/errors/APPROVAL) | 2 | A spend needed an approval that no flag and no terminal gave. |
@@ -102,7 +102,7 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN) | error | cues.json lists a cue no page declares, so nothing plays it. |
 | [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED) | error | The cue's phrase is not spoken in its section, so there is no second to place it at. |
 | [`CUE_STALE`](/reference/findings/CUE_STALE) | error | The cue times on disk were placed from a different cues.json than the project's, so the film is judged against moments nobody asked for until the project is built again. |
-| [`CUE_OFF`](/reference/findings/CUE_OFF) | error | The change lands further from its word than the offset limit allows. |
+| [`CUE_OFF`](/reference/findings/CUE_OFF) | error | The change lands further from its word than verify.cue_offset_max_ms allows. |
 | [`CUE_NO_ONSET`](/reference/findings/CUE_NO_ONSET) | warning | The cue resolved with no measured onset, so its second is the section's start and not its word's. |
 | [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE) | error | Nothing in the picture changed at the cue's second, so the reveal never happened. |
 | [`CUE_THIN_CHANGE`](/reference/findings/CUE_THIN_CHANGE) | warning | Less of the picture changed at the cue than a visible reveal must cross. |
@@ -357,7 +357,7 @@ It answers with the `narrate` result: `decktalk schema narrate`.
 | `--force` | Build again from nothing, keeping every voiced take. |
 | `--replace-voiced` | Set aside each voiced take: voice it again with --spend, or play a placeholder with --no-spend. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
-| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. A free voice such as dtsp makes its takes either way. Unset, a terminal is asked and a run without one is refused. |
+| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. A free provider such as dtsp makes its takes either way once a voice is named. Unset, a terminal is asked and a run without one is refused. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
 | `--fail-on` `WHEN` | error fails on an error, warning fails on any finding, never fails on none. Default error. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |
@@ -476,7 +476,7 @@ It answers with the `build` result: `decktalk schema build`.
 | `--replace-score` | Buy each bought sound again with --spend. Without --spend it keeps every bought sound. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--watch` | Stay running, rebuild the changed section, never spend. |
-| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. A free voice such as dtsp makes its takes either way. Unset, a terminal is asked and a run without one is refused. |
+| `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. A free provider such as dtsp makes its takes either way once a voice is named. Unset, a terminal is asked and a run without one is refused. |
 | `--max-cost` `N` | Refuse before the first call if the most this run can cost is over N US dollars. |
 | `--fail-on` `WHEN` | error fails on an error, warning fails on any finding, never fails on none. Default error. |
 | `--allow` `CODE` | Carry on past this finding code. Repeats. |

@@ -7,7 +7,7 @@ dash is already spoken for: it is DeckTalk's own beat marker in a script, so a d
 dash in data would be one character with two meanings.
 
 Each rule is one test that lists every offending line in every file, because these are lint rather
-than behaviour: a test per file made them four fifths of the suite's count and said nothing more.
+than behaviour, and a test per file would make them most of the suite's count and say nothing more.
 They run once, in the lint row, rather than in the unit suite on every Python.
 
 The third rule, that every sentence is complete and declarative, is not held here, and this

@@ -94,7 +94,7 @@ CUES = (
     "4:3.1:eq",
     "4:3.1:bar",
 )
-"""Every cue the fixture declares, as the section number, then the cue id of slide and local name."""
+"""Every cue the fixture declares, as the section number, then the cue id of slide id and cue name."""
 
 SLATE_SECONDS = 1.0
 """How long section 5's slate plays, which `decktalk.toml` states as `slate_seconds = 1`."""

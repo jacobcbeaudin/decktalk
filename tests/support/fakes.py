@@ -1,8 +1,9 @@
 """The tools a stage reaches for, faked at the seam the stage imports.
 
-A stage test runs the real stage. What it must not run is ffmpeg, Chromium and a paid voice, so
-ffmpeg and the voice are replaced at the one module attribute the stage reads, each fixture handing
-back the record of what the stage asked for, and `FakePage` is the page a browser seam hands a stage.
+A stage test runs the real stage. What it must not run is ffmpeg, Chromium and a provider that bills,
+so ffmpeg is replaced at the one module attribute the stage reads and the voice is registered in the
+table the test's runs are opened with, each fixture handing back the record of what the stage asked
+for, and `FakePage` is the page a browser seam hands a stage.
 `FakeChromium` stands one level lower, as the Playwright a launch is handed.
 Faking the seam rather than the stage is what keeps these tests about the stage: an argument list, a
 page call or a speech request that changes shape shows up here rather than passing unread.

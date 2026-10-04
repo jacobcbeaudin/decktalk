@@ -5,9 +5,10 @@
    * URL and a report are spelled with.
    *
    * An element on a slide has four moments and one value type. It arrives, it steps back, it comes to
-   * the front, and it leaves, and each of those is the local name of a cue. Everything else is either
+   * the front, and it leaves, and each of those is the cue name of a cue. Everything else is either
    * how a moment looks, which is a closed word this file owns, or what a moment means, which is a
-   * sentence for the transcript. Seconds are never written on the page, because cues.json owns them.
+   * sentence for the transcript. A cue's second is never written on the page, because the cue stage
+   * resolves it from the phrase `cues.json` pairs with it.
    *
    * This module is the one home of that grammar. Every other runtime module reads its attribute names
    * from here rather than spelling a "data-" literal of its own, `scripts/build_runtime.py` prints
@@ -361,8 +362,8 @@
    * What the recorder calls
    *   window.__decktalkProbe.cover()   draw the magenta cover and the keep-alive from the first paint
    *   window.__decktalkProbe.lift()    remove the cover and start the page clock on the next animation
-   *                                    frame, resolving to the performance.now() of that frame, which is
-   *                                    the recording's narration t=0
+   *                                    frame, whose stamp is the recording's t=0 on the section clock, and
+   *                                    resolving to performance.now() read in that frame
    *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
    *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
    *
@@ -523,8 +524,8 @@
       moments,
       text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, TEXT_MAX),
       box: boxOf(el, frame, scale),
-      // The count a stagger's span is worked out from, which no attribute carries, because the flag
-      // that says the children step says nothing about how many of them there are.
+      // The count a stagger's span is worked out from, which no attribute carries, because `data-stagger`
+      // gives the step between children and says nothing about how many of them there are.
       children: el.hasAttribute(STAGGER) ? el.children.length : 0,
     };
   }

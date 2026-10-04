@@ -16,18 +16,19 @@ file rewritten since is hashed again. One instance therefore serves a project fo
 across runs and threads, and nothing else about the places is remembered.
 
 A voiced take is written to the take store first and the takes directory second, once per take: a
-store that holds a good copy keeps it, so a take voiced again on request changes this project's takes
-directory and never the take another project plays. Voicing holds the store's lock on that take, the
-operating system's own through `filelock`, so two runs on one machine voice one take once: the second
-waits up to `[narration] store_wait_seconds`, then plays the copy the first left. Before the voice is
-asked, each place the take will be written is made and proved writable, so a place that cannot hold
-it is refused before anything is paid.
+store that holds a good copy keeps it, so a take voiced again on request changes this project's
+takes directory and never the take another project plays. Voicing holds the store's lock on that
+take, the operating system's own through `filelock`, so two runs on one machine voice one take once:
+the second waits up to `[narration] store_wait_seconds` for the lock and keeps the copy the first
+left, and it is refused when the wait runs out. Before the voice is asked, each place the take will
+be written is made and proved writable, so a place that cannot hold it is refused before anything is
+paid.
 
 Nothing damaged is ever deleted. A damaged copy is moved aside as `<name>.unreadable`, or as
 `<name>.<n>.unreadable` with the first number free for both files, in the same step that a good copy
-replaces it, and it is put back when that write fails. When every place holds a damaged copy, the
-take is refused with the sentence a paid record is refused with, because the next step would voice it
-again.
+replaces it, and it is put back when that write fails. When no place holds a good copy and one holds
+a damaged copy, the take is refused with the sentence a paid record is refused with, because the next
+step would voice it again.
 """
 
 from __future__ import annotations
@@ -109,7 +110,7 @@ class TakeFiles:
     _workspace: Workspace | None = field(default=None, repr=False, compare=False)
 
     def refusal(self, section: int) -> InputError | None:
-        """The paid record's refusal when a place holds a damaged copy and none holds a good one, else None."""
+        """The paid record's refusal when a place holds both files of a damaged copy and none a good one, else None."""
         if self.held or self._fault is None or self._workspace is None:
             return None
         return _damaged(self._workspace, section, self.digest, *self._fault)
@@ -417,7 +418,8 @@ class TakePlaces:
         text = ProviderWords(words=tuple(words), audio=AudioPrint.of(audio, suffix=workspace.suffix)).text
 
         def pair(place: Path) -> dict[Path, str | bytes]:
-            # The words come last, so a run stopped while it writes never leaves audio with no words.
+            # The words come last, so a run stopped while it writes never leaves a words file vouching for audio
+            # that is not there.
             return {place / audio_name: audio, place / words_name: text}
 
         in_store: list[tuple[Path, Path]] = []

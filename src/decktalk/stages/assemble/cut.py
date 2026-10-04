@@ -218,7 +218,7 @@ def render_page(inputs: Inputs, run: Run, enc: Encoder, section: PageSection, ou
         _cut(out, enc, enc.color_source(BLACK, total), chain, (), seconds=total)
         return Rendered(section, out, ffmpeg.probe_duration(out), source, substitute=Substitute.BLACK)
     # The recorder covers the page until it starts the section clock, so the head of the webm is
-    # trimmed at the moment its own log recorded as narration t=0.
+    # trimmed at the moment its own log recorded as the start of the section clock.
     log = RecordingLog.read(inputs.workspace.recording_log(section.key))
     lead = "" if log is None else f"trim=start={log.trim_seconds},setpts=PTS-STARTPTS,"
     chain = (

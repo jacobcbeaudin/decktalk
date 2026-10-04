@@ -11,7 +11,7 @@
  *     </template>
  *   </div>
  *
- * An element has four moments, each the local name of a cue that `cues.json` gives a second to: it
+ * An element has four moments, each the cue name of a cue whose phrase `cues.json` names: it
  * arrives, it steps back, it comes to the front and it leaves. A page that wants behaviour of its
  * own adds it beside the markup, and a page that would rather build a slide in script gives that
  * slide a render function instead of a template.

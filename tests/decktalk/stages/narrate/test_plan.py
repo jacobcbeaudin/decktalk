@@ -1,4 +1,4 @@
-"""What a take is named by: the digest of a paid take, and the inputs a placeholder is sized at."""
+"""What a take is named by: the digest of a voiced take, and the inputs a placeholder is sized at."""
 
 from __future__ import annotations
 

@@ -84,7 +84,7 @@ def test_a_note_says_what_plays_where_nothing_was_said():
     slated = clip.model_copy(update={"substitute": Substitute.SLATE})
     assert placement_note(clip) == "A clip plays here: media/b.mp4."
     assert placement_note(page) == ""
-    assert placement_note(slated) == "A placeholder slate frame plays here."
+    assert placement_note(slated) == "A slate plays here."
 
 
 def test_sections_that_share_a_chapter_share_one_transcript_entry(tmp_path):
