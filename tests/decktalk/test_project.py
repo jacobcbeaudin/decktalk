@@ -110,7 +110,13 @@ def _filler(name: str) -> dict[str, Any]:
     """The fields each faked result needs beyond the ones the run fills, and nothing more."""
     priced = a_cost(0.0, 0.0, layer=SettingLayer.DEFAULT)
     return {
-        "narrate": {"spend": False, "sections": (), "cost": priced, "elapsed_seconds": 0.0},
+        "narrate": {
+            "spend": False,
+            "sections": (),
+            "cost": priced,
+            "takes": Path("build/narrate/takes.json"),
+            "elapsed_seconds": 0.0,
+        },
         "cue": {"sections": (), "elapsed_seconds": 0.0},
         "record": {"sections": (), "elapsed_seconds": 0.0},
         "build": {"stages": (), "spend": False, "cost": priced, "elapsed_seconds": 0.0},
@@ -257,6 +263,63 @@ def test_a_run_written_backwards_is_refused_rather_than_selecting_nothing() -> N
     with pytest.raises(InputError, match="runs backwards") as refused:
         section_numbers("3,9-7")
     assert refused.value.hint == "Write the lower number first, as in 7-9."
+
+
+SELECTING: dict[str, Callable[[Project, tuple[int, ...]], object]] = {
+    "narrate": lambda project, only: project.narrate(only=only),
+    "cue": lambda project, only: project.cue(only=only),
+    "record": lambda project, only: project.record(only=only),
+    "score": lambda project, only: project.score(only=only),
+    "assemble": lambda project, only: project.assemble(only=only),
+    "verify": lambda project, only: project.verify(only=only),
+    "build": lambda project, only: project.build(only=only),
+    "price": lambda project, only: project.price(only=only),
+    "check": lambda project, only: project.check(only=only),
+    "words": lambda project, only: project.words(only=only),
+    "storyboard": lambda project, only: project.storyboard(only=only),
+}
+"""Every call that takes a selection, each made with the one it is handed."""
+
+
+@pytest.mark.parametrize("name", SELECTING)
+@pytest.mark.parametrize("only", [(99,), (1, 99), ()], ids=["no such section", "one of two missing", "empty"])
+def test_a_selection_that_names_a_number_no_section_carries_is_refused_before_any_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, only: tuple[int, ...]
+) -> None:
+    """One rule for every call: the refusal names the sections there are, and no run is opened to find out."""
+    reached: list[str] = []
+    for stage in SELECTING.keys() - {"price"}:
+        a_stage(monkeypatch, stage, lambda *_args, _stage=stage, **_options: reached.append(_stage))
+    project = a_project(tmp_path)
+    with pytest.raises(InputError) as refused:
+        SELECTING[name](project, only)
+    assert "99" in str(refused.value) if only else "names no section" in str(refused.value)
+    assert refused.value.hint == "The sections are [0, 1, 2]."
+    assert refused.value.location is not None and refused.value.location.file == Path("decktalk.toml")
+    assert not reached, f"{name} reached its stage"
+    assert not (tmp_path / "build").exists(), f"{name} did work before it refused the selection"
+
+
+def test_a_clip_of_a_section_no_section_carries_is_refused_before_any_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`clip --section 99` opened a run, left a lock and an events file, and refused in other words."""
+    reached: list[str] = []
+    a_stage(monkeypatch, "clip", lambda *_args, **_options: reached.append("clip"))
+    project = a_project(tmp_path)
+    with pytest.raises(InputError, match="no section carries the number 99") as refused:
+        project.clip(99, start=0.0, end=1.0, out=tmp_path / "cut.mp4")
+    assert refused.value.hint == "The sections are [0, 1, 2]."
+    assert not reached, "clip reached its stage"
+    assert not (tmp_path / "build").exists(), "clip did work before it refused the selection"
+
+
+def test_a_selection_of_sections_the_project_carries_reaches_the_stage(
+    tmp_path: Path, fake_stages: dict[str, list[Call]]
+) -> None:
+    project = a_project(tmp_path)
+    project.cue(only=(0, 2))
+    assert fake_stages["cue"][0][2]["only"] == (0, 2)
 
 
 # ---- the calls -----------------------------------------------------------------------------------

@@ -32,16 +32,15 @@ under an old start.
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Callable, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import RecordingChecks, RecordingLog, Start, UnreadablePaidRecord
+from decktalk.artifacts import RecordingChecks, RecordingLog, Start, UnreadableCache, UnreadablePaidRecord
 from decktalk.errors import InputError
-from decktalk.events import Level, SectionDone, SectionStart, Unit
-from decktalk.findings import Code, Finding, Location, judge
+from decktalk.events import Level, Unit
+from decktalk.findings import Finding
 from decktalk.inputs import Inputs, PageSection
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
@@ -142,16 +141,22 @@ def stale_recording(inputs: Inputs, section: PageSection) -> str | None:
 def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
     """One job per page section this run considers, in section order.
 
-    A section with no span in the take index has no length to record, so it is named in one sentence
-    and left out rather than recorded for a length nobody stated.
+    A selection no page section matches is refused with the page sections named, as narrate names
+    the spoken ones. A section with no span in the take index has no length to record, so it is named
+    in one sentence and left out rather than recorded for a length nobody stated.
     """
     takes = inputs.takes(required=True)
     cue_times = inputs.cue_times()
     wanted = selects(only)
+    chosen = [section for section in inputs.document.page_sections if wanted(section.number)]
+    if only is not None and not chosen:
+        every = [section.number for section in inputs.document.page_sections]
+        raise InputError(
+            f"no page section matches {list(only)}, so there is nothing to record.",
+            hint=f"The page sections are {every}.",
+        )
     planned: list[Job] = []
-    for section in inputs.document.page_sections:
-        if not wanted(section.number):
-            continue
+    for section in chosen:
         take = takes.of(section.number)
         if take is None or not take.span_seconds:
             run.note(f"Section {section.number} has no narration span yet, so it is not recorded.", level=Level.WARNING)
@@ -170,32 +175,22 @@ def passed_over(inputs: Inputs, run: Run, only: Sequence[int] | None) -> None:
 
     A run that names sections says nothing about the others, and the film is assembled from all of
     them, so a section left behind out of date is reported rather than left for a reader to notice
-    by eye. A section with no recording is missing whatever its inputs say, so it is reported
-    before any of them is read. A section whose provider words do not read cannot be judged, and this
-    run neither reads nor writes them, so that is a line naming the file rather than a refusal: the
-    run that records that section is the one refused over them.
+    by eye. A section with no recording has no picture to keep, and its absence is no finding of a run
+    that did not touch it, so it is passed over before any of its inputs is read: `status` reports
+    it. A section whose words do not read cannot be judged, whether they are the provider's or the
+    ones DeckTalk estimated for a placeholder, and this run records nothing from them, so that is a
+    line naming the file rather than a refusal: the run that records that section is the one refused
+    over them.
     """
     if not only:
         return
     named = set(only)
     for section in inputs.document.page_sections:
-        if section.number in named:
-            continue
-        where = inputs.relative(inputs.workspace.recording(section.key))
-        if not inputs.workspace.recording(section.key).exists():
-            run.found(
-                judge(
-                    Code.FILE_MISSING,
-                    f"section {section.number} has no recording at {where.as_posix()}, and this run did not "
-                    "name it, so the film would be cut from a picture that is not there.",
-                    Location(where=where.as_posix(), file=where, section=section.number),
-                    stage=Stage.RECORD,
-                )
-            )
+        if section.number in named or not inputs.workspace.recording(section.key).exists():
             continue
         try:
             why = stale_recording(inputs, section)
-        except UnreadablePaidRecord as unread:
+        except (UnreadablePaidRecord, UnreadableCache) as unread:
             run.note(
                 f"Section {section.number} cannot be judged, because {inputs.relative(unread.path).as_posix()} "
                 "does not read, and this run did not name it, so the film keeps the picture recorded before.",
@@ -321,25 +316,17 @@ def row(inputs: Inputs, job: Job, seconds: float, *, kept: bool) -> SectionRecor
 
 
 def kept_row(inputs: Inputs, run: Run, job: Job) -> SectionRecording:
-    """The row of a section this run left alone, with its own pair of lines on the stream.
+    """The row of a section whose recording still stands, with its own pair of lines on the stream.
 
-    A kept section is work the run decided not to do, so its `section.done` carries `skipped` rather
-    than `ok` and a renderer counts it apart from a section that was really recorded.
+    A kept section is work the run planned and did not repeat, so its `section.done` carries `kept`,
+    as a take narrate finds on disk does, and a renderer counts it apart from a section that was
+    really recorded.
     """
-    started = time.monotonic()
-    run.check()
-    number = job.section.number
-    run.emit(SectionStart, stage=Stage.RECORD, section=number)
-    previous = job.previous
-    seconds = previous.checks.duration_seconds if previous is not None and previous.checks is not None else 0.0
-    run.emit(
-        SectionDone,
-        stage=Stage.RECORD,
-        section=number,
-        outcome=Outcome.SKIPPED,
-        elapsed_seconds=time.monotonic() - started,
-    )
-    return row(inputs, job, seconds, kept=True)
+    with run.section(Stage.RECORD, job.section.number) as ending:
+        ending.outcome = Outcome.KEPT
+        previous = job.previous
+        seconds = previous.checks.duration_seconds if previous is not None and previous.checks is not None else 0.0
+        return row(inputs, job, seconds, kept=True)
 
 
 def _decided(job: Job, *, force: bool, named: set[int]) -> bool:

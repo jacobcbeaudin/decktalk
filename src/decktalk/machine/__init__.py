@@ -203,6 +203,10 @@ class Toolchain:
         return replace(self, ffmpeg=Path(ffmpeg), ffprobe=Path(ffprobe))
 
 
+NOT_ON_DISK = "Executable doesn't exist"
+"""What Playwright says, after the call it names, when the file a launch would run is not on disk: a fetch away."""
+
+
 @dataclass(frozen=True)
 class Machine:
     """Everything about this computer and this process, as one value nothing else reaches for."""
@@ -494,20 +498,29 @@ class Machine:
 
         The row also names where that browser lives, because a person told the browser is there
         still has to find it to clear a cache or to hand it to a container. The driver looks in the
-        browser directory of this machine's tool cache, which is where `install` fetches it.
+        browser directory of this machine's tool cache, which is where `install` fetches it. A
+        headless launch runs Playwright's headless shell, not the full browser `installed_chromium`
+        finds, so the launch is the answer: a shell that launches is a browser, named with no path
+        when the full browser is not beside it. A launch refused because a file is not on disk says
+        what is not installed and names the command that fetches it, and any other refusal says the
+        browser did not launch, with the reason.
         """
         with chromium_fetch.driver(chromium_fetch.browsers_in(self.cache_dir)) as playwright:
+            where = chromium_fetch.installed_chromium(playwright)
             try:
                 browser = playwright.chromium.launch()
                 version = browser.version
                 browser.close()
             except Exception as failed:  # noqa: BLE001  (a browser that will not launch is a row, never a traceback)
                 # The row says only that there is no browser, so the reason goes on the run's stream.
-                log.warning("Chromium did not launch.", extra={"data": {"reason": str(failed).splitlines()[0]}})
+                reason = str(failed).splitlines()[0]
+                if NOT_ON_DISK in reason:
+                    missing = "Chromium" if where is None else "Chromium's headless shell"
+                    log.warning(f"{missing} is not installed. Run decktalk install to fetch it.")
+                else:
+                    log.warning("Chromium did not launch.", extra={"data": {"reason": reason}})
                 return InstalledTool(tool=CHROMIUM)
-            where = chromium_fetch.installed_chromium(playwright)
-            path = Path(where) if where else None
-            return InstalledTool(tool=CHROMIUM, version=version, path=path)
+            return InstalledTool(tool=CHROMIUM, version=version, path=Path(where) if where else None)
 
     def _katex_row(self) -> InstalledTool:
         """The maths the wheel carries, which a deck copies beside its pages."""

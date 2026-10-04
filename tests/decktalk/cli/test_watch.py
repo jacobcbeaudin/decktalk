@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from decktalk.cli import watch
 from decktalk.cli.session import Globals, Session
-from decktalk.errors import InputError
+from decktalk.errors import Cancelled, InputError
 from decktalk.results import UNPRICED, BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, TakeState
 from decktalk.stages.narrate.state import CHANGED, HELD
 from support.costs import a_cost
@@ -44,6 +46,19 @@ def test_the_loop_serves_builds_once_and_never_voices(monkeypatch) -> None:
     assert origin.closed
 
 
+def test_a_rebuild_stopped_by_an_interrupt_ends_the_loop_as_the_interrupt_does(monkeypatch) -> None:
+    """An interrupted narrate reaches the loop as `Cancelled`, which ends the watch rather than escaping it."""
+
+    def interrupted(_seconds: float) -> None:
+        raise Cancelled("The run was interrupted.")
+
+    monkeypatch.setattr(watch.time, "sleep", interrupted)
+    origin = Origin()
+    project = Fake(serve=origin, build=BUILT, status=_status(), authored_files=())
+    assert watch.loop(session(), project.project()) is BUILT
+    assert origin.closed
+
+
 def test_a_refused_rebuild_is_reported_and_the_loop_keeps_watching(monkeypatch, capsys) -> None:
     monkeypatch.setattr(watch.time, "sleep", _stop)
     project = Fake(serve=Origin(), build=InputError("script.md is not there."), status=_status(), authored_files=())
@@ -52,6 +67,16 @@ def test_a_refused_rebuild_is_reported_and_the_loop_keeps_watching(monkeypatch, 
     assert "error[INPUT]" in capsys.readouterr().err
     assert built.cost == UNPRICED
     assert all(name != "price" for name, _, _ in project.calls), "a refused rebuild was priced"
+
+
+def test_a_selection_the_project_refuses_ends_the_loop_before_it_serves(monkeypatch) -> None:
+    """The one selection rule holds for the loop too, so it neither serves nor watches a section that is not there."""
+    monkeypatch.setattr(watch.time, "sleep", _stop)
+    refused = InputError("no section carries the number 99, so the run would select nothing.")
+    project = Fake(select=refused, serve=Origin(), build=BUILT, status=_status(), authored_files=())
+    with pytest.raises(InputError):
+        watch.loop(session(), project.project(), only=(99,))
+    assert [name for name, _, _ in project.calls] == ["select"]
 
 
 def test_a_saved_file_names_the_sections_it_touches(tmp_path) -> None:

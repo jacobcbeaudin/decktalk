@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from decktalk.cli import machine as commands
 from decktalk.findings import Threshold
 
@@ -90,4 +92,20 @@ def test_doctor_applies_nothing_without_a_terminal_and_without_the_flag(run, mac
 def test_doctor_fix_applies_and_reads_the_machine_again(run, machine) -> None:
     made = machine(doctor=MISSING, apply=None)
     run("doctor", "--fix")
+    assert [name for name, _, _ in made.calls] == ["doctor", "apply", "doctor"]
+
+
+def test_doctor_help_says_when_it_fetches(run) -> None:
+    """The help is the contract a person reads first, so it names the offer a terminal makes and the flags."""
+    said = " ".join(run("doctor", "--help").out.split())
+    assert "fetches nothing, and writes nothing" not in said, said
+    assert "offers once to fetch what is missing" in said, said
+    assert "--fix fetches it without asking, under --json or --no-input too" in said, said
+    assert "--no-input and --json without --fix" in said, said
+
+
+@pytest.mark.parametrize("flag", ["--json", "--no-input"])
+def test_doctor_fix_fetches_under_json_and_no_input_as_its_help_says(run, machine, flag: str) -> None:
+    made = machine(doctor=MISSING, apply=None)
+    run(flag, "doctor", "--fix")
     assert [name for name, _, _ in made.calls] == ["doctor", "apply", "doctor"]

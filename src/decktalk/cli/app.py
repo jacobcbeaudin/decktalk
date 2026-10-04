@@ -423,10 +423,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         # silent: the interrupt is reported as the CANCELLED refusal below.
         return _session().failed(Cancelled("The caller stopped the run."))
     except DeckTalkError as refused:
-        return _session().failed(refused)
+        return _refused(_session(), refused)
     except Exception as failure:  # noqa: BLE001  (anything else is a bug, reported as one)
         return _session().bug(failure)
     return int(answered or 0)
+
+
+def _refused(session: Session, refused: DeckTalkError) -> int:
+    """Report a refusal, with the result of what the run made when it carries one.
+
+    A run stopped or refused after it bought something carries that result, which under `--json` is
+    the one object printed, its `error` the refusal. Otherwise the error block goes to stderr and the
+    result is rendered as a finished one is, so the reader sees what the run spent.
+    """
+    made = refused.result
+    if not isinstance(made, Result):
+        return session.failed(refused)
+    if not session.flags.json_out:
+        session.failed(refused)
+    return session.report(made)
 
 
 SUGGESTION_CUTOFF = 0.75

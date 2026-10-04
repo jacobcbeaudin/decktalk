@@ -292,7 +292,8 @@ FIRST_GENERATOR = "build_runtime"
 package reads."""
 
 SAMPLES = "build_samples"
-"""The generator that runs DeckTalk on a starter for the docs samples, which needs ffmpeg and runs in the e2e row."""
+"""The generator that runs DeckTalk on a starter for the docs samples, which needs ffmpeg and Chromium and runs in the
+e2e row."""
 
 GENERATORS = (
     FIRST_GENERATOR,

@@ -165,7 +165,7 @@ Every call in the table also appends its own events file, `build/events/<run>.js
 |---|---|---|
 | `spend` | `narrate`, `score`, `build` | True buys what is missing. False, the default, buys nothing: `narrate` plays every take on disk and a placeholder with estimated words for each missing one, reported as `TAKE_MISSING`, and `score` reports its plan with each unbought item as `SOUND_MISSING`, which the film plays as silence. The library buys nothing without `spend=True`, whatever the price. |
 | `max_cost` | `narrate`, `score`, `build` | A ceiling in US dollars on the most the run can cost, checked before the first paid request. A run over it raises `ApprovalRequired`. |
-| `only` | every call but `status` and `clip` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. |
+| `only` | every call but `status` and `clip`, and `price` | Limits the run to these section numbers, which limits what is voiced as well as what is recorded. `None`, the default, is every section. A number no section carries, or an empty sequence, raises `InputError` naming the sections there are, before any run opens. `Project.select(only)` makes that same judgement alone and returns the numbers. A `build` hands each stage the selected sections it can act on, the spoken ones to `narrate` and the page ones to `record`, and skips a stage with none, so a selection of a clip alone rebuilds that clip. |
 | `force` | `narrate`, `record`, `build` | Does the free work again where what is on disk still matches, and never spends. `narrate` makes each placeholder again and keeps every voiced take, and `build` keeps every voiced take and every item of the score. On `build` it also runs `assemble` and `verify` where the build would have kept them. |
 | `replace_voiced` | `narrate`, `build` | Sets aside the voiced take a section holds. A run that spends voices the section again and plays the new take. One that does not plays a placeholder in its place for that run, and the voiced take stays on disk. Without it, a run that does not spend plays every voiced take on disk. It never buys a sound. |
 | `replace_score` | `score`, `build` | Buys every bought sound the run selects again, each music part included. A run that does not spend ignores it and keeps every bought sound on disk. It never buys a take. |
@@ -204,7 +204,7 @@ if result.stopped_at is not None:
 | `ProviderError` | `narrate`, `score` and `build` on a paid run, when the voice service fails. |
 | `ToolError` | Every call that opens a page or runs ffmpeg, when Chromium or ffmpeg is missing or fails. |
 | `InputError` | Every call, when a file the author writes is missing, unreadable or malformed. |
-| `Cancelled` | Every call, when its `cancel` token is set. |
+| `Cancelled` | Every call, when its `cancel` token is set, and `narrate`, `score` and `build` on a Ctrl-C. |
 
 [Errors](#errors) says what each one carries.
 
@@ -341,7 +341,14 @@ cancelled run leaves whole artifacts behind rather than half of one, and raises 
 
 Nothing in the CLI sets the token. A Ctrl-C reaches the run as `KeyboardInterrupt`: the first starts
 no new section and waits for the ones in flight, keeping every take already made, and a second
-leaves at once.
+leaves at once. A Ctrl-C during `narrate`'s takes, `score`'s requests or anywhere in a `build` raises `Cancelled` from
+the interrupt instead, so it can carry what the run made.
+
+A refusal raised after a run paid for something carries the result its command answers with: a
+`narrate` stopped or refused while it makes takes carries a `NarrateResult` of every take finished so
+far, a `score` stopped or refused after a request was paid for carries a `ScoreResult`, and a `build`
+stopped or refused after it paid for something carries a `BuildResult`. Each has `ok` false, the
+refusal as its `error` and what the run spent. Every other refusal's `result` is `None`.
 
 ```python
 import threading
@@ -369,7 +376,7 @@ declares `run`, and one whose command writes files also declares `written`.
 | `schema` | The shape version of the object, which is always `1`. It is spelled `schema_` in Python and `schema` in JSON. |
 | `ok` | True when the call ran and judged nothing that reaches its threshold. Its threshold is the one the project was opened with, which fails on an error by default. On the command line the threshold is the one `--fail-on` and `--allow` set, so `ok` is true exactly when the command exits 0. |
 | `findings` | Every judgement this call made, in the order it made them. |
-| `error` | An `ErrorInfo`, filled only when the command could not run at all. |
+| `error` | An `ErrorInfo`, filled when the command could not run, or when a run stopped or was refused after it made something and carries its own result. |
 | `run` | The id of the run this call opened, which names its events file. |
 | `written` | Every file this run wrote, project-relative, in the order it wrote them. |
 
@@ -605,14 +612,20 @@ def changed(path: Path) -> None:
     project = project.reload()
     touched = project.sections_touching(path)
     if touched:
-        project.record(only=touched)
-        project.assemble()
+        project.build(only=touched, stages=decktalk.Stage.span(decktalk.Stage.RECORD, decktalk.Stage.ASSEMBLE))
 ```
+
+`build` hands each stage the touched sections it can act on, so a saved clip skips `record` and is
+cut again.
 
 ## Errors
 
 Every refusal DeckTalk makes on purpose is a `DeckTalkError`, so `except DeckTalkError` catches an
-environment DeckTalk cannot work in and never catches a bug in DeckTalk itself.
+environment DeckTalk cannot work in and never catches a bug in DeckTalk itself. An interrupt that lands in
+`narrate`'s takes, `score`'s requests or anywhere in a `build` arrives as `Cancelled`, which is a `DeckTalkError`.
+One that lands anywhere else, including `cue`, `record`, `assemble` or `verify` called alone, arrives as
+`KeyboardInterrupt`. A loop that should end on Ctrl-C catches `Cancelled` and `KeyboardInterrupt` before it catches
+`DeckTalkError`.
 
 Each one carries `hint`, which is a whole command with its flags rather than a topic, and
 `location`, which is the place the reader should open. Either is `None` when nothing knows it.
@@ -626,7 +639,7 @@ Each one carries `hint`, which is a whole command with its flags rather than a t
 | `ToolError` | `TOOL` | ffmpeg, ffprobe or Chromium is unavailable, or one of them failed a call. |
 | `ProjectLocked` | `LOCKED` | Another writer holds this project's build directory. |
 | `ApprovalRequired` | `APPROVAL` | A run that spends money was not approved. |
-| `Cancelled` | `CANCELLED` | The caller stopped the run through its cancel token. |
+| `Cancelled` | `CANCELLED` | The caller stopped the run through its cancel token, or a Ctrl-C landed in `narrate`'s takes, `score`'s requests or a `build`. |
 
 `ProviderError` adds `retryable`, which is true when the same request may succeed later, and is what
 decides whether a caller waits.
@@ -824,6 +837,7 @@ write no `take.charged` line.
 | `digest` | The take's input digest, which names its files. |
 | `characters` | How many characters of that section's text were sent. |
 | `dollars` | What the take cost at the price in force. |
+| `possibly_charged` | True when the request was sent and its reply broke, so the provider may have billed it and no take was written. Its `dollars` count toward the run's ceiling and never toward what it spent. |
 
 The digest is what makes a retry safe to meter. A take already on disk is read from the cache and never
 bought again, so it earns no line, and a ledger keyed on `digest` sees at once when two runs bought
@@ -833,7 +847,9 @@ the same words.
 paid for: one per ambience bed or effect, and one per part of the music. `name` is the name the item
 has in `decktalk.toml`, `kind` is `music`, `ambience` or `effect`, `digest` is the request's digest
 in the sound ledger, `seconds` is how much audio was asked for, and `dollars` is those seconds at the
-rate per minute its kind's table states.
+rate per minute its kind's table states. A request whose reply broke after it was sent, or that a
+Ctrl-C abandoned, writes its line
+with `possibly_charged` true, as a take's does.
 
 ```python
 import decktalk

@@ -29,7 +29,8 @@ busy answer to one of several concurrent sections would fail the run after the o
 refusal that says the request itself is wrong is never repeated, because it would be refused again.
 A reply that broke once the request was connected, and a reply that arrived and could not be read,
 are never repeated either, because the service may already have billed the request. Each becomes a
-`PROVIDER` error that says the request was possibly charged, rather than escaping as a bare timeout.
+`PROVIDER` error that says the request was possibly charged, and is flagged `possibly_charged` for the
+stage that put it on the stream, rather than escaping as a bare timeout.
 A request whose adapter says it bills nothing, the `dtsp` provider on a local server, is the one
 exception: its broken reply costs nothing to send again, so it is tried again under the same retries
 and waits.
@@ -275,7 +276,10 @@ def _broken(url: str, exc: BaseException, carried: Collection[str], *, free: boo
     said = scrub(str(exc), carried) or "no reason given"
     bill, hint = _after_sending(free)
     return ProviderError(
-        f"{shown(url)} stopped answering ({type(exc).__name__}: {said}).{bill}", hint=hint, retryable=free
+        f"{shown(url)} stopped answering ({type(exc).__name__}: {said}).{bill}",
+        hint=hint,
+        retryable=free,
+        possibly_charged=not free,
     )
 
 
@@ -414,7 +418,9 @@ def post_json(
             # A gateway may have answered for a service that never had the request, and the service may
             # equally have billed a reply that arrived mangled, so it is reported and never sent again.
             bill, hint = _after_sending(free)
-            raise ProviderError(f"{shown(url)} answered with something that is not JSON.{bill}", hint=hint) from exc
+            raise ProviderError(
+                f"{shown(url)} answered with something that is not JSON.{bill}", hint=hint, possibly_charged=not free
+            ) from exc
         if not isinstance(answered, dict):
             raise ProviderError(f"{shown(url)} answered with a {type(answered).__name__} rather than an object.")
         return answered

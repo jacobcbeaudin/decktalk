@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from decktalk.settings.layers import (
     load,
     machine_config_path,
     merge_tables,
+    named_file,
     read_machine_toml,
     refuse_off_scope,
     route,
@@ -285,6 +287,37 @@ class TestANumberThatIsNotFinite:
     def test_an_item_of_an_array_is_held_to_the_same_rule(self) -> None:
         with pytest.raises(InputError, match=r"verify\.probe_delays_seconds: must be a finite number"):
             load(machine={}, project={"verify": {"probe_delays_seconds": [0.5, float("nan")]}}, environ={})
+
+
+class TestAValueOutOfItsRange:
+    """A value outside its range is refused by the key, the range and the layer that wrote it."""
+
+    def test_a_value_written_in_the_project_file_is_refused_naming_the_file(self, tmp_path: Path) -> None:
+        (tmp_path / "decktalk.toml").write_text("[video]\ncrf = 99\n", encoding="utf-8")
+        with pytest.raises(InputError, match=r"^video\.crf: must be between 0 and 32, got 99 in decktalk\.toml\.$"):
+            load(tmp_path, machine={}, environ={})
+
+    def test_a_value_in_the_environment_is_refused_naming_the_variable(self) -> None:
+        variable = BY_ID["video.crf"].environment
+        with pytest.raises(InputError, match=rf"^video\.crf: must be between 0 and 32, got 99 in {variable}\.$"):
+            load(machine={}, project={}, environ={variable: "99"})
+
+    def test_a_value_in_an_override_is_refused_naming_the_override(self) -> None:
+        with pytest.raises(InputError, match=r"^video\.crf: must be between 0 and 32, got 99 in --set video\.crf\.$"):
+            load(machine={}, project={}, environ={}, overrides=("video.crf=99",))
+
+    def test_a_value_in_the_machine_file_is_refused_naming_it_as_config_set_does(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Many projects share one machine file, so its name alone does not say which file to correct."""
+        (tmp_path / "machine.toml").write_text("[record]\nconcurrency = 999\n", encoding="utf-8")
+        (tmp_path / "here").mkdir()
+        monkeypatch.chdir(tmp_path / "here")
+        named = re.escape((tmp_path / "machine.toml").as_posix())
+        wanted = rf"^record\.concurrency: must be between 0 and 16, got 999 in {named}\.$"
+        with pytest.raises(InputError, match=wanted):
+            load(machine_path=Path("../machine.toml"), project={}, environ={})
+        assert named_file(Path("../machine.toml"), Scope.MACHINE) == tmp_path / "machine.toml"
 
 
 class TestCrossTableRelations:

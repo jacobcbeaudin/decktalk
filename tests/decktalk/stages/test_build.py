@@ -19,7 +19,7 @@ import pytest
 
 from decktalk.cli import main
 from decktalk.cli.session import Session
-from decktalk.errors import ApprovalRequired, ErrorCode, InputError, NotBuiltError
+from decktalk.errors import ApprovalRequired, Cancelled, ErrorCode, ErrorInfo, InputError, NotBuiltError
 from decktalk.events import CostPriced, RunLog, StageDone, StageStart
 from decktalk.findings import Code, Finding, Location, Severity, Threshold
 from decktalk.inputs import Inputs
@@ -30,6 +30,7 @@ from decktalk.project import Project
 from decktalk.results import (
     AssembleResult,
     BillingBasis,
+    BuildResult,
     Cost,
     CostState,
     CueResult,
@@ -47,6 +48,7 @@ from decktalk.settings import MACHINE_FILE_VARIABLE
 from decktalk.stages import assemble, cue, narrate, record, storyboard, verify
 from decktalk.stages import score as score_stage
 from decktalk.stages.build import build
+from decktalk.stages.build import price as build_price
 from decktalk.stages.kept import read_kept
 from decktalk.stages.table import CALLS
 from support.fakes import FakeVoice
@@ -700,6 +702,198 @@ def test_a_stopped_run_keeps_what_narrate_already_charged(
     assert result.cost.dollars == pytest.approx(1.0)
 
 
+def test_a_narrate_stopped_mid_build_stops_the_build_with_what_it_bought(
+    inputs: Inputs, make_run: Callable[..., Watched], calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stopped narrate carries its own result, and the build carries it on as the build's, with the money in it."""
+    spent = price(1.0, state=CostState.CHARGED)
+
+    def stopped(_inputs: Inputs, _run: Run, **_options: object) -> Result:
+        stop = Cancelled("The run was interrupted.")
+        stop.result = _results(Answers(narrate_cost=spent))["narrate"]().model_copy(update={"ok": False})
+        raise stop
+
+    _replace(monkeypatch, narrate, "narrate", stopped)
+    with pytest.raises(Cancelled) as raised:
+        build(inputs, make_run(inputs, spend=True).run)
+    result = raised.value.result
+    assert isinstance(result, BuildResult)
+    assert result.ok is False
+    assert result.error is not None and result.error.code is ErrorCode.CANCELLED
+    assert result.cost.state is CostState.CHARGED
+    assert result.cost.dollars == pytest.approx(1.0)
+    assert [row.outcome for row in result.stages] == [Outcome.STOPPED, *[Outcome.SKIPPED] * 5]
+    assert calls.names == []
+
+
+def test_a_stage_that_fails_after_narrate_bought_carries_the_build_and_its_cost(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Money narrate spent is reported whichever later stage refuses the run."""
+    answers.narrate_cost = price(1.0, state=CostState.CHARGED)
+
+    def broken(_inputs: Inputs, _run: Run, **_options: object) -> Result:
+        raise InputError("cues.json is not JSON.")
+
+    _replace(monkeypatch, cue, "cue", broken)
+    with pytest.raises(InputError) as raised:
+        build(inputs, make_run(inputs, spend=True).run)
+    result = raised.value.result
+    assert isinstance(result, BuildResult)
+    assert result.error == ErrorInfo.of(raised.value)
+    assert result.cost.dollars == pytest.approx(1.0)
+    assert [row.outcome for row in result.stages][:2] == [Outcome.RAN, Outcome.FAILED]
+    assert calls.names == ["narrate"]
+
+
+def test_a_build_cancelled_between_stages_after_narrate_bought_carries_what_it_spent(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host cancels while the last take answers, so the stop lands before cue, outside any stage."""
+    answers.narrate_cost = price(1.0, state=CostState.CHARGED)
+    watched = make_run(inputs, spend=True)
+    made = CALLS[Stage.NARRATE].call
+
+    def narrated_then_cancelled(_inputs: Inputs, run: Run, **options: object) -> Result:
+        answer = made(_inputs, run, **options)
+        run.cancel.cancel()
+        return answer
+
+    _replace(monkeypatch, narrate, "narrate", narrated_then_cancelled)
+    with pytest.raises(Cancelled) as raised:
+        build(inputs, watched.run)
+    result = raised.value.result
+    assert isinstance(result, BuildResult)
+    assert result.cost.dollars == pytest.approx(1.0)
+    assert [row.outcome for row in result.stages] == [Outcome.RAN, Outcome.STOPPED, *[Outcome.SKIPPED] * 4]
+    assert calls.names == ["narrate"]
+    ended = [(line.stage, line.outcome) for line in watched.of(StageDone)]
+    assert ended == [(row.stage, row.outcome) for row in result.stages], "a renderer meets every stage once"
+
+
+def test_a_build_stopped_after_it_assembled_reports_the_film(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The film is on disk once assemble ran, so a stop in verify still names it beside what the run spent."""
+    answers.narrate_cost = price(1.0, state=CostState.CHARGED)
+
+    def interrupted(_inputs: Inputs, _run: Run, **_options: object) -> Result:
+        raise KeyboardInterrupt
+
+    _replace(monkeypatch, verify, "verify", interrupted)
+    with pytest.raises(Cancelled) as raised:
+        build(inputs, make_run(inputs, spend=True).run)
+    result = raised.value.result
+    assert isinstance(result, BuildResult)
+    assert result.film == Path("build/final/t.mp4")
+    assert calls.names == ["narrate", "cue", "record", "score", "assemble"]
+
+
+@pytest.mark.parametrize("bought", [True, False], ids=["after-narrate-bought", "nothing-bought"])
+def test_a_ctrl_c_anywhere_in_a_build_is_cancelled(
+    inputs: Inputs,
+    make_run: Callable[..., Watched],
+    answers: Answers,
+    calls: Calls,
+    monkeypatch: pytest.MonkeyPatch,
+    bought: bool,
+) -> None:
+    """An interrupt in record is the same `Cancelled` an interrupt in narrate is, carrying the build when it bought."""
+    if bought:
+        answers.narrate_cost = price(1.0, state=CostState.CHARGED)
+
+    def interrupted(_inputs: Inputs, _run: Run, **_options: object) -> Result:
+        raise KeyboardInterrupt
+
+    _replace(monkeypatch, record, "record", interrupted)
+    with pytest.raises(Cancelled) as raised:
+        build(inputs, make_run(inputs, spend=True).run)
+    assert isinstance(raised.value.__cause__, KeyboardInterrupt)
+    result = raised.value.result
+    if not bought:
+        assert result is None
+        return
+    assert isinstance(result, BuildResult)
+    assert result.cost.dollars == pytest.approx(1.0)
+    assert [row.outcome for row in result.stages][:3] == [Outcome.RAN, Outcome.RAN, Outcome.STOPPED]
+    assert calls.names == ["narrate", "cue"]
+
+
+def test_a_refusal_after_a_narrate_that_paid_nothing_carries_no_build(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A free voice's run is charged nothing, so a later refusal reads as any other rather than as a build."""
+    answers.narrate_cost = price(0.0, state=CostState.CHARGED)
+
+    def broken(_inputs: Inputs, _run: Run, **_options: object) -> Result:
+        raise InputError("cues.json is not JSON.")
+
+    _replace(monkeypatch, cue, "cue", broken)
+    with pytest.raises(InputError) as raised:
+        build(inputs, make_run(inputs, spend=True).run)
+    assert raised.value.result is None
+    assert calls.names == ["narrate"]
+
+
+CLIPPED = (
+    TOML
+    + """
+[[section]]
+number = 3
+clip = "media/b-roll.mp4"
+"""
+)
+"""The two-section project with a clip as its third section, which nothing narrates and nothing records."""
+
+
+@pytest.mark.parametrize(
+    ("only", "narrated", "recorded"),
+    [((3,), None, None), ((1, 3), (1,), (1,))],
+    ids=["clip-alone", "clip-and-page"],
+)
+def test_each_stage_is_handed_only_the_selected_sections_it_can_act_on(
+    tmp_path: Path,
+    make_run: Callable[..., Watched],
+    calls: Calls,
+    only: tuple[int, ...],
+    narrated: tuple[int, ...] | None,
+    recorded: tuple[int, ...] | None,
+) -> None:
+    """A saved clip rebuilds alone: narrate and record have no part of it, so they are skipped, and the rest cut it."""
+    clipped = load_project(tmp_path / "clipped", CLIPPED, script=SCRIPT)
+    (clipped.root / "media").mkdir()
+    (clipped.root / "media" / "b-roll.mp4").write_bytes(b"clip")
+    result = build(clipped, make_run(clipped).run, only=only)
+    outcomes = {row.stage: row.outcome for row in result.stages}
+    for stage, share in ((Stage.NARRATE, narrated), (Stage.RECORD, recorded)):
+        if share is None:
+            assert stage.value not in calls.names
+            assert outcomes[stage] is Outcome.SKIPPED
+        else:
+            assert calls.options(stage.value)["only"] == share
+    assert calls.options("cue")["only"] == only
+    assert build_price(clipped, (Stage.NARRATE,), only=(3,)).buys is False
+
+
+@pytest.mark.usefixtures("calls")
+def test_a_disk_that_refuses_a_later_stage_after_narrate_bought_carries_the_build(
+    inputs: Inputs, make_run: Callable[..., Watched], answers: Answers, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An OSError is the environment and not a bug, so it is a refusal naming the file, carrying what was spent."""
+    answers.narrate_cost = price(1.0, state=CostState.CHARGED)
+
+    def full(_inputs: Inputs, _run: Run, **_options: object) -> Result:
+        raise OSError(28, "No space left on device", "build/final/t.mp4")
+
+    _replace(monkeypatch, assemble, "assemble", full)
+    with pytest.raises(InputError, match="build/final/t.mp4") as refused:
+        build(inputs, make_run(inputs, spend=True).run)
+    result = refused.value.result
+    assert isinstance(result, BuildResult)
+    assert result.cost.dollars == pytest.approx(1.0)
+    assert isinstance(refused.value.__cause__, OSError)
+
+
 def test_a_warning_lets_the_run_carry_on(inputs: Inputs, watched: Watched, answers: Answers, calls: Calls) -> None:
     answers.record.append(judged(Code.PAGE_SWAP_APART, Stage.RECORD))
     assert judged(Code.PAGE_SWAP_APART, Stage.RECORD).severity is Severity.WARNING
@@ -848,7 +1042,7 @@ FREE_AND_VOICED = priced(
 @pytest.mark.parametrize(
     ("narrated", "dollars", "said"),
     [
-        (FREE_AND_VOICED, 0.0, "This run voiced 39 characters for nothing, because the voice is free."),
+        (FREE_AND_VOICED, 0.0, "This run voiced 39 characters for nothing, because the provider is free."),
         (price(0.30, state=CostState.CHARGED), 0.30, "This run spent $0.30"),
     ],
     ids=["free-voice", "paid-voice"],

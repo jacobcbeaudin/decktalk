@@ -19,14 +19,14 @@ from typing import Any
 
 import pytest
 
-from decktalk.errors import ApprovalRequired, Cancelled, InputError, ProviderError
+from decktalk.errors import ApprovalRequired, Cancelled, ErrorCode, InputError, ProviderError
 from decktalk.events import CostPriced, Event, SoundCharged, StageProgress, Unit
 from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
 from decktalk.inputs.workspace import LEDGER_FILE
 from decktalk.media import audio
 from decktalk.pipeline import Stage
-from decktalk.results import BillingBasis, CostState, Layer, SoundKind, SoundOutcome, up_to_the_cent
+from decktalk.results import BillingBasis, CostState, Layer, ScoreResult, SoundKind, SoundOutcome, up_to_the_cent
 from decktalk.speech.sound import SoundContext
 from decktalk.stages import score as stage
 from decktalk.stages.score import ledger as ledger_module
@@ -660,7 +660,7 @@ def test_one_progress_line_is_reported_for_every_asset(tmp_path: Path) -> None:
     run.machine.events.subscribe(lambda line: seen.append(line) if isinstance(line, StageProgress) else None)
     score(an_inputs(tmp_path), run)
     assert [line.label for line in seen] == ["ambience", "chime", "music", "score"]
-    assert {line.unit for line in seen} == {Unit.ASSET}
+    assert {line.unit for line in seen} == {Unit.SCORE_ITEM}
     assert {line.stage for line in seen} == {Stage.SCORE}
     assert seen[-1].done == seen[-1].total == 3
 
@@ -833,6 +833,112 @@ def test_a_paid_runs_charged_cost_adds_up_its_charge_lines_and_stays_under_its_c
     assert result.cost.dollars == up_to_the_cent(line.dollars for line in charged)
     assert result.cost.seconds == sum(line.seconds for line in charged)
     assert result.cost.dollars <= priced.cost.ceiling_dollars
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined")
+def test_a_sound_whose_reply_broke_is_on_the_stream_and_in_the_ceiling_never_the_dollars(
+    tmp_path: Path, service: FakeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The chime's reply broke after it was sent, so it may be billed: a flagged line, and the ceiling alone."""
+    answered = service.effect
+
+    def breaks_on_the_chime(body: Mapping[str, Any], *, output_format: str) -> bytes:
+        if service.sounds:
+            raise ProviderError("the reply broke. The request was possibly charged.", possibly_charged=True)
+        return answered(body, output_format=output_format)
+
+    monkeypatch.setattr(service, "effect", breaks_on_the_chime)
+    lines: list[Event] = []
+    with pytest.raises(ProviderError) as refused:
+        score(an_inputs(tmp_path, RATED), a_run(tmp_path, spend=True, lines=lines))
+    charged = [line for line in lines if isinstance(line, SoundCharged)]
+    assert [(line.name, line.possibly_charged) for line in charged] == [("ambience", False), ("chime", True)]
+    result = refused.value.result
+    assert isinstance(result, ScoreResult)
+    assert result.error is not None and result.error.code is ErrorCode.PROVIDER
+    assert result.cost.state is CostState.CHARGED
+    assert result.cost.dollars == up_to_the_cent([charged[0].dollars])
+    assert result.cost.ceiling_dollars == up_to_the_cent(line.dollars for line in charged)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined")
+def test_a_score_interrupted_after_it_bought_is_cancelled_with_what_it_bought(
+    tmp_path: Path, service: FakeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The music request was out when the Ctrl-C landed, so it may be billed: a flagged line, in the ceiling alone."""
+
+    def interrupted(_body: Mapping[str, Any], *, output_format: str) -> bytes:  # noqa: ARG001
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(service, "music", interrupted)
+    lines: list[Event] = []
+    with pytest.raises(Cancelled) as stopped:
+        score(an_inputs(tmp_path, RATED), a_run(tmp_path, spend=True, lines=lines))
+    assert isinstance(stopped.value.__cause__, KeyboardInterrupt)
+    result = stopped.value.result
+    assert isinstance(result, ScoreResult)
+    charged = [line for line in lines if isinstance(line, SoundCharged)]
+    assert [(line.name, line.possibly_charged) for line in charged] == [
+        ("ambience", False),
+        ("chime", False),
+        ("music", True),
+    ]
+    assert result.cost.dollars == up_to_the_cent(line.dollars for line in charged if not line.possibly_charged)
+    assert result.cost.ceiling_dollars == up_to_the_cent(line.dollars for line in charged)
+    assert result.cost.ceiling_dollars > result.cost.dollars
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined", "service")
+def test_a_sound_the_disk_refuses_after_it_was_paid_for_reports_what_the_run_bought(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = Path.write_bytes
+
+    def full(self: Path, data: bytes) -> int:
+        if "score" in self.parts:
+            raise OSError(28, "No space left on device", str(self))
+        return real(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", full)
+    lines: list[Event] = []
+    with pytest.raises(InputError, match="No space left on device") as refused:
+        score(an_inputs(tmp_path, RATED), a_run(tmp_path, spend=True, lines=lines))
+    charged = [line.dollars for line in lines if isinstance(line, SoundCharged)]
+    assert charged
+    result = refused.value.result
+    assert isinstance(result, ScoreResult)
+    assert result.cost.dollars == up_to_the_cent(charged)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined")
+def test_a_score_refused_before_any_request_was_paid_carries_no_result(
+    tmp_path: Path, service: FakeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing was bought, so the refusal reads as any other rather than as a score that bought nothing."""
+
+    def refused(_body: Mapping[str, Any], *, output_format: str) -> bytes:  # noqa: ARG001
+        raise ProviderError("could not reach the sound provider.", reached=False)
+
+    monkeypatch.setattr(service, "effect", refused)
+    with pytest.raises(ProviderError) as raised:
+        score(an_inputs(tmp_path, RATED), a_run(tmp_path, spend=True))
+    assert raised.value.result is None
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined", "service")
+def test_a_score_that_may_not_spend_interrupted_carries_no_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that may not spend buys nothing, so a Ctrl-C in it carries no price in place of a cost."""
+
+    def interrupted(*_args: object, **_kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(stage, "_kept", interrupted)
+    monkeypatch.setattr(stage, "_row", interrupted)
+    with pytest.raises(Cancelled) as stopped:
+        score(an_inputs(tmp_path, RATED), a_run(tmp_path, spend=False))
+    assert stopped.value.result is None
 
 
 # ---- where each request's settings come from -------------------------------------------------

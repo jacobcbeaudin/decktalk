@@ -258,12 +258,29 @@ def _reachable(module: str) -> str:
 
 @pytest.mark.parametrize("code", [code for code in Code if code.raised_by is RaisedBy.PYTHON], ids=str)
 def test_every_command_a_code_names_can_reach_the_line_that_raises_it(code: Code) -> None:
-    """A code's page says which commands report it, so each one named must reach a line that judges it."""
+    """A code's page says which commands report it, so each one named must reach a line that judges it.
+
+    `verify` also reaches what the recording log it repeats was judged by, which is how it reports
+    a recording's own findings without measuring them again.
+    """
     modules = {DOCTOR: "decktalk.machine"}
+    repeats = {Stage.VERIFY.value: "decktalk.stages.record.checks"}
     assert code.raised_in
     for command in code.raised_in:
         reached = _reachable(modules.get(command, f"decktalk.stages.{command}"))
+        if command in repeats:
+            reached += _reachable(repeats[command])
         assert f"Code.{code.name}" in reached, f"{command} cannot raise {code.name}"
+
+
+@pytest.mark.parametrize("code", [code for code in Code if Stage.RECORD.value in code.raised_in], ids=str)
+def test_every_judgement_of_a_recording_names_verify_which_repeats_it(code: Code) -> None:
+    """`verify` reports again what each recording log judged, so a code the log carries is one verify reports.
+
+    Every finding `record` raises is one `recording_findings` wrote into the log, the page's own codes
+    among them, so every code that names `record` names `verify` too.
+    """
+    assert Stage.VERIFY.value in code.raised_in
 
 
 def test_every_command_a_code_names_is_one_the_tree_has() -> None:

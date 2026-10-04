@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 import measure
+from decktalk.stages.verify.plan import HALF_FRAME
 
 
 def cue(name: str, offset: float, *, skipped: str | None = None) -> dict[str, object]:
@@ -30,7 +31,7 @@ def test_landing_is_the_distance_from_the_word_early_or_late_over_every_run() ->
         {"cues": [cue("1.1:title", 0.016), cue("1.1:files", -0.050), cue("1.2:deck", 0.0, skipped="hidden")]},
         {"cues": [cue("1.1:title", 0.020), cue("1.1:files", 0.030), cue("1.2:deck", 0.0, skipped="hidden")]},
     ]
-    row = measure.landing(runs, limit_ms=80.0)
+    row = measure.landing(runs, limit_ms=80.0, fps=25)
     assert row["limit_ms"] == 80.0
     assert row["reveals"] == 4
     assert row["skipped"] == 2
@@ -42,17 +43,37 @@ def test_landing_is_the_distance_from_the_word_early_or_late_over_every_run() ->
     ]
 
 
-def test_every_reveal_past_the_limit_is_counted() -> None:
-    """A worst landing past the limit is a finding verify raised, and the page says how many there were."""
-    runs = [{"cues": [cue("1.1:title", 0.016), cue("1.1:files", -0.050), cue("1.2:deck", 0.081)]}]
-    assert measure.landing(runs, limit_ms=40.0)["over_limit"] == 2
-    assert measure.landing(runs, limit_ms=81.0)["over_limit"] == 0
+def test_a_reveal_is_past_the_limit_by_the_rule_verify_raises_cue_off_with() -> None:
+    """Verify allows the limit plus half a frame, so the page counts a reveal past it by the same rule
+    and never names a reveal past the limit that verify passed."""
+    allowance_ms = HALF_FRAME / 25 * 1000
+    runs = [
+        {
+            "cues": [
+                cue("1.1:title", 0.016),
+                cue("1.1:files", -0.081),
+                cue("1.2:deck", (80 + allowance_ms) / 1000),
+                cue("1.2:word", (81 + allowance_ms) / 1000),
+            ]
+        }
+    ]
+    assert measure.landing(runs, limit_ms=80.0, fps=25)["over_limit"] == 1
+    assert measure.landing(runs, limit_ms=40.0, fps=25)["over_limit"] == 3
+    assert measure.landing(runs, limit_ms=200.0, fps=25)["over_limit"] == 0
+
+
+def test_the_half_frame_shrinks_as_the_frame_rate_rises() -> None:
+    """Half a frame at 50 frames per second is 10 ms, so a reveal 95 ms off is past an 80 ms limit there
+    and inside it at 25, where half a frame is 20 ms."""
+    runs = [{"cues": [cue("1.1:title", 0.095)]}]
+    assert measure.landing(runs, limit_ms=80.0, fps=25)["over_limit"] == 0
+    assert measure.landing(runs, limit_ms=80.0, fps=50)["over_limit"] == 1
 
 
 def test_a_run_that_measured_no_reveal_is_refused() -> None:
     """A median of nothing would publish a page that says nothing as if it measured something."""
     with pytest.raises(SystemExit, match="no reveal"):
-        measure.landing([{"cues": [cue("1.1:title", 0.0, skipped="hidden")]}], limit_ms=80.0)
+        measure.landing([{"cues": [cue("1.1:title", 0.0, skipped="hidden")]}], limit_ms=80.0, fps=25)
 
 
 def test_coverage_is_the_total_the_report_prints() -> None:

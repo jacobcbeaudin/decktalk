@@ -46,7 +46,11 @@ def differs(path: Path, text: str) -> str | None:
     """Why the committed file no longer says `text`, naming the first line that moved, or None."""
     if not path.exists():
         return MISSING
-    committed = path.read_text(encoding="utf-8")
+    return moved(path.read_text(encoding="utf-8"), text)
+
+
+def moved(committed: str, text: str) -> str | None:
+    """Why `committed` no longer says `text`, naming the first line that moved, or None."""
     if committed == text:
         return None
     pairs = enumerate(zip(committed.splitlines(), text.splitlines(), strict=False), start=1)

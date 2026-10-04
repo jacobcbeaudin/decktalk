@@ -175,7 +175,7 @@ decktalk config set record.concurrency 2 --scope machine
 A `decktalk.toml` that sets any of the five is refused by name, because a project travels and a
 limit that suits one machine is wrong on the next:
 
-{/* sample: decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3 */}
+{/* sample: machine-key-in-project, decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3 */}
 ```text
 error[INPUT]: decktalk.toml: 'record.concurrency' is machine-scoped, so it belongs in this machine's file, where the machine that runs the build states what it runs.
   hint: Remove it from decktalk.toml and run `decktalk config set record.concurrency <value> --scope machine`.
@@ -328,7 +328,7 @@ together, the same total its result reports.
 decktalk check --json
 ```
 
-{/* sample: decktalk check --json, on a fresh decktalk init my-lesson, the cost object */}
+{/* sample: check-cost, decktalk check --json, on a fresh decktalk init my-lesson, the cost object */}
 ```json
 {
   "state": "estimate",
@@ -397,15 +397,17 @@ apart.
 | Some sections could not be matched | `This run costs $X for the sections that certainly need a take, and up to $Y if the takes that could not be matched to a voice need one too, at $0.30 per 1,000 characters.` |
 | No section could be matched | `The takes on disk could not be matched to a voice, so this run costs up to $0.15 at $0.30 per 1,000 characters.` |
 | Nothing needs a take | `This run buys nothing.` |
-| The voice declares itself free | `This run voices 476 characters for nothing, because the voice is free.` |
+| The provider declares itself free | `This run voices 476 characters for nothing, because the provider is free.` |
 | After a voiced run | `This run spent $0.15 on 476 characters at $0.30 per 1,000 characters.` |
 | After a voiced run that bought nothing | `This run bought nothing.` |
+| After a voiced run whose one reply broke | `This run spent $0.00, and up to $0.01 if the provider billed the requests it never answered, at $0.30 per 1,000 characters.` |
 | Two stages buy | `This run costs $0.14: $0.02 for the narration's 39 characters at $0.30 per 1,000 characters, and $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio.` |
-| A free provider and a paid score | `This run costs $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio, and voices 39 characters for nothing, because the voice is free.` |
+| A free provider and a paid score | `This run costs $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio, and voices 39 characters for nothing, because the provider is free.` |
 | Takes nobody could match and a score | `This run costs $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio, and up to $0.26 if the takes on disk that could not be matched to a voice need making again, at $0.30 per 1,000 characters.` |
 
-A run that is stopped or fails returns no cost. The `take.charged` and `sound.charged` lines it wrote
-are its record of what it paid.
+A `narrate` stopped or refused once its takes are under way, and a `score` or `build` stopped or
+refused after it paid for something, still report their cost: the refusal carries the run's result,
+with what it spent. The `take.charged` and `sound.charged` lines it wrote are the record of each payment.
 
 ### The ceiling
 
@@ -416,7 +418,7 @@ together first, so a run it refuses has bought nothing. Each request that buys i
 made, against what the run already approved, so a stage that asks for more than the build was
 priced at is still refused, and the refusal says that what the run bought before it is kept.
 
-{/* sample: decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voice] id set and no API key, which refuses before any request */}
+{/* sample: narrate-over-the-ceiling, decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voice] id set and no API key, which refuses before any request */}
 ```text
 error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.15, is over the $0.05 ceiling --max-cost set.
   hint: Raise the ceiling to --max-cost 0.15, or narrow the run with --section.
@@ -425,7 +427,7 @@ error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 char
 
 `--max-cost` also refuses while the price is still the default, before it compares anything.
 
-{/* sample: the same run with the dollars_per_1000_characters line deleted from decktalk.toml */}
+{/* sample: narrate-ceiling-with-no-rate, the same run with the dollars_per_1000_characters line deleted from decktalk.toml */}
 ```text
 error[APPROVAL]: --max-cost was given and nothing states the rate this run buys at, so the cap would guard a made-up price.
   hint: Set elevenlabs.dollars_per_1000_characters to what your plan charges, then run it again.

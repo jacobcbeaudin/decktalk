@@ -51,8 +51,9 @@ EXITS = """
 ERRORS = """
 ## Error codes
 
-An error means DeckTalk could not run, so nothing was judged. A finding is the other thing
-entirely, which is a judgement about a film that did get made.
+An error means DeckTalk could not run or did not finish. A result that carries an `error` beside its
+own fields is a run that stopped after it made something, and its `cost` and `findings` say what it
+made. A finding is the other thing entirely, which is a judgement about a film that did get made.
 """
 
 FINDINGS = """

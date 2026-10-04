@@ -48,10 +48,12 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
+from decktalk.errors import HALTS, DeckTalkError, ErrorInfo, ProviderError, as_refusal
 from decktalk.events import Level, SoundCharged, Unit
 from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs, MusicSpec, SoundSpec
@@ -227,7 +229,7 @@ def wanted(inputs: Inputs, only: Sequence[int] | None) -> Callable[[Planned], bo
     """
     chosen = selects(only)
     document = inputs.document
-    if not only:
+    if only is None:
         return lambda _item: True
     played = any(chosen(section.number) for section in document.sections)
     bedded = any(chosen(section.number) for section in document.page_sections if section.with_ambience)
@@ -339,30 +341,73 @@ def _keep(ledger: Ledger, path: Path, entry: SoundEntry) -> Ledger:
     return grown
 
 
-def _charge(run: Run, inputs: Inputs, item: Planned, digest: str, buy: Buy) -> Buy:
-    """Put one paid request on the stream the moment the provider answered, and give back what it bought.
+def _ask(
+    run: Run, inputs: Inputs, item: Planned, digest: str, buy: Buy, paid: list[Buy], ask: Callable[[], bytes]
+) -> bytes:
+    """Send one paid request, and put its charge on the stream and in `paid` the moment the provider answered.
 
     The provider is paid when it answers, so the charge is written before anything that could fail
     writes the audio, and a host that keeps its own ledger records every request it paid for. The
-    charge is `buy` at the bill the cost module reads, the same buy the run was priced at.
+    charge is `buy` at the bill the cost module reads, the same buy the run was priced at. A reply that
+    broke after the request was sent may have been billed, and so may a request a Ctrl-C abandoned,
+    because score asks on the caller's own thread and waits for nothing in flight. Either line is
+    flagged possibly charged and its buy counts toward the ceiling alone.
     """
+    try:
+        audio_bytes = ask()
+    except ProviderError as failure:
+        if failure.possibly_charged:
+            _possibly(run, inputs, item, digest, buy, paid)
+        raise
+    except KeyboardInterrupt:
+        _possibly(run, inputs, item, digest, buy, paid)
+        raise
+    _charge(run, inputs, item, digest, buy)
+    paid.append(buy)
+    return audio_bytes
+
+
+def _possibly(run: Run, inputs: Inputs, item: Planned, digest: str, buy: Buy, paid: list[Buy]) -> None:
+    """Count a request the provider may have billed into the ceiling, and put its flagged line on the stream."""
+    paid.append(replace(buy, certain=False))
+    _charge(run, inputs, item, digest, buy, possibly=True)
+
+
+def _charge(run: Run, inputs: Inputs, item: Planned, digest: str, buy: Buy, *, possibly: bool = False) -> None:
+    """Put one request's charge on the stream, flagged when the provider only possibly billed it."""
     dollars = charge_of(inputs, buy) or 0.0
-    run.emit(SoundCharged, name=item.name, kind=item.kind, digest=digest, seconds=buy.seconds, dollars=dollars)
-    return buy
+    run.emit(
+        SoundCharged,
+        name=item.name,
+        kind=item.kind,
+        digest=digest,
+        seconds=buy.seconds,
+        dollars=dollars,
+        possibly_charged=possibly,
+    )
 
 
 def _buy_sound(
-    run: Run, inputs: Inputs, client: SoundProvider, item: Planned, ledger: Ledger, path: Path, buy: Buy
-) -> tuple[Ledger, list[Buy]]:
+    run: Run,
+    inputs: Inputs,
+    client: SoundProvider,
+    item: Planned,
+    ledger: Ledger,
+    path: Path,
+    buy: Buy,
+    paid: list[Buy],
+) -> Ledger:
     """Buy one ambience bed or one effect, write it, and record what it was bought with and what it cost."""
     body = item.bodies[0]
-    audio_bytes = client.effect(body, output_format=inputs.settings.score.output_format)
-    bought = _charge(run, inputs, item, item.digest, buy)
+    output_format = inputs.settings.score.output_format
+    audio_bytes = _ask(
+        run, inputs, item, item.digest, buy, paid, lambda: client.effect(body, output_format=output_format)
+    )
     item.out.parent.mkdir(parents=True, exist_ok=True)
     item.out.write_bytes(audio_bytes)
     run.wrote(item.out)
     run.wrote(path)
-    return _keep(ledger, path, _entry(inputs, item, item.digest)), [bought]
+    return _keep(ledger, path, _entry(inputs, item, item.digest))
 
 
 def _entry(inputs: Inputs, item: Planned, digest: str, parts: Sequence[str] = ()) -> SoundEntry:
@@ -393,14 +438,15 @@ def _buy_music(
     *,
     held: frozenset[int],
     buys: Sequence[Buy],
-) -> tuple[Ledger, list[Buy], bool]:
+    paid: list[Buy],
+) -> tuple[Ledger, bool]:
     """Buy every part of the music the run was priced for, join them, and record each part as it is paid for.
 
     The parts a run keeps are decided when it is priced, as `held`, and this buys every other one, at
     the `buys` it was priced at in part order, and never asks the disk again, so it buys nothing the
     run was not approved for. The ledger is written after every part, so a run that is stopped half
     way through a long piece keeps what it has already bought and asks only for the rest. Only the
-    parts bought by this run are charged.
+    parts bought by this run are charged, each into `paid` as it is.
 
     A held part that is gone since the run was priced is left for the next run, which prices and buys
     it. Then the piece is not joined, its ledger row stays unfinished, an older piece joined before
@@ -408,7 +454,6 @@ def _buy_music(
     the three values says whether that happened.
     """
     digests: list[str] = []
-    paid: list[Buy] = []
     gone: list[Path] = []
     priced = iter(buys)
     for index, (body, part) in enumerate(zip(item.bodies, item.parts, strict=True)):
@@ -420,8 +465,8 @@ def _buy_music(
         elif index in held:
             gone.append(part)
         else:
-            audio_bytes = client.music(body, output_format=inputs.settings.score.output_format)
-            paid.append(_charge(run, inputs, item, digest, next(priced)))
+            asked = partial(client.music, body, output_format=inputs.settings.score.output_format)
+            audio_bytes = _ask(run, inputs, item, digest, next(priced), paid, asked)
             part.write_bytes(audio_bytes)
             run.wrote(part)
         digests.append(digest)
@@ -438,10 +483,10 @@ def _buy_music(
                 stage=Stage.SCORE,
             )
         )
-        return ledger, paid, True
+        return ledger, True
     _join(run, inputs, item)
     run.wrote(path)
-    return _keep(ledger, path, _entry(inputs, item, item.digest, digests)), paid, False
+    return _keep(ledger, path, _entry(inputs, item, item.digest, digests)), False
 
 
 def _bought(
@@ -454,17 +499,18 @@ def _bought(
     *,
     held: frozenset[int],
     covered: tuple[int, ...],
-) -> tuple[Ledger, list[Buy], SoundItem]:
-    """Buy one item the run was priced for, with what it paid for and its row, which is planned when not whole."""
+    paid: list[Buy],
+) -> tuple[Ledger, SoundItem]:
+    """Buy one item the run was priced for, with its row, which is planned when not whole, and its charges in `paid`."""
     buys = _buys([item], {item.name: held}, covered=covered)
     if item.kind is not SoundKind.MUSIC:
-        ledger, paid = _buy_sound(run, inputs, client, item, ledger, path, buys[0])
+        ledger = _buy_sound(run, inputs, client, item, ledger, path, buys[0], paid)
     else:
-        ledger, paid, broken = _buy_music(run, inputs, client, item, ledger, path, held=held, buys=buys)
+        ledger, broken = _buy_music(run, inputs, client, item, ledger, path, held=held, buys=buys, paid=paid)
         if broken:
-            return ledger, paid, _row(inputs, item, SoundOutcome.PLANNED, None)
+            return ledger, _row(inputs, item, SoundOutcome.PLANNED, None)
     bought = ledger.of(item.name)
-    return ledger, paid, _row(inputs, item, SoundOutcome.GENERATED, bought.seconds if bought else None)
+    return ledger, _row(inputs, item, SoundOutcome.GENERATED, bought.seconds if bought else None)
 
 
 def _join(run: Run, inputs: Inputs, item: Planned) -> None:
@@ -514,6 +560,22 @@ def _missing(inputs: Inputs, item: Planned) -> Location:
     return Location(where=item.name, file=inputs.relative(item.out))
 
 
+def _carrying(
+    refusal: DeckTalkError, run: Run, inputs: Inputs, rows: Sequence[SoundItem], charged: Sequence[Buy]
+) -> DeckTalkError:
+    """The refusal a score stopped on, carrying what the run paid or may have paid, by the rule build uses.
+
+    A refusal that bought nothing, including every one of a run that may not spend, carries nothing and
+    reads as any other.
+    """
+    spent = cost_of(inputs, charged, state=CostState.CHARGED)
+    if charged and spent.ceiling_dollars > 0:
+        refusal.result = run.result(
+            ScoreResult, ok=False, error=ErrorInfo.of(refusal), spend=run.spend, items=tuple(rows), cost=spent
+        )
+    return refusal
+
+
 def score(
     inputs: Inputs,
     run: Run,
@@ -547,19 +609,26 @@ def score(
     client = client_for(run, inputs) if buying else None
     rows: list[SoundItem] = []
     charged: list[Buy] = []
-    for done, item in enumerate(planned):
-        run.check()
-        run.progress(Stage.SCORE, done=done, total=len(planned), unit=Unit.ASSET, label=item.name)
-        if item.name not in fresh:
-            rows.append(_kept(run, inputs, item, ledger))
-            continue
-        if client is None:
-            rows.append(_row(inputs, item, SoundOutcome.PLANNED, None))
-            continue
-        ledger, paid, row = _bought(run, inputs, client, item, ledger, path, held=held[item.name], covered=covered)
-        charged += paid
-        rows.append(row)
-    run.progress(Stage.SCORE, done=len(planned), total=len(planned), unit=Unit.ASSET, label="score")
+    try:
+        for done, item in enumerate(planned):
+            run.check()
+            run.progress(Stage.SCORE, done=done, total=len(planned), unit=Unit.SCORE_ITEM, label=item.name)
+            if item.name not in fresh:
+                rows.append(_kept(run, inputs, item, ledger))
+                continue
+            if client is None:
+                rows.append(_row(inputs, item, SoundOutcome.PLANNED, None))
+                continue
+            ledger, row = _bought(
+                run, inputs, client, item, ledger, path, held=held[item.name], covered=covered, paid=charged
+            )
+            rows.append(row)
+    except HALTS as failure:
+        refusal = _carrying(as_refusal(failure), run, inputs, rows, charged)
+        if refusal is failure:
+            raise
+        raise refusal from failure
+    run.progress(Stage.SCORE, done=len(planned), total=len(planned), unit=Unit.SCORE_ITEM, label="score")
     if not planned:
         run.note("The project declares no score for this run, so there is nothing to generate.", level=Level.INFO)
     for item, row in zip(planned, rows, strict=True):

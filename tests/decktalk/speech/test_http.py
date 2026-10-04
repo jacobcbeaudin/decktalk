@@ -256,6 +256,7 @@ def test_a_reply_that_is_not_json_is_never_asked_for_again_and_says_it_was_possi
         _http.post_json(httpserver.url_for("/html"), {}, {}, secrets=(), timeout=5, retries=2)
     assert caught.value.retryable is False
     assert "possibly charged" in str(caught.value)
+    assert caught.value.possibly_charged is True
     assert len(httpserver.log) == 1 and waits == []
 
 
@@ -341,6 +342,7 @@ def test_a_reply_that_stalls_after_the_request_was_sent_is_sent_once_and_said_to
     assert reached.wait(WAIT), "the service never had the request"
     assert len(handed) == 1 and waits == []
     assert "possibly charged" in str(caught.value)
+    assert caught.value.possibly_charged is True
     assert caught.value.retryable is False
     assert isinstance(caught.value.__cause__, TimeoutError), "it ends as a provider error rather than a bare timeout"
 
@@ -390,6 +392,7 @@ def test_a_reply_that_broke_while_it_was_read_is_sent_once_and_said_to_be_possib
         _http.post_bytes("https://api.test/v1/sound", {}, {}, secrets=(), timeout=5, retries=3)
     assert len(sent) == 1 and waits == []
     assert "possibly charged" in str(caught.value)
+    assert caught.value.possibly_charged is True
     assert caught.value.retryable is False
     assert caught.value.__cause__ is broken
 
@@ -410,6 +413,7 @@ def test_a_reply_that_never_began_after_the_request_was_sent_is_sent_once(monkey
         _http.post_bytes("https://api.test/v1/sound", {}, {}, secrets=(), timeout=5, retries=3)
     assert len(sent) == 1 and waits == []
     assert "possibly charged" in str(caught.value)
+    assert caught.value.possibly_charged is True
 
 
 @pytest.mark.parametrize(
@@ -435,6 +439,7 @@ def test_only_a_request_that_never_connected_is_sent_again(monkeypatch, reason, 
     assert len(sent) == asked
     assert caught.value.retryable is (asked > 1)
     assert ("possibly charged" in str(caught.value)) is (asked == 1)
+    assert caught.value.possibly_charged is (asked == 1)
 
 
 class Answered:
@@ -472,6 +477,7 @@ def test_a_free_request_whose_reply_broke_is_asked_again_until_the_retries_are_s
     assert len(sent) == 3 and len(waits) == 2
     assert caught.value.retryable is True
     assert "charged" not in f"{caught.value} {caught.value.hint}"
+    assert caught.value.possibly_charged is False
 
 
 @pytest.mark.parametrize(

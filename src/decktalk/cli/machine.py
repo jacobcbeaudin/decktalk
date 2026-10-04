@@ -109,7 +109,14 @@ _SUDO_QUESTION = "Installing Chromium's system libraries asks for your password.
 """The one question `install` asks, which is asked because the answer costs a password."""
 
 
-@command(group=Group.MACHINE, epilog="Reads this machine and fetches nothing, and writes nothing.")
+@command(
+    group=Group.MACHINE,
+    epilog=(
+        "Reads this machine first. On a terminal it then offers once to fetch what is missing. --fix fetches "
+        "it without asking, under --json or --no-input too, and --no-fix fetches nothing, as do --no-input and "
+        "--json without --fix."
+    ),
+)
 def doctor(
     ctx: Context,
     measure: Annotated[

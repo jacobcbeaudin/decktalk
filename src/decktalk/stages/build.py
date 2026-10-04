@@ -35,12 +35,14 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from pydantic import JsonValue, TypeAdapter
 
-from decktalk.errors import InputError, NotBuiltError
+from decktalk.errors import HALTS, Cancelled, DeckTalkError, ErrorInfo, InputError, NotBuiltError, as_refusal
 from decktalk.events import Level, StageDone
 from decktalk.findings import Finding
 from decktalk.inputs import Inputs
@@ -48,7 +50,7 @@ from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.media import browser
 from decktalk.pipeline import Artifact, Outcome, Stage, downstream, required
-from decktalk.results import BuildResult, Cost, Result, StageRun, counted
+from decktalk.results import BuildResult, Cost, CostState, Result, StageRun, counted
 from decktalk.stages import narrate
 from decktalk.stages import score as score_stage
 from decktalk.stages.cost import cost_of, total
@@ -117,51 +119,178 @@ def build(
     }
     _refuse_a_key_beside_a_page(inputs, run, plan)
     _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
+    going = _Going()
+    try:
+        film, stopped_at = _stages(inputs, run, plan, options, going, force=force)
+    except HALTS as failure:
+        refusal = as_refusal(failure)
+        refusal.result = _bought_before(refusal, run, going)
+        if refusal is failure:
+            raise
+        raise refusal from failure
+    return run.result(
+        BuildResult,
+        stages=tuple(going.rows),
+        spend=run.spend,
+        cost=total(going.spends) if going.spends else cost_of(inputs),
+        film=film,
+        stopped_at=stopped_at,
+    )
+
+
+@dataclass
+class _Going:
+    """How far a build has got: the stage it is at, the rows of the stages behind it and what they reported."""
+
+    at: Stage | None = None
+    opened: float = 0.0
+    closed: bool = False
+    """Whether the stage it is at has its `stage.done` line, which a stage opened on the stream always gets."""
+    rows: list[StageRun] = field(default_factory=list)
+    spends: list[Cost] = field(default_factory=list)
+    film: Path | None = None
+    """The film an assemble this run ran or kept left on disk, which a stop after it still names."""
+
+
+def _stages(
+    inputs: Inputs, run: Run, plan: tuple[Stage, ...], options: Mapping[str, object], going: _Going, *, force: bool
+) -> tuple[Path | None, Stage | None]:
+    """Run, keep or skip every stage in pipeline order, recording each as it goes, and give back the film and the
+    stage the run stopped at.
+
+    Everything the build does stage by stage happens here, so a refusal or an interrupt anywhere in it,
+    in a stage or between two, is met by the one handler in `build` with `going` as far as it got.
+    """
     kept = read_kept(inputs)
     fresh: dict[Stage, KeptStage] = {}
-    rows: list[StageRun] = []
-    spends: list[Cost] = []
-    film: Path | None = None
     stopped_at: Stage | None = None
     for stage in Stage:
         if stage not in plan or stopped_at is not None:
-            rows.append(_skipped(run, stage))
+            going.rows.append(_skipped(run, stage))
             continue
+        going.at, going.opened, going.closed = stage, time.monotonic(), False
         run.check()
-        opened = time.monotonic()
-        taken = {name: options[name] for name in CALLS[stage].options}
-        digest = _digest(stage, inputs, kept, fresh, taken)
-        standing = None
-        if stage in KEEPS:
-            standing, why = (None, FORCED) if force else _standing(stage, inputs, kept, digest)
-            cache_decision(log, stage.value, hit=standing is not None, why=why, key=digest)
-        if standing is not None:
-            findings = _keep(stage, run, standing)
-            rows.append(StageRun(stage=stage, outcome=Outcome.KEPT, elapsed_seconds=time.monotonic() - opened))
-            fresh[stage] = standing
-            if stage is Stage.ASSEMBLE:
-                film = inputs.relative(inputs.workspace.film)
-        else:
-            with run.stage(stage, index=plan.index(stage) + 1, count=len(plan)):
-                answer = CALLS[stage].call(inputs, run, **taken)
-            rows.append(StageRun(stage=stage, outcome=Outcome.RAN, elapsed_seconds=time.monotonic() - opened))
-            spends += _reported(answer)
-            findings = [found for found in answer.findings if found.stage is stage]
-            if digest is not None:
-                fresh[stage] = _remember(stage, inputs, digest, taken, findings)
-            if stage is Stage.ASSEMBLE:
-                film = _film_of(answer)
+        taken = _taken(inputs, stage, options)
+        if taken is None:
+            run.note(f"{stage.value.capitalize()} has none of the selected sections to work on, so it is skipped.")
+            going.rows.append(_skipped(run, stage))
+            continue
+        findings, made = _one_stage(inputs, run, stage, plan, taken, kept, fresh, going, force=force)
+        going.film = made or going.film
         if stage is not Stage.VERIFY and _stopped(stage, findings, run, plan):
             stopped_at = stage
     if fresh:
         run.wrote(_kept_after(kept, fresh).write(inputs.workspace.kept_path))
+    return going.film, stopped_at
+
+
+ACTS_ON: dict[Stage, Callable[[Inputs], Collection[int]]] = {
+    Stage.NARRATE: lambda inputs: {section.number for section in inputs.spoken()},
+    Stage.RECORD: lambda inputs: {section.number for section in inputs.document.page_sections},
+}
+"""The stages that work on one kind of section only, with the section numbers of that kind: narrate speaks the
+spoken sections and record records the page sections. Every other stage acts on any section."""
+
+
+def _share(inputs: Inputs, stage: Stage, only: Sequence[int] | None) -> Sequence[int] | None:
+    """The part of a selection this stage can act on: all of it, or the sections of its kind in a selection."""
+    if only is None or stage not in ACTS_ON:
+        return only
+    acts = ACTS_ON[stage](inputs)
+    if all(number in acts for number in only):
+        return only
+    return tuple(number for number in only if number in acts)
+
+
+def _taken(inputs: Inputs, stage: Stage, options: Mapping[str, object]) -> dict[str, object] | None:
+    """The options this stage is handed, with its share of the selection, or None when its share is empty.
+
+    A selection of a clip alone has nothing to narrate or record, so those two are skipped and the
+    stages that cut and measure the clip still run, which is how a saved clip is rebuilt alone.
+    """
+    taken = {name: options[name] for name in CALLS[stage].options}
+    if "only" not in taken:
+        return taken
+    share = _share(inputs, stage, cast("Sequence[int] | None", taken["only"]))
+    if share is not None and not share:
+        return None
+    return {**taken, "only": share}
+
+
+def _one_stage(
+    inputs: Inputs,
+    run: Run,
+    stage: Stage,
+    plan: tuple[Stage, ...],
+    taken: Mapping[str, object],
+    kept: Kept,
+    fresh: dict[Stage, KeptStage],
+    going: _Going,
+    *,
+    force: bool,
+) -> tuple[list[Finding], Path | None]:
+    """Keep one stage the last build left standing, or run it, and give back what it found and the film it made."""
+    digest = _digest(stage, inputs, kept, fresh, taken)
+    standing = None
+    if stage in KEEPS:
+        standing, why = (None, FORCED) if force else _standing(stage, inputs, kept, digest)
+        cache_decision(log, stage.value, hit=standing is not None, why=why, key=digest)
+    if standing is not None:
+        going.rows.append(StageRun(stage=stage, outcome=Outcome.KEPT, elapsed_seconds=_since(going)))
+        fresh[stage] = standing
+        going.closed = True
+        findings = _keep(stage, run, standing)
+        return findings, inputs.relative(inputs.workspace.film) if stage is Stage.ASSEMBLE else None
+    going.closed = True
+    with run.stage(stage, index=plan.index(stage) + 1, count=len(plan)):
+        answer = CALLS[stage].call(inputs, run, **taken)
+    going.rows.append(StageRun(stage=stage, outcome=Outcome.RAN, elapsed_seconds=_since(going)))
+    going.spends += _reported(answer)
+    findings = [found for found in answer.findings if found.stage is stage]
+    if digest is not None:
+        fresh[stage] = _remember(stage, inputs, digest, taken, findings)
+    return findings, _film_of(answer) if stage is Stage.ASSEMBLE else None
+
+
+def _since(going: _Going) -> float:
+    """How long the stage the build is at has taken so far."""
+    return time.monotonic() - going.opened
+
+
+def _bought_before(failure: DeckTalkError, run: Run, going: _Going) -> BuildResult | None:
+    """The build a refusal carries when the run bought something before it, or None when it bought nothing.
+
+    What the stages behind it reported and what a refused stage carried of its own are added, so a
+    build stopped or refused anywhere still says what it spent. The stage it was at ends as stopped
+    or failed, unless its row is already written, on the stream too when the stop came before it
+    opened there, and every stage after it as skipped. The film an assemble left is named. A build that
+    paid nothing, and might have paid nothing, carries nothing, so its refusal reads as any other.
+    """
+    own = getattr(failure.result, "cost", None)
+    costs = [*going.spends, *([own] if isinstance(own, Cost) else [])]
+    if not any(cost.state is CostState.CHARGED and cost.ceiling_dollars > 0 for cost in costs):
+        # A free voice's takes are charged nothing, so a run that paid nothing has nothing to report.
+        return None
+    done = {row.stage for row in going.rows}
+    here = []
+    if going.at is not None and going.at not in done:
+        ended = Outcome.STOPPED if isinstance(failure, Cancelled) else Outcome.FAILED
+        here = [StageRun(stage=going.at, outcome=ended, elapsed_seconds=_since(going))]
+        if not going.closed:
+            # A stop between two stages lands before this one opened on the stream, so it is closed here.
+            run.emit(StageDone, stage=going.at, outcome=ended, elapsed_seconds=_since(going))
+    order = list(Stage)
+    after = order[order.index(going.at) + 1 :] if going.at is not None else order
+    later = [_skipped(run, stage) for stage in after if stage not in done]
     return run.result(
         BuildResult,
-        stages=tuple(rows),
+        ok=False,
+        error=ErrorInfo.of(failure),
+        stages=(*going.rows, *here, *later),
         spend=run.spend,
-        cost=total(spends) if spends else cost_of(inputs),
-        film=film,
-        stopped_at=stopped_at,
+        cost=total(costs),
+        film=going.film,
+        stopped_at=None,
     )
 
 
@@ -343,8 +472,9 @@ def price(
     is held to and the cost its result reports are one sum of the same stages.
     """
     spends: list[Cost] = []
-    if Stage.NARRATE in stages:
-        spends.append(narrate.price(inputs, only=only, replace_voiced=replace_voiced))
+    spoken = _share(inputs, Stage.NARRATE, only)
+    if Stage.NARRATE in stages and (spoken is None or spoken):
+        spends.append(narrate.price(inputs, only=spoken, replace_voiced=replace_voiced))
     if Stage.SCORE in stages:
         spends.append(score_stage.price(inputs, only=only, replace_score=replace_score))
     return total(spends) if spends else cost_of(inputs)

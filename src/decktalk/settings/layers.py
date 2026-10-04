@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import operator
+import os
 import sys
 import tomllib
 from collections.abc import Callable, Iterator, Mapping
@@ -253,6 +254,17 @@ def scoped(overrides: Mapping[str, str], scope: Scope) -> dict[str, str]:
     return {key: value for key, value in overrides.items() if BY_ID[key].scope is scope}
 
 
+def named_file(path: Path, scope: Scope) -> Path:
+    """A settings file as DeckTalk names it: the project's own project-relative, the machine's whole.
+
+    The project file sits at the project root, so its name is its project-relative path. The machine
+    file sits outside every project and one machine file serves them all, so its absolute path names
+    it, which is how every result names a file outside the project. A result of `config set` and a
+    refusal of a value the file holds name it this one way.
+    """
+    return Path(path.name) if scope is Scope.PROJECT else Path(os.path.abspath(path))
+
+
 def load(
     root: Path | None = None,
     *,
@@ -288,7 +300,7 @@ def load(
             return f"--set {dotted}" if dotted in pairs else variable(dotted)
         if stated(from_project, dotted) is not ABSENT:
             return project_file.name
-        return machine_path.name if machine_path else "the machine's tables"
+        return named_file(machine_path, Scope.MACHINE).as_posix() if machine_path else "the machine's tables"
 
     settings = from_mapping(Settings, base=base, environ=env_and_overrides, said=said)
     _require(settings)

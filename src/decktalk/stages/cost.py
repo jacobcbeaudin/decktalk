@@ -60,8 +60,8 @@ class Buy:
     seconds: float = 0.0
     sections: tuple[SectionNumber, ...] = ()
     certain: bool = True
-    """False for a take that may already be on disk under a voice nobody named, which counts into the ceiling
-    alone. A charged cost counts every buy."""
+    """False for a take that may already be on disk under a voice nobody named, or for a request whose reply broke
+    after it was sent and which the provider may have billed, which counts into the ceiling alone."""
     kind: SoundKind | None = None
     """The kind of sound, whose `[score]` table states its rate, or None for a take."""
 
@@ -144,8 +144,8 @@ def is_free(inputs: Inputs) -> bool:
 def cost_of(inputs: Inputs, buys: Iterable[Buy] = (), *, state: CostState = CostState.ESTIMATE) -> Cost:
     """What one stage's buys cost at its provider's bill, or the price of nothing when it buys nothing.
 
-    An estimate counts a buy that is not certain into the ceiling alone, and a charged cost counts
-    every buy as bought. The price and the ceiling are the buys' `charge_of` figures added exactly and
+    A buy that is not certain counts into the ceiling alone, in an estimate and in a charged cost
+    alike. The price and the ceiling are the buys' `charge_of` figures added exactly and
     rounded up to the cent, so a price whose every buy is certain has a ceiling equal to it. The
     characters and the seconds count the buys the price is for. Several sound kinds bought at their
     own rates give the rate their exact sum comes to per minute, `averaged`, and the key and layer of
@@ -183,9 +183,8 @@ def _nothing(inputs: Inputs, state: CostState) -> Cost:
 
 def _stage(inputs: Inputs, bought: Sequence[Buy], state: CostState) -> Cost:
     """What one stage's buys cost, which `cost_of` has checked are all takes or all sounds."""
-    charged = state is CostState.CHARGED
-    certain = [buy for buy in bought if charged or buy.certain]
-    possible = [buy for buy in bought if not charged and not buy.certain]
+    certain = [buy for buy in bought if buy.certain]
+    possible = [buy for buy in bought if not buy.certain]
     sections = tuple(dict.fromkeys(number for buy in certain + possible for number in buy.sections))
     charges = {id(buy): charge_of(inputs, buy) or 0.0 for buy in bought}
     bills = {buy.kind: _bill(inputs, buy.kind) for buy in bought}

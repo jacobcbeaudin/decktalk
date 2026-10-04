@@ -40,8 +40,10 @@ def loop(
     """Serve the project, build it once, and rebuild what each save touches until the caller stops.
 
     The result given back is the last build made, so a caller that stopped the loop still receives
-    the run it was watching rather than nothing.
+    the run it was watching rather than nothing. A selection the project refuses ends the loop before
+    it serves, because no save could make a section that is not there.
     """
+    project.select(only)
     origin = project.serve()
     session.say(f"Serving {origin.result.url}")
     session.say(
@@ -61,8 +63,9 @@ def loop(
             project = project.reload()
             built = _once(session, project, skip=skip, only=_touched(project, changed) or only, force=force)
             _stale(session, project)
-    except KeyboardInterrupt:
-        # silent: an interrupt is how a person ends the watch loop.
+    except (KeyboardInterrupt, Cancelled):
+        # silent: an interrupt is how a person ends the watch loop, and one that lands in a rebuild's
+        # narrate arrives as `Cancelled`.
         session.say("Stopped.")
     finally:
         origin.close()

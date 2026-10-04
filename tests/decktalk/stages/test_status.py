@@ -228,11 +228,13 @@ def test_whether_a_recording_still_stands_is_asked_of_record(tmp_path: Path, mon
     [SCRIPT, "# Demo\n\nNo section heading anywhere.\n"],
     ids=["the take's refusal says it", "the recording's judgement says it"],
 )
-def test_a_damaged_provider_words_file_is_one_line_and_every_row_is_kept(tmp_path: Path, script: str) -> None:
-    """A recorded section's damaged provider words refused the whole report, which reports and never raises."""
+@pytest.mark.parametrize("paid", [True, False], ids=["provider words", "estimated words"])
+def test_a_damaged_words_file_is_one_line_and_every_row_is_kept(tmp_path: Path, script: str, paid: bool) -> None:
+    """A recorded section's damaged words refused the whole report, which reports and never raises."""
     inputs = a_project(tmp_path, script=script)
-    take = take_on_disk(inputs)
-    damaged = inputs.workspace.takes / words_file(take.digest)
+    take = take_on_disk(inputs, voiced=paid)
+    damaged = inputs.take_places.find(take.digest).words
+    damaged.parent.mkdir(parents=True, exist_ok=True)
     damaged.write_text("{damaged", encoding="utf-8")
     inputs.workspace.recording("01").parent.mkdir(parents=True, exist_ok=True)
     inputs.workspace.recording("01").write_bytes(b"")

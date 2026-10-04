@@ -25,7 +25,7 @@ class TestTheWriter:
         assert "# how late" in path.read_text(encoding="utf-8")
         assert (written.previous, written.value, written.effective) == (100, 120.0, 120.0)
         assert written.layer is Layer.PROJECT
-        assert written.written == (path,)
+        assert written.written == (Path("decktalk.toml"),)
 
     def test_a_write_into_a_file_that_does_not_exist_yet_creates_the_table(self, tmp_path: Path) -> None:
         path = tmp_path / "decktalk.toml"
@@ -142,7 +142,7 @@ class TestTheRemover:
             unset(path, "video.preset", "tools.ffmpeg", scope=Scope.PROJECT, environ={})
         assert "preset" in path.read_text(encoding="utf-8")
         removed = unset(path, "video.preset", "video.crf", scope=Scope.PROJECT, environ={})
-        assert removed.keys == ("video.preset", "video.crf") and removed.written == (path,)
+        assert removed.keys == ("video.preset", "video.crf") and removed.written == (Path("decktalk.toml"),)
         assert path.read_text(encoding="utf-8") == "[video]\n"
 
     def test_a_removal_from_a_file_that_is_not_there_writes_no_file(self, tmp_path: Path) -> None:

@@ -34,7 +34,7 @@ from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from contextlib import contextmanager, nullcontext
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from filelock import FileLock, Timeout
 
@@ -67,7 +67,7 @@ from decktalk.results import (
     VerifyResult,
     WordsResult,
 )
-from decktalk.settings import PROJECT_VARIABLE, Layers, Settings
+from decktalk.settings import PROJECT_FILE, PROJECT_VARIABLE, Layers, Settings
 from decktalk.settings.layers import route, scoped
 
 log = logging.getLogger(__name__)
@@ -258,6 +258,33 @@ class Project:
         """Every section a change to this file would change, in section order."""
         return self._inputs.sections_touching(path)
 
+    def select(self, only: Sequence[int] | None) -> tuple[int, ...] | None:
+        """The sections a run of numbers selects in this project, refused when one is not a section.
+
+        No selection is every section. A selection names sections the project carries and no
+        others, so a number no section carries, or a selection that names nothing, is refused as
+        `INPUT` with the sections there are, before any run is opened. Every call that takes `only`
+        asks this first, and a command line that prices a run asks it before pricing, so a run that
+        could select nothing never starts.
+        """
+        if only is None:
+            return None
+        named = tuple(dict.fromkeys(only))
+        carried = [section.number for section in self._inputs.document.sections]
+        missing = [number for number in named if number not in carried]
+        if named and not missing:
+            return named
+        what = (
+            f"no section carries the number {', '.join(str(number) for number in missing)}"
+            if missing
+            else "the selection names no section"
+        )
+        raise InputError(
+            f"{what}, so the run would select nothing.",
+            hint=f"The sections are {carried}.",
+            location=at(self.root / PROJECT_FILE, self.root),
+        )
+
     def authored_files(self) -> tuple[Path, ...]:
         """Every file under the project an author edits, which is what a watch loop polls for saves.
 
@@ -301,7 +328,9 @@ class Project:
         voiced take on disk.
 
         Raises `ApprovalRequired` when the run would spend over `max_cost`, and `ProviderError` when
-        a provider that bills fails, or when a free provider answers and fails.
+        a provider that bills fails, or when a free provider answers and fails. Raises `Cancelled`
+        when it is cancelled or interrupted. A refusal raised while takes are being made carries a
+        `NarrateResult` of the takes made so far, and what they cost, as its `result`.
         """
         return self._stage(Stage.NARRATE, NarrateResult, cancel=cancel, spend=spend, max_cost=max_cost,
                           only=only, force=force, replace_voiced=replace_voiced)  # fmt: skip
@@ -398,8 +427,9 @@ class Project:
         every item of the score is kept. `loudness` and `strict` mean what they mean to
         `assemble`.
 
-        Raises `ApprovalRequired` and `ProviderError` as `narrate` does, and `ToolError`
-        when `strict` is true and the mix misses its loudness. Under the untrusted page policy a run
+        Raises `ApprovalRequired`, `ProviderError` and `Cancelled` as `narrate` does, and `ToolError`
+        when `strict` is true and the mix misses its loudness. A refusal raised after the run bought
+        something carries a `BuildResult` with what it spent as its `result`. Under the untrusted page policy a run
         that may spend refuses to open a page, so a host voices with `narrate` and builds without
         `spend`.
         """
@@ -429,6 +459,7 @@ class Project:
         """
         from decktalk.stages import build  # noqa: PLC0415
 
+        only = self.select(only)
         return build.price(self._inputs, tuple(stages if stages is not None else Stage), only=only,
                            replace_voiced=replace_voiced, replace_score=replace_score)  # fmt: skip
 
@@ -503,9 +534,10 @@ class Project:
         hold_seconds: float = 0.0,
         cancel: Cancel | None = None,
     ) -> ClipResult:
-        """Cut a span of one built section into its own file."""
+        """Cut a span of one built section into its own file, refusing a section the project does not carry."""
         from decktalk.stages.clip import clip  # noqa: PLC0415
 
+        self.select((section,))
         return self._call(clip, ClipResult, cancel=cancel, section=section, start=start, end=end, out=out,
                           gain_db=gain_db, hold_seconds=hold_seconds)  # fmt: skip
 
@@ -566,8 +598,11 @@ class Project:
         """Open a run, hold the build directory when the call writes, and hand the call its inputs.
 
         `model` is the result this command answers with, which is named after the command itself, so
-        a call that answers with another is a bug caught here rather than in the caller.
+        a call that answers with another is a bug caught here rather than in the caller. A call that
+        takes `only` has its selection judged by `select` before the run opens.
         """
+        if "only" in options:
+            options["only"] = self.select(cast("Sequence[int] | None", options["only"]))
         with self._open(cancel=cancel, spend=spend, max_cost=max_cost, writes=writes) as run:
             answered = call(self._inputs, run, **options)
         if not isinstance(answered, model):

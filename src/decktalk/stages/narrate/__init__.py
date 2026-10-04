@@ -39,11 +39,11 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field, replace
 
 from decktalk.artifacts import Take, Takes, is_placeholder
-from decktalk.errors import InputError, ProviderError
+from decktalk.errors import HALTS, ErrorInfo, InputError, ProviderError, as_refusal
 from decktalk.events import Level, Unit
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
@@ -113,6 +113,10 @@ def narrate(
     never buys a take, and `replace_voiced` is the one way a voiced take on disk is made again. The voice is
     built only once a take must be made, and the index is written again after every take, so a run
     that is stopped keeps everything it has already paid for.
+
+    A run stopped or refused once its takes are under way carries what it made as the refusal's
+    `result`: every take finished so far, and the cost of those it voiced. An interrupt becomes
+    `Cancelled` for that, so a caller meets a stopped narrate as it meets a cancelled one.
     """
     targets = _targets(inputs, only)
     free = is_free(inputs)
@@ -142,10 +146,29 @@ def narrate(
         refuse_dropped_pauses(inputs, sending)
         run.approve(plan.cost)
         provider = speech_provider(run, inputs)
-    rows, made, unreached = _write_takes(inputs, run, plan.takes, provider, previous, free=free)
-    index = _index(inputs, rows)
-    run.wrote(index.write(inputs.workspace.takes_path))
-    run.wrote(join_takes(inputs, index))
+    progress = _Progress(rows={take.section: take for take in previous.sections} if previous is not None else {})
+    try:
+        rows, made, unreached = _write_takes(inputs, run, plan.takes, provider, progress, free=free)
+        index = _index(inputs, rows)
+        run.wrote(index.write(inputs.workspace.takes_path))
+        run.wrote(join_takes(inputs, index))
+    except HALTS as failure:
+        refusal = as_refusal(failure)
+        so_far = [progress.made[take.section.number] for take in plan.takes if take.section.number in progress.made]
+        with progress.lock:
+            charged, possibly = set(progress.charged), set() if free else progress.sent - progress.charged
+        refusal.result = run.result(
+            NarrateResult,
+            ok=False,
+            error=ErrorInfo.of(refusal),
+            spend=run.spend,
+            sections=tuple(so_far),
+            cost=_spent(states, plan, charged, possibly=possibly),
+            takes=inputs.relative(inputs.workspace.takes_path),
+        )
+        if refusal is failure:
+            raise
+        raise refusal from failure
     _note_what_is_missing(inputs, run, index)
     if unreached:
         run.note(
@@ -160,9 +183,15 @@ def narrate(
         NarrateResult,
         spend=run.spend,
         sections=tuple(made),
-        cost=states.charged(plan, made) if plan.voiced else plan.cost,
+        cost=_spent(states, plan, progress.charged),
         takes=inputs.relative(inputs.workspace.takes_path),
     )
+
+
+def _spent(states: TakeStates, plan: NarratePlan, charged: Collection[int], *, possibly: Collection[int] = ()) -> Cost:
+    """What a run of this plan reports as its cost: the sections whose charge ran, with the sections in `possibly`
+    in its ceiling, when it voices any, and its price otherwise."""
+    return states.charged(plan, charged, possibly) if plan.voiced else plan.cost
 
 
 def price(inputs: Inputs, *, only: Sequence[int] | None = None, replace_voiced: bool = False) -> Cost:
@@ -231,7 +260,7 @@ def _write_takes(
     run: Run,
     plans: Sequence[TakePlan],
     provider: SpeechProvider | None,
-    previous: Takes | None,
+    progress: _Progress,
     *,
     free: bool,
 ) -> tuple[dict[int, Take], list[SectionTake], list[ScriptSection]]:
@@ -241,20 +270,25 @@ def _write_takes(
     for sharing another section's words reads the take that section is still making. A `free` voice
     that nothing answers is a voice that is not running, so each section it would have made plays a
     placeholder and is given back last, and no section after the first asks it again. A voice that
-    bills is not stood in for, because a take the author paid to buy is not optional. `previous` is the
-    take index this run started from, whose rows it rewrites.
+    bills is not stood in for, because a take the author paid to buy is not optional. `progress` starts
+    from the rows of the take index this run started from, which it rewrites, and holds every take
+    made so far, which is what a run stopped on the way reports.
     """
     inputs.workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     inputs.workspace.takes_path.parent.mkdir(parents=True, exist_ok=True)
     chapters = inputs.chapters()
-    progress = _Progress(rows={take.section: take for take in previous.sections} if previous is not None else {})
 
     def one(plan: TakePlan) -> None:
         number = plan.section.number
         chapter = chapters.get(number, plan.section.title)
         with run.section(Stage.NARRATE, number) as ending:
             down = progress.down if free else None
-            row, outcome = _one_take(inputs, run, plan, chapter, provider, down)
+            try:
+                row, outcome = _one_take(inputs, run, plan, chapter, provider, progress, down=down)
+            except ProviderError as failure:
+                if failure.possibly_charged:
+                    _possibly_charged(inputs, run, plan)
+                raise
             if outcome is TakeOutcome.KEPT:
                 # A take found on disk did not run, so its section ends as kept, as its row says.
                 ending.outcome = Outcome.KEPT
@@ -317,12 +351,23 @@ def _write_takes(
     return _placed(inputs, progress.rows, set(progress.made)), made, unreached
 
 
+def _possibly_charged(inputs: Inputs, run: Run, plan: TakePlan) -> None:
+    """Put a take whose reply broke after its request was sent on the stream, flagged as possibly charged."""
+    if plan.buy is None or plan.digest is None:
+        return
+    charge_take(inputs, run, plan.section, plan.digest, plan.buy, possibly=True)
+
+
 @dataclass
 class _Progress:
     """What the workers of one narrate share, which every one of them changes only under its lock."""
 
     rows: dict[int, Take]
     made: dict[int, SectionTake] = field(default_factory=dict)
+    sent: set[int] = field(default_factory=set)
+    """The sections whose request went to the voice and was not refused outright, which the provider may bill."""
+    charged: set[int] = field(default_factory=set)
+    """The sections whose voice answered and whose charge ran, which the provider was paid for."""
     done: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock)
     down: threading.Event = field(default_factory=threading.Event)
@@ -335,6 +380,8 @@ def _one_take(
     plan: TakePlan,
     chapter: str,
     provider: SpeechProvider | None,
+    progress: _Progress,
+    *,
     down: threading.Event | None,
 ) -> tuple[Take, TakeOutcome]:
     """One section's take, made or found, with what this run did about it.
@@ -362,9 +409,9 @@ def _one_take(
         return take_row(inputs, plan.section, chapter, digest, voiced=voiced), TakeOutcome.KEPT
     if down is not None and down.is_set() and plan.outcome is not TakeOutcome.PLACEHOLDER:
         # A take the voice would make, or one another section was making, cannot come from a voice that is down.
-        return _stand_in(inputs, run, plan, chapter)
+        return _stand_in(inputs, run, plan, chapter, progress)
     if plan.outcome is TakeOutcome.VOICED:
-        return _buy(inputs, run, plan, chapter, digest, provider, down)
+        return _buy(inputs, run, plan, chapter, digest, provider, progress, down=down)
     row, files = write_placeholder_take(inputs, plan.section, chapter, digest)
     for path in files:
         run.wrote(path)
@@ -378,9 +425,16 @@ def _buy(
     chapter: str,
     digest: str,
     provider: SpeechProvider | None,
+    progress: _Progress,
+    *,
     down: threading.Event | None,
 ) -> tuple[Take, TakeOutcome]:
-    """Voice one section's take through the take places, or play the copy another run voiced meanwhile."""
+    """Voice one section's take through the take places, or play the copy another run voiced meanwhile.
+
+    The section is marked sent as its request goes out and charged once its charge runs, which is what a
+    run stopped on the way counts its cost from. A request refused outright was not billed, so it is
+    unmarked again, and one whose reply broke after sending stays sent.
+    """
     request, buy = plan.request, plan.buy
     if provider is None or request is None or buy is None:
         raise InputError(
@@ -390,10 +444,24 @@ def _buy(
         )
     voice, ask = provider, request
 
+    number = plan.section.number
+
     def speak() -> tuple[bytes, Sequence[Word]]:
-        return voice.speak(ask)
+        with progress.lock:
+            progress.sent.add(number)
+        try:
+            return voice.speak(ask)
+        except ProviderError as failure:
+            if not failure.possibly_charged:
+                with progress.lock:
+                    progress.sent.discard(number)
+            raise
 
     def charge() -> None:
+        # The voice answered, so it is paid: the take is counted before its line is written, so a stop
+        # or a failure between the two never leaves a paid take in the ceiling alone.
+        with progress.lock:
+            progress.charged.add(number)
         charge_take(inputs, run, plan.section, digest, buy)
 
     try:
@@ -404,17 +472,17 @@ def _buy(
         if down is None or failure.reached:
             raise
         down.set()
-        return _stand_in(inputs, run, plan, chapter)
+        return _stand_in(inputs, run, plan, chapter, progress)
     return take_row(inputs, plan.section, chapter, digest, voiced=True), outcome
 
 
-def _stand_in(inputs: Inputs, run: Run, plan: TakePlan, chapter: str) -> tuple[Take, TakeOutcome]:
+def _stand_in(inputs: Inputs, run: Run, plan: TakePlan, chapter: str, progress: _Progress) -> tuple[Take, TakeOutcome]:
     """The placeholder one section plays because its free voice did not answer, found on disk or made now."""
     digest = placeholder_inputs(inputs, plan.section).digest
     held = inputs.take_places.find(digest).held
     outcome = TakeOutcome.KEPT if held else TakeOutcome.PLACEHOLDER
     stand_in = replace(plan, outcome=outcome, digest=digest, request=None, buy=None)
-    row, _kept = _one_take(inputs, run, stand_in, chapter, None, None)
+    row, _kept = _one_take(inputs, run, stand_in, chapter, None, progress, down=None)
     return row, TakeOutcome.PLACEHOLDER
 
 

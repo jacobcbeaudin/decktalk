@@ -242,7 +242,7 @@
     },
     "ErrorInfo": {
       "additionalProperties": false,
-      "description": "The `error` of a result: why the command could not run, and what would let it.\n\nIt is filled only when the command could not run at all, so a reader that finds it null knows\nthe command ran and that every judgement is in `findings`.",
+      "description": "The `error` of a result: why the command could not run, and what would let it.\n\nIt is filled when the command could not run, and on the result a stopped or refused run carries\nof what it bought. A reader that finds it null knows the command ran to its end and that every\njudgement is in `findings`.",
       "properties": {
         "code": {
           "$ref": "#/$defs/ErrorCode",
@@ -553,7 +553,7 @@
         }
       ],
       "default": null,
-      "description": "Filled only when the command could not run."
+      "description": "Filled when the command could not run, or when a run stopped or was refused after it made something and carries its own result, and null otherwise."
     },
     "run": {
       "description": "The id of the run this call opened, which names its events file.",

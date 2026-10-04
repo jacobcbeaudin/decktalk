@@ -136,7 +136,7 @@ def readme_block(data: dict[str, Any]) -> str:
         if not over
         else f"The starter's reveals landed a median of {row['median']} from their word over {row['reveals']} "
         f"reveals in {run['repeats']} builds. The worst was {row['worst']} against a limit of {limit}, "
-        f"and {over} of {row['reveals']} reveals landed past {row['limit']} alone."
+        f"and {over} of {row['reveals']} reveals landed past it."
     )
     lines = [
         f"- **Landing.** {landed}",

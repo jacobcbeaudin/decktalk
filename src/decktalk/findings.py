@@ -87,8 +87,11 @@ STATUS = "status"
 DOCTOR = "doctor"
 """The command that reports the machine, which names a tool file the machine lists and the disk lacks."""
 
-PAGE_OPENERS = (CHECK, Stage.RECORD.value)
-"""The two commands that open a page and so report every code the page raises itself."""
+PAGE_REPORTERS = (CHECK, Stage.RECORD.value, Stage.VERIFY.value)
+"""The commands that report every code the page raises itself.
+
+`check` and `record` open the page, and `verify` reports again what each recording log carries.
+"""
 
 
 class Code(Enum):
@@ -114,12 +117,12 @@ class Code(Enum):
         code: str,
         sentence: str,
         raised_by: RaisedBy = RaisedBy.RUNTIME,
-        raised_in: tuple[str, ...] = PAGE_OPENERS,
+        raised_in: tuple[str, ...] = PAGE_REPORTERS,
         severity: Severity = Severity.ERROR,
     ) -> Code:
         # A row that names no severity is an error and one that names no side is the page's, which
-        # `check` and `record` report when they open it, because most rows are both, and a row that
-        # differs says so where it is written.
+        # `check` and `record` report when they open it and `verify` repeats from the recording log,
+        # because most rows are reported by all three, and a row that differs says so where it is written.
         member = object.__new__(cls)
         member._value_ = code
         member.sentence = sentence
@@ -292,13 +295,13 @@ class Code(Enum):
         "PAGE_CDN_ASSET",
         "The page loads an asset from a network origin, so the film depends on somebody else's server.",
         RaisedBy.PYTHON,
-        (CHECK, Stage.RECORD.value),
+        PAGE_REPORTERS,
     )
     RECORD_STALLED = (
         "RECORD_STALLED",
         "The picture held still for longer than a recorded section ever should.",
         RaisedBy.PYTHON,
-        (Stage.RECORD.value,),
+        (Stage.RECORD.value, Stage.VERIFY.value),
     )
     RECORD_BLACK = (
         "RECORD_BLACK",
@@ -310,7 +313,7 @@ class Code(Enum):
         "RECORD_TRUNCATED",
         "A recording stopped before its section's clock ran out, so the film is short of picture.",
         RaisedBy.PYTHON,
-        (Stage.RECORD.value,),
+        (Stage.RECORD.value, Stage.VERIFY.value),
     )
 
     # Measured in Python, about the script, the cues, the cut and the files.
@@ -429,7 +432,7 @@ class Code(Enum):
         "FILE_MISSING",
         "A file the project names is not on disk.",
         RaisedBy.PYTHON,
-        (CHECK, STATUS, DOCTOR, Stage.RECORD.value, Stage.ASSEMBLE.value),
+        (CHECK, STATUS, DOCTOR, Stage.ASSEMBLE.value),
     )
 
 

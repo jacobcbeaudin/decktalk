@@ -95,10 +95,17 @@ def reachable(annotation: object) -> list[object]:
     return found + [one for argument in get_args(annotation) for one in reachable(argument)]
 
 
-def hints(function: object) -> dict[str, object]:
-    """One callable's parameter and return annotations, resolved, or a failure that names it."""
+def hints(function: object, owner: type | None = None) -> dict[str, object]:
+    """One callable's parameter and return annotations, resolved, or a failure that names it.
+
+    The type parameters of the callable and of the class that owns it are passed as the local
+    names, because `get_type_hints` before Python 3.12.4 resolves a string annotation from the
+    module alone, where a parameter such as `E` in `def emit[E: Event]` is not defined.
+    """
+    scopes = (owner, function)
+    params = {param.__name__: param for scope in scopes for param in getattr(scope, "__type_params__", ())}
     try:
-        return typing.get_type_hints(function)
+        return typing.get_type_hints(function, localns=params or None)
     except NameError as missing:  # pragma: no cover - the failure message is the test's output
         pytest.fail(f"{getattr(function, '__qualname__', function)} names a type nothing can resolve: {missing}")
 
@@ -143,7 +150,7 @@ def annotations_of(obj: object) -> Iterator[tuple[str, object]]:
     elif inspect.isclass(obj) and not issubclass(obj, enum.Enum):
         yield from fields_of(obj)
         for name, member in callables_of(obj):
-            for parameter, annotation in hints(member).items():
+            for parameter, annotation in hints(member, obj).items():
                 yield f".{name}({parameter})", annotation
 
 

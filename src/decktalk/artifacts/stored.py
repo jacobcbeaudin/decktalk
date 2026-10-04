@@ -124,6 +124,19 @@ class UnreadablePaidRecord(InputError):
         """The paid record that does not read."""
 
 
+class UnreadableCache(NotBuiltError):
+    """A cache file that is there and does not read, refused as `NOT_BUILT`, which its writer builds again.
+
+    It carries the file, as `UnreadablePaidRecord` does, so a reader that only asks about a section it
+    is not making can say which file it could not read and go on rather than refuse.
+    """
+
+    def __init__(self, message: str, *, path: Path, hint: str | None = None) -> None:
+        super().__init__(message, hint=hint)
+        self.path = path
+        """The cache file that does not read."""
+
+
 class Stored(Model):
     """One file under `build/`, which knows how to read itself and how to write itself."""
 
@@ -148,7 +161,7 @@ class Stored(Model):
         """The artifact at `path`, or None when nothing has written one there yet.
 
         A file that is there and cannot be read as this shape is refused. A cache file is refused as
-        `NOT_BUILT`, which its writer builds again. A paid record is refused as `INPUT` with
+        `NOT_BUILT` with `UnreadableCache`, which its writer builds again. A paid record is refused as `INPUT` with
         `UnreadablePaidRecord`, whose sentence says what alone gives it back, and nothing here deletes it.
         """
         try:
@@ -162,7 +175,7 @@ class Stored(Model):
                     "making again what it records costs money on a paid provider.",
                     path=path,
                 ) from exc
-            raise NotBuiltError(str(exc), hint=f"Delete {path.name} and build it again.") from exc
+            raise UnreadableCache(str(exc), hint=f"Delete {path.name} and build it again.", path=path) from exc
 
     @classmethod
     def parse(cls, path: Path) -> Self | None:

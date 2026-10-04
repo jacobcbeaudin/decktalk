@@ -39,7 +39,7 @@ that carries no placements file and has no section files to read a shape from. B
 
 ## What it prints
 
-{/* sample: decktalk verify, a --no-spend build of a fresh starter */}
+{/* sample: verify, decktalk verify, a --no-spend build of a fresh starter */}
 ```text
 Verifying build/final/my-lesson.mp4, 0:50 long.
 
@@ -47,16 +47,16 @@ Verifying build/final/my-lesson.mp4, 0:50 long.
  ───────────────────────────────────────────────
  1         1.1:title     0.50     0.52    +0.02
  1         1.1:files     1.93     1.96    +0.04
- 1         1.2:script    8.56     8.64    +0.08
+ 1         1.2:script    8.56     8.60    +0.04
  1         1.2:deck      11.87    11.92   +0.05
  1         1.2:word      17.08    17.12   +0.04
  2         2.1:average   21.23    21.28   +0.05
  2         2.1:formula   25.46    25.52   +0.06
  2         2.1:code      29.22    29.24   +0.02
- 2         2.1:waited    31.10    31.16   +0.06
+ 2         2.1:waited    31.10    31.12   +0.02
  3         3.1:idea      37.09    37.12   +0.03
  3         3.1:again     43.47    43.52   +0.05
- 3         3.1:make      44.39    44.44   +0.05
+ 3         3.1:make      44.39    44.40   +0.01
 ```
 
 The table holds one row per cue that was measured all the way to an onset. A cue that was skipped has
@@ -203,10 +203,12 @@ to the same delay count once. `verify` says on its stream which cue was fitted a
 detail line that `-v` prints, because a fitted probe is how a close pair is measured and not a
 problem.
 
-{/* sample: decktalk -v verify, a --no-spend build of a fresh starter */}
-
+{/* sample: verify-close-pair, decktalk -v verify, a --no-spend build of a fresh starter */}
 ```text
 Cue 1.1:title in section 1 sits close to another cue, so verify compared the picture 0.7 s and 1.281 s after its word instead of at the usual delays. This is how a close pair is measured, not a problem.
+Cue 1.1:files in section 1 sits close to another cue, so verify compared the picture 0.7 s and 1.14 s after its word instead of at the usual delays. This is how a close pair is measured, not a problem.
+Cue 3.1:again in section 3 sits close to another cue, so verify compared the picture 0.7 s and 0.772 s after its word instead of at the usual delays. This is how a close pair is measured, not a problem.
+Cue 3.1:make in section 3 sits close to another cue, so verify compared the picture 0.62 s and 1.5 s after its word instead of at the usual delays. This is how a close pair is measured, not a problem.
 ```
 
 ### Change test
@@ -350,19 +352,22 @@ it has none. Two of the six reasons carry a finding, and the table says which.
 `decktalk verify --json` prints one flat object with the four reserved keys, `run`, and seven fields
 of its own.
 
-{/* sample: decktalk verify --json, a --no-spend build of a fresh starter */}
-
+{/* sample: verify-json, decktalk verify --json, a --no-spend build of a fresh starter */}
 ```json
 {
   "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "2b7560312c73",
+  "run": "2e8554a685b2",
   "film": "build/final/my-lesson.mp4",
   "film_seconds": 50.4,
-  "starts": [{ "section": 1, "at_seconds": 0.2, "luma": 242.0 }],
-  "cuts": [{ "section": 1, "at_seconds": 19.787, "speech_dbfs": -120.0, "step_dbfs": 0.0 }],
+  "starts": [
+    { "section": 1, "at_seconds": 0.2, "luma": 242.0 }
+  ],
+  "cuts": [
+    { "section": 1, "at_seconds": 19.787, "speech_dbfs": -120.0, "step_dbfs": 0.0 }
+  ],
   "seams": [],
   "cues": [
     {
@@ -371,11 +376,11 @@ of its own.
       "spoken": 0.504,
       "shown": 0.52,
       "offset_seconds": 0.016,
-      "change_percent": 1.88,
+      "change_percent": 1.87,
       "skipped": null
     }
   ],
-  "elapsed_seconds": 10.351
+  "elapsed_seconds": 3.052
 }
 ```
 

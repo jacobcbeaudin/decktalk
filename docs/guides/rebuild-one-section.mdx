@@ -34,12 +34,14 @@ decktalk build --section 3 --section 5
 ```
 
 A value that is not a number or a run of them is refused as a usage error, which exits 2. A number
-that no section carries is not a usage error. `narrate`, `record`, `words` and `build` refuse it as an
-`INPUT` error, which exits 3, and the hints of `narrate`, `words` and `build` name the spoken sections
-there are. With neither spend flag and no terminal to ask on, `narrate` and `build` refuse it first as
-`APPROVAL`, which exits 2, because a section that does not exist cannot be priced. `cue`, `check` and `storyboard`
-select nothing and exit 0. `assemble` joins the whole film as it always does, and `verify` measures
-every cue of the film as though no section were named, and both exit 0.
+that no section carries is refused on every command as an `INPUT` error, which exits 3, before the
+command does any work or prices anything. The hint names the sections there are. A selection is
+never widened to the whole project: naming a section that is not there never means every section.
+
+A section that is there but is not the kind a command acts on is refused by that command: `narrate`
+and `words` name the spoken sections, and `record` names the page sections. `build` hands each stage
+the selected sections it can act on and skips a stage that has none, so `build --section N` on a clip
+section skips `narrate` and `record`, and `assemble` cuts that clip again when it changed.
 
 What the flag does depends on the stage, and the difference is the point of the flag.
 
@@ -55,7 +57,8 @@ What the flag does depends on the stage, and the difference is the point of the 
 
 A section you leave out of `record` whose recording no longer matches the project is reported by
 name, with the reason, so a run never leaves an out-of-date picture in the film silently. A section
-with no recording at all is a [`FILE_MISSING`](/reference/findings/FILE_MISSING) error.
+you leave out that has no recording at all is not this run's finding, because the run did not touch
+it, and `decktalk status` shows it in its `Recorded` column.
 
 ## What makes a take stale
 
@@ -154,9 +157,10 @@ another changes no line of HTML, so the markup alone would say that nothing had 
 One function answers this question, so what `record` skips and what `status` calls stale can never
 disagree, and neither of them compares file times.
 
-A section whose provider words do not read cannot be judged, because its words are in the page URL.
-`record --section` names it in one line, with the file, when the run passes it over, and records the
-sections it was asked for. Only a run that records that section is refused over them.
+A section whose words do not read, provider words or estimated words, cannot be judged, because its
+words are in the page URL. `record --section` names it in one line, with the file, when the run
+passes it over, and records the sections it was asked for. Only a run that records that section is
+refused over them.
 
 ### What each edit does again
 
@@ -184,7 +188,7 @@ which is a [`FILE_MISSING`](/reference/findings/FILE_MISSING) error and the only
 decktalk status
 ```
 
-{/* sample: decktalk status on a fresh starter */}
+{/* sample: status-fresh, decktalk status on a fresh starter */}
 ```text
  Section   Key   Plays                     Take      Recorded   Assembled   Stale
  ────────────────────────────────────────────────────────────────────────────────
@@ -198,14 +202,14 @@ Next   decktalk narrate --no-spend
 `--json` gives an agent the same reading as one flat object, and the `sections[]` rows are what a
 loop dispatches on.
 
-{/* sample: decktalk status --json on a fresh decktalk init my-lesson, cut to the first section row */}
+{/* sample: status-json-fresh-one-row, decktalk status --json on a fresh decktalk init my-lesson, cut to the first section row */}
 ```json
 {
   "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "46116e0ba657",
+  "run": "b2ece037731a",
   "name": "my-lesson",
   "script": "script.md",
   "cues_file": "cues.json",
@@ -253,10 +257,9 @@ reads has moved since the last build ran them, a build keeps both rather than do
 reports each with the outcome `kept` and reports its findings again, so the result reads as the run
 that made the film did.
 
-{/* sample: a second decktalk build --no-spend on an unchanged starter named my-lesson */}
-
+{/* sample: build-unchanged, a second decktalk build --no-spend on an unchanged starter named my-lesson */}
 ```text
-run 12b57bd04586, events build/events/12b57bd04586.jsonl
+run f42dd9d969e7, events build/events/f42dd9d969e7.jsonl
      Narrate    0:00
          Cue    0:00
       Record    0:00
@@ -302,7 +305,7 @@ voiced rehearses its new section for nothing. `--replace-voiced --no-spend` play
 place of the voiced takes for that one run, and the voiced takes stay on disk for the next. A voice
 that bills nothing, such as `dtsp`, voices each section it names again with or without `--spend`.
 
-{/* sample: decktalk narrate --section 2 --replace-voiced --no-spend, on a fresh decktalk init my-lesson, the finding line */}
+{/* sample: replace-voiced-with-no-take, decktalk narrate --section 2 --replace-voiced --no-spend, on a fresh decktalk init my-lesson, the finding line */}
 ```text
 script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
 ```

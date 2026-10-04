@@ -440,3 +440,8 @@ def test_the_events_file_schema_is_committed_under_the_schema_folder_and_names_e
     assert {key: value for key, value in committed.items() if not key.startswith("$")} == {
         key: value for key, value in TypeAdapter(AnyEvent).json_schema().items() if not key.startswith("$")
     }
+
+
+def test_a_progress_unit_is_spelled_in_the_glossary_word_for_what_it_counts() -> None:
+    """Score counts score items, which the glossary names, so its unit is that word and no other."""
+    assert {unit.value for unit in Unit} == {"take", "section", "score_item", "pass", "probe"}

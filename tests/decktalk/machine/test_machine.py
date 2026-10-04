@@ -538,13 +538,63 @@ def test_a_browser_that_will_not_launch_is_a_row_and_a_warning_that_says_why(
 
     executable = tmp_path / "chrome"
     executable.write_bytes(b"")
-    refused = FakeChromium(executable, refusal="Executable doesn't exist\nat /nowhere/chrome")
+    refused = FakeChromium(executable, refusal="Target page, context or browser has been closed\nat launch")
     monkeypatch.setattr("playwright.sync_api.sync_playwright", refused.started())
     row = a_machine(tmp_path)._browser_row()
     assert (row.version, row.path) == (None, None)
     [said] = [record for record in caplog.records if record.name == "decktalk.machine"]
     assert (said.levelname, said.getMessage()) == ("WARNING", "Chromium did not launch.")
-    assert data_of(said) == {"reason": "Executable doesn't exist"}
+    assert data_of(said) == {"reason": "Target page, context or browser has been closed"}
+
+
+def test_a_browser_that_is_not_installed_says_so_and_names_the_command_that_fetches_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A machine with no browser on disk was never fetched, so the warning names `install`, not a launch."""
+    missing = FakeChromium(tmp_path / "chrome")
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", missing.started())
+    row = a_machine(tmp_path)._browser_row()
+    assert (row.version, row.path) == (None, None)
+    [said] = [record for record in caplog.records if record.name == "decktalk.machine"]
+    assert (said.levelname, said.getMessage()) == (
+        "WARNING",
+        "Chromium is not installed. Run decktalk install to fetch it.",
+    )
+
+
+def test_a_browser_whose_headless_shell_is_missing_says_the_shell_is_not_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A headless launch runs the headless shell, so a full browser alone on disk still cannot record."""
+    executable = tmp_path / "chrome"
+    executable.write_bytes(b"")
+    shell = "BrowserType.launch: Executable doesn't exist at /cache/chromium_headless_shell-1243/chrome-headless-shell"
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", FakeChromium(executable, refusal=shell).started())
+    row = a_machine(tmp_path)._browser_row()
+    assert (row.version, row.path) == (None, None)
+    [said] = [record for record in caplog.records if record.name == "decktalk.machine"]
+    assert (said.levelname, said.getMessage()) == (
+        "WARNING",
+        "Chromium's headless shell is not installed. Run decktalk install to fetch it.",
+    )
+
+
+class ShellOnly(FakeChromium):
+    """A cache holding the headless shell alone: no full browser on disk, and a headless launch that works."""
+
+    def launch(self, **options: object) -> BareBrowser:
+        self.asked.append(options)
+        return BareBrowser()
+
+
+def test_a_headless_shell_alone_launches_and_is_reported_as_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The row reports what a launch found, so a shell that launches is a browser, with no path to name."""
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", ShellOnly(tmp_path / "chrome").started())
+    row = a_machine(tmp_path)._browser_row()
+    assert (row.version, row.path) == (BareBrowser.version, None)
+    assert [record for record in caplog.records if record.name == "decktalk.machine"] == []
 
 
 @pytest.mark.usefixtures("launched")

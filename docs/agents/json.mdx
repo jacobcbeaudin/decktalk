@@ -27,7 +27,7 @@ Every result carries all four.
 | `schema` | integer | The shape version of the object, which is `1`. It changes only when the shape changes, and it is not the product version. Check it before reading anything else. |
 | `ok` | boolean | True when the command ran and judged nothing that reaches the threshold `--fail-on` and `--allow` set, so it is true exactly when the command exits 0. |
 | `findings` | array | Every judgement this call made, in the order it made them, which is the order the `finding.raised` events streamed. Empty when it judged nothing. Read `severity` to tell the ones that fail the run from the rest. |
-| `error` | object or null | Filled only when the command could not run at all, and null otherwise. |
+| `error` | object or null | Filled when the command could not run, or when a run stopped or was refused after it made something and carries its own result, and null otherwise. |
 
 ## The two declared fields
 
@@ -37,16 +37,19 @@ from the schema which commands do those things rather than meeting a null on the
 | Key | Type | Carried by |
 |---|---|---|
 | `run` | string | Every result whose command opens a run, which is every command except the five under `config`. It is the run id, and it names the run's events file. |
-| `written` | array of strings | Every result whose command writes a file, in the order the files were written. A stage writes project-relative POSIX paths. `config set` and `config unset` write the absolute path of the settings file, because a machine file sits outside the project. |
+| `written` | array of strings | Every result whose command writes a file, as project-relative POSIX paths in the order they were written. A `config set` or `config unset` with `--scope machine` names the machine file by its absolute path, because it sits outside every project. |
 
 `init`, `check`, `storyboard`, `narrate`, `cue`, `record`, `score`, `assemble`, `build`,
 `clip`, `config set` and `config unset` declare `written`. `doctor`, `install`, `status`, `words`,
 `serve`, `verify`, `config list`, `config get` and `config explain` do not, because they write
 nothing.
 
-A result that carries an error carries neither field. A command refused before its run opened has no
-run to name. A command whose run opened and then failed has one, and its events file still says why:
-`run.done` carries the error.
+The error result carries neither field. A command refused before its run opened has no run to name.
+A command whose run opened and then failed has one, and its events file still says why: `run.done`
+carries the error. A `narrate` stopped or refused once its takes were under way, and a `score` or
+`build` stopped or refused after it paid for something, print their own result instead, with `ok`
+false, `error` filled and `cost` saying what the run spent, so a run stopped by Ctrl-C still reports
+the takes and sounds it paid for.
 
 ## The one exemption
 
@@ -67,14 +70,14 @@ decktalk schema cues        # the shape of cues.json
 
 `decktalk status --json` on a project that has been written and not yet built.
 
-{/* sample: decktalk status --json, on a fresh decktalk init my-lesson */}
+{/* sample: status-json-fresh, decktalk status --json, on a fresh decktalk init my-lesson */}
 ```json
 {
   "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "90c3b0af7a6f",
+  "run": "6e3fd488c259",
   "name": "my-lesson",
   "script": "script.md",
   "cues_file": "cues.json",
@@ -138,19 +141,16 @@ same rule.
 judgements it therefore could not reach. It makes no film and prices what a voiced build would
 cost, so it is the one call an agent makes to learn the price of a run.
 
-{/* sample: decktalk check --no-pages --json, on a fresh decktalk init my-lesson */}
+{/* sample: check-json-no-pages, decktalk check --no-pages --json, on a fresh decktalk init my-lesson */}
 ```json
 {
   "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "434e1b793d02",
+  "run": "78f02beea511",
   "written": [],
-  "judged": [
-    "script.md",
-    "cues.json"
-  ],
+  "judged": ["script.md", "cues.json"],
   "pages_opened": false,
   "frames_compared": false,
   "cost": {
@@ -196,7 +196,8 @@ and never against `dollars`, because a provider charges one request at a time.
 
 To add the `take.charged` and `sound.charged` lines yourself, add each `dollars` as the decimal it is
 written as, settle the sum to the nearest billionth of a dollar, then round up to the cent: that is the
-stage's charged `dollars`.
+stage's charged `dollars`. A `take.charged` or `sound.charged` line with `possibly_charged` true is a request whose reply
+broke after it was sent, which the provider may have billed: it counts toward `ceiling_dollars` alone.
 
 ## A result that judged and failed
 
@@ -204,7 +205,7 @@ The same call on a project whose script still holds an unfilled blank and whose 
 phrase the script does not speak. It exits 1, and `error` is null, because both of these are
 judgements about the project rather than a reason the command could not run.
 
-{/* sample: decktalk check --no-pages --json, on a starter whose line 14 reads "This is DeckTalk [VERSION]." and whose cue 2.1:average waits for "the mean of the numbers" */}
+{/* sample: check-json-findings, decktalk check --no-pages --json, on a starter whose line 14 reads "This is DeckTalk [VERSION]." and whose cue 2.1:average waits for "the mean of the numbers" */}
 ```json
 {
   "schema": 1,
@@ -214,13 +215,7 @@ judgements about the project rather than a reason the command could not run.
       "code": "SCRIPT_UNFINISHED",
       "message": "script.md line 14 holds something a voiced run would read out or swallow, which is that [VERSION] is still open, so a voiced run would read 'VERSION' out.",
       "severity": "error",
-      "location": {
-        "where": "script.md",
-        "file": "script.md",
-        "line": 14,
-        "section": 1,
-        "cue": null
-      },
+      "location": { "where": "script.md", "file": "script.md", "line": 14, "section": 1, "cue": null },
       "stage": null,
       "fix": null,
       "docs": "https://docs.decktalk.ai/reference/findings/SCRIPT_UNFINISHED"
@@ -242,7 +237,7 @@ judgements about the project rather than a reason the command could not run.
     }
   ],
   "error": null,
-  "run": "a793bd17679a",
+  "run": "94a68b6ad345",
   "written": [],
   "judged": ["script.md", "cues.json"],
   "pages_opened": false,
@@ -289,19 +284,19 @@ A build stops after the stage whose findings reach the threshold, and the stages
 names the stage. This is `decktalk build --no-spend --json` on a starter whose cue waits for a phrase
 the script does not speak, cut to the keys a build adds.
 
-{/* sample: decktalk build --no-spend --json, on a starter whose cue 3.1:idea waits for "a phrase nobody says", cut to the keys a build adds */}
+{/* sample: build-stopped-json, decktalk build --no-spend --json, on a starter whose cue 3.1:idea waits for "a phrase nobody says", cut to the keys a build adds */}
 ```json
 {
   "schema": 1,
   "ok": false,
   "error": null,
   "stages": [
-    {"stage": "narrate", "outcome": "ran", "elapsed_seconds": 0.348},
-    {"stage": "cue", "outcome": "ran", "elapsed_seconds": 0.005},
-    {"stage": "record", "outcome": "skipped", "elapsed_seconds": 0.0},
-    {"stage": "score", "outcome": "skipped", "elapsed_seconds": 0.0},
-    {"stage": "assemble", "outcome": "skipped", "elapsed_seconds": 0.0},
-    {"stage": "verify", "outcome": "skipped", "elapsed_seconds": 0.0}
+    { "stage": "narrate", "outcome": "ran", "elapsed_seconds": 0.338 },
+    { "stage": "cue", "outcome": "ran", "elapsed_seconds": 0.006 },
+    { "stage": "record", "outcome": "skipped", "elapsed_seconds": 0.0 },
+    { "stage": "score", "outcome": "skipped", "elapsed_seconds": 0.0 },
+    { "stage": "assemble", "outcome": "skipped", "elapsed_seconds": 0.0 },
+    { "stage": "verify", "outcome": "skipped", "elapsed_seconds": 0.0 }
   ],
   "spend": false,
   "film": null,
@@ -325,7 +320,7 @@ filled, because nothing was judged. This result carries neither `run` nor `writt
 error result carries only the four reserved keys. The run it opened still has its events file, and
 that file's `run.done` carries the same error.
 
-{/* sample: decktalk words --json, on a fresh decktalk init my-lesson */}
+{/* sample: words-json-not-built, decktalk words --json, on a fresh decktalk init my-lesson */}
 ```json
 {
   "schema": 1,
@@ -345,7 +340,7 @@ A bad command line is an error too, with the code `USAGE` and exit 2. Pass `--js
 command name to get the object rather than the text form, because a flag after an unknown flag is
 never parsed.
 
-{/* sample: decktalk --json check --nope, which exits 2 */}
+{/* sample: usage-error, decktalk --json check --nope, which exits 2 */}
 ```json
 {
   "schema": 1,
@@ -412,7 +407,7 @@ there instead, which is the empty string when the edit removes.
 This one comes from a `CUE_UNLISTED` finding that `decktalk check --json` raised on a project whose
 deck declares two moments `cues.json` does not list.
 
-{/* sample: decktalk check --json, on a starter with the rows 3.1:again and 3.1:make deleted from cues.json */}
+{/* sample: cue-rows-missing-fix, decktalk check --json, on a starter with the rows 3.1:again and 3.1:make deleted from cues.json */}
 ```json
 {
   "kind": "edit",
@@ -436,7 +431,7 @@ element, so a caller hands it straight to a subprocess with no shell. This one c
 `decktalk doctor --json` on a machine whose cache holds none of the tools, which raises one such
 fix for each of Chromium, ffmpeg and ffprobe.
 
-{/* sample: DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk doctor --json, the ffmpeg finding's fix */}
+{/* sample: doctor-empty-cache-fix, DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk doctor --json, the ffmpeg finding's fix */}
 ```json
 {
   "kind": "command",
@@ -467,7 +462,9 @@ Both are on `doctor`, `check`, `storyboard`, `narrate`, `cue`, `record`, `score`
 
 ## Errors and exit codes
 
-An error means DeckTalk could not run, so nothing was judged. The error object carries `code`,
+An error means DeckTalk could not run or did not finish. A result that carries an `error` beside its
+own fields is a run that stopped after it made something, and its `cost` and `findings` say what it
+made. The error object carries `code`,
 `message`, `hint`, `location` and `docs`. `hint` is the smallest next action, or null: the whole command that clears a refusal, or how to report a bug.
 `location` is the same five-key object a finding carries, or null. `message` never carries the value
 of a secret. [Error codes](/reference/cli#error-codes) lists every code with its exit, and each code
@@ -487,14 +484,14 @@ appends the same lines to `build/events/<run>.jsonl`, named by the run id the re
 with no project behind it, such as `decktalk doctor` outside one, reports `events_file` as null and
 appends nothing.
 
-{/* sample: decktalk build --no-spend --events --json, the first six lines of stderr, on a fresh decktalk init my-lesson */}
-```json
-{"event":"run.start","time":"2026-10-02T07:36:49.958492Z","seq":0,"run":"d8244c090102","events_file":"build/events/d8244c090102.jsonl"}
-{"event":"run.log","time":"2026-10-02T07:36:49.959299Z","seq":1,"run":"d8244c090102","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":15057,"lock":".lock"}}
-{"event":"stage.start","time":"2026-10-02T07:36:49.971981Z","seq":2,"run":"d8244c090102","stage":"narrate","index":1,"count":6}
-{"event":"run.log","time":"2026-10-02T07:36:49.973050Z","seq":3,"run":"d8244c090102","level":"debug","message":"3 takes are made on 2 workers.","source":"stages.narrate","stage":"narrate","section":null,"data":{"workers":2,"jobs":3,"requested":2}}
-{"event":"section.start","time":"2026-10-02T07:36:49.973254Z","seq":4,"run":"d8244c090102","stage":"narrate","section":1}
-{"event":"section.start","time":"2026-10-02T07:36:49.973403Z","seq":5,"run":"d8244c090102","stage":"narrate","section":2}
+{/* sample: build-events, decktalk build --no-spend --events --json, the first six lines of stderr, on a fresh decktalk init my-lesson */}
+```jsonl
+{"event":"run.start","time":"2026-10-04T04:39:28.558263Z","seq":0,"run":"ff86210428e8","events_file":"build/events/ff86210428e8.jsonl"}
+{"event":"run.log","time":"2026-10-04T04:39:28.559554Z","seq":1,"run":"ff86210428e8","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":42725,"lock":".lock"}}
+{"event":"stage.start","time":"2026-10-04T04:39:28.559778Z","seq":2,"run":"ff86210428e8","stage":"narrate","index":1,"count":6}
+{"event":"run.log","time":"2026-10-04T04:39:28.561651Z","seq":3,"run":"ff86210428e8","level":"debug","message":"3 takes are made on 2 workers.","source":"stages.narrate","stage":"narrate","section":null,"data":{"workers":2,"jobs":3,"requested":2}}
+{"event":"section.start","time":"2026-10-04T04:39:28.562033Z","seq":4,"run":"ff86210428e8","stage":"narrate","section":1}
+{"event":"section.start","time":"2026-10-04T04:39:28.562307Z","seq":5,"run":"ff86210428e8","stage":"narrate","section":2}
 ```
 
 Under `--events` every line of stderr is one JSON object. The sentences DeckTalk would otherwise
@@ -517,19 +514,19 @@ counts from zero inside its run, so a reader can order lines that arrived out of
 | `stage.progress` | How far through its own work a stage is. | `stage`, `section`, `done`, `total`, `unit`, `label` |
 | `finding.raised` | A judgement was made, carried as it was found. | `finding` |
 | `cost.priced` | A cost was worked out. | `cost` |
-| `take.charged` | The provider was paid for one take. A free provider writes none. | `section`, `digest`, `characters`, `dollars` |
-| `sound.charged` | The sound provider was paid for one request. | `name`, `kind`, `digest`, `seconds`, `dollars` |
+| `take.charged` | The provider was paid for one take, or may have been when `possibly_charged` is true. A free provider writes none. | `section`, `digest`, `characters`, `dollars`, `possibly_charged` |
+| `sound.charged` | The sound provider was paid for one request, or may have been when `possibly_charged` is true. | `name`, `kind`, `digest`, `seconds`, `dollars`, `possibly_charged` |
 | `tool.fetch` | A tool is being downloaded. | `tool`, `bytes`, `total_bytes` |
 | `run.log` | One sentence the library would have printed. | `level`, `message`, `source`, `stage`, `section`, `data` |
 
 `outcome` is `ran`, `kept`, `skipped`, `stopped` or `failed`, and it is on `run.done`, `stage.done`
 and `section.done`. `kept` is a stage the run planned and did not repeat, because nothing it reads had
-changed since it last ran, or a section whose take narrate found on disk. `skipped` is a stage the
-run did not plan or did not reach, or a section `record` kept because its recording still stands.
-`stopped` is a run the caller cancelled or interrupted. One
+changed since it last ran, or a section whose take narrate found on disk or whose recording `record`
+found still standing. `skipped` is a stage the run did not plan or did not reach, and `stopped` is a
+run the caller cancelled or interrupted. One
 field replaces four event names, so a caller reads one field rather than branching four ways to learn the
-same fact. `unit` on a progress line is `take`, `section`, `asset`, `pass` or `probe`, because narrate
-counts takes, record sections, score assets, assemble encoding passes and verify probes, and `level` on a log line is `debug`, `info`, `warning` or `error`.
+same fact. `unit` on a progress line is `take`, `section`, `score_item`, `pass` or `probe`, because narrate
+counts takes, record sections, score its score items, assemble encoding passes and verify probes, and `level` on a log line is `debug`, `info`, `warning` or `error`.
 
 `run.done` carries `error` in the shape a result's `error` takes when the run stopped or failed, and
 null when it finished, so the events file of a failed run says why. A `run.log` line carries `source`,

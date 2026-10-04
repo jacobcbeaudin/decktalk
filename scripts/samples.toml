@@ -1,17 +1,36 @@
 # Every docs sample `scripts/build_samples.py` writes, keyed by the id its page names in a
 # `{/* sample: <id> */}` comment above the block.
 #
-# A row says how the project was made, what ran on it and which file it shows:
-#   page     the page whose block this row fills
-#   what     the run, in a sentence, which is what a reader of the page source sees in this file
-#   edits    find and replace pairs applied to the fresh `decktalk init my-lesson`, each [file, find, replace]
-#   voice    "dtsp" to read the script with the loopback fake voice, which needs no key and spends nothing
-#   run      the commands run in the project, in order, each one argv after `decktalk`
-#   file     the file the block shows, project-relative, where {digest} is section 1's take digest
-#   keep     how many items to keep of each named list, so a long file is cut to its first rows
-#   varies   the keys whose values the encoder decides, which `--check` holds by key and not by value
+# A row says how the project was made, what ran on it and what the block shows:
+#   page      the page whose block this row fills
+#   what      the run, in a sentence, which is what a reader of the page source sees in this file
+#   edits     find and replace pairs applied to the fresh `decktalk init my-lesson`, each [file, find, replace]
+#   voice     "dtsp" to read the script with the loopback fake voice, which needs no key and spends nothing
+#   env       variables every command of the row sees, where {empty} is an empty folder
+#   init      false to run in an empty folder rather than in a fresh starter
+#   folder    true to run in the folder that holds my-lesson rather than in my-lesson
+#   run       the steps, in order: a command as its argv after `decktalk`, `{ edit = [file, find, replace] }`
+#             or `{ delete = file }`. A command before the last may exit 0 or 1, since 1 is a finding
+#   exit      the exit the last command must end with, 0 when it is not given
+#   file      the file the block shows, project-relative, where {digest} is section 1's take digest and
+#             {run} is the run of the newest events file, which is the last command's
+#   stream    instead of a file, what the last command printed: "stdout", "stderr" or "both" in order
+#   fence     the block's language, from the file's suffix or "text" when it is not given. A "json"
+#             block is parsed, cut and printed again, and any other is the printed text
+#   head      keep the first N lines of a text block
+#   grep      keep the lines of a text block this pattern finds
+#   key       show one part of a json block, by a dotted path where a number is a list index
+#   fragment  true to write that part as the `"key": value` entry a reader pastes into the file
+#   only      keep these keys of a json block, in this order
+#   keep      how many items to keep of each named list, by a dotted path, so a long file is cut to its first rows
+#   varies    the json keys whose values a run decides, which `--check` holds by key and not by value
+#   masks     the patterns whose matches a run decides, which `--check` holds by place and not by value
+#   measured  the findings a slower machine can add to the verdict of a last command that verifies the film,
+#             since a page is recorded in real time: their lines are left out of the block, and the findings
+#             exit they bring is accepted only when every error the run names is one of them
 #
-# Rows with the same edits, voice and run share one project and one run.
+# Rows that begin with the same steps share the project those steps made, and run only the steps
+# after them in a copy of it.
 
 [takes-json]
 page = "docs/reference/artifacts.mdx"
@@ -38,3 +57,821 @@ run = [["narrate", "--no-spend"]]
 file = "takes/{digest}.words.json"
 keep = { words = 3 }
 varies = ["bytes", "blake3"]
+
+# ---- the starter, before a build ---------------------------------------------------------------
+
+[init]
+page = "docs/quickstart.mdx"
+what = "decktalk init my-lesson, in an empty folder"
+init = false
+run = [["init", "my-lesson"]]
+stream = "both"
+
+[init-over-a-project]
+page = "docs/agents/install.mdx"
+what = "decktalk --json init my-lesson, with no terminal, where my-lesson already holds a project, which exits 2"
+folder = true
+run = [["--json", "init", "my-lesson"]]
+exit = 2
+stream = "stdout"
+fence = "json"
+
+[agents-md]
+page = "docs/agents/agents-md.mdx"
+what = "AGENTS.md as decktalk init my-lesson writes it"
+run = []
+file = "AGENTS.md"
+
+[status-fresh]
+page = "docs/guides/rebuild-one-section.mdx"
+what = "decktalk status on a fresh starter"
+run = [["status"]]
+stream = "both"
+
+[status-json-fresh]
+page = "docs/agents/json.mdx"
+what = "decktalk status --json, on a fresh decktalk init my-lesson"
+run = [["status", "--json"]]
+stream = "stdout"
+fence = "json"
+varies = ["run"]
+
+[status-json-fresh-one-row]
+page = "docs/guides/rebuild-one-section.mdx"
+what = "decktalk status --json on a fresh decktalk init my-lesson, cut to the first section row"
+run = [["status", "--json"]]
+stream = "stdout"
+fence = "json"
+keep = { sections = 1 }
+varies = ["run"]
+
+[status-events]
+page = "docs/guides/ci-and-offline.mdx"
+what = "decktalk status --json --events, its stderr, on a fresh decktalk init my-lesson"
+run = [["status", "--json", "--events"]]
+stream = "stderr"
+fence = "jsonl"
+varies = ["time", "run", "events_file", "elapsed_seconds"]
+
+[words-not-built]
+page = "docs/help/troubleshooting.mdx"
+what = "decktalk words, on a fresh decktalk init my-lesson, which exits 3"
+run = [["words"]]
+exit = 3
+stream = "both"
+
+[words-not-built-again]
+page = "docs/help/troubleshooting.mdx"
+what = "decktalk words, on a fresh decktalk init my-lesson, which exits 3"
+run = [["words"]]
+exit = 3
+stream = "both"
+
+[words-json-not-built]
+page = "docs/agents/json.mdx"
+what = "decktalk words --json, on a fresh decktalk init my-lesson"
+run = [["words", "--json"]]
+exit = 3
+stream = "stdout"
+fence = "json"
+
+[usage-error]
+page = "docs/agents/json.mdx"
+what = "decktalk --json check --nope, which exits 2"
+run = [["--json", "check", "--nope"]]
+exit = 2
+stream = "stdout"
+fence = "json"
+
+[check-cost]
+page = "docs/requirements.mdx"
+what = "decktalk check --json, on a fresh decktalk init my-lesson, the cost object"
+run = [["check", "--json"]]
+stream = "stdout"
+fence = "json"
+key = "cost"
+
+[check-cost-quickstart]
+page = "docs/quickstart.mdx"
+what = "decktalk check --json, on a fresh decktalk init my-lesson, the cost object"
+run = [["check", "--json"]]
+stream = "stdout"
+fence = "json"
+key = "cost"
+
+[check-json-no-pages]
+page = "docs/agents/json.mdx"
+what = "decktalk check --no-pages --json, on a fresh decktalk init my-lesson"
+run = [["check", "--no-pages", "--json"]]
+stream = "stdout"
+fence = "json"
+varies = ["run", "elapsed_seconds"]
+
+[check-no-pages]
+page = "docs/guides/ci-and-offline.mdx"
+what = "decktalk check --no-pages, on a fresh decktalk init my-lesson with no API key and no voice id"
+run = [["check", "--no-pages"]]
+stream = "both"
+
+[check-no-pages-skipped]
+page = "docs/help/troubleshooting.mdx"
+what = "decktalk check --no-pages, on a fresh decktalk init my-lesson, the line about what it skipped"
+run = [["check", "--no-pages"]]
+stream = "both"
+grep = "^no page was opened"
+
+[storyboard]
+page = "docs/quickstart.mdx"
+what = "decktalk storyboard, on the starter"
+run = [["storyboard"]]
+stream = "both"
+
+[doctor-empty-cache]
+page = "docs/quickstart.mdx"
+what = "DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk doctor, the findings under the table, which exits 1"
+env = { DECKTALK_TOOLS_CACHE_DIR = "{empty}" }
+init = false
+run = [["doctor"]]
+exit = 1
+stream = "both"
+grep = "^\\S+: [A-Z_]+ |^  fix|^Found"
+
+[doctor-empty-cache-fix]
+page = "docs/agents/json.mdx"
+what = "DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk doctor --json, the ffmpeg finding's fix"
+env = { DECKTALK_TOOLS_CACHE_DIR = "{empty}" }
+init = false
+run = [["doctor", "--json"]]
+exit = 1
+stream = "stdout"
+fence = "json"
+key = "findings.1.fix"
+
+# ---- a project file the loader refuses or reads past -------------------------------------------
+
+[machine-key-in-project]
+page = "docs/requirements.mdx"
+what = "decktalk status, on a fresh decktalk init my-lesson with [record] concurrency = 2 added to decktalk.toml, which exits 3"
+edits = [["decktalk.toml", "[audio]\n", "[record]\nconcurrency = 2\n\n[audio]\n"]]
+run = [["status"]]
+exit = 3
+stream = "both"
+
+[crf-out-of-range]
+page = "docs/reference/decktalk-toml.mdx"
+what = "decktalk status, on a fresh decktalk init my-lesson with crf = 99 added under [video], which exits 3"
+edits = [["decktalk.toml", "# [video]\n", "[video]\ncrf = 99\n"]]
+run = [["status"]]
+exit = 3
+stream = "both"
+
+[misspelt-key]
+page = "docs/reference/decktalk-toml.mdx"
+what = "decktalk status, on a fresh decktalk init my-lesson with stability spelled stabilty under [elevenlabs], the first line"
+edits = [["decktalk.toml", "stability = 0.55", "stabilty = 0.55"]]
+run = [["status"]]
+stream = "both"
+head = 1
+
+[key-in-the-wrong-table]
+page = "docs/reference/decktalk-toml.mdx"
+what = "decktalk status, on a fresh decktalk init my-lesson with stability = 0.5 added under [voice], the first line"
+edits = [["decktalk.toml", "speed = 1.0\n", "speed = 1.0\nstability = 0.5\n"]]
+run = [["status"]]
+stream = "both"
+head = 1
+
+# ---- spending with no key ----------------------------------------------------------------------
+
+[narrate-over-the-ceiling]
+page = "docs/requirements.mdx"
+what = "decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voice] id set and no API key, which refuses before any request"
+edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
+run = [["narrate", "--spend", "--max-cost", "0.05"]]
+exit = 2
+stream = "both"
+
+[narrate-ceiling-with-no-rate]
+page = "docs/requirements.mdx"
+what = "the same run with the dollars_per_1000_characters line deleted from decktalk.toml"
+edits = [
+    ["decktalk.toml", 'id = ""', 'id = "a-voice-id"'],
+    ["decktalk.toml", "dollars_per_1000_characters = 0.30   # what your plan charges, which is what `decktalk check` prices the narration at\n", ""],
+]
+run = [["narrate", "--spend", "--max-cost", "0.05"]]
+exit = 2
+stream = "both"
+
+[narrate-no-terminal]
+page = "docs/guides/ci-and-offline.mdx"
+what = "decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voice] id set and no API key, which exits 2"
+edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
+run = [["narrate", "--no-input"]]
+exit = 2
+stream = "both"
+
+[build-over-the-ceiling]
+page = "docs/quickstart.mdx"
+what = "decktalk build --spend --max-cost 0.05, on the starter with [voice] id set and no API key, which exits 2 before any request"
+edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
+run = [["build", "--spend", "--max-cost", "0.05"]]
+exit = 2
+stream = "both"
+masks = ['[0-9a-f]{12}']
+
+[build-no-terminal]
+page = "docs/quickstart.mdx"
+what = "decktalk build --no-input, on the starter with [voice] id set and no API key, which exits 2"
+edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
+run = [["build", "--no-input"]]
+exit = 2
+stream = "both"
+grep = "^error|^  "
+
+[replace-voiced-with-no-take]
+page = "docs/guides/rebuild-one-section.mdx"
+what = "decktalk narrate --section 2 --replace-voiced --no-spend, on a fresh decktalk init my-lesson, the finding line"
+run = [["narrate", "--section", "2", "--replace-voiced", "--no-spend"]]
+stream = "both"
+grep = "TAKE_MISSING"
+
+# ---- the script and the cues -------------------------------------------------------------------
+
+[bracket-in-a-paragraph]
+page = "docs/reference/script-md.mdx"
+what = "decktalk narrate --no-spend --section 3, starter with [maybe] added inside a paragraph"
+edits = [["script.md", "That is the whole idea. [beat]", "That is the whole idea. [maybe] [beat]"]]
+run = [["narrate", "--no-spend", "--section", "3"]]
+exit = 3
+stream = "both"
+
+[open-placeholder]
+page = "docs/reference/script-md.mdx"
+what = "decktalk check --no-pages, starter with [IDEA] added to section 3, the finding line and the count"
+edits = [["script.md", "That is the whole idea. [beat]", "That is the whole idea [IDEA]. [beat]"]]
+run = [["check", "--no-pages"]]
+exit = 1
+stream = "both"
+grep = "SCRIPT_UNFINISHED|^Found"
+
+[check-json-findings]
+page = "docs/agents/json.mdx"
+what = 'decktalk check --no-pages --json, on a starter whose line 14 reads "This is DeckTalk [VERSION]." and whose cue 2.1:average waits for "the mean of the numbers"'
+edits = [
+    ["script.md", "This is DeckTalk. [beat]", "This is DeckTalk [VERSION]. [beat]"],
+    ["cues.json", '"phrase": "the average"', '"phrase": "the mean of the numbers"'],
+]
+run = [["check", "--no-pages", "--json"]]
+exit = 1
+stream = "stdout"
+fence = "json"
+varies = ["run", "elapsed_seconds"]
+
+[cues-file-missing]
+page = "docs/help/troubleshooting.mdx"
+what = "decktalk check, on a fresh decktalk init my-lesson with cues.json deleted, which exits 1"
+run = [{ delete = "cues.json" }, ["check"]]
+exit = 1
+stream = "both"
+
+[cue-row-missing]
+page = "docs/reference/cues-json.mdx"
+what = "decktalk check --no-frames, on a fresh decktalk init my-lesson with the 2.1:formula row deleted, which exits 1"
+edits = [["cues.json", "        { \"id\": \"2.1:formula\", \"phrase\": \"the formula\", \"occurrence\": 1 },\n", ""]]
+run = [["check", "--no-frames"]]
+exit = 1
+stream = "both"
+
+[cue-rows-missing-fix]
+page = "docs/agents/json.mdx"
+what = "decktalk check --json, on a starter with the rows 3.1:again and 3.1:make deleted from cues.json"
+edits = [["cues.json", ",\n        { \"id\": \"3.1:again\", \"phrase\": \"made again\", \"occurrence\": 1 },\n        { \"id\": \"3.1:make\", \"phrase\": \"Make your own\", \"occurrence\": 1 }", ""]]
+run = [["check", "--json"]]
+exit = 1
+stream = "stdout"
+fence = "json"
+key = "findings.0.fix"
+
+[cue-unresolved]
+page = "docs/help/troubleshooting.mdx"
+what = 'decktalk check --no-pages, on a fresh decktalk init my-lesson whose cue 1.1:title waits for "a phrase nobody says", the finding line'
+edits = [["cues.json", '"phrase": "This is DeckTalk"', '"phrase": "a phrase nobody says"']]
+run = [["check", "--no-pages"]]
+exit = 1
+stream = "both"
+grep = "CUE_UNRESOLVED"
+
+[cue-no-change]
+page = "docs/help/troubleshooting.mdx"
+what = "decktalk check, on a fresh decktalk init my-lesson whose 1.1:title element is styled visibility: hidden, the finding line"
+edits = [["deck/index.html", 'style="top: 190px" data-in="title"', 'style="top: 190px; visibility: hidden" data-in="title"']]
+run = [["check"]]
+exit = 1
+stream = "both"
+grep = "CUE_NO_CHANGE"
+
+[build-stopped]
+page = "docs/help/troubleshooting.mdx"
+what = 'decktalk build --no-spend, on a fresh decktalk init my-lesson whose cue 3.1:idea waits for "a phrase nobody says", which exits 1'
+edits = [["cues.json", '"phrase": "the whole idea"', '"phrase": "a phrase nobody says"']]
+run = [["build", "--no-spend"]]
+exit = 1
+stream = "both"
+masks = ['[0-9a-f]{12}', '\b\d+:\d\d\b']
+
+[build-stopped-json]
+page = "docs/agents/json.mdx"
+what = 'decktalk build --no-spend --json, on a starter whose cue 3.1:idea waits for "a phrase nobody says", cut to the keys a build adds'
+edits = [["cues.json", '"phrase": "the whole idea"', '"phrase": "a phrase nobody says"']]
+run = [["build", "--no-spend", "--json"]]
+exit = 1
+stream = "stdout"
+fence = "json"
+only = ["schema", "ok", "error", "stages", "spend", "film", "stopped_at"]
+varies = ["elapsed_seconds"]
+
+# ---- the starter, built ------------------------------------------------------------------------
+
+[build]
+page = "docs/quickstart.mdx"
+what = "decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend"]]
+stream = "both"
+masks = ['[0-9a-f]{12}', '\b\d+:\d\d\b', '\b\d+ findings?\b', '\b\d+ errors?\b']
+
+[build-assemble-line]
+page = "docs/help/troubleshooting.mdx"
+what = "decktalk build --no-spend, on a fresh decktalk init my-lesson, the assemble line"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend"]]
+stream = "both"
+grep = "^The loudness pass"
+
+[build-events]
+page = "docs/agents/json.mdx"
+what = "decktalk build --no-spend --events --json, the first six lines of stderr, on a fresh decktalk init my-lesson"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend", "--events", "--json"]]
+stream = "stderr"
+fence = "jsonl"
+head = 6
+varies = ["time", "run", "events_file", "pid", "elapsed_seconds"]
+
+[status-built]
+page = "docs/quickstart.mdx"
+what = "decktalk status, after the build above"
+run = [["build", "--no-spend"], ["status"]]
+stream = "both"
+
+[build-unchanged]
+page = "docs/guides/rebuild-one-section.mdx"
+what = "a second decktalk build --no-spend on an unchanged starter named my-lesson"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend"], ["build", "--no-spend"]]
+stream = "both"
+masks = ['[0-9a-f]{12}', '\b\d+ findings?\b', '\b\d+ errors?\b']
+
+[verify]
+page = "docs/reference/verify.mdx"
+what = "decktalk verify, a --no-spend build of a fresh starter"
+measured = ["CUE_OFF"]
+grep = '^Verifying|^ |^$'
+run = [["build", "--no-spend"], ["verify"]]
+stream = "both"
+masks = ['(?<=\d)  +\d+\.\d\d   +[-+]\d\.\d\d$']
+
+[verify-close-pair]
+page = "docs/reference/verify.mdx"
+what = "decktalk -v verify, a --no-spend build of a fresh starter"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend"], ["-v", "verify"]]
+stream = "both"
+grep = "sits close to another cue"
+
+[verify-json]
+page = "docs/reference/verify.mdx"
+what = "decktalk verify --json, a --no-spend build of a fresh starter"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend"], ["verify", "--json"]]
+stream = "stdout"
+fence = "json"
+keep = { starts = 1, cuts = 1, cues = 1 }
+varies = ["ok", "run", "luma", "speech_dbfs", "step_dbfs", "shown", "offset_seconds", "change_percent", "elapsed_seconds"]
+
+[clip]
+page = "docs/guides/clip-section.mdx"
+what = "decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4, on a starter built with --no-spend"
+run = [["build", "--no-spend"], ["clip", "--section", "1", "--start", "0.48", "--end", "1.92", "--hold-seconds", "0.5", "--out", "media/open-line.mp4"]]
+stream = "both"
+
+[clip-json]
+page = "docs/guides/clip-section.mdx"
+what = "decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4 --json, on a starter built with --no-spend"
+run = [["build", "--no-spend"], ["clip", "--section", "1", "--start", "0.48", "--end", "1.92", "--hold-seconds", "0.5", "--out", "media/open-line.mp4", "--json"]]
+stream = "stdout"
+fence = "json"
+varies = ["run", "elapsed_seconds"]
+
+[cue-times-json]
+page = "docs/reference/artifacts.mdx"
+what = "build/cue-times.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section's first two cues"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend"]]
+file = "build/cue-times.json"
+keep = { sections = 1, "sections.0.cues" = 2 }
+
+[recording-json]
+page = "docs/reference/artifacts.mdx"
+what = "build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues, words, frame gaps and long frames cut to []"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend"]]
+file = "build/recordings/01.json"
+keep = { "recording.report.catalog" = 0, "recording.report.cues" = 0, "recording.report.words" = 0, "recording.report.frameGaps" = 0, "recording.report.longFrames" = 0 }
+varies = ["digest", "load_seconds", "settle_seconds", "clock_start_seconds", "seconds", "method", "duration_seconds", "at_tenth", "at_half", "at_nine_tenths", "peak_at_half"]
+
+[section-json]
+page = "docs/reference/artifacts.mdx"
+what = "build/sections/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend"]]
+file = "build/sections/01.json"
+varies = ["digest"]
+
+[placements-json]
+page = "docs/reference/artifacts.mdx"
+what = "build/final/placements.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section"
+measured = ["CUE_OFF"]
+run = [["build", "--no-spend"]]
+file = "build/final/placements.json"
+keep = { sections = 1 }
+
+[cue-events]
+page = "docs/reference/artifacts.mdx"
+what = "decktalk cue, on a starter built with --no-spend, the whole events file it wrote"
+run = [["build", "--no-spend"], ["cue"]]
+file = "build/events/{run}.jsonl"
+varies = ["time", "run", "events_file", "pid", "elapsed_seconds"]
+masks = ['[0-9a-f]{12}']
+
+[cue-stale]
+page = "docs/help/troubleshooting.mdx"
+what = 'decktalk verify, on a built starter rebuilt with 3.1:idea on "Change a word" and then set back to "the whole idea", the finding line'
+run = [
+    ["build", "--no-spend"],
+    { edit = ["cues.json", '"phrase": "the whole idea"', '"phrase": "Change a word"'] },
+    ["build", "--no-spend"],
+    { edit = ["cues.json", '"phrase": "Change a word"', '"phrase": "the whole idea"'] },
+    ["verify"],
+]
+exit = 1
+stream = "both"
+grep = "CUE_STALE"
+
+[no-cover]
+page = "docs/help/troubleshooting.mdx"
+what = "decktalk record --section 2 --force --set record.cover_min_chroma=255, on a starter after narrate --no-spend and cue, the warning line"
+run = [["narrate", "--no-spend"], ["cue"], ["record", "--section", "2", "--force", "--set", "record.cover_min_chroma=255"]]
+stream = "both"
+grep = "shows no cover"
+masks = ['\d+\.\d+s']
+
+[effect-plan]
+page = "docs/guides/effects-on-a-cue.mdx"
+what = "decktalk score --no-spend --json, on a fresh decktalk init my-lesson with the [score.effects.tick] table above, which exits 0"
+edits = [["decktalk.toml", "[audio]\n", "[score.effects.tick]\nprompt = \"one soft interface click, short, dry, no reverb\"\n\n[audio]\n"]]
+run = [["score", "--no-spend", "--json"]]
+stream = "stdout"
+fence = "json"
+varies = ["run", "elapsed_seconds"]
+
+# ---- your first deck: section 4 pasted into the four files -------------------------------------
+
+[first-deck-check]
+page = "docs/guides/first-deck.mdx"
+what = "decktalk check --section 4 --no-frames, on a fresh decktalk init my-lesson with the four pastes above, which exits 1"
+edits = [
+    ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
+
+## 4. One more section
+
+[Scene 4. The heading, then the band about waiting.]
+
+Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
+picture waits for it.
+'''],
+    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+
+[[section]]
+number = 4
+chapter = "One more section"
+page = "deck/index.html"
+scene = "4"
+'''],
+    ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
+  <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
+    <p class="eyebrow">One more section</p>
+
+    <div class="title" style="top: 190px" data-in="heading" data-describe="the heading, one more section">
+      <h1>One more section.</h1>
+      <div class="rule"></div>
+    </div>
+
+    <p class="strip" style="top: 640px" data-in="waits"
+       data-describe="a band reading: the picture waits for the phrase">
+      The picture waits for the phrase.
+    </p>
+  </template>
+</div>
+</body>'''],
+    ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    }''', '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    },
+    "4": {
+      "cues": [
+        { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
+      ]
+    }'''],
+]
+run = [["check", "--section", "4", "--no-frames"]]
+exit = 1
+stream = "both"
+
+[first-deck-fix]
+page = "docs/guides/first-deck.mdx"
+what = "decktalk check --section 4 --no-frames --fix, on the same project, which exits 1"
+edits = [
+    ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
+
+## 4. One more section
+
+[Scene 4. The heading, then the band about waiting.]
+
+Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
+picture waits for it.
+'''],
+    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+
+[[section]]
+number = 4
+chapter = "One more section"
+page = "deck/index.html"
+scene = "4"
+'''],
+    ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
+  <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
+    <p class="eyebrow">One more section</p>
+
+    <div class="title" style="top: 190px" data-in="heading" data-describe="the heading, one more section">
+      <h1>One more section.</h1>
+      <div class="rule"></div>
+    </div>
+
+    <p class="strip" style="top: 640px" data-in="waits"
+       data-describe="a band reading: the picture waits for the phrase">
+      The picture waits for the phrase.
+    </p>
+  </template>
+</div>
+</body>'''],
+    ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    }''', '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    },
+    "4": {
+      "cues": [
+        { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
+      ]
+    }'''],
+]
+run = [["check", "--section", "4", "--no-frames", "--fix"]]
+exit = 1
+stream = "both"
+
+[first-deck-fixed-cues]
+page = "docs/guides/first-deck.mdx"
+what = "cues.json after the --fix above"
+edits = [
+    ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
+
+## 4. One more section
+
+[Scene 4. The heading, then the band about waiting.]
+
+Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
+picture waits for it.
+'''],
+    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+
+[[section]]
+number = 4
+chapter = "One more section"
+page = "deck/index.html"
+scene = "4"
+'''],
+    ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
+  <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
+    <p class="eyebrow">One more section</p>
+
+    <div class="title" style="top: 190px" data-in="heading" data-describe="the heading, one more section">
+      <h1>One more section.</h1>
+      <div class="rule"></div>
+    </div>
+
+    <p class="strip" style="top: 640px" data-in="waits"
+       data-describe="a band reading: the picture waits for the phrase">
+      The picture waits for the phrase.
+    </p>
+  </template>
+</div>
+</body>'''],
+    ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    }''', '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    },
+    "4": {
+      "cues": [
+        { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
+      ]
+    }'''],
+]
+run = [["check", "--section", "4", "--no-frames", "--fix"]]
+exit = 1
+file = "cues.json"
+key = "sections.4"
+fragment = true
+
+[first-deck-phrase-written]
+page = "docs/guides/first-deck.mdx"
+what = "decktalk check --section 4 --no-frames, on the same project with the phrase written, which exits 0"
+edits = [
+    ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
+
+## 4. One more section
+
+[Scene 4. The heading, then the band about waiting.]
+
+Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
+picture waits for it.
+'''],
+    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+
+[[section]]
+number = 4
+chapter = "One more section"
+page = "deck/index.html"
+scene = "4"
+'''],
+    ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
+  <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
+    <p class="eyebrow">One more section</p>
+
+    <div class="title" style="top: 190px" data-in="heading" data-describe="the heading, one more section">
+      <h1>One more section.</h1>
+      <div class="rule"></div>
+    </div>
+
+    <p class="strip" style="top: 640px" data-in="waits"
+       data-describe="a band reading: the picture waits for the phrase">
+      The picture waits for the phrase.
+    </p>
+  </template>
+</div>
+</body>'''],
+    ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    }''', '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    },
+    "4": {
+      "cues": [
+        { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
+      ]
+    }'''],
+]
+run = [
+    ["check", "--section", "4", "--no-frames", "--fix"],
+    { edit = ["cues.json", '"phrase": ""', '"phrase": "the picture waits"'] },
+    ["check", "--section", "4", "--no-frames"],
+]
+stream = "both"
+
+[first-deck-build]
+page = "docs/guides/first-deck.mdx"
+what = "decktalk build --no-spend, on the same project, which exits 0"
+measured = ["CUE_OFF"]
+edits = [
+    ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
+
+## 4. One more section
+
+[Scene 4. The heading, then the band about waiting.]
+
+Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
+picture waits for it.
+'''],
+    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+
+[[section]]
+number = 4
+chapter = "One more section"
+page = "deck/index.html"
+scene = "4"
+'''],
+    ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
+  <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
+    <p class="eyebrow">One more section</p>
+
+    <div class="title" style="top: 190px" data-in="heading" data-describe="the heading, one more section">
+      <h1>One more section.</h1>
+      <div class="rule"></div>
+    </div>
+
+    <p class="strip" style="top: 640px" data-in="waits"
+       data-describe="a band reading: the picture waits for the phrase">
+      The picture waits for the phrase.
+    </p>
+  </template>
+</div>
+</body>'''],
+    ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    }''', '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    },
+    "4": {
+      "cues": [
+        { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
+      ]
+    }'''],
+]
+run = [
+    ["check", "--section", "4", "--no-frames", "--fix"],
+    { edit = ["cues.json", '"phrase": ""', '"phrase": "the picture waits"'] },
+    ["build", "--no-spend"],
+]
+stream = "both"
+masks = ['[0-9a-f]{12}', '\b\d+:\d\d\b', '\b\d+ findings?\b', '\b\d+ errors?\b']
+
+[first-deck-verify]
+page = "docs/guides/first-deck.mdx"
+what = "decktalk verify --section 4, on the same project after the build, which exits 0"
+measured = ["CUE_OFF"]
+grep = '^Verifying|^ |^$'
+edits = [
+    ["script.md", "[beat] Make your own at decktalk dot AI.\n", '''[beat] Make your own at decktalk dot AI.
+
+## 4. One more section
+
+[Scene 4. The heading, then the band about waiting.]
+
+Here is one more section, written by hand. [beat] A cue is a phrase from this script, and the
+picture waits for it.
+'''],
+    ["decktalk.toml", "hold_seconds = 1.5     # the last frame holds this long after the narration\n", '''hold_seconds = 1.5     # the last frame holds this long after the narration
+
+[[section]]
+number = 4
+chapter = "One more section"
+page = "deck/index.html"
+scene = "4"
+'''],
+    ["deck/index.html", "</body>", '''<div data-scene="4" data-name="One more section">
+  <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
+    <p class="eyebrow">One more section</p>
+
+    <div class="title" style="top: 190px" data-in="heading" data-describe="the heading, one more section">
+      <h1>One more section.</h1>
+      <div class="rule"></div>
+    </div>
+
+    <p class="strip" style="top: 640px" data-in="waits"
+       data-describe="a band reading: the picture waits for the phrase">
+      The picture waits for the phrase.
+    </p>
+  </template>
+</div>
+</body>'''],
+    ["cues.json", '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    }''', '''        { "id": "3.1:make", "phrase": "Make your own", "occurrence": 1 }
+      ]
+    },
+    "4": {
+      "cues": [
+        { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
+      ]
+    }'''],
+]
+run = [
+    ["check", "--section", "4", "--no-frames", "--fix"],
+    { edit = ["cues.json", '"phrase": ""', '"phrase": "the picture waits"'] },
+    ["build", "--no-spend"],
+    ["verify", "--section", "4"],
+]
+stream = "both"
+masks = ['(?<=\d)  +\d+\.\d\d   +[-+]\d\.\d\d$']

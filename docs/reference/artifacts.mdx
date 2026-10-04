@@ -267,7 +267,7 @@ the section: the section's own clock begins at its lead.
 One block per section, each holding every cue that section declares, resolved against the words it
 speaks.
 
-{/* sample: build/cue-times.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section's first two cues */}
+{/* sample: cue-times-json, build/cue-times.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section's first two cues */}
 ```json build/cue-times.json
 {
   "sections": [
@@ -305,7 +305,7 @@ instead.
 that section, written when that section is finished, so a reader of a long run sees each section's
 log as soon as that section is done and a measurement always belongs to the recording beside it.
 
-{/* sample: build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues and words cut to [] */}
+{/* sample: recording-json, build/recordings/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson, with the report's catalog, cues, words, frame gaps and long frames cut to [] */}
 ```json build/recordings/01.json
 {
   "section": 1,
@@ -316,9 +316,9 @@ log as soon as that section is done and a measurement always belongs to the reco
     "external": [],
     "missing": [],
     "requested_seconds": 20.087,
-    "load_seconds": 0.053,
-    "settle_seconds": 1.454,
-    "clock_start_seconds": 1.507,
+    "load_seconds": 0.064,
+    "settle_seconds": 1.453,
+    "clock_start_seconds": 1.517,
     "page_errors": [],
     "report": {
       "version": "0.5.0",
@@ -334,21 +334,12 @@ log as soon as that section is done and a measurement always belongs to the reco
       "unreadable": []
     }
   },
-  "start": {
-    "seconds": 1.48,
-    "method": "the frame after the last of 37 cover frames",
-    "guessed": false
-  },
+  "start": { "seconds": 1.48, "method": "the frame after the last of 36 cover frames", "guessed": false },
   "findings": [],
   "checks": {
-    "duration_seconds": 22.56,
+    "duration_seconds": 22.6,
     "wanted_seconds": 20.087,
-    "luma": {
-      "at_tenth": 231.923,
-      "at_half": 218.763,
-      "at_nine_tenths": 187.518,
-      "peak_at_half": 243.0
-    }
+    "luma": { "at_tenth": 231.937, "at_half": 218.762, "at_nine_tenths": 187.518, "peak_at_half": 243.0 }
   }
 }
 ```
@@ -439,11 +430,9 @@ concatenates into the film. A section video left behind by a renumbering belongs
 
 Beside each section video, `NN.json` holds the key it was encoded from.
 
-{/* sample: build/sections/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson */}
+{/* sample: section-json, build/sections/01.json after decktalk build --no-spend on a fresh decktalk init my-lesson */}
 ```json build/sections/01.json
-{
-  "digest": "6a0b6860ad7cd96f72d01d1cbe5e69659dcc6ccfeab9c9b438ddc4b29a6b275f"
-}
+{ "digest": "db03482d6a66d2bf01b89e3bcc0858c61f71752a953d81ea5c3bbf17967904ef" }
 ```
 
 The digest is a sha256 over the whole argument list of the encode, the BLAKE3 digest of every file it
@@ -520,7 +509,7 @@ the minute the copy was taken.
 This is the one record of the shape of a film. The transcript page, a caption reader and anything
 that wants to jump to a section read it instead of adding section files up.
 
-{/* sample: build/final/placements.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section */}
+{/* sample: placements-json, build/final/placements.json after decktalk build --no-spend on a fresh decktalk init my-lesson, cut to the first section */}
 ```json build/final/placements.json
 {
   "fps": 25,
@@ -563,17 +552,17 @@ Every run of a project appends one JSON object per line to its own file, named b
 file per run, never truncated, so a watch loop running beside a build by hand cannot overwrite what
 the other is writing. `--events` prints the same lines on stderr as they happen.
 
-{/* sample: decktalk cue, on a starter built with --no-spend, the whole events file it wrote */}
-```jsonl build/events/36d65ca9220b.jsonl
-{"event":"run.start","time":"2026-10-02T08:37:55.627448Z","seq":0,"run":"36d65ca9220b","events_file":"build/events/36d65ca9220b.jsonl"}
-{"event":"run.log","time":"2026-10-02T08:37:55.628391Z","seq":1,"run":"36d65ca9220b","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":32488,"lock":".lock"}}
-{"event":"section.start","time":"2026-10-02T08:37:55.630716Z","seq":2,"run":"36d65ca9220b","stage":"cue","section":1}
-{"event":"section.done","time":"2026-10-02T08:37:55.630872Z","seq":3,"run":"36d65ca9220b","stage":"cue","section":1,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"section.start","time":"2026-10-02T08:37:55.630943Z","seq":4,"run":"36d65ca9220b","stage":"cue","section":2}
-{"event":"section.done","time":"2026-10-02T08:37:55.631047Z","seq":5,"run":"36d65ca9220b","stage":"cue","section":2,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"section.start","time":"2026-10-02T08:37:55.631094Z","seq":6,"run":"36d65ca9220b","stage":"cue","section":3}
-{"event":"section.done","time":"2026-10-02T08:37:55.631181Z","seq":7,"run":"36d65ca9220b","stage":"cue","section":3,"outcome":"ran","elapsed_seconds":0.0}
-{"event":"run.done","time":"2026-10-02T08:37:55.633391Z","seq":8,"run":"36d65ca9220b","outcome":"ran","elapsed_seconds":0.006,"error":null,"dropped":0}
+{/* sample: cue-events, decktalk cue, on a starter built with --no-spend, the whole events file it wrote */}
+```jsonl build/events/86326c4b528d.jsonl
+{"event":"run.start","time":"2026-10-04T04:44:47.842771Z","seq":0,"run":"86326c4b528d","events_file":"build/events/86326c4b528d.jsonl"}
+{"event":"run.log","time":"2026-10-04T04:44:47.843765Z","seq":1,"run":"86326c4b528d","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":52476,"lock":".lock"}}
+{"event":"section.start","time":"2026-10-04T04:44:47.846811Z","seq":2,"run":"86326c4b528d","stage":"cue","section":1}
+{"event":"section.done","time":"2026-10-04T04:44:47.846925Z","seq":3,"run":"86326c4b528d","stage":"cue","section":1,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"section.start","time":"2026-10-04T04:44:47.847007Z","seq":4,"run":"86326c4b528d","stage":"cue","section":2}
+{"event":"section.done","time":"2026-10-04T04:44:47.847073Z","seq":5,"run":"86326c4b528d","stage":"cue","section":2,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"section.start","time":"2026-10-04T04:44:47.847134Z","seq":6,"run":"86326c4b528d","stage":"cue","section":3}
+{"event":"section.done","time":"2026-10-04T04:44:47.847195Z","seq":7,"run":"86326c4b528d","stage":"cue","section":3,"outcome":"ran","elapsed_seconds":0.0}
+{"event":"run.done","time":"2026-10-04T04:44:47.849570Z","seq":8,"run":"86326c4b528d","outcome":"ran","elapsed_seconds":0.007,"error":null,"dropped":0}
 ```
 
 `event` is the discriminator. `time`, `seq` and `run` are on every line, and `seq` counts per run

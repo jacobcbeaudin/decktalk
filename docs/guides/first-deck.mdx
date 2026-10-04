@@ -137,7 +137,7 @@ slow part and not what finds a missing row.
 decktalk check --section 4 --no-frames
 ```
 
-{/* sample: decktalk check --section 4 --no-frames, on a fresh decktalk init my-lesson with the four pastes above, which exits 1 */}
+{/* sample: first-deck-check, decktalk check --section 4 --no-frames, on a fresh decktalk init my-lesson with the four pastes above, which exits 1 */}
 ```text
 No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
@@ -155,7 +155,7 @@ second, which is [CUE_UNLISTED](/reference/findings/CUE_UNLISTED). The finding c
 decktalk check --section 4 --no-frames --fix
 ```
 
-{/* sample: decktalk check --section 4 --no-frames --fix, on the same project, which exits 1 */}
+{/* sample: first-deck-fix, decktalk check --section 4 --no-frames --fix, on the same project, which exits 1 */}
 ```text
 No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
@@ -166,11 +166,11 @@ Found 1 finding, 1 error.
 
 The row is in the file:
 
-{/* sample: cues.json after the --fix above */}
+{/* sample: first-deck-fixed-cues, cues.json after the --fix above */}
 ```json cues.json
 "4": {
   "cues": [
-    {"id": "4.1:waits", "phrase": ""},
+    { "id": "4.1:waits", "phrase": "" },
     { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
   ]
 }
@@ -189,7 +189,7 @@ and the section is complete.
 decktalk check --section 4 --no-frames
 ```
 
-{/* sample: decktalk check --section 4 --no-frames, on the same project with the phrase written, which exits 0 */}
+{/* sample: first-deck-phrase-written, decktalk check --section 4 --no-frames, on the same project with the phrase written, which exits 0 */}
 ```text
 No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
@@ -210,9 +210,9 @@ on past one code.</Tip>
 decktalk build --no-spend
 ```
 
-{/* sample: decktalk build --no-spend, on the same project, which exits 0 */}
+{/* sample: first-deck-build, decktalk build --no-spend, on the same project, which exits 0 */}
 ```text
-run 7546c53592c6, events build/events/7546c53592c6.jsonl
+run 2d46c8c4e483, events build/events/2d46c8c4e483.jsonl
      Narrate    0:00
          Cue    0:00
       Record    0:22
@@ -220,7 +220,7 @@ The project declares no score for this run, so there is nothing to generate.
        Score    0:00
 The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
     Assemble    0:03
-      Verify    0:03
+      Verify    0:02
        Built build/final/my-lesson.mp4, $0.00, 4 findings
 script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
 script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
@@ -242,14 +242,14 @@ without building again.
 decktalk verify --section 4
 ```
 
-{/* sample: decktalk verify --section 4, on the same project after the build, which exits 0 */}
+{/* sample: first-deck-verify, decktalk verify --section 4, on the same project after the build, which exits 0 */}
 ```text
 Verifying build/final/my-lesson.mp4, 1:02 long.
 
  Section   Cue           Spoken   Shown   Offset
  ───────────────────────────────────────────────
- 4         4.1:heading   51.77    51.80   +0.03
- 4         4.1:waits     58.24    58.28   +0.04
+ 4         4.1:heading   51.77    51.76   -0.01
+ 4         4.1:waits     58.24    58.24   -0.01
 ```
 
 `Spoken` is the second the cue phrase is said on the film's clock. `Shown` is the second the picture

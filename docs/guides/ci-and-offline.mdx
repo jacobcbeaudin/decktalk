@@ -25,8 +25,9 @@ there and fetches nothing, so it is safe to leave in a job forever.
 - On Linux, `install` is also what installs Chromium's system libraries, which needs root. A build
   never installs them. On a terminal it asks before it does, and without a terminal it goes ahead,
   because a job that ran `install` asked for exactly this.
-- `decktalk doctor` reports what this machine holds and what a run would use, and fetches nothing. Its
-  `cache` field is the directory to cache, read from the machine rather than guessed.
+- `decktalk doctor` reports what this machine holds and what a run would use, and fetches nothing,
+  unless `--fix` is passed. Its `cache` field is the directory to cache, read from the machine rather
+  than guessed.
 
 After `install`, DeckTalk itself reaches the network only to buy speech or sound, and a build with
 `--no-spend` never does. A free provider such as `dtsp` is still called under `--no-spend` once a voice is named, on the
@@ -51,7 +52,7 @@ agent cannot answer and a flag that does not exist are the same failure.
 
 The refusal is the whole of what a caller needs.
 
-{/* sample: decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voice] id set and no API key, which exits 2 */}
+{/* sample: narrate-no-terminal, decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voice] id set and no API key, which exits 2 */}
 ```text
 error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
   hint: Run decktalk narrate --spend to approve that cost, or decktalk narrate --no-spend to play a placeholder wherever a take is missing.
@@ -78,16 +79,15 @@ decktalk build --no-spend --no-input --json > build.json
 each event occurs, so `--json` and `--events` together are the answer on stdout and the progress on
 stderr with neither in the other's way.
 
-{/* sample: decktalk status --json --events, its stderr, on a fresh decktalk init my-lesson */}
-```json
-{"event":"run.start","time":"2026-10-02T07:36:06.301156Z","seq":0,"run":"0208b197a5c7","events_file":"build/events/0208b197a5c7.jsonl"}
-{"event":"run.done","time":"2026-10-02T07:36:06.312588Z","seq":1,"run":"0208b197a5c7","outcome":"ran","elapsed_seconds":0.012,"error":null,"dropped":0}
+{/* sample: status-events, decktalk status --json --events, its stderr, on a fresh decktalk init my-lesson */}
+```jsonl
+{"event":"run.start","time":"2026-10-04T04:38:52.298788Z","seq":0,"run":"7a0a76a666bc","events_file":"build/events/7a0a76a666bc.jsonl"}
+{"event":"run.done","time":"2026-10-04T04:38:52.301461Z","seq":1,"run":"7a0a76a666bc","outcome":"ran","elapsed_seconds":0.003,"error":null,"dropped":0}
 ```
 
 `event` is the discriminator. A `stage.done` and a `section.done` each carry an `outcome` of `ran`,
 `kept`, `skipped`, `stopped` or `failed`, so a job can tell work that was done from work that was
-not. `record` reports a section whose recording it kept as `skipped`, so a job counts `kept` and
-`skipped` together as work that was not done again. A failed run's `run.done` carries its `error`. [The event stream](/agents/json#the-event-stream)
+kept, and a failed run's `run.done` carries its `error`. [The event stream](/agents/json#the-event-stream)
 lists every event and its fields.
 
 Every run appends the same lines to `build/events/<run>.jsonl` whether `--events` was passed or not,
@@ -100,7 +100,8 @@ and the first line names that file. So a job that backgrounds a build can follow
 Every command shares one exit rule, so a pipeline asserts on the code rather than on the output.
 [Exit codes](/reference/cli#exit-codes) is the table, and the rule a job follows is
 [one line](/agents/json#errors-and-exit-codes): a non-zero exit with `error` null is a finding the job
-may fix, and a non-null `error` means DeckTalk could not run.
+may fix, and a non-null `error` means DeckTalk could not run or did not finish. When the object beside
+it is the command's own result, its `cost` is what the stopped run spent.
 
 A build that stops on a finding follows the same rule. It exits 1 with `error` null, and its result
 carries `stopped_at`, the stage it stopped after, beside its findings and the spend so far. A job
@@ -134,7 +135,7 @@ decktalk check --no-pages
 narration a voiced build would buy. `--no-pages` drops the browser entirely and says which judgements it could not
 reach, so a docs-only job, a pre-commit hook and a container with no Chromium can all still run it.
 
-{/* sample: decktalk check --no-pages, on a fresh decktalk init my-lesson with no API key and no voice id */}
+{/* sample: check-no-pages, decktalk check --no-pages, on a fresh decktalk init my-lesson with no API key and no voice id */}
 ```text
 No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 no page was opened, so these judgements were not reached: CUE_UNLISTED, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.

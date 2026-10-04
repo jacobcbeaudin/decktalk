@@ -54,11 +54,11 @@ writes the per-machine file. `--dry-run` reports the change and writes nothing.
 `decktalk config unset KEY` takes a key out again so the layer below it wins.
 
 A value outside a key's safe range is refused at load, by the dotted key that wrote it, with the
-range it missed and the sentence saying what goes wrong at the edge.
+range it missed, the layer it came from and the sentence saying what goes wrong at the edge.
 
-{/* sample: decktalk status, on a fresh decktalk init my-lesson with crf = 99 added under [video], which exits 3 */}
+{/* sample: crf-out-of-range, decktalk status, on a fresh decktalk init my-lesson with crf = 99 added under [video], which exits 3 */}
 ```text
-error[INPUT]: video.crf: must be between 0 and 32, got 99.
+error[INPUT]: video.crf: must be between 0 and 32, got 99 in decktalk.toml.
   hint: Above about 32 the encoder's own ringing is larger than a small reveal, so a cue that played reads as no change and the check that would have caught it passes instead.
   docs: https://docs.decktalk.ai/reference/errors/INPUT
 ```
@@ -92,7 +92,7 @@ refusal names what it read and would not accept.
 An unknown key inside a known table does not fail the load. DeckTalk warns, names the closest key it
 does read, ignores the key and carries on.
 
-{/* sample: decktalk status, on a fresh decktalk init my-lesson with stability spelled stabilty under [elevenlabs], the first line */}
+{/* sample: misspelt-key, decktalk status, on a fresh decktalk init my-lesson with stability spelled stabilty under [elevenlabs], the first line */}
 ```text
 decktalk.toml: [elevenlabs]: ignoring unknown key 'stabilty' (did you mean 'stability'?).
 ```
@@ -100,7 +100,7 @@ decktalk.toml: [elevenlabs]: ignoring unknown key 'stabilty' (did you mean 'stab
 A key spelled under a table it does not live in is warned about the same way, and the closest key is
 named with its own table, because no key is read under any name but its own.
 
-{/* sample: decktalk status, on a fresh decktalk init my-lesson with stability = 0.5 added under [voice], the first line */}
+{/* sample: key-in-the-wrong-table, decktalk status, on a fresh decktalk init my-lesson with stability = 0.5 added under [voice], the first line */}
 ```text
 decktalk.toml: [voice]: ignoring unknown key 'stability' (did you mean 'elevenlabs.stability'?).
 ```

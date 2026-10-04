@@ -101,6 +101,11 @@ class DeckTalkError(Exception):
 
     A raiser carries the smallest next action as `hint`, which is a whole command with its flags
     rather than a topic, and the place the reader should open as `location`.
+
+    A `narrate` stopped once its takes are under way, and a `score` or `build` stopped after it paid
+    for something, carry the result their command answers with as `result`, with this refusal as its
+    `error`, so what the run spent is reported even though the run did not finish. It is None on
+    every other refusal. It is typed as an object because the results are built on these errors.
     """
 
     code: ClassVar[ErrorCode]
@@ -111,6 +116,7 @@ class DeckTalkError(Exception):
         super().__init__(redact(message))
         self.hint = redact(hint) if hint is not None else None
         self.location = location
+        self.result: object | None = None
 
 
 class InputError(DeckTalkError):
@@ -141,12 +147,15 @@ class ProviderError(DeckTalkError):
         location: Location | None = None,
         retryable: bool = False,
         reached: bool = True,
+        possibly_charged: bool = False,
     ) -> None:
         super().__init__(message, hint=hint, location=location)
         self.retryable = retryable
         """True when the same request may succeed later, which is what decides whether a caller waits."""
         self.reached = reached
         """False when nothing answered at all, so the request was never received and nothing was billed."""
+        self.possibly_charged = possibly_charged
+        """True when a provider that bills may have billed the request, because its reply broke after it was sent."""
 
 
 class ToolError(DeckTalkError):
@@ -172,7 +181,7 @@ class ApprovalRequired(DeckTalkError):
 
 
 class Cancelled(DeckTalkError):
-    """The run stopped before a section started, because its caller cancelled it or its pool halted."""
+    """The run stopped before a section started, because its caller cancelled or interrupted it or its pool halted."""
 
     code = ErrorCode.CANCELLED
 
@@ -208,8 +217,9 @@ class Cancel:
 class ErrorInfo(Model):
     """The `error` of a result: why the command could not run, and what would let it.
 
-    It is filled only when the command could not run at all, so a reader that finds it null knows
-    the command ran and that every judgement is in `findings`.
+    It is filled when the command could not run, and on the result a stopped or refused run carries
+    of what it bought. A reader that finds it null knows the command ran to its end and that every
+    judgement is in `findings`.
     """
 
     code: ErrorCode = Field(description="The code a caller dispatches on, such as NOT_BUILT.")
@@ -259,6 +269,41 @@ class ErrorInfo(Model):
             hint="Run the command again with -v for the traceback, and open an issue with it.",
             docs=ErrorCode.INTERNAL.url,
         )
+
+
+def interrupted() -> Cancelled:
+    """The refusal a Ctrl-C becomes inside `narrate`, `score` and `build`, which can carry what the run made.
+
+    A bare `KeyboardInterrupt` has nowhere to hold a result, so those three raise this from it instead,
+    and a caller meets an interrupt there exactly as it meets a cancel.
+    """
+    return Cancelled(
+        "The run was interrupted.", hint="Run the command again, and everything this run already made is kept."
+    )
+
+
+HALTS = (DeckTalkError, KeyboardInterrupt, OSError)
+"""What a stage that buys catches to carry what it bought: a refusal, a Ctrl-C, and a disk that refused a file."""
+
+
+def as_refusal(failure: DeckTalkError | KeyboardInterrupt | OSError) -> DeckTalkError:
+    """The refusal a run that stopped on `failure` raises.
+
+    A refusal stays itself, a Ctrl-C becomes `interrupted()`, and an `OSError` is the machine refusing a
+    file, a full disk or a permission, which is an input DeckTalk cannot work with rather than a bug in
+    it, so it becomes an `InputError` naming the file.
+    """
+    if isinstance(failure, DeckTalkError):
+        return failure
+    if isinstance(failure, OSError):
+        where = failure.filename if failure.filename is not None else "a file"
+        reason = failure.strerror or str(failure) or type(failure).__name__
+        return InputError(
+            f"could not write {where}: {reason}.",
+            hint="Free some space or fix the folder's permissions, then run the command again. "
+            "What this run bought is kept.",
+        )
+    return interrupted()
 
 
 STOPS = (Cancelled, KeyboardInterrupt)

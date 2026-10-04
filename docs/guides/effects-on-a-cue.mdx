@@ -51,7 +51,7 @@ the closing band lands.
     decktalk score --no-spend --json
     ```
 
-    {/* sample: decktalk score --no-spend --json, on a fresh decktalk init my-lesson with the [score.effects.tick] table above, which exits 0 */}
+    {/* sample: effect-plan, decktalk score --no-spend --json, on a fresh decktalk init my-lesson with the [score.effects.tick] table above, which exits 0 */}
     ```json
     {
       "schema": 1,
@@ -61,20 +61,14 @@ the closing band lands.
           "code": "SOUND_MISSING",
           "message": "the effect tick is not bought yet, so the film plays silence where it would be. Buying it with `decktalk score --spend` asks for 0.5 seconds of audio.",
           "severity": "warning",
-          "location": {
-            "where": "tick",
-            "file": "score/tick.mp3",
-            "line": null,
-            "section": null,
-            "cue": null
-          },
+          "location": { "where": "tick", "file": "score/tick.mp3", "line": null, "section": null, "cue": null },
           "stage": "score",
           "fix": null,
           "docs": "https://docs.decktalk.ai/reference/findings/SOUND_MISSING"
         }
       ],
       "error": null,
-      "run": "467868184d72",
+      "run": "a921172f28db",
       "written": [],
       "spend": false,
       "items": [
@@ -118,7 +112,7 @@ the closing band lands.
           }
         ]
       },
-      "elapsed_seconds": 0.005
+      "elapsed_seconds": 0.002
     }
     ```
 

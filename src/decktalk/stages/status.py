@@ -45,7 +45,7 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from decktalk.artifacts import WORDS_SUFFIX, UnreadablePaidRecord, is_placeholder
+from decktalk.artifacts import WORDS_SUFFIX, UnreadableCache, UnreadablePaidRecord, is_placeholder
 from decktalk.artifacts.takes import TAKE_DIGEST
 from decktalk.errors import DeckTalkError
 from decktalk.events import AnyEvent, Level, StageStart
@@ -185,15 +185,16 @@ def section_rows(
 def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool, said: bool = False) -> bool:
     """Whether this section's recording no longer matches the project, with the reason as a line.
 
-    A section whose provider words do not read cannot be judged, so the refusal is one error line, with
-    its own sentence and hint, and the row says nothing stale rather than ending the report. `said`
-    is true when the take's own refusal is already a line, which then stands for this one.
+    A section whose words do not read, the provider's or the ones DeckTalk estimated for a placeholder,
+    cannot be judged, so the refusal is one error line, with its own sentence and hint, and the row
+    says nothing stale rather than ending the report. `said` is true when the take's own refusal is
+    already a line, which then stands for this one.
     """
     if not recorded or not isinstance(section, PageSection):
         return False
     try:
         why = stale_recording(inputs, section)
-    except UnreadablePaidRecord as unread:
+    except (UnreadablePaidRecord, UnreadableCache) as unread:
         if not said:
             hint = f" {unread.hint}" if unread.hint else ""
             run.note(f"{unread}{hint}", level=Level.ERROR)

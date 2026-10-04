@@ -218,6 +218,18 @@ def test_a_run_that_names_sections_checks_only_their_cues(tmp_path: Path) -> Non
     assert default_checks(CueTimes.read(path), [2]) == [(2, "b")]
 
 
+def test_a_run_whose_sections_kept_none_checks_no_cue(tmp_path: Path) -> None:
+    """`verify` hands over the sections the film carries of those named, so none kept measures nothing."""
+    document = {
+        "sections": [
+            {"section": 1, "key": "01", "estimated": True, "cues": [{"id": "a", "phrase": "x", "seconds": 0.5}]},
+        ]
+    }
+    path = tmp_path / "cue-times.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert default_checks(CueTimes.read(path), []) == []
+
+
 def test_a_film_with_no_cue_times_checks_nothing() -> None:
     assert default_checks(None) == []
 

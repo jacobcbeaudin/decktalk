@@ -11,9 +11,10 @@ It measures three things, each with the command a reader can run to see the same
 
 - **Landing error.** The starter `decktalk init` writes is built with `--no-spend`, so every section
   plays a placeholder, whose words have a real clock. `decktalk verify` then decodes the
-  film and reports how far each reveal sits from its word, and the limit is the project's own
-  `verify.cue_offset_max_ms`. The placeholder has no voice to misplace a word, so these
-  numbers measure the cue, the recorder and the cut, and not a voice's timing.
+  film and reports how far each reveal sits from its word. A reveal is past the limit when it is
+  further than the project's own `verify.cue_offset_max_ms` plus half a frame, the rule verify
+  reports by. The placeholder has no voice to misplace a word, so these numbers measure the cue,
+  the recorder and the cut, and not a voice's timing.
 - **Build times.** A cold build in a fresh project, the same build again with nothing changed, and
   the build after one word of one section changed, each timed as the wall time of the whole
   command. Each build also says how many sections it recorded, which is what the cache saves.
@@ -43,6 +44,7 @@ from typing import Any
 import check
 import check_coverage
 from decktalk.results import TakeOutcome
+from decktalk.stages.verify.plan import HALF_FRAME
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "docs" / "data" / "measured.json"
@@ -61,7 +63,10 @@ MS_PER_SECOND = 1000
 """Truth: verify reports seconds and the limit is in milliseconds."""
 
 LIMIT_KEY = "verify.cue_offset_max_ms"
-"""The setting verify grades every reveal against, early or late."""
+"""The setting verify grades every reveal against, early or late, with half a frame beside it."""
+
+FPS_KEY = "video.fps"
+"""The film's frame rate, which sets how long the half frame verify allows beside the limit is."""
 
 PROJECT = "starter"
 """What `decktalk init --no-input` writes, which is the project the quickstart builds."""
@@ -88,8 +93,12 @@ BUILDS = ("cold", "unchanged", "one section changed")
 """The three builds timed, in the order they run in one project."""
 
 
-def landing(verifies: list[dict[str, Any]], *, limit_ms: float) -> dict[str, Any]:
-    """The landing row: how far each reveal sat from its word over every run, early or late alike."""
+def landing(verifies: list[dict[str, Any]], *, limit_ms: float, fps: int) -> dict[str, Any]:
+    """The landing row: how far each reveal sat from its word over every run, early or late alike.
+
+    A reveal is past the limit by the rule verify raises CUE_OFF with: further than the limit plus
+    half a frame at the film's rate, so the count names exactly the reveals verify reported.
+    """
     offsets: dict[str, list[float]] = {}
     skipped = 0
     for result in verifies:
@@ -99,6 +108,7 @@ def landing(verifies: list[dict[str, Any]], *, limit_ms: float) -> dict[str, Any
                 continue
             offsets.setdefault(row["cue"], []).append(round(row["offset_seconds"] * MS_PER_SECOND, MS_DECIMALS))
     distances = [abs(value) for values in offsets.values() for value in values]
+    allowed_ms = limit_ms + HALF_FRAME / fps * MS_PER_SECOND
     if not distances:
         raise SystemExit("verify measured no reveal in any run, so there is no landing error to publish.")
     return {
@@ -107,7 +117,7 @@ def landing(verifies: list[dict[str, Any]], *, limit_ms: float) -> dict[str, Any
         "limit_ms": limit_ms,
         "reveals": len(distances),
         "skipped": skipped,
-        "over_limit": sum(1 for distance in distances if distance > limit_ms),
+        "over_limit": sum(1 for distance in distances if distance > allowed_ms),
         "worst_ms": max(distances),
         "median_ms": statistics.median(distances),
         "cues": [{"cue": name, "offsets_ms": values} for name, values in offsets.items()],
@@ -203,10 +213,11 @@ def decktalk(*args: str, cwd: Path) -> tuple[dict[str, Any], float]:
     return answer, seconds
 
 
-def one_project(scratch: Path) -> tuple[list[dict[str, Any]], dict[str, Any], float, dict[str, Any]]:
+def one_project(scratch: Path) -> tuple[list[dict[str, Any]], dict[str, Any], tuple[float, int], dict[str, Any]]:
     """Build one fresh starter three ways and verify its first film.
 
-    Answers each build's seconds and sections recorded, verify's answer, the limit and the film.
+    Answers each build's seconds and sections recorded, verify's answer, the limit with the frame
+    rate that sets its half frame, and the film.
     """
     project = scratch / PROJECT
     text([sys.executable, "-m", "decktalk", "init", str(project), "--no-input"])
@@ -215,6 +226,7 @@ def one_project(scratch: Path) -> tuple[list[dict[str, Any]], dict[str, Any], fl
     builds.append({"build": BUILDS[0], "seconds": seconds, "recorded": recorded_sections(cold)})
     verified, _ = decktalk("verify", cwd=project)
     limit = decktalk("config", "get", LIMIT_KEY, cwd=project)[0]["key"]["value"]
+    fps = decktalk("config", "get", FPS_KEY, cwd=project)[0]["key"]["value"]
     again, seconds = decktalk("build", "--no-spend", cwd=project)
     builds.append({"build": BUILDS[1], "seconds": seconds, "recorded": recorded_sections(again)})
     script = project / "script.md"
@@ -222,7 +234,7 @@ def one_project(scratch: Path) -> tuple[list[dict[str, Any]], dict[str, Any], fl
     changed, seconds = decktalk("build", "--no-spend", cwd=project)
     builds.append({"build": BUILDS[2], "seconds": seconds, "recorded": recorded_sections(changed)})
     film = {"film_seconds": verified["film_seconds"], "sections": len(verified["starts"])}
-    return builds, verified, limit, film
+    return builds, verified, (limit, fps), film
 
 
 def coverage() -> dict[str, Any]:
@@ -261,7 +273,7 @@ def main() -> int:
     load = round(os.getloadavg()[0], LOAD_DECIMALS) if hasattr(os, "getloadavg") else None
     samples: list[list[dict[str, Any]]] = []
     verifies: list[dict[str, Any]] = []
-    limits: set[float] = set()
+    limits: set[tuple[float, int]] = set()
     films: list[dict[str, Any]] = []
     for repeat in range(args.repeats):
         print(f"building fresh project {repeat + 1} of {args.repeats}", file=sys.stderr)
@@ -272,8 +284,11 @@ def main() -> int:
         limits.add(limit)
         films.append(film)
     if len(limits) != 1 or any(film != films[0] for film in films):
-        raise SystemExit(f"the fresh projects disagreed about the limit or the film: {sorted(limits)}, {films}")
+        raise SystemExit(
+            f"the fresh projects disagreed about the limit, the frame rate or the film: {sorted(limits)}, {films}"
+        )
 
+    limit_ms, fps = limits.pop()
     doctor, _ = decktalk("doctor", cwd=ROOT)
     run = {
         "what": "the starter `decktalk init` writes, built with placeholders",
@@ -290,7 +305,7 @@ def main() -> int:
     document = {
         "schema": SCHEMA,
         "runs": {RUN: run, **other_runs},
-        "landing": [landing(verifies, limit_ms=limits.pop()), *other_rows],
+        "landing": [landing(verifies, limit_ms=limit_ms, fps=fps), *other_rows],
         "builds": {
             "run": RUN,
             "project": PROJECT,

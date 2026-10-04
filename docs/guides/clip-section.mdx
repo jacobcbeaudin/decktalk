@@ -170,7 +170,7 @@ first word is part of the span like anything else.
     inside the span in seconds after the clip starts. A word the span cuts in two is left out and
     said aloud on the stream, so move `--end` into the silence beside the word to keep it.
 
-    {/* sample: decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4, on a starter built with --no-spend */}
+    {/* sample: clip, decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4, on a starter built with --no-spend */}
     ```text
     Section 1 carries placeholder narration, so every word time in this clip is an estimate.
     Cut media/open-line.mp4, 1.9 seconds of section 1.
@@ -197,7 +197,7 @@ first word is part of the span like anything else.
 
 The JSON is one flat object, so a caller reads what was written without parsing a line.
 
-{/* sample: decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4 --json, on a starter built with --no-spend */}
+{/* sample: clip-json, decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4 --json, on a starter built with --no-spend */}
 ```json
 {
   "schema": 1,

@@ -203,7 +203,7 @@ def test_no_spend_never_asks_and_never_buys(monkeypatch: pytest.MonkeyPatch, is_
     monkeypatch.setattr(made, "confirm", _never_asked)
     fake = Fake(price=a_cost())
     assert made.spends(fake.project(), (Stage.NARRATE,)).spend is False
-    assert fake.calls == [], "a run told not to spend was priced as if it might"
+    assert [name for name, _, _ in fake.calls] == ["select"], "a run told not to spend was priced as if it might"
 
 
 def test_spend_buys_without_asking(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -169,6 +169,7 @@ def test_a_failure_of_a_voice_that_bills_nothing_never_says_the_request_was_char
     said = f"{caught.value} {caught.value.hint}"
     assert "charged" not in said, said
     assert "usage" not in said, said
+    assert caught.value.possibly_charged is False
 
 
 def test_a_reply_from_the_free_voice_that_broke_is_asked_for_again(

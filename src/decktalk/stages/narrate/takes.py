@@ -135,7 +135,9 @@ def write_placeholder_take(
     return take_row(inputs, section, chapter, digest, voiced=False), [out, written]
 
 
-def charge_take(inputs: Inputs, run: Run, section: ScriptSection, digest: str, buy: Buy) -> None:
+def charge_take(
+    inputs: Inputs, run: Run, section: ScriptSection, digest: str, buy: Buy, *, possibly: bool = False
+) -> None:
     """Put the charge for one voiced take on the stream, once its voice has answered.
 
     A provider that bills is paid the moment it answers, so the charge goes on the stream before
@@ -144,12 +146,20 @@ def charge_take(inputs: Inputs, run: Run, section: ScriptSection, digest: str, b
     provider declares, the same buy the run was priced and approved at, so a per-second bill is
     charged on the length the script gave the take. A provider that declares it bills nothing is paid
     nothing, so its take puts no charge on the stream, and every charge line is money paid, as
-    `sound.charged` is.
+    `sound.charged` is, unless it is `possibly` charged: its request was sent and its reply broke,
+    so the provider may have billed it, and the line says so.
     """
     dollars = charge_of(inputs, buy)
     if dollars is None:
         return
-    run.emit(TakeCharged, section=section.number, digest=digest, characters=buy.characters, dollars=dollars)
+    run.emit(
+        TakeCharged,
+        section=section.number,
+        digest=digest,
+        characters=buy.characters,
+        dollars=dollars,
+        possibly_charged=possibly,
+    )
 
 
 def join_takes(inputs: Inputs, takes: Takes) -> Path:

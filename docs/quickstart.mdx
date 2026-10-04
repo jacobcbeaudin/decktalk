@@ -95,10 +95,10 @@ the one thing in DeckTalk that costs money.
     it to the page.
 
     On a machine that has never recorded, the `chromium`, `ffmpeg` and `ffprobe` rows read
-    `missing`, and each one comes with a finding. `doctor` also prints `Chromium did not launch.`
-    above the table, which means only that there was no Chromium to start.
+    `missing`, and each one comes with a finding. `doctor` also prints `Chromium is not installed. Run
+    decktalk install to fetch it.` above the table.
 
-    {/* sample: DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk doctor, the findings under the table, which exits 1 */}
+    {/* sample: doctor-empty-cache, DECKTALK_TOOLS_CACHE_DIR=<an empty folder> decktalk doctor, the findings under the table, which exits 1 */}
     ```text
     chromium: FILE_MISSING chromium is not on this machine, so a build that needs it cannot run.
       fix (safe): Fetch chromium into the cache.
@@ -148,7 +148,7 @@ cache paths.
     decktalk init my-lesson && cd my-lesson
     ```
 
-    {/* sample: decktalk init my-lesson, in an empty folder */}
+    {/* sample: init, decktalk init my-lesson, in an empty folder */}
     ```text
     Wrote my-lesson from the starter example, 14 files.
     Next   cd my-lesson && decktalk build --no-spend
@@ -177,9 +177,9 @@ cache paths.
     decktalk build --no-spend
     ```
 
-    {/* sample: decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0 */}
+    {/* sample: build, decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0 */}
     ```text
-    run 3ffc9cf27001, events build/events/3ffc9cf27001.jsonl
+    run fc3e5b583fcd, events build/events/fc3e5b583fcd.jsonl
          Narrate    0:00
              Cue    0:00
           Record    0:22
@@ -187,7 +187,7 @@ cache paths.
            Score    0:00
     The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
         Assemble    0:03
-          Verify    0:04
+          Verify    0:02
            Built build/final/my-lesson.mp4, $0.00, 3 findings
     script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
     script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
@@ -256,7 +256,7 @@ cache paths.
     decktalk status
     ```
 
-    {/* sample: decktalk status, after the build above */}
+    {/* sample: status-built, decktalk status, after the build above */}
     ```text
      Section   Key   Plays                     Take          Recorded   Assembled   Stale
      ────────────────────────────────────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ film.
     The result is one flat object carrying `run`, `written`, `judged`, `pages_opened`, `frames_compared`,
     `cost` and `storyboard` beside the four keys every result reserves. Its `cost` is the price:
 
-    {/* sample: decktalk check --json, on a fresh decktalk init my-lesson, the cost object */}
+    {/* sample: check-cost-quickstart, decktalk check --json, on a fresh decktalk init my-lesson, the cost object */}
     ```json
     {
       "state": "estimate",
@@ -423,7 +423,7 @@ film.
     decktalk storyboard
     ```
 
-    {/* sample: decktalk storyboard, on the starter */}
+    {/* sample: storyboard, decktalk storyboard, on the starter */}
     ```text
     Wrote build/storyboard.html, 16 panels.
     ```
@@ -445,22 +445,22 @@ film.
     when the most it can cost is over N US dollars, and the refusal names the figure that would let
     it through. A ceiling of five cents on this project reads:
 
-    {/* sample: decktalk build --spend --max-cost 0.05, on the starter with [voice] id set and no API key, which exits 2 before any request */}
+    {/* sample: build-over-the-ceiling, decktalk build --spend --max-cost 0.05, on the starter with [voice] id set and no API key, which exits 2 before any request */}
     ```text
-    Storyboard build/storyboard.html, 16 panels.
-    run d93b083d90d5, events build/events/d93b083d90d5.jsonl
     error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.15, is over the $0.05 ceiling --max-cost set.
       hint: Raise the ceiling to --max-cost 0.15, or narrow the run with --section.
       docs: https://docs.decktalk.ai/reference/errors/APPROVAL
     ```
 
-    A run that would buy draws the storyboard first, so it is there to read before you approve.
+    The price is held to the ceiling before anything else, so a run the ceiling refuses opens no run
+    and draws nothing. A run within it draws the storyboard next, so it is there to read before you
+    approve.
 
     On a terminal, `decktalk build` with neither flag prints the price and asks. With no terminal
     there is nobody to ask, so it refuses rather than guessing, and the refusal carries the price, so
     one call prices the run.
 
-    {/* sample: decktalk build --no-input, on the starter with [voice] id set and no API key, which exits 2 */}
+    {/* sample: build-no-terminal, decktalk build --no-input, on the starter with [voice] id set and no API key, which exits 2 */}
     ```text
     error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
       hint: Run decktalk build --spend to approve that cost, or decktalk build --no-spend to play a placeholder wherever a take is missing and silence where a sound is unbought.

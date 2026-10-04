@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -12,9 +13,10 @@ from decktalk.artifacts import TakeInputs
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.speech import canonical_text
+from decktalk.stages.narrate import plan
 from decktalk.stages.narrate.plan import placeholder_inputs, take_inputs
 from decktalk.stages.narrate.state import take_states
-from support.paths import DATA
+from support.paths import DATA, SRC, TESTS
 from support.projects import MINIMAL_TOML, load_project
 
 from .conftest import TOML, VOICE_ID
@@ -94,3 +96,13 @@ def test_a_voice_a_host_registered_keeps_the_digest_its_takes_were_named_by(
     assert project.workspace.take_file(made.digest) == f"{made.digest}.mp3"
     spend = take_states(project, [section]).plan(spend=True).cost
     assert "declares no bill" in spend.sentence
+
+
+def test_every_name_the_plan_exports_is_read_somewhere_else() -> None:
+    """A name the plan publishes and nothing reads is a second spelling of a sentence that can drift from the first."""
+    plan_file = SRC / "stages" / "narrate" / "plan.py"
+    others = [
+        path.read_text(encoding="utf-8") for root in (SRC, TESTS) for path in root.rglob("*.py") if path != plan_file
+    ]
+    unread = [name for name in plan.__all__ if not any(re.search(rf"\b{name}\b", text) for text in others)]
+    assert unread == []

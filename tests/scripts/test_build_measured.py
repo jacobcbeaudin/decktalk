@@ -97,10 +97,16 @@ def test_a_bench_row_is_a_second_landing_row_and_leaves_the_first_alone() -> Non
 
 
 def test_reveals_past_the_limit_are_named_on_the_page_and_in_the_readme() -> None:
+    """`scripts/measure.py` counts a reveal past the limit by verify's rule, the limit plus half a frame,
+    so the page and the README name that one limit and never the setting alone."""
     data = copy.deepcopy(DATA)
-    data["landing"][0] |= {"worst_ms": 83.0, "over_limit": 2}
-    assert "| 2 |" in build_measured.page(data)
-    assert "2 of 6 reveals landed past 80 ms alone." in build_measured.readme_block(data)
+    data["landing"][0] |= {"worst_ms": 103.0, "over_limit": 2}
+    page = build_measured.page(data)
+    block = build_measured.readme_block(data)
+    assert "| 2 |" in page
+    assert "2 of 6 reveals landed past it." in block
+    assert "alone" not in page
+    assert "alone" not in block
 
 
 def test_a_recount_that_differs_between_repeats_is_shown_as_a_range() -> None:

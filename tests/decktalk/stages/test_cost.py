@@ -204,7 +204,7 @@ def test_a_take_is_priced_at_the_bill_its_provider_declares(tmp_path: Path, bill
     elif bill is BillingBasis.FREE:
         assert spend.free
         assert spend.dollars == 0 and spend.price_key is None
-        assert spend.sentence.endswith("for nothing, because the voice is free.")
+        assert spend.sentence.endswith("for nothing, because the provider is free.")
     else:
         assert spend.dollars == 0 and spend.price_key is None and spend.price_layer is Layer.DEFAULT
         assert not spend.free
@@ -343,14 +343,15 @@ def test_a_possible_take_moves_the_ceiling_and_never_the_price(tmp_path: Path) -
     assert priced.sections == (3, 1)
 
 
-def test_a_charged_cost_counts_every_buy_as_bought(tmp_path: Path) -> None:
+def test_a_charged_cost_counts_a_possible_buy_into_its_ceiling_alone(tmp_path: Path) -> None:
+    """A request whose reply broke may have been billed, so it raises the ceiling and never the dollars spent."""
     possible = Buy(characters=100, seconds=8.0, sections=(1,), certain=False)
     charged = cost_of(
         project(tmp_path, SPEECH), [Buy(characters=39, seconds=3.8, sections=(3,)), possible], state=CostState.CHARGED
     )
     assert charged.state is CostState.CHARGED
-    assert charged.dollars == charged.ceiling_dollars == 0.05
-    assert (charged.characters, charged.sections) == (139, (3, 1))
+    assert (charged.dollars, charged.ceiling_dollars) == (0.02, 0.05)
+    assert (charged.characters, charged.sections) == (39, (3, 1))
 
 
 # ---- the total ----------------------------------------------------------------------------------
@@ -405,7 +406,7 @@ def test_a_total_of_costs_that_buy_nothing_still_names_a_rate(tmp_path: Path) ->
 @pytest.mark.parametrize(
     ("voice", "dollars", "said"),
     [
-        (FREE_VOICE, 0.0, "This run voiced 39 characters for nothing, because the voice is free."),
+        (FREE_VOICE, 0.0, "This run voiced 39 characters for nothing, because the provider is free."),
         ("", 0.30, "This run spent $0.30"),
     ],
     ids=["free-voice", "paid-voice"],
@@ -547,13 +548,17 @@ def exact(inputs: Inputs, buys: Sequence[Buy]) -> Fraction:
 
 @pytest.mark.parametrize("name", PROJECTS)
 def test_a_stages_charges_add_up_to_its_charged_cost_to_the_cent(priced: dict[str, Inputs], name: str) -> None:
-    """A host that adds a stage's charge lines and rounds up gets the stage's charged price, whatever it bought."""
+    """A host that adds a stage's charge lines and rounds up gets the stage's charged price, whatever it bought.
+
+    The lines of the requests that were possibly charged add up to the ceiling with the rest, and never to the price.
+    """
     inputs = priced[name]
 
     @given(buys=buys_for(name))
     def holds(buys: list[Buy]) -> None:
         charged = cost_of(inputs, buys, state=CostState.CHARGED)
-        assert charged.dollars == up_to_the_cent(charge_of(inputs, buy) or 0.0 for buy in buys)
+        assert charged.dollars == up_to_the_cent(charge_of(inputs, buy) or 0.0 for buy in buys if buy.certain)
+        assert charged.ceiling_dollars == up_to_the_cent(charge_of(inputs, buy) or 0.0 for buy in buys)
 
     holds()
 
@@ -623,7 +628,7 @@ def test_a_stage_row_keeps_its_own_state_in_a_charged_total(tmp_path: Path) -> N
     ]
     assert whole.stages[1].dollars == 0.12
     assert whole.state is CostState.CHARGED and whole.dollars == 0
-    assert whole.sentence == "This run voiced 39 characters for nothing, because the voice is free."
+    assert whole.sentence == "This run voiced 39 characters for nothing, because the provider is free."
 
 
 def test_one_stage_in_two_costs_is_refused(tmp_path: Path) -> None:
@@ -659,12 +664,12 @@ def test_the_total_names_each_stage_that_buys_at_a_price(tmp_path: Path) -> None
         (
             CostState.ESTIMATE,
             "This run costs $0.12 for the score's about 60 seconds of audio at $0.12 per minute of audio, and voices "
-            "39 characters for nothing, because the voice is free.",
+            "39 characters for nothing, because the provider is free.",
         ),
         (
             CostState.CHARGED,
             "This run spent $0.12 on the score's about 60 seconds of audio at $0.12 per minute of audio, and voiced "
-            "39 characters for nothing, because the voice is free.",
+            "39 characters for nothing, because the provider is free.",
         ),
     ],
 )

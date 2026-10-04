@@ -16,7 +16,7 @@ appear as data, and what to change.
 An **error** means DeckTalk could not run, so nothing was judged. It prints one block and the command
 stops.
 
-{/* sample: decktalk words, on a fresh decktalk init my-lesson, which exits 3 */}
+{/* sample: words-not-built, decktalk words, on a fresh decktalk init my-lesson, which exits 3 */}
 ```text
 error[NOT_BUILT]: takes.json has not been built.
   hint: Run `decktalk narrate` first, or `decktalk narrate --no-spend` to spend nothing.
@@ -26,7 +26,7 @@ error[NOT_BUILT]: takes.json has not been built.
 A **finding** is a judgement DeckTalk made about your files or your film. The command ran, and this
 is what it measured. It prints its own sentences, then one line per judgement, then one count line.
 
-{/* sample: decktalk check, on a fresh decktalk init my-lesson with cues.json deleted, which exits 1 */}
+{/* sample: cues-file-missing, decktalk check, on a fresh decktalk init my-lesson with cues.json deleted, which exits 1 */}
 ```text
 No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, deck/index.html.
@@ -59,7 +59,7 @@ None of the three produces a film and none of them spends. `decktalk check --no-
 and opens no browser at all, which makes it the one to run on a machine with no Chromium and inside a
 commit hook. It names every judgement it could not reach rather than passing quietly.
 
-{/* sample: decktalk check --no-pages, on a fresh decktalk init my-lesson, the line about what it skipped */}
+{/* sample: check-no-pages-skipped, decktalk check --no-pages, on a fresh decktalk init my-lesson, the line about what it skipped */}
 ```text
 no page was opened, so these judgements were not reached: CUE_UNLISTED, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
 ```
@@ -107,7 +107,7 @@ did not reach are reported as skipped, and the run still returns everything it k
 its findings are printed and in the JSON, the money narrate already spent is in `cost`, and
 `stopped_at` names the stage it stopped after.
 
-{/* sample: decktalk build --no-spend, on a fresh decktalk init my-lesson whose cue 3.1:idea waits for "a phrase nobody says", which exits 1 */}
+{/* sample: build-stopped, decktalk build --no-spend, on a fresh decktalk init my-lesson whose cue 3.1:idea waits for "a phrase nobody says", which exits 1 */}
 ```text
 run 9227734468d0, events build/events/9227734468d0.jsonl
      Narrate    0:00
@@ -243,7 +243,7 @@ In the library there is no terminal to ask, so nothing spends without `spend=Tru
 
 **What you see.** `error[NOT_BUILT]`, naming the file that is not there and the command that writes it.
 
-{/* sample: decktalk words, on a fresh decktalk init my-lesson, which exits 3 */}
+{/* sample: words-not-built-again, decktalk words, on a fresh decktalk init my-lesson, which exits 3 */}
 ```text
 error[NOT_BUILT]: takes.json has not been built.
   hint: Run `decktalk narrate` first, or `decktalk narrate --no-spend` to spend nothing.
@@ -265,7 +265,9 @@ the reason when it could not be reached.
 1. Read the status in the message. A 401 is a key ElevenLabs does not accept, and a 429 or a 5xx is
    ElevenLabs being busy, which a later run usually gets past.
 2. Run the same command again. Each take is written to the takes directory as soon as it is voiced,
-   so the sections already voiced are found on disk and the run pays only for the rest.
+   so the sections already voiced are found on disk and the run pays only for the rest. When the
+   message says the request was possibly charged, its reply broke after it was sent, so check the
+   account's usage first: running again buys that take once more.
 3. A key that is not set at all is not this code. It is an `INPUT` error naming
    `ELEVENLABS_API_KEY`, raised before any request is sent.
 
@@ -310,7 +312,7 @@ say which half is missing.
 **Reading `CUE_UNRESOLVED`.** The message names the phrase and how many words the section actually
 speaks.
 
-{/* sample: decktalk check --no-pages, on a fresh decktalk init my-lesson whose cue 1.1:title waits for "a phrase nobody says", the finding line */}
+{/* sample: cue-unresolved, decktalk check --no-pages, on a fresh decktalk init my-lesson whose cue 1.1:title waits for "a phrase nobody says", the finding line */}
 ```text
 cues.json:13: CUE_UNRESOLVED the cue 1.1:title waits for 'a phrase nobody says' and section 1 speaks 38 words, none of which is that phrase.
 ```
@@ -324,7 +326,7 @@ fires, and `verify` set to false leaves the cue out of the measurement.
 **Reading `CUE_STALE`.** `verify` measures the film on disk against the cue times the last build
 placed. Edit `cues.json` and run `verify` alone, and the times no longer match the file:
 
-{/* sample: decktalk verify, on a built starter rebuilt with 3.1:idea on "Change a word" and then set back to "the whole idea", the finding line */}
+{/* sample: cue-stale, decktalk verify, on a built starter rebuilt with 3.1:idea on "Change a word" and then set back to "the whole idea", the finding line */}
 ```text
 cues.json: CUE_STALE cues.json asks for 3.1:idea on 'the whole idea' and the cue times hold a second placed for 'Change a word', so the cue times are older than cues.json and the film was cut to moments nobody asks for now. Run `decktalk build` to place them again.
 ```
@@ -364,7 +366,7 @@ measure that, all of them by comparing frames.
 
 **What you see.** The message carries the measured share of the frame and the floor it is under.
 
-{/* sample: decktalk check, on a fresh decktalk init my-lesson whose 1.1:title element is styled visibility: hidden, the finding line */}
+{/* sample: cue-no-change, decktalk check, on a fresh decktalk init my-lesson whose 1.1:title element is styled visibility: hidden, the finding line */}
 ```text
 build/frames/01/freeze-1.1-after-1.1_title.png: CUE_NO_CHANGE freezing the slide either side of 1.1:title changes 0.00 percent of the frame, which is under the 0.10 percent floor, so the reveal would not be measured at all.
 ```
@@ -406,7 +408,7 @@ the start of the section clock. When the scan finds no cover frames, the run fal
 settle, and failing that to `record.fallback_first_paint_seconds` plus the settle. It says so when it
 does:
 
-{/* sample: decktalk record --section 2 --force --set record.cover_min_chroma=255, on a starter after narrate --no-spend and cue, the warning line */}
+{/* sample: no-cover, decktalk record --section 2 --force --set record.cover_min_chroma=255, on a starter after narrate --no-spend and cue, the warning line */}
 ```text
 Section 2 shows no cover, so the start of the section clock is a guess at 1.434s (the first painted frame and the settle), and every reveal in the section moves with it.
 ```
@@ -510,7 +512,7 @@ on it. [Sound](/concepts/sound#loudness) says exactly when `MIX_LOUDNESS` is rai
 1. Check whether the loudness pass ran at all. On a build with placeholder narration it does not,
    and the run says so.
 
-   {/* sample: decktalk build --no-spend, on a fresh decktalk init my-lesson, the assemble line */}
+   {/* sample: build-assemble-line, decktalk build --no-spend, on a fresh decktalk init my-lesson, the assemble line */}
    ```text
    The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
    ```
@@ -573,8 +575,9 @@ and the fix is the one above: put the file beside the page.
 ## A page the contract refuses
 
 These come out when `check` opens the page, and all but `PAGE_NO_DESCRIPTION` and
-`PAGE_SWAP_APART` also when `record` does. Most of them the page reports about
-itself, through the probe, and the rest DeckTalk reads off the catalog the page published. All of
+`PAGE_SWAP_APART` also when `record` does and again when `verify` reads the recording log. Most of
+them the page reports about itself, through the probe, and the rest DeckTalk reads off the catalog
+the page published. All of
 them are about markup rather than about timing, so all of them can be cleared before a single credit
 is spent. One of them, `PAGE_SWAP_APART`, is a warning, and the rest are errors because the
 contract either declares a thing or it does not.

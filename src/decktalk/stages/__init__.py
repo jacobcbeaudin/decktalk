@@ -57,9 +57,15 @@ def speech_context(inputs: Inputs) -> SpeechContext:
 
 
 def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
-    """Whether one section number is in this run's selection, which is every section when it names none."""
-    numbers = set(only or ())
-    return lambda number: not numbers or number in numbers
+    """Whether one section number is in this run's selection.
+
+    No selection at all is every section. A selection is the sections it names and no others, so an
+    empty one selects nothing and never widens to the whole project.
+    """
+    if only is None:
+        return lambda _number: True
+    numbers = set(only)
+    return lambda number: number in numbers
 
 
 __all__ = [

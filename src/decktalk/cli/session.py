@@ -31,6 +31,7 @@ from decktalk.events import Events
 from decktalk.files import json_text
 from decktalk.findings import ERRORS_FAIL, Finding, Threshold
 from decktalk.machine import Machine
+from decktalk.machine.run import hold_whole, raise_the_ceiling
 from decktalk.pipeline import Stage
 from decktalk.project import Project
 from decktalk.results import Cost, ErrorResult, Result, counted
@@ -308,31 +309,89 @@ class Session:
         `storyboard` makes the storyboard this run's checkpoint. It is drawn here once, before any run
         this answers yes for without asking and before the price on a terminal that asks, so a run
         that will spend has a sheet to look at and the person asked looks before answering.
+
+        The selection is judged first, by `Project.select`, in every path. The checkpoint then prices,
+        then draws, then asks. Under `--max-cost` the price is held to
+        the ceiling by `hold_whole`, the rule `build` holds itself to, before the storyboard is drawn
+        or anybody is asked, so a run the ceiling refuses draws nothing and asks nothing. A run under
+        `--max-cost` that could not be priced is refused by the reason it could not be, because no
+        ceiling holds a price nobody knows, with or without `--spend`.
         """
+        # The selection is judged before anything else, in every path, so a number no section carries
+        # is refused as INPUT before a price is asked for or a storyboard is drawn.
+        project.select(only)
+        buying = [stage for stage in Stage.keyed_stages() if stage in stages]
         if self.spend is not None:
-            if self.spend:
+            if self.spend and storyboard:
+                if buying and self.max_cost is not None:
+                    self._held(project, buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
                 self._checkpoint(project, storyboard=storyboard)
             return self.spend, False
-        buying = [stage for stage in Stage.keyed_stages() if stage in stages]
         if not buying:
             return False, False
-        try:
-            priced, unpriced = (
-                project.price(stages=buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score),
-                None,
-            )
-        except DeckTalkError as refused:
-            priced, unpriced = None, refused
+        priced, unpriced = self._held(
+            project, buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score
+        )
         if priced is not None and priced.free:
             self._checkpoint(project, storyboard=storyboard)
             return True, False
         if priced is not None and not priced.buys and not (replace_voiced or replace_score):
             return False, False
         if not self.asks:
-            raise ApprovalRequired(_cost_sentence(priced, unpriced), hint=_spend_hint(self.command, buying))
+            raise ApprovalRequired(_cost_sentence(priced, unpriced), hint=self._spend_hint(buying, only=only))
         self._checkpoint(project, storyboard=storyboard)
         self.say(priced.sentence if priced is not None else _unpriced_sentence(unpriced))
         return self.confirm(" ".join([*_warnings(replace_voiced, replace_score), "Spend that now?"])), True
+
+    def _held(
+        self,
+        project: Project,
+        buying: Sequence[Stage],
+        *,
+        only: Sequence[int] | None,
+        replace_voiced: bool,
+        replace_score: bool,
+    ) -> tuple[Cost | None, DeckTalkError | None]:
+        """This run's price held to `--max-cost`, or the refusal that kept it from being priced.
+
+        A ceiling cannot hold a price nobody knows, so under `--max-cost` the reason the run could not
+        be priced is raised as the refusal, the same with or without `--spend`. Without a ceiling it
+        is handed back, for the question and the approval refusal to name.
+        """
+        try:
+            priced = project.price(stages=buying, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
+        except DeckTalkError as refused:
+            if self.max_cost is not None:
+                raise
+            return None, refused
+        hold_whole(priced, self.max_cost, hint=lambda most: self._over_hint(most, only=only))
+        return priced, None
+
+    def _over_hint(self, most: float, *, only: Sequence[int] | None) -> str:
+        """The step that lets a run over its ceiling through, which needs `--spend` too when nobody can be asked."""
+        if self.spend is None and not self.asks:
+            return f"Run {self._again('--spend', only=only, cap=most)}, or narrow the run with --section."
+        return raise_the_ceiling(most)
+
+    def _spend_hint(self, buying: Sequence[Stage], *, only: Sequence[int] | None) -> str:
+        """The two whole commands that answer a spend refusal, which is what makes a hint a hint.
+
+        The first approves the cost the refusal named, so it keeps this run's selection and ceiling.
+        The second says what `--no-spend` plays in place of what each stage that buys would buy.
+        """
+        plays = " and ".join(PLAYS[stage] for stage in buying)
+        approve = self._again("--spend", only=only, cap=self.max_cost)
+        play = self._again("--no-spend", only=only, cap=None)
+        return f"Run {approve} to approve that cost, or {play} to play {plays}."
+
+    def _again(self, *flags: str, only: Sequence[int] | None, cap: float | None) -> str:
+        """This run's command again with its selection, its ceiling and then `flags`, so a hint names the same run."""
+        parts = [f"decktalk {self.command}"]
+        if only is not None:
+            parts.append("--section " + ",".join(str(number) for number in only))
+        if cap is not None:
+            parts.append(f"--max-cost {cap:.2f}")
+        return " ".join([*parts, *flags])
 
     def _checkpoint(self, project: Project, *, storyboard: bool) -> None:
         """Draw the storyboard this checkpoint points at, when it is one, and say where it is.
@@ -423,15 +482,6 @@ def _unpriced_sentence(unpriced: DeckTalkError | None) -> str:
     if unpriced is None:
         return "This run may buy something, and its price is not known."
     return f"This run may buy something, and it could not be priced: {unpriced}"
-
-
-def _spend_hint(command: str, buying: Sequence[Stage]) -> str:
-    """The two whole commands that answer a spend refusal, which is what makes a hint a hint.
-
-    The second says what `--no-spend` plays in place of what each stage that buys would buy.
-    """
-    plays = " and ".join(PLAYS[stage] for stage in buying)
-    return f"Run decktalk {command} --spend to approve that cost, or decktalk {command} --no-spend to play {plays}."
 
 
 def of(ctx: Context) -> Session:

@@ -11,6 +11,7 @@ from decktalk.events import StageProgress
 from decktalk.media import audio
 from decktalk.results import AssembleResult, Substitute, Word
 from decktalk.stages.assemble import assemble, slate
+from support.takes import a_take, narrated
 
 from .conftest import TITLED_TOML, draw_slate, open_run, spoken, take_index, write_project
 
@@ -115,6 +116,25 @@ def test_a_placeholder_narration_is_never_normalized(tmp_path, monkeypatch):  # 
     assert called == []
     assert result.loudness is None
     assert any("a take is a placeholder" in note for note in opened.notes())
+
+
+def test_one_placeholder_among_voiced_takes_skips_the_pass_and_says_a_take_is_one(tmp_path, monkeypatch):  # fmt: skip
+    """The pass is skipped when any one take is a placeholder, so the note names a take and not the whole narration."""
+    inputs = write_project(tmp_path)
+    opened = open_run(tmp_path)
+    a_film(inputs)
+    said = {1: spoken("alpha beta"), 2: spoken("gamma delta"), 3: spoken("epsilon")}
+    rows = [
+        a_take(number, seconds=2.0, voiced=number != 2, spoken=" ".join(word.word for word in words))
+        for number, words in said.items()
+    ]
+    narrated(inputs, *rows, words=said)
+    called: list[str] = []
+    monkeypatch.setattr(audio, "measure_loudness", lambda *_a, **_k: called.append("measured"))
+    result = assemble(inputs, opened.run)
+    assert called == []
+    assert result.loudness is None
+    assert any("because a take is a placeholder" in note for note in opened.notes())
 
 
 def test_a_film_that_stood_a_frame_in_for_a_missing_file_is_not_ok(tmp_path, monkeypatch):  # fmt: skip

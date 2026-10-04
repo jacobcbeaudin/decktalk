@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 from decktalk.machine import Machine
+from decktalk.toolchain.cache import standard_cache_dir
 
 pytestmark = pytest.mark.platform
 """Every test here is about this machine, so only the group that names this platform runs one."""
@@ -54,11 +55,14 @@ def test_doctor_names_this_platform_and_this_python() -> None:
 
 def test_the_cache_is_one_directory_per_user_on_this_platform() -> None:
     """A second project on this machine downloads nothing, which only holds while the cache is shared."""
-    report = Machine.from_environment().doctor()
-    cache = Path(report.cache)
+    machine = Machine.from_environment()
+    if machine.toolchain.tools.cache_dir:
+        pytest.skip("this machine names its own cache with tools.cache_dir")
+    cache = Path(machine.doctor().cache)
     assert cache.is_absolute()
-    assert cache.name == "decktalk"
-    assert cache.parent != Path.cwd(), "a cache under the working directory is a cache per project"
+    assert cache == standard_cache_dir(dict(os.environ), Path.home()), "the cache is the one this platform names"
+    assert "decktalk" in cache.parts, "the cache is inside DeckTalk's own per-user folder"
+    assert not cache.is_relative_to(Path.cwd()), "a cache under the working directory is a cache per project"
 
 
 def test_every_tool_path_this_platform_reports_is_named_the_way_it_runs_one() -> None:

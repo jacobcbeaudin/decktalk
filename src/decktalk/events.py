@@ -42,7 +42,7 @@ class Unit(Enum):
 
     TAKE = "take"
     SECTION = "section"
-    ASSET = "asset"
+    SCORE_ITEM = "score_item"
     PASS = "pass"
     PROBE = "probe"
 
@@ -171,7 +171,9 @@ class TakeCharged(Event):
     A `cost.priced` event prices a whole run, before or after it. This one is written at the moment a take
     is bought, once per take, so a host that keeps its own ledger can record every charge as it
     happens and can tell by the take's digest that a retried run did not buy the same take twice. A
-    provider that declares it bills nothing is paid nothing, so its takes write no line.
+    provider that declares it bills nothing is paid nothing, so its takes write no line. A request
+    whose reply broke after it was sent may have been billed and is never sent again, so it writes a
+    line flagged `possibly_charged`, which a ledger counts toward a ceiling and never toward money spent.
     """
 
     event: Literal["take.charged"] = Field("take.charged", description=MOMENT)
@@ -179,6 +181,13 @@ class TakeCharged(Event):
     digest: str = Field(pattern=r"^[0-9a-f]+$", description="The take's digest, which names its files.")
     characters: int = Field(ge=0, description="How many characters were sent for this take.")
     dollars: float = Field(ge=0, description="What this take cost at the price in force, in US dollars.")
+    possibly_charged: bool = Field(
+        False,
+        description=(
+            "True when the reply broke after the request was sent, so the provider may or may not have billed "
+            "it and no take was written. Its dollars count toward the run's ceiling and never toward what it spent."
+        ),
+    )
 
 
 class SoundCharged(Event):
@@ -186,7 +195,8 @@ class SoundCharged(Event):
 
     It is written the moment the provider answers, once per paid request, so a host that keeps its
     own ledger records every sound it paid for and can tell by the digest that a retried run did not
-    buy the same request twice.
+    buy the same request twice. A request whose reply broke after it was sent, or that a Ctrl-C
+    abandoned, may have been billed, so it writes a line flagged `possibly_charged`, as `take.charged` does.
     """
 
     event: Literal["sound.charged"] = Field("sound.charged", description=MOMENT)
@@ -195,6 +205,14 @@ class SoundCharged(Event):
     digest: str = Field(pattern=r"^[0-9a-f]+$", description="The digest of the request that was paid for.")
     seconds: float = Field(ge=0, description="How many seconds of audio were asked for.")
     dollars: float = Field(ge=0, description="What this request cost at the rate in force, in US dollars.")
+    possibly_charged: bool = Field(
+        False,
+        description=(
+            "True when the reply broke after the request was sent, or a Ctrl-C abandoned it, so the provider may or "
+            "may not have billed it and no sound was written. Its dollars count toward the run's ceiling and never "
+            "toward what it spent."
+        ),
+    )
 
 
 class ToolFetch(Event):

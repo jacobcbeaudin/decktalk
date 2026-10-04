@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import threading
+import time
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,14 +21,24 @@ from decktalk.artifacts import (
     Takes,
     file_digest,
     is_placeholder,
+    stored,
     take_file,
     words_file,
 )
 from decktalk.cli import main
-from decktalk.errors import ApprovalRequired, ErrorCode, InputError, ProjectLocked, ProviderError
+from decktalk.errors import (
+    ApprovalRequired,
+    Cancel,
+    Cancelled,
+    DeckTalkError,
+    ErrorCode,
+    InputError,
+    ProjectLocked,
+    ProviderError,
+)
 from decktalk.events import CostPriced, RunLog, SectionDone, SectionStart, StageProgress, TakeCharged, Unit
 from decktalk.findings import Code, Severity
-from decktalk.inputs import Inputs
+from decktalk.inputs import Inputs, take_places
 from decktalk.media import audio
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import CostState, NarrateResult, TakeOutcome, Word, up_to_the_cent
@@ -35,6 +46,7 @@ from decktalk.settings import MACHINE_FILE_VARIABLE
 from decktalk.speech import Piece, SpeechContext, SpeechFactory, SpeechRequest
 from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import narrate as narrate_stage
+from decktalk.stages.cost import charge_of
 from decktalk.stages.narrate import narrate, take_states
 from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE
 from support.fakes import FAKE_VOICE_NAME, FREE_VOICE_NAME, FakeVoice
@@ -46,6 +58,9 @@ from support.runs import Watched, a_voiced_run
 from support.takes import TAKE_SUFFIX, damage_take
 
 from .conftest import ENVIRON, FREE_TOML, SCRIPT, TOML, VOICE_ID
+
+LEAVE_GAP_SECONDS = 0.3
+"""Calibration: how long after the first Ctrl-C the second is pressed, long enough for the first to be answered."""
 
 KEY = "ELEVENLABS_API_KEY"
 """The credential a voiced take is bought with, which a run that buys nothing never reads."""
@@ -73,7 +88,6 @@ def test_every_file_the_run_wrote_is_reported(inputs: Inputs, watched: Watched) 
     written = {path.as_posix() for path in result.written}
     assert "build/narrate/takes.json" in written
     assert "build/narrate/narration.mp3" in written
-    assert result.takes is not None
     assert result.takes.as_posix() == "build/narrate/takes.json"
     index = Takes.read(inputs.workspace.takes_path)
     assert index is not None
@@ -218,6 +232,8 @@ def test_a_paid_run_sends_one_request_per_section_and_reports_what_it_charged(
     charged = watched.of(TakeCharged)
     assert sorted(line.section for line in charged) == [1, 2, 3]
     assert sum(line.characters for line in charged) == result.cost.characters
+    assert not any(line.possibly_charged for line in charged), "a take that arrived was paid for"
+    assert result.cost.ceiling_dollars == result.cost.dollars
 
 
 def test_a_cap_of_nothing_refuses_a_take_that_costs_under_a_cent(
@@ -993,17 +1009,190 @@ def test_ctrl_c_during_a_paid_run_buys_the_takes_in_flight_and_none_still_queued
 
     pressing = threading.Thread(target=press, daemon=True)
     try:
-        with interrupts_raise(), pytest.raises(KeyboardInterrupt):
+        with interrupts_raise(), pytest.raises(Cancelled) as stopped:
             pressing.start()
-            narrate(project, make_run(project, spend=True).run)
+            narrate(project, (watched := make_run(project, spend=True)).run)
     finally:
         voice.release.set()
         pressing.join(timeout=10)
     assert voice.sent == 2, f"{voice.sent} takes were bought, and only the 2 in flight should have been"
     assert voice.answered == 2
+    assert isinstance(stopped.value.__cause__, KeyboardInterrupt)
+    result = stopped.value.result
+    assert isinstance(result, NarrateResult), "the interrupted run still answers with what it bought"
+    charged = [line.dollars for line in watched.of(TakeCharged)]
+    assert len(charged) == 2
+    assert result.cost.state is CostState.CHARGED
+    assert result.cost.dollars == up_to_the_cent(charged)
     index = Takes.read(project.workspace.takes_path)
     assert index is not None
     assert [row.section for row in index.sections] == [1, 2], "the takes already paid for are kept"
+
+
+class StoppingVoice:
+    """A voice that answers every take, and asks the run to stop while it answers the first."""
+
+    name = FAKE_VOICE_NAME
+
+    def __init__(self, cancel: Cancel) -> None:
+        self.cancel = cancel
+        self.sent = 0
+
+    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:  # noqa: ARG002  (the name the protocol calls it by)
+        self.sent += 1
+        self.cancel.cancel()
+        return b"take", [Word(word="A", start=0.0, end=0.4)]
+
+
+def test_a_run_stopped_after_a_take_answers_with_what_it_bought(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    """The take.charged lines are not the only record of a stopped run: its refusal carries the result and its cost."""
+    one_at_a_time = {"narration": {"concurrency": 1}}
+    project = Inputs.load(six_sections(make_inputs).root, environ=ENVIRON, machine=one_at_a_time)
+    watched = make_run(project, spend=True)
+    voice = StoppingVoice(watched.run.cancel)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
+    with pytest.raises(Cancelled) as stopped:
+        narrate(project, watched.run)
+    assert voice.sent == 1
+    result = stopped.value.result
+    assert isinstance(result, NarrateResult)
+    assert result.ok is False
+    assert result.error is not None and result.error.code is ErrorCode.CANCELLED
+    assert [(row.section, row.outcome) for row in result.sections] == [(1, TakeOutcome.VOICED)]
+    charged = [line.dollars for line in watched.of(TakeCharged)]
+    assert len(charged) == 1
+    assert result.cost.state is CostState.CHARGED
+    assert result.cost.sections == (1,)
+    assert result.cost.dollars == up_to_the_cent(charged) > 0
+    assert result.takes == Path("build/narrate/takes.json")
+
+
+@aimed_signals
+def test_a_second_ctrl_c_counts_the_takes_it_left_in_flight_into_the_ceiling(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    """The run leaves without the replies it was waiting on, which the provider may still bill, so they are possible."""
+    project = six_sections(make_inputs)
+    voice = HeldVoice(hold=project.settings.narration.concurrency)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
+    # Priced before the run, because the replies it leaves behind still land on disk once they are let go.
+    in_flight = [take.buy for take in take_states(project).plan(spend=True).takes[: voice.hold] if take.buy]
+
+    def press() -> None:
+        assert voice.in_flight.wait(timeout=10)
+        press_ctrl_c()
+        time.sleep(LEAVE_GAP_SECONDS)
+        press_ctrl_c()
+
+    pressing = threading.Thread(target=press, daemon=True)
+    try:
+        with interrupts_raise(), pytest.raises(Cancelled) as stopped:
+            pressing.start()
+            narrate(project, make_run(project, spend=True).run)
+    finally:
+        voice.release.set()
+        pressing.join(timeout=10)
+    result = stopped.value.result
+    assert isinstance(result, NarrateResult)
+    assert result.cost.dollars == 0
+    assert result.cost.ceiling_dollars == up_to_the_cent(charge_of(project, buy) or 0.0 for buy in in_flight) > 0
+
+
+@pytest.mark.usefixtures("fake_voice")
+def test_a_take_charged_and_then_unwritable_is_counted_as_spent(
+    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The provider was paid before the disk refused the take, so the result spends what the charge line says."""
+
+    def full(*_args: object, **_kwargs: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(take_places, "_replace_pair", full)
+    watched = make_run(inputs, spend=True)
+    with pytest.raises(DeckTalkError) as refused:
+        narrate(inputs, watched.run, only=[1])
+    (line,) = watched.of(TakeCharged)
+    result = refused.value.result
+    assert isinstance(result, NarrateResult)
+    assert result.cost.dollars == up_to_the_cent([line.dollars]) > 0
+    assert result.cost.ceiling_dollars == result.cost.dollars
+
+
+@pytest.mark.usefixtures("fake_voice")
+def test_a_take_index_the_disk_refuses_after_takes_were_charged_reports_what_they_cost(
+    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full disk after the voice was paid is a refusal naming the file, and it carries what the run bought."""
+    real = stored.replace_all
+
+    def full(texts: Mapping[Path, str | bytes]) -> None:
+        if any(path.name == "takes.json" for path in texts):
+            raise OSError(28, "No space left on device", "takes.json")
+        real(texts)
+
+    monkeypatch.setattr(stored, "replace_all", full)
+    watched = make_run(inputs, spend=True)
+    with pytest.raises(InputError, match="takes.json") as refused:
+        narrate(inputs, watched.run)
+    charged = [line.dollars for line in watched.of(TakeCharged)]
+    assert charged
+    result = refused.value.result
+    assert isinstance(result, NarrateResult)
+    assert result.cost.dollars == up_to_the_cent(charged)
+
+
+@pytest.mark.usefixtures("fake_voice")
+def test_a_take_whose_charge_line_failed_is_still_counted_as_bought(
+    inputs: Inputs, make_run: Callable[..., Watched], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The voice answered, so it was paid, whether or not its line reached the stream before the run stopped."""
+
+    def unwritten(*_args: object, **_kwargs: object) -> None:
+        raise OSError(28, "No space left on device", "build/events")
+
+    monkeypatch.setattr(narrate_stage, "charge_take", unwritten)
+    with pytest.raises(InputError) as refused:
+        narrate(inputs, make_run(inputs, spend=True).run, only=[1])
+    result = refused.value.result
+    assert isinstance(result, NarrateResult)
+    assert result.cost.dollars > 0
+    assert result.cost.ceiling_dollars == result.cost.dollars
+
+
+class BrokenReplyVoice:
+    """A voice whose reply breaks once the request was sent, so the provider may have billed it."""
+
+    name = FAKE_VOICE_NAME
+
+    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:  # noqa: ARG002  (the name the protocol calls it by)
+        raise ProviderError(
+            "https://api.test/v1/speech stopped answering (TimeoutError: timed out). The request was possibly "
+            "charged, so it is not sent again.",
+            possibly_charged=True,
+        )
+
+
+def test_a_take_whose_reply_broke_is_on_the_stream_and_in_the_ceiling_never_the_dollars(
+    inputs: Inputs, make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    """A possibly charged take is a `take.charged` line flagged as possible, and the run's ceiling, never its spend."""
+    voices[FAKE_VOICE_NAME] = lambda _context: BrokenReplyVoice()
+    watched = make_run(inputs, spend=True)
+    with pytest.raises(ProviderError) as refused:
+        narrate(inputs, watched.run, only=[1])
+    (line,) = watched.of(TakeCharged)
+    assert line.section == 1
+    assert line.possibly_charged is True
+    assert line.dollars > 0
+    result = refused.value.result
+    assert isinstance(result, NarrateResult)
+    assert result.error is not None and result.error.code is ErrorCode.PROVIDER
+    assert result.cost.state is CostState.CHARGED
+    assert result.cost.dollars == 0
+    assert result.cost.ceiling_dollars == up_to_the_cent([line.dollars])
+    assert "up to" in result.cost.sentence
 
 
 # ---- a project's own takes_dir ------------------------------------------------------------
@@ -1159,7 +1348,7 @@ def test_a_run_stopped_while_it_writes_a_take_leaves_neither_half_of_it(
         return opened(self, mode, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", stopped)
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(Cancelled):
         narrate(inputs, make_run(inputs, spend=True).run, only=[1])
     monkeypatch.setattr(Path, "open", opened)
     assert take_files(inputs.workspace.takes) == set(), "half a pair was left on disk"

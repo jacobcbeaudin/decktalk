@@ -413,7 +413,7 @@
     },
     "ErrorInfo": {
       "additionalProperties": false,
-      "description": "The `error` of a result: why the command could not run, and what would let it.\n\nIt is filled only when the command could not run at all, so a reader that finds it null knows\nthe command ran and that every judgement is in `findings`.",
+      "description": "The `error` of a result: why the command could not run, and what would let it.\n\nIt is filled when the command could not run, and on the result a stopped or refused run carries\nof what it bought. A reader that finds it null knows the command ran to its end and that every\njudgement is in `findings`.",
       "properties": {
         "code": {
           "$ref": "#/$defs/ErrorCode",
@@ -1061,7 +1061,7 @@
     },
     "SoundCharged": {
       "additionalProperties": false,
-      "description": "The sound provider was paid for one request, which is a score item or one part of its music.\n\nIt is written the moment the provider answers, once per paid request, so a host that keeps its\nown ledger records every sound it paid for and can tell by the digest that a retried run did not\nbuy the same request twice.",
+      "description": "The sound provider was paid for one request, which is a score item or one part of its music.\n\nIt is written the moment the provider answers, once per paid request, so a host that keeps its\nown ledger records every sound it paid for and can tell by the digest that a retried run did not\nbuy the same request twice. A request whose reply broke after it was sent, or that a Ctrl-C\nabandoned, may have been billed, so it writes a line flagged `possibly_charged`, as `take.charged` does.",
       "properties": {
         "event": {
           "const": "sound.charged",
@@ -1115,6 +1115,12 @@
           "minimum": 0,
           "title": "Dollars",
           "type": "number"
+        },
+        "possibly_charged": {
+          "default": false,
+          "description": "True when the reply broke after the request was sent, or a Ctrl-C abandoned it, so the provider may or may not have billed it and no sound was written. Its dollars count toward the run's ceiling and never toward what it spent.",
+          "title": "Possibly Charged",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1456,7 +1462,7 @@
     },
     "TakeCharged": {
       "additionalProperties": false,
-      "description": "The voice provider was paid for one take, which is the line a ledger of real charges reads.\n\nA `cost.priced` event prices a whole run, before or after it. This one is written at the moment a take\nis bought, once per take, so a host that keeps its own ledger can record every charge as it\nhappens and can tell by the take's digest that a retried run did not buy the same take twice. A\nprovider that declares it bills nothing is paid nothing, so its takes write no line.",
+      "description": "The voice provider was paid for one take, which is the line a ledger of real charges reads.\n\nA `cost.priced` event prices a whole run, before or after it. This one is written at the moment a take\nis bought, once per take, so a host that keeps its own ledger can record every charge as it\nhappens and can tell by the take's digest that a retried run did not buy the same take twice. A\nprovider that declares it bills nothing is paid nothing, so its takes write no line. A request\nwhose reply broke after it was sent may have been billed and is never sent again, so it writes a\nline flagged `possibly_charged`, which a ledger counts toward a ceiling and never toward money spent.",
       "properties": {
         "event": {
           "const": "take.charged",
@@ -1507,6 +1513,12 @@
           "minimum": 0,
           "title": "Dollars",
           "type": "number"
+        },
+        "possibly_charged": {
+          "default": false,
+          "description": "True when the reply broke after the request was sent, so the provider may or may not have billed it and no take was written. Its dollars count toward the run's ceiling and never toward what it spent.",
+          "title": "Possibly Charged",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1592,7 +1604,7 @@
       "enum": [
         "take",
         "section",
-        "asset",
+        "score_item",
         "pass",
         "probe"
       ],

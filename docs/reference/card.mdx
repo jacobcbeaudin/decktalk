@@ -276,9 +276,9 @@ Every command's `--json` is one flat object. There is no wrapper, no `command` k
 | `schema` | The shape version, always `1`. |
 | `ok` | True when the command ran and judged nothing that reaches the threshold `--fail-on` and `--allow` set, so it is true exactly when the command exits 0. |
 | `findings` | Every judgement, in the order it was made. |
-| `error` | Filled only when the command could not run, and null otherwise. |
+| `error` | Filled when the command could not run, or when a run stopped or was refused after it made something and carries its own result, and null otherwise. |
 | `run` | The run id, on every result whose command opens a run. |
-| `written` | Every file written, in the order it was written, on every result that writes. A stage writes project-relative paths, and `config set` and `config unset` write the absolute path of the settings file. |
+| `written` | Every file written, project-relative, on every result that writes. A machine settings write names the machine file by its absolute path. |
 
 `decktalk schema` is the one exemption: it prints the contract document itself with no reserved keys
 around it, because a JSON Schema document inside a wrapper is not that document.

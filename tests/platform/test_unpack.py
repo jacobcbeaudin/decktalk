@@ -95,13 +95,18 @@ def test_an_archive_that_holds_no_member_the_table_names_is_refused(tmp_path: Pa
 
 
 def test_the_cache_sits_where_this_platform_keeps_a_per_user_cache() -> None:
-    """A tool fetched into the wrong place is fetched again on every run, once per platform."""
+    """A tool fetched into the wrong place is fetched again on every run, once per platform.
+
+    Each branch is a row of the cache table in `docs/requirements.mdx`. Windows has one local
+    per-user root for the cache and the take store, so the cache is a folder of its own inside
+    DeckTalk's folder there rather than DeckTalk's folder itself.
+    """
     root = cache_dir()
-    assert root.name == "decktalk"
     assert install_dir().is_relative_to(root)
+    home = Path.home()
     if sys.platform == "darwin":
-        assert root.parent == Path.home() / "Library" / "Caches"
+        assert root == home / "Library" / "Caches" / "decktalk"
     elif WINDOWS:
-        assert root.parent.is_absolute()
+        assert root == Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local") / "decktalk" / "cache"
     else:
-        assert root.parent == Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+        assert root == Path(os.environ.get("XDG_CACHE_HOME") or home / ".cache") / "decktalk"

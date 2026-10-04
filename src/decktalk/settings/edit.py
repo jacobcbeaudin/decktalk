@@ -27,6 +27,7 @@ from decktalk.settings.layers import (
     Loaded,
     json_value,
     load,
+    named_file,
     not_toml,
     read_toml,
     refuse_off_scope,
@@ -125,12 +126,12 @@ def write(
     tree = _in_force(path, scope, {key: edited.value}, environ)
     return ConfigSetResult(
         ok=True,
-        written=() if dry_run else (path,),
+        written=() if dry_run else (named_file(path, scope),),
         key=key,
         value=json_value(edited.value),
         previous=None if edited.previous is ABSENT else json_value(edited.previous),
         scope=scope,
-        file=path,
+        file=named_file(path, scope),
         dry_run=dry_run,
         effective=json_value(value_of(tree.settings, key)),
         layer=tree.layers.winner(key).layer,
@@ -164,11 +165,11 @@ def unset(path: Path, key: str, *more: str, scope: Scope, environ: Mapping[str, 
     tree = _in_force(path, scope, {}, environ)
     return ConfigUnsetResult(
         ok=True,
-        written=(path,) if stating else (),
+        written=(named_file(path, scope),) if stating else (),
         keys=keys,
         previous=None if previous is ABSENT else json_value(previous),
         scope=scope,
-        file=path,
+        file=named_file(path, scope),
         effective=json_value(value_of(tree.settings, key)),
         layer=tree.layers.winner(key).layer,
     )

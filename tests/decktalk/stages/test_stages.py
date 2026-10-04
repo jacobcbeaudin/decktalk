@@ -34,9 +34,10 @@ def test_a_run_that_names_sections_selects_those_alone() -> None:
     assert not wanted(4)
 
 
-def test_an_empty_selection_still_selects_every_section() -> None:
-    """An empty run of numbers is a caller that named none, which is every section and not no section."""
-    assert selects([])(2)
+def test_an_empty_selection_selects_no_section() -> None:
+    """Only a caller that passes no selection at all means every section, so an empty one never widens."""
+    assert not selects([])(2)
+    assert not selects(())(1)
 
 
 # ---- the voice ----------------------------------------------------------------------------------

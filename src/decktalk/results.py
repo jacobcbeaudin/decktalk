@@ -2,10 +2,10 @@
 
 `Result` reserves four keys and every result carries them. `schema` is the shape version, `ok` is
 true when the command ran and judged nothing its threshold fails on, `findings` holds every
-judgement and `error` is filled only when the command could not run at all. A result whose command
-opens a run also declares `run`, and one whose command writes files also declares `written`, so a
-reader learns from the schema which commands do those things rather than meeting a null on the ones
-that do not.
+judgement and `error` is filled when the command could not run, or on the result a run stopped or
+refused after it made something carries. A result whose command opens a run also declares `run`, and
+one whose command writes files also declares `written`, so a reader learns from the schema which
+commands do those things rather than meeting a null on the ones that do not.
 
 A result also declares two facts about its own command rather than about its own JSON.
 `reports_findings` says the command can report a judgement and `spends` says it can buy something,
@@ -59,6 +59,18 @@ Written = Annotated[
     Field(default=(), description="Every file this run wrote, project-relative, in the order it wrote them."),
 ]
 """The files a run wrote, declared once and carried by every result whose command writes any."""
+
+SETTINGS_FILE = (
+    "decktalk.toml, project-relative, for a project write, or the machine file's absolute path for a machine "
+    "write, because the machine file sits outside every project."
+)
+"""How a settings write names the file it wrote, which is the one result whose file may sit outside the project."""
+
+SettingsWritten = Annotated[
+    tuple[ProjectPath, ...],
+    Field(default=(), description=f"The settings file this call wrote, or nothing when it wrote none: {SETTINGS_FILE}"),
+]
+"""The file a settings write wrote, which names the machine file whole because no project-relative path can."""
 
 Elapsed = Annotated[
     float,
@@ -321,17 +333,16 @@ class _Priced(Model):
         return counted(self.characters, "character")
 
     @property
-    def _maker(self) -> str:
-        """Who a price that is not money is owed to: the voice for speech, and the provider for sound alone."""
-        return "voice" if self.characters > 0 else "provider"
-
-    @property
     def _made(self) -> str:
         """The verb a price that is not money says what the run does with, which is voicing speech and making sound."""
         charged = self.state is CostState.CHARGED
         if self.characters > 0:
             return "voiced" if charged else "voices"
         return "made" if charged else "makes"
+
+    def _possibly(self, ceiling: float) -> str:
+        """The clause for the requests a run sent that were never answered, naming the most the run may have spent."""
+        return f"up to {money(ceiling)} if the provider billed the requests it never answered, at {self.rate}"
 
     @property
     def sentence(self) -> str:
@@ -345,14 +356,15 @@ class _Priced(Model):
         rate = self.rate
         made = self._made
         if self.free and self.buys and self.ceiling_dollars == 0:
-            return f"This run {made} {self.amount} for nothing, because the {self._maker} is free."
+            return f"This run {made} {self.amount} for nothing, because the provider is free."
         if self.billing is BillingBasis.UNDECLARED and self.buys:
-            return (
-                f"This run {made} {self.amount} on a {self._maker} that declares no bill, so DeckTalk cannot price it."
-            )
+            return f"This run {made} {self.amount} on a provider that declares no bill, so DeckTalk cannot price it."
         if self.state is CostState.CHARGED:
             if self.dollars == self.ceiling_dollars == 0:
                 return "This run bought nothing."
+            if self.ceiling_dollars > self.dollars:
+                on = f" on {self.amount}" if self.dollars > 0 else ""
+                return f"This run spent {money(self.dollars)}{on}, and {self._possibly(self.ceiling_dollars)}."
             return f"This run spent {money(self.dollars)} on {self.amount} at {rate}."
         if self.ceiling_dollars == 0:
             return "This run buys nothing."
@@ -398,13 +410,19 @@ class StageCost(_Priced):
             preposition = "on" if self.state is CostState.CHARGED else "for"
             return f"{money(self.dollars)} {preposition} {STAGE_OWNER[self.stage]} {self.amount} at {self.rate}"
         if self.free:
-            return f"{self._made} {self.amount} for nothing, because the {self._maker} is free"
+            return f"{self._made} {self.amount} for nothing, because the provider is free"
         if self.billing is BillingBasis.UNDECLARED:
-            return f"{self._made} {self.amount} on a {self._maker} that declares no bill, so DeckTalk cannot price it"
+            return f"{self._made} {self.amount} on a provider that declares no bill, so DeckTalk cannot price it"
         return ""
 
     def up_to(self, ceiling: float) -> str:
-        """The clause for this row's takes that could not be matched to a voice, naming the whole run's `ceiling`."""
+        """The clause for what this row may cost beyond its figure, naming the whole run's `ceiling`.
+
+        A price says that is a take that could not be matched to a voice, and a charge a request whose
+        reply broke.
+        """
+        if self.state is CostState.CHARGED:
+            return self._possibly(ceiling)
         return (
             f"up to {money(ceiling)} if the takes on disk that could not be matched to a voice need making again, "
             f"at {self.rate}"
@@ -443,7 +461,7 @@ class Cost(_Priced):
         for row in rows:
             if not row.priced and row.clause:
                 others.append(row.clause)
-            if row.state is CostState.ESTIMATE and row.ceiling_dollars > row.dollars:
+            if row.ceiling_dollars > row.dollars:
                 others.append(row.up_to(self.ceiling_dollars))
         if len(priced) > 1:
             opening = f"This run {verb} {money(self.dollars)}: {', and '.join(priced)}"
@@ -556,7 +574,13 @@ class Result(Model):
         )
     )
     findings: tuple[Finding, ...] = Field((), description="Every judgement this call made, in the order it made them.")
-    error: ErrorInfo | None = Field(None, description="Filled only when the command could not run.")
+    error: ErrorInfo | None = Field(
+        None,
+        description=(
+            "Filled when the command could not run, or when a run stopped or was refused after it made something "
+            "and carries its own result, and null otherwise."
+        ),
+    )
 
 
 class ErrorResult(Result):
@@ -943,12 +967,12 @@ class ConfigGetResult(Result):
 class ConfigSetResult(Result):
     """What a settings write changed, or what it would change on a dry run."""
 
-    written: Written
+    written: SettingsWritten
     key: str = Field(description="The key's dotted name.")
     value: JsonValue = Field(description="The value this call wrote.")
     previous: JsonValue = Field(description="The value that file held before, or null when it held none.")
     scope: Scope = Field(description="Which file the write landed in.")
-    file: ProjectPath = Field(description="The file that was written, project-relative.")
+    file: ProjectPath = Field(description=f"The settings file this call acts on: {SETTINGS_FILE}")
     effective: JsonValue = Field(description="The value in force once this call is done, which a higher layer may set.")
     layer: Layer = Field(description="Which layer the value in force comes from, so a shadowed write says it is one.")
     dry_run: bool = Field(description="True when the call reported the change and wrote nothing.")
@@ -957,11 +981,11 @@ class ConfigSetResult(Result):
 class ConfigUnsetResult(Result):
     """What a settings removal took out, so the layer below it wins again."""
 
-    written: Written
+    written: SettingsWritten
     keys: tuple[str, ...] = Field(description="Every key that file no longer sets, in the order this call named them.")
     previous: JsonValue = Field(description="The value that file held before, or null when it held none.")
     scope: Scope = Field(description="Which file the removal landed in.")
-    file: ProjectPath = Field(description="The file that was written, project-relative.")
+    file: ProjectPath = Field(description=f"The settings file this call acts on: {SETTINGS_FILE}")
     effective: JsonValue = Field(description="The value in force once this call is done, which the layer below sets.")
     layer: Layer = Field(description="Which layer decides the key now, so a variable that still sets it says so.")
 
@@ -1014,7 +1038,7 @@ class NarrateResult(Result):
     spend: bool = Field(description=SPEND)
     sections: tuple[SectionTake, ...] = Field(description="Every section this run considered, in script order.")
     cost: Cost = Field(description="What this run cost, or would have cost.")
-    takes: ProjectPath | None = Field(None, description="The take index this run wrote, project-relative.")
+    takes: ProjectPath = Field(description="The take index this run wrote, project-relative.")
     elapsed_seconds: Elapsed
 
 

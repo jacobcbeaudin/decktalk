@@ -113,9 +113,6 @@ def voice_id_of(inputs: Inputs) -> str:
 VOICE_ID_VARIABLE = BY_ID["voice.id"].environment
 """The variable that overrides `[voice] id`, for anyone who keeps the id out of the file."""
 
-UNNAMED = f"[voice] id is empty and {VOICE_ID_VARIABLE} is not set"
-"""Why no voice is named, in the words `NO_VOICE_NOTE` says."""
-
 NO_VOICE_NOTE = (
     f"No voice is named, so no take on disk can be matched, because [voice] id is empty and {VOICE_ID_VARIABLE} "
     "is not set."
@@ -125,7 +122,6 @@ NO_VOICE_NOTE = (
 
 __all__ = [
     "NO_VOICE_NOTE",
-    "UNNAMED",
     "VOICE_ID_VARIABLE",
     "DROPPED_PAUSE_HINT",
     "dropped_pauses",

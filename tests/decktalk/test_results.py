@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel
 
 from decktalk import errors, events, findings, results
-from decktalk.results import RESULTS, Result
+from decktalk.results import RESULTS, CostState, Result
 from support.commands import RESERVED_KEYS
 from support.costs import a_cost
 from support.paths import REPO
@@ -205,6 +205,14 @@ def test_every_cost_field_is_required() -> None:
     assert "stage" in results.StageCost.model_fields
 
 
+def test_a_narrate_result_always_names_its_take_index() -> None:
+    """Narrate writes the take index on every run, so a reader never meets a narrate result without one."""
+    field = results.NarrateResult.model_fields["takes"]
+    assert field.is_required()
+    assert type(None) not in typing.get_args(field.annotation)
+    assert "takes" in results.NarrateResult.model_json_schema()["required"]
+
+
 def test_a_price_that_is_certain_is_stated_once() -> None:
     assert a_cost(0.14, 0.14).sentence == "This run costs $0.14 for 466 characters at $0.30 per 1,000 characters."
 
@@ -230,6 +238,17 @@ def test_a_charged_price_is_stated_as_spent() -> None:
     assert charged.sentence.startswith("This run spent $0.14")
 
 
+def test_a_charged_price_with_a_ceiling_names_what_may_have_been_billed() -> None:
+    """A request never answered, its reply broken or abandoned, may have been billed, so a spent price says how far."""
+    said = a_cost(0.12, 0.15, state=CostState.CHARGED).sentence
+    assert said.startswith("This run spent $0.12 on ")
+    assert "up to $0.15 if the provider billed the requests it never answered" in said
+    assert a_cost(0.0, 0.01, state=CostState.CHARGED).sentence == (
+        "This run spent $0.00, and up to $0.01 if the provider billed the requests it never answered, at $0.30 per "
+        "1,000 characters."
+    )
+
+
 def test_a_price_of_nothing_says_the_run_buys_nothing() -> None:
     assert a_cost(0.0, 0.0).sentence == "This run buys nothing."
 
@@ -248,7 +267,7 @@ def test_a_free_price_for_sound_names_the_provider_rather_than_a_voice() -> None
     sound = a_cost(0.0, 0.0, sections=(), billing=results.BillingBasis.FREE).model_copy(update={"seconds": 12.0})
     assert sound.sentence == "This run makes about 12 seconds of audio for nothing, because the provider is free."
     speech = a_cost(0.0, 0.0, billing=results.BillingBasis.FREE).model_copy(update={"characters": 476})
-    assert speech.sentence == "This run voices 476 characters for nothing, because the voice is free."
+    assert speech.sentence == "This run voices 476 characters for nothing, because the provider is free."
 
 
 def test_a_price_that_covers_nothing_buys_nothing() -> None:

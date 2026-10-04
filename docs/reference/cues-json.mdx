@@ -136,7 +136,7 @@ text scan can see.
 `decktalk check` makes the comparison against a catalog it reads live, and names every moment that
 this file has no row for.
 
-{/* sample: decktalk check --no-frames, on a fresh decktalk init my-lesson with the 2.1:formula row deleted, which exits 1 */}
+{/* sample: cue-row-missing, decktalk check --no-frames, on a fresh decktalk init my-lesson with the 2.1:formula row deleted, which exits 1 */}
 ```text
 No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.

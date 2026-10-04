@@ -32,6 +32,7 @@ from pydantic import Field
 from decktalk.artifacts.stored import DIGEST_DIGITS, Stored, engine_digest, file_digest
 from decktalk.findings import Finding, Model
 from decktalk.media.pagereport import Recording
+from decktalk.results import SectionNumber
 
 
 def input_digest(parts: Sequence[str], files: Mapping[str, Path]) -> str:
@@ -82,7 +83,7 @@ class RecordingLog(Stored):
 
     label: ClassVar[str] = "the log of one section's recording"
 
-    section: int = Field(ge=1, description="The section this recording plays.")
+    section: SectionNumber
     digest: str = Field(description="The digest of what this section was recorded from, which keys a skip.")
     recording: Recording = Field(description="What the recorder knew: the page, its files, its timings and its report.")
     start: Start | None = Field(

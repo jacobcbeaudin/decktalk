@@ -13,8 +13,8 @@ run reported.
 
 `decktalk verify` decodes the finished film, finds the frame where each reveal starts to change, and
 measures how far that frame sits from the word its cue names. A reveal passes when it lands within
-`verify.cue_offset_max_ms` of its word plus half a frame, early or late, and the table grades every
-reveal against `verify.cue_offset_max_ms` alone.
+`verify.cue_offset_max_ms` of its word plus half a frame, early or late, and the table counts a reveal
+past the limit by that same rule, so it names the reveals verify reported.
 
 | Takes | Reveals | Median | Worst | Limit | Past the limit |
 |---|---|---|---|---|---|

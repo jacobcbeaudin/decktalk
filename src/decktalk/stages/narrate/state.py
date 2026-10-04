@@ -15,15 +15,15 @@ report it, so the four of them never disagree about a take.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Collection, Iterator, Mapping, Sequence
+from dataclasses import dataclass, replace
 
 from decktalk.artifacts import EstimatedWords, ProviderWords, Take, on_section_clock
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import ScriptSection
 from decktalk.inputs.take_places import TakeFiles
-from decktalk.results import Cost, CostState, SectionTake, TakeOutcome, TakeState, counted
+from decktalk.results import Cost, CostState, TakeOutcome, TakeState, counted
 from decktalk.settings import PROJECT_FILE
 from decktalk.speech import SpeechRequest, canonical_text
 from decktalk.stages.cost import Buy, cost_of, is_free
@@ -396,15 +396,23 @@ class TakeStates(Mapping[int, SectionTakeState]):
             for at, section in enumerate(selected)
         }
 
-    def charged(self, plan: NarratePlan, made: Sequence[SectionTake]) -> Cost:
-        """What a voiced run paid for: the takes it voiced, each counted as bought.
+    def charged(self, plan: NarratePlan, charged: Collection[int], possibly: Collection[int] = ()) -> Cost:
+        """What a voiced run paid for: the sections whose charge ran, as bought, and the ones it may have paid for.
 
-        A section the run kept, because another run voiced its take first, or one that played a
-        placeholder, because its free voice did not answer, was not paid for, so it is not counted.
+        A section counts as bought once its voice answered and its charge ran, whether or not its take
+        then reached the disk. A section the run kept, because another run voiced its take first, or one
+        that played a placeholder, because its free voice did not answer, was not paid for, so it is not
+        counted. A section in `possibly` sent its request and has no charge, because its reply broke or
+        the run left without it, so the provider may have billed it, and it counts toward the ceiling
+        and never toward the dollars.
         """
-        voiced = {row.section for row in made if row.outcome is TakeOutcome.VOICED}
-        bought = [p for p in plan.takes if p.section.number in voiced]
-        return cost_of(self._inputs, self._buys(bought), state=CostState.CHARGED)
+        bought = [
+            replace(buy, certain=True) for buy in self._buys([p for p in plan.takes if p.section.number in charged])
+        ]
+        maybe = [
+            replace(buy, certain=False) for buy in self._buys([p for p in plan.takes if p.section.number in possibly])
+        ]
+        return cost_of(self._inputs, bought + maybe, state=CostState.CHARGED)
 
     @staticmethod
     def _buys(plans: Sequence[TakePlan]) -> list[Buy]:

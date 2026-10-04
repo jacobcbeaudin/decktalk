@@ -81,7 +81,7 @@ def test_set_refuses_a_project_file_that_links_out_of_the_project(run, project_d
 def test_an_out_of_range_refusal_is_two_sentences(run, project_dir) -> None:
     """The loader's refusal ends on the value it got, and the reason it was refused is a new sentence."""
     said = " ".join(run("-p", str(project_dir), "config", "set", "video.crf", "99").err.split())
-    assert "got 99. " in said
+    assert "got 99 in config set. " in said
 
 
 def test_unset_refuses_a_name_that_is_neither_a_key_nor_a_table(run, project_dir) -> None:
@@ -101,6 +101,24 @@ def test_set_on_a_dry_run_reports_the_change_and_writes_nothing(run, project_dir
     ran = run("-p", str(project_dir), "config", "set", "video.crf", "20", "--dry-run", "--json")
     assert json.loads(ran.out)["dry_run"] is True
     assert "crf" not in (project_dir / "decktalk.toml").read_text(encoding="utf-8")
+
+
+def test_a_project_write_names_its_file_project_relative(run, project_dir) -> None:
+    """`written` and `file` are project-relative like every other result's, wherever the command runs from."""
+    written = json.loads(run("-p", str(project_dir), "config", "set", "video.crf", "20", "--json").out)
+    assert (written["written"], written["file"]) == (["decktalk.toml"], "decktalk.toml")
+    removed = json.loads(run("-p", str(project_dir), "config", "unset", "video.crf", "--json").out)
+    assert (removed["written"], removed["file"]) == (["decktalk.toml"], "decktalk.toml")
+
+
+def test_a_machine_write_names_the_machine_file_by_its_absolute_path(run, project_dir, tmp_path) -> None:
+    """The machine file sits outside every project, so no project-relative path could name it."""
+    machine = (tmp_path / "machine.toml").absolute().as_posix()
+    argv = ("-p", str(project_dir), "config")
+    written = json.loads(run(*argv, "set", "record.concurrency", "2", "--scope", "machine", "--json").out)
+    assert (written["written"], written["file"]) == ([machine], machine)
+    removed = json.loads(run(*argv, "unset", "record.concurrency", "--scope", "machine", "--json").out)
+    assert (removed["written"], removed["file"]) == ([machine], machine)
 
 
 def test_unset_takes_one_key_back_out(run, project_dir) -> None:
