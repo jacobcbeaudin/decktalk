@@ -14,9 +14,9 @@ RESOLVED = CueTimes(
             key="03",
             estimated=False,
             cues=(
-                CueTime(cue="3.1:expand", phrase="On a typical", seconds=1.2, offset=0.0),
-                CueTime(cue="3.2:zero", phrase="Zero", seconds=2.5, offset=0.3),
-                CueTime(cue="3.3:never", phrase="nowhere", seconds=None, offset=0.0),
+                CueTime(id="3.1:expand", phrase="On a typical", seconds=1.2, nudge_seconds=0.0),
+                CueTime(id="3.2:zero", phrase="Zero", seconds=2.5, nudge_seconds=0.3),
+                CueTime(id="3.3:never", phrase="nowhere", seconds=None, nudge_seconds=0.0),
             ),
         ),
     )
@@ -33,11 +33,11 @@ def test_the_query_carries_every_resolved_cue_and_leaves_the_rest_out() -> None:
     assert RESOLVED.query(3) == "3.1:expand@1.2,3.2:zero@2.5"
 
 
-def test_the_times_are_keyed_by_wire_id() -> None:
+def test_the_times_are_keyed_by_cue_id() -> None:
     assert RESOLVED.times(3) == {"3.1:expand": 1.2, "3.2:zero": 2.5}
 
 
-def test_one_cue_is_found_by_its_section_and_its_wire_id() -> None:
+def test_one_cue_is_found_by_its_section_and_its_cue_id() -> None:
     assert RESOLVED.at(3, "3.1:expand") == 1.2
     assert RESOLVED.at(3, "3.3:never") is None
     assert RESOLVED.at(3, "nothing") is None

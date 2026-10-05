@@ -19,7 +19,7 @@ from dataclasses import asdict
 
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs.document import PageSection
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import frames
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import Attr
@@ -97,7 +97,7 @@ def element_cues(entry: MeasuredScene) -> set[str]:
     it plays in the film. Such a cue is unmeasurable from a still rather than a reveal that failed,
     and `verify` measures it on the finished film where the handler does run.
     """
-    return {wire for row in measured_rows(entry) for wire in row.moments.values() if wire}
+    return {cue_id for row in measured_rows(entry) for cue_id in row.moments.values() if cue_id}
 
 
 def landing_findings(
@@ -115,7 +115,7 @@ def landing_findings(
     strokes = drawn_cues(entry)
     declared = element_cues(entry)
     found: list[Finding] = []
-    for pair in plan_frames(slides, times, settings.video.output_fps):
+    for pair in plan_frames(slides, times, settings.video.fps):
         if (section.number, pair.cue) in skipped:
             continue
         if pair.cue not in declared:
@@ -167,9 +167,9 @@ def opening_panels(sheet: Sheet, section: PageSection, slides: Slides, times: Ma
     A check freezes the frames either side of every cue, and the frame in front of the first cue of a
     slide is the picture that slide opens on, so the sheet is complete without drawing anything twice.
     """
-    for slide, wires in slides.items():
-        opening = min((times[wire] for wire in wires if wire in times), default=SECTION_START_SECONDS)
-        sheet.panel(section, Freeze.state(slide, (), wires), None, opening)
+    for slide, cue_ids in slides.items():
+        opening = min((times[cue_id] for cue_id in cue_ids if cue_id in times), default=SECTION_START_SECONDS)
+        sheet.panel(section, Freeze.state(slide, (), cue_ids), None, opening)
 
 
 def seam_findings(
@@ -190,7 +190,7 @@ def seam_findings(
         sheet.run.note(f"section {section.number} declares seamless and a side of its cut published no catalog.")
         return []
     last = last_state(ending, times.get(previous.number, {}))
-    first = first_state(opening, times.get(section.number, {}), settings.video.output_fps)
+    first = first_state(opening, times.get(section.number, {}), settings.video.fps)
     if last is None or first is None:
         sheet.run.note(f"section {section.number} declares seamless and a side of its cut has no resolved cue.")
         return []

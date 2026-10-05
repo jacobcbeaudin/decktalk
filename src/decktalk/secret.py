@@ -116,7 +116,7 @@ class Secret:
         return self._value
 
     def __bool__(self) -> bool:
-        """True when the variable is set, which is what a caller checks before spending."""
+        """True when the variable is set, which is what a caller checks before it buys."""
         return bool(self._value)
 
     def __len__(self) -> int:

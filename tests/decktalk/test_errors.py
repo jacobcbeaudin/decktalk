@@ -5,15 +5,13 @@ from __future__ import annotations
 import pytest
 
 from decktalk.errors import (
-    BROKEN,
-    INTERRUPTED,
-    REFUSED,
     ApprovalRequired,
     Cancel,
     Cancelled,
     DeckTalkError,
     ErrorCode,
     ErrorInfo,
+    Exit,
     InputError,
     NotBuiltError,
     ProjectLocked,
@@ -61,9 +59,9 @@ def test_the_base_is_never_raised_bare_so_it_carries_no_code() -> None:
 def test_the_exit_mapping_is_total_and_is_the_one_the_design_named() -> None:
     exits = {code: code.exit_code for code in ErrorCode}
     assert set(exits) == set(ErrorCode)
-    assert {code for code, value in exits.items() if value == REFUSED} == {ErrorCode.USAGE, ErrorCode.APPROVAL}
-    assert {code for code, value in exits.items() if value == INTERRUPTED} == {ErrorCode.CANCELLED}
-    assert {code for code, value in exits.items() if value == BROKEN} == set(ErrorCode) - {
+    assert {code for code, value in exits.items() if value is Exit.REFUSED} == {ErrorCode.USAGE, ErrorCode.APPROVAL}
+    assert {code for code, value in exits.items() if value is Exit.INTERRUPTED} == {ErrorCode.CANCELLED}
+    assert {code for code, value in exits.items() if value is Exit.BROKEN} == set(ErrorCode) - {
         ErrorCode.USAGE,
         ErrorCode.APPROVAL,
         ErrorCode.CANCELLED,
@@ -114,7 +112,7 @@ def test_a_cancelled_run_raises_the_class_that_carries_the_interrupt_code() -> N
     token.cancel()
     with pytest.raises(Cancelled) as raised:
         token.check()
-    assert raised.value.code.exit_code == INTERRUPTED
+    assert raised.value.code.exit_code is Exit.INTERRUPTED
 
 
 def test_every_error_field_publishes_one_sentence() -> None:

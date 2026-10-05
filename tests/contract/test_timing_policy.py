@@ -1,20 +1,20 @@
 """When a build that exited non-zero still counts as finished, case by case, and what a budget is.
 
 `tests/support/timing_policy.py` holds the rule every suite that drives a real build follows, and
-this holds the rule to each case without a build, because the rule is the thing that went wrong: a
-late reveal on a hosted macOS runner failed a test whose subject was which sections got recorded
+this holds the rule to each case without a build, because the rule is where a mistake costs most: a
+late reveal on a hosted macOS runner would fail a test whose subject is which sections get recorded
 again.
 
 Each case here is one decision the rule makes. The message `tolerated` returns is read only for the
 code it names and never for its wording, so the sentence can be rewritten without touching these.
 
 The middle section holds the seam, which is the one reading every suite that drives a real build
-gets its certain findings from. Applying the rule test by test is what let a second test fail a
-merge on the same reveal, so the rule being right matters less than every test asking it.
+gets its errors from. A rule applied test by test lets a second test fail a merge on the same
+reveal, so the rule being right matters less than every test asking it.
 
 The last section holds the other half of the rule, which is that a leg reaches the suite with it.
-The rule read `--timing` correctly from the day it was written and no row of `GROUPS` ever passed
-that flag, so every hosted runner gated and the founder's decision lived only in a docstring.
+A rule that reads `--timing` correctly does nothing unless a row of `GROUPS` passes that flag,
+because without it every hosted runner gates and the decision lives only in a docstring.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from typing import Any, cast
 import pytest
 
 import check
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Code, Severity
 from support.timing_policy import (
     BASE_BUDGET_SECONDS,
     LATE_FRAME,
@@ -50,7 +50,7 @@ REPORTS_TIMING = (
     "scaffold",
     *(() if check.LINUX_GATES_TIMING else ("e2e",)),
 )
-"""Every leg whose compositor is not trustworthy, which is the founder's decision written as names.
+"""Every leg whose compositor is not trustworthy, which is the decision written as names.
 
 The three `-platforms` rows are the hosted macOS and Windows runners, which composite through a
 stack DeckTalk does not own. `scaffold` is a hosted Linux runner rendering five whole projects in
@@ -60,8 +60,8 @@ other leg gates, which is what keeps the Linux row of each pair the one that hol
 """
 
 
-UNCERTAIN = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
-"""One finding a run is not sure of, for the rows where an uncertain finding rides along."""
+WARNING = next(code for code in Code if code.severity is Severity.WARNING)
+"""One finding a run is not sure of, for the rows where a warning rides along."""
 
 
 @pytest.mark.parametrize(
@@ -77,11 +77,11 @@ UNCERTAIN = next(code for code in Code if code.certainty is Certainty.UNCERTAIN)
         # fault and it is deliberately not tolerated, because it means the recorder stopped presenting
         # frames rather than the runner being slow.
         pytest.param(1, [Code.CUE_OFF, Code.CUT_SPEECH], False, Code.CUT_SPEECH.name, id="cut speech"),
-        pytest.param(1, [Code.CUE_OFF, Code.PAGE_STALLED], False, Code.PAGE_STALLED.name, id="a stalled page"),
-        # Only a certain finding exits a build that is not strict, so an uncertain one explains nothing.
-        pytest.param(1, [Code.CUE_OFF, UNCERTAIN], False, None, id="an uncertain finding riding along"),
-        # An exit code with no certain finding row is a bug in the command, not a slow runner.
-        pytest.param(1, [UNCERTAIN], False, "", id="a non-zero exit with nothing to explain it"),
+        pytest.param(1, [Code.CUE_OFF, Code.RECORD_STALLED], False, Code.RECORD_STALLED.name, id="a stalled page"),
+        # Only an error exits a build that is not strict, so a warning explains nothing.
+        pytest.param(1, [Code.CUE_OFF, WARNING], False, None, id="a warning riding along"),
+        # An exit code with no error row is a bug in the command, not a slow runner.
+        pytest.param(1, [WARNING], False, "", id="a non-zero exit with nothing to explain it"),
     ],
 )
 def test_a_build_is_tolerated_only_for_late_reveals_where_timing_is_not_gated(
@@ -104,9 +104,9 @@ def test_a_finding_that_is_not_a_late_landing_is_judged_wherever_it_is_read(othe
     assert judged([Code.CUE_OFF, other], gate=False) == [other]
 
 
-def test_the_starter_rule_reads_every_row_and_not_only_the_certain_ones() -> None:
-    """The starter may publish no finding at all, so an uncertain row is judged there as well."""
-    assert judged([UNCERTAIN], gate=True) == [UNCERTAIN]
+def test_the_starter_rule_reads_every_row_and_not_only_the_errors() -> None:
+    """The starter may publish no finding at all, so a warning row is judged there as well."""
+    assert judged([WARNING], gate=True) == [WARNING]
     assert judged(LATE_FRAME, gate=False) == []
 
 
@@ -116,7 +116,7 @@ def test_a_gated_run_holds_the_project_to_the_limit_it_states() -> None:
 
 
 def test_an_ungated_run_adds_the_declared_slack_and_nothing_else() -> None:
-    """The `4` and the `5` this replaces were the settings plus two, written as literals in the suite."""
+    """The slack is the declared frames over the stated limit, so no literal in the suite restates it."""
     widened = offset_limit_ms(STATED_LIMIT_MS, gate=False)
     assert widened > STATED_LIMIT_MS
     assert (widened - STATED_LIMIT_MS) / UNGATED_EXTRA_FRAMES == pytest.approx(
@@ -156,11 +156,11 @@ class Leg:
         self.printed.append(line)
 
 
-def row(code: Code, certainty: Certainty | None = None) -> dict[str, Any]:
+def row(code: Code, severity: Severity | None = None) -> dict[str, Any]:
     """One finding as `--json` publishes it, which is the shape the seam reads a run's findings in."""
     return {
         "code": code.value,
-        "certainty": (certainty or code.certainty).value,
+        "severity": (severity or code.severity).value,
         "message": f"{code.value} was reported by the run",
     }
 
@@ -187,16 +187,16 @@ def test_a_late_landing_is_returned_where_timing_is_gated() -> None:
 
 
 @pytest.mark.parametrize("other", [Code.CUE_NO_CHANGE, Code.PAGE_WORDS_NOT_FOUND, Code.PAGE_RENDER_THREW])
-def test_every_other_certain_finding_is_returned_on_either_leg(other: Code) -> None:
+def test_every_other_error_is_returned_on_either_leg(other: Code) -> None:
     """A deck's own fault fails everywhere, which is what a leg that reports timing does not touch."""
     assert seam("report", row(Code.CUE_OFF), row(other))[0] == [row(other)]
     assert seam("gate", row(other))[0] == [row(other)]
 
 
-def test_an_uncertain_row_is_not_a_certain_finding_on_either_leg() -> None:
+def test_a_warning_row_is_not_an_error_on_either_leg() -> None:
     """The seam answers what a run is sure about, so a row it is unsure of is neither held nor news."""
-    assert seam("gate", row(UNCERTAIN))[0] == []
-    assert seam("report", row(UNCERTAIN, Certainty.UNCERTAIN)) == ([], [])
+    assert seam("gate", row(WARNING))[0] == []
+    assert seam("report", row(WARNING, Severity.WARNING)) == ([], [])
 
 
 def test_a_run_with_no_reporter_still_holds_the_deck_to_every_other_finding() -> None:
@@ -227,7 +227,7 @@ def suites(group: check.Group) -> list[tuple[str, ...]]:
     return [command for command in group.commands if "pytest" in command]
 
 
-def test_the_table_passes_the_flag_on_every_leg_the_founder_named_and_on_no_other() -> None:
+def test_the_table_passes_the_flag_on_every_named_leg_and_on_no_other() -> None:
     """One assertion in both directions, because a flag on a trusted runner is as wrong as none here."""
     for group in check.GROUPS:
         for command in suites(group):

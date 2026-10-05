@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,20 +23,23 @@ from pytest_httpserver import HTTPServer
 from werkzeug import Request, Response
 from werkzeug.utils import send_from_directory
 
+from decktalk.findings import Code
 from decktalk.page import (
     APPEAR_WORDS_MAX,
     ATTENTION,
     BACK_OPACITY,
     COUNTS,
+    ENGINE_PATH,
     ENTRANCES,
     EXITS,
     FRAME_STEP_MS,
     MEASURABLE_SPAN_SECONDS,
     ONSET_FIRST_FRAME_PERCENT,
+    PREVIEW_CUE_TIMES,
     SLIDE_ENTRANCES,
     WORD_STYLES,
 )
-from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
+from decktalk.toolchain.assets import RUNTIME_FILE, engine_files
 from support.browser_pages import KATEX, Tab, chromium_tab, opened, script_page, settled, write_page
 
 if TYPE_CHECKING:
@@ -47,19 +49,19 @@ pytestmark = pytest.mark.browser
 
 
 # The three-slide scene every markup test uses: attributes only, no JavaScript anywhere. Its moments
-# are local names, so the wire ids the recorder sees are "1.1:ball" and the rest.
+# write cue names, so the cue ids the recorder sees are "1.1:ball" and the rest.
 MARKUP_SCENE = """
 <div data-scene="1" data-name="Open">
-  <template data-slide="1.1" data-hold="6">
+  <template data-slide="1.1" data-preview-seconds="6">
     <h1 class="title">A bowl</h1>
     <p class="ball" data-in="ball" data-in-style="pop" data-describe="a ball rests in the bowl">A ball</p>
     <p class="step" data-in="step" data-back="ball" data-describe="the step down">Watch it step down</p>
   </template>
-  <template data-slide="1.2" data-hold="4">
+  <template data-slide="1.2" data-preview-seconds="4">
     <p class="sum" data-in="sum" data-tex-display data-tex="\\sum_{i=1}^{n} x_i"
        data-describe="the sum of the first n terms">the sum of x i from one to n</p>
   </template>
-  <template data-slide="1.3" data-hold="4" data-owns="aside">
+  <template data-slide="1.3" data-preview-seconds="4" data-owns="aside">
     <p class="late" data-in="late" data-describe="the closing line">nothing follows</p>
   </template>
 </div>
@@ -116,7 +118,7 @@ def opacity_one_frame_in(page: Page, selector: str) -> float:
     )
 
 
-ALIAS = "/__decktalk/cue-times.json"
+ALIAS = PREVIEW_CUE_TIMES
 """The one router alias a preview asks its origin for, which the served directory does not hold."""
 
 
@@ -126,9 +128,15 @@ def origin(tmp_path: Path, httpserver: HTTPServer) -> Iterator[Any]:
     published: list[dict[str, Any]] = []
 
     def serve(request: Request) -> Response:
-        if request.path != ALIAS:
-            return send_from_directory(tmp_path, request.path.lstrip("/"), request.environ)
-        return Response(json.dumps(published[-1]), mimetype="application/json") if published else Response(status=404)
+        if request.path == ALIAS:
+            if not published:
+                return Response(status=404)
+            return Response(json.dumps(published[-1]), mimetype="application/json")
+        if request.path.startswith(ENGINE_PATH):
+            # The engine's own files, answered from the package as DeckTalk's origin answers them.
+            found = engine_files()[request.path.removeprefix(ENGINE_PATH)]
+            return send_from_directory(found.parent, found.name, request.environ)
+        return send_from_directory(tmp_path, request.path.lstrip("/"), request.environ)
 
     httpserver.expect_request(re.compile(".*")).respond_with_handler(serve)
 
@@ -137,13 +145,12 @@ def origin(tmp_path: Path, httpserver: HTTPServer) -> Iterator[Any]:
             published[:] = [] if document is None else [document]
 
         def write(self, name: str, body: str) -> str:
-            """A page beside its own copy of the runtime and the typesetter, as a project is served."""
-            (tmp_path / RUNTIME_FILE).write_bytes(runtime_path().read_bytes())
-            shutil.copytree(katex_dir(), tmp_path / "katex", dirs_exist_ok=True)
+            """A page that loads the runtime and the typesetter from the engine's path, as a project is served."""
             (tmp_path / name).write_text(
                 f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{name}</title>'
-                f'<link rel="stylesheet" href="katex/katex.min.css"><script src="katex/katex.min.js"></script>'
-                f'<script src="{RUNTIME_FILE}"></script></head><body>{body}</body></html>',
+                f'<link rel="stylesheet" href="{ENGINE_PATH}katex/katex.min.css">'
+                f'<script src="{ENGINE_PATH}katex/katex.min.js"></script>'
+                f'<script src="{ENGINE_PATH}{RUNTIME_FILE}"></script></head><body>{body}</body></html>',
                 encoding="utf-8",
             )
             return httpserver.url_for(name)
@@ -171,7 +178,7 @@ def test_the_stylesheet_is_prepended_and_carries_no_specificity(page, tmp_path):
     forced = [line for line in sheet.splitlines() if "!important" in line]
     assert all("dt-frozen" in line for line in forced)
     assert page.evaluate("() => document.head.firstElementChild.id") == "dt-style"
-    settled(page, f"{write_page(tmp_path, 'weight-shown.html', MARKUP_SCENE, head=head + KATEX)}?slide=1.1")
+    settled(page, f"{write_page(tmp_path, 'weight-shown.html', MARKUP_SCENE, head=head + KATEX)}?freeze=1.1")
     assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).color") == "rgb(1, 2, 3)"
 
 
@@ -198,7 +205,7 @@ def test_a_markup_scene_needs_no_javascript(page, tmp_path):
 
 def test_a_template_slide_writes_a_backslash_once(page, tmp_path):
     """Markup is parsed and not evaluated, which is the reason to prefer a template to a render string."""
-    settled(page, f"{deck(tmp_path, 'tex.html')}?slide=1.2")
+    settled(page, f"{deck(tmp_path, 'tex.html')}?freeze=1.2")
     assert page.evaluate("() => document.querySelector('.sum').getAttribute('data-tex')") == "\\sum_{i=1}^{n} x_i"
 
 
@@ -225,7 +232,7 @@ def test_markup_slides_join_a_scene_declared_in_script(page, tmp_path):
     [("data-in", "arrive"), ("data-back", "dim"), ("data-front", "lift"), ("data-out", "go")],
 )
 def test_every_moment_attribute_joins_the_cue_order(page, tmp_path, attribute, local):
-    """An exit that never reached the cue order was a cue no check could see, which is the whole repair."""
+    """Every moment joins the cue order, because a moment outside it is a cue no check can see."""
     scene = f"""
     <div data-scene="2">
       <template data-slide="2.1">
@@ -239,8 +246,8 @@ def test_every_moment_attribute_joins_the_cue_order(page, tmp_path, attribute, l
 
 
 def test_a_local_moment_is_qualified_with_the_slide_that_carries_it(page, tmp_path):
-    """The author writes `ball` and the wire carries `1.1:ball`, which is the whole of the qualification."""
-    opened(page, deck(tmp_path, "wire.html"))
+    """The author writes `ball` and its cue id is `1.1:ball`, which is the whole of the qualification."""
+    opened(page, deck(tmp_path, "qualified.html"))
     cues = page.evaluate("() => window.__decktalk.catalog[0].cues")
     assert cues["1.1"] == ["1.1:ball", "1.1:step"]
     assert cues["1.3"] == ["1.3:late", "1.3:aside"]
@@ -277,12 +284,12 @@ def test_a_class_moment_joins_the_cue_order_and_declares_its_span(page, tmp_path
 
 
 def test_cue_mode_fires_in_order_and_reports_each_cue(page, tmp_path):
-    """The recorder passes wire ids and seconds, and the page fires each at its own second."""
+    """The recorder passes cue ids and seconds, and the page fires each at its own second."""
     url = deck(tmp_path, "cued.html")
     settled(page, f"{url}?scene=1&t0=0&cues=1.1:ball@0.1,1.1:step@0.3,1.2:sum@0.6")
     page.wait_for_function("() => window.__decktalk.fired.length === 3")
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step", "1.2:sum"]
-    assert page.evaluate("() => window.__decktalk.mode") == "cue"
+    assert page.evaluate("() => window.__decktalk.mode") == "record"
 
 
 def test_the_first_slide_is_mounted_before_the_clock_starts(page, tmp_path):
@@ -298,7 +305,7 @@ def test_the_first_slide_is_mounted_before_the_clock_starts(page, tmp_path):
 
 def test_freeze_mode_fires_every_cue_the_slide_declares(page, tmp_path):
     """A still is the whole slide, which is what the index links and what a screenshot records."""
-    settled(page, f"{deck(tmp_path, 'frozen.html')}?slide=1.1")
+    settled(page, f"{deck(tmp_path, 'frozen.html')}?freeze=1.1")
     assert page.evaluate("() => window.__decktalk.fired") == ["1.1:ball", "1.1:step"]
     assert page.evaluate("() => window.__decktalk.mode") == "freeze"
     assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).opacity") == "1"
@@ -310,8 +317,8 @@ def test_the_index_page_lists_every_scene_and_slide(page, tmp_path):
     assert page.evaluate("() => window.__decktalk.mode") == "index"
     links = page.evaluate("() => [...document.querySelectorAll('#dt-index a')].map((a) => a.getAttribute('href'))")
     assert "?scene=1" in links
-    assert "?slide=1.1" in links
-    assert page.evaluate("() => getComputedStyle(document.getElementById('dt-stage')).display") == "none"
+    assert "?freeze=1.1" in links
+    assert page.evaluate("() => getComputedStyle(document.getElementById('dt-canvas')).display") == "none"
 
 
 def test_a_preview_without_cue_times_still_shows_every_cue(page, tmp_path):
@@ -323,7 +330,7 @@ def test_a_preview_without_cue_times_still_shows_every_cue(page, tmp_path):
 
 
 def test_a_preview_plays_the_cue_times_the_project_resolved(page, origin):
-    """The point of a preview is to review the film's own timing without spending a recording on it."""
+    """The point of a preview is to review the film's own timing without making a recording for it."""
     origin.publish({"sections": [{"key": "01", "scene": "1", "cues": [{"cue": "1.1:step", "at": 0.2}]}]})
     page.goto(f"{origin.write('timed.html', MARKUP_SCENE)}?scene=1")
     page.wait_for_function("() => window.__decktalk.fired.length === 1")
@@ -437,23 +444,23 @@ def test_a_staggered_container_spreads_one_cue_across_its_children(page, tmp_pat
     assert delays == ["0s", "0.08s", "0.16s"]
     span = page.evaluate("() => window.__decktalk.catalog[0].spans['6.1:tiles']")
     assert span == pytest.approx(0.08 * 2 + ENTRANCES["rise"].seconds)
-    # The published span is the honest arithmetic, which is what makes the overrun a certain finding.
+    # The published span is the honest arithmetic, which is what makes the overrun an error.
     assert span > MEASURABLE_SPAN_SECONDS - FRAME_STEP_MS / 1000
 
 
-def test_steps_brings_each_child_forward_and_steps_the_ones_before_it_back(page, tmp_path):
-    """A stepped list is written once and lands in the catalog as though every moment were typed."""
+def test_a_spotlight_brings_each_child_forward_and_steps_the_ones_before_it_back(page, tmp_path):
+    """A spotlit list is written once and lands in the catalog as though every moment were typed."""
     scene = """
     <div data-scene="7">
       <template data-slide="7.1">
-        <ul class="list" data-steps>
+        <ul class="list" data-spotlight>
           <li class="one" data-in="first" data-describe="the first point">one</li>
           <li class="two" data-in="second" data-describe="the second point">two</li>
         </ul>
       </template>
     </div>
     """
-    page.goto(f"{write_page(tmp_path, 'steps.html', scene)}?scene=7&t0=0&cues=7.1:first@0.05,7.1:second@0.3")
+    page.goto(f"{write_page(tmp_path, 'spotlight.html', scene)}?scene=7&t0=0&cues=7.1:first@0.05,7.1:second@0.3")
     page.wait_for_function("() => window.__decktalk.fired.length === 2")
     page.wait_for_timeout(int(ATTENTION["back"].seconds * 1000) + 200)
     assert page.evaluate("() => document.querySelector('.one').classList.contains('dt-back')") is True
@@ -495,7 +502,7 @@ def test_the_crossfade_holds_the_outgoing_slide_at_full_opacity(page, tmp_path):
     leaving, arriving = pair
     assert leaving == 1.0
     assert 0 < arriving < 1
-    # The composite of an opaque slide under a half-faded one is opaque, which is the whole repair.
+    # The composite of an opaque slide under a half-faded one is opaque, so nothing shows through mid-fade.
     assert leaving + (1 - leaving) * arriving == pytest.approx(1.0)
 
 
@@ -615,13 +622,13 @@ def test_each_moment_of_one_element_fires_in_the_order_its_cues_land(page, tmp_p
 
 
 def test_a_decorative_element_writes_no_line(page, tmp_path):
-    """An empty phrase is the author saying the element means nothing, which the transcript honours."""
+    """An empty description is the author saying the element means nothing, which the transcript honours."""
     scene = """
     <div data-scene="11">
       <template data-slide="11.1"><p class="rule" data-in="show" data-describe="">---</p></template>
     </div>
     """
-    settled(page, f"{write_page(tmp_path, 'decorative.html', scene)}?slide=11.1")
+    settled(page, f"{write_page(tmp_path, 'decorative.html', scene)}?freeze=11.1")
     assert warnings_of(page) == []
 
 
@@ -685,7 +692,7 @@ def test_a_page_callback_that_throws_becomes_a_warning(page, errors, tmp_path, s
 
 
 def test_an_attribute_the_registry_does_not_define_is_reported(page, tmp_path):
-    """Every misspelling of every knob is one condition, and this is the code that names it."""
+    """Every misspelling of every attribute is one condition, and this is the code that names it."""
     scene = """
     <div data-scene="14">
       <template data-slide="14.1"><p data-inn="show" data-describe="the line">a line</p></template>
@@ -693,7 +700,7 @@ def test_an_attribute_the_registry_does_not_define_is_reported(page, tmp_path):
     """
     opened(page, write_page(tmp_path, "misspelled.html", scene))
     rows = warnings_of(page)
-    assert [row["code"] for row in rows] == ["PAGE_UNKNOWN_ATTR"]
+    assert [row["code"] for row in rows] == ["PAGE_ATTR_UNKNOWN"]
     assert rows[0]["attr"] == "data-inn"
 
 
@@ -729,13 +736,13 @@ def test_katex_refusing_a_value_leaves_the_readable_text(page, tmp_path):
       </template>
     </div>
     """
-    settled(page, f"{write_page(tmp_path, 'katex-bad.html', scene, head=KATEX)}?slide=19.1")
+    settled(page, f"{write_page(tmp_path, 'katex-bad.html', scene, head=KATEX)}?freeze=19.1")
     assert "PAGE_KATEX_ERROR" in codes_of(page)
     assert page.evaluate("() => document.querySelector('.bad').textContent") == "one over"
 
 
 MISTAKES = {
-    # The transcript is the reason a class may ship at all, so a class with no phrase is refused.
+    # The transcript is the reason a class may ship at all, so a class with no description is refused.
     "class-undescribed": (
         {"PAGE_CLASS_UNDESCRIBED"},
         '<template data-slide="3.1"><p data-in="show" data-class="cancel:stale">h over h</p></template>',
@@ -744,6 +751,11 @@ MISTAKES = {
     "stagger-empty": (
         {"PAGE_STAGGER_EMPTY"},
         '<template data-slide="3.1"><p data-in="tiles" data-stagger="0.08" data-describe="nothing">x</p></template>',
+    ),
+    # A spotlight walks its cued children, so a container with none of them brings nothing forward.
+    "spotlight-empty": (
+        {Code.PAGE_SPOTLIGHT_EMPTY.value},
+        '<template data-slide="3.1"><ul data-spotlight><li data-describe="a point">one</li></ul></template>',
     ),
     # Zero candidates and two candidates are both guesses, and the page refuses to make either.
     "swap-ambiguous": (
@@ -756,7 +768,7 @@ MISTAKES = {
         '<p data-in="loose" data-describe="a line outside every slide">loose</p>'
         '<template data-slide="3.1"><p data-in="show" data-describe="the line">a line</p></template>',
     ),
-    # The declared order makes the comparison exact, so this is a certain finding and not a guess.
+    # The declared order makes the comparison exact, so this is an error and not a guess.
     "moment-order": (
         {"PAGE_MOMENT_ORDER"},
         '<template data-slide="3.1"><p data-in="show" data-out="show" data-describe="the line">a line</p></template>',
@@ -764,7 +776,7 @@ MISTAKES = {
     # A scene that declares no slide and a slide that declares no id both reach no recording.
     "scene-empty": ({"PAGE_SCENE_EMPTY"}, ""),
     "slide-no-id": ({"PAGE_SLIDE_NO_ID"}, "<template></template>"),
-    # Every moment local to a doubled id has two owners, which no wire id can tell apart.
+    # Every moment local to a doubled id has two owners, which no cue id can tell apart.
     "slide-doubled": (
         {"PAGE_SLIDE_DOUBLED"},
         '<template data-slide="3.1"><p data-in="a" data-describe="one">one</p></template>'

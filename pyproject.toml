@@ -45,17 +45,17 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
-    # Every fingerprint of a file's content is BLAKE3, which hashes a large recording or film on every
-    # core where SHA-256 reads it on one. 1.0 is the first stable release of the mapped, threaded reader.
+    # File fingerprints hash a large recording or film on every core. 1.0 is the first stable release.
     "blake3>=1.0",
-    # 3.20.1 is the first release that opens the lock file without following a link, which is what
-    # refuses a `build/.lock` planted as a link inside the build directory.
+    # 3.20.1 is the first release that refuses to follow a `build/.lock` planted as a link.
     "filelock>=3.20.1",
     "playwright>=1.63.0,<2",
     "pydantic>=2.11",
     "rich>=13",
     "tomlkit>=0.13",
-    "typer>=0.15",
+    # 0.26 is the first release with its own copy of Click, which the command line subclasses, so
+    # Click itself is not a dependency.
+    "typer>=0.26",
 ]
 
 [project.urls]
@@ -82,40 +82,28 @@ wheel-exclude = ["**/.DS_Store", "**/runtime/src/**", "**/tsconfig.json"]
 
 [dependency-groups]
 dev = [
-    # A property test states a rule over every input and draws the examples, where a list of cases
-    # names the ones its author thought of. `tests/conftest.py` fixes the seed, so every run agrees.
+    # Property tests draw the cases a hand-written list would miss.
     "hypothesis>=6.168",
-    # `scripts/build_assets.py` traces the wordmark's letters out of a WOFF2 face, and fontTools reads
-    # WOFF2 only with the Brotli decoder its `woff` extra brings.
-    "fonttools[woff]>=4.50",
-    # What a renderer writes is held as the literal text in the test. CI only ever compares: the `CI`
-    # variable turns the plugin's writing off, and under `-n auto` asking it to write is refused.
-    # `pytest -p no:xdist --inline-snapshot=create,fix <file>` is how a person writes one.
+    # A renderer's output is held as literal text in its test. CI only compares, and a person writes
+    # one with `pytest -p no:xdist --inline-snapshot=create,fix <file>`.
     "inline-snapshot>=0.35",
-    # `scripts/build_outbound_reference.py` renders its page from a template that reads as the page
-    # does, with a loop where each table is written from the data file.
+    # The generated pages whose shape is mostly prose render from templates that read as the page does.
     "jinja2>=3.1",
-    # The suite validates every command's real output and every setting's default against the
-    # committed JSON Schema, so the validator is a development dependency rather than something the
-    # schema generator reimplements.
+    # Every command's output and every setting's default are validated against the committed schemas.
     "jsonschema>=4.23",
-    # `contract/test_installer.py` runs install.sh under a terminal of its own, because the script
-    # branches on `[ -t 1 ]`, and pexpect is that terminal and the Ctrl-C it sends.
+    # install.sh branches on `[ -t 1 ]`, so its test runs it under a terminal and sends the Ctrl-C.
     "pexpect>=4.9.0",
     "pytest>=8",
     "pytest-cov>=6",
-    # A test that needs a listener on this machine asks this plugin for one, and its request log is
-    # what a "reaches nothing" test asserts is empty, rather than a hand-written server per file.
+    # A loopback listener whose request log a "reaches nothing" test asserts is empty.
     "pytest-httpserver>=1.1.5",
     "pytest-timeout>=2.3",
     # The unit row runs under `-n auto`, which halves the time every push waits on.
     "pytest-xdist>=3.6",
-    # `scripts/check_docs_links.py` parses each page's front matter, and `tests/scripts/test_check.py` reads
-    # `ci.yml` against the check table, so both read YAML as the YAML it is rather than search it as text.
+    # Page front matter and `ci.yml` are read as YAML rather than searched as text.
     "pyyaml>=6",
     "ruff>=0.16.8",
-    # `contract/test_imports.py` reads every import as a graph and asks it for its cycles, which is a
-    # graph algorithm rather than a loop the test should carry. It never reaches the wheel.
+    # The import-layer test asks the import graph for its cycles rather than walking edges by hand.
     "rustworkx>=0.17",
     "ty>=0.0.83",
 ]
@@ -141,10 +129,9 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"scripts/*" = ["E501"]  # generated CSS and SVG strings
 # This one reads TOML, whose values are `Any` before they are checked. Typing the parameter as
 # anything narrower would be a claim the file has not made yet, which is what it exists to make.
-"src/decktalk/tomlmap.py" = ["ANN401"]
+"src/decktalk/tomlmap/*.py" = ["ANN401"]
 # A test replaces a seam with a lambda of the real signature and reads only the arguments it judges,
 # so ARG005 there measures the seam rather than the test. ARG still holds over every other argument.
 "tests/**" = ["ARG005"]
@@ -172,13 +159,14 @@ consider_namespace_packages = true
 pythonpath = ["tests", "scripts"]
 # A test still running after two minutes has hung, so every thread's stack is printed to say where.
 faulthandler_timeout = 120
-# Every marker names its tool in its first clause, so `pytest --markers` answers what a table used to.
+# Every marker names its tool in its first clause, so `pytest --markers` lists what each suite needs.
 markers = [
     "browser: needs the headless Chromium that `decktalk install` fetches",
     "media: needs the ffmpeg that `decktalk install` fetches",
     "e2e: needs Chromium and ffmpeg, and builds the pipeline fixture in tests/e2e, about a minute",
     "scaffold: needs Chromium and ffmpeg, and builds every packaged project without a voice, about five minutes",
     "platform: needs the machine it runs on, whose filesystem and fetched toolchain are what it asserts",
+    "wheel: needs the wheel `uv build` writes into dist/, and is given to tests/contract/test_wheel.py by its path",
 ]
 # Selection is `tests/conftest.py`'s collection hook rather than an `-m` here, because a person's own
 # `-m` replaces this line whole and would admit every suite it did not name.

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from importlib.metadata import entry_points
 
 import jsonschema
 
@@ -58,9 +59,10 @@ def test_the_version_is_the_package_version(run) -> None:
     assert ran.out.strip() == __version__
 
 
-def test_the_entry_point_is_the_one_main(run) -> None:
-    assert callable(main)
-    assert run("schema", "error").exit_code == 0
+def test_the_installed_command_runs_the_one_main() -> None:
+    """The `decktalk` script the package installs loads this `main`, and no other function."""
+    (script,) = entry_points(group="console_scripts", name="decktalk")
+    assert script.load() is main
 
 
 def test_the_json_of_a_command_validates_against_its_committed_schema(run, project, answers) -> None:

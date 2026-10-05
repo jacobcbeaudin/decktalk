@@ -1,7 +1,7 @@
 """The URL a page section is opened at, and what its recording is keyed on.
 
 The page is opened on the local origin with the section's scene, the cues `cue` resolved and the
-words the voice spoke, and it is recorded for its span in the narration plus its record margin. A
+section's words, and it is recorded for its span in the narration plus its record margin. A
 section whose frames stall is recorded again while the machine is quieter, up to `[record] retries`
 times.
 
@@ -15,7 +15,7 @@ the same pixels, so `record` keeps the recording it has.
 The key is cut that way because a page holds every scene of a film. A digest of the whole file would
 call all nine sections of a nine-scene page stale for one slide's edit, which on the one-page project
 `decktalk init` writes is every section there is. The scene slice is taken from the page source and
-never from the browser, because `status` and `record --only` ask whether a recording still stands and
+never from the browser, because `status` and `record --section` ask whether a recording still stands and
 neither may open Chromium to find out. The asset list is what keeps the key honest in the other
 direction: a page that swaps one picture for another changes no line of HTML, so the markup alone
 would say nothing had moved.
@@ -29,17 +29,14 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
-from decktalk.artifacts import CueTimes, RecordingLog, content_digest, input_hash
+from decktalk.artifacts import CueTimes, RecordingLog, content_digest, input_digest
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs, PageSection
 from decktalk.media.origin import page_url
-from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, TIME_MARK, Q
+from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, T0_SIGNAL, TIME_MARK, Q
 from decktalk.results import Word
 
 log = logging.getLogger(__name__)
-
-SIGNAL = "signal"
-"""What `t0` is set to so the page starts its clock on the recorder's signal rather than on a second."""
 
 WORD_DIGITS = 2
 """How precisely a word's start is written into the page URL, which is a hundredth of a second."""
@@ -84,16 +81,9 @@ def words_param(words: tuple[Word, ...]) -> str | None:
     return LIST_SEPARATOR.join(f"{said}{TIME_MARK}{start:.{WORD_DIGITS}f}" for said, start in pairs)
 
 
-def spoken_words(inputs: Inputs, section: int) -> tuple[Word, ...]:
-    """One section's words in seconds after it starts, or nothing when it has no take yet."""
-    takes = inputs.takes()
-    take = takes.of(section) if takes is not None else None
-    return () if take is None else inputs.words(section, take.hash)
-
-
 def words_query(inputs: Inputs, section: PageSection) -> str | None:
     """The section's spoken words with their seconds, which is what a word-synced line is drawn on."""
-    return words_param(spoken_words(inputs, section.number))
+    return words_param(inputs.words(section.number).words)
 
 
 def scene_url(inputs: Inputs, section: PageSection, params: dict[Q, str]) -> str:
@@ -108,7 +98,7 @@ def scene_url(inputs: Inputs, section: PageSection, params: dict[Q, str]) -> str
     words = words_query(inputs, section)
     if words and Q.WORDS not in query:
         query[Q.WORDS] = words
-    query[Q.T0] = SIGNAL
+    query[Q.T0] = T0_SIGNAL
     return page_url(section.page, query)
 
 
@@ -127,8 +117,7 @@ class SceneSpans(HTMLParser):
     and an HTML comment cannot disturb because the parser hands neither back as a tag.
 
     A page whose scene element never closes leaves `balanced` false. Nothing is sliced then, and the
-    caller keys the section on the whole file, which is what a recording was keyed on before this
-    key could tell one scene from another.
+    caller keys the section on the whole file, which is the one key that cannot miss a change.
     """
 
     def __init__(self, source: str) -> None:
@@ -228,7 +217,7 @@ def page_source(path: Path) -> str:
         return ""
 
 
-def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float, assets: Sequence[str | Path]) -> str:
+def section_digest(inputs: Inputs, section: PageSection, url: str, seconds: float, assets: Sequence[str | Path]) -> str:
     """The digest of everything that decides what this section's recording looks like.
 
     The page joins the key in two pieces rather than as one file, so an edit to one scene moves the
@@ -247,7 +236,7 @@ def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float,
     lines = [
         url,
         f"{seconds:.{SECOND_DIGITS}f}",
-        f"{video.width}x{video.height}@{video.output_fps}",
+        f"{video.width}x{video.height}@{video.fps}",
         record.color_scheme,
         f"policy:{record.page_policy}",
         f"motion:{motion.reduce}:{motion.scale:g}",
@@ -256,7 +245,7 @@ def section_hash(inputs: Inputs, section: PageSection, url: str, seconds: float,
     ]
     named = [Path(rel).as_posix() for rel in assets]
     files = {rel: found for rel in named if (found := inputs.path(rel)) != page}
-    return input_hash(lines, files)
+    return input_digest(lines, files)
 
 
 @dataclass(frozen=True)
@@ -268,7 +257,7 @@ class Job:
     seconds: float
     out: Path
     log_path: Path
-    input_hash: str
+    digest: str
     previous: RecordingLog | None
     """The log of the recording already on disk, when there is one."""
 
@@ -276,14 +265,14 @@ class Job:
     def unchanged(self) -> bool:
         """Whether the recording on disk was made from these exact inputs, and is finished.
 
-        A log with no narration t=0 in it belongs to a run that was stopped between placing the webm
+        A log with no start in it belongs to a run that was stopped between placing the webm
         and measuring it, so the section is recorded again rather than assembled from a picture whose
         first frame nobody found.
         """
         return (
             self.previous is not None
-            and bool(self.previous.input_hash)
-            and self.previous.input_hash == self.input_hash
+            and bool(self.previous.digest)
+            and self.previous.digest == self.digest
             and self.previous.start is not None
             and self.out.exists()
         )
@@ -300,7 +289,7 @@ def plan_job(inputs: Inputs, section: PageSection, cue_times: CueTimes | None, s
         seconds=seconds,
         out=workspace.recording(section.key),
         log_path=workspace.recording_log(section.key),
-        input_hash=section_hash(inputs, section, url, seconds, previous.recording.assets if previous else ()),
+        digest=section_digest(inputs, section, url, seconds, previous.recording.assets if previous else ()),
         previous=previous,
     )
 
@@ -315,8 +304,7 @@ __all__ = [
     "plan_job",
     "scene_params",
     "scene_url",
-    "section_hash",
-    "spoken_words",
+    "section_digest",
     "words_param",
     "words_query",
 ]

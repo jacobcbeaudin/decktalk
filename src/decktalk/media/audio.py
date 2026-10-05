@@ -1,11 +1,11 @@
 """Audio work on top of ffmpeg, so nothing above this module spells an audio filter by hand.
 
-The narration stages build silence, click tracks, padding and joins here, `assemble` measures and
+The narration stages build silence, placeholder audio, padding and joins here, `assemble` measures and
 corrects loudness here, and `verify` reads the samples of one span here. Every call goes through
 `ffmpeg.run`, `ffmpeg.stderr` or `ffmpeg.raw`, each of which checks the return code, so a failed
 edit says what ffmpeg said rather than leaving an empty file behind.
 
-Every number a verdict depends on arrives as an argument. The sample rate comes from `[video]`, the
+Every number a verdict depends on arrives as an argument. The sample rate comes from `[audio]`, the
 two bounds that decide where a take stops sounding come from `[narration]`, the click level is the
 published number `verify.click_floor_dbfs` is derived from, and what is left here is a fact about
 audio rather than a choice about a film.
@@ -104,7 +104,7 @@ def sound_end(path: Path, *, noise_dbfs: float, min_run_seconds: float) -> float
 
 
 def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate: int, bitrate: str) -> None:
-    """A placeholder track for builds without voice: silence with a soft click at each word start.
+    """The audio of a placeholder: silence with a soft click at each word start.
 
     The clicks let `verify` measure the finished file's audio against its picture, and
     they make a silent draft reviewable for pacing.
@@ -113,13 +113,19 @@ def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate
     samples = array.array("h", bytes(PCM_BYTES_PER_SAMPLE * n))
     amp = int(FULL_SCALE * gain(CLICK_LEVEL_DBFS))
     click = round(CLICK_SECONDS * sample_rate)
+    # One click is drawn once and copied to every word start, cut where it would run off either end.
+    template = array.array(
+        "h",
+        (
+            int(amp * math.sin(math.pi * i / click) * math.sin(2 * math.pi * CLICK_HZ * i / sample_rate))
+            for i in range(click)
+        ),
+    )
     for t in times:
         start = round(t * sample_rate)
-        for i in range(click):
-            j = start + i
-            if 0 <= j < n:
-                env = math.sin(math.pi * i / click)
-                samples[j] = int(amp * env * math.sin(2 * math.pi * CLICK_HZ * i / sample_rate))
+        first, last = max(start, 0), min(start + click, n)
+        if first < last:
+            samples[first:last] = template[first - start : last - start]
     wav = path.with_suffix(".clicks.wav")
     with wave.open(str(wav), "wb") as fh:
         fh.setnchannels(1)
@@ -131,7 +137,7 @@ def write_clicks(path: Path, duration: float, times: list[float], *, sample_rate
 
 
 def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int) -> list[int]:
-    """Mono 16-bit samples of the audio between start and start + seconds, at `[video] sample_rate`."""
+    """Mono 16-bit samples of the audio between start and start + seconds, at `[audio] sample_rate`."""
     out = ffmpeg.raw(
         "-ss", f"{start:.3f}", "-t", f"{seconds:.3f}", *ffmpeg.source(path), "-vn",
         "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "-",

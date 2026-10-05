@@ -13,7 +13,7 @@ from pathlib import Path
 
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio
 from decktalk.media.audio import gain
 from decktalk.pipeline import Stage
@@ -43,7 +43,7 @@ def normalize_loudness(inputs: Inputs, src: Path, dst: Path) -> tuple[audio.Loud
     the ceiling. It runs oversampled so inter-sample peaks are caught, which is what a true-peak
     ceiling promises.
     """
-    loudness = inputs.settings.mix.loudness
+    loudness = inputs.settings.audio
     before = audio.measure_loudness(
         src, i=loudness.target_lufs, tp=loudness.true_peak_max_dbtp, lra=loudness.range_max_lu
     )
@@ -56,7 +56,7 @@ def normalize_loudness(inputs: Inputs, src: Path, dst: Path) -> tuple[audio.Loud
         dst,
         filters=f"volume={lift:.2f}dB,aresample={LIMITER_OVERSAMPLE_RATE},"
         f"alimiter=limit={ceiling:.4f}:attack={LIMITER_ATTACK_MS}:release={LIMITER_RELEASE_MS}:level=false,"
-        f"aresample={inputs.settings.video.sample_rate}",
+        f"aresample={inputs.settings.audio.sample_rate}",
     )
     after = audio.measure_loudness(
         dst, i=loudness.target_lufs, tp=loudness.true_peak_max_dbtp, lra=loudness.range_max_lu
@@ -77,7 +77,7 @@ def measured(inputs: Inputs, after: audio.Loudness) -> Loudness | None:
         integrated_lufs=round(after.i, 1),
         true_peak_dbtp=round(after.tp, 1),
         range_lu=round(max(after.lra, 0.0), 1),
-        target_lufs=inputs.settings.mix.loudness.target_lufs,
+        target_lufs=inputs.settings.audio.target_lufs,
     )
 
 
@@ -88,7 +88,7 @@ def loudness_findings(inputs: Inputs, run: Run, after: audio.Loudness) -> list[F
     a reader decides what to do about it. The subject is the finished film, which is the file whose
     loudness was measured.
     """
-    loudness = inputs.settings.mix.loudness
+    loudness = inputs.settings.audio
     film = inputs.relative(inputs.workspace.film)
     where = Location(where=film.as_posix(), file=film)
     found: list[Finding] = []

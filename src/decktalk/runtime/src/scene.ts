@@ -5,11 +5,11 @@
  * names are derived from the registry rather than spelled here, an unknown `data-` word and a value
  * outside its published set are reported before a single pixel is drawn, and a moment is qualified
  * with the id of the template it was written in, so the author writes `expand` inside the slide
- * `pitch.listing` and the wire carries `pitch.listing:expand`.
+ * `pitch.listing` and its cue id is `pitch.listing:expand`.
  *
  * Ownership is declared and never inferred. A slide owns exactly the cues its moment attributes
- * name plus the local names it lists, which is what lets a cue id carry any characters an author
- * likes and what replaced the longest-prefix rule that used to guess.
+ * name plus the cue names it lists, which is what lets a cue id carry any characters an author
+ * likes, with no prefix rule guessing which slide a cue belongs to.
  */
 
 import {
@@ -18,6 +18,7 @@ import {
   type Attr,
   COUNTS,
   type Count,
+  cueId,
   ENTRANCES,
   type Entrance,
   EXITS,
@@ -34,7 +35,6 @@ import {
   staggerSpan,
   WORD_STYLES,
   type WordStyle,
-  wireId,
 } from "./contract.ts";
 import type { CatalogEntry } from "./telemetry.ts";
 import { warn } from "./warn.ts";
@@ -59,7 +59,7 @@ export const ATTR = {
   scene: named("scene"),
   name: named("name"),
   slide: named("slide"),
-  hold: named("hold"),
+  previewSeconds: named("preview-seconds"),
   owns: named("owns"),
   enter: named("enter"),
   in: named("in"),
@@ -69,7 +69,7 @@ export const ATTR = {
   inStyle: named("in-style"),
   inSeconds: named("in-seconds"),
   outStyle: named("out-style"),
-  steps: named("steps"),
+  spotlight: named("spotlight"),
   stagger: named("stagger"),
   swaps: named("swaps"),
   words: named("words"),
@@ -99,7 +99,7 @@ export type Render = (ctx: { scene: Scene; slide: Slide; frozen: boolean }) => s
 /** One slide, as the markup declared it or as a script registered it. */
 export type Slide = {
   readonly id: string;
-  hold: number;
+  previewSeconds: number;
   enter: SlideEntrance;
   owns: string[];
   markup: HTMLTemplateElement | null;
@@ -121,13 +121,13 @@ const SCENE_WORD = "Scene";
 /** Every scene of the deck, keyed by the id a section names, in the order they were declared. */
 const scenes = new Map<string, Scene>();
 
-/** Every handler the deck registered outside a slide, keyed by the wire id of its cue. */
+/** Every handler the deck registered outside a slide, keyed by the cue id of its cue. */
 const handlers = new Map<string, Handler[]>();
 
-/** The scale every declared span is multiplied by, which a reduced-motion render lowers. */
+/** The scale every declared span is multiplied by, which `motion.scale` sets. */
 let motionScale = 1;
 
-/** Tell the reader how far a reduced render slows the page down, before it reads any markup. */
+/** Tell the reader how far `motion.scale` slows the page down, before it reads any markup. */
 export function setMotionScale(scale: number): void {
   motionScale = scale;
 }
@@ -147,7 +147,7 @@ export function handled(cue: string): boolean {
   return handlers.has(cue);
 }
 
-/** Register a handler for one wire id, which is what `DeckTalk.on` does. */
+/** Register a handler for one cue id, which is what `DeckTalk.on` does. */
 export function on(cue: string, fn: Handler): void {
   const list = handlers.get(cue) ?? [];
   list.push(fn);
@@ -225,13 +225,13 @@ export function staggerSeconds(el: Element): number | null {
 }
 
 /** How long the preview rests on a slide, which is the author's own length or the published default. */
-function holdSeconds(el: Element): number {
-  return seconds(el, ATTR.hold) ?? Number(ATTRS[ATTR.hold].default);
+function previewSeconds(el: Element): number {
+  return seconds(el, ATTR.previewSeconds) ?? Number(ATTRS[ATTR.previewSeconds].default);
 }
 
 // ---- moments -------------------------------------------------------------------------------------
 
-/** One moment an element declares, as the author wrote it and as the wire carries it. */
+/** One moment an element declares, as the author wrote it and as its cue id spells it. */
 export type Moment = { readonly attr: Attr; readonly local: string; readonly cue: string };
 
 /**
@@ -244,23 +244,23 @@ export function momentsOf(el: Element, slideId: string): Moment[] {
   const out: Moment[] = [];
   for (const attr of MOMENTS) {
     const local = written(el, attr);
-    if (local) out.push({ attr, local, cue: wireId(slideId, local) });
+    if (local) out.push({ attr, local, cue: cueId(slideId, local) });
   }
   return out;
 }
 
-/** Every class an element changes, as a moment and the class name it adds at that moment. */
-export function classMomentsOf(el: Element, slideId: string): { cue: string; local: string; name: string }[] {
+/** Every class an element changes, as a cue and the class name it adds at that cue. */
+export function classChangesOf(el: Element, slideId: string): { cue: string; local: string; name: string }[] {
   const value = written(el, ATTR.class);
   if (!value) return [];
-  return pairs(value).map((pair) => ({ cue: wireId(slideId, pair.moment), local: pair.moment, name: pair.value }));
+  return pairs(value).map((pair) => ({ cue: cueId(slideId, pair.cue), local: pair.cue, name: pair.value }));
 }
 
-/** The phrase the author wrote for one class change, or null when they wrote none for it. */
-export function classPhraseOf(el: Element, local: string): string | null {
+/** The description the author wrote for one class change, or null when they wrote none for it. */
+export function classDescriptionOf(el: Element, local: string): string | null {
   const value = written(el, ATTR.describeClass);
   if (value === null) return null;
-  const found = pairs(value).find((pair) => pair.moment === local);
+  const found = pairs(value).find((pair) => pair.cue === local);
   return found ? found.value : null;
 }
 
@@ -287,11 +287,11 @@ export function cueOrder(slide: Slide): string[] {
   if (slide.markup) {
     for (const el of momentElements(slide.markup.content)) {
       for (const moment of momentsOf(el, slide.id)) add(moment.cue);
-      for (const change of classMomentsOf(el, slide.id)) add(change.cue);
+      for (const change of classChangesOf(el, slide.id)) add(change.cue);
     }
   }
-  for (const local of Object.keys(slide.on)) add(wireId(slide.id, local));
-  for (const local of slide.owns) add(wireId(slide.id, local));
+  for (const local of Object.keys(slide.on)) add(cueId(slide.id, local));
+  for (const local of slide.owns) add(cueId(slide.id, local));
   return order;
 }
 
@@ -331,7 +331,7 @@ export function spansOf(slide: Slide): Record<string, number> {
   if (!slide.markup) return spans;
   for (const el of momentElements(slide.markup.content)) {
     for (const moment of momentsOf(el, slide.id)) widen(moment.cue, spanOf(el, moment.attr));
-    for (const change of classMomentsOf(el, slide.id)) widen(change.cue, 0);
+    for (const change of classChangesOf(el, slide.id)) widen(change.cue, 0);
   }
   return spans;
 }
@@ -384,7 +384,7 @@ export function measureClassSpans(
   reduced: boolean,
 ): void {
   for (const el of momentElements(slideEl)) {
-    for (const change of classMomentsOf(el, slide.id)) {
+    for (const change of classChangesOf(el, slide.id)) {
       el.classList.add(change.name);
       const span = longestMotion(el);
       el.classList.remove(change.name);
@@ -426,7 +426,7 @@ export function catalog(): CatalogEntry[] {
 /** One slide of a scene a script declares, in the shape a page writes it. */
 export type SlideInput = {
   id?: string | number;
-  hold?: number;
+  previewSeconds?: number;
   enter?: SlideEntrance;
   owns?: readonly (string | number)[];
   render?: Render;
@@ -440,7 +440,7 @@ export type SceneInput = { name?: string; slides?: readonly SlideInput[] };
 function slideFrom(sceneId: string, input: SlideInput, at: number): Slide {
   return {
     id: String(input.id ?? `${sceneId}.${at + 1}`),
-    hold: Number(input.hold ?? ATTRS[ATTR.hold].default),
+    previewSeconds: Number(input.previewSeconds ?? ATTRS[ATTR.previewSeconds].default),
     enter: input.enter ?? (ATTRS[ATTR.enter].default as SlideEntrance),
     owns: (input.owns ?? []).map(String),
     markup: null,
@@ -471,7 +471,7 @@ export function declare(id: string | number, input: SceneInput): void {
  */
 export function readMarkup(): void {
   // Every slide id the document has claimed so far, because two templates claiming one id give every
-  // moment written inside either of them two owners and no wire id can tell those apart.
+  // moment written inside either of them two owners and no cue id can tell those apart.
   const claimed = new Set<string>();
   for (const wrap of document.querySelectorAll(`[${ATTR.scene}]`)) {
     const sceneId = written(wrap, ATTR.scene) ?? "";
@@ -508,7 +508,7 @@ export function readMarkup(): void {
       // A slide that builds itself in script keeps its render, and the template beside it is the
       // markup of nothing, so only a slide with no render of its own takes one.
       if (!slide.render) slide.markup = tpl;
-      slide.hold = holdSeconds(tpl);
+      slide.previewSeconds = previewSeconds(tpl);
       slide.enter = slideEntranceOf(tpl);
       slide.owns = (written(tpl, ATTR.owns) ?? "").split(/\s+/).filter(Boolean);
       check(tpl.content, slideId, true);
@@ -535,7 +535,7 @@ function check(root: ParentNode, place: string, inSlide: boolean): void {
     for (const attribute of el.attributes) {
       if (!attribute.name.startsWith(PREFIX)) continue;
       if (!known(attribute.name)) {
-        warn("PAGE_UNKNOWN_ATTR", place, null, { attr: attribute.name });
+        warn("PAGE_ATTR_UNKNOWN", place, null, { attr: attribute.name });
         continue;
       }
       const row = ATTRS[attribute.name];
@@ -558,14 +558,15 @@ function check(root: ParentNode, place: string, inSlide: boolean): void {
     }
     describedClasses(el, place);
     staggered(el, place);
+    spotlit(el, place);
     swapped(el, root, place);
   }
 }
 
-/** A class change with no phrase for it loses its line in the transcript, which is the whole of the rule. */
+/** A class change with no description for it loses its line in the transcript, which is the whole of the rule. */
 function describedClasses(el: Element, slideId: string): void {
-  for (const change of classMomentsOf(el, slideId)) {
-    if (classPhraseOf(el, change.local) === null) {
+  for (const change of classChangesOf(el, slideId)) {
+    if (classDescriptionOf(el, change.local) === null) {
       warn("PAGE_CLASS_UNDESCRIBED", slideId, change.cue, { value: change.name, attr: ATTR.class });
     }
   }
@@ -576,6 +577,13 @@ function staggered(el: Element, slideId: string): void {
   if (staggerSeconds(el) === null || el.children.length) return;
   const moment = momentsOf(el, slideId).find((one) => one.attr === ATTR.in);
   warn("PAGE_STAGGER_EMPTY", slideId, moment ? moment.cue : null, { attr: ATTR.stagger });
+}
+
+/** A spotlight walks its cued children, so a container with none of them brings nothing forward. */
+function spotlit(el: Element, slideId: string): void {
+  if (!flagged(el, ATTR.spotlight)) return;
+  if ([...el.children].some((child) => written(child, ATTR.in))) return;
+  warn("PAGE_SPOTLIGHT_EMPTY", slideId, null, { attr: ATTR.spotlight });
 }
 
 /**
@@ -590,7 +598,7 @@ function swapped(el: Element, root: ParentNode, slideId: string): void {
   if (!local) return;
   const leaving = [...root.querySelectorAll(`[${ATTR.out}]`)].filter((other) => written(other, ATTR.out) === local);
   if (leaving.length === 1) return;
-  warn("PAGE_SWAP_AMBIGUOUS", slideId, wireId(slideId, local), { value: leaving.length, attr: ATTR.swaps });
+  warn("PAGE_SWAP_AMBIGUOUS", slideId, cueId(slideId, local), { value: leaving.length, attr: ATTR.swaps });
 }
 
 /** An exit at or before its own entrance never plays, which the declared order makes exact. */

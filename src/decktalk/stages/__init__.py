@@ -3,21 +3,25 @@
     narrate/     the script becomes one take per section, with a time for every word
     cue/         every cue phrase becomes a second on its own section's clock
     record/      each page section is recorded against those seconds
-    soundscape/  the music, the ambience bed and the effects are generated
-    assemble/    the recordings, the narration and the soundscape become one film
+    score/       the music, the ambience bed and the effects are generated
+    assemble/    the recordings, the narration and the score become one film
     verify/      the finished film is measured against the clock it was promised
     build.py     the six stages in order, or the span of them a caller named
-    check.py     what a build would spend and show, judged before anything is spent
+    cost.py      what every stage that buys costs, priced at the bill its provider declares
+    table.py     each stage's function, its result and the options it takes
+    check/       what a build would cost and show, judged before anything is bought
+    kept.py      what the last build made, and whether the film and its measurement still stand
+    pool.py      the one pool narrate and record fan their sections out to
     status.py    what is written, what is built, what is stale and what to do next
     words.py     every spoken word with its span, which is how a cue phrase is written
     storyboard.py  every slide at every cue, frozen onto one page
     clip.py      a span of one built section, cut into its own file
 
-Every one of them satisfies the same convention: the module named after the call holds a function
+Every call above satisfies the same convention: the module named after the call holds a function
 of that name, taking the project's `Inputs` and the `Run` the facade opened, and returning the
-result model named after it. That is the whole seam between `project.py` and the stages, so a test
-fakes a stage by replacing one attribute and no stage ever sees a project, a machine or a run
-opener.
+result model named after it. The six stages are called through their rows in `table.py`, which
+`build` and `project.py` share, so a test fakes a stage by replacing one row and no stage ever sees
+a project, a machine or a run opener.
 
 A stage therefore cannot read the environment and cannot print. It reports through the run: one
 sentence with `run.note`, one judgement with `run.found`, one count with `run.progress`, one file
@@ -31,69 +35,41 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from decktalk.inputs import Inputs
-from decktalk.results import Layer
-from decktalk.speech import VoiceContext
-
-PRICE_KEY = "voice.price_per_1000_characters"
-"""The key that states what speech costs, whose layer decides whether a spend ceiling may refuse a run."""
-
-CHARACTERS_PER_PRICE = 1000
-"""Truth: the price is stated per thousand characters, which is how every provider bills speech."""
-
-DOLLAR_DIGITS = 2
-"""Truth: a price in dollars is read to the cent, which is the smallest unit anybody is charged."""
+from decktalk.speech import SpeechContext
 
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
 
 
-def dollars_for(characters: int, inputs: Inputs) -> float:
-    """What this many characters cost at the project's stated rate, unrounded.
+def speech_context(inputs: Inputs) -> SpeechContext:
+    """What the voice in force is built from, taken from its own table, this project's tuning and its own `.env`.
 
-    One take's charge is stated at full precision, because a ledger that adds rounded cents per take
-    drifts from the run's own total, which is rounded once, after the sum.
-    """
-    return characters / CHARACTERS_PER_PRICE * inputs.settings.voice.price_per_1000_characters
-
-
-def price_layer(inputs: Inputs) -> Layer:
-    """Which layer stated the price, because a ceiling may not guard a price nobody has stated."""
-    try:
-        return inputs.layers.winner(PRICE_KEY).layer
-    except KeyError:
-        # silent: a price no layer states is the default's.
-        return Layer.DEFAULT
-
-
-def voice_context(inputs: Inputs) -> VoiceContext:
-    """What a speech provider is built from, taken from this project's tuning and its own `.env`.
-
-    The context carries five values and no settings tree, so the speech layer imports no settings
-    class and a provider built in a test is built the way a run builds one.
+    The base URL is its own table's `base_url`, which only the machine sets, so a provider with no
+    table is handed none.
     """
     settings = inputs.settings
-    return VoiceContext(
+    return SpeechContext(
         secrets=inputs.env,
-        api_base=settings.elevenlabs.api_base,
-        context_chars=settings.narration.context_chars,
+        base_url=inputs.voice.base_url,
+        context_characters=settings.narration.context_characters,
         speech_timeout_seconds=settings.narration.timeout_seconds,
-        sound_timeout_seconds=settings.elevenlabs.timeout_seconds,
     )
 
 
 def selects(only: Sequence[int] | None) -> Callable[[int], bool]:
-    """Whether one section number is in this run's selection, which is every section when it names none."""
-    numbers = set(only or ())
-    return lambda number: not numbers or number in numbers
+    """Whether one section number is in this run's selection.
+
+    No selection at all is every section. A selection is the sections it names and no others, so an
+    empty one selects nothing and never widens to the whole project.
+    """
+    if only is None:
+        return lambda _number: True
+    numbers = set(only)
+    return lambda number: number in numbers
 
 
 __all__ = [
-    "CHARACTERS_PER_PRICE",
-    "DOLLAR_DIGITS",
-    "PRICE_KEY",
     "SECTION_START_SECONDS",
-    "dollars_for",
-    "price_layer",
     "selects",
-    "voice_context",
+    "speech_context",
 ]

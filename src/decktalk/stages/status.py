@@ -16,202 +16,84 @@ writes it, and a stage added to the pipeline reaches this report with no line ch
 everything is on disk, anything that moved since it was built names `build`, which keeps what did
 not move and redoes the rest.
 
+Each spoken section's take state is narrate's own, read through `take_states`: voiced, unchecked,
+stale, placeholder or missing, with the clause that says why. So this report, `check`, `narrate` and
+`watch` never disagree about a take, and the project is told to build exactly when a run that buys
+nothing would change a take. A take damaged in every place that holds it is one error line, and its
+section's row carries no take state. A takes directory that holds none of the takes the project
+played is one warning line, and no build is named next, because a build would buy them again.
+
+The takes directory keeps every voiced take the project ever made, so after a voice change or an
+edit it holds takes no section plays. This report lists them with their size and never removes one, because
+each is a paid record and its author decides with `git rm`. A take counts as played when the take
+index or a section's current digest names it, so a report that cannot name the digests, with no
+voice named, claims nothing about any take.
+
 Whether a recording still stands is `record`'s rule, asked of `record`, because one rule decides
 what a run skips and what this report calls stale and neither compares file times.
 
-Whether the film and its measurement still stand is this module's rule, and `build` asks it. A build
-leaves `kept.json` under the build directory, which holds a digest of everything `assemble` and
-`verify` read the last time they ran, what they wrote and what they found. A build whose digest
-matches keeps both stages rather than repeating them, and this report names nothing next once the
-film on disk is the one the last build measured. The digests are over file contents and never
-over file times, because a copy or a checkout moves every time and changes no byte.
+Whether the film and its measurement still stand is `kept.py`'s rule, which `build` asks too, so
+this report names nothing next once the film on disk is the one the last build measured.
 """
 
 from __future__ import annotations
 
-import dataclasses
-import json
 import logging
-from collections.abc import Callable, Iterable, Mapping
+import re
+from collections.abc import Callable
 from pathlib import Path
 
-from pydantic import Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from decktalk.artifacts.stored import Stored, engine_digest, file_digest
+from decktalk.artifacts import WORDS_SUFFIX, UnreadableCache, UnreadablePaidRecord, is_placeholder
+from decktalk.artifacts.takes import TAKE_DIGEST
 from decktalk.errors import DeckTalkError
-from decktalk.events import Level, Line, StageStart
-from decktalk.findings import Code, Finding, Location, Model, judge
+from decktalk.events import AnyEvent, Level, StageStart
+from decktalk.findings import Code, Location, judge
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.paths import at
 from decktalk.inputs.workspace import EVENTS_SUFFIX
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.page import Q
-from decktalk.pipeline import PIPELINE, Artifact, Stage
-from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult
-from decktalk.settings import PROJECT_FILE
+from decktalk.pipeline import PIPELINE, Stage
+from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult, UnplayedTakes
+from decktalk.stages.kept import BUILT, assembled, read_kept, verify_digest
+from decktalk.stages.narrate import TakeStates, take_states
 from decktalk.stages.record import stale_recording
 
 log = logging.getLogger(__name__)
 
-LINE = TypeAdapter(Line)
+LINE = TypeAdapter(AnyEvent)
 """The one reader of an event file, so a line this library cannot read is never taken for a run."""
+
+ALIGNED_DIR = "aligned"
+"""The folder inside the takes directory that aligned words are kept in, beside the takes they time."""
 
 BUILD = "build"
 """The command a stale project runs, which redoes what moved and keeps every stage whose inputs did not."""
 
-DRAFT = {Stage.NARRATE: "--no-voice"}
+DRAFT = {Stage.NARRATE: "--no-spend"}
 """The flag that makes a stage's first move the cheap one, which is the unpaid draft of the voice.
 
 A project with no take index at all has never been narrated, so the move it is told to make is the
 rehearsal that spends nothing. Every other stage costs only time, and so is named on its own.
 """
 
-BUILT: dict[Artifact, Callable[[Inputs], bool]] = {
-    Artifact.TAKES: lambda inputs: inputs.workspace.takes_path.is_file(),
-    Artifact.CUE_TIMES: lambda inputs: inputs.workspace.cue_times_path.is_file(),
-    Artifact.RECORDINGS: lambda inputs: all(
-        inputs.workspace.recording(section.key).is_file() for section in inputs.document.page_sections
-    ),
-    # A project that describes no soundscape has nothing to generate, so that stage is never next.
-    Artifact.SOUNDSCAPE: lambda inputs: inputs.document.soundscape.empty or _holds(inputs.workspace.soundscape_dir),
-    # The film is what the final directory is for, and a directory a stopped run left behind is not one.
-    Artifact.FINAL: lambda inputs: inputs.workspace.film.is_file(),
-}
-"""When each artifact the pipeline declares counts as built, which is one sentence of arithmetic each.
 
-The path comes from the workspace rather than from the artifact's own value, because `[project]
-build` may put the whole build directory somewhere else and the workspace is what knows where.
-"""
-
-
-KEPT_FILE = "kept.json"
-"""What the record of the last assemble and verify is called, under the project's build directory."""
-
-
-class KeptStage(Model):
-    """What one stage read, what it wrote and what it found the last time a build ran it."""
-
-    key: str = Field(description="The digest of everything the stage read, with the options it was run with.")
-    options: dict[str, JsonValue] = Field(description="The options the stage was run with, as the build passed them.")
-    outputs: dict[str, str] = Field(
-        default_factory=dict,
-        description="Each file the stage wrote, project-relative, against the digest of its bytes.",
-    )
-    findings: tuple[Finding, ...] = Field(
-        default=(),
-        description="What the stage found, which a run that keeps the stage reports again.",
-    )
-
-
-class Kept(Stored):
-    """The record a build leaves of the two stages it can keep, read by the next build and by status."""
-
-    assemble: KeptStage | None = None
-    verify: KeptStage | None = None
-
-
-def read_kept(inputs: Inputs) -> Kept:
-    """The record the last build left, or an empty one when there is none or it cannot be read.
-
-    A record this version cannot read keeps nothing, which costs one assemble and one verify and is
-    never wrong, so it is not worth a refusal.
-    """
-    return Kept.previous(kept_path(inputs)) or Kept()
-
-
-def kept_path(inputs: Inputs) -> Path:
-    """Where this project keeps its record, which is under the build directory the project names."""
-    return inputs.workspace.build / KEPT_FILE
-
-
-def assemble_key(inputs: Inputs, options: Mapping[str, JsonValue]) -> str:
-    """The digest of everything `assemble` reads, with the options a build runs it with.
-
-    The list is deliberately wide: the project file, the script, the cue file, every file the local
-    origin serves, the take index and the joined narration, the cue times, every recording and every
-    generated sound, every setting in force and the engine's own version. A digest that missed an
-    input would ship a film the inputs no longer describe, and one that reads too much costs only a
-    repeated assemble.
-    """
-    settings = json.dumps(dataclasses.asdict(inputs.settings), sort_keys=True, default=str)
-    read = (f"{inputs.relative(path).as_posix()}:{file_digest(path)}" for path in _assemble_reads(inputs))
-    return engine_digest(settings, json.dumps(options, sort_keys=True), *read)
-
-
-def verify_key(inputs: Inputs, assembled: str, options: Mapping[str, JsonValue]) -> str:
-    """The digest of what `verify` measures: the film's own bytes, what made it, and the options.
-
-    What made the film is the assemble digest, which already carries every setting and every file
-    the measurement is judged against, so the film is the only input added here.
-    """
-    return engine_digest(assembled, file_digest(inputs.workspace.film), json.dumps(options, sort_keys=True))
-
-
-def outputs_of(inputs: Inputs, paths: Iterable[Path]) -> dict[str, str]:
-    """Each of these files that is on disk, project-relative, against the digest of its bytes."""
-    return {inputs.relative(path).as_posix(): file_digest(path) for path in paths if path.is_file()}
-
-
-def intact(inputs: Inputs, stage: KeptStage) -> bool:
-    """Whether every file a kept stage wrote is still on disk with the bytes it wrote.
-
-    A stage run on its own after the build, such as `decktalk assemble --no-loudness`, rewrites the
-    film without touching the record, and this is what stops the next build keeping that film.
-    """
-    return all(file_digest(inputs.root / name) == digest for name, digest in stage.outputs.items())
-
-
-def assembled(inputs: Inputs, kept: Kept) -> str | None:
-    """The assemble digest of the film on disk, or None when that film no longer stands.
-
-    The film stands when the last build's assemble read exactly what is on disk now and wrote
-    exactly the files that are there, which is the one question both a keeping build and this
-    report ask before they trust a measurement of it.
-    """
-    record = kept.assemble
-    if record is None or not holds_film(inputs, record):
-        return None
-    return record.key if assemble_key(inputs, record.options) == record.key else None
-
-
-def holds_film(inputs: Inputs, record: KeptStage) -> bool:
-    """Whether a kept assemble wrote the film on disk, byte for byte, along with everything beside it."""
-    return inputs.relative(inputs.workspace.film).as_posix() in record.outputs and intact(inputs, record)
-
-
-def _assemble_reads(inputs: Inputs) -> list[Path]:
-    """Every file `assemble` may read, each once, in an order that depends on nothing but their names."""
-    workspace = inputs.workspace
-    named = [inputs.root / PROJECT_FILE, inputs.script_path, inputs.cues_path]
-    named += [inputs.root / served for served in inputs.served_paths()]
-    named += [workspace.takes_path, workspace.narration_path, workspace.cue_times_path]
-    named += [workspace.recordings_dir, workspace.soundscape_dir]
-    return sorted({found for path in named for found in _files(path)}, key=lambda path: path.as_posix())
-
-
-def _files(path: Path) -> list[Path]:
-    """The files one named path stands for, which is itself, everything under it, or nothing."""
-    if path.is_dir():
-        return [found for found in path.rglob("*") if found.is_file()]
-    return [path]
-
-
-def _holds(directory: Path) -> bool:
-    """Whether a directory artifact holds anything at all, which is what makes it written."""
-    return directory.is_dir() and any(directory.iterdir())
-
-
-def next_command(inputs: Inputs, *, stale: bool = False) -> str | None:
+def next_command(inputs: Inputs, states: TakeStates | None, *, stale: bool = False) -> str | None:
     """The whole command to run next, read off the pipeline rather than worked out here, or None.
 
     The stages run in a fixed order and each declares what it writes, so the first artifact that is
-    not on disk names the stage that writes it. Once everything is on disk, a project where anything
-    has moved since it was built is told to build, because a build keeps every stage whose inputs
-    did not move and redoes the rest, and a lone `verify` would measure a film its inputs no longer
-    describe. `stale` is what the section rows already found, so the recordings are judged once.
-    A film the last build made and measured from exactly these inputs leaves nothing to do, and a
-    film nobody has measured yet is told to be measured.
+    not on disk names the stage that writes it. A takes directory that holds none of the takes the
+    project played names nothing, because a build would buy again what a renamed folder holds. Once
+    everything is on disk, a project where anything has moved since it was built is told to build,
+    because a build keeps every stage whose inputs did not move and redoes the rest, and a lone
+    `verify` would measure a film its inputs no longer describe. A take has moved when a run that buys
+    nothing would change it, which is what `states` says is not settled. `stale` is what the section
+    rows already found, so the recordings are judged once. A film the last build made and measured
+    from exactly these inputs leaves nothing to do, and a film nobody has measured yet is told to be
+    measured.
     """
     for spec in PIPELINE:
         for artifact in spec.writes:
@@ -219,28 +101,16 @@ def next_command(inputs: Inputs, *, stale: bool = False) -> str | None:
                 stage = artifact.written_by or spec.stage
                 flag = DRAFT.get(stage)
                 return f"decktalk {stage.value} {flag}" if flag else f"decktalk {stage.value}"
+    if states is not None and any(state.takes_dir_gone for state in states.values()):
+        return None
     kept = read_kept(inputs)
     made = assembled(inputs, kept)
-    if stale or _words_moved(inputs) or (kept.assemble is not None and made is None):
+    if stale or (states is not None and not states.settled) or (kept.assemble is not None and made is None):
         return f"decktalk {BUILD}"
     measured = kept.verify
-    if made is not None and measured is not None and verify_key(inputs, made, measured.options) == measured.key:
+    if made is not None and measured is not None and verify_digest(inputs, made, measured.options) == measured.digest:
         return None
     return f"decktalk {Stage.VERIFY.value}"
-
-
-def _words_moved(inputs: Inputs) -> bool:
-    """Whether any spoken section's take says other words than the script does now, or is missing."""
-    takes = inputs.takes()
-    if takes is None:
-        return True
-    for section, said in voiced_text(inputs).items():
-        if section in inputs.document.clip_numbers:
-            continue
-        take = takes.of(section)
-        if take is None or take.spoken != said:
-            return True
-    return False
 
 
 def source_of(section: Section) -> str:
@@ -255,31 +125,46 @@ def source_of(section: Section) -> str:
     return section.clip
 
 
-def voiced_text(inputs: Inputs) -> dict[int, str]:
-    """What each section's script says now, so a take of older words is not reported as this one's.
+def _states(inputs: Inputs, run: Run) -> tuple[TakeStates | None, frozenset[int]]:
+    """Every spoken section's take state, or None when the script cannot be read, and the sections refused.
 
-    A script that will not parse is reported by `judgements`, and every section then falls back to
-    holding a take at all, which is still true and is all this report can honestly say.
+    A take damaged in every place that holds it is refused for its section alone, so that refusal is
+    one error line, its section is left out, and the rest are read again. Each pass leaves out the
+    section the refusal named, so the reading ends, and the sections it named come back beside the
+    states so no other reading reports the same damaged take again. A script that will not parse is
+    reported by `judgements`, and every row then carries no take state, which is all this report can
+    honestly say.
     """
+    refused_sections: set[int] = set()
     try:
-        return {segment.index: segment.spoken for segment in inputs.script()}
+        sections = list(inputs.spoken())
     except DeckTalkError as unread:
-        log.debug("The script did not parse, so no take is judged by its words.", exc_info=unread)
-        return {}
+        log.debug("The script did not parse, so no take state is read.", exc_info=unread)
+        return None, frozenset()
+    while True:
+        try:
+            return take_states(inputs, sections), frozenset(refused_sections)
+        except DeckTalkError as refused:
+            where = refused.location.section if refused.location is not None else None
+            if where is None or all(section.number != where for section in sections):
+                log.debug("The take states could not be read.", exc_info=refused)
+                return None, frozenset(refused_sections)
+            refused_sections.add(where)
+            hint = f" {refused.hint}" if refused.hint else ""
+            run.note(f"{refused}{hint}", level=Level.ERROR)
+            sections = [section for section in sections if section.number != where]
 
 
-def section_rows(inputs: Inputs, run: Run) -> tuple[SectionStatus, ...]:
-    """One row per section: what it plays, what is on disk for it, and whether that is still true."""
-    takes = inputs.takes()
-    spoken = voiced_text(inputs)
+def section_rows(
+    inputs: Inputs, run: Run, states: TakeStates | None, refused: frozenset[int] = frozenset()
+) -> tuple[SectionStatus, ...]:
+    """One row per section: what it plays, what is on disk for it, and whether that is still true.
+
+    `refused` names the sections whose take was refused as one line already, which is not said twice.
+    """
     rows: list[SectionStatus] = []
     for section in inputs.document.sections:
-        take = takes.of(section.number) if takes is not None else None
-        on_disk = take is not None and (inputs.workspace.takes_dir / take.file).is_file()
-        said = spoken.get(section.number)
-        # `voiced` is the take's own word, so a placeholder take on disk is not one a voice spoke
-        # and the column that says what this project has paid for never counts it.
-        voiced = on_disk and take is not None and take.voiced and (said is None or take.spoken == said)
+        state = states.get(section.number) if states is not None else None
         recorded = isinstance(section, PageSection) and inputs.workspace.recording(section.key).is_file()
         rows.append(
             SectionStatus(
@@ -287,20 +172,33 @@ def section_rows(inputs: Inputs, run: Run) -> tuple[SectionStatus, ...]:
                 key=section.key,
                 kind=SectionKind.CLIP if section.is_clip else SectionKind.PAGE,
                 source=source_of(section),
-                voiced=voiced,
+                take_state=state.state if state is not None else None,
+                take_reason=state.reason if state is not None else None,
                 recorded=recorded,
-                cut=inputs.workspace.section_video(section.key).is_file(),
-                stale=_stale(inputs, run, section, recorded=recorded),
+                assembled=inputs.workspace.section_video(section.key).is_file(),
+                recording_stale=_stale(inputs, run, section, recorded=recorded, said=section.number in refused),
             )
         )
     return tuple(rows)
 
 
-def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool) -> bool:
-    """Whether this section's recording no longer matches the project, with the reason as a line."""
+def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool, said: bool = False) -> bool:
+    """Whether this section's recording no longer matches the project, with the reason as a line.
+
+    A section whose words do not read, the provider's or the ones DeckTalk estimated for a placeholder,
+    cannot be judged, so the refusal is one error line, with its own sentence and hint, and the row
+    says nothing stale rather than ending the report. `said` is true when the take's own refusal is
+    already a line, which then stands for this one.
+    """
     if not recorded or not isinstance(section, PageSection):
         return False
-    why = stale_recording(inputs, section)
+    try:
+        why = stale_recording(inputs, section)
+    except (UnreadablePaidRecord, UnreadableCache) as unread:
+        if not said:
+            hint = f" {unread.hint}" if unread.hint else ""
+            run.note(f"{unread}{hint}", level=Level.ERROR)
+        return False
     if why is None:
         return False
     run.note(f"{why[0].upper()}{why[1:]}, so it would be recorded again.", level=Level.WARNING)
@@ -310,7 +208,7 @@ def _stale(inputs: Inputs, run: Run, section: Section, *, recorded: bool) -> boo
 def judgements(inputs: Inputs, run: Run) -> None:
     """Every file the project names and has not got, and every file it has that will not parse.
 
-    A file that is absent is a certain `FILE_MISSING`, because the next command cannot read it. A
+    A file that is absent is a `FILE_MISSING` error, because the next command cannot read it. A
     file that is there and will not parse has no code in the frozen list, so it is one sentence on
     the stream carrying the loader's own words, its file and its line.
     """
@@ -376,7 +274,7 @@ def live_runs(inputs: Inputs, run: Run) -> tuple[LiveRun, ...]:
 
 def _live_run(inputs: Inputs, run: Run, path: Path) -> LiveRun | None:
     """The run one events file describes, or None when it has closed or cannot be read."""
-    lines: list[Line] = []
+    lines: list[AnyEvent] = []
     try:
         for raw in path.read_text(encoding="utf-8").splitlines():
             if raw.strip():
@@ -391,9 +289,65 @@ def _live_run(inputs: Inputs, run: Run, path: Path) -> LiveRun | None:
     staged = [line.stage for line in lines if isinstance(line, StageStart)]
     return LiveRun(
         run=lines[0].run,
-        events=inputs.relative(path),
+        events_file=inputs.relative(path),
         started=lines[0].time,
         stage=staged[-1] if staged else None,
+    )
+
+
+def played_takes(inputs: Inputs, states: TakeStates | None) -> set[str] | None:
+    """Every take a section plays, or None when the script's own takes cannot be named.
+
+    A take is played when the take index names it, since the film plays that take until narrate runs
+    again, or when a section's current text, voice and settings name it, since the next narrate plays
+    that one. Both are counted, so no take the film still needs is ever called unplayed. With no voice
+    named, or no take states read, the script's own takes have no digest, so nothing is claimed.
+    """
+    if states is None or not inputs.voice.id:
+        return None
+    named = {state.digest for state in states.values() if state.digest is not None}
+    index = inputs.takes()
+    return named | ({row.digest for row in index.sections} if index is not None else set())
+
+
+def _take_of(name: str) -> str | None:
+    """The digest of the voiced take a file in the takes directory belongs to, or None when it is not one.
+
+    A take's audio is its digest and one suffix, and its words file is its digest and `.words.json`,
+    so a copy set aside as `.unreadable`, or any file of the author's own, names no take.
+    """
+    digest, _, rest = name.partition(".")
+    if re.fullmatch(TAKE_DIGEST, digest) is None or is_placeholder(digest):
+        return None
+    return digest if rest == WORDS_SUFFIX.removeprefix(".") or rest.isalnum() else None
+
+
+def unplayed_takes(inputs: Inputs, states: TakeStates | None) -> UnplayedTakes | None:
+    """The takes and aligned words in the takes directory that no section plays, read and never touched.
+
+    Each is a paid record or the measured timing of one, so DeckTalk lists them for their author to
+    remove with `git rm` and deletes none of them. No stage of this version reads aligned words, so
+    every file under `aligned/` is one no section plays. A file that is not named like a take, such
+    as a damaged copy set aside as `.unreadable`, is not a take and is left out.
+    """
+    played = played_takes(inputs, states)
+    if played is None:
+        return None
+    takes = inputs.workspace.takes
+    named = ((path, _take_of(path.name)) for path in sorted(takes.iterdir() if takes.is_dir() else ()))
+    pairs = [(path, digest) for path, digest in named if digest is not None and path.is_file()]
+    gone = {digest for _path, digest in pairs if digest not in played}
+    unplayed = [path for path, digest in pairs if digest in gone]
+    aligned_dir = takes / ALIGNED_DIR
+    aligned = sorted(aligned_dir.glob(f"*{WORDS_SUFFIX}")) if aligned_dir.is_dir() else []
+    aligned = [path for path in aligned if path.is_file()]
+    files = sorted([*unplayed, *aligned])
+    return UnplayedTakes(
+        directory=inputs.relative(takes),
+        takes=len(gone),
+        aligned=len(aligned),
+        bytes=sum(path.stat().st_size for path in files),
+        files=tuple(inputs.relative(path) for path in files),
     )
 
 
@@ -401,36 +355,41 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
     """Report what is written, what is built, what is stale, and what to do next.
 
     Nothing is written and only the built film is measured, because how long a film runs is a fact
-    about its own bytes and the cut list beside it is a record of what a run meant to write.
+    about its own bytes and the placements beside it are a record of what a run meant to write.
     """
     judgements(inputs, run)
-    rows = section_rows(inputs, run)
+    states, refused = _states(inputs, run)
+    rows = section_rows(inputs, run, states, refused)
+    gone = next((state for state in states.values() if state.takes_dir_gone), None) if states is not None else None
+    if gone is not None:
+        reason = gone.reason
+        run.note(
+            f"{reason[0].upper()}{reason[1:]}, so no build is named next. "
+            "Point [narration] takes_dir at the folder that holds them.",
+            level=Level.WARNING,
+        )
     film = inputs.workspace.film
     built = film.is_file()
     return run.result(
         StatusResult,
         name=inputs.document.name,
         script=inputs.relative(inputs.script_path),
-        cues=inputs.relative(inputs.cues_path),
+        cues_file=inputs.relative(inputs.cues_path),
         sections=rows,
         film=inputs.relative(film) if built else None,
         film_seconds=ffmpeg.probe_duration(film) if built else None,
         runs=live_runs(inputs, run),
-        next=next_command(inputs, stale=any(row.stale for row in rows)),
+        unplayed=unplayed_takes(inputs, states),
+        next=next_command(inputs, states, stale=any(row.recording_stale for row in rows)),
     )
 
 
 __all__ = [
-    "BUILT",
-    "Kept",
-    "KeptStage",
-    "assemble_key",
-    "assembled",
     "live_runs",
     "next_command",
-    "read_kept",
     "section_rows",
     "source_of",
+    "played_takes",
     "status",
-    "verify_key",
+    "unplayed_takes",
 ]

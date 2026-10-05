@@ -2,7 +2,7 @@
 
 The rule these tests exist for is the pair on disk. The log of the recording being replaced goes
 before anything is captured and the log of what was recorded is written last, so a run that stops in
-between leaves a webm with no log or a log with no narration t=0, and the next run records the
+between leaves a webm with no log or a log with no start, and the next run records the
 section again rather than trimming a new picture at an old moment.
 """
 
@@ -17,19 +17,21 @@ from typing import Any
 import pytest
 
 from decktalk.artifacts import RecordingLog
-from decktalk.errors import NotBuiltError
-from decktalk.events import Event, Level, Log, Progress
+from decktalk.errors import InputError, NotBuiltError
+from decktalk.events import Event, Level, RunLog, SectionDone, StageProgress
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.media import browser, ffmpeg, frames
-from decktalk.media.browser import Recording, RecordingSink
-from decktalk.media.pagereport import PageReport
+from decktalk.media import browser, ffmpeg, frames, recording
+from decktalk.media.pagereport import PageReport, Recording
+from decktalk.media.recording import RecordingSink
+from decktalk.pipeline import Outcome
+from decktalk.results import Word
 from decktalk.stages.record import pool, record, stale_recording
 from support.logs import decisions
 from support.pages import TWO_SCENE_PAGE, a_report
 from support.projects import load_project
 from support.runs import a_run
-from support.takes import a_take, write_takes
+from support.takes import a_take, narrated, write_takes
 
 TOML = """
 [project]
@@ -83,7 +85,7 @@ class Driven:
         self.counting = threading.Lock()
 
     @contextmanager
-    def chromium(self, _browser_path: str = "", *, policy: str = "trusted") -> Iterator[object]:
+    def chromium(self, _executable: str = "", *, policy: str = "trusted", **_launch: object) -> Iterator[object]:
         if self.launches_together is not None:
             self.launches_together.wait()
         with self.counting:
@@ -135,7 +137,7 @@ def driven(monkeypatch: pytest.MonkeyPatch) -> Driven:
     # One recording at a time, so the order a test reads is the order a single recorder writes in.
     monkeypatch.setattr(pool, "available_cpus", lambda: float(pool.CPUS_PER_RECORDING))
     monkeypatch.setattr(browser, "chromium", fake.chromium)
-    monkeypatch.setattr(browser, "record_page", fake.record_page)
+    monkeypatch.setattr(recording, "record_page", fake.record_page)
     monkeypatch.setattr(ffmpeg, "probe_duration", lambda _path: SPAN_SECONDS)
     monkeypatch.setattr(frames, "luma_at", lambda _path, _at, **_kwargs: (90.0, BRIGHT_LUMA))
     monkeypatch.setattr(
@@ -213,6 +215,17 @@ def test_a_section_nothing_moved_under_is_kept_and_no_browser_opens(tmp_path: Pa
 
 
 @pytest.mark.usefixtures("driven")
+def test_a_section_whose_recording_still_stands_ends_as_kept_as_a_kept_take_does(tmp_path: Path) -> None:
+    """A kept recording ended as `skipped`, which is a section the run left out, while narrate says `kept`."""
+    inputs = a_project(tmp_path)
+    record(inputs, a_run(inputs.root))
+    lines: list[Event] = []
+    record(inputs, a_run(inputs.root, lines=lines))
+    ended = [(line.section, line.outcome) for line in lines if isinstance(line, SectionDone)]
+    assert ended == [(1, Outcome.KEPT), (2, Outcome.KEPT)]
+
+
+@pytest.mark.usefixtures("driven")
 def test_naming_a_section_records_it_although_nothing_moved(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     record(inputs, a_run(inputs.root))
@@ -246,12 +259,68 @@ def test_every_section_recorded_or_kept_says_why(tmp_path: Path, caplog: pytest.
 
 
 @pytest.mark.usefixtures("driven")
-def test_a_section_the_run_passed_over_with_no_recording_at_all_is_a_missing_file(tmp_path: Path) -> None:
+def test_a_run_reports_on_the_sections_it_records_and_not_on_a_recording_it_never_touched(tmp_path: Path) -> None:
+    """`record --section 1` reported FILE_MISSING for section 2, whose missing recording `status` reports."""
     inputs = a_project(tmp_path)
-    result = record(inputs, a_run(inputs.root), only=[1])
-    assert [row.code for row in result.findings] == [Code.FILE_MISSING]
-    assert result.findings[0].location.section == 2
-    assert not result.ok
+    lines: list[Event] = []
+    result = record(inputs, a_run(inputs.root, lines=lines), only=[1])
+    assert [row.section for row in result.sections] == [1]
+    assert result.findings == () and result.ok
+    assert [line.message for line in lines if isinstance(line, RunLog) and line.section == 2] == []
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_run_whose_own_section_is_missing_its_page_is_refused(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path)
+    (tmp_path / "deck" / "index.html").unlink()
+    with pytest.raises(InputError, match="section 1 plays deck/index.html, which is not there"):
+        record(inputs, a_run(inputs.root), only=[1])
+
+
+def project_with_damaged_words(tmp_path: Path, damaged: int, *, voiced: bool = True) -> tuple[Inputs, Path]:
+    """Both sections narrated and recorded, then one section's words file damaged on disk.
+
+    A voiced take's words are the provider's, a paid record, and a placeholder's are estimated, a cache.
+    """
+    inputs = a_project(tmp_path, takes=False)
+    said = (Word(word="a", start=0.0, end=0.4),)
+    rows = (a_take(n, seconds=SPAN_SECONDS, voiced=voiced) for n in (1, 2))
+    takes = narrated(inputs, *rows, words={1: said, 2: said})
+    record(inputs, a_run(inputs.root))
+    take = takes.of(damaged)
+    assert take is not None
+    path = inputs.take_places.find(take.digest).words
+    assert path.is_file()
+    path.write_text("{damaged", encoding="utf-8")
+    return inputs, path
+
+
+@pytest.mark.usefixtures("driven")
+@pytest.mark.parametrize("paid", [True, False], ids=["provider words", "estimated words"])
+def test_a_run_is_never_refused_over_the_words_of_a_section_it_passes_over(tmp_path: Path, paid: bool) -> None:
+    """Section 2's damaged words refused `record --section 1`, which records nothing from them."""
+    inputs, damaged = project_with_damaged_words(tmp_path, 2, voiced=paid)
+    lines: list[Event] = []
+    result = record(inputs, a_run(inputs.root, lines=lines), only=[1])
+    assert [row.section for row in result.sections] == [1]
+    said = [line.message for line in lines if isinstance(line, RunLog) and line.level is Level.WARNING]
+    assert len(said) == 1 and damaged.name in said[0] and said[0].startswith("Section 2 "), said
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_run_that_records_the_section_with_damaged_provider_words_is_refused(tmp_path: Path) -> None:
+    inputs, damaged = project_with_damaged_words(tmp_path, 2)
+    with pytest.raises(InputError, match="Only voicing this take again gives these words back") as refused:
+        record(inputs, a_run(inputs.root), only=[2])
+    assert damaged.name in str(refused.value)
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_run_that_records_the_section_with_damaged_estimated_words_is_not_built(tmp_path: Path) -> None:
+    inputs, damaged = project_with_damaged_words(tmp_path, 2, voiced=False)
+    with pytest.raises(NotBuiltError, match="cannot be read as") as refused:
+        record(inputs, a_run(inputs.root), only=[2])
+    assert damaged.name in str(refused.value)
 
 
 def test_a_page_that_stalls_is_recorded_again_while_the_machine_is_quieter(
@@ -278,7 +347,7 @@ def test_one_progress_line_is_emitted_per_section(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     lines: list[Event] = []
     record(inputs, a_run(inputs.root, lines=lines))
-    counted = [line for line in lines if isinstance(line, Progress)]
+    counted = [line for line in lines if isinstance(line, StageProgress)]
     assert [(line.done, line.total) for line in counted] == [(1, 2), (2, 2)]
 
 
@@ -287,6 +356,24 @@ def test_every_file_the_run_wrote_is_reported(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
     result = record(inputs, a_run(inputs.root), only=[1])
     assert set(result.written) == {Path("build/recordings/01.webm"), Path("build/recordings/01.json")}
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_section_no_page_section_carries_is_refused_with_the_page_sections_named(tmp_path: Path) -> None:
+    """`record --section 99` said no page section had a length to record, and named none it could record."""
+    inputs = a_project(tmp_path)
+    with pytest.raises(InputError, match=r"no page section matches \[99\]") as refused:
+        record(inputs, a_run(inputs.root), only=[99])
+    assert refused.value.hint == "The page sections are [1, 2]."
+
+
+@pytest.mark.usefixtures("driven")
+def test_an_empty_selection_is_refused_with_the_page_sections_named(tmp_path: Path) -> None:
+    """An empty selection selects nothing, which is not the same as no selection at all."""
+    inputs = a_project(tmp_path)
+    with pytest.raises(InputError, match=r"no page section matches \[\]") as refused:
+        record(inputs, a_run(inputs.root), only=())
+    assert refused.value.hint == "The page sections are [1, 2]."
 
 
 @pytest.mark.usefixtures("driven")
@@ -322,7 +409,7 @@ def test_sections_recorded_at_once_come_back_in_order_with_their_own_pair_of_lin
     for number in (1, 2):
         paired = [type(line).__name__ for line in lines if getattr(line, "section", None) == number]
         assert paired[0] == "SectionStart" and "SectionDone" in paired, paired
-    assert [(line.done, line.section) for line in lines if isinstance(line, Progress)] == [(1, 1), (2, 2)]
+    assert [(line.done, line.section) for line in lines if isinstance(line, StageProgress)] == [(1, 1), (2, 2)]
 
 
 def test_a_file_the_page_asked_for_and_the_project_lacks_is_said_on_the_stream(tmp_path: Path, driven: Driven) -> None:
@@ -331,5 +418,17 @@ def test_a_file_the_page_asked_for_and_the_project_lacks_is_said_on_the_stream(t
     driven.missing = ("media/gone.png",)
     lines: list[Event] = []
     record(inputs, a_run(inputs.root, lines=lines), only=[1])
-    said = [line.message for line in lines if isinstance(line, Log) and line.level is Level.WARNING]
+    said = [line.message for line in lines if isinstance(line, RunLog) and line.level is Level.WARNING]
     assert said == ["Section 1 asked for media/gone.png, which the project does not have."]
+
+
+@pytest.mark.usefixtures("driven")
+def test_a_page_section_numbered_zero_is_recorded_and_logged(tmp_path: Path) -> None:
+    """The log refused section 0, which the script and the project number a section by as well as any other."""
+    inputs = load_project(tmp_path, TOML.replace("number = 1", "number = 0"), page=TWO_SCENE_PAGE)
+    write_takes(inputs, *(a_take(section, seconds=SPAN_SECONDS, voiced=False) for section in (0, 2)))
+    inputs = Inputs.load(tmp_path, environ={})
+    result = record(inputs, a_run(inputs.root))
+    assert [row.section for row in result.sections] == [0, 2]
+    log = RecordingLog.read(inputs.workspace.recording_log("00"))
+    assert log is not None and log.section == 0

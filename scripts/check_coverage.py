@@ -22,11 +22,10 @@ one of them has to be there and to have measured something, so a silent leg is n
 rather than as whichever module fell first.
 
 **Measuring something is not the same as running something.** A suite whose every test skipped
-still imports the package, so its data file measured the import-time lines and the leg counted as
-reporting. That is how the e2e leg passed this gate with all 32 tests skipped. So each suite also
-writes a JUnit report of what it ran, and a leg is silent when it wrote none, when one of its runs
-ran no test, or when a suite that names a marker skipped any test: the run named the marker, so it
-asked for every one of those tests to run.
+still imports the package, so its data file measures the import-time lines and the leg would count
+as reporting. So each suite also writes a JUnit report of what it ran, and a leg is silent when it
+wrote none, when one of its runs ran no test, or when a suite that names a marker skipped any test:
+the run named the marker, so it asked for every one of those tests to run.
 
 **The floor allows a point of margin.** A runner slower than the one the record was measured on
 takes a different branch here and there: a timeout that fires, a page that answers before it is

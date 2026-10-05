@@ -1,4 +1,4 @@
-"""The three things about a knob that have to be computed rather than looked up."""
+"""The three things about a setting that have to be computed rather than looked up."""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ from decktalk.explain import explain as explained
 from decktalk.findings import Code
 from decktalk.machine import Machine, Toolchain
 from decktalk.results import ConfigExplainResult, CueTime, Layer, Nature, Scope, SectionCues, Source
-from decktalk.settings import BY_ID, NUMBERS_BY_ID, load
+from decktalk.settings import BY_ID
+from decktalk.settings.layers import load
+from decktalk.settings.numbers import NUMBERS_BY_ID
 
 CUES = CueTimes(
     sections=(
@@ -22,10 +24,10 @@ CUES = CueTimes(
             key="01",
             estimated=False,
             cues=(
-                CueTime(cue="1.1:first", phrase="first", seconds=1.0),
-                CueTime(cue="1.1:close", phrase="close", seconds=1.1),
-                CueTime(cue="1.1:far", phrase="far", seconds=5.0),
-                CueTime(cue="1.1:never", phrase="never", seconds=None),
+                CueTime(id="1.1:first", phrase="first", seconds=1.0),
+                CueTime(id="1.1:close", phrase="close", seconds=1.1),
+                CueTime(id="1.1:far", phrase="far", seconds=5.0),
+                CueTime(id="1.1:never", phrase="never", seconds=None),
             ),
         ),
     )
@@ -54,7 +56,7 @@ scene = "1"
 """A project that states one key on its second line and moves its build directory, as an author may."""
 
 
-MACHINE = Machine(environ={}, tables={}, config_path=Path("unread.toml"), cwd=Path(), toolchain=Toolchain())
+MACHINE = Machine(environ={}, tables={}, machine_file=Path("unread.toml"), cwd=Path(), toolchain=Toolchain())
 """A machine that read nothing, so the machine running the suite sets no key in any explanation."""
 
 
@@ -94,6 +96,13 @@ class TestTheKeyItself:
         assert found.environment == "DECKTALK_VERIFY_CUE_OFFSET_MAX_MS"
         assert found.docs.endswith("/configuration#verify")
 
+    def test_the_take_store_wait_is_a_machine_key_whose_default_covers_one_take_request(self) -> None:
+        found = explain("narration.store_wait_seconds")
+        assert found.default == 900
+        assert found.scope is Scope.MACHINE
+        assert found.nature is Nature.APPARATUS
+        assert found.unit == "seconds"
+
     def test_a_key_with_a_wider_type_range_publishes_both(self) -> None:
         found = explain("verify.onset_rise_points")
         key = BY_ID["verify.onset_rise_points"]
@@ -105,9 +114,9 @@ class TestTheKeyItself:
         with pytest.raises(InputError, match="Did you mean 'verify.cue_offset_max_ms'"):
             explain("verify.cue_offset_maks_ms")
 
-    def test_a_knob_is_explainable_before_a_project_exists(self) -> None:
-        found = explain("video.output_fps")
-        assert found.value == BY_ID["video.output_fps"].default
+    def test_a_setting_is_explainable_before_a_project_exists(self) -> None:
+        found = explain("video.fps")
+        assert found.value == BY_ID["video.fps"].default
         assert found.layer is Layer.DEFAULT
         assert found.measured is False
 
@@ -129,7 +138,7 @@ class TestTheLayerView:
 
 
 class TestTheNumbersTheKeyFeeds:
-    """A knob is only understood once the arithmetic above it is visible."""
+    """A setting is only understood once the arithmetic above it is visible."""
 
     def test_each_derived_number_is_shown_with_its_inputs_at_their_effective_values(self, project: Path) -> None:
         found = explain("verify.cue_offset_max_ms", project=project)
@@ -188,7 +197,7 @@ class TestWhereTheExplainerReads:
         CUES.write(project / "build" / "cue-times.json")
         assert explain("verify.cue_offset_max_ms", project=project).measured is False
 
-    def test_a_project_whose_sections_are_not_written_yet_still_explains_its_knobs(self, tmp_path: Path) -> None:
+    def test_a_project_whose_sections_are_not_written_yet_still_explains_its_settings(self, tmp_path: Path) -> None:
         (tmp_path / "decktalk.toml").write_text("[verify]\ncue_offset_max_ms = 100\n", encoding="utf-8")
         found = explain("verify.cue_offset_max_ms", project=tmp_path)
         assert found.layer is Layer.PROJECT and found.measured is False
@@ -205,7 +214,7 @@ class TestWhereTheExplainerReads:
         here = Machine(
             environ={"DECKTALK_TOOLS_TIMEOUT_SECONDS": "40"},
             tables={"tools": {"timeout_seconds": 30}},
-            config_path=tmp_path / "machine.toml",
+            machine_file=tmp_path / "machine.toml",
             cwd=tmp_path,
             toolchain=Toolchain(),
         )

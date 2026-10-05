@@ -8,14 +8,14 @@ import pytest
 
 from decktalk.cli import watch
 from decktalk.cli.session import Globals, Session
-from decktalk.errors import InputError
-from decktalk.inputs.workspace import Workspace
-from decktalk.results import BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, Voicing
-from support.spends import a_spend
+from decktalk.errors import Cancelled, InputError
+from decktalk.results import UNPRICED, BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, TakeState
+from decktalk.stages.narrate.state import CHANGED, HELD
+from support.costs import a_cost
 
 from .conftest import Fake
 
-BUILT = BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=a_spend(), seconds=1.0)
+BUILT = BuildResult(ok=True, run="r", stages=(), spend=False, cost=a_cost(), elapsed_seconds=1.0)
 
 
 class Origin:
@@ -36,24 +36,47 @@ def session() -> Session:
     return Session(Globals(quiet=True), command="build")
 
 
-def test_the_loop_serves_builds_once_and_never_voices(monkeypatch, tmp_path) -> None:
+def test_the_loop_serves_builds_once_and_never_voices(monkeypatch) -> None:
     monkeypatch.setattr(watch.time, "sleep", _stop)
     origin = Origin()
-    project = Fake(serve=origin, build=BUILT, status=_status())
-    _place(project, tmp_path)
+    project = Fake(serve=origin, build=BUILT, status=_status(), authored_files=())
     built = watch.loop(session(), project.project())
     assert built is BUILT
-    assert project.called("build")["voice"] is Voicing.PLACEHOLDER
+    assert project.called("build")["spend"] is False
     assert origin.closed
 
 
-def test_a_refused_rebuild_is_reported_and_the_loop_keeps_watching(monkeypatch, tmp_path, capsys) -> None:
+def test_a_rebuild_stopped_by_an_interrupt_ends_the_loop_as_the_interrupt_does(monkeypatch) -> None:
+    """An interrupted narrate reaches the loop as `Cancelled`, which ends the watch rather than escaping it."""
+
+    def interrupted(_seconds: float) -> None:
+        raise Cancelled("The run was interrupted.")
+
+    monkeypatch.setattr(watch.time, "sleep", interrupted)
+    origin = Origin()
+    project = Fake(serve=origin, build=BUILT, status=_status(), authored_files=())
+    assert watch.loop(session(), project.project()) is BUILT
+    assert origin.closed
+
+
+def test_a_refused_rebuild_is_reported_and_the_loop_keeps_watching(monkeypatch, capsys) -> None:
     monkeypatch.setattr(watch.time, "sleep", _stop)
-    project = Fake(serve=Origin(), build=InputError("script.md is not there."), status=_status())
-    _place(project, tmp_path)
+    project = Fake(serve=Origin(), build=InputError("script.md is not there."), status=_status(), authored_files=())
     built = watch.loop(session(), project.project())
     assert built.ok is False
     assert "error[INPUT]" in capsys.readouterr().err
+    assert built.cost == UNPRICED
+    assert all(name != "price" for name, _, _ in project.calls), "a refused rebuild was priced"
+
+
+def test_a_selection_the_project_refuses_ends_the_loop_before_it_serves(monkeypatch) -> None:
+    """The one selection rule holds for the loop too, so it neither serves nor watches a section that is not there."""
+    monkeypatch.setattr(watch.time, "sleep", _stop)
+    refused = InputError("no section carries the number 99, so the run would select nothing.")
+    project = Fake(select=refused, serve=Origin(), build=BUILT, status=_status(), authored_files=())
+    with pytest.raises(InputError):
+        watch.loop(session(), project.project(), only=(99,))
+    assert [name for name, _, _ in project.calls] == ["select"]
 
 
 def test_a_saved_file_names_the_sections_it_touches(tmp_path) -> None:
@@ -68,42 +91,37 @@ def test_a_saved_file_that_touches_nothing_named_rebuilds_everything(tmp_path) -
     assert watch._touched(project.project(), [tmp_path / "decktalk.toml"]) is None
 
 
-def test_what_a_run_writes_is_never_watched(tmp_path) -> None:
+def test_the_loop_stamps_the_files_the_project_says_an_author_edits(tmp_path) -> None:
+    """A file removed between the listing and its stat is left out rather than stopping the loop."""
     (tmp_path / "script.md").write_text("one", encoding="utf-8")
-    (tmp_path / "build").mkdir()
-    (tmp_path / "build" / "takes.json").write_text("{}", encoding="utf-8")
-    watched = watch._stamps(_place(Fake(), tmp_path).project())
-    assert set(watched) == {tmp_path / "script.md"}
+    project = Fake(authored_files=(tmp_path / "script.md", tmp_path / "gone.md"))
+    assert set(watch._stamps(project.project())) == {tmp_path / "script.md"}
 
 
-def test_a_build_folder_the_project_names_is_never_watched(tmp_path) -> None:
-    """A run writes into this folder, so watching it would start the next build without end."""
-    (tmp_path / "script.md").write_text("one", encoding="utf-8")
-    for written in ("out/film", "takes"):
-        (tmp_path / written).mkdir(parents=True)
-        (tmp_path / written / "takes.json").write_text("{}", encoding="utf-8")
-    project = _place(Fake(), tmp_path, build="out/film", takes="takes")
-    watched = watch._stamps(project.project())
-    assert set(watched) == {tmp_path / "script.md"}
-
-
-def _place(project: Fake, root: Path, *, build: str = "build", takes: str | None = None) -> Fake:
-    """Put a fake project at a root, with its build and take folders where a test's settings put them."""
-    project.root = root
-    project.workspace = Workspace(
-        root=root, build=root / build, name="demo", takes=None if takes is None else root / takes
-    )
-    return project
-
-
-def test_a_voiced_take_that_goes_stale_is_named_with_the_command_that_voices_it(capsys, tmp_path) -> None:
+def test_a_stale_take_is_named_with_the_command_that_voices_it(capsys, tmp_path) -> None:
     project = Fake(status=_status(stale=True))
     project.root = tmp_path
     made = Session(Globals(), command="build")
     watch._stale(made, project.project())
     said = capsys.readouterr().err
-    assert "no longer matches the script" in said
+    assert "has a stale voiced take" in said
     assert "decktalk narrate --section 2 --spend" in said
+
+
+def test_a_voice_change_is_announced_with_the_row_s_reason(capsys, tmp_path) -> None:
+    """The row says why its take is stale, so the line names the input that moved rather than guessing."""
+    project = Fake(status=_status(stale=True))
+    project.root = tmp_path
+    watch._stale(Session(Globals(), command="build"), project.project())
+    said = capsys.readouterr().err
+    assert f"because {CHANGED}." in said
+
+
+def test_a_current_take_is_not_announced(capsys, tmp_path) -> None:
+    project = Fake(status=_status(stale=False))
+    project.root = tmp_path
+    watch._stale(Session(Globals(), command="build"), project.project())
+    assert "stale" not in capsys.readouterr().err
 
 
 def _stop(_seconds: float) -> None:
@@ -118,22 +136,18 @@ def _status(*, stale: bool = False) -> StatusResult:
         run="r",
         name="demo",
         script=Path("script.md"),
-        cues=Path("cues.json"),
+        cues_file=Path("cues.json"),
         sections=(
             SectionStatus(
                 section=2,
                 key="02",
                 kind=SectionKind.PAGE,
                 source="deck/index.html",
-                voiced=True,
+                take_state=TakeState.STALE if stale else TakeState.VOICED,
+                take_reason=CHANGED if stale else HELD,
                 recorded=True,
-                cut=True,
-                stale=stale,
+                assembled=True,
+                recording_stale=False,
             ),
         ),
     )
-
-
-@pytest.mark.parametrize("directory", sorted(watch.IGNORED))
-def test_every_ignored_directory_is_one_a_run_writes(directory: str) -> None:
-    assert directory in {"build", ".git", ".venv", "node_modules", "__pycache__"}

@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <title>Pipeline fixture</title>
-<link rel="stylesheet" href="./katex/katex.min.css">
-<script src="./katex/katex.min.js"></script>
-<script src="./decktalk-runtime.js"></script>
+<link rel="stylesheet" href="/__decktalk/katex/katex.min.css">
+<script src="/__decktalk/katex/katex.min.js"></script>
+<script src="/__decktalk/decktalk-runtime.js"></script>
 <style>
   /* No web fonts, no canvas, no SVG and no transitions: every reveal is a solid block that appears
      on its own frame, because data-in-style="cut" declares no span at all. */
@@ -22,7 +22,7 @@
 <body>
 
 <div data-scene="1" data-name="Blocks">
-  <template data-slide="1.1" data-hold="8" data-describe="three blocks, each on its own word">
+  <template data-slide="1.1" data-preview-seconds="8" data-describe="three blocks, each on its own word">
     <p class="t-title">Blocks</p>
     <div class="t-block" style="left: 120px; top: 260px; background: #2c1fea"
          data-in="first" data-in-style="cut" data-describe="the first block, on the left"></div>
@@ -37,7 +37,7 @@
      its own. The runtime mounts the first slide of a section before the clock starts, so that
      picture is already on the first recorded frame, and a still of the slide shows it too. -->
 <div data-scene="2" data-name="Blocks">
-  <template data-slide="2.1" data-hold="8" data-describe="two more blocks joining the three already there">
+  <template data-slide="2.1" data-preview-seconds="8" data-describe="two more blocks joining the three already there">
     <p class="t-title">Blocks</p>
     <div class="t-block" style="left: 120px; top: 260px; background: #2c1fea"></div>
     <div class="t-block" style="left: 720px; top: 260px; background: #0a0a0a"></div>
@@ -50,7 +50,7 @@
 </div>
 
 <div data-scene="3" data-name="Equation">
-  <template data-slide="3.1" data-hold="8" data-describe="one equation on a card, then a bar under it">
+  <template data-slide="3.1" data-preview-seconds="8" data-describe="one equation on a card, then a bar under it">
     <p class="t-title">Equation</p>
     <div class="t-card" data-in="eq" data-in-style="cut" data-describe="the integral of x squared from zero to one">
       <span data-tex-display data-tex="\int_0^1 x^2 \, dx = \frac{1}{3}">

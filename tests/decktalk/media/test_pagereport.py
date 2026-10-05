@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from decktalk.findings import Code, RaisedBy
+from decktalk.findings import CONTRACT_SUBJECTS, Code, RaisedBy
 from decktalk.media import pagereport
 from decktalk.page import REPORT
 
 REPORTED = {
     "version": "0.5.0",
-    "mode": "cue",
+    "mode": "record",
     "scene": "intro",
     "slide": "1.1",
     "warnings": [
-        {"code": "PAGE_UNKNOWN_ATTR", "message": "data-lift is not an attribute.", "slide": "1.1", "attr": "data-lift"}
+        {"code": "PAGE_ATTR_UNKNOWN", "message": "data-lift is not an attribute.", "slide": "1.1", "attr": "data-lift"}
     ],
     "catalog": [
         {
@@ -33,16 +33,16 @@ REPORTED = {
         }
     ],
     "cues": [{"id": "1.1:expand", "due": 1.5, "ran": 1.52, "frame": 1.5, "describe": None, "next": 1.56, "after": 1.6}],
-    "words": [{"text": "Halfway there", "cueAt": 1.5, "runAt": 1.6, "count": 2, "firstOn": 1.62}],
+    "words": [{"text": "Halfway there", "cueAt": 1.5, "spokenAt": 1.6, "count": 2, "firstShown": 1.62}],
     "frameGaps": [{"at": None, "ms": 180}, {"at": 2.0, "ms": 140}],
     "longFrames": [{"start": 1.4, "ms": 62, "render": 1.44, "presented": None}],
 }
-"""One page's answer, in the shape and the spelling `window.__dtprobe.report()` uses."""
+"""One page's answer, in the shape and the spelling `window.__decktalkProbe.report()` uses."""
 
 
 def test_the_report_reads_into_models_with_the_page_names_on_the_left():
     report = pagereport.read(REPORTED)
-    assert report.version == "0.5.0" and report.mode == "cue" and report.slide == "1.1"
+    assert report.version == "0.5.0" and report.mode == "record" and report.slide == "1.1"
     assert report.unreadable == ()
     assert report.words[0].cue_at == 1.5 and report.words[0].first_shown == 1.62
     assert report.frame_gaps[0].at is None and report.frame_gaps[1].ms == 140
@@ -53,7 +53,7 @@ def test_the_report_reads_into_models_with_the_page_names_on_the_left():
 def test_every_warning_the_page_reports_carries_its_code():
     """`record` dispatches on the code, which is what replaced a sentence classified by substring."""
     row = pagereport.read(REPORTED).warnings[0]
-    assert row.code is Code.PAGE_UNKNOWN_ATTR
+    assert row.code is Code.PAGE_ATTR_UNKNOWN
     assert row.attr == "data-lift" and row.slide == "1.1" and row.cue is None
 
 
@@ -65,7 +65,7 @@ def test_a_row_this_contract_cannot_read_is_named_rather_than_carried():
         "cues": [{"id": "1.1:expand"}],
     }
     report = pagereport.read(said)
-    assert [row.code for row in report.warnings] == [Code.PAGE_UNKNOWN_ATTR]
+    assert [row.code for row in report.warnings] == [Code.PAGE_ATTR_UNKNOWN]
     assert report.cues == ()
     assert len(report.unreadable) == 2
     assert any("warnings[0]" in line for line in report.unreadable), report.unreadable
@@ -115,7 +115,7 @@ def test_the_report_names_every_field_the_contract_names():
 
 def test_a_code_decktalk_measures_itself_is_refused_when_a_page_reports_it():
     """Half the page codes are measured from the frames, and a page reporting one decides its own verdict."""
-    measured = next(c for c in Code if c.name.startswith("PAGE_") and c.raised_by is not RaisedBy.RUNTIME)
+    measured = next(c for c in Code if c.subject in CONTRACT_SUBJECTS and c.raised_by is not RaisedBy.RUNTIME)
     report = pagereport.read({**REPORTED, "warnings": [{"code": measured.name, "message": "not mine to say"}]})
     assert report.warnings == ()
     assert report.unreadable and "warnings[0]" in report.unreadable[0]

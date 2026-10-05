@@ -9,8 +9,8 @@ for that section again. An edit that changes only the picture pays nothing and r
 | --- | --- | --- | --- |
 | A word in a section's spoken text | That section | That section | The whole section's text is the unit, so a one-word change costs the section |
 | A bracketed direction inside a paragraph | That section | That section | A bracket changes the text that is sent |
-| An HTML comment in the script | That section | That section | The comment is sent to the voice, so remove it |
-| A section heading's title | Nothing | Nothing | The heading names the take file and the chapter, not the spoken text |
+| An HTML comment in the script | That section | That section | `narrate` refuses a comment in the spoken text, because the voice would read it out, so remove it |
+| A section heading's title | Nothing | Nothing | The take is named by the spoken text, not the heading. The heading names the chapter when the project file names none |
 | A section's chapter in the project file | Nothing | Nothing | It names the chapter and the slate |
 | A slide, a style or an image on a page | Nothing | Every section that plays that page | A page change is free and still needs the picture again |
 | A cue phrase | Nothing | That section | The reveal moves, so the recording moves |
@@ -26,8 +26,8 @@ When a rebuild is limited to some sections, name every section on this list and 
 touched.
 
 1. Every section whose table names the scene you changed, because a recording is kept only while that
-   section's own scene markup is unchanged. An edit outside every scene, to the head, a stylesheet, a
-   script or the runtime file, reaches every scene, so it stales every section of that page. A
+   section's own scene markup is unchanged. An edit outside every scene, to the head, a stylesheet or
+   a script of the page's own, reaches every scene, so it stales every section of that page. A
    section left out is reported as inconsistent and the film keeps the older recording.
 2. The section after any section you changed, when its page reads the previous section's spoken words
    or opens on the previous section's last frame.
@@ -36,19 +36,19 @@ touched.
 
 ## Proving the scope
 
-Before anything is spent, read which sections would be paid for.
+Before anything is spent, read which sections would be voiced.
 
 - A section whose text is unchanged is already on disk and costs nothing.
 - A section that could not be checked at all is priced at its worst case, so quote both figures rather
   than the certain one alone.
-- When a section you did not touch would be paid for, stop. Either its text changed by accident, or a
-  voice setting changed, or the take cache is missing because this is a fresh checkout.
-- A project that has only ever been built without a voice is the exception. Every section there is
-  new, because no take has been paid for yet, and that is expected rather than a scope failure.
+- When a section you did not touch would be voiced, stop. Either its text changed by accident, or a
+  voice setting changed, or the takes directory is missing from this checkout.
+- A project that has only ever been built on placeholders is the exception. Every section there is
+  new, because no take has been voiced yet, and that is expected rather than a scope failure.
 
-## Keeping the previous cut
+## Keeping the previous film
 
-Ask for a dated second copy of the film before a revision build, so the cut the author already
+Ask for a dated second copy of the film before a revision build, so the film the author already
 approved survives the rebuild.
 
 ## The change note

@@ -1,0 +1,102 @@
+---
+title: The stability promise
+description: What DeckTalk promises a script, a GitHub Action or a service that builds on it, and what it keeps as a private cache.
+---
+
+A caller that builds on DeckTalk reads four things and nothing else: the `--json` result of each
+command, the events file of each run, the files in `build/final/`, and the exit code. Those four
+keep their shape within a `schema` version, and a change to one of them is a new `schema`.
+
+Everything else under `build/` is DeckTalk's private cache. Its files and their shapes are what
+[Build artifacts](/reference/artifacts) describes, which is how the engine works today and not a
+promise. A newer release that cannot read a cache file builds it again, except the paid records
+below.
+
+## The result of a command
+
+Every command prints one flat JSON object with `--json`, and every library call returns the same
+object as a frozen model.
+
+| Key | What it promises |
+|---|---|
+| `schema` | The shape version of the object, which is `1`. A reader checks it before it reads anything else. |
+| `ok` | True exactly when the command exits 0, under the threshold `--fail-on` and `--allow` set. |
+| `findings` | Every judgement the command made, in the order it made them. |
+| `error` | Filled only when the command could not run, with `code`, `message`, `hint` and `docs`. |
+| `run` | The id of the run the command opened, on every command that opens one. It names the events file. |
+| `written` | Every file the run wrote, project-relative, on every command that writes one. |
+
+`decktalk schema NAME` prints the JSON Schema of one command's result, and `decktalk schema` with no
+name prints every command with the result it answers with, the exit codes and the error codes.
+The same schemas are committed in the repository under `schemas/v1/results/`, one file per command,
+in the folder the `schema` number names.
+
+```bash
+uv run decktalk build --json | python -c "import json,sys; r=json.load(sys.stdin); print(r['schema'], r['ok'], r['run'])"
+```
+
+## The events file
+
+Every run of a project appends one JSON object per line to `build/events/<run>.jsonl`, where `<run>`
+is the `run` of the result. `--events` prints the same lines on stderr as they happen.
+
+Every line carries `event`, which names its kind, and `time`, `seq` and `run`. `seq` counts within
+the run, so a reader can tell a gap from a lost line. The last line of a run is `run.done`, with the
+run's `outcome` and, when it failed, the same `error` the result carries. `decktalk schema event`
+prints every kind and every field, and the same schema is committed in the repository as
+`schemas/v1/events.json`.
+
+## `build/final/`
+
+The deliverables, named after `[project] name`, which is `<name>` below.
+
+| File | What it is |
+|---|---|
+| `<name>.mp4` | The film. It is renamed into place only once it is whole. |
+| `<name>.srt` | The captions, as SubRip. |
+| `<name>.vtt` | The captions, as WebVTT. |
+| `<name>.chapters.txt` | The chapter markers, as ffmetadata. |
+| `<name>-transcript.html` | The whole film as one page, which is the media alternative. |
+| `<name>-poster.png` | The opening slide, as a lossless PNG. |
+| `placements.json` | Where every section sits in the finished film. |
+
+## Exit codes
+
+| Exit | Meaning |
+|---|---|
+| 0 | The command ran and found nothing at the threshold. `ok` is true. |
+| 1 | The command ran and found something at or above the threshold `--fail-on` set. |
+| 2 | The command was refused, which is `USAGE` or `APPROVAL`, and a retry as written is refused again. |
+| 3 | The command could not run, which is every other error code. |
+| 130 | The caller stopped the run, which is `CANCELLED`. |
+
+## The paid records
+
+Four kinds of file record money spent, so they are never treated as a cache. Each stays where it is
+and is never deleted by DeckTalk.
+
+| Kind | File | Folder |
+|---|---|---|
+| Take audio | `<digest>.mp3`, one per voiced take, named by the digest of what was sent | The takes directory, `takes/` unless `[narration] takes_dir` names another, with a second copy in the take store, `[narration] store_dir` |
+| Provider words | `<digest>.words.json`, the words the speech provider sent back with its take | Beside its take, in the takes directory, `takes/`, and the take store, `[narration] store_dir` |
+| Score audio | `<name>.mp3` for the ambience bed and each effect, and `music-part<n>.mp3` for each part of the music, named by the item the score stage bought | The score directory, `score/` unless `[score] dir` names another, or the path a sound's own `out` names |
+| Ledger | `ledger.json`, what the score stage has bought, keyed by the request that made it | Beside the score audio, in the score directory, `score/` |
+
+The take store sits outside every project, and a take is written there first, once, when it is
+bought. A take's suffix is the one its voice declares for the format it asks for, which is `.mp3` for
+every ElevenLabs format.
+
+A newer release reads the words files and the ledger or refuses them with a sentence. It never
+builds one again and never deletes one, because counting a paid record as absent would buy what it
+records again. The refusal says so, and leaves the file where it is for the person whose money it is.
+A take no section plays any more stays too, and `decktalk status` lists it so its author can remove
+it with `git rm`.
+
+The take index, `takes.json`, is not one of them. It is a cache over the takes on disk, which
+`narrate` builds again from them when it does not read, so a broken index buys nothing.
+
+## Related
+
+- **Every command, its flags and its output:** [CLI](/reference/cli)
+- **Every field of every event line:** [Python API](/reference/python-api)
+- **What the cache holds today:** [Build artifacts](/reference/artifacts)

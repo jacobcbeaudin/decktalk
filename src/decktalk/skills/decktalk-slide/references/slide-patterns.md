@@ -5,34 +5,35 @@ A scene is markup. Write attributes, not JavaScript. Every pattern here goes ins
 
 ## The page
 
-The head loads the typesetter from the copies in `deck/katex/` and then the runtime, in that order,
-so the first slide is already typeset when the recorder starts the clock. A page with no equation on
-it needs the runtime alone.
+The head loads the typesetter and then the runtime, in that order, so the first slide is already
+typeset when the recorder starts the clock. DeckTalk serves both from `/__decktalk/` on the origin it
+opens the page at, so the project holds no copy of either. A page with no equation on it needs the
+runtime alone.
 
 ```html
-<link rel="stylesheet" href="./katex/katex.min.css">
-<script src="./katex/katex.min.js"></script>
-<script src="./decktalk-runtime.js"></script>
+<link rel="stylesheet" href="/__decktalk/katex/katex.min.css">
+<script src="/__decktalk/katex/katex.min.js"></script>
+<script src="/__decktalk/decktalk-runtime.js"></script>
 ```
 
 ## The scene wrapper
 
 ```html
 <div data-scene="3" data-name="How it works">
-  <template data-slide="3.1" data-hold="12" data-describe="the idea and the line under it">
+  <template data-slide="3.1" data-preview-seconds="12" data-describe="the idea and the line under it">
     <h1 data-in="title" data-describe="the heading, One idea">One idea</h1>
     <p data-in="detail" data-in-style="fade" data-describe="the line that follows it">
       The line that follows it
     </p>
   </template>
-  <template data-slide="3.2" data-hold="10" data-enter="cut" data-describe="the next idea">
+  <template data-slide="3.2" data-preview-seconds="10" data-enter="cut" data-describe="the next idea">
     <h1 data-in="next" data-describe="the heading, The next idea">The next idea</h1>
   </template>
 </div>
 ```
 
-The slide qualifies every local name written inside it, so `data-in="title"` in slide `3.1` is the
-cue `3.1:title`. `data-owns` is for a local name no attribute mentions, because a handler serves it.
+The slide qualifies every cue name written inside it, so `data-in="title"` in slide `3.1` is the
+cue `3.1:title`. `data-owns` is for a cue name no attribute mentions, because a handler serves it.
 
 ## The four moments
 
@@ -78,7 +79,7 @@ the typesetter does not load, so it carries its own brackets and is correct math
      data-in="inbox" data-in-style="fade" data-describe="the inbox, with one unread message">
 ```
 
-- Capture at twice the stage scale, so text stays sharp at 1920 by 1080.
+- Capture at twice the canvas scale, so text stays sharp at 1920 by 1080.
 - Capture from a demo account. Never show a real customer's name, email or invoice.
 - Give a screenshot at least four seconds before the next reveal on the same slide.
 - Highlight a region by revealing a filled box over it on its own cue, or by dimming the rest with a
@@ -87,10 +88,10 @@ the typesetter does not load, so it carries its own brackets and is correct math
 ## A list that walks
 
 ```html
-<ul data-steps>
+<ul data-spotlight>
   <li data-in="first" data-describe="step one">Guess</li>
   <li data-in="second" data-describe="step two">Measure the error</li>
-  <li data-in="third" data-describe="step three">Nudge the knobs</li>
+  <li data-in="third" data-describe="step three">Nudge the dials</li>
 </ul>
 ```
 
@@ -112,7 +113,7 @@ the page's stylesheet has to drop the motion under the reduced-motion class or t
 
 ## The frame
 
-- The stage is 1920 by 1080, and the page is scaled to it.
+- The canvas is 1920 by 1080, and the page is scaled to it.
 - Body text is 36 pixels or larger.
 - The bottom fifteen percent is the caption band. Keep every cued element out of it.
 - Four reveals is the most one slide should carry, and three equations is the most.

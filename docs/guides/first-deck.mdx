@@ -21,14 +21,13 @@ A section is one number written in four places, and one moment on a page named i
 | `deck/index.html` | The slides. | A `[data-scene="4"]` wrapper holding one or more `<template data-slide>` elements. |
 | `cues.json` | The seconds. | A `"4"` entry with one row per moment the slide declares. |
 
-`cues.json` owns seconds and the page owns what a thing looks like and what it means. No attribute on
-the page ever writes a second, and no row in `cues.json` ever says what a thing looks like.
+`cues.json` owns when a cue fires and the page owns what a thing looks like and what it means. No
+attribute on the page says when a cue fires, and no row in `cues.json` says what a thing looks like.
 
 An element on a slide has four moments, each naming a cue local to that slide: `data-in` when it
 arrives, `data-back` when it steps back, `data-front` when it comes forward again, and `data-out`
-when it leaves. The runtime qualifies a local name with the slide it is written in, so `data-in="waits"`
-inside `<template data-slide="4.1">` is the wire id `4.1:waits`, and that is the id `cues.json`
-carries. Write the local name on the page and the wire id in `cues.json`.
+when it leaves. Write the cue name on the page and its [cue id](/concepts/cues#the-cue-id) in
+`cues.json`: `data-in="waits"` inside `<template data-slide="4.1">` is the cue id `4.1:waits`.
 
 ## Write the section
 
@@ -75,7 +74,7 @@ carries. Write the local name on the page and the wire id in `cues.json`.
 
     ```html deck/index.html
     <div data-scene="4" data-name="One more section">
-      <template data-slide="4.1" data-hold="10" data-describe="the heading and the band about waiting">
+      <template data-slide="4.1" data-preview-seconds="10" data-describe="the heading and the band about waiting">
         <p class="eyebrow">One more section</p>
 
         <div class="title" style="top: 190px" data-in="heading" data-describe="the heading, one more section">
@@ -92,14 +91,14 @@ carries. Write the local name on the page and the wire id in `cues.json`.
     ```
 
     - A `[data-scene]` wrapper is a scene and never draws anything itself. `data-name` is what the scene index calls it.
-    - Each `<template data-slide>` inside it is one slide, cloned onto the stage when the slide mounts. `data-hold` is how long the preview rests on the slide, and no recording reads it.
-    - An element with `data-in` stays hidden until that cue fires. The local name is yours to choose, and it has to be unique within the slide.
+    - Each `<template data-slide>` inside it is one slide, cloned onto the stage when the slide mounts. `data-preview-seconds` is how long the preview rests on the slide, and no recording reads it.
+    - An element with `data-in` stays hidden until that cue fires. The cue name is yours to choose, and it has to be unique within the slide.
     - `data-describe` says in one sentence what the moment shows. It is what the transcript reads and what a reviewer checks a reveal against, and a moment without one is reported.
     - Every element is placed absolutely on the 1920 by 1080 stage, so one thing arriving moves nothing else.
 
     Declare a scene number one time per page. A second `[data-scene="4"]` wrapper replaces the first.
     [The page contract](/concepts/page-contract) covers the whole model, and `decktalk schema page`
-    prints all twenty-four attributes with their values, ranges and warning codes.
+    prints every attribute with their values, ranges and warning codes.
   </Step>
 
   <Step title="Add one cue row to cues.json">
@@ -110,15 +109,15 @@ carries. Write the local name on the page and the wire id in `cues.json`.
     ```json cues.json
     "4": {
       "cues": [
-        { "cue": "4.1:heading", "on": "one more section", "occurrence": 1 }
+        { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
       ]
     }
     ```
 
-    `cue` is the wire id: the slide id, a colon, and the local name the page wrote. `on` is a word or
+    `id` is the cue id, `4.1:heading` here. `phrase` is a word or
     short phrase from that section of `script.md`, matched with case and punctuation ignored, and
     `occurrence` picks which match when the phrase is said more than once. `$start` is the section
-    start, `$end` is the end of speech, and `offset` shifts a cue by seconds.
+    start, `$end` is the end of speech, and `offset_seconds` shifts a cue by seconds.
     [cues.json](/reference/cues-json) lists every key, and [Cues](/concepts/cues) explains the
     matching.
   </Step>
@@ -126,8 +125,9 @@ carries. Write the local name on the page and the wire id in `cues.json`.
 
 ## Let check find what is missing
 
-`decktalk check` judges the written files and the pages before a build. It produces nothing, it calls
-no API, and it prices what a voiced build would cost. Run it on the new section.
+`decktalk check` judges the written files and the pages before a build. It calls no API, it writes
+nothing a stage reads, and it prices what a voiced build would cost. A plain run also draws
+`build/storyboard.html` from the frames it freezes. Run it on the new section.
 
 `--section 4` narrows it to the section you just wrote. `--no-frames` keeps the browser, which is
 what reads the moments the page declares, and drops the comparison of frozen frames, which is the
@@ -137,89 +137,101 @@ slow part and not what finds a missing row.
 decktalk check --section 4 --no-frames
 ```
 
+{/* sample: first-deck-check, decktalk check --section 4 --no-frames, on a fresh decktalk init my-lesson with the four pastes above, which exits 1 */}
 ```text
-No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
+No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
-The takes on disk could not be matched to a voice, so this run costs up to $0.03 at $0.30 per 1,000 characters.
-cues.json: CUE_MISSING section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
-  fix (safe): Add 1 row to section 4 of cues.json, each waiting for the phrase you write in its `on`.
-Found 1 finding, 1 certain. 1 fixable with --fix.
+This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
+cues.json: CUE_UNLISTED section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
+  fix (safe): Add 1 row to section 4 of cues.json, each waiting for the words you write in its `phrase`.
+Found 1 finding, 1 error. 1 fixable with --fix.
 ```
 
-It exits 1, because it found something certain. The slide declares `4.1:waits` and no row gives it a
-second, which is [CUE_MISSING](/reference/findings/CUE_MISSING). The finding carries a safe fix, so
+It exits 1, because it found an error. The slide declares `4.1:waits` and no row gives it a
+second, which is [CUE_UNLISTED](/reference/findings/CUE_UNLISTED). The finding carries a safe fix, so
 `--fix` applies it.
 
 ```console
 decktalk check --section 4 --no-frames --fix
 ```
 
+{/* sample: first-deck-fix, decktalk check --section 4 --no-frames --fix, on the same project, which exits 1 */}
 ```text
-cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'on' and it will have a second.
-Found 1 finding, 1 certain.
+No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+Checking script.md, cues.json, deck/index.html.
+This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
+cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'phrase' and it will have a second.
+Found 1 finding, 1 error.
 ```
 
 The row is in the file:
 
+{/* sample: first-deck-fixed-cues, cues.json after the --fix above */}
 ```json cues.json
 "4": {
   "cues": [
-    {"cue": "4.1:waits", "on": ""},
-    { "cue": "4.1:heading", "on": "one more section", "occurrence": 1 }
+    { "id": "4.1:waits", "phrase": "" },
+    { "id": "4.1:heading", "phrase": "one more section", "occurrence": 1 }
   ]
 }
 ```
 
-The fix writes the id, because DeckTalk knows the id, and leaves `on` empty, because the phrase is
+The fix writes the id, because DeckTalk knows the id, and leaves `phrase` empty, because the phrase is
 your line and not DeckTalk's. The run reads the project again after the fix and reports the empty
 phrase as [CUE_UNRESOLVED](/reference/findings/CUE_UNRESOLVED), so it still exits 1. Write the phrase
 and the section is complete.
 
 ```json cues.json
-{ "cue": "4.1:waits", "on": "the picture waits" }
+{ "id": "4.1:waits", "phrase": "the picture waits" }
 ```
 
 ```console
 decktalk check --section 4 --no-frames
 ```
 
+{/* sample: first-deck-phrase-written, decktalk check --section 4 --no-frames, on the same project with the phrase written, which exits 0 */}
 ```text
-No voice is named, so the cache cannot be checked, because ELEVENLABS_VOICE_ID is not set.
+No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
 Checking script.md, cues.json, deck/index.html.
-The takes on disk could not be matched to a voice, so this run costs up to $0.03 at $0.30 per 1,000 characters.
+This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
 ```
 
-Nothing found, and it exits 0. The two lines about the voice are the price explaining itself: with
-no voice id named, no take on disk can be matched to the voice that made it, so the section counts
-toward the most the run can cost rather than toward what it certainly costs. Set
-`ELEVENLABS_VOICE_ID` and the same line states one figure: `This run costs $0.03 for 111 characters
-at $0.30 per 1,000 characters.`
+Nothing found, and it exits 0. The first line says the takes already on disk were not looked up,
+because no voice is named, and the last line is what voicing the section would cost.
 
 <Tip>Run `decktalk check` with no flags before a build. It opens the pages, freezes every slide
 either side of every cue, and reports a reveal too small to be measured, which is the judgement
-`--no-frames` drops. `--fail-on any` also fails on an uncertain finding, and `--allow CODE` carries
+`--no-frames` drops. `--fail-on warning` also fails on a warning, and `--allow CODE` carries
 on past one code.</Tip>
 
 ## Build it and measure it
 
 ```console
-decktalk build --no-voice
+decktalk build --no-spend
 ```
 
+{/* sample: first-deck-build, decktalk build --no-spend, on the same project, which exits 0 */}
 ```text
-run a86cc81a91cc, events build/events/a86cc81a91cc.jsonl
+run 2d46c8c4e483, events build/events/2d46c8c4e483.jsonl
      Narrate    0:00
          Cue    0:00
       Record    0:22
-The project declares no soundscape for this run, so there is nothing to generate.
-  Soundscape    0:00
-The loudness pass is skipped because the narration is a placeholder, so the soundtrack is encoded as it was mixed.
+The project declares no score for this run, so there is nothing to generate.
+       Score    0:00
+The loudness pass is skipped because a take is a placeholder, so the soundtrack is encoded as it was mixed.
     Assemble    0:03
       Verify    0:02
-       Built build/final/my-lesson.mp4, $0.00, nothing found
+       Built build/final/my-lesson.mp4, $0.00, 4 findings
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
+script.md: TAKE_MISSING Section 4 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 4 --spend to buy its take.
+Found 4 findings, 0 errors.
 ```
 
-`--no-voice` uses estimated word times and a click track, so the new section costs nothing to try.
+`--no-spend` uses estimated word times and a placeholder, so the new section costs nothing to try.
+Each placeholder is reported as [TAKE_MISSING](/reference/findings/TAKE_MISSING), a warning, so the
+build still exits 0.
 Its page records beside the other three, so a fourth section adds little to the time the build
 takes.
 
@@ -230,19 +242,19 @@ without building again.
 decktalk verify --section 4
 ```
 
+{/* sample: first-deck-verify, decktalk verify --section 4, on the same project after the build, which exits 0 */}
 ```text
-Verifying build/final/my-lesson.mp4, 1:01 long.
+Verifying build/final/my-lesson.mp4, 1:02 long.
 
  Section   Cue           Spoken   Shown   Offset
  ───────────────────────────────────────────────
- 4         4.1:heading   51.77    51.80   +0.03
- 4         4.1:waits     58.24    58.28   +0.04
-
+ 4         4.1:heading   51.77    51.76   -0.01
+ 4         4.1:waits     58.24    58.24   -0.01
 ```
 
 `Spoken` is the second the cue phrase is said on the film's clock. `Shown` is the second the picture
 was measured arriving in the encoded frames. `Offset` is the difference, and it is the product's whole
-claim written as a number: both moments landed within four hundredths of a second of their word.
+claim written as a number: both moments landed within a few hundredths of a second of their word.
 `verify` reports `CUE_OFF` and exits 1 when that difference is outside the limit, which is
 `verify.cue_offset_max_ms`. [Verify](/reference/verify) defines every measurement it takes.
 
@@ -250,6 +262,6 @@ Run `decktalk verify` with no scope to measure every section, every cut and ever
 
 ## What to do next with it
 
-- Voice it. With a key in `.env`, `decktalk check --json` prices the run and `decktalk storyboard` shows you what you are about to buy. [Requirements and costs](/requirements#how-the-price-is-worked-out) covers the ceiling.
+- Voice it. With a key in `.env`, `decktalk check --json` prices the narration and `decktalk storyboard` shows you what you are about to buy. [Requirements and costs](/requirements#how-the-price-is-worked-out) covers the ceiling.
 - Make the slide worth watching. [Design a slide](/guides/design-a-slide) covers reveal styles, the camera and making a reveal large enough to be measured, and [Slide recipes](/guides/slide-recipes) has patterns to copy.
 - Change one word and rebuild. [Rebuild one section](/guides/rebuild-one-section) says which edit runs which stage again.

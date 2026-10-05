@@ -50,7 +50,7 @@ LAYER_NOTES = {
 
 DATA_DIRS = {
     "runtime": "decktalk-runtime.js, the page contract every deck loads, decktalk-probe.js and contract.json",
-    "katex": "The pinned KaTeX release the pages typeset with, copied into a project by `decktalk init`",
+    "katex": "The pinned KaTeX release the pages typeset with, which the origin serves beside the runtime",
     "template": "The starter, the lesson example and the AGENTS.md that `decktalk init` writes",
     "skills": "The six packaged skills a project keeps in .agents/skills/",
 }

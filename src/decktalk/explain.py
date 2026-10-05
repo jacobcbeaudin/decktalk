@@ -1,4 +1,4 @@
-"""One knob explained: what set it, what it feeds, and what a candidate value would do to this project.
+"""One setting explained: what set it, what it feeds, and what a candidate value would do to this project.
 
 Everything about a key that can be looked up is in the published schema, so this module is only
 what has to be computed. Three things are: which of the five layers actually set the value here,
@@ -15,29 +15,22 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from decktalk.settings import Loaded, Settings, key_named
+from decktalk.settings.edit import nested
+from decktalk.settings.layers import effective, json_value, load, value_of
+from decktalk.settings.numbers import NUMBERS, NUMBERS_BY_ID
+
 from .errors import DeckTalkError, InputError
 from .findings import DOCS
 from .inputs import Inputs
 from .machine import Machine
 from .results import ConfigExplainResult, Layer, NumberView, Scope, SectionCues
-from .settings import (
-    NUMBERS,
-    NUMBERS_BY_ID,
-    Loaded,
-    Settings,
-    effective,
-    json_value,
-    key_named,
-    load,
-    nested,
-    value_of,
-)
 from .tomlmap import Key
 
 log = logging.getLogger(__name__)
 
 Cue = tuple[float, str]
-"""One resolved cue as the explainer reads it, which is its second and its wire id, in that order so it sorts."""
+"""One resolved cue as the explainer reads it, which is its second and its cue id, in that order so it sorts."""
 
 TYPE_NAMES: dict[object, str] = {bool: "boolean", int: "integer", float: "number", str: "string"}
 """A scalar key's type as the schema names it."""
@@ -49,7 +42,7 @@ ARRAY_TYPE = "array of numbers"
 def explain(
     key: str, *, project: Path | None = None, value: str | None = None, machine: Machine | None = None
 ) -> ConfigExplainResult:
-    """One knob, its layers, the numbers it feeds and what a candidate would clamp in this project.
+    """One setting, its layers, the numbers it feeds and what a candidate would clamp in this project.
 
     `project` is a project directory. Without one the answer is about the defaults and the machine
     alone, which is what an agent reading the instruction set before it has a project needs.
@@ -65,7 +58,7 @@ def explain(
     here = (
         Loaded(settings=opened.settings, layers=opened.layers)
         if opened
-        else load(project, machine=on.tables, machine_path=on.config_path, environ=on.environ)
+        else load(project, machine=on.tables, machine_path=on.machine_file, environ=on.environ)
     )
     candidate = _candidate(known, here, value)
     cues = _cues(opened) if opened else ()
@@ -102,7 +95,7 @@ def explain(
 def _opened(project: Path, machine: Machine) -> Inputs | None:
     """The project whole, or None while its document does not parse yet.
 
-    A knob is explainable in a project whose sections are still being written, so a document the
+    A setting is explainable in a project whose sections are still being written, so a document the
     loader refuses costs the answer its cues and nothing else. A refused setting is not swallowed,
     because the settings-only load that follows meets the same refusal and raises it.
     """
@@ -176,7 +169,7 @@ def _cues(project: Inputs) -> tuple[tuple[str, tuple[Cue, ...]], ...]:
     The times are read through `CueTimes`, the model `cue` writes them with, from the build directory
     the project names, so a moved build directory is read where it is. A row whose second is null was
     never resolved against a word, so it is left out rather than read as a cue at zero. A file that is
-    there and cannot be read explains nothing about cues, because a knob is explainable without them.
+    there and cannot be read explains nothing about cues, because a setting is explainable without them.
     """
     try:
         resolved = project.cue_times()
@@ -190,7 +183,7 @@ def _cues(project: Inputs) -> tuple[tuple[str, tuple[Cue, ...]], ...]:
 
 def _block(section: SectionCues) -> tuple[str, tuple[Cue, ...]]:
     """One section of the artifact as the explainer reads it, which is its key and its resolved cues."""
-    return section.key, tuple(sorted((row.seconds, row.cue) for row in section.cues if row.seconds is not None))
+    return section.key, tuple(sorted((row.seconds, row.id) for row in section.cues if row.seconds is not None))
 
 
 __all__ = ["explain"]

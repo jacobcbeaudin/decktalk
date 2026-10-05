@@ -5,9 +5,10 @@
    * URL and a report are spelled with.
    *
    * An element on a slide has four moments and one value type. It arrives, it steps back, it comes to
-   * the front, and it leaves, and each of those is the local name of a cue. Everything else is either
+   * the front, and it leaves, and each of those is the cue name of a cue. Everything else is either
    * how a moment looks, which is a closed word this file owns, or what a moment means, which is a
-   * sentence for the transcript. Seconds are never written on the page, because cues.json owns them.
+   * sentence for the transcript. A cue's second is never written on the page, because the cue stage
+   * resolves it from the phrase `cues.json` pairs with it.
    *
    * This module is the one home of that grammar. Every other runtime module reads its attribute names
    * from here rather than spelling a "data-" literal of its own, `scripts/build_runtime.py` prints
@@ -44,7 +45,7 @@
   var READ_FROM_THE_PAGE = null;
   var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
-  var HOLD_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
+  var PREVIEW_SECONDS_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
     "data-in": {
       name: "data-in",
@@ -61,7 +62,7 @@
     "data-describe": {
       name: "data-describe",
       on: ["element", "slide"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -69,7 +70,7 @@
       span: 0,
       affects: ["transcript", "catalog"],
       summary:
-        "The subject of the reveal, which the runtime gives a verb per moment. An empty phrase means decorative.",
+        "The subject of the reveal, which the runtime gives a verb per moment. An empty description means decorative.",
     },
     "data-tex": {
       name: "data-tex",
@@ -177,7 +178,7 @@
       code: "PAGE_CLASS_UNDESCRIBED",
       span: READ_FROM_THE_PAGE,
       affects: ["cue-order", "motion", "transcript", "style"],
-      summary: "Adds a class at a moment, written as moment:name pairs, for the page's own stylesheet.",
+      summary: "Adds a class at a cue, written as cue:class pairs, for the page's own stylesheet.",
     },
     "data-describe-class": {
       name: "data-describe-class",
@@ -189,7 +190,7 @@
       code: null,
       span: 0,
       affects: ["transcript"],
-      summary: "What each class change means, as moment:phrase pairs separated by a vertical bar.",
+      summary: "What each class change means, as cue:description pairs separated by a vertical bar.",
     },
     "data-stagger": {
       name: "data-stagger",
@@ -203,14 +204,14 @@
       affects: ["motion"],
       summary: "The container's children arrive this far apart from one cue.",
     },
-    "data-steps": {
-      name: "data-steps",
+    "data-spotlight": {
+      name: "data-spotlight",
       on: ["container"],
       kind: "flag",
       values: [],
       default: null,
       range: null,
-      code: "PAGE_STAGGER_EMPTY",
+      code: "PAGE_SPOTLIGHT_EMPTY",
       span: READ_FROM_THE_PAGE,
       affects: ["cue-order", "motion", "transcript", "catalog"],
       summary: "Each cued child comes to the front as it arrives and the ones before it step back.",
@@ -254,7 +255,7 @@
     "data-describe-out": {
       name: "data-describe-out",
       on: ["element"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -278,7 +279,7 @@
     "data-name": {
       name: "data-name",
       on: ["scene"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -299,13 +300,13 @@
       affects: ["cue-order", "catalog"],
       summary: "Declares a slide on a template. Its id qualifies every moment written inside it.",
     },
-    "data-hold": {
-      name: "data-hold",
+    "data-preview-seconds": {
+      name: "data-preview-seconds",
       on: ["slide"],
       kind: "seconds",
       values: [],
       default: "8",
-      range: HOLD_RANGE,
+      range: PREVIEW_SECONDS_RANGE,
       code: null,
       span: 0,
       affects: ["preview"],
@@ -321,7 +322,7 @@
       code: "PAGE_CUE_UNKNOWN",
       span: 0,
       affects: ["cue-order", "catalog"],
-      summary: "Local names of cues only a handler serves, which no moment attribute mentions.",
+      summary: "Cue names only a handler serves, which no moment attribute mentions.",
     },
     "data-enter": {
       name: "data-enter",
@@ -338,9 +339,11 @@
   };
   var MOMENTS = Object.keys(ATTRS).filter((name) => ATTRS[name].kind === "moment");
   var MOMENT_SELECTOR = MOMENTS.map((name) => `[${name}]`).join(",");
-  var WIRE_MARK = ":";
-  function wireId(slide, local) {
-    return `${slide}${WIRE_MARK}${local}`;
+  var CUE_MARK = ":";
+  var ENGINE_PATH = "/__decktalk/";
+  var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
+  function cueId(slide, local) {
+    return `${slide}${CUE_MARK}${local}`;
   }
 
   // src/decktalk/runtime/src/probe/probe.ts
@@ -357,24 +360,24 @@
    * the same, and keeps nothing.
    *
    * What the recorder calls
-   *   window.__dtprobe.cover()   draw the magenta cover and the keep-alive from the first paint
-   *   window.__dtprobe.lift()    remove the cover and start the page clock on the next animation
-   *                              frame, resolving to the performance.now() of that frame, which is
-   *                              the recording's narration t=0
-   *   window.__dtprobe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
-   *   window.__dtprobe.report()  everything the recorder reads back off the page, in one call
+   *   window.__decktalkProbe.cover()   draw the magenta cover and the keep-alive from the first paint
+   *   window.__decktalkProbe.lift()    remove the cover and start the page clock on the next animation
+   *                                    frame, whose stamp is the recording's t=0 on the section clock, and
+   *                                    resolving to performance.now() read in that frame
+   *   window.__decktalkProbe.ready()   the page's fonts and its window.__decktalk.ready, whichever exist
+   *   window.__decktalkProbe.report()  everything the recorder reads back off the page, in one call
    *
    * What the runtime reads, and only when this file is there
-   *   window.__dtprobe.recorder                          the telemetry sink, read once at startup
-   *   window.__dtprobe.freezeCues(order, slideId, warn)  which of a frozen slide's cues fire
-   *   window.__dtprobe.measure(catalog, stage)           one box row per element, onto the catalog
+   *   window.__decktalkProbe.recorder                          the telemetry sink, read once at startup
+   *   window.__decktalkProbe.freezeCues(order, slideId, warn)  which of a frozen slide's cues fire
+   *   window.__decktalkProbe.measure(catalog, canvas)          one box row per element, onto the catalog
    *
    * This module imports the contract and the telemetry seam and nothing else, which is what keeps the
    * split honest: the probe knows the vocabulary and it knows the sink, and it knows no DOM the
    * runtime owns.
    */
-  var COVER_ID = "__t0cover";
-  var KEEPALIVE_ID = "__dtkeepalive";
+  var COVER_ID = "dt-cover";
+  var KEEPALIVE_ID = "dt-keepalive";
   var GAP_MS = 100;
   var AFTER = "after";
   var BEFORE = "before";
@@ -514,15 +517,15 @@
     const moments = {};
     for (const name of MOMENT_ATTRS) {
       const local = attrs[name];
-      if (local) moments[name] = wireId(slideId, local);
+      if (local) moments[name] = cueId(slideId, local);
     }
     return {
       attrs,
       moments,
       text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, TEXT_MAX),
       box: boxOf(el, frame, scale),
-      // The count a stagger's span is worked out from, which no attribute carries, because the flag
-      // that says the children step says nothing about how many of them there are.
+      // The count a stagger's span is worked out from, which no attribute carries, because `data-stagger`
+      // gives the step between children and says nothing about how many of them there are.
       children: el.hasAttribute(STAGGER) ? el.children.length : 0,
     };
   }
@@ -534,19 +537,19 @@
     }
     return rows;
   }
-  function measure(catalog, stage) {
+  function measure(catalog, canvas) {
     const layer = document.createElement("div");
     layer.id = "dt-measure";
     layer.style.cssText = "position:absolute;inset:0;visibility:hidden";
-    stage.pan.appendChild(layer);
-    const frame = stage.origin.getBoundingClientRect();
-    const scale = stage.scale || 1;
+    canvas.pan.appendChild(layer);
+    const frame = canvas.origin.getBoundingClientRect();
+    const scale = canvas.scale || 1;
     for (const entry of catalog) {
-      const scene = stage.scenes.get(entry.scene);
+      const scene = canvas.scenes.get(entry.scene);
       if (!scene) continue;
       entry.elements = {};
       for (const slide of scene.slides) {
-        const slideEl = stage.build(scene, slide);
+        const slideEl = canvas.build(scene, slide);
         layer.appendChild(slideEl);
         entry.elements[slide.id] = rowsFor(slideEl, slide.id, frame, scale);
         layer.removeChild(slideEl);
@@ -557,5 +560,5 @@
   }
   watchFrames();
   var probe = { cover, lift, ready, report, recorder, freezeCues, measure };
-  window.__dtprobe = probe;
+  window.__decktalkProbe = probe;
 })();

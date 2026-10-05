@@ -11,8 +11,8 @@ pattern, so a PyPI spelling such as `0.5.0rc1` on a marked line reads as `0.5.0`
 version rule. The spelling of a whole field, in `pyproject.toml` or `uv.lock`, is free, because
 release-please replaces the field entire and `uv lock` writes the PEP 440 spelling.
 
-The config is held to the candidate cycle CONTRIBUTING.md describes under "Releases": the package
-stays in the series, and a final release is named by a footer rather than by editing the config.
+The config is held to the candidate cycle RELEASING.md describes under "Candidates and finals": the
+package stays in the series, and a final release is named by a footer rather than by editing the config.
 
 `scripts/check_wheel.py` holds the tag to the built wheel at release time. This reads only the
 checkout, so the two never judge the same pair.

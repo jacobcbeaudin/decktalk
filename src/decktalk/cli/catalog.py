@@ -1,7 +1,8 @@
 """One walk over the parser, joined onto what the library publishes about itself.
 
-Three renderings read this and no other source: `--help` through Click's own formatter, the
-generated reference page, and `decktalk schema`. The command half is walked from the parser, so a
+Two renderings read this and no other source: the generated reference page and `decktalk schema`.
+`--help` is drawn by Click's own formatter from the same parser, so all three name the same flags.
+The command half is walked from the parser, so a
 flag on a page is a flag the command takes, and the contract half is read off the library's own
 registries, so a sentence a code or a key publishes has one home in the model that declares it.
 That is every result's schema, every finding code, every error code with its exit, the event
@@ -17,42 +18,32 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from pydantic import TypeAdapter
-from typer._click import Context, Parameter
-from typer._click.core import Command
+from typer import Context
 from typer.main import get_command
 
-from decktalk import page
-from decktalk import settings as knobs
-from decktalk.cli.app import PROGRAM, app
-from decktalk.errors import ErrorCode
-from decktalk.events import Line
+from decktalk import page, settings
+from decktalk.cli.app import PROGRAM, Command, Parameter, app
+from decktalk.errors import ErrorCode, Exit
+from decktalk.events import AnyEvent
 from decktalk.findings import Code, Finding
 from decktalk.pipeline import PIPELINE
-from decktalk.results import RESULTS, Result
-from decktalk.settings import json_value
+from decktalk.results import RESULTS, Result, Scope
+from decktalk.settings.layers import json_value
+from decktalk.settings.numbers import NUMBERS
 from decktalk.tomlmap import PUBLISHED, Key
 
 PURPOSE_LIMIT = 120
 """How much of a command's own sentence a row carries, which is more than any of them is long."""
 
-SETTINGS_KEYSPACE = "settings"
+SETTINGS_KEYSPACE = "setting"
 """What the `--set` parameter points a reader at, which is the key space rather than a copy of it."""
-
-EXITS: tuple[tuple[int, str], ...] = (
-    (0, "The command ran and found nothing."),
-    (1, "The command ran and found something at or above the threshold --fail-on set."),
-    (2, "The command line was refused, which is USAGE or APPROVAL."),
-    (3, "The command could not run, which is every other error code."),
-    (130, "The caller stopped the run."),
-)
-"""Every code a run can exit with, which is a two-way branch for an agent and a table for a reader."""
 
 NAMES: dict[type[Result], str] = {model: name for name, model in RESULTS.items()}
 """Each result model by the name `decktalk schema NAME` prints it under, read back off the registry."""
 
 SCHEMAS: dict[str, Callable[[], dict[str, Any]]] = {
     **{name: RESULTS[name].model_json_schema for name in sorted(RESULTS)},
-    "event": lambda: TypeAdapter(Line).json_schema(),
+    "event": lambda: TypeAdapter(AnyEvent).json_schema(),
     "finding": Finding.model_json_schema,
 }
 """Every JSON Schema the library's models own, by the name `decktalk schema NAME` prints it under.
@@ -69,8 +60,9 @@ def finding_codes() -> list[dict[str, Any]]:
         {
             "code": code.value,
             "sentence": code.sentence,
-            "certainty": code.certainty.value,
+            "severity": code.severity.value,
             "raised_by": code.raised_by.value,
+            "raised_in": list(code.raised_in),
             "docs": code.url,
         }
         for code in Code
@@ -85,7 +77,7 @@ def error_codes() -> list[dict[str, Any]]:
 
 
 def stages() -> list[dict[str, Any]]:
-    """Every stage as a row, with what it reads, what it writes and why it runs where it does."""
+    """Every stage as a row, with what it reads and writes under the build directory and why it runs where it does."""
     return [
         {
             "stage": spec.stage.value,
@@ -161,7 +153,7 @@ def globals_() -> list[dict[str, Any]]:
 
 def exits() -> list[dict[str, Any]]:
     """Every exit code with the sentence that says what it means."""
-    return [{"exit": code, "sentence": sentence} for code, sentence in EXITS]
+    return [{"exit": code.value, "sentence": code.sentence} for code in Exit]
 
 
 def deciding(code: Code) -> tuple[str, ...]:
@@ -169,9 +161,9 @@ def deciding(code: Code) -> tuple[str, ...]:
 
     A key names the codes it decides beside its range, and that is the one declaration of the
     relation, so the finding page, `decktalk schema` and `config explain` cannot give an agent two
-    different answers about which knob to read.
+    different answers about which setting to read.
     """
-    return tuple(key.id for key in knobs.KEYS if code in key.decides)
+    return tuple(key.id for key in settings.KEYS if code in key.decides)
 
 
 def findings() -> list[dict[str, Any]]:
@@ -191,13 +183,14 @@ def document() -> dict[str, Any]:
     }
 
 
-def settings_schema(*, machine: bool = False) -> dict[str, Any]:
-    """Every knob with its type, default, safe range, unit, hazard and the findings it decides.
+def settings_schema(*, scope: Scope | None = None) -> dict[str, Any]:
+    """Every setting with its type, default, safe range, unit, hazard and the findings it decides.
 
     It is rendered from the key records rather than read from a committed file, because the file is
     a repository artifact and a wheel carries the records. A test holds the two to the same key set.
+    A scope keeps the keys of one file alone, which for the machine is what its file may hold.
     """
-    wanted = [key for key in knobs.KEYS if not machine or key.scope.value == "machine"]
+    wanted = [key for key in settings.KEYS if scope is None or key.scope is scope]
     return {
         "keys": [{name: json_value(_published(key, name)) for name in PUBLISHED} for key in wanted],
         "numbers": [
@@ -210,7 +203,7 @@ def settings_schema(*, machine: bool = False) -> dict[str, Any]:
                 "sentence": number.sentence,
                 "decides": [code.value for code in number.decides],
             }
-            for number in knobs.NUMBERS
+            for number in NUMBERS
         ],
     }
 
@@ -226,7 +219,7 @@ def _published(key: Key, name: str) -> object:
 
 
 def page_schema() -> dict[str, Any]:
-    """Every attribute an author or an agent writes in a slide, with its values, its range and its code."""
+    """Every attribute an author or an agent writes in a slide, and every query key a page URL may carry."""
     return {
         "attributes": [spec.model_dump(mode="json") for spec in page.ATTRS.values()],
         "entrances": {name: effect.model_dump(mode="json") for name, effect in page.ENTRANCES.items()},
@@ -235,12 +228,14 @@ def page_schema() -> dict[str, Any]:
         "counts": {name: effect.model_dump(mode="json") for name, effect in page.COUNTS.items()},
         "attention": {name: effect.model_dump(mode="json") for name, effect in page.ATTENTION.items()},
         "slides": {name: effect.model_dump(mode="json") for name, effect in page.SLIDE_ENTRANCES.items()},
+        "query": {key.value: meaning for key, meaning in page.QUERY.items()},
+        "t0_signal": page.T0_SIGNAL,
         "measurable_span_seconds": page.MEASURABLE_SPAN_SECONDS,
         "capture_fps": page.CAPTURE_FPS,
     }
 
 
-def project_schema() -> dict[str, Any]:
+def cues_schema() -> dict[str, Any]:
     """The shape of `cues.json`, read off the row the loader parses it into."""
     # The cue row is an input rather than a result, so its schema comes from the declaration the
     # loader reads it with, which is the one place its keys and their defaults are written.
@@ -260,17 +255,17 @@ def project_schema() -> dict[str, Any]:
 
 CONTRACTS: dict[str, Callable[..., dict[str, Any]]] = {
     **SCHEMAS,
+    "cues": cues_schema,
     "page": page_schema,
-    "project": project_schema,
-    "settings": settings_schema,
+    "setting": settings_schema,
 }
 """Every document `decktalk schema NAME` prints, by name, in the order a refusal lists them back."""
 
 
-def named(name: str, *, machine: bool = False) -> dict[str, Any]:
+def named(name: str, *, scope: Scope | None = None) -> dict[str, Any]:
     """The one contract document `decktalk schema NAME` prints, whichever name was asked for."""
-    if name == "settings":
-        return settings_schema(machine=machine)
+    if name == "setting":
+        return settings_schema(scope=scope)
     return CONTRACTS[name]()
 
 
@@ -291,7 +286,7 @@ __all__ = [
     "named",
     "names",
     "page_schema",
-    "project_schema",
+    "cues_schema",
     "settings_schema",
     "stages",
     "walk",

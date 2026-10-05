@@ -7,8 +7,19 @@ from typing import get_args
 import pytest
 import typer
 
-from decktalk.cli.options import GLOBALS, FailOn, Force, one_section, pairs, restated, sections_of, shared_for
-from decktalk.findings import Certainty
+from decktalk.cli.options import (
+    GLOBALS,
+    SHARED_LINE,
+    YES,
+    FailOn,
+    Force,
+    one_section,
+    pairs,
+    restated,
+    sections_of,
+    shared_for,
+)
+from decktalk.findings import Severity
 from decktalk.results import BuildResult, StatusResult, WordsResult
 
 
@@ -52,13 +63,18 @@ def test_a_result_that_judges_gains_the_two_finding_flags() -> None:
     assert "fail_on" not in {param.name for param in shared_for(StatusResult)}
 
 
-def test_a_result_that_buys_gains_the_three_spending_flags() -> None:
-    assert {"no_voice", "spend", "max_cost"} <= {param.name for param in shared_for(BuildResult)}
+def test_a_result_that_buys_gains_the_two_spend_flags() -> None:
+    assert {"spend", "max_cost"} <= {param.name for param in shared_for(BuildResult)}
+    assert "no_voice" not in {param.name for param in shared_for(BuildResult)}
     assert "spend" not in {param.name for param in shared_for(WordsResult)}
 
 
-def test_a_result_that_is_not_a_result_gains_the_globals_alone() -> None:
-    assert {param.name for param in shared_for(dict)} == {name for name, _, _ in GLOBALS}
+def test_a_result_that_is_not_a_result_gains_the_globals_and_the_refused_yes_alone() -> None:
+    assert {param.name for param in shared_for(dict)} == {name for name, _, _ in (*GLOBALS, YES)}
+
+
+def test_the_shared_line_names_every_global_by_its_shortest_spelling() -> None:
+    assert SHARED_LINE == "-p, --json, --events, --color, --no-input, -v and -q work on every command."
 
 
 def test_a_command_can_restate_a_flag_without_touching_the_shared_one() -> None:
@@ -74,7 +90,7 @@ def _help(annotation: object) -> str:
     return next(meta.help for meta in get_args(annotation)[1:] if hasattr(meta, "help"))
 
 
-def test_a_threshold_names_the_least_certain_finding_a_build_stops_on() -> None:
-    assert FailOn.CERTAIN.stops_on is Certainty.CERTAIN
-    assert FailOn.ANY.stops_on is Certainty.UNCERTAIN
+def test_a_threshold_names_the_least_severe_finding_a_build_stops_on() -> None:
+    assert FailOn.ERROR.stops_on is Severity.ERROR
+    assert FailOn.WARNING.stops_on is Severity.WARNING
     assert FailOn.NEVER.stops_on is None

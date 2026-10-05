@@ -21,10 +21,10 @@ from typer.testing import CliRunner
 from decktalk.cli import catalog, main
 from decktalk.cli import session as sessions
 from decktalk.events import Event, Events
-from decktalk.findings import Applicability, Code, EditFix, Finding, Location
-from decktalk.inputs.workspace import Workspace
+from decktalk.findings import ERRORS_FAIL, Applicability, Code, EditFix, Finding, Location, Threshold
 from decktalk.project import Project
 from decktalk.results import (
+    ApiKeyState,
     BuildResult,
     CheckResult,
     DoctorResult,
@@ -34,10 +34,9 @@ from decktalk.results import (
     ServeResult,
     StatusResult,
     StoryboardResult,
-    Voicing,
     WordsResult,
 )
-from support.spends import a_spend
+from support.costs import a_cost
 
 TTY = "TTY_COMPATIBLE"
 """The variable Rich reads to be told there is a terminal here, which is how both paths are run."""
@@ -73,13 +72,14 @@ class Fake:
     """A stand-in for `Project` or `Machine` that records every call and answers as it was told to.
 
     Every command is a thin client of one of those two objects, so a fake at that seam is the whole
-    of what a command-line test needs to say what the client did.
+    of what a command-line test needs to say what the client did. A result it answers with has its
+    `ok` judged the way the library judges it: by the threshold the project was opened with, or by
+    the one a machine call was handed.
     """
-
-    workspace: Workspace  # set by a test whose command reads the project's folders
 
     def __init__(self, **answers: object) -> None:
         self.answers = dict(answers)
+        self.threshold: Threshold = ERRORS_FAIL
         self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
         self.events = Events()
         self.emits: dict[str, tuple[type[Event], dict[str, object]]] = {}
@@ -88,6 +88,11 @@ class Fake:
     def project(self) -> Project:
         """This fake as the project it stands in for, for a test that hands it to a function directly."""
         return cast("Project", self)
+
+    def opened(self, threshold: Threshold) -> Fake:
+        """This fake as the project a session opened, with the threshold it was opened with."""
+        self.threshold = threshold
+        return self
 
     def called(self, name: str) -> dict[str, object]:
         """The keywords one call was made with, which is what a client test asserts on."""
@@ -105,6 +110,10 @@ class Fake:
             answer = self.answers.get(name)
             if isinstance(answer, Exception):
                 raise answer
+            if isinstance(answer, Result) and answer.error is None:
+                threshold = cast("Threshold", keywords.get("threshold", self.threshold))
+                ok = not threshold.fails(answer.findings)
+                return answer if answer.ok is ok else answer.model_copy(update={"ok": ok})
             return answer
 
         return call
@@ -116,7 +125,7 @@ def project(monkeypatch: pytest.MonkeyPatch):
 
     def install(**answers: object) -> Fake:
         fake = Fake(**answers)
-        monkeypatch.setattr(sessions.Session, "project", lambda self: fake)
+        monkeypatch.setattr(sessions.Session, "project", lambda self: fake.opened(self.threshold))
         return fake
 
     return install
@@ -145,7 +154,7 @@ def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
         EditFix(
             title='Change the phrase to "the same thing in code".',
             applicability=Applicability.SAFE,
-            edits=({"file": "cues.json", "line": 14, "new": '"on": "the same thing in code"'},),
+            edits=({"file": "cues.json", "line": 14, "new": '"phrase": "the same thing in code"'},),
         )
         if fix
         else None
@@ -161,19 +170,27 @@ def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
 
 
 ANSWERS: dict[str, Result] = {
-    "init": InitResult(ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills=True),
+    "init": InitResult(ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills_written=True),
     "install": InstallResult(ok=True, run="r", tools=(), cache=Path("cache")),
     "doctor": DoctorResult(
-        ok=True, run="r", tools=(), cache=Path("cache"), python="3.12", platform="test", voice_key=False
+        ok=True,
+        run="r",
+        tools=(),
+        cache=Path("cache"),
+        python="3.12",
+        platform="test",
+        api_key_state=ApiKeyState.MISSING,
     ),
     "status": StatusResult(
-        ok=True, run="r", name="demo", script=Path("script.md"), cues=Path("cues.json"), sections=()
+        ok=True, run="r", name="demo", script=Path("script.md"), cues_file=Path("cues.json"), sections=()
     ),
-    "check": CheckResult(ok=True, run="r", judged=(Path("script.md"),), pages=True, frames=True, spend=a_spend()),
+    "check": CheckResult(
+        ok=True, run="r", judged=(Path("script.md"),), pages_opened=True, frames_compared=True, cost=a_cost()
+    ),
     "words": WordsResult(ok=True, run="r", sections=()),
     "storyboard": StoryboardResult(ok=True, run="r", storyboard=Path("build/storyboard.html"), panels=()),
     "serve": ServeResult(ok=True, run="r", url="http://127.0.0.1:8000", port=8000),
-    "build": BuildResult(ok=True, run="r", stages=(), voice=Voicing.PLACEHOLDER, spend=a_spend(), seconds=1.0),
+    "build": BuildResult(ok=True, run="r", stages=(), spend=False, cost=a_cost(), elapsed_seconds=1.0),
 }
 """One prepared answer per command, so a client test says what it asked for rather than what it got."""
 

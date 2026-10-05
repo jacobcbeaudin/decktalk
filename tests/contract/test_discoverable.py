@@ -1,21 +1,17 @@
-"""The founder's thesis, made mechanical: nothing is a knob unless an agent can find it and read it.
+"""Nothing is a setting or an attribute unless an agent can find it and read it.
 
-    "I give a CLI, a very structured set of instructions that can be told through the
-    self-documenting code, and then an agent can go look at it, look at my Midjourney knobs, and
-    figure out how to implement this."
-
-So the tool is an instruction set and the settings and the page attributes are its parameters, each
+The tool is an instruction set and the settings and the page attributes are its parameters, each
 named, documented, ranged and defaulted. A surface an agent cannot discover, read and act on from
-`--help` and the published schemas alone is a surface that fails the thesis, and this file is the
+`--help` and the published schemas alone is a surface that fails that design, and this file is the
 one place that sentence is a test rather than an intention.
 
 Four surfaces are walked and each is total in both directions. The command line has to publish a
 command for every result the library returns and help for every command and every option it takes.
 The settings tree has to publish, for every key, a sentence, a default, a safe range, a unit, a
-scope and a nature. `tests/decktalk/test_settings.py` holds that record, the generator check
+scope and a nature. `tests/decktalk/settings/test_settings.py` holds that record, the generator check
 `build_settings_schema.py --check` holds the committed schema to the same keys, and this file holds
 only the range rule neither of them does. The finding codes and the error codes have to publish a
-sentence, a certainty where one applies and a documentation address that follows the published
+sentence, a severity where one applies and a documentation address that follows the published
 pattern. The page contract has to publish, for every attribute, what it
 is written on, what values it takes, its default, the code that names it and what it affects, or
 name it in the exemption list with the sentence saying why no value of it can change a verdict.
@@ -30,16 +26,17 @@ from decktalk.cli import catalog
 from decktalk.errors import ErrorCode
 from decktalk.findings import Code, RaisedBy
 from decktalk.results import RESULTS, Result
-from decktalk.settings import KEYS, NUMBERS
+from decktalk.settings import KEYS
+from decktalk.settings.numbers import NUMBERS
 
 DOCS = "https://docs.decktalk.ai"
 """Where every published address resolves, which is the one host a printed URL may name."""
 
-SCHEMA_VERSION = 2
-"""The shape version every result publishes, which is the founder's decided contract."""
+SCHEMA_VERSION = 1
+"""The shape version every result publishes, which stays 1 through the alpha."""
 
 
-# ---- the settings, which are the knobs a project turns --------------------------------------
+# ---- the settings, which are the values a project changes -----------------------------------
 
 
 NUMERIC = (int, float)
@@ -53,10 +50,10 @@ ratio and a factor are dimensionless and their range is what says how far they m
 
 
 def test_every_numeric_settings_key_publishes_a_safe_range():
-    """A number with no range is a knob an agent cannot turn safely, because nothing says how far is too far.
+    """A number with no range is a setting an agent cannot change safely, because nothing says how far is too far.
 
     The rest of each key's record, its sentence, default, scope and nature, is held once in
-    `tests/decktalk/test_settings.py`, and the published schema is held to the keys by
+    `tests/decktalk/settings/test_settings.py`, and the published schema is held to the keys by
     `build_settings_schema.py --check`. This is the one rule of the record that neither holds.
     """
     unranged = sorted(key.id for key in KEYS if key.annotation in NUMERIC and key.bounds is None)
@@ -64,8 +61,8 @@ def test_every_numeric_settings_key_publishes_a_safe_range():
 
 
 @pytest.mark.parametrize("number", NUMBERS, ids=[number.id for number in NUMBERS])
-def test_every_published_number_says_why_it_is_not_a_knob(number):
-    """A number that is deliberately not a knob publishes its formula, so a reader stops looking for one."""
+def test_every_published_number_says_why_it_is_not_a_setting(number):
+    """A number that is deliberately not a setting publishes its formula, so a reader stops looking for one."""
     assert number.sentence and number.sentence.endswith("."), number.id
     assert number.nature is not None, number.id
     assert number.formula, f"{number.id} publishes no formula, so nothing says what it is computed from."
@@ -75,10 +72,10 @@ def test_every_published_number_says_why_it_is_not_a_knob(number):
 
 
 @pytest.mark.parametrize("code", list(Code), ids=[code.name for code in Code])
-def test_every_finding_code_publishes_a_sentence_a_certainty_and_an_address(code: Code):
+def test_every_finding_code_publishes_a_sentence_a_severity_and_an_address(code: Code):
     """A code is the token an agent dispatches on, so each one answers what it means and where to read."""
     assert code.sentence and code.sentence.endswith("."), code.name
-    assert code.certainty is not None, code.name
+    assert code.severity is not None, code.name
     assert code.raised_by in tuple(RaisedBy), code.name
     assert code.url == f"{DOCS}/reference/findings/{code.value}", code.name
 
@@ -91,12 +88,12 @@ def test_every_error_code_publishes_a_sentence_an_exit_code_and_an_address(code:
     assert code.url == f"{DOCS}/reference/errors/{code.value}", code.name
 
 
-# ---- the page attributes, which are the knobs an author writes in the markup -----------------
+# ---- the page attributes, which are the values an author writes in the markup ----------------
 
 
 @pytest.mark.parametrize("attr", list(page.ATTRS), ids=[attr.value for attr in page.ATTRS])
 def test_every_page_attribute_publishes_what_it_is_and_what_it_affects(attr):
-    """The page is the second knob surface, so every attribute reads like a parameter with a range."""
+    """The page attributes are the second surface, so every attribute reads like a parameter with a range."""
     row = page.ATTRS[attr]
     assert row.summary and row.summary.endswith("."), attr.value
     assert row.on, attr.value
@@ -130,7 +127,7 @@ def test_every_result_declares_the_shape_version_the_contract_fixes():
 
 
 def test_every_command_and_every_option_carries_its_own_help():
-    """An option with no help is a knob an agent can pass and cannot read, which is the thesis failing.
+    """An option with no help is a flag an agent can pass and cannot read.
 
     The catalog walks a group's subcommands too, so the options of `config set` are held as well.
     """

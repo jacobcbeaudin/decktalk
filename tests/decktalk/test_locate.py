@@ -17,8 +17,8 @@ width = 1920
 # How late a reveal may land.
 cue_offset_max_ms = 120
 
-[mix.loudness]
-target_lufs = -16.0
+[score.music]
+duration_seconds = 120
 
 [[section]]
 title = "one"
@@ -27,7 +27,12 @@ title = "one"
 
 @pytest.mark.parametrize(
     ("key", "line"),
-    [("video.width", 3), ("verify.cue_offset_max_ms", 7), ("mix.loudness.target_lufs", 10), ("section.title", 13)],
+    [
+        ("video.width", 3),
+        ("verify.cue_offset_max_ms", 7),
+        ("score.music.duration_seconds", 10),
+        ("section.title", 13),
+    ],
 )
 def test_a_key_is_found_on_the_line_it_was_written_on(key: str, line: int) -> None:
     assert locate(FILE, key) == line
@@ -44,7 +49,7 @@ def test_a_dotted_key_at_the_top_of_the_file_is_the_same_key() -> None:
 
 def test_a_quoted_name_and_spacing_around_the_dot_do_not_hide_a_key() -> None:
     assert locate('[video]\n"width"  =  1920\n', "video.width") == 2
-    assert locate("mix . loudness . target_lufs = -16.0\n", "mix.loudness.target_lufs") == 1
+    assert locate("score . music . duration_seconds = 120\n", "score.music.duration_seconds") == 1
 
 
 def test_a_comment_that_looks_like_an_assignment_is_not_one() -> None:

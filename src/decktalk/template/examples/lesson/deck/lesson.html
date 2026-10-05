@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <title>__TITLE__</title>
 
-<!-- The runtime is the only script this page needs. Every reveal below is an attribute, and the one
-     handler at the foot of the file is there to show what a handler is for. -->
-<script src="./decktalk-runtime.js"></script>
+<!-- The runtime is the only script this page needs, and DeckTalk serves it from /__decktalk/. Every
+     reveal below is an attribute, and the one handler at the foot of the file is there to show what a
+     handler is for. -->
+<script src="/__decktalk/decktalk-runtime.js"></script>
 
 <style>
   /* Bundled OFL fonts (deck/fonts/), so a recorder with no network never falls back to Helvetica. */
@@ -24,9 +25,9 @@
   }
   html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
   body { width: 100vw; height: 100vh; overflow: hidden; }
-  #dt-stage { background: var(--ground); }
+  #dt-canvas { background: var(--ground); }
 
-  /* Everything is placed absolutely on the 1920 by 1080 stage, so one reveal never moves another.
+  /* Everything is placed absolutely on the 1920 by 1080 canvas, so one reveal never moves another.
      Every revealed shape is filled rather than outlined, because `decktalk check` compares frames on
      brightness alone and a thin outline changes too few pixels to be seen. */
   .l-eyebrow, .l-head, .l-card, .l-pill, .l-strip, .l-row, .l-meter, .l-hill, .l-steps, .l-slider, .l-grid {
@@ -50,10 +51,10 @@
   .l-tile .l-face { width: 150px; height: 150px; border-radius: 24px; background: var(--accent); }
   .l-tile .l-word { font: 600 34px/40px var(--sans); color: var(--mute); }
 
-  /* Scene 1.2: the loop, the knobs, the guess and the meter. */
+  /* Scene 1.2: the loop, the dials, the guess and the meter. */
   .l-step { list-style: none; margin: 0 0 18px 0; padding: 22px 34px; width: 900px; border-radius: 16px; background: var(--ink); color: #fff; font: 500 42px/52px var(--sans); }
-  .l-knobs { position: absolute; left: 1120px; top: 320px; display: flex; gap: 28px; }
-  .l-knob { width: 120px; height: 120px; border-radius: 999px; border: 12px solid var(--ink); }
+  .l-dials { position: absolute; left: 1120px; top: 320px; display: flex; gap: 28px; }
+  .l-dial { width: 120px; height: 120px; border-radius: 999px; border: 12px solid var(--ink); }
   .l-meter { left: 1120px; top: 740px; width: 680px; height: 90px; border-radius: 12px; background: var(--accent); }
 
   /* The guess card is the one place this deck hands its own stylesheet a change at a cue, which is
@@ -77,7 +78,7 @@
   .l-slider { left: 120px; top: 520px; width: 1680px; height: 40px; border-radius: 999px; background: var(--block); }
   .l-thumb { position: absolute; top: -60px; left: 760px; width: 160px; height: 160px; border-radius: 999px; background: var(--accent); }
 
-  /* Scene 1.6: the knobs as a grid of numbers. */
+  /* Scene 1.6: the dials as a grid of numbers. */
   .l-grid { left: 120px; top: 380px; display: grid; grid-template-columns: repeat(4, 200px); gap: 16px; }
   .l-grid b { display: block; height: 120px; border-radius: 14px; background: var(--ink); color: #fff; font: 600 48px/120px var(--mono); text-align: center; }
 </style>
@@ -85,13 +86,13 @@
 
 <body>
 
-<!-- One scene, six slides, and every reveal written as an attribute. A moment is the local name of a
-     cue, so data-in="guess" inside <template data-slide="1.2"> is the cue 1.2:guess that cues.json
+<!-- One scene, six slides, and every reveal written as an attribute. A moment is a cue
+     name, so data-in="guess" inside <template data-slide="1.2"> is the cue 1.2:guess that cues.json
      gives a spoken phrase. Nothing here writes a second. -->
 
 <div data-scene="1" data-name="How a model learns">
 
-  <template data-slide="1.1" data-hold="18" data-describe="examples in place of rules, which is machine learning">
+  <template data-slide="1.1" data-preview-seconds="18" data-describe="examples in place of rules, which is machine learning">
     <p class="l-eyebrow">How a model learns</p>
 
     <div class="l-head" data-in="question" data-describe="the question, how does a model learn">
@@ -122,24 +123,24 @@
        data-describe="the term, machine learning">machine learning</p>
   </template>
 
-  <template data-slide="1.2" data-hold="22" data-describe="the loop a model learns by, one example at a time">
+  <template data-slide="1.2" data-preview-seconds="22" data-describe="the loop a model learns by, one example at a time">
     <p class="l-eyebrow">The loop</p>
 
-    <div class="l-head" data-in="box" data-describe="the heading, a model is a box of knobs">
-      A box of knobs.
+    <div class="l-head" data-in="box" data-describe="the heading, a model is a box of dials">
+      A box of dials.
       <div class="l-rule"></div>
     </div>
 
-    <div class="l-knobs">
-      <span class="l-knob"></span><span class="l-knob"></span><span class="l-knob"></span>
+    <div class="l-dials">
+      <span class="l-dial"></span><span class="l-dial"></span><span class="l-dial"></span>
     </div>
 
-    <!-- data-steps turns a list into a walk: each child comes to the front as it arrives and the
+    <!-- data-spotlight turns a list into a walk: each child comes to the front as it arrives and the
          ones before it step back, from the cues the children already declare. -->
-    <ul style="position: absolute; left: 120px; top: 400px; margin: 0; padding: 0" data-steps>
+    <ul style="position: absolute; left: 120px; top: 400px; margin: 0; padding: 0" data-spotlight>
       <li class="l-step" data-in="guess" data-describe="step one, the model guesses">It guesses.</li>
       <li class="l-step" data-in="error" data-describe="step two, a meter shows how wrong the guess was">A meter shows the error.</li>
-      <li class="l-step" data-in="nudge" data-describe="step three, learning nudges the knobs">Learning nudges the knobs.</li>
+      <li class="l-step" data-in="nudge" data-describe="step three, learning nudges the dials">Learning nudges the dials.</li>
       <li class="l-step" data-in="right" data-describe="step four, the next guess is right">It guesses again, and it is right.</li>
     </ul>
 
@@ -147,40 +148,40 @@
          sentence the transcript prints for it, which is why neither may be written without the other. -->
     <p class="l-guess" data-in="guess"
        data-class="nudge:stale|right:live"
-       data-describe-class="nudge:the answer is set aside while the knobs turn|right:the answer turns green, because it now matches the example"
+       data-describe-class="nudge:the answer is set aside while the dials turn|right:the answer turns green, because it now matches the example"
        data-describe="the model's answer for this example">cat</p>
 
     <div class="l-meter" data-in="error" data-describe="the error meter, filled to how wrong the guess was"></div>
   </template>
 
-  <template data-slide="1.3" data-hold="14" data-describe="why every knob is given a direction at once">
+  <template data-slide="1.3" data-preview-seconds="14" data-describe="why every dial is given a direction at once">
     <p class="l-eyebrow">The direction</p>
 
-    <div class="l-head" data-in="which" data-describe="the question, which way should each knob turn">
-      Which way should each knob turn?
+    <div class="l-head" data-in="which" data-describe="the question, which way should each dial turn">
+      Which way should each dial turn?
       <div class="l-rule"></div>
     </div>
 
     <div class="l-card grey" style="left: 120px; top: 440px; width: 1680px; height: 220px" data-in="one"
          data-out="instead" data-out-style="fall"
-         data-describe="turning one knob at a time, and the billions of tries it would take"
+         data-describe="turning one dial at a time, and the billions of tries it would take"
          data-describe-out="the slow way falls away">
-      <div class="l-k">one knob at a time</div>
+      <div class="l-k">one dial at a time</div>
       billions of tries for every step
     </div>
 
     <!-- data-swaps holds the leaving element in place until its replacement has arrived, so the two
          cards are read as one thing changing rather than as a gap. -->
     <div class="l-card" style="left: 120px; top: 440px; width: 1680px; height: 220px" data-in="instead" data-swaps
-         data-describe="one round of maths, giving every knob a direction at once">
-      <div class="l-k">every knob at once</div>
+         data-describe="one round of maths, giving every dial a direction at once">
+      <div class="l-k">every dial at once</div>
       one round of maths, one direction each
     </div>
   </template>
 
   <!-- data-enter says how a slide replaces the one before it. This one cuts, because the picture
        changes completely and a crossfade would read as a dissolve rather than as a new idea. -->
-  <template data-slide="1.4" data-hold="20" data-enter="cut" data-describe="the error drawn as a hill the model walks down">
+  <template data-slide="1.4" data-preview-seconds="20" data-enter="cut" data-describe="the error drawn as a hill the model walks down">
     <p class="l-eyebrow">Downhill</p>
 
     <div class="l-head" data-in="hill" data-describe="the heading, picture the error as a hill">
@@ -207,9 +208,9 @@
        data-describe="the term, gradient descent">gradient descent</p>
   </template>
 
-  <!-- data-owns lists the local names of cues no attribute mentions, because a handler serves them.
+  <!-- data-owns lists the cue names no attribute mentions, because a handler serves them.
        It is the one way a slide declares a cue it draws with script of its own. -->
-  <template data-slide="1.5" data-hold="14" data-owns="long short" data-describe="one setting, deciding how long each step is">
+  <template data-slide="1.5" data-preview-seconds="14" data-owns="long short" data-describe="one setting, deciding how long each step is">
     <p class="l-eyebrow">The step size</p>
 
     <div class="l-head" data-in="setting" data-describe="the heading, one setting decides how long each step is">
@@ -220,15 +221,15 @@
     <div class="l-slider"><span class="l-thumb"></span></div>
   </template>
 
-  <template data-slide="1.6" data-hold="16" data-describe="the knobs as grids of numbers, and the chips that multiply them">
+  <template data-slide="1.6" data-preview-seconds="16" data-describe="the dials as grids of numbers, and the chips that multiply them">
     <p class="l-eyebrow">Inside</p>
 
-    <div class="l-head" data-in="inside" data-describe="the heading, the knobs are grids of numbers">
-      The knobs are grids of numbers.
+    <div class="l-head" data-in="inside" data-describe="the heading, the dials are grids of numbers">
+      The dials are grids of numbers.
       <div class="l-rule"></div>
     </div>
 
-    <div class="l-grid" data-in="inside" data-in-style="fade" data-describe="a grid of numbers, which is what a layer of knobs is">
+    <div class="l-grid" data-in="inside" data-in-style="fade" data-describe="a grid of numbers, which is what a layer of dials is">
       <b>0.4</b><b>-1.0</b><b>1.5</b><b>0.2</b>
       <b>1.0</b><b>0.5</b><b>-0.5</b><b>1.1</b>
       <b>-1.5</b><b>1.0</b><b>0.5</b><b>-0.3</b>
@@ -237,7 +238,7 @@
     <!-- data-count grows the first number in the text from zero, so the figure the voice says and
          the figure on screen land on the same word. -->
     <p class="l-pill" style="left: 1060px; top: 420px" data-in="billion" data-count="first"
-       data-describe="the count of knobs a large model holds">400 billion knobs</p>
+       data-describe="the count of dials a large model holds">400 billion dials</p>
 
     <p class="l-strip" style="top: 800px" data-in="chips"
        data-describe="the closing line, chips multiply whole grids at once">
@@ -248,8 +249,8 @@
 </div>
 
 <script>
-// Slide 1.5 declares two cues in data-owns and serves them here. A handler takes the wire id, which
-// is the slide and the local name, because a handler may be registered anywhere in the deck.
+// Slide 1.5 declares two cues in data-owns and serves them here. A handler takes the cue id, which
+// is the slide and the cue name, because a handler may be registered anywhere in the deck.
 const step = (left) => (slide) => {
   const thumb = slide.querySelector(".l-thumb");
   if (thumb) thumb.style.left = left;

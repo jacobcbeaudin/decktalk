@@ -16,8 +16,9 @@ import pytest
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
 from decktalk.media.frames import Size
-from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS, MILLISECONDS
-from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig, reference_lead_seconds
+from decktalk.page import CAPTURE_FPS, ENTRANCES, MEASURABLE_SPAN_SECONDS
+from decktalk.settings import GUARD_FRAMES, Settings, VerifyConfig
+from decktalk.settings.numbers import reference_lead_seconds
 from decktalk.stages.verify.plan import (
     EPSILON,
     PROBE_TAIL_SECONDS,
@@ -49,7 +50,7 @@ def settings_with(**verify: object) -> Settings:
 def test_the_reference_lead_is_the_published_formula_and_not_a_second_copy() -> None:
     """The lead is the offset limit plus the grid guard plus whatever extra lead was asked for."""
     settings = settings_with(cue_offset_max_ms=80.0, reference_lead_extra_ms=40.0)
-    expected = 80.0 / MILLISECONDS + GUARD_FRAMES / CAPTURE_FPS + 40.0 / MILLISECONDS
+    expected = 80.0 / 1000 + GUARD_FRAMES / CAPTURE_FPS + 40.0 / 1000
     assert reference_lead_seconds(settings) == pytest.approx(expected)
 
 
@@ -188,14 +189,14 @@ def test_a_factor_of_one_turns_the_second_opinion_off() -> None:
 def test_every_resolved_cue_is_checked_in_section_order_and_then_cue_time(tmp_path: Path) -> None:
     document = {
         "sections": [
-            {"section": 2, "key": "02", "estimated": True, "cues": [{"cue": "b", "phrase": "x", "seconds": 0.5}]},
+            {"section": 2, "key": "02", "estimated": True, "cues": [{"id": "b", "phrase": "x", "seconds": 0.5}]},
             {
                 "section": 1,
                 "key": "01",
                 "estimated": True,
                 "cues": [
-                    {"cue": "late", "phrase": "x", "seconds": 2.0},
-                    {"cue": "early", "phrase": "x", "seconds": 0.5},
+                    {"id": "late", "phrase": "x", "seconds": 2.0},
+                    {"id": "early", "phrase": "x", "seconds": 0.5},
                 ],
             },
         ]
@@ -208,13 +209,25 @@ def test_every_resolved_cue_is_checked_in_section_order_and_then_cue_time(tmp_pa
 def test_a_run_that_names_sections_checks_only_their_cues(tmp_path: Path) -> None:
     document = {
         "sections": [
-            {"section": 1, "key": "01", "estimated": True, "cues": [{"cue": "a", "phrase": "x", "seconds": 0.5}]},
-            {"section": 2, "key": "02", "estimated": True, "cues": [{"cue": "b", "phrase": "x", "seconds": 0.5}]},
+            {"section": 1, "key": "01", "estimated": True, "cues": [{"id": "a", "phrase": "x", "seconds": 0.5}]},
+            {"section": 2, "key": "02", "estimated": True, "cues": [{"id": "b", "phrase": "x", "seconds": 0.5}]},
         ]
     }
     path = tmp_path / "cue-times.json"
     path.write_text(json.dumps(document), encoding="utf-8")
     assert default_checks(CueTimes.read(path), [2]) == [(2, "b")]
+
+
+def test_a_run_whose_sections_kept_none_checks_no_cue(tmp_path: Path) -> None:
+    """`verify` hands over the sections the film carries of those named, so none kept measures nothing."""
+    document = {
+        "sections": [
+            {"section": 1, "key": "01", "estimated": True, "cues": [{"id": "a", "phrase": "x", "seconds": 0.5}]},
+        ]
+    }
+    path = tmp_path / "cue-times.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    assert default_checks(CueTimes.read(path), []) == []
 
 
 def test_a_film_with_no_cue_times_checks_nothing() -> None:
@@ -227,7 +240,7 @@ def test_a_cue_the_author_opted_out_of_is_never_measured(tmp_path: Path) -> None
     )
     (tmp_path / "cues.json").write_text(
         json.dumps(
-            {"sections": {"1": {"cues": [{"cue": "1:a", "on": "x", "verify": False}, {"cue": "1:b", "on": "y"}]}}}
+            {"sections": {"1": {"cues": [{"id": "1:a", "phrase": "x", "verify": False}, {"id": "1:b", "phrase": "y"}]}}}
         ),
         encoding="utf-8",
     )

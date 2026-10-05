@@ -11,8 +11,9 @@ from collections.abc import Callable
 import pytest
 
 from decktalk.events import Event
+from decktalk.findings import ERRORS_FAIL, Threshold
 from decktalk.inputs import Inputs
-from decktalk.results import Voicing
+from decktalk.speech import SpeechFactory
 from support.runs import Watched, a_run
 
 
@@ -23,12 +24,23 @@ def run_environ() -> dict[str, str]:
 
 
 @pytest.fixture
-def make_run(run_environ: dict[str, str]) -> Callable[..., Watched]:
-    """A run on a machine that holds nothing but a stream, with every line it emits kept."""
+def make_run(run_environ: dict[str, str], voices: dict[str, SpeechFactory]) -> Callable[..., Watched]:
+    """A run on a machine that holds nothing but a stream and this test's voice table, with every line it emits kept."""
 
-    def build(project: Inputs, *, voice: Voicing = Voicing.PLACEHOLDER, max_cost: float | None = None) -> Watched:
+    def build(
+        project: Inputs, *, spend: bool = False, max_cost: float | None = None, threshold: Threshold = ERRORS_FAIL
+    ) -> Watched:
         lines: list[Event] = []
-        return Watched(a_run(project.root, voice=voice, max_cost=max_cost, lines=lines, **run_environ), lines)
+        made = a_run(
+            project.root,
+            spend=spend,
+            max_cost=max_cost,
+            lines=lines,
+            threshold=threshold,
+            speech_providers=voices,
+            **run_environ,
+        )
+        return Watched(made, lines)
 
     return build
 

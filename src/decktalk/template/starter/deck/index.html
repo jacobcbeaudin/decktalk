@@ -5,11 +5,11 @@
 <title>__TITLE__</title>
 
 <!-- KaTeX typesets every [data-tex] element, and it has to be loaded before the runtime so the
-     first slide is already typeset when the recorder starts the clock. `decktalk init` copied
-     this release into deck/katex/, so the page loads nothing from the network. -->
-<link rel="stylesheet" href="./katex/katex.min.css">
-<script src="./katex/katex.min.js"></script>
-<script src="./decktalk-runtime.js"></script>
+     first slide is already typeset when the recorder starts the clock. DeckTalk serves both from
+     /__decktalk/ on the origin it opens the page at, so the page loads nothing from the network. -->
+<link rel="stylesheet" href="/__decktalk/katex/katex.min.css">
+<script src="/__decktalk/katex/katex.min.js"></script>
+<script src="/__decktalk/decktalk-runtime.js"></script>
 
 <style>
   /* Tokens. The accent belongs to the thing being revealed right now, and to nothing else. */
@@ -23,9 +23,9 @@
   }
   html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
   body { width: 100vw; height: 100vh; overflow: hidden; }
-  #dt-stage { background: var(--ground); }
+  #dt-canvas { background: var(--ground); }
 
-  /* Every element is placed absolutely on the 1920 by 1080 stage, so a reveal moves nothing else. */
+  /* Every element is placed absolutely on the 1920 by 1080 canvas, so a reveal moves nothing else. */
   .eyebrow, .title, .card, .strip, .stat { position: absolute; margin: 0; box-sizing: border-box; }
   .eyebrow { left: 120px; top: 80px; font: 600 24px/32px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--mute); }
 
@@ -63,14 +63,14 @@
 <body>
 
 <!-- A scene is markup. Each <template data-slide> is one slide, and the runtime clones it when the
-     slide mounts. An element has four moments, and each of them is the local name of a cue: it
+     slide mounts. An element has four moments, and each of them is a cue name: it
      arrives on data-in, it steps back on data-back, it comes to the front on data-front, and it
-     leaves on data-out. The runtime qualifies a local name with the slide it is written in, so
+     leaves on data-out. The runtime qualifies a cue name with the slide it is written in, so
      data-in="title" inside <template data-slide="1.1"> is the cue 1.1:title that cues.json carries.
      Seconds are never written here, because cues.json owns them. -->
 
 <div data-scene="1" data-name="Open">
-  <template data-slide="1.1" data-hold="10" data-describe="the opening title and the count of files">
+  <template data-slide="1.1" data-preview-seconds="10" data-describe="the opening title and the count of files">
     <p class="eyebrow">DeckTalk</p>
 
     <div class="title" style="top: 190px" data-in="title" data-describe="the title, This is DeckTalk">
@@ -85,7 +85,7 @@
     </p>
   </template>
 
-  <template data-slide="1.2" data-hold="12" data-describe="the two files you write, and the promise">
+  <template data-slide="1.2" data-preview-seconds="12" data-describe="the two files you write, and the promise">
     <p class="eyebrow">DeckTalk</p>
 
     <div class="card" style="left: 120px; top: 300px" data-in="script"
@@ -110,7 +110,7 @@
 </div>
 
 <div data-scene="2" data-name="How it works">
-  <template data-slide="2.1" data-hold="16" data-describe="the average of n numbers, as a formula and as code">
+  <template data-slide="2.1" data-preview-seconds="16" data-describe="the average of n numbers, as a formula and as code">
     <p class="eyebrow">How it works</p>
 
     <div class="title" style="top: 170px; font-size: 76px" data-in="average"
@@ -146,7 +146,7 @@
 </div>
 
 <div data-scene="3" data-name="Close">
-  <template data-slide="3.1" data-hold="12" data-describe="the closing idea and the end card">
+  <template data-slide="3.1" data-preview-seconds="12" data-describe="the closing idea and the end card">
     <p class="eyebrow">Close</p>
 
     <div class="title" style="top: 190px" data-in="idea" data-describe="the heading, change one word">

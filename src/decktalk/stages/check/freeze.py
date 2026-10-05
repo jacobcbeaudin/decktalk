@@ -29,9 +29,6 @@ ORDER_NOTE = "the slide's cues fire in another order when frozen, so these frame
 EPSILON = 1e-9
 """Truth: the slack two seconds meant to be equal are compared with, which is finer than any clock."""
 
-FIRST_FRAME = 1
-"""Truth: a cue inside the first frame of a section has no frame before it to be measured against."""
-
 
 @dataclass(frozen=True)
 class FramePair:
@@ -58,7 +55,7 @@ def owner_slide(cue: str, slides: Slides) -> str | None:
     Ownership is declared rather than inferred, so a cue no slide lists belongs to no slide and is
     reported as such rather than handed to whichever slide its id happens to start with.
     """
-    return next((slide for slide, wires in slides.items() if cue in wires), None)
+    return next((slide for slide, cue_ids in slides.items() if cue in cue_ids), None)
 
 
 def mounts(slides: Slides, times: Mapping[str, float]) -> list[tuple[str, float]]:
@@ -98,7 +95,7 @@ def plan_frames(slides: Slides, times: Mapping[str, float], fps: int) -> list[Fr
             detail = "no slide of the scene declares this cue, so there is no state to freeze it between"
             pairs.append(FramePair(cue, second, None, reason=SkipReason.NO_SLIDE, detail=detail))
             continue
-        if second * fps < FIRST_FRAME:
+        if second * fps < 1:
             detail = f"the cue fires {second:.2f}s into the section, which is inside its first frame"
             pairs.append(FramePair(cue, second, slide, reason=SkipReason.AT_SECTION_START, detail=detail))
             continue
@@ -151,12 +148,11 @@ def first_state(slides: Slides, times: Mapping[str, float], fps: int) -> Freeze 
     if not order:
         return None
     slide = order[0][0]
-    return Freeze.state(slide, fired_by(slides, times, slide, FIRST_FRAME / fps, inclusive=False), slides[slide])
+    return Freeze.state(slide, fired_by(slides, times, slide, 1 / fps, inclusive=False), slides[slide])
 
 
 __all__ = [
     "EPSILON",
-    "FIRST_FRAME",
     "ORDER_NOTE",
     "FramePair",
     "fired_by",

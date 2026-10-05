@@ -309,7 +309,7 @@ def test_a_download_nobody_is_listening_to_says_nothing_and_still_arrives(monkey
 
 
 def test_two_cold_fetches_take_turns_and_the_second_downloads_nothing(monkeypatch):
-    """Two first builds in one process used to share one scratch directory and delete each other's download."""
+    """Two first builds in one process each get their own scratch directory, so neither deletes the other's download."""
     pinned_tar(monkeypatch, "test-race")
     real = fetch._download_verified
     downloads: list[str] = []
@@ -374,7 +374,7 @@ def test_a_fetch_waiting_on_another_gives_up_after_the_tools_timeout(monkeypatch
 
 
 def test_a_fetch_that_waited_says_how_long_and_what_it_found(monkeypatch, caplog):
-    """A run that downloaded nothing because another had just installed the build used to say nothing."""
+    """A run that downloaded nothing because another had just installed the build says so."""
     pinned_tar(monkeypatch, "test-waited")
     held = threading.Event()
 

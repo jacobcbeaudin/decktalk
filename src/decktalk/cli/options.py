@@ -3,7 +3,7 @@
 A command's own parameters are written in its own signature. The flags several commands share are
 not copied into each of them: they are derived from the command's return annotation, which is the
 result model, so a command that reports findings takes `--fail-on` and `--allow` by being the sort
-of command that reports findings, and a command that can spend takes `--no-voice`, `--spend` and
+of command that reports findings, and a command that can spend takes `--spend/--no-spend` and
 `--max-cost` by being the sort of command that spends.
 
 The model says which sort it is. `Result.reports_findings` and `Result.spends` are declared beside
@@ -13,7 +13,7 @@ is no list here to keep in step with the models.
 Each family is one flag over a vocabulary the product already publishes, rather than a flag per
 value. `--allow` takes finding codes, `--skip` takes stages, `--set` takes settings keys, and
 `--section` takes section numbers, so an agent that has read `decktalk schema` can already write
-every one of them and a new code, stage or knob costs no help row at all.
+every one of them and a new code, stage or setting costs no help row at all.
 """
 
 from __future__ import annotations
@@ -28,21 +28,35 @@ from typing import Annotated, Any, get_args
 import typer
 
 from decktalk.errors import InputError
-from decktalk.findings import Certainty, Code
+from decktalk.findings import DOCS as REFERENCE
+from decktalk.findings import Code, Severity
 from decktalk.pipeline import Stage
 from decktalk.project import section_numbers
 from decktalk.results import Result
 
-DOCS = "https://docs.decktalk.ai/reference/cli"
+DOCS = f"{REFERENCE}/cli"
 """Where the generated reference page lives, which every command's help closes with."""
+
+PROMPT_FLAGS: set[str] = set()
+"""Every flag that answers a prompt, which is what a refused `--yes` names back at its caller.
+
+It is filled by `answering` as each command module declares its options, so a flag says it answers
+a prompt where it is declared and there is no second list to keep in step with the commands.
+"""
+
+
+def answering(*decls: str, **options: Any) -> Any:  # noqa: ANN401  (typer's own OptionInfo is untyped)
+    """A `typer.Option` whose flags answer one of its command's prompts, recorded in `PROMPT_FLAGS`."""
+    PROMPT_FLAGS.update(flag for decl in decls for flag in decl.split("/") if flag.startswith("--"))
+    return typer.Option(*decls, **options)
 
 
 class Group(Enum):
     """The five headings the command tree is read under, in the order a reader meets them."""
 
     MACHINE = "Set up this machine"
-    PROJECT = "Read the project, spending nothing"
-    CONTRACTS = "Read the knobs and the contracts"
+    PROJECT = "Read the project, buying nothing"
+    CONTRACTS = "Read the settings and the schemas"
     STAGE = "Run one stage, in this order"
     WHOLE = "Run them all, or cut one piece out"
 
@@ -50,8 +64,8 @@ class Group(Enum):
 class Panel(Enum):
     """The headings one command's own options are read under, in the order a reader meets them."""
 
-    SPENDING = "Spending"
-    SCOPE = "Scope"
+    SPEND = "Spend"
+    SELECTION = "Selection"
     FINDINGS = "Findings"
     REDOING = "Redoing work"
     THIS_RUN = "This run only"
@@ -59,25 +73,25 @@ class Panel(Enum):
 
 
 class FailOn(Enum):
-    """The threshold a run fails on, which names a threshold and never the value of a field.
+    """The threshold a run fails on, which is the least severe finding that fails it, or never.
 
-    The lowest threshold is spelled from the certainty it is the threshold for, because a second
-    spelling of that word would be a second vocabulary for one idea.
+    Each threshold is spelled from the severity it is the threshold for, because a second spelling of
+    those words would be a second vocabulary for one idea.
     """
 
-    CERTAIN = Certainty.CERTAIN.value
-    ANY = "any"
+    ERROR = Severity.ERROR.value
+    WARNING = Severity.WARNING.value
     NEVER = "never"
 
     @property
-    def stops_on(self) -> Certainty | None:
-        """The least certain finding that stops a build, which is the same line the exit code draws.
+    def stops_on(self) -> Severity | None:
+        """The least severe finding that stops a build, which is the same line the exit code draws.
 
         A build that carried on past a finding its exit code fails on would spend on a film the
         caller has already said is wrong, and one that stopped short of it would refuse a film the
         caller said is fine, so the threshold is one decision read in two places.
         """
-        return {FailOn.CERTAIN: Certainty.CERTAIN, FailOn.ANY: Certainty.UNCERTAIN, FailOn.NEVER: None}[self]
+        return {FailOn.ERROR: Severity.ERROR, FailOn.WARNING: Severity.WARNING, FailOn.NEVER: None}[self]
 
 
 class When(Enum):
@@ -90,7 +104,7 @@ class When(Enum):
 
 # The shared families, each written once and derived onto the commands that carry it. A hidden
 # global is on every command so that it works after the command name as well as before it, and the
-# command's own help closes by naming them in one line instead of spending eight rows on them.
+# command's own help closes by naming them in one line instead of eight rows of their own.
 Project = Annotated[
     Path | None,
     typer.Option(
@@ -138,7 +152,7 @@ Sections = Annotated[
     typer.Option(
         "--section",
         metavar="N",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Only these sections: 3, 3,5 or 7-9. Repeats.",
     ),
 ]
@@ -157,39 +171,35 @@ Fail = Annotated[
         "--fail-on",
         metavar="WHEN",
         rich_help_panel=Panel.FINDINGS.value,
-        help="certain fails on a certain finding, any fails on any finding, never fails on none. Default certain.",
+        help="error fails on an error, warning fails on any finding, never fails on none. Default error.",
     ),
 ]
 Fix = Annotated[
     bool | None,
-    typer.Option(
+    answering(
         "--fix/--no-fix",
         rich_help_panel=Panel.FINDINGS.value,
         help="Apply every safe fix, or apply none. An unsafe fix is printed either way and never applied.",
     ),
 ]
-NoVoice = Annotated[
-    bool,
-    typer.Option(
-        "--no-voice",
-        rich_help_panel=Panel.SPENDING.value,
-        help="Placeholder narration: no API key and no spend.",
-    ),
-]
 Spend = Annotated[
-    bool,
-    typer.Option(
-        "--spend",
-        rich_help_panel=Panel.SPENDING.value,
-        help="Voice what needs it without asking first.",
+    bool | None,
+    answering(
+        "--spend/--no-spend",
+        rich_help_panel=Panel.SPEND.value,
+        help=(
+            "Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. "
+            "A free provider such as dtsp makes its takes either way once a voice is named. Unset, a terminal is "
+            "asked and a run without one is refused."
+        ),
     ),
 ]
 MaxCost = Annotated[
     float | None,
-    typer.Option(
+    answering(
         "--max-cost",
         metavar="N",
-        rich_help_panel=Panel.SPENDING.value,
+        rich_help_panel=Panel.SPEND.value,
         help="Refuse before the first call if the most this run can cost is over N US dollars.",
     ),
 ]
@@ -207,7 +217,7 @@ Skip = Annotated[
     typer.Option(
         "--skip",
         metavar="STAGE",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="Run every stage but this one. Repeats.",
     ),
 ]
@@ -221,10 +231,18 @@ Force = Annotated[
 ]
 ReplaceVoiced = Annotated[
     bool,
-    typer.Option(
+    answering(
         "--replace-voiced",
         rich_help_panel=Panel.REDOING.value,
-        help="Voice a section again and discard the take it replaces, which is the one flag here that destroys money.",
+        help="Set aside each voiced take: voice it again with --spend, or play a placeholder with --no-spend.",
+    ),
+]
+ReplaceScore = Annotated[
+    bool,
+    answering(
+        "--replace-score",
+        rich_help_panel=Panel.REDOING.value,
+        help="Buy each bought sound again with --spend. Without --spend it keeps every bought sound.",
     ),
 ]
 
@@ -236,24 +254,39 @@ GLOBALS: tuple[tuple[str, Any, Any], ...] = (
     ("no_input", NoInput, False),
     ("verbose", Verbose, False),
     ("quiet", Quiet, False),
-    ("yes", Yes, False),
 )
 """Every flag that works on every command, before or after the command name, with its default."""
 
+YES: tuple[str, Any, Any] = ("yes", Yes, False)
+"""`--yes`, which every command recognises and refuses, because each of its prompts has a flag of its own."""
+
+
+def shortest(annotation: object) -> str:
+    """The shortest spelling of one declared flag, such as `-p` for `-p, --project`.
+
+    Typer reads the first spelling of an `Annotated` option as its default, so it is read from there too.
+    """
+    info = get_args(annotation)[1]
+    return min((one for one in (info.default, *info.param_decls) if isinstance(one, str)), key=len)
+
+
+_EVERY = [shortest(annotation) for _, annotation, _ in GLOBALS]
+SHARED_LINE = f"{', '.join(_EVERY[:-1])} and {_EVERY[-1]} work on every command."
+"""The one line a command's help spends on the flags every command carries, each by its shortest name."""
+
 FINDING_FAMILY: tuple[tuple[str, Any, Any], ...] = (
-    ("fail_on", Fail, FailOn.CERTAIN),
+    ("fail_on", Fail, FailOn.ERROR),
     ("allow", Allow, None),
 )
 """The two flags a command that reports judgements carries, derived from its result model."""
 
 SPEND_FAMILY: tuple[tuple[str, Any, Any], ...] = (
-    ("no_voice", NoVoice, False),
-    ("spend", Spend, False),
+    ("spend", Spend, None),
     ("max_cost", MaxCost, None),
 )
-"""The three flags a command that can buy something carries, derived from its result model."""
+"""The two flags a command that can buy something carries, derived from its result model."""
 
-SHARED: frozenset[str] = frozenset(name for name, _, _ in (*GLOBALS, *FINDING_FAMILY, *SPEND_FAMILY))
+SHARED: frozenset[str] = frozenset(name for name, _, _ in (*GLOBALS, YES, *FINDING_FAMILY, *SPEND_FAMILY))
 """Every parameter name the wrapper takes off a command's own call, so a command reads none of them."""
 
 
@@ -263,7 +296,7 @@ def shared_for(result: object) -> list[inspect.Parameter]:
     The families come first so that they sit in their own panels above the hidden globals, and the
     globals come last because a reader who wants them reads the line that names them all at once.
     """
-    families = list(GLOBALS)
+    families = [*GLOBALS, YES]
     if isinstance(result, type) and issubclass(result, Result):
         if result.reports_findings:
             families = [*FINDING_FAMILY, *families]
@@ -333,11 +366,11 @@ __all__ = [
     "Json",
     "MaxCost",
     "NoInput",
-    "NoVoice",
     "Overrides",
     "Panel",
     "Project",
     "Quiet",
+    "ReplaceScore",
     "ReplaceVoiced",
     "Sections",
     "Skip",

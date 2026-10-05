@@ -1,7 +1,8 @@
 """A small project, a run that records its own stream, and the shapes the narrate tests share.
 
-Every test here runs the real stage. What it must not run is a paid voice or ffmpeg, and both are
-faked at the seam the stage imports, by `fake_voice` and `fake_ffmpeg` in the suite's own conftest.
+Every test here runs the real stage. What it must not run is a provider that bills or ffmpeg, so
+`fake_voice` registers a voice in the table the test's runs are opened with and `fake_ffmpeg`
+replaces the seam the stage imports, both in the suite's own conftest.
 The run is a real `Run` on a machine with nothing on it but an event stream, because a stage reports
 through the run and a test that replaced the run would measure a fake instead of the stage.
 """
@@ -16,13 +17,14 @@ import pytest
 from decktalk.artifacts import Take
 from decktalk.inputs import Inputs
 from decktalk.media import audio
+from support.fakes import FREE_VOICE_NAME
 from support.projects import load_project
 from support.takes import a_take
 
 VOICE_ID = "voice-under-test"
 """The voice every project here is read in, which is one of the inputs a take's digest is over."""
 
-ENVIRON = {"ELEVENLABS_API_KEY": "key-under-test", "ELEVENLABS_VOICE_ID": VOICE_ID}
+ENVIRON = {"ELEVENLABS_API_KEY": "key-under-test", "DECKTALK_VOICE_ID": VOICE_ID}
 """What a machine hands a project, which is the credential and the published voice name."""
 
 TOML = """
@@ -30,12 +32,14 @@ TOML = """
 name = "t"
 
 [voice]
-provider = "test-voice"
-price_per_1000_characters = 0.30
+provider = "elevenlabs"
+
+[elevenlabs]
+dollars_per_1000_characters = 0.30
 
 [narration]
 lead_seconds = 0.5
-tail_min_seconds = 0.7
+tail_seconds = 0.7
 
 [[section]]
 number = 1
@@ -52,6 +56,9 @@ number = 3
 page = "deck/index.html"
 scene = "3"
 """
+
+FREE_TOML = TOML.replace('provider = "elevenlabs"', f'provider = "{FREE_VOICE_NAME}"')
+"""The same project read by the voice DeckTalk ships that bills nothing."""
 
 SCRIPT = """# Notes
 
@@ -108,7 +115,7 @@ def a_paid_take(section: int = 1, *, digest: str = "0000000000000abc", seconds: 
         section,
         seconds=seconds,
         chapter="Open",
-        hash=digest,
+        digest=digest,
         characters=8,
         estimated_seconds=1.0,
         speech_end_seconds=None,

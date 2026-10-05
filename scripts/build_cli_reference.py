@@ -51,14 +51,15 @@ EXITS = """
 ERRORS = """
 ## Error codes
 
-An error means DeckTalk could not run, so nothing was judged. A finding is the other thing
-entirely, which is a judgement about a film that did get made.
+An error means DeckTalk could not run or did not finish. A result that carries an `error` beside its
+own fields is a run that stopped after it made something, and its `cost` and `findings` say what it
+made. A finding is the other thing entirely, which is a judgement about a film that did get made.
 """
 
 FINDINGS = """
 ## Finding codes
 
-A finding carries its code, its sentence, its certainty and often a fix an agent can apply.
+A finding carries its code, its sentence, its severity and often a fix an agent can apply.
 `--allow CODE` carries on past one, and `--fail-on` decides which of them fails a run.
 """
 
@@ -129,21 +130,33 @@ def _exits() -> str:
 def _errors() -> str:
     """Every error code with its sentence and the exit code its refusal takes."""
     rows = ["\n| Code | Exit | Meaning |", "|---|---|---|"]
-    rows += [f"| `{row['code']}` | {row['exit']} | {row['sentence']} |" for row in catalog.document()["errors"]]
+    rows += [
+        f"| {_linked('errors', row['code'])} | {row['exit']} | {row['sentence']} |"
+        for row in catalog.document()["errors"]
+    ]
     return "\n".join(rows) + "\n"
 
 
 def _findings() -> str:
-    """Every finding code with its certainty and its sentence."""
-    rows = ["\n| Code | Certainty | Meaning |", "|---|---|---|"]
-    rows += [f"| `{row['code']}` | {row['certainty']} | {row['sentence']} |" for row in catalog.document()["findings"]]
+    """Every finding code with its severity and its sentence."""
+    rows = ["\n| Code | Severity | Meaning |", "|---|---|---|"]
+    rows += [
+        f"| {_linked('findings', row['code'])} | {row['severity']} | {row['sentence']} |"
+        for row in catalog.document()["findings"]
+    ]
     return "\n".join(rows) + "\n"
+
+
+def _linked(kind: str, code: str) -> str:
+    """A code as a link to its own page, which makes these two tables the index of the code pages."""
+    return f"[`{code}`](/reference/{kind}/{code})"
 
 
 def _schema_names() -> str:
     """Every name `decktalk schema NAME` answers to, which is the whole contract in one list."""
     names = ", ".join(f"`{name}`" for name in catalog.names())
-    return f"\n## The contract\n\n`decktalk schema` prints the whole instruction set. `decktalk schema NAME` takes {names}.\n"
+    whole = "`decktalk schema` prints the whole instruction set."
+    return f"\n## The schemas\n\n{whole} `decktalk schema NAME` takes {names}.\n"
 
 
 def documents() -> dict[Path, str]:

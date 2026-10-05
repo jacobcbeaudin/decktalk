@@ -2,11 +2,11 @@
 
 A cue and the moment it fires are one thing written in two files, so each is read against the other.
 The page's side of it is the catalog the runtime publishes, which names every slide of a scene and
-every moment its elements declare, already qualified into the wire id `cues.json` carries. It is
-read from the catalog and never from a regex over the markup, because `data-steps`, `data-class` and
+every moment its elements declare, already qualified into the cue id `cues.json` carries. It is
+read from the catalog and never from a regex over the markup, because `data-spotlight`, `data-class` and
 `data-owns` all declare moments no text scan can see.
 
-A moment with no row is `CUE_MISSING`, whose fix adds the row and leaves the phrase for the author,
+A moment with no row is `CUE_UNLISTED`, whose fix adds the row and leaves the phrase for the author,
 because the phrase is their line and not DeckTalk's. A row no page declares is `CUE_UNKNOWN`, which
 names the row rather than deleting it, and when one row's phrase survives beside exactly one
 undeclared moment the two are read as a rename and the fix changes the id alone.
@@ -32,11 +32,8 @@ from decktalk.pagescan import scene_cues, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import counted
 
-JSON_INDENT = 2
-"""How a scaffolded `cues.json` is indented, which keeps a diff of one readable in a terminal."""
-
 EMPTY_PHRASE = ""
-"""What a scaffolded row leaves in `on`, because the phrase a cue lands on is the author's own line."""
+"""What a scaffolded row leaves in `phrase`, because the phrase a cue lands on is the author's own line."""
 
 SECTION_KEY = '"{number}"'
 """How `cues.json` keys one section, which is its number in `decktalk.toml` written as a string."""
@@ -52,7 +49,7 @@ def declared_cues(
     catalogs: Mapping[str, Sequence[MeasuredScene]],
     sections: Iterable[PageSection],
 ) -> dict[int, tuple[str, ...]]:
-    """Every wire id the scene each section plays declares, by section number.
+    """Every cue id the scene each section plays declares, by section number.
 
     `catalogs` maps each page to the scenes it published. A section whose page published no catalog,
     or whose scene is not in it, is left out rather than mapped to nothing, so a caller can tell a
@@ -73,7 +70,6 @@ def cue_findings(
     cues_path: Path,
     root: Path,
     stage: Stage | None = None,
-    allow_unknown: bool = False,
 ) -> list[Finding]:
     """Every moment with no row and every row no page declares, each with the fix that reconciles it.
 
@@ -90,22 +86,21 @@ def cue_findings(
     found: list[Finding] = []
     for number in sorted(declared):
         rows = _rows_of(listed, number)
-        missing = [wire for wire in declared[number] if wire not in rows]
-        scaffold = [wire for wire in missing if wire not in renames.get(number, {}).values()]
+        missing = [cue_id for cue_id in declared[number] if cue_id not in rows]
+        scaffold = [cue_id for cue_id in missing if cue_id not in renames.get(number, {}).values()]
         if not missing:
             continue
         fix, text = _scaffold_fix(text, number, scaffold, where=where)
         found.append(_missing_finding(number, missing, renames.get(number, {}), where=where, stage=stage, fix=fix))
-    if allow_unknown:
-        return found
     for number in sorted(listed):
         if number not in declared:
             continue
+        known = set(declared[number])
         for row in listed[number].cues:
-            if row.cue in declared[number]:
+            if row.id in known:
                 continue
-            fix, text = _rename_fix(text, row.cue, renames.get(number, {}).get(row.cue), where=where)
-            found.append(_unknown_finding(number, row.cue, renames.get(number, {}).get(row.cue), where, stage, fix))
+            fix, text = _rename_fix(text, row.id, renames.get(number, {}).get(row.id), where=where)
+            found.append(_unknown_finding(number, row.id, renames.get(number, {}).get(row.id), where, stage, fix))
     return found
 
 
@@ -130,7 +125,7 @@ def _missing_finding(
         else ""
     )
     return judge(
-        Code.CUE_MISSING,
+        Code.CUE_UNLISTED,
         f"section {number} declares {len(missing)} moment(s) that {where.as_posix()} does not list, which is "
         f"{named}, so nothing gives them a second.{also}",
         Location(where=where.as_posix(), file=where, section=number),
@@ -141,7 +136,7 @@ def _missing_finding(
 
 def _unknown_finding(
     number: int,
-    wire: str,
+    cue_id: str,
     renamed: str | None,
     where: Path,
     stage: Stage | None,
@@ -151,9 +146,9 @@ def _unknown_finding(
     looks = f" It looks like {renamed} renamed, because its phrase is the one that survives." if renamed else ""
     return judge(
         Code.CUE_UNKNOWN,
-        f"{where.as_posix()} lists {wire} in section {number} and no slide that section plays declares it, "
+        f"{where.as_posix()} lists {cue_id} in section {number} and no slide that section plays declares it, "
         f"so nothing plays it.{looks}",
-        Location(where=wire, file=where, section=number, cue=wire),
+        Location(where=cue_id, file=where, section=number, cue=cue_id),
         stage=stage,
         fix=fix,
     )
@@ -167,22 +162,22 @@ def _renames(declared: Mapping[int, Sequence[str]], listed: Mapping[int, CuedSec
     carries it is the row the author already wrote for that moment.
     """
     out: dict[int, dict[str, str]] = {}
-    for number, wires in declared.items():
+    for number, cue_ids in declared.items():
         block = listed.get(number)
         if block is None:
             continue
-        listed_ids, wanted = {row.cue for row in block.cues}, set(wires)
-        stale = [row for row in block.cues if row.cue not in wanted and row.on]
-        gained = [wire for wire in wires if wire not in listed_ids]
+        listed_ids, wanted = {row.id for row in block.cues}, set(cue_ids)
+        stale = [row for row in block.cues if row.id not in wanted and row.phrase]
+        gained = [cue_id for cue_id in cue_ids if cue_id not in listed_ids]
         if len(stale) == 1 and len(gained) == 1:
-            out[number] = {stale[0].cue: gained[0]}
+            out[number] = {stale[0].id: gained[0]}
     return out
 
 
 def _rows_of(listed: Mapping[int, CuedSection], number: int) -> set[str]:
-    """Every wire id `cues.json` lists for one section, which is empty when it holds no block for it."""
+    """Every cue id `cues.json` lists for one section, which is empty when it holds no block for it."""
     block = listed.get(number)
-    return {row.cue for row in block.cues} if block else set()
+    return {row.id for row in block.cues} if block else set()
 
 
 # ---- the fixes --------------------------------------------------------------------------------
@@ -199,12 +194,12 @@ class Placement:
 
 def _create_findings(declared: Mapping[int, Sequence[str]], *, where: Path, stage: Stage | None) -> list[Finding]:
     """The one judgement for a project with no cue file at all, whose fix writes the whole of one."""
-    moments = sorted((number, wire) for number, wires in declared.items() for wire in wires)
+    moments = sorted((number, cue_id) for number, cue_ids in declared.items() for cue_id in cue_ids)
     if not moments:
         return []
     document = {
         "sections": {
-            str(number): {"cues": [{"cue": wire, "on": EMPTY_PHRASE} for wire in sorted(declared[number])]}
+            str(number): {"cues": [{"id": cue_id, "phrase": EMPTY_PHRASE} for cue_id in sorted(declared[number])]}
             for number in sorted(declared)
             if declared[number]
         }
@@ -212,14 +207,14 @@ def _create_findings(declared: Mapping[int, Sequence[str]], *, where: Path, stag
     fix = EditFix(
         title=(
             f"Write {where.as_posix()} with a row for each of the {len(moments)} moment(s) the deck declares, "
-            "each waiting for the phrase you write in its `on`."
+            "each waiting for the words you write in its `phrase`."
         ),
         applicability=Applicability.SAFE,
-        edits=(Edit(file=where, line=1, old=None, new=json_text(document, indent=JSON_INDENT)),),
+        edits=(Edit(file=where, line=1, old=None, new=json_text(document, indent=2)),),
     )
     return [
         judge(
-            Code.CUE_MISSING,
+            Code.CUE_UNLISTED,
             f"the deck declares {len(moments)} moment(s) and there is no {where.as_posix()}, so nothing gives "
             "any of them a second.",
             Location(where=where.as_posix(), file=where),
@@ -229,22 +224,22 @@ def _create_findings(declared: Mapping[int, Sequence[str]], *, where: Path, stag
     ]
 
 
-def _scaffold_fix(text: str, number: int, wires: Sequence[str], *, where: Path) -> tuple[EditFix | None, str]:
+def _scaffold_fix(text: str, number: int, cue_ids: Sequence[str], *, where: Path) -> tuple[EditFix | None, str]:
     """(the fix that adds this section's rows, the file as that fix would leave it).
 
     A fix only ever adds, so running it twice adds nothing the second time: the rows it wrote are
     declared and listed by then, and no moment of the section is missing any more.
     """
-    if not wires:
+    if not cue_ids:
         return None, text
-    placement = _place(text, number, wires)
+    placement = _place(text, number, cue_ids)
     if placement is None:
-        return _by_hand(number, wires, where=where), text
+        return _by_hand(number, cue_ids, where=where), text
     edit = Edit(file=where, line=placement.line, old=placement.replaces, new=placement.text)
     fix = EditFix(
         title=(
-            f"Add {counted(len(wires), 'row')} to section {number} of {where.as_posix()}, each waiting for the phrase "
-            "you write in its `on`."
+            f"Add {counted(len(cue_ids), 'row')} to section {number} of {where.as_posix()}, each waiting for the "
+            "words you write in its `phrase`."
         ),
         applicability=Applicability.SAFE,
         edits=(edit,),
@@ -252,13 +247,13 @@ def _scaffold_fix(text: str, number: int, wires: Sequence[str], *, where: Path) 
     return fix, _as_applied(text, edit)
 
 
-def _by_hand(number: int, wires: Sequence[str], *, where: Path) -> EditFix:
+def _by_hand(number: int, cue_ids: Sequence[str], *, where: Path) -> EditFix:
     """The fix for a file this module cannot place a row in, which is a change only a person can make.
 
     A hand-written `cues.json` may be laid out any way its author likes, and an edit that guessed
     where a row goes would be worse than an edit nobody made.
     """
-    rows = ", ".join(_row(wire) for wire in wires)
+    rows = ", ".join(_row(cue_id) for cue_id in cue_ids)
     return EditFix(
         title=f"Add these row(s) to section {number} of {where.as_posix()}: {rows}",
         applicability=Applicability.DISPLAY,
@@ -266,7 +261,7 @@ def _by_hand(number: int, wires: Sequence[str], *, where: Path) -> EditFix:
     )
 
 
-def _place(text: str, number: int, wires: Sequence[str]) -> Placement | None:
+def _place(text: str, number: int, cue_ids: Sequence[str]) -> Placement | None:
     """Where this section's rows go in the file, or None when its cue array cannot be found.
 
     A cue array written over several lines is grown by inserting the new rows after the line it
@@ -276,13 +271,13 @@ def _place(text: str, number: int, wires: Sequence[str]) -> Placement | None:
     lines = text.splitlines()
     start = _section_line(lines, number)
     if start is None:
-        return _new_block(lines, number, wires)
+        return _new_block(lines, number, cue_ids)
     for offset, line in enumerate(lines[start:], start=start):
         match = CUES_KEY.match(line)
         if not match:
             continue
         indent = match.group("indent") + "  "
-        rows = [_row(wire) for wire in wires]
+        rows = [_row(cue_id) for cue_id in cue_ids]
         if "]" in line:
             inner = line[line.index("[") + 1 : line.rindex("]")].strip()
             kept = [*rows, inner] if inner else rows
@@ -298,7 +293,7 @@ def _place(text: str, number: int, wires: Sequence[str]) -> Placement | None:
     return None
 
 
-def _new_block(lines: Sequence[str], number: int, wires: Sequence[str]) -> Placement | None:
+def _new_block(lines: Sequence[str], number: int, cue_ids: Sequence[str]) -> Placement | None:
     """A whole block for a section the file holds none for, written as the first member of `sections`.
 
     It goes first rather than in number order because the member order of a JSON object says
@@ -310,16 +305,16 @@ def _new_block(lines: Sequence[str], number: int, wires: Sequence[str]) -> Place
     if opened is None or match is None:
         return None
     indent = match.group("indent") + "  "
-    rows = f",\n{indent}    ".join(_row(wire) for wire in wires)
+    rows = f",\n{indent}    ".join(_row(cue_id) for cue_id in cue_ids)
     after = next((line.strip() for line in lines[opened + 1 :] if line.strip()), "")
     comma = "" if after.startswith("}") else ","
     block = f'{indent}"{number}": {{\n{indent}  "cues": [\n{indent}    {rows}\n{indent}  ]\n{indent}}}{comma}'
     return Placement(line=opened + 2, replaces=None, text=block)
 
 
-def _row(wire: str) -> str:
+def _row(cue_id: str) -> str:
     """One new row, spaced the way the file this module writes spaces a row, waiting for its phrase."""
-    return f'{{"cue": {json_text(wire)}, "on": {json_text(EMPTY_PHRASE)}}}'
+    return f'{{"id": {json_text(cue_id)}, "phrase": {json_text(EMPTY_PHRASE)}}}'
 
 
 def _section_line(lines: Sequence[str], number: int) -> int | None:
@@ -334,7 +329,7 @@ def _closes_next(lines: Sequence[str], opened: int) -> bool:
     return after.startswith("]")
 
 
-def _rename_fix(text: str, wire: str, renamed: str | None, *, where: Path) -> tuple[EditFix | None, str]:
+def _rename_fix(text: str, cue_id: str, renamed: str | None, *, where: Path) -> tuple[EditFix | None, str]:
     """(the fix that renames one stale row, the file as it would leave it), or none when nothing renamed it.
 
     It is unsafe rather than safe, because it rewrites an id the author typed and a pairing read
@@ -343,12 +338,12 @@ def _rename_fix(text: str, wire: str, renamed: str | None, *, where: Path) -> tu
     if renamed is None:
         return None, text
     lines = text.splitlines()
-    found = next((index for index, line in enumerate(lines) if f'"{wire}"' in line), None)
+    found = next((index for index, line in enumerate(lines) if f'"{cue_id}"' in line), None)
     if found is None:
         return None, text
-    edit = Edit(file=where, line=found + 1, old=lines[found], new=lines[found].replace(f'"{wire}"', f'"{renamed}"'))
+    edit = Edit(file=where, line=found + 1, old=lines[found], new=lines[found].replace(f'"{cue_id}"', f'"{renamed}"'))
     fix = EditFix(
-        title=f"Rename the cue {wire} to {renamed} in {where.as_posix()}, keeping the phrase it already waits for.",
+        title=f"Rename the cue {cue_id} to {renamed} in {where.as_posix()}, keeping the phrase it already waits for.",
         applicability=Applicability.UNSAFE,
         edits=(edit,),
     )

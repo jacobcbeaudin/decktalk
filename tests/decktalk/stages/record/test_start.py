@@ -1,4 +1,4 @@
-"""Where narration t=0 sits in a recording, and what happens when nothing marks it.
+"""Where the section clock starts in a recording, and what happens when nothing marks it.
 
 The recorder's cover is the only measurement of the start there is. Every other answer is an
 estimate, so every test here also asserts that an estimate says so, because a guessed start moves
@@ -45,11 +45,11 @@ def test_a_cover_frame_is_mid_luma_with_both_chroma_planes_high(settings: Record
 
 
 def test_a_dark_frame_is_not_the_cover(settings: RecordConfig) -> None:
-    assert not is_cover(a_frame(0.0, yavg=settings.cover_luma_min - 1), settings)
+    assert not is_cover(a_frame(0.0, yavg=settings.cover_min_luma - 1), settings)
 
 
 def test_a_grey_frame_is_not_the_cover_because_its_chroma_is_flat(settings: RecordConfig) -> None:
-    assert not is_cover(a_frame(0.0, chroma=settings.cover_chroma_min - 1), settings)
+    assert not is_cover(a_frame(0.0, chroma=settings.cover_min_chroma - 1), settings)
 
 
 def test_one_frame_cannot_measure_its_own_step() -> None:
@@ -79,7 +79,7 @@ def test_no_cover_falls_back_to_the_first_painted_frame_and_says_so(
     monkeypatch: pytest.MonkeyPatch, settings: RecordConfig, tmp_path: Path
 ) -> None:
     painted = a_frame(
-        0.2, yavg=settings.painted_mean_luma_max - 1, ymax=settings.painted_peak_luma_min + 1, chroma=128.0
+        0.2, yavg=settings.painted_mean_max_luma - 1, ymax=settings.painted_peak_min_luma + 1, chroma=128.0
     )
     read_as(monkeypatch, [a_frame(0.0, yavg=0.0, ymax=0.0, chroma=128.0), painted])
     start = find_start(tmp_path / "01.webm", SETTLE, settings)

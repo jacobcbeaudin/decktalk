@@ -5,7 +5,7 @@ description: Understand how the narration, the clip audio, the music, the ambien
 
 A film's soundtrack is mixed once, in `assemble`, as one filter graph over a silent anchor as long as
 the picture. The narration and the audio of every clip are always in it. The music, the ambience bed
-and the effects are the soundscape, and each of them is in the mix only because the project named a
+and the effects are the score, and each of them is in the mix only because the project named a
 file for it. A sound placed on a cue lands on the second that cue resolved to, which
 [Cues](/concepts/cues) explains. To put one sound on one cue from nothing, follow
 [Put a sound effect on a cue](/guides/effects-on-a-cue).
@@ -17,137 +17,139 @@ file for it. A sound placed on a cue lands on the second that cue resolved to, w
 | Narration | `build/narrate/narration.mp3` | It plays under the page sections. A clip between two page sections, or a hold, pauses it, so it plays in the runs the timeline splits it into. |
 | Clip audio | each clip file | Each clip's own sound lands at its section start, trimmed to its picture and faded over 20 milliseconds at each edge, so a cut into it never clicks. |
 | Music | `[mix] music` | One bed loops under the whole film at `[mix] music_db`. It fades in over `music_fade_in_seconds` and out over `music_fade_out_seconds`. |
-| Ambience bed | `[mix] ambience` | One bed loops at `[mix] ambience_db` under each page section that sets `ambience = true`, and is silent everywhere else. |
-| Effects | `[[mix.effects]]` | Each effect plays once, at the second its own cue resolved to plus its own `offset`, at its own `db`. |
+| Ambience bed | `[mix] ambience` | One bed loops at `[mix] ambience_db` under each page section that sets `with_ambience = true`, and is silent everywhere else. |
+| Effects | `[[mix.effect]]` | Each effect plays once, at the second its own cue resolved to plus its own `offset_seconds`, at its own `db`. |
 
 The anchor is what fixes the length. The picture carries no audio of its own, so without a silence as
 long as the film the soundtrack would run as long as whichever layer happened to be longest.
 
-`decktalk assemble --skip soundscape` leaves the music, the ambience and the effects out and mixes
+`decktalk assemble --skip score` leaves the music, the ambience and the effects out and mixes
 the narration and the clip audio alone. Nothing else changes.
 
 ### What `[mix]` holds
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `music` | path | none | The music bed under the whole film. It loops, and it ducks under speech and under clips. |
-| `music_db` | number | -24 | The music's own level, in dB. |
-| `music_duck_db` | number | -6 | How far the music drops under a spoken span or a clip, in dB. |
-| `music_fade_in_seconds` | number | 2 | How long the music fades in at the start of the film. |
-| `music_fade_out_seconds` | number | 3 | How long the music fades out at the end of it. |
-| `music_markers` | path | none | A markers file, which raises and mutes the music at spoken phrases. |
-| `ambience` | path | none | The ambience bed, for the sections that set `ambience = true`. |
-| `ambience_db` | number | -20 | The ambience bed's level, in dB. |
-| `slate` | path | a rendered slate | A PNG to play for a missing clip, instead of the titled slate DeckTalk draws. |
+[`[mix]`](/reference/decktalk-toml#mix) lists every key that names a file and its level, and
+[`[[mix.effect]]`](/reference/decktalk-toml#mix-effect) every key of an effect. A cued sound takes
+a `caption`, and [Captions carry the whole soundtrack](/guides/accessible-video#captions-carry-the-whole-soundtrack)
+says what a viewer reads in its place.
 
-One `[[mix.effects]]` table places one sound.
+## The score stage
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `file` | path | required | The audio file to play. |
-| `section` | integer | required | The section whose cue places it. The section must exist. |
-| `cue` | string | required | The wire id of a cue in that section, which the `cue` stage resolved. |
-| `db` | number | -16 | The effect's level, in dB. |
-| `offset` | number | 0 | Seconds added to the cue's own second. This offset belongs to the effect and not to the cue. |
-| `caption` | string | none | The caption line a viewer reads when the sound plays, such as `ball bounces`. |
-
-A cued sound that names no caption is a hole in what a deaf viewer receives, so `assemble` says so on
-the stream. A caption is wrapped in square brackets if it is not already, and it gets a line of its
-own in the captions.
-
-## The soundscape stage
-
-`soundscape` is the fourth stage of the six. It generates the music, the ambience bed and the effects
-this project describes, from the prompts in `[soundscape]`, through the ElevenLabs sound and music
-endpoints. It spends, which is why it runs where it does: it is the last stage that can buy anything,
+`score` is the fourth stage of the six. It generates the music, the ambience bed and the effects
+this project describes, from the prompts in `[score]`, through the sound provider
+`[score] provider` names, which is ElevenLabs's sound and music endpoints with the key and
+`base_url` of `[elevenlabs]`. It spends, which is why it runs where it does: it is the last stage that can buy anything,
 so `decktalk build --to record` stops before it and an unpaid draft loop never reaches it.
 
-It is a stage like any other, so `decktalk build` reaches it with `--from soundscape`,
-`--to soundscape` and `--skip soundscape`, `decktalk assemble --skip soundscape` mixes without it,
-and `decktalk soundscape` runs it alone.
+It is a stage like any other, so `decktalk build` reaches it with `--from score`,
+`--to score` and `--skip score`, `decktalk assemble --skip score` mixes without it,
+and `decktalk score` runs it alone.
 
 ```console
-decktalk soundscape --no-voice     # report the whole plan, send nothing and write nothing
-decktalk soundscape --spend        # generate what is missing or has changed, without asking first
-decktalk soundscape --section 3    # only what section 3 needs
-decktalk soundscape --force        # generate again, even where the request has not changed
+decktalk score --no-spend     # report the whole plan, send nothing and write nothing
+decktalk score --spend        # generate what is missing or has changed, without asking first
+decktalk score --section 3    # only what section 3 needs
+decktalk score --replace-score --spend   # buy every bought sound again
 ```
 
-A run whose voicing is a placeholder reports what it would ask for and buys nothing, which is the
-plan an author reads before approving a spend. On a terminal a run that would buy something prices it
-and asks. `--max-cost N` refuses before the first call when the most the run can cost is over N
-dollars.
+A run with `--no-spend` reports what it would ask for and buys nothing, which is the plan an author
+reads before approving a spend. With neither flag, a run that would buy something prices it and asks
+on a terminal, and a run with nothing left to buy asks nothing. A build asks once about its takes
+and its sounds added together, and [The ceiling](/requirements#the-ceiling) is how `--max-cost`
+refuses one. `--replace-score` is the one way to buy
+again a sound the ledger holds. It acts only with `--spend`, is confirmed once on a terminal, and
+never buys a take, while `--force` never buys a sound.
 
-The price is the prompt characters at `voice.price_per_1000_characters`, because that is the one rate
-a project publishes. A sound request is billed by the service per second of audio, so the figure is
-what the spend gate holds and never an invoice.
+A sound is billed by the second of audio, at the rate in the sound provider's own table. Each kind
+states its rate in US dollars per minute of audio as `dollars_per_minute` in its own table,
+`[score.ambience]`, `[score.effects]` or `[score.music]`, and a request costs the seconds it asks
+for at that rate. The result's `cost` reports the rate in the same unit, under the same name, so the
+rate you typed is the rate you read back. A rate nobody stated is zero from the `default` layer, and `--max-cost` refuses a run that buys
+at one, because the cap would guard a made-up price. The speech rate,
+`[elevenlabs] dollars_per_1000_characters`, never prices a sound.
+
+Every request the provider is paid for is a `sound.charged` line on the stream the moment it answers,
+one per bed or effect and one per part of the music, and a run that bought something reports its
+spend as `charged`.
 
 ### What each table declares
 
 | Table | Required key | What it generates |
 |---|---|---|
-| `[soundscape.music]` | `prompt` | The music bed. |
-| `[soundscape.ambience]` | `text` | The ambience bed, asked for as a loop so it meets its own end. |
-| `[soundscape.effects.<name>]` | `text` | One effect, named by `<name>`. |
+| `[score.music]` | `prompt` | The music bed. |
+| `[score.ambience]` | `prompt` | The ambience bed, asked for as a loop so it meets its own end. |
+| `[score.effects.<name>]` | `prompt` | One effect, named by `<name>`. |
 
-`[soundscape.music]` also takes `seconds`, which is 360 by default and must be a whole number,
-`force_instrumental`, which is true by default, `model_id` and `out`. `[soundscape.ambience]` and
-`[soundscape.effects.<name>]` each take `duration_seconds`, `prompt_influence`, `model_id` and `out`.
-A key a table leaves out is filled from `[elevenlabs]`, which holds `sound_model`, `music_model`,
-`ambience_seconds`, `ambience_prompt_influence`, `effect_seconds` and `effect_prompt_influence` with
-their own ranges. [Configuration](/reference/configuration) lists every one of them.
+Each table holds its prompt and its file beside the settings that size its request, spelled the
+same way in every table. [`[score]`](/reference/decktalk-toml#score) lists every key of each table,
+and [Configuration](/reference/configuration#score) every setting with its range.
 
-Music longer than `[elevenlabs] max_music_chunk_seconds` is asked for in equal parts, because the
+Music longer than `[score.music] chunk_max_seconds` is asked for in equal parts, because the
 service will not write a long piece in one answer. Each part is told which one it is so it keeps the
-key and the tempo, and the parts are joined with a crossfade of
-`[elevenlabs] music_crossfade_seconds`.
+key and the tempo, and the parts are joined with a crossfade of `[score.music] crossfade_seconds`.
 
 ```toml decktalk.toml
 [mix]
 music = "media/bed.mp3"
 ambience = "media/room.mp3"
 
-[[mix.effects]]
-file = "build/soundscape/tick.mp3"
+[[mix.effect]]
+file = "score/tick.mp3"
 section = 2
 cue = "2.1:code"
 caption = "soft click"
 
-[soundscape.music]
+[score.music]
 prompt = "calm, minimal instrumental for a lesson: soft piano and warm pads, slow, no drums, unobtrusive under a narrator"
-seconds = 120
+duration_seconds = 120
 
-[soundscape.ambience]
-text = "quiet lecture hall room tone, distant HVAC, no voices, steady"
+[score.ambience]
+prompt = "quiet lecture hall room tone, distant HVAC, no voices, steady"
 
-[soundscape.effects.tick]
-text = "soft interface click, single, short, no reverb"
+[score.effects.tick]
+prompt = "soft interface click, single, short, no reverb"
 ```
 
 ### How each generated file reaches the mix
 
-This is the one join to get right. `soundscape` writes files and the mix reads `[mix]`, so the two
+This is the one join to get right. `score` writes files and the mix reads `[mix]`, so the two
 have to name the same path.
 
-| Item | Where `soundscape` writes it | What the mix plays |
+| Item | Where `score` writes it | What the mix plays |
 |---|---|---|
-| Music | `[soundscape.music] out`, else `[mix] music`, else `build/soundscape/music.mp3` | `[mix] music` |
-| Ambience | `[soundscape.ambience] out`, else `[mix] ambience`, else `build/soundscape/ambience.mp3` | `[mix] ambience` |
-| Effect `<name>` | `[soundscape.effects.<name>] out`, else `build/soundscape/<name>.mp3` | every `[[mix.effects]]` row whose `file` names that path |
+| Music | its parts in `score/music-part<n>.mp3`, joined into `[score.music] out`, else `[mix] music`, else `build/score/music.mp3` | `[mix] music` |
+| Ambience | `[score.ambience] out`, else `[mix] ambience`, else `score/ambience.mp3` | `[mix] ambience` |
+| Effect `<name>` | `[score.effects.<name>] out`, else `score/<name>.mp3` | every `[[mix.effect]]` row whose `file` names that path |
 
-So naming the file in `[mix]` is enough for the music and the ambience: `soundscape` writes to the
+So naming the file in `[mix]` is enough for the music and the ambience: `score` writes to the
 path the mix will read. An effect has no such shortcut, because one generated sound can be cued in
-several places, so a `[[mix.effects]] file` points at `build/soundscape/<name>.mp3` by hand.
+several places, so a `[[mix.effect]] file` points at `score/<name>.mp3` by hand.
 
-`build/soundscape/ledger.json` records what this project has already bought, keyed by the request
-that bought it. An item whose request still matches its row and whose audio is still on disk is kept
+### The score directory
+
+Every sound the score buys lands in the score directory, `score/` unless `[score] dir` names
+another folder inside the project, and you commit it the way you commit `takes/`. Each file is
+named by its item, so `score/` reads `ambience.mp3`, `tick.mp3`, `music-part1.mp3` and the ledger
+beside them. Deleting the build directory then costs nothing: the next run finds what it bought,
+and joins the music again from its parts under `build/score/`, which is free. A run without
+`--spend` reads the score directory and never writes it, so a clone that commits it, such as the
+one the GitHub Action checks out, mixes the film with no key and leaves no tracked file changed.
+`--replace-score` with `--spend` buys each item again and writes over the same file, after it asks
+on a terminal.
+
+`score/ledger.json` records what this project has already bought, keyed by the request
+that bought it: the endpoint as the sound provider publishes it and the request body, and never
+`base_url`, so a project that moves to another host of the same service buys nothing again. An item whose request still matches its row and whose audio is still on disk is kept
 rather than bought again, and the ledger is written after every paid call, so a run stopped half way
 through a long piece keeps what it has and asks only for the rest.
 
-A planned item nobody has bought is [`FILE_MISSING`](/reference/findings/FILE_MISSING) against the
-path a mix would look for. `assemble` reports the same code for a music file, an ambience file or an
-effect file the project names and has not got, and mixes that layer as silence rather than failing
-the film. An effect whose cue did not resolve is a sentence on the stream, and the sound is left out
+A planned item nobody has bought is a [`SOUND_MISSING`](/reference/findings/SOUND_MISSING) warning
+against the path a mix would look for, and `assemble` reports the same code when it meets that path
+empty. The layer plays as silence and the film is still made, so `decktalk build --no-spend` on a
+project with a score exits 0, and `--fail-on warning` makes it fail. A music file, an ambience file
+or an effect file the project names and that no score item writes is the author's own, so its
+absence is a [`FILE_MISSING`](/reference/findings/FILE_MISSING) error. That layer plays as silence
+too, and the build stops after `assemble`. An effect whose cue did not resolve is a sentence on the stream, and the sound is left out
 of the mix and out of the captions.
 
 ## Ducking
@@ -158,7 +160,7 @@ default of -6 dB against a `music_db` of -24, the music plays at -30 dB there.
 - A spoken section carries speech from where it starts until the end of its last word, or until it
   ends when it says nothing at all.
 - A clip carries speech for the whole of its own length, because its dialogue is its own.
-- Each edge of a span ramps over `[audio] duck_ramp_seconds`, which is 0.5 seconds by default.
+- Each edge of a span ramps over `[mix] duck_ramp_seconds`, which is 0.5 seconds by default.
 
 The music therefore begins to rise in the last half second of speech and is at full level through the
 silence after it, and it stays down under a whole clip.
@@ -169,22 +171,16 @@ silence after it, and it stays down under a whole clip.
 </Frame>
 
 The ambience bed is shaped the same way and for a different reason. It plays under the page sections
-that ask for one, it ramps over `[audio] ambience_ramp_seconds`, and it reaches
-`[audio] ambience_pad_seconds` past each edge of its section, so the room does not appear and vanish
+that ask for one, it ramps over `[mix] ambience_ramp_seconds`, and it reaches
+`[mix] ambience_pad_seconds` past each edge of its section, so the room does not appear and vanish
 exactly on a cut.
 
 ### The mix mechanics
 
-These are the five `[audio]` keys. They set the shape of the mix, and the levels are project content
-that lives in `[mix]`.
-
-| Key | Default | Meaning |
-|---|---|---|
-| `duck_ramp_seconds` | 0.5 | The ramp of the music duck at each edge of a spoken span or a clip. |
-| `ambience_ramp_seconds` | 1.0 | The ramp of the ambience bed at each edge of its span. |
-| `ambience_pad_seconds` | 0.5 | How far the ambience bed reaches past each edge of its section. |
-| `marker_mute_ramp_seconds` | 0.04 | The ramp into and out of a marker's mute. |
-| `marker_boost_ramp_seconds` | 0.3 | The ramp into and out of a marker's swell. |
+The settings of `[mix]` set the shape of the mix, beside the files and the levels that are the
+table's project content: the ramp of the music duck at each edge of a spoken span or a clip, the ramp
+and the reach of the ambience bed, and the ramps into and out of a marker's mute and swell.
+[Configuration](/reference/configuration#mix) lists each with its default and its range.
 
 ## Markers
 
@@ -196,24 +192,13 @@ without an edit to its audio. `[mix] music_markers` names the file.
   "boost_db": 3,
   "boost_seconds": 2,
   "markers": [
-    { "name": "open", "section": 1, "on": "$start" },
-    { "name": "turn", "section": 3, "on": "the whole idea", "mute_seconds": 0.4 }
+    { "name": "open", "section": 1, "phrase": "$start" },
+    { "name": "turn", "section": 3, "phrase": "the whole idea", "mute_seconds": 0.4 }
   ]
 }
 ```
 
-| Key | Where | Default | Meaning |
-|---|---|---|---|
-| `boost_db` | top level | 3 | How far each marker raises the music, in dB. |
-| `boost_seconds` | top level | 2 | How long each swell lasts. |
-| `markers` | top level | none | The markers. |
-| `name` | marker | none | The name a warning uses for it. |
-| `section` | marker | required | The section that holds the phrase. |
-| `on` | marker | `$start` | A spoken phrase, `$start` or `$end`. |
-| `offset` | marker | 0 | Seconds added to the matched second. |
-| `occurrence` | marker | 1 | Which match of the phrase to take. |
-| `case_sensitive` | marker | false | Whether the match compares case. |
-| `mute_seconds` | marker | 0 | Seconds of silence before the swell starts. |
+[`markers.json`](/reference/decktalk-toml#markers-json) lists every key.
 
 A marker resolves exactly as a cue does, against the words of its own section, by the rules in
 [Cues](/concepts/cues#matching-rules). Markers apply only where there is a music file. A markers file
@@ -227,34 +212,34 @@ After the layers are summed, the loudness pass brings the whole mix to one progr
 
 1. It measures the integrated loudness, the true peak and the loudness range of the mix.
 2. It applies one plain gain, which is the distance from the measured loudness to
-   `[mix.loudness] target_lufs`. A plain gain keeps the dynamics of the mix intact.
+   `[audio] target_lufs`. A plain gain keeps the dynamics of the mix intact.
 3. It runs a true-peak limiter at 192 kHz, so an inter-sample peak becomes a sample the limiter can
-   see. The limiter sits 0.3 dB under `[mix.loudness] true_peak_max_dbtp`, attacks in 5 milliseconds
+   see. The limiter sits 0.3 dB under `[audio] true_peak_max_dbtp`, attacks in 5 milliseconds
    and releases in 50, which is long enough not to pump on speech.
 4. It measures the result again.
 
 The defaults are -16 LUFS and a -1.5 dBTP ceiling, so the limiter acts on peaks above -1.8 dBTP.
-`[mix.loudness] range_max_lu` is the loudness range the measurement is made against, and its default
+`[audio] range_max_lu` is the loudness range the measurement is made against, and its default
 is 11 LU.
 
 [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) reports what the pass could not fix. It is raised
 when the measured true peak is above the ceiling, and when the measured integrated loudness sits more
-than 1 LU from the target. It is an uncertain finding, because it is a measurement of a film rather
+than 1 LU from the target. It is a warning, because it is a measurement of a film rather
 than a fault in it, and a reader decides.
 
-A run whose narration is a placeholder skips the pass. The placeholder is clicks and silence, and
+A run with a placeholder take skips the pass. The placeholder is clicks and silence, and
 normalising them would move the clicks the offset check listens for.
 
 ## Your own audio files
 
-Point `[mix] music`, `[mix] ambience` and each `[[mix.effects]] file` at any audio file ffmpeg can
-read. A project that generates nothing needs no `[soundscape]` table at all.
+Point `[mix] music`, `[mix] ambience` and each `[[mix.effect]] file` at any audio file ffmpeg can
+read. A project that generates nothing needs no `[score]` table at all.
 
-Keep a file of your own at a path no `[soundscape]` table writes to. An item whose ledger row does
+Keep a file of your own at a path no `[score]` table writes to. An item whose ledger row does
 not match its request is bought again and written over whatever is at its output path, so a hand-made
 bed under a generated bed's path is replaced the next time the prompt changes.
 
-`decktalk init` writes no `[mix]` sound keys and no `[soundscape]` tables, so a new project makes no
+`decktalk init` writes no `[mix]` sound keys and no `[score]` tables, so a new project makes no
 sound beyond its narration until you add them.
 
 ## Next
@@ -262,4 +247,4 @@ sound beyond its narration until you add them.
 - **Put one sound on one cue:** [Put a sound effect on a cue](/guides/effects-on-a-cue)
 - **Give a sound its moment:** [Cues](/concepts/cues)
 - **Look up every key and its range:** [Configuration](/reference/configuration)
-- **See what spends credits:** [Requirements](/requirements#what-spends-and-what-does-not)
+- **See what costs money:** [Requirements](/requirements#what-spends-and-what-does-not)

@@ -32,15 +32,16 @@ TOP_LINES = (
 
 BUILD_SENTENCES = (
     "Run every stage in order, or a span of them with --from and --to.",
-    "Placeholder narration: no API key and no spend.",
-    "Voice what needs it without asking first.",
-    "Start at this stage: narrate, cue, record, soundscape, assemble or verify.",
+    "Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing.",
+    "A free provider such as dtsp makes its takes either way once a voice is named.",
+    "Unset, a terminal is asked and a run without one is refused.",
+    "Start at this stage: narrate, cue, record, score, assemble or verify.",
     "Stop after this stage, inclusive.",
     "Run every stage but this one. Repeats.",
     "Only these sections: 3, 3,5 or 7-9. Repeats.",
-    "certain fails on a certain finding, any fails on any finding, never fails on none. Default",
+    "error fails on an error, warning fails on any finding, never fails on none. Default",
     "Carry on past this finding code. Repeats.",
-    "Build again from nothing, keeping every voiced take, and measure the film again.",
+    "Build again from nothing, keeping every voiced take and every bought sound, and measure the film again.",
     "Override one setting here. Repeats. See config explain.",
     "Stay running, rebuild the changed section, never spend.",
     "-p, --json, --events, --color, --no-input, -v and -q work on every command.",
@@ -82,13 +83,13 @@ def test_the_finding_flags_are_exactly_on_the_commands_that_judge(name: str) -> 
 
 
 @pytest.mark.parametrize("name", sorted(commands()))
-def test_the_spending_flags_are_exactly_on_the_commands_that_buy(name: str) -> None:
+def test_the_spend_flags_are_exactly_on_the_commands_that_buy(name: str) -> None:
     row = commands()[name]
     flags = {opt for param in row["params"] for opt in param["opts"]}
     model = _model(row)
     spends = model is not None and model.spends
     assert ("--spend" in flags) is spends
-    assert ("--no-voice" in flags) is spends
+    assert ("--no-spend" in flags) is spends
     assert ("--max-cost" in flags) is spends
 
 
@@ -101,9 +102,38 @@ def _model(row: dict[str, object]) -> type[Result] | None:
 def test_every_command_help_names_every_field_its_result_carries_and_its_docs(run, name: str) -> None:
     said = flat(run(*name.split(), "--help").out)
     model = _model(commands()[name])
-    for field in model.model_fields.keys() - Result.model_fields.keys() if model else ():
-        assert field in said, f"{name} --help leaves out {field}"
+    for field, info in model.model_fields.items() if model else ():
+        published = info.alias or field
+        assert field in Result.model_fields or published in said, f"{name} --help leaves out {published}"
     assert f"#decktalk-{name.replace(' ', '-')}" in said
+
+
+RATIONALE = {
+    "narrate": "It names the transformation",
+    "cue": "so the stage is called what everything around it is called",
+    "score": "so that the unpaid draft loop stops at a recording",
+    "assemble": "the editing room's word for joining shots into a cut",
+    "verify": "the product's whole claim written as a measurement",
+    "clip": "so the command that makes one is called what the file is called",
+    "storyboard": "One panel of a storyboard is still a storyboard",
+    "config list": "An agent cannot change a setting it cannot enumerate",
+    "config unset": "editing a validated file is library work",
+    "config explain": "the whole instruction set rests on",
+}
+"""One sentence of each command's design note, which its docstring keeps after the form feed Click cuts at."""
+
+
+@pytest.mark.parametrize(("name", "note"), sorted(RATIONALE.items()))
+def test_a_command_s_help_leaves_out_why_it_was_designed(run, name: str, note: str) -> None:
+    """A reader of `--help` needs what the command does, and the reason behind its name is for its maintainer."""
+    assert flat(note) not in flat(run(*name.split(), "--help").out)
+
+
+def test_the_serve_help_says_its_output_stays_open_while_it_serves(run) -> None:
+    """The command flushes its one object and then serves, so a caller reading to the end of the stream waits."""
+    said = flat(run("serve", "--help").out)
+    assert "closes stdout" not in said
+    assert "standard output stays open while it serves" in said
 
 
 @pytest.mark.parametrize("name", sorted(commands()))

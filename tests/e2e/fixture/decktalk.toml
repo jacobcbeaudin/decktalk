@@ -1,6 +1,7 @@
 #:schema https://raw.githubusercontent.com/jacobcbeaudin/decktalk/main/schemas/v1/decktalk.json
-# The pipeline fixture. tests/e2e/test_pipeline.py copies it to tests/out/e2e/pipeline, adds the runtime and
-# KaTeX, generates the clip and the beds with ffmpeg, and builds it without voice in about twenty seconds of video.
+# The pipeline fixture. tests/e2e/test_pipeline.py copies it to tests/out/e2e/pipeline, generates the clip and
+# the beds with ffmpeg, and builds it without voice in about twenty seconds of video. The engine serves the
+# runtime and KaTeX, so the fixture holds neither.
 # Every page is still, and every reveal is a solid block that snaps in on its frame, so a hosted runner
 # has almost nothing to draw while a cue lands. The five sections cover a shared chapter, a seam, a
 # B-roll clip with dips, a held page with an ambience bed and an equation, and a missing optional clip.
@@ -35,7 +36,7 @@ chapter = "Equation"
 page = "deck/index.html"
 scene = "3"
 hold_seconds = 0.5
-ambience = true
+with_ambience = true
 
 [[section]]
 number = 5
@@ -53,10 +54,10 @@ music_markers = "media/markers.json"
 ambience = "media/ambience.mp3"
 ambience_db = -32             # well under the -24 dBFS clicks, so the a/v check still finds each click
 
-[[mix.effects]]
+[[mix.effect]]
 file = "media/tick.mp3"
 section = 1
 cue = "1.1:second"
 db = -30
-offset = 0.4                  # outside the click search window of the cued word
+offset_seconds = 0.4          # outside the click search window of the cued word
 caption = "a tick lands"      # the caption files carry the whole soundtrack, not only the speech

@@ -12,19 +12,10 @@
       "title": "Applicability",
       "type": "string"
     },
-    "Certainty": {
-      "description": "Whether a finding is wrong for sure or only probably wrong.\n\nThe threshold a run fails on is `--fail-on`, which names a threshold and never a field value, so\nthese two words are read and never compared against a flag.",
-      "enum": [
-        "certain",
-        "uncertain"
-      ],
-      "title": "Certainty",
-      "type": "string"
-    },
     "Code": {
-      "description": "Every judgement DeckTalk can make, with its sentence, its certainty and who raises it.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, because two lists of one relation had drifted apart.",
+      "description": "Every judgement DeckTalk can make, with its sentence, its severity, who raises it and where.\n\nThe member name is the code an agent dispatches on and passes to `--allow`. The prefix is the\nsubject the finding judges, which groups the codes for sorting, for `--allow` and for the docs\nURL.\n\nA code does not list the settings that move it. Each settings key names the codes it decides,\nbeside its range, and every rendering that shows a code's keys reads that one declaration in\nreverse, so the relation is written once.",
       "enum": [
-        "PAGE_UNKNOWN_ATTR",
+        "PAGE_ATTR_UNKNOWN",
         "PAGE_BAD_VALUE",
         "PAGE_MOMENT_UNKNOWN",
         "PAGE_MOMENT_ORDER",
@@ -51,17 +42,17 @@
         "PAGE_PREVIEW_AMBIGUOUS",
         "PAGE_APPEAR_TOO_LONG",
         "PAGE_STAGGER_EMPTY",
+        "PAGE_SPOTLIGHT_EMPTY",
         "PAGE_MOTION_OVERRUN",
         "PAGE_STAGGER_OVERRUN",
         "PAGE_THIN_DRAW",
         "PAGE_NO_DESCRIPTION",
         "PAGE_SWAP_APART",
-        "PAGE_STALLED",
-        "PAGE_BLACK",
-        "PAGE_TRUNCATED",
         "PAGE_CDN_ASSET",
-        "PAGE_RUNTIME_STALE",
-        "CUE_MISSING",
+        "RECORD_STALLED",
+        "RECORD_BLACK",
+        "RECORD_TRUNCATED",
+        "CUE_UNLISTED",
         "CUE_UNKNOWN",
         "CUE_UNRESOLVED",
         "CUE_STALE",
@@ -70,11 +61,14 @@
         "CUE_NO_CHANGE",
         "CUE_THIN_CHANGE",
         "CUE_OVERLAP",
-        "TAKE_PLACEHOLDER",
-        "TAKE_SPOKEN_SYMBOL",
+        "SCRIPT_UNFINISHED",
+        "SCRIPT_SPOKEN_SYMBOL",
+        "SCRIPT_PAUSE_DROPPED",
+        "TAKE_MISSING",
         "CUT_SPEECH",
         "CUT_POP",
         "MIX_LOUDNESS",
+        "SOUND_MISSING",
         "FILE_MISSING"
       ],
       "title": "Code",
@@ -248,7 +242,7 @@
     },
     "ErrorInfo": {
       "additionalProperties": false,
-      "description": "The `error` of a result: why the command could not run, and what would let it.\n\nIt is filled only when the command could not run at all, so a reader that finds it null knows\nthe command ran and that every judgement is in `findings`.",
+      "description": "The `error` of a result: why the command could not run, and what would let it.\n\nIt is filled when the command could not run, and on the result a stopped or refused run carries\nof what it bought. A reader that finds it null knows the command ran to its end and that every\njudgement is in `findings`.",
       "properties": {
         "code": {
           "$ref": "#/$defs/ErrorCode",
@@ -269,7 +263,7 @@
             }
           ],
           "default": null,
-          "description": "The whole command that would clear this, or null.",
+          "description": "The smallest next action, or null. A refusal names the whole command that clears it, and a bug says how to report it.",
           "title": "Hint"
         },
         "location": {
@@ -300,7 +294,7 @@
     },
     "Finding": {
       "additionalProperties": false,
-      "description": "One judgement, in the shape every renderer, every schema and every agent receives.\n\n`certainty` and `url` are the code's own and are written into the object rather than left for a\nreader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them\nout and the code fills them, and a value that disagrees with the code is refused. Both therefore\ncarry a declared default, which says in the signature and in the schema that a raiser names the\ncode and nothing else. Neither default is ever the value in force, because the code fills both\nbefore this model is built and refuses any finding whose code it does not know.",
+      "description": "One judgement, in the shape every renderer, every schema and every agent receives.\n\n`severity` and `docs` are the code's own and are written into the object rather than left for a\nreader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them\nout and the code fills them, and a value that disagrees with the code is refused. Both therefore\ncarry a declared default, which says in the signature and in the schema that a raiser names the\ncode and nothing else. Neither default is ever the value in force, because the code fills both\nbefore this model is built and refuses any finding whose code it does not know.",
       "properties": {
         "code": {
           "$ref": "#/$defs/Code",
@@ -311,10 +305,10 @@
           "title": "Message",
           "type": "string"
         },
-        "certainty": {
-          "$ref": "#/$defs/Certainty",
-          "default": "certain",
-          "description": "Whether this is wrong for sure or only probably wrong."
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "default": "error",
+          "description": "Whether this fails the default run (error) or is reported and passes (warning)."
         },
         "location": {
           "$ref": "#/$defs/Location",
@@ -338,9 +332,7 @@
               "discriminator": {
                 "mapping": {
                   "command": "#/$defs/CommandFix",
-                  "edit": "#/$defs/EditFix",
-                  "runtime": "#/$defs/RuntimeFix",
-                  "setting": "#/$defs/SettingFix"
+                  "edit": "#/$defs/EditFix"
                 },
                 "propertyName": "kind"
               },
@@ -349,13 +341,7 @@
                   "$ref": "#/$defs/EditFix"
                 },
                 {
-                  "$ref": "#/$defs/SettingFix"
-                },
-                {
                   "$ref": "#/$defs/CommandFix"
-                },
-                {
-                  "$ref": "#/$defs/RuntimeFix"
                 }
               ]
             },
@@ -367,10 +353,10 @@
           "description": "A change that resolves it, or null when none is known.",
           "title": "Fix"
         },
-        "url": {
+        "docs": {
           "default": "",
           "description": "The docs page for this code.",
-          "title": "Url",
+          "title": "Docs",
           "type": "string"
         }
       },
@@ -443,7 +429,7 @@
             }
           ],
           "default": null,
-          "description": "The wire id of the cue this is about, or null.",
+          "description": "The cue id of the cue this is about, or null.",
           "title": "Cue"
         }
       },
@@ -451,41 +437,6 @@
         "where"
       ],
       "title": "Location",
-      "type": "object"
-    },
-    "RuntimeFix": {
-      "additionalProperties": false,
-      "description": "A fix that replaces a project's copy of the runtime with the one this engine ships.\n\nA copy some release shipped holds none of the author's work, so its fix is safe. A copy that\nmatches no shipped runtime holds edits that replacing it would lose, so its fix is unsafe. The\nfix names only where the copy is, because what goes there is always the engine's runtime.",
-      "properties": {
-        "kind": {
-          "const": "runtime",
-          "default": "runtime",
-          "description": "The kind of fix, which is how a reader dispatches on it.",
-          "title": "Kind",
-          "type": "string"
-        },
-        "title": {
-          "description": "One sentence saying what applying this fix does.",
-          "title": "Title",
-          "type": "string"
-        },
-        "applicability": {
-          "$ref": "#/$defs/Applicability",
-          "description": "Whether this fix may be applied without asking."
-        },
-        "file": {
-          "description": "The project's copy of the runtime to replace, project-relative.",
-          "format": "path",
-          "title": "File",
-          "type": "string"
-        }
-      },
-      "required": [
-        "title",
-        "applicability",
-        "file"
-      ],
-      "title": "RuntimeFix",
       "type": "object"
     },
     "SectionWords": {
@@ -526,45 +477,14 @@
       "title": "SectionWords",
       "type": "object"
     },
-    "SettingFix": {
-      "additionalProperties": false,
-      "description": "A fix that turns a knob, which is the same key space `config set` and `--set` take.",
-      "properties": {
-        "kind": {
-          "const": "setting",
-          "default": "setting",
-          "description": "The kind of fix, which is how a reader dispatches on it.",
-          "title": "Kind",
-          "type": "string"
-        },
-        "title": {
-          "description": "One sentence saying what applying this fix does.",
-          "title": "Title",
-          "type": "string"
-        },
-        "applicability": {
-          "$ref": "#/$defs/Applicability",
-          "description": "Whether this fix may be applied without asking."
-        },
-        "key": {
-          "description": "The settings key to set, such as verify.cue_offset_max_ms.",
-          "title": "Key",
-          "type": "string"
-        },
-        "value": {
-          "description": "The value to set it to, spelled as a command line would spell it.",
-          "title": "Value",
-          "type": "string"
-        }
-      },
-      "required": [
-        "title",
-        "applicability",
-        "key",
-        "value"
+    "Severity": {
+      "description": "Whether a finding fails the default run or is reported and passes.\n\n`--fail-on` names the least severe finding that fails a run, so its values are these two words\nplus `never`, and a reader meets one vocabulary on the flag and on the field.",
+      "enum": [
+        "error",
+        "warning"
       ],
-      "title": "SettingFix",
-      "type": "object"
+      "title": "Severity",
+      "type": "string"
     },
     "Stage": {
       "description": "One stage of the pipeline, declared in run order. The value is the word that names it.",
@@ -572,7 +492,7 @@
         "narrate",
         "cue",
         "record",
-        "soundscape",
+        "score",
         "assemble",
         "verify"
       ],
@@ -581,7 +501,7 @@
     },
     "Word": {
       "additionalProperties": false,
-      "description": "One spoken word with its span, in seconds after its section starts.",
+      "description": "One spoken word with its start and its end, on its take's own clock in a words file and on its section clock\nin a result.",
       "properties": {
         "word": {
           "description": "The word as the script spells it.",
@@ -589,13 +509,13 @@
           "type": "string"
         },
         "start": {
-          "description": "When the word starts, in seconds after its section starts.",
+          "description": "When the word starts, in seconds: on the take's own clock in a words file, on the section clock in a result.",
           "minimum": 0,
           "title": "Start",
           "type": "number"
         },
         "end": {
-          "description": "When the word ends, in seconds after its section starts.",
+          "description": "When the word ends, in seconds: on the take's own clock in a words file, on the section clock in a result.",
           "minimum": 0,
           "title": "End",
           "type": "number"
@@ -614,20 +534,20 @@
   "description": "Every spoken word with its span, which is how a cue phrase is written.",
   "properties": {
     "schema": {
-      "const": 2,
-      "default": 2,
+      "const": 1,
+      "default": 1,
       "description": "The shape version of this object.",
       "title": "Schema",
       "type": "integer"
     },
     "ok": {
-      "description": "True when the command ran and judged nothing certain.",
+      "description": "True when the command ran and judged nothing its threshold fails on, which is the one --fail-on and --allow set, so it is true exactly when the command exits 0.",
       "title": "Ok",
       "type": "boolean"
     },
     "findings": {
       "default": [],
-      "description": "Every judgement this call made, certain first.",
+      "description": "Every judgement this call made, in the order it made them.",
       "items": {
         "$ref": "#/$defs/Finding"
       },
@@ -644,7 +564,7 @@
         }
       ],
       "default": null,
-      "description": "Filled only when the command could not run."
+      "description": "Filled when the command could not run, or when a run stopped or was refused after it made something and carries its own result, and null otherwise."
     },
     "run": {
       "description": "The id of the run this call opened, which names its events file.",

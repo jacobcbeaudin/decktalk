@@ -4,9 +4,10 @@
     measure.py   the measurements behind the plan, the onset scan and the cue loop
     seams.py     the start, cut and seam checks
 
-The film is decoded once. The cues and the seams first say which frames they will read, the film is
-streamed through that one plan at each size a comparison needs, and every comparison is then made in
-this process on the frames that were kept.
+The cue and seam frames are decoded once. The cues and the seams first say which frames they will
+read, the film is streamed through that one plan at each size a comparison needs, and every
+comparison is then made in this process on the frames that were kept. Each section start reads its
+one frame on its own.
 
 `verify` measures four things. Every section must open on a real picture past its dip to black. The
 narration must be quiet in the window before each cut, so no cut lands on a word. A section that
@@ -25,7 +26,7 @@ from collections.abc import Callable, Sequence
 from decktalk.errors import NotBuiltError
 from decktalk.findings import Code, Finding, Location, judge
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import ffmpeg, frames
 from decktalk.pipeline import Artifact, Stage
 from decktalk.results import VerifyResult
@@ -48,12 +49,12 @@ def verify(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> Ve
     starts, total = film_starts(inputs, film)
     if not starts:
         raise NotBuiltError(
-            f"{inputs.relative(inputs.workspace.final_dir).as_posix()} holds no cut list and no section was cut, "
-            "so the film has no shape to read.",
+            f"{inputs.relative(inputs.workspace.final_dir).as_posix()} holds no placements file and no section "
+            "was cut, so the film has no shape to read.",
             hint=Artifact.FINAL.next_step,
         )
-    if inputs.cuts() is None:
-        run.note("The film has no cut list, so verify read where each section starts from the section files.")
+    if inputs.placements() is None:
+        run.note("The film has no placements file, so verify read where each section starts from the section files.")
     wanted = selects(only)
     kept = {number: at for number, at in starts.items() if wanted(number)}
     _repeat_recorded(inputs, run, wanted)
@@ -102,24 +103,28 @@ def _placed(inputs: Inputs, run: Run, wanted: Callable[[int], bool]) -> None:
     for block in inputs.cues():
         if not wanted(block.number):
             continue
-        rows = {row.cue: row for row in times.rows(block.number)} if times is not None else {}
+        rows = {row.id: row for row in times.rows(block.number)} if times is not None else {}
         for cue in block.cues:
-            row = rows.get(cue.cue)
-            here = Location(where=cue.cue, file=where, section=block.number, cue=cue.cue)
-            if times is not None and (row is None or row.phrase != cue.on or row.offset != cue.offset):
+            row = rows.get(cue.id)
+            here = Location(where=cue.id, file=where, section=block.number, cue=cue.id)
+            if times is not None and (
+                row is None or row.phrase != cue.phrase or row.nudge_seconds != cue.offset_seconds
+            ):
                 placed = "no second at all" if row is None else f"a second placed for {row.phrase!r}"
-                run.found(_stale(f"cues.json asks for {cue.cue} on {cue.on!r} and the cue times hold {placed}", here))
+                run.found(
+                    _stale(f"cues.json asks for {cue.id} on {cue.phrase!r} and the cue times hold {placed}", here)
+                )
             elif row is None or row.seconds is None:
                 run.found(
                     judge(
                         Code.CUE_UNRESOLVED,
-                        f"the cue {cue.cue} lands on the phrase {cue.on!r}, which section {block.number} does "
+                        f"the cue {cue.id} lands on the phrase {cue.phrase!r}, which section {block.number} does "
                         "not speak, so there is no second to place it at and the film never plays it.",
                         here,
                         stage=Stage.VERIFY,
                     )
                 )
-        declared = {cue.cue for cue in block.cues}
+        declared = {cue.id for cue in block.cues}
         for gone in sorted(set(rows) - declared):
             here = Location(where=gone, file=where, section=block.number, cue=gone)
             run.found(_stale(f"the cue times hold a second for {gone}, which cues.json no longer declares", here))

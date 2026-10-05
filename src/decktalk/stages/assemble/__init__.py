@@ -1,14 +1,15 @@
-"""Stage 5: the recordings, the narration, the clips and the soundscape become one film.
+"""Stage 5: the recordings, the narration, the clips and the score become one film.
 
-    cut.py        every section as one silent mp4, and the cut list
+    cut.py        every section as one silent mp4, and the placements
     mix.py        the whole soundtrack as one filter graph, one `MixInput` per layer
     loudness.py   the two-pass normalization and what it measured
     publish.py    captions, chapters, the transcript, the poster and the atomic final file
 
 The order is fixed. Each section is cut to its span and the sections are joined with no gaps. The
 soundtrack is mixed over a silent anchor of the picture's length. The mix is normalized to the EBU
-R128 target unless the narration is a placeholder, whose clicks the a/v check listens for. Then
-everything a viewer receives is written, and the finished film is renamed into place in one step.
+R128 target unless any take is a placeholder, whose clicks the a/v check listens for, or the run
+asks for no loudness pass. Then the captions, the chapters, the placements and the transcript are
+written, the finished film is renamed into place in one step, and the poster is drawn last.
 """
 
 from __future__ import annotations
@@ -16,21 +17,20 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from decktalk.artifacts import Cuts, Takes
+from decktalk.artifacts import Placements, Takes
 from decktalk.errors import ToolError
 from decktalk.events import Unit
 from decktalk.inputs import Inputs
 from decktalk.inputs.timeline import narration_offsets
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
-from decktalk.pipeline import Artifact, Stage
+from decktalk.pipeline import Stage
 from decktalk.results import AssembleResult, RenderedSection, counted
-from decktalk.stages.assemble.cut import Rendered, cut_list, remove_stray_cuts, render_sections, rendered_starts
+from decktalk.stages.assemble.cut import Rendered, placements_of, remove_stray_videos, render_sections, rendered_starts
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
 from decktalk.stages.assemble.mix import MixPlan, encode_soundtrack, mix_soundtrack
 from decktalk.stages.assemble.publish import (
-    WORK_MARK,
     build_captions,
     build_chapters,
     caption_texts,
@@ -50,7 +50,7 @@ DELIVERY_PASSES: tuple[str, ...] = (
     "write the captions",
     "publish the film",
 )
-"""Truth: the passes that follow the section cuts, in the order the encoder and the writers run them.
+"""Truth: the passes that follow the section videos, in the order the encoder and the writers run them.
 
 They are named rather than counted, so the count a renderer reads and the label it prints beside it
 come from one list and a pass added here reaches both.
@@ -64,10 +64,10 @@ class Passes:
     naming each step's number where it happens, which is how the count and the plan stay equal.
     """
 
-    def __init__(self, run: Run, cuts: int) -> None:
+    def __init__(self, run: Run, sections: int) -> None:
         self.run = run
-        self.total = cuts + len(DELIVERY_PASSES)
-        self.done = cuts
+        self.total = sections + len(DELIVERY_PASSES)
+        self.done = sections
 
     def finished(self, label: str) -> None:
         """One more pass is behind this run, which is the line a renderer draws its bar from."""
@@ -80,25 +80,24 @@ def assemble(
     run: Run,
     *,
     only: Sequence[int] | None = None,
-    soundscape: bool = True,
+    score: bool = True,
     loudness: bool = True,
     strict: bool = False,
 ) -> AssembleResult:
     """Cut, mix, normalize and publish the whole film, with everything a viewer receives beside it."""
-    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
-    remove_stray_cuts(inputs)
+    takes = inputs.takes(required=True)
+    remove_stray_videos(inputs)
     passes = Passes(run, len(inputs.document.sections))
     rows = render_sections(
         inputs, run, takes, only=list(only) if only is not None else None, strict=strict, passes=passes.total
     )
 
-    final_dir = inputs.workspace.final_dir
-    work = final_dir / f"{WORK_MARK}{inputs.workspace.name}.tmp.mp4"
-    mixed = final_dir / f"{WORK_MARK}{inputs.workspace.name}.mix.mov"
+    work = inputs.workspace.work_file("tmp.mp4")
+    mixed = inputs.workspace.work_file("mix.mov")
     for path in (work, mixed):
         path.unlink(missing_ok=True)
 
-    plan = mix_soundtrack(inputs, run, rows, takes, mixed, soundscape=soundscape)
+    plan = mix_soundtrack(inputs, run, rows, takes, mixed, score=score)
     passes.finished(f"mix {len(plan.inputs)} audio layers")
     try:
         after = _deliver(inputs, run, mixed, work, takes, loudness=loudness, strict=strict)
@@ -135,9 +134,9 @@ def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *,
     been through AAC twice.
     """
     if takes.estimated or not loudness:
-        # A placeholder narration is clicks and silence, and normalizing them would move the clicks
-        # the a/v check listens for, so the pass is skipped and the result reports no loudness.
-        why = "the narration is a placeholder" if takes.estimated else "the run asked for no loudness pass"
+        # A placeholder take is clicks and silence, and normalizing a narration that holds one would move
+        # the clicks the a/v check listens for, so the pass is skipped and the result reports no loudness.
+        why = "a take is a placeholder" if takes.estimated else "the run asked for no loudness pass"
         run.note(f"The loudness pass is skipped because {why}, so the soundtrack is encoded as it was mixed.")
         encode_soundtrack(inputs, mixed, work)
         return None
@@ -146,13 +145,13 @@ def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *,
     if missed and strict:
         raise ToolError(
             f"the mix missed the loudness it was mastered to in {counted(len(missed), 'way')}.",
-            hint="Publish it as it is, or change [mix.loudness] to what this film is for.",
+            hint="Publish it as it is, or change the loudness keys of [audio] to what this film is for.",
         )
     return after
 
 
-def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes) -> Cuts:
-    """The captions, the chapters, the cut list and the transcript, and the cut list they are read from."""
+def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes) -> Placements:
+    """The captions, the chapters, the placements and the transcript, and the placements they are read from."""
     paths = inputs.workspace.deliverables()
     starts = rendered_starts(rows)
     texts = caption_texts(inputs, takes)
@@ -163,12 +162,12 @@ def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: T
     cues = with_sound_captions(spoken, sound_captions(inputs, starts))
     chapters = build_chapters(rows, inputs.chapters())
     write_caption_files(paths, cues, chapters)
-    cuts = cut_list(inputs, rows)
-    cuts.write(paths["cuts"])
-    write_transcript_page(inputs, paths["transcript"], cuts, texts)
-    for name in ("srt", "vtt", "chapters", "cuts", "transcript"):
+    placements = placements_of(inputs, rows)
+    placements.write(paths["placements"])
+    write_transcript_page(inputs, paths["transcript"], placements, texts)
+    for name in ("srt", "vtt", "chapters", "placements", "transcript"):
         run.wrote(paths[name])
-    return cuts
+    return placements
 
 
 def _rendered_rows(inputs: Inputs, rows: list[Rendered]) -> tuple[RenderedSection, ...]:
@@ -179,7 +178,7 @@ def _rendered_rows(inputs: Inputs, rows: list[Rendered]) -> tuple[RenderedSectio
             section=row.number,
             key=row.key,
             file=inputs.relative(row.path),
-            start=round(starts[row.number], SECOND_DIGITS),
+            start_seconds=round(starts[row.number], SECOND_DIGITS),
             seconds=round(row.seconds, SECOND_DIGITS),
             substitute=row.substitute,
         )

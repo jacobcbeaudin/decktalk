@@ -11,7 +11,7 @@
 
 import { type Code, message, type PageWarning } from "./contract.ts";
 
-/** What a message's `{field}` placeholders are filled from, which is whatever the caller knows. */
+/** What a message's `{field}` slots are filled from, which is whatever the caller knows. */
 export type Fields = Readonly<Record<string, string | number>>;
 
 /** The prefix the console echo carries, so a page with several scripts says which one spoke. */

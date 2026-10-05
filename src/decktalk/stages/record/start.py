@@ -1,7 +1,7 @@
-"""Where narration t=0 sits in a recording.
+"""Where the section clock starts in a recording.
 
-The recorder covers the page in magenta from its first paint until it starts the narration clock, so
-the first clean frame after the magenta run is narration t=0 no matter when Chromium's capture
+The recorder covers the page in magenta from its first paint until it starts the section clock, so
+the first clean frame after the magenta run is where the section clock starts no matter when Chromium's capture
 actually began. Without a cover the fallback is the first painted frame plus the settle, and failing
 that a fixed guess, and both fallbacks say so, because a guessed start moves every reveal in the
 section.
@@ -29,9 +29,9 @@ MIN_FRAME_SECONDS = 1 / FASTEST_CAPTURE_FPS
 def is_cover(frame: frames.FrameStats, settings: RecordConfig) -> bool:
     """Whether one frame is the recorder's cover, which is mid luma with both chroma planes high."""
     return (
-        settings.cover_luma_min < frame.yavg < settings.cover_luma_max
-        and frame.uavg > settings.cover_chroma_min
-        and frame.vavg > settings.cover_chroma_min
+        settings.cover_min_luma < frame.yavg < settings.cover_max_luma
+        and frame.uavg > settings.cover_min_chroma
+        and frame.vavg > settings.cover_min_chroma
     )
 
 
@@ -43,7 +43,7 @@ def frame_seconds(rows: list[frames.FrameStats]) -> float:
 
 
 def find_start(webm: Path, settle: float, settings: RecordConfig) -> Start:
-    """Narration t=0 in `webm`, which is the frame after the last cover frame or the best estimate of it."""
+    """Where the section clock starts in `webm`: the frame after the last cover frame, or the best estimate of it."""
     rows = frames.frame_stats(webm, settings.cover_scan_seconds)
     if not rows:
         fallback = round(settings.fallback_first_paint_seconds + settle, SECOND_DIGITS)
@@ -59,7 +59,7 @@ def find_start(webm: Path, settle: float, settings: RecordConfig) -> Start:
     painted = [
         row.pts
         for row in rows
-        if row.ymax > settings.painted_peak_luma_min and row.yavg < settings.painted_mean_luma_max
+        if row.ymax > settings.painted_peak_min_luma and row.yavg < settings.painted_mean_max_luma
     ]
     if painted:
         return Start(

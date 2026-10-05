@@ -52,7 +52,7 @@ draws it again. It is drawn on the colour
 [`[video] slate_color`](/reference/configuration#video) names, and `[mix] slate` points at an image of
 your own to use in its place.
 
-Nothing about a slate is silent about itself: `decktalk status` reports the missing file as a certain
+Nothing about a slate is silent about itself: `decktalk status` reports the missing file as an error,
 [`FILE_MISSING`](/reference/findings/FILE_MISSING), naming the section and the path. A section marked
 `optional` is the one exception, because it has said the slate is allowed.
 
@@ -64,9 +64,9 @@ A section's number is its place in the film, so adding a clip in the middle renu
    upward, then add the clip section's own table.
 2. In `script.md`, renumber the same headings. The clip section needs no heading of its own, and a
    heading there is never voiced, because the voice reads every section that does not play a clip.
-3. In `cues.json`, rename each later section key, from the last one upward. The cue ids do not move.
-   A cue id is the slide id, a colon and the local name the page writes, and the slides of the page
-   are untouched by a renumbering of the film.
+3. In `cues.json`, rename each later section key, from the last one upward. The [cue id](/concepts/cues#the-cue-id)s do not
+   move, because they name slides, and the slides of the page are untouched by a renumbering of the
+   film.
 4. Run `decktalk build`.
 
 A renumbered section is voiced again by nothing. A take is named by the digest of what was sent to
@@ -124,7 +124,7 @@ name the file on the section with `words`, and run `decktalk assemble`.
 - The transcript page carries the same words as one paragraph, so a reader is not left with a silent
   gap where the clip is.
 
-A take's own `<hash>.words.json` under `build/narrate/` has this shape, and so does the file
+A take's own `<digest>.words.json` in `takes/` has this shape, and so does the file
 `decktalk clip` writes beside every clip it cuts.
 
 ## Cut a clip out of the film
@@ -170,7 +170,7 @@ first word is part of the span like anything else.
     inside the span in seconds after the clip starts. A word the span cuts in two is left out and
     said aloud on the stream, so move `--end` into the silence beside the word to keep it.
 
-    {/* sample: decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 on a starter built with --no-voice */}
+    {/* sample: clip, decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4, on a starter built with --no-spend */}
     ```text
     Section 1 carries placeholder narration, so every word time in this clip is an estimate.
     Cut media/open-line.mp4, 1.9 seconds of section 1.
@@ -197,20 +197,20 @@ first word is part of the span like anything else.
 
 The JSON is one flat object, so a caller reads what was written without parsing a line.
 
-{/* sample: decktalk clip --section 1 --json, the fields the result declares */}
+{/* sample: clip-json, decktalk clip --section 1 --start 0.48 --end 1.92 --hold-seconds 0.5 --out media/open-line.mp4 --json, on a starter built with --no-spend */}
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "aad1d3514574",
+  "run": "78d56eab7905",
   "written": ["media/open-line.mp4", "media/open-line.words.json"],
   "section": 1,
-  "film": "media/open-line.mp4",
-  "words": "media/open-line.words.json",
-  "start": 0.48,
-  "end": 1.92,
+  "file": "media/open-line.mp4",
+  "words_file": "media/open-line.words.json",
+  "start_seconds": 0.48,
+  "end_seconds": 1.92,
   "seconds": 1.92,
   "hold_seconds": 0.48,
   "gain_db": 0.0,
@@ -228,13 +228,13 @@ there. Each refusal names the command that makes what is missing.
 
 | The refusal | What to do |
 |---|---|
-| The section has no cut | Run `decktalk assemble` first. |
-| The section has no take, or the take file is gone | Run `decktalk narrate`, or `decktalk narrate --no-voice` to spend nothing. |
+| The section has no section video | Run `decktalk assemble` first. |
+| The section has no take, or the take file is gone | Run `decktalk narrate`, or `decktalk narrate --no-spend` to spend nothing. |
 | The section plays a clip the project already has | Cut from a page section, which is one DeckTalk recorded. There is nothing to cut out of a file you supplied. |
 | The span ends before it starts, or starts before zero | Write `--start` at 0 or later and `--end` after it. |
 | The span holds no whole frame | Make it at least one frame long. |
 | The span ends past the section | Write `--end` at the section's own length or earlier, which the refusal states. |
-| `--out` names the section cut itself | Write the clip somewhere else, such as under `media/`. |
+| `--out` names the section video itself | Write the clip somewhere else, such as under `media/`. |
 
 ## Related
 

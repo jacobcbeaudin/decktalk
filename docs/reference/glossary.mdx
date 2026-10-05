@@ -1,68 +1,149 @@
 ---
 title: Glossary
-description: One entry per word DeckTalk uses, with the page that explains it.
+description: One entry per word DeckTalk uses, the words it retired, and the page that explains each.
 ---
 
 This page gives each DeckTalk word its one meaning. Write the word, and write it in that meaning
 alone. Write it whole, because a short form such as bed, span, offset or stage belongs to no one
 word.
 
+The **Not** column lists the words DeckTalk retired for each meaning. A test fails when one of them
+appears in the CLI help, in a docs page or in a packaged skill, so a retired word cannot come back.
+
+## The project and the script
+
+| Word | Meaning | Not | Explained in |
+|---|---|---|---|
+| project | One directory holding `script.md`, `decktalk.toml`, `cues.json`, the deck pages and the `build/` directory those four produce. | | [decktalk.toml](/reference/decktalk-toml) |
+| section | One `## N.` heading of the script and the `[[section]]` table that pairs it with a scene or a clip. | segment | [decktalk.toml](/reference/decktalk-toml) |
+| section key | The two-digit `"01"` that names a section's files and its rows in `cues.json`. | | [cues.json](/reference/cues-json) |
+| chapter | The title a section shows in the chapter markers, the transcript and a slate. | | [decktalk.toml](/reference/decktalk-toml) |
+| script | `script.md`, which the voice reads once it is cleaned into spoken text. | | [script.md](/reference/script-md) |
+| direction | A bracketed instruction the voice does not speak, such as `[beat]` or `[pause 2]`. | stage direction | [script.md](/reference/script-md) |
+| unfinished text | An unfilled blank such as `[NUMBER]`, or other text a voice would read out or swallow, which `check` reports as `SCRIPT_UNFINISHED`. It is never called a placeholder, because a placeholder is a take. | | [script.md](/reference/script-md) |
+
+## The page and the cues
+
+| Word | Meaning | Not | Explained in |
+|---|---|---|---|
+| deck page | An HTML file under `deck/` that a page section records. | | [The page contract](/concepts/page-contract) |
+| scene | One `[data-scene]` wrapper in a deck page, holding the slides a section plays. | | [The page contract](/concepts/page-contract) |
+| slide | One `<template data-slide>` inside a scene, which the runtime clones when the slide mounts. A deck page is never called a slide. | | [The page contract](/concepts/page-contract) |
+| preview seconds | How long the preview rests on a slide, which `data-preview-seconds` writes. No recording reads it. | data-hold | [The page contract](/concepts/page-contract) |
+| freeze | One slide drawn with its cues already fired and nothing in motion, which `?freeze=ID` asks the page for. | ?slide | [The runtime](/reference/runtime) |
+| container | An element whose children carry moments, so one cue can stagger them or a spotlight can walk them. | | [The page contract](/concepts/page-contract) |
+| moment | One of the four things an element does, which are `data-in`, `data-back`, `data-front` and `data-out`. A moment is never an event, a cue name or a time. | | [The page contract](/concepts/page-contract) |
+| cue name | The name a moment attribute writes, such as `expand`, which means something inside its own slide alone. | local name | [The page contract](/concepts/page-contract) |
+| cue id | The slide id, a colon and the cue name. `data-in="expand"` inside `<template data-slide="4.1">` is the cue id `4.1:expand`. | wire id | [Cues](/concepts/cues) |
+| cue | One row of `cues.json`, pairing a cue id with the phrase its moment waits for. | | [cues.json](/reference/cues-json) |
+| phrase | The spoken words a cue lands on, which its row writes in `phrase`, or `$start` or `$end`. | | [cues.json](/reference/cues-json) |
+| description | The text an author writes in `data-describe` and its kin, which the transcript is written from. It is never called a phrase. | | [The page contract](/concepts/page-contract) |
+| cue time | The second a cue lands on, counted on its section clock. | | [Cues](/concepts/cues) |
+| section clock | The seconds since a section starts, which its words, its cues and its page all run on. | narration clock | [Cues](/concepts/cues) |
+| film clock | The seconds since the film starts, which `verify` reports on. | | [Verify](/reference/verify) |
+| canvas | The 1920 by 1080 surface the runtime draws on, which is `#dt-canvas` on the page. | #dt-stage, stage pixels | [The runtime](/reference/runtime) |
+| runtime | `decktalk-runtime.js`, the page's script, which the engine serves beside every deck. The recorder reads it through `window.__decktalkProbe`. | __dtprobe | [The runtime](/reference/runtime) |
+
 ## The six stages
 
 They run in this order, and each is both a command and a call on a `Project`.
 
-| Word | Meaning | Explained in |
-|---|---|---|
-| narrate | The stage that turns the script into spoken takes with a word clock. It writes `build/narrate/takes.json`, the take files and their words files. | [How it works](/concepts/how-it-works) |
-| cue | The stage that turns each cue phrase into a second on its section clock. It writes `build/cue-times.json`. | [Cues](/concepts/cues) |
-| record | The stage that records each page section in headless Chromium against those seconds. It writes `build/recordings/`. | [How it works](/concepts/how-it-works) |
-| soundscape | The stage that generates the music, the ambience bed and the effects. It writes `build/soundscape/`. | [Sound](/concepts/sound) |
-| assemble | The stage that cuts, mixes and encodes the sections into one film. It writes `build/final/`. | [How it works](/concepts/how-it-works) |
-| verify | The stage that measures the finished film against the clock the earlier stages promised. It writes nothing. | [Verify](/reference/verify) |
-
-## The page
-
-| Word | Meaning | Explained in |
-|---|---|---|
-| scene | One `[data-scene]` wrapper in a deck page, holding the slides a section plays. | [The page contract](/concepts/page-contract) |
-| slide | One `<template data-slide>` inside a scene, which the runtime clones when the slide mounts. | [The page contract](/concepts/page-contract) |
-| container | An element whose children carry moments, so one cue can stagger or step through them. | [The page contract](/concepts/page-contract) |
-| moment | One of the four things an element does, which are `data-in`, `data-back`, `data-front` and `data-out`. Each names a cue local to its slide. | [The page contract](/concepts/page-contract) |
-| wire id | The id `cues.json` carries for a moment, which is the slide id, a colon and the local name the page writes. `data-in="expand"` inside `<template data-slide="4.1">` is the wire id `4.1:expand`. | [Cues](/concepts/cues) |
-| cue | One row of `cues.json`, pairing a wire id with the spoken phrase its moment waits for. | [cues.json](/reference/cues-json) |
-
-## The project
-
-| Word | Meaning | Explained in |
-|---|---|---|
-| project | One directory holding `script.md`, `decktalk.toml`, `cues.json` and the deck pages, and the `build/` directory those four produce. | [decktalk.toml](/reference/decktalk-toml) |
-| section | One numbered part of the script and the `[[section]]` table that pairs it with a scene or a clip. | [decktalk.toml](/reference/decktalk-toml) |
-| take | One section's spoken audio, named by the digest of everything that changes it. Two sections with the same text and voice share one take. | [Build artifacts](/reference/artifacts) |
-| clip | A video file of your own that a clip section plays with its own audio, and the file `decktalk clip` cuts out of a built section. | [Add a clip section](/guides/clip-section) |
-| storyboard | The page at `build/storyboard.html` that freezes every slide at every cue, which is the checkpoint a person reads before credits are spent. | [CLI](/reference/cli) |
-| soundscape | The generated sound beside the narration, which is the music, the ambience bed and the effects. | [Sound](/concepts/sound) |
-| machine | This computer and this process, which is what holds the toolchain, the per-machine settings and the credential a voiced run uses. | [Python API](/reference/python-api) |
+| Word | Meaning | Not | Explained in |
+|---|---|---|---|
+| narrate | The stage that turns the script into one take per section and its words. It writes a voiced take into the takes directory, a placeholder into `build/narrate/`, and the take index `build/narrate/takes.json`. | | [How it works](/concepts/how-it-works) |
+| cue | The stage that turns each cue phrase into a second on its section clock. It writes `build/cue-times.json`. | | [Cues](/concepts/cues) |
+| record | The stage that records each page section in headless Chromium against those seconds. It writes `build/recordings/`. | | [How it works](/concepts/how-it-works) |
+| score | The music, the ambience bed and the effects beside the narration, and the stage that composes them. It keeps what it buys in the score directory and joins the music under `build/score/`. | soundscape | [Sound](/concepts/sound) |
+| assemble | The stage that cuts, mixes and encodes the sections into one film. It writes `build/final/`. | | [How it works](/concepts/how-it-works) |
+| verify | The stage that measures the finished film against the clock the earlier stages promised. It writes no artifact, only its events file and the build lock. | | [Verify](/reference/verify) |
+| build | The command that runs the stages in order, or a span of them. A rebuild is always incremental. | | [CLI](/reference/cli) |
+| force | `--force`, which builds every cache again from nothing and never spends. | | [Rebuild one section](/guides/rebuild-one-section) |
 
 ## A run and what it reports
 
-| Word | Meaning | Explained in |
-|---|---|---|
-| run | One call that opens work, named by a run id that every result and every event line carries. Its lines are kept in `build/events/<run>.jsonl`. | [The JSON contract](/agents/json) |
-| event | One JSON line saying what is happening while a run is still going, printed on stderr by `--events`. | [The JSON contract](/agents/json) |
-| finding | One judgement DeckTalk made about the project, carrying a code, a sentence, a certainty, a location and often a fix. | [CLI](/reference/cli) |
-| certainty | Whether a finding is wrong for sure or only probably wrong, which is `certain` or `uncertain`. `--fail-on` names the threshold a run fails at. | [The JSON contract](/agents/json) |
-| fix | A change a finding carries that would resolve it, which edits files, turns a knob or runs a command. Its applicability says whether it may be applied without asking. | [The JSON contract](/agents/json) |
-| spend | What a run of the voice costs or would cost, priced once and carried as an object with its state, its characters and its ceiling. | [Requirements and costs](/requirements) |
+| Word | Meaning | Not | Explained in |
+|---|---|---|---|
+| run | One call that opens work, named by a run id that every result and every event carries. | | [The JSON contract](/agents/json) |
+| event | One JSON line of `build/events/<run>.jsonl`, saying what happened while the run was going. `--events` prints the same lines on stderr. | | [The JSON contract](/agents/json) |
+| result | The one object a command prints with `--json`, and a call returns in Python. | | [The JSON contract](/agents/json) |
+| outcome | How a stage, a section or one take ended in a run. A stage or a section `ran`, was `kept`, `skipped`, `stopped` or `failed`. A take was `voiced`, `kept` or a `placeholder`, and a score item was `planned`, `kept` or `generated`. | take status, sound status | [The JSON contract](/agents/json) |
+| status | The command that reads the project off disk and says what to run next, and the result and rows it prints. It never names what a run did. | | [CLI](/reference/cli) |
+| finding | One judgement DeckTalk made about the project, carrying a code, a sentence, a severity, a place and often a fix. | | [CLI](/reference/cli) |
+| severity | Whether a finding fails the default run: an `error` does, and a `warning` is reported and passes. `--fail-on` names the threshold a run fails at. | certainty | [The JSON contract](/agents/json) |
+| fix | A change a finding carries that would resolve it, which edits a file, changes a setting or runs a command. A fix shown and never applied is a suggestion. | | [The JSON contract](/agents/json) |
+| elapsed seconds | How long a call took, as wall time on a result or a `*.done` event. | | [The JSON contract](/agents/json) |
+| seconds | How long a piece of media runs. | | [Build artifacts](/reference/artifacts) |
+| machine | This computer and this process, which hold the toolchain, the machine file and the API key. | | [Python API](/reference/python-api) |
+| host | An application that runs DeckTalk as a library. | | [Python API](/reference/python-api) |
+| stability promise | What `build/` and `--json` promise a caller: the results, the events, `build/final/` and the exit codes. | | [Stability](/reference/stability) |
 
-## The knobs
+## The voice and the takes
 
-| Word | Meaning | Explained in |
-|---|---|---|
-| knob | One published setting with a default, a safe range, a unit and a hazard, which `decktalk config explain` prints whole. | [Configuration](/reference/configuration) |
-| layer | One of the five places a knob's value can come from, which are the default, the per-machine file, `decktalk.toml`, the environment variable and `--set`. Each overrides the ones before it. | [Configuration](/reference/configuration) |
+| Word | Meaning | Not | Explained in |
+|---|---|---|---|
+| provider | The service that makes takes, which `[voice] provider` names: `elevenlabs` or `dtsp`. | | [Requirements and costs](/requirements) |
+| voice | The provider's named speaker, which `[voice] id` names. | | [Requirements and costs](/requirements) |
+| voice in force | What `[voice]` resolves to for one project on one machine: the provider, the voice it reads in, the model, and what that provider declares about its output and its bill. Every take's digest and every price is read from it. | | [Requirements and costs](/requirements) |
+| API key | The secret a provider that bills needs. `doctor` reports it as `api_key`: `set`, `missing` or `not_needed`. | voice key | [Requirements and costs](/requirements) |
+| take | One section's spoken audio, named by its digest. Two sections with the same text and voice share one take. | | [Build artifacts](/reference/artifacts) |
+| voiced take | A take a provider spoke, whether that provider bills or is free. | paid take, bought take | [Rebuild one section](/guides/rebuild-one-section) |
+| placeholder | A take made with no provider: click audio sized from the script's pace, which a run that does not spend plays where a take is missing. | silent take, click track, build without voice | [How it works](/concepts/how-it-works) |
+| take index | `build/narrate/takes.json`, every take row and the narration track's layout. It is a cache, rebuilt from the takes on disk. | | [Build artifacts](/reference/artifacts) |
+| takes directory | The folder inside the project that holds every take the film plays and its words, `takes/` unless `[narration] takes_dir` names another. You commit it, so a clone builds the film with no key. | | [Rebuild one section](/guides/rebuild-one-section) |
+| take store | The folder outside every project where this machine keeps a second copy of every voiced take it makes, which `[narration] store_dir` names. A take missing from the takes directory is checked and copied in from here, and nothing plays from it directly. | | [Rebuild one section](/guides/rebuild-one-section) |
+| take state | What the disk holds for one spoken section, judged against its current text, voice, model and voice settings: `voiced`, `unchecked`, `stale`, `placeholder` or `missing`, each with the clause that says why. `status` reports it as `take_state` and `take_reason`. | | [Rebuild one section](/guides/rebuild-one-section) |
+| stale | Made from inputs that have changed since. A stale take is a voiced take of this section still held under an older text, voice, model or voice settings, which a voiced run would replace. A recording, a section video and a score item go stale the same way. | outdated | [Rebuild one section](/guides/rebuild-one-section) |
+| unchecked | The take state of a voiced take of this text when no voice is named, so it cannot be matched until `[voice] id` or `DECKTALK_VOICE_ID` names one. A run keeps it and never buys it again on a guess. | unmatched | [Rebuild one section](/guides/rebuild-one-section) |
+| missing | The take state of a section with nothing it could play held. A `TAKE_MISSING` finding is wider: it is raised for every section that plays a placeholder for want of a voiced take of its current inputs. | | [Rebuild one section](/guides/rebuild-one-section) |
+| digest | A take's name. For a voiced take it is the first 16 hex digits of a sha256 over everything that changes the take. | input hash | [Build artifacts](/reference/artifacts) |
+| words | Every spoken word of a take with its start and its end on the take's own clock, kept in a words file beside the take. A stage reads them on the section clock, which adds the section's lead. | word clock | [Build artifacts](/reference/artifacts) |
+| provider words | The words a provider sent back with a voiced take. They are a paid record, because only voicing the take again gives them back. | voiced words, bought words | [Build artifacts](/reference/artifacts) |
+| estimated words | The words DeckTalk timed from the script's pace for a placeholder. They cost nothing to make again. | placeholder words | [Build artifacts](/reference/artifacts) |
+| clip words | The words of one clip, cut from its section's words, or a words file the author names for a clip section. | | [Add a clip section](/guides/clip-section) |
+
+## Money and records
+
+| Word | Meaning | Not | Explained in |
+|---|---|---|---|
+| spend | Whether a run may buy from a provider that bills: `--spend/--no-spend`, and `spend` in Python and in the JSON. A free provider needs no spend. | spending | [Requirements and costs](/requirements) |
+| cost | What a run costs or would cost, carried as `cost` with its state, its dollars, its ceiling and its rate in US dollars. It pairs with `--max-cost`, and holds one row per stage that buys, in `cost.stages`. | credits | [Requirements and costs](/requirements) |
+| cost state | Whether a cost is an `estimate` or was `charged`. | | [Requirements and costs](/requirements) |
+| billing | How a provider charges: per character, per second, free, undeclared or mixed. | | [Requirements and costs](/requirements) |
+| buy | To pay a provider for a take or a sound. A `*.charged` event is written for each bill that is not free. | purchase | [The JSON contract](/agents/json) |
+| paid record | A file only remaking can replace, which is refused with a sentence when it does not read and is never rebuilt or deleted. Remaking it costs money on a provider that bills. | | [Stability](/reference/stability) |
+| cache | A file DeckTalk rebuilds for free. Everything under `build/` is a cache except what the stability promise names. | | [Stability](/reference/stability) |
+| ledger | `score/ledger.json`, every request the score stage has bought. | | [Sound](/concepts/sound) |
+
+## Sound and film
+
+| Word | Meaning | Not | Explained in |
+|---|---|---|---|
+| score item | One named sound in `[score]`: the music, an ambience bed or an effect. | | [Sound](/concepts/sound) |
+| sound effect | An effect item placed on a cue by `[[mix.effect]]`. The runtime uses "effect" alone for motion. | | [Put a sound effect on a cue](/guides/effects-on-a-cue) |
+| score directory | The folder inside the project that holds every sound the score bought and the ledger, each named by its item, `score/` unless `[score] dir` names another. You commit it, so a clone mixes the film with no key. | | [Sound](/concepts/sound) |
+| section video | One section encoded to its own span, `build/sections/NN.mp4`, which `assemble` joins into the film. | | [Build artifacts](/reference/artifacts) |
+| film | The finished mp4, `build/final/<name>.mp4`. | | [Build artifacts](/reference/artifacts) |
+| clip | A video file of your own that a clip section plays with its own audio, and the file `decktalk clip` cuts out of a built section. | | [Add a clip section](/guides/clip-section) |
+| slate | The titled frame a missing clip plays. | placeholder frame | [Add a clip section](/guides/clip-section) |
+| cut | The boundary where one section ends and the next starts. | | [Verify](/reference/verify) |
+| seam | A cut a `seamless` section claims shows nothing. | | [Verify](/reference/verify) |
+| placement | A section as placed in the film, which is one row of `build/final/placements.json`. | | [Build artifacts](/reference/artifacts) |
+| still | A slide frozen at a cue. | | [CLI](/reference/cli) |
+| storyboard | The page at `build/storyboard.html` that freezes every slide at every cue, which is the checkpoint a person reads before anything is bought. | | [CLI](/reference/cli) |
+
+## The settings
+
+| Word | Meaning | Not | Explained in |
+|---|---|---|---|
+| setting | One published value with a default, a safe range, a unit and a hazard, addressed by its dotted key, which `decktalk config explain` prints whole. | knob, tunable | [Configuration](/reference/configuration) |
+| number | A published value `config explain` shows and nobody sets, with the formula or the fact that fixes it. | | [Configuration](/reference/configuration) |
+| layer | One of the places a setting's value can come from. A project key is set by its default, `decktalk.toml`, its environment variable and `--set`, and a machine key by its default, the machine file, its variable and `--set`, each over the ones before it. | | [Configuration](/reference/configuration) |
+| provenance | What every layer said about every key, which is where a value in force is traced from. | | [Configuration](/reference/configuration) |
+| scope | Which file a write lands in, `project` or `machine`, which `config set --scope` names. | | [Configuration](/reference/configuration) |
+| machine file | `machine.toml`, the per-machine settings file. | | [Configuration](/reference/configuration) |
 
 ## Related
 
 - **Look up a command:** [CLI](/reference/cli)
-- **Look up a knob:** [Configuration](/reference/configuration)
+- **Look up a setting:** [Configuration](/reference/configuration)
 - **The whole contract on one page:** [Reference card](/reference/card)

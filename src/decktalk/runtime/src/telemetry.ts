@@ -15,9 +15,9 @@
 
 import type { Code, PageWarning, ReportField } from "./contract.ts";
 
-/** One cue, as the runtime alone can describe it, in seconds on the narration clock. */
+/** One cue, as the runtime alone can describe it, in seconds on the section clock. */
 export type CueEvent = {
-  /** The wire id of the cue that fired. */
+  /** The cue id of the cue that fired. */
   readonly id: string;
   /** The second the cue was due. */
   readonly due: number;
@@ -36,11 +36,11 @@ export type WordEvent = {
   /** The second the cue that started the line ran. */
   readonly cueAt: number;
   /** The second the voice reaches the line's first word. */
-  readonly runAt: number;
+  readonly spokenAt: number;
   /** How many words the line holds. */
   readonly count: number;
-  /** The second the first word was drawn, which the debug log prints beside `runAt`. */
-  readonly firstOn: number;
+  /** The second the first word was drawn, which the debug log prints beside `spokenAt`. */
+  readonly firstShown: number;
 };
 
 /**
@@ -83,9 +83,9 @@ export function setRecorder(next: Recorder | null | undefined): void {
 // ---- what crosses the seam on window ------------------------------------------------------------
 
 /** What the page is doing, which the probe reports and a person reads in the heads-up display. */
-export type Mode = "index" | "preview" | "cue" | "freeze";
+export type Mode = "index" | "preview" | "record" | "freeze";
 
-/** A box in stage pixels, which is the coordinate system every static check reasons in. */
+/** A box in canvas pixels, which is the coordinate system every static check reasons in. */
 export type Box = { x: number; y: number; w: number; h: number };
 
 /** One measured element of a slide, as the author wrote it and as the layout placed it. */
@@ -121,7 +121,7 @@ export type LoanedScene = { readonly slides: readonly LoanedSlide[] };
  * `build` is written as a method so the runtime's own builder, which takes its full scene and slide
  * types, is the function it lends, and the probe only ever hands back what `scenes` gave it.
  */
-export type StageLoan = {
+export type CanvasLoan = {
   readonly pan: HTMLElement;
   readonly origin: HTMLElement;
   readonly scale: number;
@@ -132,7 +132,7 @@ export type StageLoan = {
 /** How the probe reports a freeze stop it could not find, which is the runtime's own warn in its positional shape. */
 export type WarnAt = (code: Code, slide: string, cue: string) => void;
 
-/** Everything the recorder injects as `window.__dtprobe`, which the recorder and the runtime both call. */
+/** Everything the recorder injects as `window.__decktalkProbe`, which the recorder and the runtime both call. */
 export type Probe = {
   cover(): void;
   lift(): Promise<number>;
@@ -140,7 +140,7 @@ export type Probe = {
   report(): Record<ReportField, unknown>;
   readonly recorder: Recorder;
   freezeCues(order: readonly string[], slide: string, warn: WarnAt): readonly string[];
-  measure(catalog: CatalogEntry[], stage: StageLoan): CatalogEntry[];
+  measure(catalog: CatalogEntry[], canvas: CanvasLoan): CatalogEntry[];
 };
 
 /**
@@ -170,6 +170,6 @@ declare global {
     /** The author-facing runtime, of which the probe calls one method. */
     DeckTalk?: { startClock?(): void };
     __decktalk?: RuntimeView;
-    __dtprobe?: Probe;
+    __decktalkProbe?: Probe;
   }
 }

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from decktalk.media.encode import Encoder, css_color, iso_639_2
-from decktalk.settings import VideoConfig
+from decktalk.settings import AudioConfig, VideoConfig
 
 
 @pytest.mark.parametrize(
@@ -39,15 +39,15 @@ def test_the_slate_colour_is_one_setting_a_stylesheet_and_an_encoder_both_read(s
 
 def test_the_encoder_tags_every_output_bt709_and_mixes_in_float():
     """One encoder means a frame that survives a section render survives the film."""
-    enc = Encoder(VideoConfig())
+    enc = Encoder(VideoConfig(), AudioConfig())
     assert "-colorspace" in enc.venc and enc.venc[enc.venc.index("-colorspace") + 1] == "bt709"
     assert "setparams=color_primaries=bt709" in enc.fit
     assert enc.aenc[:2] == ["-c:a", "aac"] and enc.amix[:2] == ["-c:a", "pcm_f32le"]
 
 
 def test_the_encoder_takes_its_rate_from_the_output_key_and_keyframes_on_it():
-    """`[video] output_fps` is the encoder's rate, so the recorder's own rate never reaches these arguments."""
-    enc = Encoder(VideoConfig(output_fps=50))
+    """`[video] fps` is the encoder's rate, so the recorder's own rate never reaches these arguments."""
+    enc = Encoder(VideoConfig(fps=50), AudioConfig())
     assert "fps=50," in enc.fit
     assert enc.venc[enc.venc.index("-g") + 1] == "100"
     assert enc.color_source("black", 1.0)[-1].endswith(":r=50")

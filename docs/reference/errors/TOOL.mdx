@@ -8,5 +8,5 @@ description: ffmpeg or Chromium is missing, or one of them failed.
 ffmpeg or Chromium is missing, or one of them failed.
 
 A command that ends this way exits 3. The JSON object carries `error.code` of
-`TOOL`, one sentence in `error.message`, and the whole command that would clear it in
-`error.hint`.
+`TOOL` and one sentence in `error.message`. `error.hint` carries the next step when
+DeckTalk knows one, and is null when it does not.

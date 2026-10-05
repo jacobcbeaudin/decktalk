@@ -1,15 +1,15 @@
 """The `decktalk.toml` document: the frozen tables that say what this presentation is.
 
     [project]                name, script, cues, build, language
-    [voice]                  which voice reads this presentation
     [[section]]              number, chapter, then either page and scene, or clip
     [transition]             dips, dip_seconds, page_fades_in
     [mix]                    music, ambience, music_markers, effects and their levels
-    [soundscape]             the prompts `decktalk soundscape` generates from
+    [score]                  the prompts `decktalk score` generates from
 
-Everything here changes per presentation. What a knob changes is tuning and lives in `settings.py`,
-and secrets live only in `.env`. `[voice]` and `[mix]` are shared: this module reads the content
-half and the settings layer reads the knobs, so neither warns about the other's keys. Every value is
+Everything here changes per presentation. What a setting changes is tuning and lives in `settings`,
+which is also where `[voice]` lives, and secrets live only in `.env`. `[mix]` and `[score]` are
+shared: this module reads the content half and the settings layer reads the settings, so neither
+warns about the other's keys. Every value is
 read through `tomlmap.Table`, so a bad file fails at load with the table, the key and the line
 named, rather than deep inside ffmpeg.
 """
@@ -22,9 +22,11 @@ from types import NoneType
 from typing import Any, cast, get_args, get_type_hints
 
 from decktalk.errors import InputError
-from decktalk.results import SectionKind, section_key
+from decktalk.page import Q
+from decktalk.results import SectionKind, SoundKind, section_key
 from decktalk.settings import BY_ID, PROJECT_FILE, Settings
-from decktalk.tomlmap import Table, unknown_key_message
+from decktalk.tomlmap.read import Table
+from decktalk.tomlmap.suggest import unknown_key_message
 
 
 @dataclass(frozen=True)
@@ -55,8 +57,8 @@ class ClipSection:
         return True
 
 
-# The query keys DeckTalk's own runtime sets on a still, which a section's params may not name.
-FREEZE_QUERY_KEYS = ("cues", "t0", "slide", "after", "before")
+FREEZE_QUERY_KEYS = frozenset(key.value for key in (Q.CUES, Q.T0, Q.FREEZE, Q.AFTER, Q.BEFORE))
+"""The query keys DeckTalk sets itself on a still, so a section's own params never override them."""
 
 
 @dataclass(frozen=True)
@@ -67,9 +69,9 @@ class PageSection:
     into it should not show. verify compares the two frames.
 
     `lead_seconds` replaces `[narration] lead_seconds`, the silence in the narration before the
-    section's first word, and `tail_seconds` replaces `[narration] tail_min_seconds`, the silence
-    after its last. Both are placed when the takes are joined, not sent to the voice, so a cached
-    take stays cached. `hold_seconds` holds the section's
+    section's first word, and `tail_seconds` replaces `[narration] tail_seconds`, the silence
+    after its last. Both are placed when the takes are joined and never sent to the voice, so
+    changing either never makes a take stale. `hold_seconds` holds the section's
     last frame after its narration, and the narration pauses for it.
     """
 
@@ -79,11 +81,11 @@ class PageSection:
     chapter: str = ""
     record_margin_seconds: float = 0.3
     hold_seconds: float = 0.0
-    ambience: bool = False
+    with_ambience: bool = False
     params: dict[str, str] = field(default_factory=dict)
     seamless: bool = False
     lead_seconds: float | None = None  # None uses [narration] lead_seconds.
-    tail_seconds: float | None = None  # None uses [narration] tail_min_seconds.
+    tail_seconds: float | None = None  # None uses [narration] tail_seconds.
 
     @property
     def key(self) -> str:
@@ -95,26 +97,15 @@ class PageSection:
 
     @property
     def freeze_params(self) -> dict[str, str]:
-        """The params a still of this section carries, which is every one the runtime does not set itself.
+        """The params a still of this section carries, which is every one DeckTalk does not set itself.
 
         A frozen frame and the poster both ask the page for a state rather than for the film, so they
-        set `slide`, `after` and `before` themselves and pass the author's own params through.
+        set `freeze`, `after` and `before` themselves and pass the author's own params through.
         """
         return {k: v for k, v in self.params.items() if k not in FREEZE_QUERY_KEYS}
 
 
 Section = ClipSection | PageSection
-
-
-@dataclass(frozen=True)
-class Voice:
-    """Which voice reads this presentation, which is content. How it reads is `[voice]` tuning."""
-
-    provider: str = "elevenlabs"
-    """The speech provider this project is read by, which is a name the machine's own map answers."""
-
-    model: str | None = None
-    """The provider model, or None to take the one `[narration] model` names."""
 
 
 @dataclass(frozen=True)
@@ -132,7 +123,7 @@ class MixEffect:
     section: int
     cue: str
     db: float = -16.0
-    offset: float = 0.0
+    offset_seconds: float = 0.0
     caption: str = ""
 
 
@@ -152,24 +143,34 @@ class Mix:
 
 @dataclass(frozen=True)
 class SoundSpec:
-    text: str
+    """One sound to ask for: its prompt and its file, and what an effect sets for itself.
+
+    `model`, `duration_seconds` and `prompt_influence` are None for the settings of
+    `[score.effects]` or `[score.ambience]`, which the ambience bed always reads, because
+    its own table is where those settings live.
+    """
+
+    prompt: str
     out: str | None = None
     duration_seconds: float | None = None
     prompt_influence: float | None = None
-    model_id: str | None = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)
 class MusicSpec:
+    """The music to ask for: its prompt, whether it is instrumental, and its file.
+
+    How long it is and which model makes it are the settings of `[score.music]`.
+    """
+
     prompt: str
-    seconds: int = 360
     force_instrumental: bool = True
     out: str | None = None
-    model_id: str | None = None
 
 
 @dataclass(frozen=True)
-class Soundscape:
+class Score:
     ambience: SoundSpec | None = None
     effects: dict[str, SoundSpec] = field(default_factory=dict)
     music: MusicSpec | None = None
@@ -184,7 +185,7 @@ PROJECT_KEYS = frozenset({"name", "script", "cues", "build", "language"})
 # The keys each kind of section reads, which are the fields of its own class and nothing else.
 CLIP_KEYS = frozenset(ClipSection.__dataclass_fields__)
 PAGE_KEYS = frozenset(PageSection.__dataclass_fields__)
-TOP_TABLES = frozenset({"project", "voice", "section", "transition", "mix", "soundscape"})
+TOP_TABLES = frozenset({"project", "section", "transition", "mix", "score"})
 
 
 @dataclass(frozen=True)
@@ -197,10 +198,9 @@ class Document:
     build: str
     language: str
     sections: list[Section]
-    voice: Voice
     transition: Transition
     mix: Mix
-    soundscape: Soundscape
+    score: Score
     notes: tuple[str, ...] = ()
     """One sentence per key the parser read past, which a run reports rather than a log line nobody sees."""
 
@@ -223,10 +223,9 @@ class Document:
             build=project.get_path("build", "build"),
             language=project.get_str("language", "en"),
             sections=sections,
-            voice=parse_voice(doc, notes),
             transition=parse_transition(doc, numbers, notes),
             mix=parse_mix(doc, numbers, notes),
-            soundscape=parse_soundscape(doc, notes),
+            score=parse_score(doc, notes),
             notes=tuple(notes),
         )
 
@@ -270,8 +269,8 @@ class Document:
 def tuning_keys(table: str) -> set[str]:
     """The keys of one shared table that the settings layer owns, so the document warns for neither.
 
-    `[voice]` and `[mix]` each hold knobs beside the content this module parses, so a reader of one
-    of them has to know both halves before it can call a key unknown.
+    `[mix]` and every table of `[score]` hold settings beside the content this module parses, so
+    a reader of one of them has to know both halves before it can call a key unknown.
     """
     return {key.name for key in BY_ID.values() if key.table == table}
 
@@ -360,15 +359,6 @@ def parse_sections(doc: dict[str, Any], notes: list[str]) -> list[Section]:
     return sections
 
 
-def parse_voice(doc: dict[str, Any], notes: list[str]) -> Voice:
-    raw = doc.get("voice")
-    if raw is None:
-        return Voice()
-    t = Table(raw, f"{PROJECT_FILE}: [voice]", table="voice")
-    notes += t.note_unknown(set(Voice.__dataclass_fields__) | tuning_keys("voice"))
-    return fill(t, Voice)
-
-
 def parse_transition(doc: dict[str, Any], numbers: set[int], notes: list[str]) -> Transition:
     raw = doc.get("transition")
     if raw is None:
@@ -391,15 +381,21 @@ def parse_transition(doc: dict[str, Any], numbers: set[int], notes: list[str]) -
     return fill(t, Transition, dips=dips)
 
 
+EFFECT_TABLE = SoundKind.EFFECT.value
+"""The array of tables under `[mix]` that places a sound effect, named for the kind of sound it places and in the
+singular like `[[section]]`."""
+
+
 def parse_mix(doc: dict[str, Any], numbers: set[int], notes: list[str]) -> Mix:
     raw = doc.get("mix")
     if raw is None:
         return Mix()
     t = Table(raw, f"{PROJECT_FILE}: [mix]", table="mix")
-    notes += t.note_unknown(set(Mix.__dataclass_fields__) | tuning_keys("mix") | {"loudness"})
+    keys = set(Mix.__dataclass_fields__) - {"effects"} | {EFFECT_TABLE}
+    notes += t.note_unknown(keys | tuning_keys("mix"), anywhere=BY_ID)
     effects: list[MixEffect] = []
-    for i, item in enumerate(t.get_tables("effects")):
-        s = Table(item, f"{PROJECT_FILE}: [[mix.effects]] #{i + 1}")
+    for i, item in enumerate(t.get_tables(EFFECT_TABLE)):
+        s = Table(item, f"{PROJECT_FILE}: [[mix.{EFFECT_TABLE}]] #{i + 1}")
         notes += s.note_unknown(MixEffect.__dataclass_fields__)
         section = s.get_int("section", required=True)
         if section not in numbers:
@@ -409,34 +405,55 @@ def parse_mix(doc: dict[str, Any], numbers: set[int], notes: list[str]) -> Mix:
 
 
 def parse_sound(raw: dict[str, Any], where: str, notes: list[str]) -> SoundSpec:
+    """One effect, which may set its own model, length and prompt influence over `[score.effects]`."""
     t = Table(raw, where)
     notes += t.note_unknown(SoundSpec.__dataclass_fields__)
     return fill(t, SoundSpec)
 
 
-def parse_soundscape(doc: dict[str, Any], notes: list[str]) -> Soundscape:
-    raw = doc.get("soundscape")
+def parse_score(doc: dict[str, Any], notes: list[str]) -> Score:
+    """The items `[score]` declares, leaving every key the settings layer reads to it.
+
+    Each item's table holds its settings beside its prompt, so the ambience bed's and the music's
+    settings are read once, by the settings layer, where an override can reach them, and an effect
+    reads only what its own table sets for itself.
+    """
+    raw = doc.get("score")
     if raw is None:
-        return Soundscape()
-    t = Table(raw, f"{PROJECT_FILE}: [soundscape]")
-    notes += t.note_unknown(Soundscape.__dataclass_fields__)
+        return Score()
+    t = Table(raw, f"{PROJECT_FILE}: [score]", table="score")
+    notes += t.note_unknown(set(Score.__dataclass_fields__) | tuning_keys("score"), anywhere=BY_ID)
     amb_raw = t.get_table("ambience")
+    ambience = None
+    if amb_raw is not None:
+        a = Table(amb_raw, f"{PROJECT_FILE}: [score.ambience]", table="score.ambience")
+        settings = tuning_keys("score.ambience")
+        notes += a.note_unknown({"prompt", "out"} | settings, anywhere=BY_ID)
+        # The bed's own settings are read by the settings layer, so the ones an effect may set for
+        # itself are left empty here and the rest, such as its rate, are no field of an item at all.
+        ambience = fill(a, SoundSpec, **dict.fromkeys(settings & set(SoundSpec.__dataclass_fields__)))
+    effects_raw = t.get_table("effects") or {}
+    settings = tuning_keys("score.effects")
+    named = {str(name) for name, item in effects_raw.items() if isinstance(item, dict)}
+    e = Table(effects_raw, f"{PROJECT_FILE}: [score.effects]", table="score.effects")
+    notes += e.note_unknown(settings | named, anywhere=BY_ID)
     effects: dict[str, SoundSpec] = {}
-    for name, item in (t.get_table("effects") or {}).items():
-        if not isinstance(item, dict):
-            raise InputError(f"{PROJECT_FILE}: [soundscape.effects.{name}] must be a table")
-        effects[str(name)] = parse_sound(item, f"{PROJECT_FILE}: [soundscape.effects.{name}]", notes)
+    for name in sorted(named, key=list(effects_raw).index):
+        if name in settings:
+            # The settings layer reads this name as the setting every effect shares, so an effect
+            # called by it would be read as that setting rather than as a sound.
+            raise InputError(
+                f"{PROJECT_FILE}: [score.effects.{name}] is named after a setting of [score.effects].",
+                hint=f"Give the effect another name. Every effect shares the settings {', '.join(sorted(settings))}.",
+            )
+        effects[name] = parse_sound(effects_raw[name], f"{PROJECT_FILE}: [score.effects.{name}]", notes)
     music_raw = t.get_table("music")
     music = None
     if music_raw is not None:
-        m = Table(music_raw, f"{PROJECT_FILE}: [soundscape.music]")
-        notes += m.note_unknown(MusicSpec.__dataclass_fields__)
+        m = Table(music_raw, f"{PROJECT_FILE}: [score.music]", table="score.music")
+        notes += m.note_unknown(set(MusicSpec.__dataclass_fields__) | tuning_keys("score.music"), anywhere=BY_ID)
         music = fill(m, MusicSpec)
-    return Soundscape(
-        ambience=parse_sound(amb_raw, f"{PROJECT_FILE}: [soundscape.ambience]", notes) if amb_raw is not None else None,
-        effects=effects,
-        music=music,
-    )
+    return Score(ambience=ambience, effects=effects, music=music)
 
 
 def frame_dip(dip_seconds: float, fps: int) -> float:

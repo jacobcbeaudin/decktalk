@@ -7,26 +7,26 @@ introduces it. This note says how the code is arranged and why, for someone abou
 
 ## The one idea
 
-Narration comes back from the speech provider with a start and an end time for every word. Every
+Narration comes back from the voice with a start and an end time for every word. Every
 other time in the system is derived from those word times. A cue names a phrase rather than a
 second, so a reveal follows the voice wherever the voice puts it, and a rewritten sentence moves
 every picture after it without anyone editing a timeline.
 
 That is the whole design. Each decision below follows from it.
 
-## The thesis this release is shaped by
+## The command line is the instruction set
 
-The command line is the instruction set. The settings and the page attributes are the knobs, each
+The settings and the page attributes are what an agent changes, each
 one named, documented, ranged and defaulted. The agent is the implementer. A surface an agent cannot
-discover, read and act on from the command line and the schemas alone is a surface that fails the
-thesis, so every published name has exactly one home in the code and every rendering of it is
+discover, read and act on from the command line and the schemas alone is a surface that fails this
+rule, so every published name has exactly one home in the code and every rendering of it is
 generated from that home.
 
 Three commands make the whole instruction set readable without running a stage. `decktalk --help`
 gives the tree, the global flags and the exit codes. `decktalk schema` gives every command, every
 flag with its type and default, the exit codes, every error code, every finding code and the stages
 as one JSON object, and `decktalk schema event` and `decktalk schema page` give every event line and
-every page attribute. `decktalk schema settings` gives every knob with its default, its safe range,
+every page attribute. `decktalk schema setting` gives every setting with its default, its safe range,
 its unit and its hazard, and `decktalk config explain KEY` gives one of them whole.
 
 ## The four files an author writes
@@ -38,8 +38,8 @@ its unit and its hazard, and `decktalk config explain KEY` gives one of them who
 | `cues.json` | Which spoken phrase each moment on the page waits for | `cue` |
 | `deck/*.html` | The pictures, as scenes of slides whose elements declare their moments | `record` |
 
-Everything under `build/` is generated and git-ignored. A project is recreated from the four files
-and the credits it spends.
+Everything under `build/` is generated and git-ignored. A project is recreated from the four files,
+the takes in `takes/` and the sounds in `score/`, which are committed because they cost money.
 
 ## The six stages
 
@@ -50,32 +50,32 @@ one table.
 
 | Stage | One job | Writes |
 |---|---|---|
-| `narrate` | Voice each section and get a time for every word. | `build/narrate/takes.json`, one take and one words file per section |
+| `narrate` | Voice each section and get a time for every word. | one take and one words file per section, a voiced take in `takes/` and a placeholder in `build/narrate/`, and `build/narrate/takes.json` |
 | `cue` | Turn each cue phrase into a second on that section's clock. | `build/cue-times.json` |
-| `record` | Record each page section in headless Chromium and find narration t=0 in the frames. | `build/recordings/` |
-| `soundscape` | Generate the music, the ambience bed and the effects. | `build/soundscape/` |
+| `record` | Record each page section in headless Chromium and find where the section clock starts in the frames. | `build/recordings/` |
+| `score` | Compose the music, the ambience bed and the effects. | `score/`, the bought sounds and their ledger, and `build/score/` |
 | `assemble` | Cut each section to its span, join them, mix the sound and publish. | `build/final/<name>.mp4`, captions, chapters, transcript, poster |
 | `verify` | Measure the finished film against what it was supposed to be. | nothing |
 
-`soundscape` sits after `record` because it spends, and stopping at `record` is therefore the draft
+`score` sits after `record` because it spends, and stopping at `record` is therefore the draft
 loop that costs nothing. `assemble` consumes what all four before it wrote, which is why a stage that
 spends money and writes an artifact has to be reachable by `--from`, `--to`, `--skip`, the spend gate
 and the event stream rather than hidden inside another stage.
 
 Six more calls report on a project, cut a piece out of it or serve it: `status`, `check`, `words`,
-`storyboard`, `serve` and `clip`. `check` judges without producing anything and prices what a build
+`storyboard`, `serve` and `clip`. `check` judges without writing anything a stage reads and prices what a build
 would cost, so an author sees the findings and the money before a single second is bought.
 `storyboard` freezes every slide at every cue onto one page, which is the checkpoint a person looks
-at before credits are spent.
+at before anything is bought.
 
-A take is named by a hash of its text, its voice, its model and its settings, so an edit voices only
+A take is named by a digest of its text, its voice, its model and its settings, so an edit voices only
 the sections whose words changed. A recording is kept when its page, its words, its cues and every
 local file it loads are unchanged, and when the motion settings that shaped it have not moved. Paid
 takes are the only expensive thing in the tree, and caching them by content is what makes the tenth
 edit cheap.
 
 The same rule reaches past the takes. Several page sections record at once, each in its own
-Chromium, as many as the machine's CPU allows. A section cut is kept while the key of its encode,
+Chromium, as many as the machine's CPU allows. A section video is kept while the key of its encode,
 which is the whole argument list and the content of every file it read, is unchanged. A frozen frame
 is kept under a key of everything that draws it, so `check`, `storyboard` and the poster draw each
 state of a page once between them. And a build that finds nothing moved keeps `assemble` and
@@ -99,22 +99,22 @@ The layers are wide enough to be ranked among themselves, so one table gives eve
 one rank and one comparison enforces both the layer and the order inside it. The walk reads the AST
 rather than the imports Python happens to run, so an import inside a function body counts exactly as
 much as one at the top of a file, and a target that no longer exists fails rather than passing by
-being unrankable. `project` ranks above `stages` because it calls a stage by name through
-`import_module`, which is a string no AST walk can see, and declaring the rank the code really has is
-what keeps that one edge honest.
+being unrankable. `project` ranks above `stages` because it calls the stages, through the typed table in
+`stages/table.py` and plain imports inside its methods, so `stages` may never import `project` back.
 
 `scripts/build_contributing.py` writes the module tree in `CONTRIBUTING.md` from the same table, so
 the documentation of the shape and the enforcement of it come from one source.
 
-The rule buys two things. A speech provider is built from a `VoiceContext` and never from a project,
-so the speech boundary sits in the leaves and a second provider would touch nothing above it. And
+The rule buys two things. A speech provider is built from a `SpeechContext` and never from a project,
+so the speech boundary sits in the leaves, and its closed set of adapters, the ElevenLabs voice and
+the local `dtsp` one, touches nothing above it: a layer test refuses a vendor name above `speech/`. And
 the command line renders from the result objects alone, so it imports no stage and knows no result's
 shape.
 
 ## What every call returns
 
 Every call returns a frozen Pydantic model. Four keys are reserved on every one of them: `schema`,
-which is 2 and is the shape version, `ok`, `findings` and `error`. Two more are declared by the
+which is 1 and is the shape version, `ok`, `findings` and `error`. Two more are declared by the
 results that earn them: `run` on every result whose command opens a run, and `written` on every
 result that writes a file, carrying the project-relative paths that run wrote. There is no wrapper
 object and no nesting, because a flat object is the one shape a caller can dispatch on without
@@ -122,14 +122,14 @@ learning a second contract. `tests/contract/test_results.py` holds one table of 
 result and driver, and the test is total in both directions.
 
 A finding is a diagnostic in the shape a linter made familiar: a code a caller dispatches on, one
-sentence with the measured number written into it, a certainty of `certain` or `uncertain`, a
+sentence with the measured number written into it, a severity of `error` or `warning`, a
 location whose `where` names the object judged, the stage that raised it, a docs URL, and often a
-fix. A fix is an edit, a setting, a command or a runtime copy, each with an applicability that says whether it may be
-applied without asking, and `Project.apply(finding)` applies it. No code spells its own certainty,
+fix. A fix is an edit or a command, each with an applicability that says whether it may be
+applied without asking, and `Project.apply(finding)` applies it. No code spells its own severity,
 because a closed enum publishes each value with its own sentence where an adjective in a code name
 publishes nothing.
 
-`--fail-on certain|any|never` names a threshold rather than a field value, and `--allow CODE` carries
+`--fail-on error|warning|never` names the least severe finding that fails a run, and `--allow CODE` carries
 on past one code. `build` reads the same threshold to decide when to stop: a stage whose findings
 reach it ends the run before the next stage, and the result still comes back with its findings, its
 spend and `stopped_at`, because a finding is a judgement the caller reads and never an error.
@@ -146,7 +146,7 @@ rather than on a project, because installing a toolchain and reporting on a mach
 and a project-only stream would leave `--events` silent on the two commands that download two
 hundred megabytes. A project's `events` is that stream filtered to the runs the project opened.
 
-There are twelve event names and the discriminator is `event`. The library mints `event`, `time`,
+The discriminator of an event is its name, `event`. The library mints `event`, `time`,
 `seq` and `run` onto every line, and `run.start` carries the path the lines are being appended to, so
 the stream and the file can never disagree. Kept, skip and fail are not event names: `stage.done`
 and `section.done` carry an `outcome`, because four names for one moment forces four branches where
@@ -155,27 +155,28 @@ one field read will do.
 Nothing in the library prints. The command line subscribes and renders, `--events` puts the same
 lines on stderr as they happen, and every run appends `build/events/<run>.jsonl`.
 
-## The knobs
+## The settings
 
-`settings.py` publishes every knob with its default, its safe range, its unit, its scope, its nature,
+The `settings` package publishes every setting with its default, its safe range, its unit, its scope, its nature,
 the judgements it moves and its environment name. The published range is the safe range and the
 loader refuses a value outside it, naming the file and the line that wrote it, because a published
-bound you can cross into nonsense is worse than no bound at all. Five layers can set a key and each
-overrides the ones before it, and `decktalk config explain KEY` prints the value in force and
-the layer it comes from.
+bound you can cross into nonsense is worse than no bound at all. A key has one of two scopes. A
+project key is set by its default, `decktalk.toml`, the environment and `--set`, and a machine key by
+its default, the machine file, the environment and `--set`. Each overrides the ones before it, and
+`decktalk config explain KEY` prints the value in force and the layer it comes from.
 
-No flag duplicates a settings key. `--set table.key=value` is the fifth layer, it is repeatable, it
+No flag duplicates a settings key. `--set table.key=value` is the last layer, it is repeatable, it
 writes nothing, it is validated by the same loader with the same refusal, and the loader routes each
 pair to its own scope, so the command line never has to know which layer a key belongs to.
 
-A number that is deliberately not a knob is published too, with the formula that derives it, so
+A number that is deliberately not a setting is published too, with the formula that derives it, so
 `no magic numbers` is a rule with three doors rather than a habit. `tests/contract/test_numbers.py`
 holds it against a per-file baseline that only ever shrinks.
 
-## The page is the second knob surface
+## The page attributes are the second surface
 
 An element has four moments and every moment names a cue local to its slide, which the runtime
-qualifies into a wire id. `src/decktalk/runtime/src/contract.ts` is the one home of every attribute,
+qualifies into a cue id. `src/decktalk/runtime/src/contract.ts` is the one home of every attribute,
 its values, its range, its default, its warning code and its motion span, and `src/decktalk/page.py`
 is generated from it, so Python and the page cannot disagree about a name or a bound.
 
@@ -191,7 +192,7 @@ check runs on three platforms.
 ## Why the cuts land
 
 Chromium begins recording at a moment nobody can predict. The recorder covers the page in magenta
-until the page says it is ready, and the first frame after the cover is narration t=0. The cover
+until the page says it is ready, and the section clock starts on the first frame after the cover. The cover
 holds something that always moves, so frames keep coming while a still page waits. Everything after
 that is arithmetic on frames, and no part of it reads a wall clock.
 
@@ -202,18 +203,20 @@ keep such a deck from reaching what the service holds.
 
 - **The host builds the machine.** `Machine.from_environment()` is the only reading of the process
   environment, and `Machine.of` reads nothing, so a job sees exactly the variables, the settings
-  file, the cache and the voices its host chose. Such a machine reads no project's `.env`, and the key
-  goes to ElevenLabs and nowhere else unless the host says otherwise.
+  file, the cache and the voices its host chose. Such a machine reads no project's `.env`, and every base URL is
+  machine-scoped, so a voice sends its key and its script only to the hosts the host named.
 - **An untrusted page is sealed.** Under `record.page_policy = "untrusted"` Chromium runs with its
   sandbox on or not at all, every request off the project's origin is refused through every channel
   a page can open, and under both policies the browser is handed a scrubbed environment rather than
   the process's own.
-- **The key never shares a process with a page.** `narrate` and `soundscape` run in a voice process
-  that holds the key and opens no page. `check`, `storyboard`, `record`, `assemble` and `verify` run
-  in a render process that holds no key. The build directory is the only thing that moves between
-  them, and a host never runs a voiced `build`, which would put both in one process. Each paid take
-  is a `take.charged` line on the stream the moment it is bought, which is what a host's own ledger
-  reads.
+- **The key never shares a run with a stranger's page.** Each row of `PIPELINE` says whether its
+  stage `holds_api_key` or `opens_pages`, and no row is both. A host runs `Stage.keyed_stages()`, which is
+  `narrate` and `score`, in a voice process that holds the key, and `Stage.keyless_stages()` with
+  `check` and `storyboard` in a render process that holds none. The build directory is the only thing
+  that moves between them. A run that may spend refuses to open an untrusted page, at the one place
+  a browser starts, so a voiced `build` on a host is refused before it buys anything rather than
+  trusted not to happen. Each take bought is a `take.charged` line and each paid sound request a
+  `sound.charged` line on the stream the moment it is bought, which is what a host's own ledger reads.
 
 [The Python API](https://docs.decktalk.ai/reference/python-api#running-decktalk-inside-a-service)
 is the contract a host builds on.

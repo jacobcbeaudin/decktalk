@@ -9,17 +9,17 @@ from types import SimpleNamespace
 
 import pytest
 
-from decktalk.artifacts import Cut, Cuts, Words
+from decktalk.artifacts import Placement, Placements, Words
 from decktalk.captions import CaptionCue
-from decktalk.errors import ToolError
+from decktalk.errors import ErrorCode, InputError, ToolError
 from decktalk.inputs import Inputs
-from decktalk.media import browser
+from decktalk.media import browser, pages
 from decktalk.media.pagereport import CueRow, MeasuredScene, PageReport
 from decktalk.page import Q
 from decktalk.results import SectionKind, Substitute, Word
 from decktalk.settings import BY_ID
 from decktalk.stages import storyboard
-from decktalk.stages.assemble.cut import cut_list
+from decktalk.stages.assemble.cut import placements_of
 from decktalk.stages.assemble.publish import (
     SOUND_CAPTION_SECONDS,
     build_captions,
@@ -27,9 +27,9 @@ from decktalk.stages.assemble.publish import (
     caption_texts,
     clip_captions,
     clip_speech,
-    cut_note,
     described_cues,
     one_at_a_time,
+    placement_note,
     poster_query,
     publish,
     render_poster,
@@ -49,9 +49,8 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
 
 def test_described_cues_sort_on_the_time_alone(tmp_path):
-    """Two lines at one cue used to break the tie on their first letter, which printed a step back
-    before the arrival it belongs to. The runtime composes one sentence per cue in document order,
-    so the second is the whole of the rule."""
+    """Two lines at one cue keep document order, never their first letter, so a step never prints
+    before the arrival it belongs to. The runtime composes one sentence per cue in document order."""
     inputs = write_project(tmp_path)
     arrival = CueRow(id="1.1:a", due=1.0, ran=1.0, describe="the arrival")
     back = CueRow(id="1.1:b", due=1.0, ran=1.0, describe="a step back")
@@ -78,18 +77,20 @@ def test_a_section_that_was_never_recorded_describes_nothing(tmp_path):
 
 
 def test_a_note_says_what_plays_where_nothing_was_said():
-    clip = Cut(section=2, key="02", kind=SectionKind.CLIP, start=0.0, end=1.0, source=Path("media/b.mp4"), chapter="c")
-    page = Cut(section=1, key="01", kind=SectionKind.PAGE, start=0.0, end=1.0, source=Path("a.webm"), chapter="c")
+    clip = Placement(
+        section=2, key="02", kind=SectionKind.CLIP, start=0.0, end=1.0, source=Path("media/b.mp4"), chapter="c"
+    )
+    page = Placement(section=1, key="01", kind=SectionKind.PAGE, start=0.0, end=1.0, source=Path("a.webm"), chapter="c")
     slated = clip.model_copy(update={"substitute": Substitute.SLATE})
-    assert cut_note(clip) == "A clip plays here: media/b.mp4."
-    assert cut_note(page) == ""
-    assert cut_note(slated) == "A placeholder slate frame plays here."
+    assert placement_note(clip) == "A clip plays here: media/b.mp4."
+    assert placement_note(page) == ""
+    assert placement_note(slated) == "A slate plays here."
 
 
 def test_sections_that_share_a_chapter_share_one_transcript_entry(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
-    entries = transcript_sections(inputs, cut_list(inputs, rows), {1: "hello", 3: "again"})
+    entries = transcript_sections(inputs, placements_of(inputs, rows), {1: "hello", 3: "again"})
     assert [entry.chapter for entry in entries] == ["Open", "The edit", "Close"]
     # The clip and the page that share "The edit" are one heading with two paragraphs under it.
     assert len(entries[1].said) == 2
@@ -101,6 +102,28 @@ def test_a_clip_that_names_a_words_file_is_read_into_the_transcript(tmp_path):
     Words(words=(Word(word="spoken", start=0.0, end=0.4),)).write(tmp_path / "media" / "before.words.json")
     assert clip_speech(inputs, 2) == "spoken"
     assert clip_speech(inputs, 1) == ""
+
+
+@pytest.mark.parametrize("reading", ["transcript", "captions"])
+def test_a_clip_words_file_that_does_not_read_is_the_authors_input_and_is_never_deleted(tmp_path, reading):
+    """The author named the file in decktalk.toml, so DeckTalk cannot build it again and never says to delete it."""
+    inputs = write_project(tmp_path, TITLED_TOML)
+    (tmp_path / "media").mkdir()
+    path = tmp_path / "media" / "before.words.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(InputError) as refused:
+        if reading == "transcript":
+            clip_speech(inputs, 2)
+        else:
+            rows = rendered(inputs, {1: 2.0, 2: 3.0}, audio={2: tmp_path / "media" / "before.mov"})
+            clip_captions(inputs, open_run(tmp_path).run, rows)
+    said = f"{refused.value} {refused.value.hint}"
+    assert refused.value.code is ErrorCode.INPUT
+    assert str(refused.value).startswith("decktalk.toml: [[section]] number=2 words names media/before.words.json")
+    assert "the words of one clip: it is not JSON" in str(refused.value)
+    assert "elete" not in said
+    assert refused.value.location is not None and refused.value.location.file == Path("media/before.words.json")
+    assert path.read_text(encoding="utf-8") == "{not json"
 
 
 # ---- chapters ---------------------------------------------------------------------------------
@@ -123,7 +146,7 @@ def test_every_spoken_section_is_captioned_where_its_narration_plays(tmp_path):
     cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
     assert cues
     assert cues[0].start == 0.0
-    # The second section's take starts where the first one ends on the narration clock.
+    # The second section's take starts where the first one ends in the joined narration.
     assert any(cue.start >= 2.0 for cue in cues)
 
 
@@ -174,7 +197,7 @@ def test_a_cued_sound_that_names_no_caption_is_said(tmp_path):
     toml = (
         "[project]\nname = 't'\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
-        '[[mix.effects]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\n'
+        '[[mix.effect]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\n'
     )
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
@@ -189,7 +212,7 @@ def test_a_sounds_caption_is_bracketed_and_placed_at_its_resolved_cue(tmp_path):
     toml = (
         "[project]\nname = 't'\n"
         "[[section]]\nnumber = 1\npage = 'deck/index.html'\nscene = '1'\n"
-        '[[mix.effects]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\ncaption = "ball bounces"\n'
+        '[[mix.effect]]\nfile = "media/ping.mp3"\nsection = 1\ncue = "1.1:ping"\ncaption = "ball bounces"\n'
     )
     inputs = write_project(tmp_path, toml)
     cue_times(inputs, {1: {"1.1:ping": 0.5}})
@@ -227,7 +250,7 @@ def test_no_two_captions_are_ever_on_screen_at_once():
 def test_the_poster_freezes_the_opening_slide_with_its_reveals_fired(tmp_path):
     inputs = write_project(tmp_path)
     catalog = (MeasuredScene.model_validate({"scene": "1", "elements": {}, "slides": ["1.1", "1.2"]}),)
-    assert poster_query(catalog, inputs.document.page_sections[0]) == {Q.SLIDE: "1.1"}
+    assert poster_query(catalog, inputs.document.page_sections[0]) == {Q.FREEZE: "1.1"}
     assert poster_query((), inputs.document.page_sections[0]) is None
 
 
@@ -255,7 +278,7 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, monkeypatc
             return None
 
     @contextmanager
-    def chromium(_path: str = "", *, policy: str) -> Iterator[object]:
+    def chromium(_path: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
         launched.append(policy)
         yield object()
 
@@ -272,9 +295,9 @@ def test_an_unchanged_poster_is_read_back_without_a_browser(tmp_path, monkeypatc
         return Page(), SimpleNamespace(paths=["deck/index.html"])
 
     monkeypatch.setattr(storyboard, "open_page", open_page)
-    monkeypatch.setattr(browser, "await_ready", lambda _page: None)
-    monkeypatch.setattr(browser, "read_report", lambda *_a: PageReport(catalog=catalog))
-    monkeypatch.setattr(browser, "screenshot", screenshot)
+    monkeypatch.setattr(pages, "await_ready", lambda _page: None)
+    monkeypatch.setattr(pages, "read_report", lambda *_a: PageReport(catalog=catalog))
+    monkeypatch.setattr(pages, "screenshot", screenshot)
     out = inputs.workspace.deliverables()["poster"]
     assert render_poster(inputs, opened.run, out) == out
     out.unlink()
@@ -327,11 +350,11 @@ def test_a_render_that_produced_nothing_is_never_published(tmp_path, monkeypatch
     assert not inputs.workspace.film.exists()
 
 
-def test_the_cut_list_a_transcript_reads_carries_every_section(tmp_path):
+def test_the_placements_a_transcript_reads_carry_every_section(tmp_path):
     inputs = write_project(tmp_path, MID_CLIP_TOML)
-    cuts: Cuts = cut_list(inputs, rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}))
-    assert len(cuts.sections) == 4
-    assert [cut.section for cut in cuts.sections if cut.start <= 2.5 < cut.end] == [2]
+    placements: Placements = placements_of(inputs, rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5}))
+    assert len(placements.sections) == 4
+    assert [row.section for row in placements.sections if row.start <= 2.5 < row.end] == [2]
 
 
 def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, monkeypatch):
@@ -341,7 +364,7 @@ def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, monkeypatch):
     opened = open_run(tmp_path)
     launched: list[str] = []
 
-    def refuse(_path: str = "", *, policy: str) -> None:
+    def refuse(_path: str = "", *, policy: str, **_launch: object) -> None:
         launched.append(policy)
         raise ToolError("could not launch a browser.")
 

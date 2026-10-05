@@ -14,35 +14,46 @@ price before they start.
 - `narrate` sends each section's text to ElevenLabs and is billed by the character. A section whose
   text has not changed is served from the take on disk, so an edit to one sentence pays for one
   section.
-- `soundscape` generates the music, the ambience bed and the effects the project describes, and is
+- `score` generates the music, the ambience bed and the effects the project describes, and is
   billed by the second of audio. It runs after `record`, so a run that stops at the recorder never
   reaches it.
-- `decktalk check` prices a voiced run before anything is bought, using
-  `[voice] price_per_1000_characters` from `decktalk.toml` as what your own plan charges.
+- `decktalk check` prices the narration of a voiced run before anything is bought, the way the voice
+  declares it bills. ElevenLabs bills per character, so the price uses
+  `[elevenlabs] dollars_per_1000_characters` from `decktalk.toml` as what your own plan charges.
 - No run spends without being told to. On the command line that is `--spend`, and `--max-cost N`
   refuses the run before the first call if the most it could cost is over N US dollars. In the
-  library it is `voice=decktalk.Voicing.PAID`, and `ApprovalRequired` is raised rather than money
+  library it is `spend=True`, and `ApprovalRequired` is raised rather than money
   being spent.
 
 [Requirements and costs](/requirements) lists every command that spends.
 
 ## Do I need an account to try it?
 
-No. `decktalk init my-deck` and then `decktalk build --no-voice` writes a complete film with
-placeholder narration that carries a real word clock, so the pacing, the cues and the cuts are all
-real. Nothing contacts a speech service, and no key is read.
+No. `decktalk init my-deck` and then `decktalk build --no-spend` writes a complete film with
+placeholder narration that carries real word times, so the pacing, the cues and the cuts are all
+real. Nothing contacts a paid speech service, and no key is read. `--no-spend` gates money only, so a
+project whose voice is the free local `dtsp` is still voiced by it.
 
-A voiced build needs an ElevenLabs API key in `.env` and a voice id. The voice id is a published
-name rather than a credential: it says which voice reads the script, the way a model name says which
-model answers.
+A build voiced by ElevenLabs needs an ElevenLabs API key in `.env` and a voice id as `[voice] id`
+in `decktalk.toml`. The voice id is a published name rather than a credential: it says which voice reads
+the script, the way a model name says which model answers, and a cloned voice is usable only with its
+own account's key, so the id is committed with the project.
 
 ## Can I use a voice other than ElevenLabs?
 
-Not today. ElevenLabs is the one speech provider DeckTalk ships, and the seam above it is internal
-rather than an extension point. There is no plugin path and nothing is read from entry points.
+Yes, a local one. DeckTalk ships two voices: `elevenlabs`, the cloud voice, and `dtsp`, which speaks
+the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this
+repository. Set `provider = "dtsp"` under `[voice]`. It needs no key and costs nothing, so it makes
+its takes with or without `--spend`, `--no-spend` included. The server's address is
+`[dtsp] base_url`, `http://127.0.0.1:8765` by default, and only this machine sets it, so a project
+someone else wrote cannot send its script anywhere else. When the server is not running, each missing take plays a placeholder with a
+`TAKE_MISSING` finding that says to start it, and the build still exits 0.
+
+The set is closed. There is no plugin path and nothing is read from entry points, so the voices a
+build can call are the ones a reader of the code can see.
 
 What that does not lock up is your project. `script.md`, `cues.json`, `decktalk.toml` and the deck
-pages name no service, and a build with `--no-voice` needs none, so the files outlive the choice.
+pages name no service, and a build with `--no-spend` needs none, so the files outlive the choice.
 The one thing DeckTalk asks of any voice is a start and an end time for every word, because the cut
 is made on words, and that requirement is what a second provider would have to meet.
 
@@ -50,8 +61,8 @@ is made on words, and that requirement is what a second provider would have to m
 
 It sounds like the ElevenLabs voice you pick. Any voice id works, including a clone of your own.
 
-`[voice]` in `decktalk.toml` sets `stability`, `similarity_boost`, `style`, `speaker_boost` and
-`speed`. DeckTalk also sends up to `[narration] context_chars` of the text before and after each
+`[elevenlabs]` in `decktalk.toml` sets `stability`, `similarity_boost`, `style` and `speaker_boost`,
+and `[voice] speed` sets the pace. DeckTalk also sends up to `[narration] context_characters` of the text before and after each
 section with the request, so the rhythm and the tone stay even across a cut that the listener never
 hears as one.
 
@@ -84,8 +95,8 @@ other jobs.
 
 ## Is generated music required?
 
-No. Every part of the soundscape is off until the project asks for it. `[soundscape.music]`,
-`[soundscape.ambience]` and `[soundscape.effects.<name>]` describe what `decktalk soundscape`
+No. Every part of the score is off until the project asks for it. `[score.music]`,
+`[score.ambience]` and `[score.effects.<name>]` describe what `decktalk score`
 generates, and `[mix]` names the files that are mixed under the voice. You can point `[mix]` at
 audio files of your own and never run that stage at all. [Sound](/concepts/sound) explains both
 ways.
@@ -112,7 +123,7 @@ Yes. A page can be any HTML that follows the [page contract](/concepts/page-cont
 - [Write a page by hand](/guides/page-by-hand) shows the smallest page that records.
 - The runtime is one file with no dependencies, and it adds only its own stage element to your
   markup.
-- KaTeX is optional. `decktalk init` copies the packaged KaTeX into `deck/katex/`, and a page that
+- KaTeX is optional. DeckTalk serves the packaged KaTeX at `/__decktalk/katex/`, and a page that
   needs no equations can drop its two tags.
 
 A page that loads an asset from another origin still records, and `PAGE_CDN_ASSET` reports each
@@ -130,18 +141,19 @@ Yes. DeckTalk runs on Linux, macOS and Windows.
 - What DeckTalk fetches goes under `%LOCALAPPDATA%` on Windows, and `[tools] cache_dir` moves it.
   Chromium is fetched by the first command that needs it, or up front by `decktalk install`. If a
   proxy blocks the download, set `PLAYWRIGHT_DOWNLOAD_HOST` as Playwright documents, or point
-  `[record] browser_path` at a browser the machine already has, with
-  `decktalk config set record.browser_path PATH --where machine`.
+  `[tools] chromium` at a browser the machine already has, with
+  `decktalk config set tools.chromium PATH --scope machine`.
 - The groups that drive a real browser or a real ffmpeg run on macOS and Windows when a change
   merges and when a release is cut. Those legs report cue timing rather than fail on it, because a
-  hosted runner presents frames late, and the Linux legs hold every reveal to its word.
-  [What CI runs](https://github.com/jacobcbeaudin/decktalk/blob/main/CONTRIBUTING.md#what-ci-runs)
-  names every leg.
+  hosted runner presents frames late. The Linux `e2e` leg reports it too, until its own runs show the
+  runner can be trusted.
+  [What CI runs](https://github.com/jacobcbeaudin/decktalk/blob/main/RELEASING.md#what-ci-runs)
+  says how each leg is judged, and `uv run scripts/check.py --list` names every one.
 
 ## Can an agent drive it?
 
 That is what it is built for. The command line is the instruction set and it documents itself, so
-four calls tell an agent everything: `decktalk --help`, `decktalk schema`, `decktalk schema settings`
+four calls tell an agent everything: `decktalk --help`, `decktalk schema`, `decktalk schema setting`
 beside `decktalk config explain KEY`, and `decktalk status --json` beside `decktalk doctor --json`.
 Every command under `--json` prints one flat object with the same four reserved keys. `decktalk
 init` also writes six skills into the project, which hold the craft a help screen cannot say.
@@ -155,7 +167,7 @@ uses "error" because the everyday word already says that lower is better.
 - **One guess.** A loss function scores one guess. For a category guess, such as seal or otter, the
   usual loss is cross-entropy. It is large when the model gives the right answer a low probability.
 - **The height of the bowl.** Training lowers the average loss over many examples. Gradient descent
-  moves the knobs down the slope of that average.
+  moves the dials down the slope of that average.
 - **Not the error rate.** The error rate is the share of wrong guesses. It changes in jumps, so it
   has no useful slope to follow.
 

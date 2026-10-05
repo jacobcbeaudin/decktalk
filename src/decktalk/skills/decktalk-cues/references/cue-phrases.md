@@ -8,10 +8,10 @@
     "3": {
       "min_seconds": 25,
       "cues": [
-        { "cue": "3.1:bowl", "on": "a bowl" },
-        { "cue": "3.1:ball", "on": "the ball", "offset": 0.15 },
-        { "cue": "3.2:zero", "on": "zero", "occurrence": 2 },
-        { "cue": "3.3:aside", "on": "one more thing", "verify": false }
+        { "id": "3.1:bowl", "phrase": "a bowl" },
+        { "id": "3.1:ball", "phrase": "the ball", "offset_seconds": 0.15 },
+        { "id": "3.2:zero", "phrase": "zero", "occurrence": 2 },
+        { "id": "3.3:aside", "phrase": "one more thing", "verify": false }
       ]
     }
   }
@@ -20,22 +20,22 @@
 
 | Key | What it means |
 | --- | --- |
-| `cue` | The wire id, which is a slide id, a colon, and the local name the page writes |
-| `on` | The phrase from that section's narration that the moment lands on |
-| `offset` | Seconds added to the match, positive for later and negative for earlier |
+| `id` | The cue id, which is a slide id, a colon, and the cue name the page writes |
+| `phrase` | The phrase from that section's narration that the moment lands on |
+| `offset_seconds` | Seconds added to the match, positive for later and negative for earlier |
 | `occurrence` | Which match to use when the phrase repeats, counting from one |
 | `case_sensitive` | Whether the match respects case, and false is the default |
 | `verify` | Set false to leave the cue out of the reveal check, which needs the author's agreement |
 | `min_seconds` | The shortest the section may run, whatever the narration measures |
 
-Two values of `on` name the section's own edges rather than a word. `"$start"` is zero seconds, and
+Two values of `phrase` name the section's own edges rather than a word. `"$start"` is zero seconds, and
 `"$end"` is the end of the speech.
 
-## Reading a wire id
+## Reading a cue id
 
-The page writes a local name inside a slide, and the runtime joins the two. `data-in="bowl"` inside
+The page writes a cue name inside a slide, and the runtime joins the two. `data-in="bowl"` inside
 `<template data-slide="3.1">` is `3.1:bowl`, and that is what this file carries. A slide may also
-list a local name it serves from a handler, and those rows look exactly the same here.
+list a cue name it serves from a handler, and those rows look exactly the same here.
 
 ## Choosing the phrase
 
@@ -47,7 +47,7 @@ occurs once in its section.
 | `"here"` | `"the inbox"` |
 | `"and then"` | `"the second step"` |
 | `"x"` | `"x squared"` |
-| `"two"` | `"two knobs"` |
+| `"two"` | `"two dials"` |
 | `"it"` | the noun the sentence used before "it" |
 
 - A single common word such as "the", "one" or "it" matches early and lands on the wrong sentence.

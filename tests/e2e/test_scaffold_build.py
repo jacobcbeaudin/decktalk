@@ -9,11 +9,9 @@ leaves out. `tests/decktalk/template/test_template.py` judges the same projects 
 pull request without building them, and this file is what proves they build.
 
 The command line is driven as a real subprocess of `python -m decktalk`, so nothing about the CLI's
-internal module layout is assumed and nothing is faked. The commands and flags are spelled from
-`~/Documents/decktalk-plan/gen5/synthesis/design.md` section 3, the final vocabulary, with the flag
-families of `~/Documents/decktalk-plan/gen5/panels/cli/design.md` section 2 applied. T8 had not
-landed when this was written, so a failure that names a missing command or an unknown flag is T8's
-spelling and not a broken project.
+internal module layout is assumed and nothing is faked. The commands and flags are spelled as
+`docs/reference/cli.mdx` documents them, so a failure that names a missing command or an unknown flag
+is a drift between the two and not a broken project.
 """
 
 from __future__ import annotations
@@ -26,9 +24,10 @@ from typing import Any
 import pytest
 
 from decktalk.artifacts import RecordingLog
+from decktalk.errors import Exit
 from decktalk.findings import Code
 from decktalk.template import EXAMPLES, STARTER
-from support.commands import FOUND_NOTHING, HOSTILE_DIRECTORY, clean_environ, codes, flat
+from support.commands import HOSTILE_DIRECTORY, clean_environ, codes, flat
 from support.timing_policy import (
     EVERY_PACKAGED_PROJECT_SECONDS,
     FIRST_FETCH_SECONDS,
@@ -88,7 +87,7 @@ def decktalk(*args: str, cwd: Path, cache: Path) -> subprocess.CompletedProcess[
 def test_a_packaged_project_builds_and_verifies_without_a_voice(
     tmp_path: Path, example: str | None, pytestconfig: pytest.Config
 ) -> None:
-    """`init`, then `build --no-voice`, then `verify`, on a project straight out of the wheel.
+    """`init`, then `build --no-spend`, then `verify`, on a project straight out of the wheel.
 
     This suite runs whole builds one after another on a runner that renders in software, so its leg
     reports cue timing rather than gating it and `tests/support/timing_policy.py` says what that
@@ -103,12 +102,12 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(
 
     chosen = ("--example", example) if example is not NO_EXAMPLE else ()
     made = decktalk("init", str(root), "--name", name, "--json", *chosen, cwd=home, cache=home)
-    assert made.returncode == FOUND_NOTHING, made.stderr
+    assert made.returncode == Exit.FOUND_NOTHING, made.stderr
     doc = flat(made.stdout)
     assert doc["example"] == (example or STARTER), "init reports the packaged project it wrote"
     assert Path(doc["root"]).name == name
 
-    built = decktalk("--project", str(root), "build", "--no-voice", "--json", cwd=home, cache=home)
+    built = decktalk("--project", str(root), "build", "--no-spend", "--json", cwd=home, cache=home)
     report = flat(built.stdout)
     assert_build_finished(built.returncode, codes(report), built.stderr, pytestconfig)
     film = root / report["film"]
@@ -121,10 +120,10 @@ def test_a_packaged_project_builds_and_verifies_without_a_voice(
         assert list(log.findings) == [], (log_path.name, log.findings)
         assert list(log.recording.external) == [], (log_path.name, log.recording.external)
 
-    # Read the finished film back. No packaged project may raise a certain finding this runner
+    # Read the finished film back. No packaged project may raise an error this runner
     # judges, because that is a cue that did not land. An example is a project that was really made
     # and its art is its own, so a reveal of its that sits at the measurement floor may be
-    # uncertain. What it may never be is a missed cue.
+    # a warning. What it may never be is a missed cue.
     checked = decktalk("--project", str(root), "verify", "--json", "--fail-on", "never", cwd=home, cache=home)
     measured = flat(checked.stdout)
     assert faults(codes(measured), gate) == [], measured["findings"]

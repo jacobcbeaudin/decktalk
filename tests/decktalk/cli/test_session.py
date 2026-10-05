@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,31 +13,42 @@ from rich.console import Console
 from decktalk.cli.options import FailOn, When
 from decktalk.cli.session import Globals, Session, Terminal
 from decktalk.errors import ApprovalRequired, ErrorCode, InputError
-from decktalk.findings import Certainty, Code
-from decktalk.results import CheckResult, StatusResult, Voicing
-from support.spends import a_spend
+from decktalk.findings import ERRORS_FAIL, Code, Severity, Threshold
+from decktalk.pipeline import Stage
+from decktalk.results import BillingBasis, Layer, StatusResult
+from support.costs import a_cost
 
-from .conftest import Fake, finding
+from .conftest import ANSWERS, Fake, finding
 
 
-def session(flags: Globals | None = None) -> Session:
-    """One session with the flags a test is about, and nothing else set."""
-    return Session(flags or Globals(), command="build")
+def session(flags: Globals | None = None, *, spend: bool | None = None, threshold: Threshold = ERRORS_FAIL) -> Session:
+    """One session with the flags, the spend answer and the threshold a test is about, and nothing else set."""
+    return Session(flags or Globals(), command="build", spend=spend, threshold=threshold)
 
 
 def terminal(**state: bool) -> Terminal:
     """One terminal reading, with every question answered the way a test needs it."""
-    base = {"is_terminal": True, "is_dumb": False, "no_color": False, "json": False, "events": False, "quiet": False}
+    base = {"is_terminal": True, "is_dumb": False, "no_color": False}
     return Terminal(**{**base, **state})
 
 
-def test_the_live_region_needs_a_terminal_with_one_stream_to_itself() -> None:
-    assert terminal().live
-    assert not terminal(is_terminal=False).live
-    assert not terminal(is_dumb=True).live
-    assert not terminal(no_color=True).live
-    assert not terminal(json=True).live
-    assert not terminal(events=True).live
+@pytest.mark.parametrize(
+    ("flags", "state", "live"),
+    [
+        (Globals(), {}, True),
+        (Globals(), {"is_terminal": False}, False),
+        (Globals(), {"is_dumb": True}, False),
+        (Globals(), {"no_color": True}, False),
+        (Globals(json_out=True), {}, False),
+        (Globals(events=True), {}, False),
+    ],
+)
+def test_the_live_region_needs_a_terminal_with_one_stream_to_itself(
+    flags: Globals, state: dict[str, bool], live: bool
+) -> None:
+    made = session(flags)
+    made.terminal = terminal(**state)
+    assert made.live is live
 
 
 def test_no_color_in_the_environment_outranks_every_flag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -56,25 +68,58 @@ def test_color_never_turns_colour_off_without_the_variable(monkeypatch: pytest.M
     ("fail_on", "allow", "found", "code"),
     [
         (None, frozenset(), (), 0),  # a run that judged nothing
-        (None, frozenset(), (Code.CUE_UNRESOLVED,), 1),  # a certain judgement under the default threshold
-        (None, frozenset(), (Code.CUE_THIN_CHANGE,), 0),  # an uncertain one fails only under any
-        (FailOn.ANY, frozenset(), (Code.CUE_THIN_CHANGE,), 1),
+        (None, frozenset(), (Code.CUE_UNRESOLVED,), 1),  # an error under the default threshold
+        (None, frozenset(), (Code.CUE_THIN_CHANGE,), 0),  # a warning fails only under --fail-on warning
+        (FailOn.WARNING, frozenset(), (Code.CUE_THIN_CHANGE,), 1),
         (FailOn.NEVER, frozenset(), (Code.CUE_UNRESOLVED,), 0),
-        (FailOn.CERTAIN, frozenset({Code.CUE_UNRESOLVED}), (Code.CUE_UNRESOLVED,), 0),  # an allowed code
+        (FailOn.ERROR, frozenset({Code.CUE_UNRESOLVED}), (Code.CUE_UNRESOLVED,), 0),  # an allowed code
     ],
     ids=["nothing", "sure", "unsure", "unsure-failing", "off", "allowed"],
 )
 def test_the_exit_code_fails_on_what_the_threshold_names_and_nothing_it_allows(
     fail_on: FailOn | None, allow: frozenset[Code], found: tuple[Code, ...], code: int
 ) -> None:
-    made = session()
-    if fail_on is not None:
-        made.judging(fail_on=fail_on, allow=allow)
+    made = session() if fail_on is None else session(threshold=Threshold(stop_on=fail_on.stops_on, allow=allow))
     assert made.exit_code(_status(*(finding(one) for one in found))) == code
 
 
-def test_a_thin_change_is_the_uncertain_judgement_the_table_uses() -> None:
-    assert finding(Code.CUE_THIN_CHANGE).certainty is Certainty.UNCERTAIN
+@pytest.mark.parametrize(
+    ("argv", "found"),
+    [
+        (("check",), ()),
+        (("check",), (Code.CUE_THIN_CHANGE,)),
+        (("check", "--fail-on", "warning"), (Code.CUE_THIN_CHANGE,)),
+        (("check",), (Code.CUE_UNRESOLVED,)),
+        (("check", "--fail-on", "never"), (Code.CUE_UNRESOLVED,)),
+        (("check", "--allow", Code.CUE_UNRESOLVED.value), (Code.CUE_UNRESOLVED,)),
+        (("check", "--allow", Code.CUE_UNRESOLVED.value, "--fail-on", "warning"), (Code.CUE_UNRESOLVED,)),
+        (("build", "--no-spend", "--allow", Code.CUE_UNKNOWN.value), (Code.CUE_UNKNOWN,)),
+        (("build", "--no-spend", "--fail-on", "warning"), (Code.CUE_THIN_CHANGE,)),
+    ],
+    ids=["nothing", "unsure", "any-unsure", "sure", "never", "allowed", "allowed-any", "build-allowed", "build-any"],
+)
+def test_ok_under_json_is_true_exactly_when_the_exit_code_is_0(run, project, argv: tuple[str, ...], found) -> None:
+    """A workflow that reads `.ok` and one that reads the exit code agree about the same run.
+
+    The fake judges `ok` by the threshold the project was opened with, as the library does, and the
+    command line writes it unchanged, so the agreement is the one threshold both are read from.
+    """
+    judged = tuple(finding(code) for code in found)
+    answer = ANSWERS[argv[0]].model_copy(update={"findings": judged})
+    project(**{argv[0]: answer})
+    ran = run(*argv, "--json")
+    assert json.loads(ran.out)["ok"] is (ran.exit_code == 0), (ran.exit_code, ran.out)
+
+
+def test_ok_under_json_is_false_whenever_the_command_could_not_run(run, project) -> None:
+    project(check=InputError("decktalk.toml is not valid TOML."))
+    ran = run("check", "--json", "--fail-on", "never")
+    assert ran.exit_code == ErrorCode.INPUT.exit_code
+    assert json.loads(ran.out)["ok"] is False
+
+
+def test_a_thin_change_is_the_warning_the_table_uses() -> None:
+    assert finding(Code.CUE_THIN_CHANGE).severity is Severity.WARNING
 
 
 def test_a_refusal_takes_the_exit_code_its_own_code_carries() -> None:
@@ -131,26 +176,88 @@ def test_a_flag_answers_before_a_terminal_is_asked(monkeypatch: pytest.MonkeyPat
 def test_a_spend_with_no_terminal_refuses_and_names_both_flags() -> None:
     made = session()
     made.terminal = terminal(is_terminal=False)
-    made.spending(no_voice=False, spend=False, max_cost=None)
-    fake = Fake(check=_check())
+    fake = Fake(price=a_cost())
     with pytest.raises(ApprovalRequired) as refused:
-        made.voicing(fake.project())
+        made.spends(fake.project(), (Stage.NARRATE,))
     assert "No terminal is here to approve it." in str(refused.value)
     assert refused.value.hint is not None
     assert "--spend" in refused.value.hint
-    assert "--no-voice" in refused.value.hint
+    assert "--no-spend" in refused.value.hint
 
 
-def test_no_voice_never_asks_and_never_buys() -> None:
+def test_a_spend_that_could_not_be_priced_says_why_in_its_refusal() -> None:
+    """A refusal with no price and no cause leaves a caller nothing to mend, so the reason travels with it."""
     made = session()
-    made.spending(no_voice=True, spend=False, max_cost=None)
-    assert made.voicing(Fake().project()) is Voicing.PLACEHOLDER
+    made.terminal = terminal(is_terminal=False)
+    unpriced = Fake(price=InputError("cues.json is not valid JSON."))
+    with pytest.raises(ApprovalRequired) as refused:
+        made.spends(unpriced.project(), (Stage.NARRATE,))
+    assert "could not be priced" in str(refused.value)
+    assert "cues.json is not valid JSON." in str(refused.value)
 
 
-def test_spend_buys_without_asking() -> None:
+@pytest.mark.parametrize("is_terminal", [True, False])
+def test_no_spend_never_asks_and_never_buys(monkeypatch: pytest.MonkeyPatch, is_terminal: bool) -> None:
+    made = session(spend=False)
+    made.terminal = terminal(is_terminal=is_terminal)
+    monkeypatch.setattr(made, "confirm", _never_asked)
+    fake = Fake(price=a_cost())
+    assert made.spends(fake.project(), (Stage.NARRATE,)).spend is False
+    assert [name for name, _, _ in fake.calls] == ["select"], "a run told not to spend was priced as if it might"
+
+
+def test_spend_buys_without_asking(monkeypatch: pytest.MonkeyPatch) -> None:
+    made = session(spend=True)
+    monkeypatch.setattr(made, "confirm", _never_asked)
+    assert made.spends(Fake().project(), (Stage.NARRATE,)).spend is True
+
+
+@pytest.mark.parametrize("is_terminal", [True, False])
+def test_a_run_with_nothing_to_buy_is_never_asked_and_buys_nothing(
+    monkeypatch: pytest.MonkeyPatch, is_terminal: bool
+) -> None:
     made = session()
-    made.spending(no_voice=False, spend=True, max_cost=None)
-    assert made.voicing(Fake().project()) is Voicing.PAID
+    made.terminal = terminal(is_terminal=is_terminal)
+    monkeypatch.setattr(made, "confirm", _never_asked)
+    assert made.spends(Fake(price=a_cost(0.0, 0.0, sections=())).project(), (Stage.NARRATE,)).spend is False
+
+
+@pytest.mark.parametrize("is_terminal", [True, False])
+def test_a_voice_that_bills_nothing_is_never_asked_and_is_bought_from(
+    monkeypatch: pytest.MonkeyPatch, is_terminal: bool
+) -> None:
+    made = session()
+    made.terminal = terminal(is_terminal=is_terminal)
+    monkeypatch.setattr(made, "confirm", _never_asked)
+    free = a_cost(0.0, 0.0, sections=(1, 2), billing=BillingBasis.FREE)
+    assert made.spends(Fake(price=free).project(), (Stage.NARRATE,)).spend is True
+
+
+def test_a_run_told_to_replace_its_paid_takes_is_asked_even_with_nothing_missing() -> None:
+    made = session()
+    made.terminal = terminal(is_terminal=False)
+    with pytest.raises(ApprovalRequired):
+        made.spends(Fake(price=a_cost(0.0, 0.0, sections=())).project(), (Stage.NARRATE,), replace_voiced=True)
+
+
+def test_no_spend_never_buys_from_a_voice_that_bills_nothing() -> None:
+    made = session(spend=False)
+    free = a_cost(0.0, 0.0, sections=(1, 2), billing=BillingBasis.FREE)
+    assert made.spends(Fake(price=free).project(), (Stage.NARRATE,)).spend is False
+
+
+@pytest.mark.parametrize("layer", [Layer.DEFAULT, Layer.PROJECT])
+def test_a_price_of_zero_on_a_voice_that_bills_is_still_asked_about(layer: Layer) -> None:
+    """Free is what the voice declares, so a zero rate, stated or the default, never skips the question."""
+    made = session()
+    made.terminal = terminal(is_terminal=False)
+    zero = a_cost(0.0, 0.0, layer=layer).model_copy(update={"dollars_per_1000_characters": 0.0})
+    with pytest.raises(ApprovalRequired):
+        made.spends(Fake(price=zero).project(), (Stage.NARRATE,))
+
+
+def _never_asked(question: str, **_: object) -> bool:
+    raise AssertionError(f"the run asked {question!r} and was meant to ask nothing")
 
 
 def test_a_contract_document_is_written_with_no_envelope(capsys: pytest.CaptureFixture[str]) -> None:
@@ -169,14 +276,9 @@ def _status(*found: object) -> StatusResult:
         run="r",
         name="demo",
         script="script.md",
-        cues="cues.json",
+        cues_file="cues.json",
         sections=(),
     )
-
-
-def _check() -> CheckResult:
-    """What `check` answers with when a session prices a run before refusing it."""
-    return CheckResult(ok=True, run="r", judged=(), pages=False, frames=False, spend=a_spend())
 
 
 def test_a_console_reads_the_terminal_rather_than_being_told_about_it() -> None:
@@ -193,7 +295,36 @@ def test_the_fix_prompt_counts_one_fix_in_the_singular(monkeypatch: pytest.Monke
     assert asked == ["Apply 1 fix?"]
 
 
-def test_the_storyboard_line_counts_one_panel_in_the_singular() -> None:
+def test_the_storyboard_line_counts_one_panel_in_the_singular(capsys: pytest.CaptureFixture[str]) -> None:
     drawn = SimpleNamespace(storyboard=Path("build/storyboard.html"), panels=("one",))
-    line = session().storyboard_line(Fake(storyboard=drawn).project())
-    assert line == "Storyboard build/storyboard.html, 1 panel."
+    assert session(spend=True).spends(Fake(storyboard=drawn).project(), (Stage.NARRATE,), storyboard=True).spend
+    assert "Storyboard build/storyboard.html, 1 panel." in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("spend", "storyboard", "drawn"),
+    [(True, True, 1), (False, True, 0), (True, False, 0)],
+    ids=["spend-checkpoint", "no-spend", "spend-without-checkpoint"],
+)
+def test_a_spend_flag_draws_the_storyboard_once_and_only_when_the_run_will_spend(
+    spend: bool, storyboard: bool, drawn: int
+) -> None:
+    fake = Fake(storyboard=SimpleNamespace(storyboard=None, panels=()))
+    assert session(spend=spend).spends(fake.project(), (Stage.NARRATE,), storyboard=storyboard).spend is spend
+    assert [name for name, _, _ in fake.calls].count("storyboard") == drawn
+
+
+def test_a_terminal_names_the_storyboard_before_the_price_and_the_question(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The person asked looks at the sheet before answering, so the line comes first."""
+    asked: list[str] = []
+    monkeypatch.setattr(Session, "asks", property(lambda _: True))
+    made = session()
+    monkeypatch.setattr(made, "confirm", lambda question, **_: asked.append(capsys.readouterr().err) or True)
+    drawn = SimpleNamespace(storyboard=Path("build/storyboard.html"), panels=("one",))
+    fake = Fake(storyboard=drawn, price=a_cost(2.14, 2.14, sections=(1,)))
+    assert made.spends(fake.project(), (Stage.NARRATE,), storyboard=True).spend
+    said = " ".join(asked[0].split())
+    assert said.index("Storyboard build/storyboard.html") < said.index("$2.14")
+    assert [name for name, _, _ in fake.calls].count("storyboard") == 1

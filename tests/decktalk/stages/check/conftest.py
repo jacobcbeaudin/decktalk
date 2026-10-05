@@ -48,7 +48,7 @@ def drawn(monkeypatch: pytest.MonkeyPatch) -> Drawn:
     made = Drawn(page=FakePage(), assets=Assets(Path()))
 
     @contextmanager
-    def chromium(_browser_path: str = "", *, policy: str) -> Iterator[object]:
+    def chromium(_executable: str = "", *, policy: str, **_launch: object) -> Iterator[object]:
         made.policies.append(policy)
         yield object()
 

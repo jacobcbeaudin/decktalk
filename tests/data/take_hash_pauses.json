@@ -1,0 +1,150 @@
+{
+  "source": "Computed by the base code, decktalk at 486fdb1f723870090e078b046c9ba5653e24141d (gen7/join), before pauses became data, by a script run once on that commit over the uv-tutorial and halfway scripts of gen4/films and the synthetic cases below, with the inputs of tests/data/take_hash.json. No call was made: a digest is arithmetic over text.",
+  "rule": "These digests name what the base code would buy. A digest here that moves means the next voiced run buys that take again, so this file is never updated to make a test pass.",
+  "takes": [
+    {
+      "case": "uv-tutorial-1",
+      "markdown": "## 1. What uv is — 0:00 to 0:31\n\n[Scene 1. The claim, a card for what it replaces, a card for how it is built, then the promise.]\n\nuv is one program that replaces a whole shelf of Python tools. [beat] It installs packages, it\nbuilds virtual environments, it resolves a lockfile, and it installs Python itself. [beat] It is\nwritten in Rust, and it keeps one cache for your whole machine, so a wheel you have already\ndownloaded is linked into a new project rather than fetched twice. [beat] That is why a cold\ninstall finishes in seconds.\n",
+      "text": "uv is one program that replaces a whole shelf of Python tools. —\n\nIt installs packages, it builds virtual environments, it resolves a lockfile, and it installs Python itself. —\n\nIt is written in Rust, and it keeps one cache for your whole machine, so a wheel you have already downloaded is linked into a new project rather than fetched twice. —\n\nThat is why a cold install finishes in seconds.",
+      "hash": "bc1407383e3d33d5"
+    },
+    {
+      "case": "uv-tutorial-2",
+      "markdown": "## 2. Install uv — 0:31 to 1:05\n\n[Scene 2. Opens on scene 1's last picture, gives way to its own on the handoff, then the heading, the unix command, the windows command, and the update line.]\n\nBefore any of that, uv has to be on your machine. [beat]\nInstall it with the standalone installer, which needs no Python on the machine first. [beat] On\nmacOS and Linux, pipe the script from astral dot sh into your shell. [beat] On Windows, run the\nsame script through powershell. [beat] Homebrew and pip ex both carry uv as well, and either one is\nfine. [beat] From then on, uv self update moves you to the newest release.\n",
+      "text": "Before any of that, uv has to be on your machine. —\n\nInstall it with the standalone installer, which needs no Python on the machine first. —\n\nOn macOS and Linux, pipe the script from astral dot sh into your shell. —\n\nOn Windows, run the same script through powershell. —\n\nHomebrew and pip ex both carry uv as well, and either one is fine. —\n\nFrom then on, uv self update moves you to the newest release.",
+      "hash": "abdc2316935c1621"
+    },
+    {
+      "case": "uv-tutorial-3",
+      "markdown": "## 3. Start a project — 1:05 to 1:40\n\n[Scene 3. Opens on scene 2's last picture, gives way to its own on the handoff, then the heading, the files init writes, and the two cards about what has not happened yet.]\n\nWith uv installed, the next step is a project. [beat]\nRun uv init and give your project a name. [beat] uv writes four files: a pyproject dot tommel that\ndeclares the project, a read me, a starter module, and a dot python dash version file that pins the\ninterpreter this project wants. [beat] Nothing is installed yet, and there is no virtual\nenvironment yet either. [beat] uv builds one for you the first time you ask it to run something.\n",
+      "text": "With uv installed, the next step is a project. —\n\nRun uv init and give your project a name. —\n\nuv writes four files: a pyproject dot tommel that declares the project, a read me, a starter module, and a dot python dash version file that pins the interpreter this project wants. —\n\nNothing is installed yet, and there is no virtual environment yet either. —\n\nuv builds one for you the first time you ask it to run something.",
+      "hash": "5379a65c512592f4"
+    },
+    {
+      "case": "uv-tutorial-4",
+      "markdown": "## 4. Add and remove dependencies — 1:40 to 2:18\n\n[Scene 4. Opens on scene 3's last picture, gives way to its own on the handoff, then the heading, the card for the one step, the dev dependency card, and the remove line.]\n\nAn empty project needs packages, so add your first one. [beat]\nuv add httpx is how a package joins your project. [beat] It resolves the dependency, writes it into\npyproject dot tommel, updates the lockfile, and installs it into the environment, all in one step.\n[beat] For a package you need only while developing, name the group, so uv add dash dash group dev\npytest records pytest under the dependency groups table. [beat] uv remove takes a\npackage back out, and the lockfile and the environment both follow it.\n",
+      "text": "An empty project needs packages, so add your first one. —\n\nuv add httpx is how a package joins your project. —\n\nIt resolves the dependency, writes it into pyproject dot tommel, updates the lockfile, and installs it into the environment, all in one step. —\n\nFor a package you need only while developing, name the group, so uv add dash dash group dev pytest records pytest under the dependency groups table. —\n\nuv remove takes a package back out, and the lockfile and the environment both follow it.",
+      "hash": "e232ef2258d4cf49"
+    },
+    {
+      "case": "uv-tutorial-5",
+      "markdown": "## 5. Lock and sync — 2:18 to 2:53\n\n[Scene 5. Opens on scene 4's last picture, gives way to its own on the handoff, then the heading, the sync line, a card for committing and a card for continuous integration.]\n\nEvery one of those steps touched the lockfile. [beat]\nuv lock writes a lockfile that pins every package, for every platform your project claims to\nsupport. [beat] uv sync then makes your environment match that lockfile exactly, installing what is\nmissing and removing whatever does not belong. [beat] Commit the lockfile, because it is what makes\nthe install reproducible for everybody else. [beat] In continuous integration, pass the frozen flag,\nso uv installs straight from the lockfile and never resolves it again.\n",
+      "text": "Every one of those steps touched the lockfile. —\n\nuv lock writes a lockfile that pins every package, for every platform your project claims to support. —\n\nuv sync then makes your environment match that lockfile exactly, installing what is missing and removing whatever does not belong. —\n\nCommit the lockfile, because it is what makes the install reproducible for everybody else. —\n\nIn continuous integration, pass the frozen flag, so uv installs straight from the lockfile and never resolves it again.",
+      "hash": "e6eaa1b2ca1ac6ca"
+    },
+    {
+      "case": "uv-tutorial-6",
+      "markdown": "## 6. Run tools and scripts — 2:53 to 3:32\n\n[Scene 6. Opens on scene 5's last picture, gives way to its own on the handoff, then the heading, the two tool commands, and the single file script.]\n\nWith everything in sync, it is time to run something. [beat]\nuv run runs a command inside your project's environment, and it syncs before it starts, so what\nruns is always what the lockfile says. [beat] uvx runs a tool once without installing it anywhere\nat all. [beat] uv tool install keeps a tool on your path for good. [beat] And a single file script\ncan declare its own dependencies in a comment header at the top, so running it builds an\nenvironment just for that file and throws it away afterwards.\n",
+      "text": "With everything in sync, it is time to run something. —\n\nuv run runs a command inside your project's environment, and it syncs before it starts, so what runs is always what the lockfile says. —\n\nuvx runs a tool once without installing it anywhere at all. —\n\nuv tool install keeps a tool on your path for good. —\n\nAnd a single file script can declare its own dependencies in a comment header at the top, so running it builds an environment just for that file and throws it away afterwards.",
+      "hash": "dff5e835c4b720b9"
+    },
+    {
+      "case": "uv-tutorial-7",
+      "markdown": "## 7. The whole workflow — 3:32 to 3:53\n\n[Scene 7. Opens on scene 6's last picture, gives way to the recap card, then one row for each of the five commands, each on its own words.]\n\nSo that is uv, and your project fits on one card. [beat]\nuv init starts it, uv add grows it, uv lock pins it, uv sync matches it, and uv run uses it. [beat]\nThat's the whole workflow, in one tool.\n",
+      "text": "So that is uv, and your project fits on one card. —\n\nuv init starts it, uv add grows it, uv lock pins it, uv sync matches it, and uv run uses it. —\n\nThat's the whole workflow, in one tool.",
+      "hash": "34de5d3ee91eeb1c"
+    },
+    {
+      "case": "halfway-1",
+      "markdown": "## 1. Two friends\n\n[Scene 1. A dark stage. The street map is not there yet. Two dots, then the city, then the gap between them, then the texts that go nowhere.]\n\nTwo friends, [beat] one city, [beat] forty minutes apart. [beat] So they text, [beat] and they never meet.\n",
+      "text": "Two friends, —\n\none city, —\n\nforty minutes apart. —\n\nSo they text, —\n\nand they never meet.",
+      "hash": "edcbaaa1db7507bd"
+    },
+    {
+      "case": "halfway-2",
+      "markdown": "## 2. Halfway\n\n[Scene 2. The same map. The wordmark, two address fields, a pin at the fair point, two equal arcs, a cafe card, and one time label on each side.]\n\nHalfway finds the fair spot. [beat] Type two addresses. [beat] We drop a pin where it takes you both the same time, [beat] [beat] at a place worth the trip. [beat] Twenty minutes for her. [beat] Twenty minutes for you.\n",
+      "text": "Halfway finds the fair spot. —\n\nType two addresses. —\n\nWe drop a pin where it takes you both the same time, —\n\nat a place worth the trip. —\n\nTwenty minutes for her. —\n\nTwenty minutes for you.",
+      "hash": "cabcd6253368401b"
+    },
+    {
+      "case": "halfway-3",
+      "markdown": "## 3. Last month\n\n[Scene 3. A counter on the map, then three small pictures for what people did there. The number is the monthly figure and is the edit moment.]\n\nLast month, fourteen thousand people met in the middle. [beat] Coffee. [beat] Lunch. [beat] One first date [beat] that became a second.\n",
+      "text": "Last month, fourteen thousand people met in the middle. —\n\nCoffee. —\n\nLunch. —\n\nOne first date —\n\nthat became a second.",
+      "hash": "2f8dff906962193f"
+    },
+    {
+      "case": "halfway-4",
+      "markdown": "## 4. This year\n\n[Scene 4. The map pulls back to a country outline. Five new pins, one empty chair at a cafe table, the wordmark, and the tagline drawn word by word.]\n\nThis year, five more cities, [beat] and one more seat at the table. [beat] Halfway. [beat] Meet in the middle.\n",
+      "text": "This year, five more cities, —\n\nand one more seat at the table. —\n\nHalfway. —\n\nMeet in the middle.",
+      "hash": "3c1ca0a4ea4893d3"
+    },
+    {
+      "case": "timed-pause-between-paragraphs",
+      "markdown": "## 1. Think\n\nThink about it.\n\n[pause 3]\n\nOnly two x is left.\n",
+      "text": "Think about it. <break time=\"3s\" />\n\nOnly two x is left.",
+      "hash": "681abf52e2e69fb8"
+    },
+    {
+      "case": "timed-pause-inline",
+      "markdown": "## 2. Inline\n\nOne. [pause 1.5] Two.\n",
+      "text": "One. <break time=\"1.5s\" />\n\nTwo.",
+      "hash": "703ffee363e37433"
+    },
+    {
+      "case": "pause-zero-is-a-beat",
+      "markdown": "## 3. Zero\n\nFirst thought. [pause 0] Second thought.\n",
+      "text": "First thought. —\n\nSecond thought.",
+      "hash": "08fd930c74183016"
+    },
+    {
+      "case": "beat-then-pause-keeps-the-longest",
+      "markdown": "## 4. Stack\n\nA line.\n\n[beat]\n\n[pause 2]\n\n[Deck. The curve draws.]\n\nAnother line.\n",
+      "text": "A line. <break time=\"2s\" />\n\nAnother line.",
+      "hash": "953d0f9cf262f24c"
+    },
+    {
+      "case": "direction-before-any-prose-is-dropped",
+      "markdown": "## 5. Lead\n\n[pause 2]\n\n[Scene 1. Dark.]\n\nIt opens here.\n",
+      "text": "It opens here.",
+      "hash": "b1c06fe7ed7fbf03"
+    },
+    {
+      "case": "trailing-pause-at-section-end",
+      "markdown": "## 6. Tail\n\nThe last words.\n\n[pause 2]\n",
+      "text": "The last words.",
+      "hash": "cdda6dc80e558526"
+    },
+    {
+      "case": "uppercase-pause-with-trailing-zeros",
+      "markdown": "## 7. Upper\n\nWait. [PAUSE 2.50] Go.\n",
+      "text": "Wait. <break time=\"2.5s\" />\n\nGo.",
+      "hash": "f5b0125e8e19bc43"
+    },
+    {
+      "case": "author-dash-in-prose",
+      "markdown": "## 8. Dash\n\nA thought — and another. [beat] Then a third —\n\nlast.\n",
+      "text": "A thought — and another. —\n\nThen a third —\n\nlast.",
+      "hash": "46af26d77afec63e"
+    },
+    {
+      "case": "paragraphs-without-directions",
+      "markdown": "## 9. Plain\n\nOne paragraph here.\n\nAnother paragraph there.\n",
+      "text": "One paragraph here.\n\nAnother paragraph there.",
+      "hash": "92c3af7b4f3eaaaf"
+    },
+    {
+      "case": "markdown-with-pauses",
+      "markdown": "## 10. Marked — 0:10 to 0:40\n\n- **Bold** move.\n- `code` _here_.\n\nA [link](https://example.com) step. [pause 1] And *one* more. [beat] Done.\n",
+      "text": "Bold move. code here.\n\nA link step. <break time=\"1s\" />\n\nAnd one more. —\n\nDone.",
+      "hash": "c4ef08a2a4e3e2c4"
+    },
+    {
+      "case": "long-pause",
+      "markdown": "## 11. Long\n\nStop.\n\n[pause 10]\n\nStart.\n",
+      "text": "Stop. <break time=\"10s\" />\n\nStart.",
+      "hash": "35d62ee180b474ab"
+    },
+    {
+      "case": "stage-direction-is-a-beat",
+      "markdown": "## 12. Stage\n\nThe dots appear.\n\n[Deck. The map draws in.]\n\nThen the city.\n",
+      "text": "The dots appear. —\n\nThen the city.",
+      "hash": "75ba2609ec9a7a59"
+    },
+    {
+      "case": "hand-written-break-at-paragraph-end",
+      "markdown": "## 13. Hand\n\nThink about it. <break time=\"1s\" />\n\nThen go on.\n",
+      "text": "Think about it. <break time=\"1s\" />\n\nThen go on.",
+      "hash": "aa8135b32a27eed2"
+    }
+  ]
+}

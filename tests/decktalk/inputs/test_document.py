@@ -29,7 +29,7 @@ def test_frame_dip_quantizes_to_whole_frames():
 
 
 def test_a_project_that_writes_no_value_gets_the_default_its_field_declares() -> None:
-    """The parse call and the field used to spell every default twice, so the two could disagree."""
+    """The parse call and the field spell every default once, so the two cannot disagree."""
     doc = Document.from_toml(
         {
             "section": [{"number": 1, "clip": "a.mp4"}, {"number": 2, "page": "deck/a.html"}],
@@ -44,3 +44,30 @@ def test_a_project_that_writes_no_value_gets_the_default_its_field_declares() ->
         isinstance(page, PageSection) and page.record_margin_seconds == PageSection(1, "a", "1").record_margin_seconds
     )
     assert doc.mix == Mix() and doc.transition == Transition()
+
+
+def test_an_effect_row_and_a_section_bed_are_read_under_their_singular_names() -> None:
+    """Arrays of tables are singular, like `[[section]]`, and a section asks for the bed `with_ambience`."""
+    doc = Document.from_toml(
+        {
+            "section": [{"number": 1, "page": "deck/a.html", "scene": "1", "with_ambience": True}],
+            "mix": {"effect": [{"file": "media/tick.wav", "section": 1, "cue": "now"}]},
+        },
+        default_name="t",
+    )
+    (page,) = doc.sections
+    assert isinstance(page, PageSection) and page.with_ambience
+    assert [effect.cue for effect in doc.mix.effects] == ["now"]
+    assert doc.notes == ()
+
+
+def test_the_plural_effect_table_is_named_as_unknown() -> None:
+    doc = Document.from_toml(
+        {
+            "section": [{"number": 1, "page": "deck/a.html", "scene": "1"}],
+            "mix": {"effects": [{"file": "media/tick.wav", "section": 1, "cue": "now"}]},
+        },
+        default_name="t",
+    )
+    assert doc.mix.effects == ()
+    assert any("effects" in note for note in doc.notes), doc.notes

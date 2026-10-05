@@ -1,6 +1,6 @@
 """What one finished recording is judged on, and that every judgement arrives as a code.
 
-The channel these tests hold open is the one the code review's must 7 named: the page reports a
+The channel these tests hold open is this one: the page reports a
 code, the recorder dispatches on that code, and no sentence is matched against a substring anywhere
 between them.
 """
@@ -74,7 +74,7 @@ def test_the_checks_measure_the_file_against_what_the_recorder_asked_for(
 def test_a_dark_frame_half_way_through_is_black(settings: Settings) -> None:
     peak = settings.verify.black_max_luma
     found = frame_findings(checks_of(peak=peak), where=WHERE, section=SECTION, settings=settings)
-    assert [row.code for row in found] == [Code.PAGE_BLACK]
+    assert [row.code for row in found] == [Code.RECORD_BLACK]
     assert f"{peak:.1f}" in found[0].message
 
 
@@ -86,7 +86,7 @@ def test_a_bright_frame_half_way_through_is_not_black(settings: Settings) -> Non
 def test_a_recording_short_of_its_own_length_is_truncated(settings: Settings) -> None:
     short = 10.0 - settings.record.truncated_slack_seconds - 0.5
     found = frame_findings(checks_of(duration=short, wanted=10.0), where=WHERE, section=SECTION, settings=settings)
-    assert [row.code for row in found] == [Code.PAGE_TRUNCATED]
+    assert [row.code for row in found] == [Code.RECORD_TRUNCATED]
     assert "10.00s" in found[0].message
 
 
@@ -101,7 +101,7 @@ def test_a_stall_over_the_limit_carries_the_measured_gap_and_the_limit(settings:
     limit = settings.record.frame_gap_max_ms
     found = stall_finding(limit + 40, where=WHERE, section=SECTION, settings=settings)
     assert found is not None
-    assert found.code is Code.PAGE_STALLED
+    assert found.code is Code.RECORD_STALLED
     assert f"{limit + 40} ms" in found.message
     assert f"{limit} ms" in found.message
 
@@ -125,13 +125,13 @@ def test_every_judgement_of_one_recording_arrives_in_one_list(settings: Settings
     )
     assert {row.code for row in found} == {
         Code.PAGE_KATEX_MISSING,
-        Code.PAGE_BLACK,
+        Code.RECORD_BLACK,
         Code.PAGE_CDN_ASSET,
-        Code.PAGE_STALLED,
+        Code.RECORD_STALLED,
     }
 
 
 def test_a_warning_the_page_has_no_business_raising_is_refused_before_it_reaches_a_finding() -> None:
     """The media layer refuses a code DeckTalk measures itself, so no deck can decide its own verdict."""
-    with pytest.raises(ValueError, match="PAGE_BLACK"):
-        PageWarningRow(code=Code.PAGE_BLACK, message="the deck says it is fine")
+    with pytest.raises(ValueError, match="RECORD_BLACK"):
+        PageWarningRow(code=Code.RECORD_BLACK, message="the deck says it is fine")

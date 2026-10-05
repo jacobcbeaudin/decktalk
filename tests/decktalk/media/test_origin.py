@@ -3,23 +3,26 @@
 from __future__ import annotations
 
 import contextlib
+import http.client
 import json
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
 from threading import Thread
+from urllib.parse import urlsplit
 
 import pytest
 
 from decktalk.errors import ToolError
 from decktalk.media import origin
-from decktalk.media.browser import TRUSTED, chromium, open_page
+from decktalk.media.browser import TRUSTED, UNTRUSTED, chromium
 from decktalk.media.origin import (
     HIDDEN,
     OFF_ORIGIN,
     ORIGIN,
     OUTSIDE,
+    RESERVED,
     UNDECLARED,
     Allowed,
     Assets,
@@ -30,7 +33,9 @@ from decktalk.media.origin import (
     route_pages,
     served_url,
 )
-from decktalk.page import Q
+from decktalk.media.pages import open_page
+from decktalk.page import ENGINE_PATH, Q
+from decktalk.toolchain.assets import RUNTIME_FILE, katex_dir, runtime_path
 from support.fakes import FakeRouter
 from support.logs import data_of
 
@@ -299,7 +304,7 @@ def test_a_page_fetches_a_file_beside_it_from_the_origin(tmp_path):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "facts.json").write_text(json.dumps({"answer": 42}), encoding="utf-8")
     (tmp_path / "page.html").write_text(FETCH_PAGE, encoding="utf-8")
-    with chromium(policy=TRUSTED) as browser:
+    with chromium(policy=TRUSTED, spend=False) as browser:
         allowed = Allowed.of(tmp_path, ["page.html", "data"])
         page, assets = open_page(browser, allowed, width=400, height=300)
         page.goto(page_url("page.html"), wait_until="load")
@@ -450,3 +455,145 @@ def test_the_preview_server_prints_nothing_when_a_request_raises_and_logs_no_que
     assert any("GET /deck/index.html HTTP" in line for line in said)
     assert not any("sk_query_canary" in line for line in said)
     assert any("could not answer" in line for line in said)
+
+
+# ---- the engine's own files ----------------------------------------------------------------------
+
+ENGINE_SERVED = (
+    f"{ENGINE_PATH}decktalk-runtime.js",
+    f"{ENGINE_PATH}katex/katex.min.js",
+    f"{ENGINE_PATH}katex/katex.min.css",
+    f"{ENGINE_PATH}katex/fonts/KaTeX_Main-Regular.woff2",
+)
+"""Four of the files the engine answers under its own path, from the installed package."""
+
+
+def _packaged(url_path: str) -> bytes:
+    """The bytes the installed package holds for one engine path."""
+    name = url_path.removeprefix(ENGINE_PATH)
+    return (runtime_path() if name == RUNTIME_FILE else katex_dir() / name.removeprefix("katex/")).read_bytes()
+
+
+@pytest.mark.parametrize("trusted", [True, False])
+def test_the_router_answers_the_runtime_and_katex_from_the_engine(tmp_path, trusted):
+    """A project holds no copy of either, so the origin reads both from the installed engine."""
+    target = FakeRouter()
+    assets = route_pages(target.page(), project(tmp_path), trusted=trusted)
+    for asked in ENGINE_SERVED:
+        served = target.request(f"{ORIGIN}{asked}")
+        assert served.answer is not None and served.answer["status"] == 200, asked
+        assert served.answer["body"] == _packaged(asked), asked
+        assert served.answer["content_type"] == content_type(Path(asked)), asked
+    # The engine's files are not the project's, so no recording is keyed on them as project assets.
+    assert assets.paths == [] and assets.missing == [] and assets.refused == []
+
+
+def test_the_preview_server_answers_the_runtime_and_katex_from_the_engine(tmp_path):
+    with serving(project(tmp_path)) as base:
+        for asked in ENGINE_SERVED:
+            assert _get(f"{base}{asked}") == (200, _packaged(asked)), asked
+
+
+def _raw(base: str, path: str) -> tuple[int, bytes]:
+    """One request sent with its path exactly as written, which no client library folds first."""
+    host, port = urlsplit(base).hostname, urlsplit(base).port
+    connection = http.client.HTTPConnection(str(host), port, timeout=5)
+    try:
+        connection.putrequest("GET", path, skip_accept_encoding=True)
+        connection.endheaders()
+        response = connection.getresponse()
+        return response.status, response.read()
+    finally:
+        connection.close()
+
+
+ENGINE_ESCAPES = (
+    f"{ENGINE_PATH}../script.md",
+    f"{ENGINE_PATH}../.env",
+    f"{ENGINE_PATH}katex/../../.env",
+    f"{ENGINE_PATH}%2e%2e/.env",
+    f"{ENGINE_PATH}..%2f.env",
+    f"{ENGINE_PATH}katex/fonts/../../../decktalk.toml",
+    f"{ENGINE_PATH}katex/%2e%2e/%2e%2e/%2e%2e/etc/passwd",
+    f"{ENGINE_PATH}decktalk-probe.js",
+    f"{ENGINE_PATH}runtime/decktalk-probe.js",
+    f"{ENGINE_PATH}__init__.py",
+    f"{ENGINE_PATH}katex/../template/AGENTS.md",
+    f"{ENGINE_PATH}katex",
+    f"{ENGINE_PATH}katex/",
+    f"{ENGINE_PATH}mine.js",
+    ENGINE_PATH,
+)
+"""Requests under the engine's path that name anything but the runtime and the KaTeX release."""
+
+LEAKS = (b"DECKTALK_TEST_KEY", b"The opening", b"[project]", b"root:", b"import ", b"window.mine", b"The page contract")
+"""What each of those requests would carry if the engine's path were a door into the project or the package."""
+
+
+def _with_secrets(tmp_path: Path) -> Allowed:
+    """A project with a credential beside it and a file of its own under the engine's path."""
+    allowed = project(tmp_path)
+    (tmp_path / ".env").write_text("DECKTALK_TEST_KEY=not-a-key", encoding="utf-8")
+    (tmp_path / "deck" / "__decktalk").mkdir()
+    reserved = tmp_path / ENGINE_PATH.strip("/")
+    reserved.mkdir()
+    (reserved / "mine.js").write_text("window.mine = 1;", encoding="utf-8")
+    return Allowed.of(tmp_path, [*allowed.served, ENGINE_PATH.strip("/")])
+
+
+@pytest.mark.parametrize("path", ENGINE_ESCAPES)
+def test_the_engine_path_serves_the_runtime_and_katex_and_nothing_else(tmp_path, path):
+    """The engine's path is a closed list of packaged files, so no spelling under it reaches another file."""
+    allowed = _with_secrets(tmp_path)
+    with serving(allowed) as base:
+        status, body = _raw(base, path)
+    assert status in (403, 404), (path, status)
+    assert not any(leak in body for leak in LEAKS), path
+    target = FakeRouter()
+    route_pages(target.page(), allowed, trusted=True)
+    routed = target.request(f"{ORIGIN}{path}")
+    assert routed.answer is not None and routed.answer["status"] in (403, 404), path
+    assert not routed.continued
+    answered = routed.answer["body"]
+    said = answered.encode("utf-8") if isinstance(answered, str) else answered
+    assert isinstance(said, bytes) and not any(leak in said for leak in LEAKS), path
+
+
+def test_a_project_file_under_the_engine_path_is_never_served(tmp_path):
+    """The engine owns its path, so a project that declares a folder of that name cannot shadow it."""
+    allowed = _with_secrets(tmp_path)
+    assert local_target(allowed, f"{ORIGIN}{ENGINE_PATH}mine.js").refused == RESERVED
+    assert local_target(allowed, f"{ORIGIN}/deck/..{ENGINE_PATH}mine.js").refused == RESERVED
+
+
+def test_a_project_file_named_like_the_runtime_is_an_ordinary_project_file(tmp_path):
+    """Only the engine's path is special, so a project file of that name is served or refused like any other."""
+    allowed = project(tmp_path)
+    mine = tmp_path / "deck" / RUNTIME_FILE
+    mine.write_text("window.mine = 1;\n", encoding="utf-8")
+    (tmp_path / RUNTIME_FILE).write_text("window.mine = 2;\n", encoding="utf-8")
+    assert local_target(allowed, f"{ORIGIN}/deck/{RUNTIME_FILE}").path == mine.resolve()
+    assert local_target(allowed, f"{ORIGIN}/{RUNTIME_FILE}").refused == UNDECLARED
+    with serving(allowed) as base:
+        assert _get(f"{base}/deck/{RUNTIME_FILE}") == (200, b"window.mine = 1;\n")
+        assert _get(f"{base}/{RUNTIME_FILE}")[0] == 403
+
+
+@pytest.mark.browser
+def test_a_page_with_no_copy_of_the_runtime_gets_the_engines(tmp_path):
+    """The page names the engine's path, the project holds no runtime and no KaTeX, and the page runs."""
+    (tmp_path / "deck").mkdir()
+    (tmp_path / "deck" / "index.html").write_text(
+        f'<!doctype html><meta charset="utf-8"><title>engine</title>'
+        f'<link rel="stylesheet" href="{ENGINE_PATH}katex/katex.min.css">'
+        f'<script src="{ENGINE_PATH}katex/katex.min.js"></script>'
+        f'<script src="{ENGINE_PATH}decktalk-runtime.js"></script>',
+        encoding="utf-8",
+    )
+    with chromium(policy=UNTRUSTED, spend=False) as browser:
+        page, assets = open_page(browser, Allowed.of(tmp_path, ["deck"]), width=400, height=300)
+        page.goto(page_url("deck/index.html"), wait_until="load")
+        assert page.evaluate("() => window.DeckTalk.version") == page.evaluate("() => window.__decktalk.version")
+        assert page.evaluate("() => typeof window.katex.render") == "function"
+        assert assets.paths == ["deck/index.html"] and assets.refused == []
+    assert sorted(p.name for p in (tmp_path / "deck").iterdir()) == ["index.html"]

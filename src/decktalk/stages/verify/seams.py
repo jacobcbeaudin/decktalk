@@ -16,7 +16,7 @@ from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
 from decktalk.inputs.timeline import narration_offsets
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, frames
 from decktalk.media.frames import Decoded, Size, Wanted
 from decktalk.pipeline import Stage
@@ -48,11 +48,11 @@ def start_checks(inputs: Inputs, run: Run, film: Path, starts: dict[int, float])
     for number, at in starts.items():
         probe = at + verify.after_dip_seconds
         _mean, brightest = frames.luma_at(film, probe)
-        rows.append(StartCheck(section=number, at=round(probe, 3), luma=round(brightest, 2)))
+        rows.append(StartCheck(section=number, at_seconds=round(probe, 3), luma=round(brightest, 2)))
         if brightest <= verify.black_max_luma:
             run.found(
                 judge(
-                    Code.PAGE_BLACK,
+                    Code.RECORD_BLACK,
                     f"section {number} opens at {at:.3f}s and the frame read at {probe:.3f}s is black, "
                     f"with a brightest luma of {brightest:.1f} against the {verify.black_max_luma:.0f} "
                     "a frame must pass to count as a picture.",
@@ -66,7 +66,7 @@ def start_checks(inputs: Inputs, run: Run, film: Path, starts: dict[int, float])
 def cut_checks(
     inputs: Inputs, run: Run, film: Path, takes: Takes | None, starts: dict[int, float]
 ) -> tuple[CutCheck, ...]:
-    """One row per spoken section: the narration is quiet before its cut, and the waveform does not step.
+    """One row per spoken section: whether the narration is quiet before its cut, and how far the waveform steps.
 
     The speech level is read from the narration track alone, so music or an effect at a boundary is
     never taken for a word, and a clip, which carries its own audio, is exempt. The step is read from
@@ -79,16 +79,19 @@ def cut_checks(
     played = [section for section in inputs.document.sections if section.number in starts]
     offsets = narration_offsets(played, takes, starts)
     rows: list[CutCheck] = []
+    placed = takes.placed
     for section in played:
-        take = takes.of(section.number)
-        end = takes.end(section.number)
-        if take is None or end is None:
+        take, at = takes.of(section.number), placed.get(section.number)
+        if take is None or at is None:
             continue
+        end = at.end
         window = min(verify.cut_window_seconds, take.span_seconds)
         speech = audio.rms_db(narration, max(0.0, end - window), window)
         at = round(offsets[section.number] + end, 3)
         step = _step_dbfs(film, at)
-        rows.append(CutCheck(section=section.number, at=at, speech_dbfs=round(speech, 2), step_dbfs=round(step, 2)))
+        rows.append(
+            CutCheck(section=section.number, at_seconds=at, speech_dbfs=round(speech, 2), step_dbfs=round(step, 2))
+        )
         if speech > verify.cut_max_dbfs:
             run.found(
                 judge(
@@ -125,7 +128,7 @@ def planned_seams(inputs: Inputs, starts: dict[int, float]) -> list[Seam]:
 
     The frames compared sit outside any dip, so a fade to black is never taken for a jump.
     """
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     flags = inputs.document.fade_flags
     dip = frame_dip(inputs.document.transition.dip_seconds, fps)
     sections = inputs.document.sections
@@ -142,27 +145,27 @@ def planned_seams(inputs: Inputs, starts: dict[int, float]) -> list[Seam]:
 
 def want_seams(inputs: Inputs, seams: list[Seam], wanted: Wanted) -> None:
     """Add the frames every seam compares, the opening and the few after it, to the film's one plan."""
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     size = frame_size(inputs.settings)
     for seam in seams:
         wanted.point(size, seam.last, *(seam.opening + step / fps for step in range(SEAM_SEARCH_FRAMES + 1)))
 
 
 def seam_checks(inputs: Inputs, run: Run, film: Path, seams: list[Seam], decoded: Decoded) -> tuple[SeamCheck, ...]:
-    """One row per seamless cut, with how far the picture has drifted from its own clock.
+    """One row per seamless cut, and `CUT_POP` for each one whose picture visibly changes across it.
 
     The drift is the distance from the cut to the first frame of the incoming section that still
-    shows what the outgoing one ended on.
+    shows what the outgoing one ended on, which is how late a section that slipped arrived.
     """
     verify = inputs.settings.verify
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     size = frame_size(inputs.settings)
     rows: list[SeamCheck] = []
     for seam in seams:
         drift, share = _drift(
             decoded, seam.last, seam.opening, fps, size, verify.probe_diff_luma, verify.cut_change_max_percent
         )
-        rows.append(SeamCheck(section=seam.section, at=round(seam.cut, 3), drift=drift))
+        rows.append(SeamCheck(section=seam.section, at_seconds=round(seam.cut, 3), drift_seconds=drift))
         if share > verify.cut_change_max_percent:
             run.found(
                 judge(

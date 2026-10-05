@@ -3,9 +3,9 @@
     "tests/contract/test_numbers.py": 3,
     "tests/contract/test_probe.py": 2,
     "tests/contract/test_runtime.py": 27,
-    "tests/decktalk/media/test_browser.py": 2,
     "tests/decktalk/media/test_encode.py": 1,
     "tests/decktalk/media/test_pagereport.py": 1,
+    "tests/decktalk/media/test_recording.py": 1,
     "tests/decktalk/stages/assemble/test_assemble.py": 1,
     "tests/decktalk/stages/assemble/test_cut.py": 1,
     "tests/decktalk/stages/assemble/test_loudness.py": 3,
@@ -14,6 +14,7 @@
     "tests/decktalk/stages/check/test_scan.py": 1,
     "tests/decktalk/stages/record/test_checks.py": 2,
     "tests/decktalk/stages/record/test_record.py": 1,
-    "tests/decktalk/stages/test_status.py": 1
+    "tests/decktalk/stages/test_status.py": 1,
+    "tests/support/recorder.py": 1
   }
 }

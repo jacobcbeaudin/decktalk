@@ -14,8 +14,8 @@ the pictures for words that already exist, in markup rather than in code.
 
 ## The grammar
 
-An element has four moments, and each one is the local name of a cue: it arrives, it steps back, it
-comes to the front, and it leaves. The runtime qualifies a local name with the slide it is written
+An element has four moments, and each one is a cue name: it arrives, it steps back, it
+comes to the front, and it leaves. The runtime qualifies a cue name with the slide it is written
 in, so `data-in="expand"` inside `<template data-slide="4.1">` is the cue `4.1:expand` that
 `cues.json` gives a spoken phrase. Everything else is either how a moment looks, which is a closed
 word, or what a moment means, which is a sentence for the transcript. **No attribute ever writes a
@@ -34,7 +34,7 @@ finding it raises. Read it rather than guessing, and read
    A cue only a handler serves is listed in `data-owns`, and nothing else is.
 3. **Cue every element that should wait.** An element with no moment is on screen from the mount,
    which puts half the slide up before the voice arrives.
-4. **Describe every cued element.** The transcript is written from those phrases, and a reveal
+4. **Describe every cued element.** The transcript is written from those descriptions, and a reveal
    without one is silent to a reader who cannot see it. A class change needs its own sentence beside
    it, and a departure that means something gets a sentence of its own.
 5. **Make every reveal a filled shape.** A frame is compared on brightness alone, so a reveal has to
@@ -42,7 +42,7 @@ finding it raises. Read it rather than guessing, and read
    has to differ in brightness rather than only in colour. Text on white is usually too thin. A
    colour change of the same brightness counts as nothing.
 6. **Keep a slide to four reveals.** Start a new slide for the next part of a derivation.
-7. **Keep the picture inside the frame.** The stage is 1920 by 1080. Body text is 36 pixels or
+7. **Keep the picture inside the frame.** The canvas is 1920 by 1080. Body text is 36 pixels or
    larger. The bottom fifteen percent is the caption band, so keep every cued element out of it.
    Scope every class name to its scene so two scenes cannot collide.
 8. **Write a readable fallback under every equation.** The element's own text is what shows if the
@@ -58,7 +58,7 @@ finding it raises. Read it rather than guessing, and read
 - Never load a font, a stylesheet, a highlighter or a typesetter from a network address. A recording
   must not depend on the network. Copy the asset into `deck/`.
 - Never draw a product interface in HTML. Use a real screenshot, from a demo account, at twice the
-  stage scale.
+  canvas scale.
 - A page edit changes the picture and not the words, so it costs nothing to re-voice. A script edit
   costs a take.
 

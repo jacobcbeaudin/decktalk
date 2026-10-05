@@ -8,18 +8,19 @@ import pytest
 
 from decktalk import template
 from decktalk.errors import ErrorCode, InputError
+from decktalk.inputs import Inputs
+from decktalk.page import ENGINE_PATH
 from decktalk.template import (
-    DECK_DIR,
     EXAMPLES,
     SKILL_NAMES,
     STARTER,
     example,
     listed_names,
-    stale_runtime,
     title_from,
     write_project,
 )
 from decktalk.toolchain import assets
+from support.git import git
 
 
 def test_every_example_is_named_once_and_a_reserved_one_says_so() -> None:
@@ -70,8 +71,40 @@ def test_the_starter_writes_a_project_that_already_builds(tmp_path: Path) -> Non
     assert (tmp_path / "decktalk.toml").exists()
     assert (tmp_path / "script.md").exists()
     assert (tmp_path / "cues.json").exists()
-    assert (tmp_path / template.DECK_DIR / "decktalk-runtime.js").exists()
     assert len(written) == len(set(written))  # every path is reported once
+
+
+@pytest.mark.parametrize("example_name", [None, "lesson"])
+def test_every_project_init_writes_loads_with_nothing_to_warn_about(tmp_path: Path, example_name: str | None) -> None:
+    """A key a template still spells under a table it left would be read by nothing, so it is held here."""
+    write_project(tmp_path, name="demo", example_name=example_name, skills=False, force=False)
+    assert Inputs.load(tmp_path, environ={}).notes == ()
+
+
+def test_the_starter_keeps_its_takes_in_the_default_takes_directory(tmp_path: Path) -> None:
+    """Every project commits `takes/` by default, so the starter names no folder of its own for them."""
+    write_project(tmp_path, name="demo", example_name=None, skills=False, force=False)
+    assert "takes_dir" not in (tmp_path / "decktalk.toml").read_text(encoding="utf-8")
+    assert Inputs.load(tmp_path, environ={}).workspace.takes == tmp_path.resolve() / "takes"
+
+
+@pytest.mark.parametrize("example_name", [None, "lesson"])
+def test_every_project_init_writes_commits_its_takes_and_its_score_and_ignores_the_build(
+    tmp_path: Path, example_name: str | None
+) -> None:
+    """The two folders a clean machine cannot fill for free are kept, and the one it can is ignored."""
+    write_project(tmp_path, name="demo", example_name=example_name, skills=False, force=False)
+    assert "dir =" not in (tmp_path / "decktalk.toml").read_text(encoding="utf-8")
+    workspace = Inputs.load(tmp_path, environ={}).workspace
+    assert workspace.score_dir == tmp_path.resolve() / "score"
+    paid = [workspace.takes / "a.mp3", workspace.score_dir / "music-part1.mp3", workspace.score_dir / "ledger.json"]
+    for path in [*paid, workspace.joined_music]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"audio")
+    git(tmp_path, "init", "-q")
+    seen = set(git(tmp_path, "ls-files", "--others", "--exclude-standard").split())
+    assert {path.relative_to(tmp_path.resolve()).as_posix() for path in paid} <= seen
+    assert not [name for name in seen if name.startswith("build/")]
 
 
 def test_the_project_name_is_filled_into_the_files_that_carry_it(tmp_path: Path) -> None:
@@ -116,35 +149,28 @@ def test_the_starter_is_the_default_and_is_not_itself_an_example() -> None:
     assert STARTER not in {found.name for found in EXAMPLES}
 
 
-# ---- a project's copy of the runtime ------------------------------------------------------------
+# ---- the runtime and KaTeX are the engine's -----------------------------------------------------
 
 
-def test_the_copy_init_writes_is_the_runtime_this_engine_ships(tmp_path: Path) -> None:
-    write_project(tmp_path, name="demo", example_name=None, skills=False, force=False)
-    assert not stale_runtime(tmp_path / DECK_DIR / assets.RUNTIME_FILE)
-
-
-def test_a_copy_an_older_engine_wrote_is_stale(tmp_path: Path) -> None:
-    copy = tmp_path / assets.RUNTIME_FILE
-    copy.write_text('(() => {\n  var VERSION = "0.4.0";\n})();\n', encoding="utf-8")
-    assert stale_runtime(copy)
-
-
-def test_an_edited_copy_is_stale_although_it_names_the_same_version(tmp_path: Path) -> None:
-    """An engine built between two releases ships a runtime that still carries the last release's version."""
-    copy = tmp_path / assets.RUNTIME_FILE
-    copy.write_bytes(assets.runtime_path().read_bytes() + b"\n// edited\n")
-    assert stale_runtime(copy)
-
-
-def test_a_project_with_no_copy_has_nothing_stale(tmp_path: Path) -> None:
-    assert not stale_runtime(tmp_path / assets.RUNTIME_FILE)
+@pytest.mark.parametrize("example_name", [None, "lesson"])
+def test_init_writes_no_copy_of_the_runtime_or_katex(tmp_path: Path, example_name: str | None) -> None:
+    """The origin serves both from the installed engine, so a project never holds a copy to go stale."""
+    written = write_project(tmp_path, name="demo", example_name=example_name, skills=False, force=False)
+    assert not [path for path in written if path.name in (assets.RUNTIME_FILE, assets.KATEX_DIR)]
+    assert not list(tmp_path.rglob(assets.RUNTIME_FILE))
+    assert not list(tmp_path.rglob("katex.min.js"))
+    pages = sorted((tmp_path / "deck").glob("*.html"))
+    assert pages
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        assert f'<script src="{ENGINE_PATH}{assets.RUNTIME_FILE}"></script>' in text, page.name
+        assert "./katex/" not in text and './decktalk-runtime.js"' not in text, page.name
 
 
 def test_a_harness_folder_that_could_not_be_a_link_is_a_copy_and_says_so(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Windows without developer mode refuses a link, and the copy it gets instead used to go unrecorded."""
+    """Windows without developer mode refuses a link, and the copy it gets instead is recorded."""
 
     def refused(*_args: object, **_kwargs: object) -> None:
         raise OSError("links are not allowed here")

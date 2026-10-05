@@ -1,7 +1,7 @@
 """The assembled project every verify test measures, with each ffmpeg call replaced by a number.
 
 `verify` reads a finished film, so a test of it has to hand it one. Nothing here renders anything:
-the cut list says where each section sits, the artifacts say what was promised, and every frame and
+the placements say where each section sits, the artifacts say what was promised, and every frame and
 every sample the stage would read is a value the test names.
 """
 
@@ -15,12 +15,12 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Cut, Cuts
+from decktalk.artifacts import Placement, Placements
 from decktalk.errors import Cancel
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg, frames
-from decktalk.results import SectionCues, Voicing
+from decktalk.results import SectionCues
 from support.projects import load_project
 from support.runs import a_machine
 from support.takes import a_take, write_takes
@@ -93,22 +93,22 @@ class FakeDecoded:
 def opened(root: Path) -> Iterator[Run]:
     """One run on a machine that read nothing, which is what the facade would hand the stage."""
     machine = a_machine(root)
-    with machine.run(cancel=Cancel(), voice=Voicing.PLACEHOLDER, root=root) as run:
+    with machine._run(cancel=Cancel(), spend=False, root=root) as run:
         yield run
 
 
 def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> None:
-    """The take index, the cut list, the cue times and the narration a finished film leaves behind."""
+    """The take index, the placements, the cue times and the narration a finished film leaves behind."""
     workspace = inputs.workspace
     workspace.narrate_dir.mkdir(parents=True, exist_ok=True)
     workspace.final_dir.mkdir(parents=True, exist_ok=True)
     workspace.sections_dir.mkdir(parents=True, exist_ok=True)
     sections = inputs.document.sections
     write_takes(inputs, *(a_take(section.number, seconds=SECTION_SECONDS, voiced=False) for section in sections))
-    Cuts(
-        fps=inputs.settings.video.output_fps,
+    Placements(
+        fps=inputs.settings.video.fps,
         sections=tuple(
-            Cut(
+            Placement(
                 section=section.number,
                 key=section.key,
                 kind="page",
@@ -119,13 +119,13 @@ def write_artifacts(inputs: Inputs, cue_times: dict[int, dict[str, float]]) -> N
             )
             for index, section in enumerate(inputs.document.sections)
         ),
-    ).write(workspace.cuts_path)
+    ).write(workspace.placements_path)
     blocks = tuple(
         SectionCues(
             section=number,
             key=f"{number:02d}",
             estimated=True,
-            cues=tuple({"cue": cue, "phrase": "hello", "seconds": at, "offset": 0.0} for cue, at in rows.items()),
+            cues=tuple({"id": cue, "phrase": "hello", "seconds": at, "nudge_seconds": 0.0} for cue, at in rows.items()),
         )
         for number, rows in cue_times.items()
     )

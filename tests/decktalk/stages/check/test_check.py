@@ -1,28 +1,28 @@
-"""What a build would spend and show, judged before a single second of it is bought."""
+"""What a build would cost and show, judged before a single second of it is bought."""
 
 from __future__ import annotations
 
-import hashlib
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from decktalk.errors import Cancelled
-from decktalk.findings import Applicability, Code
+from decktalk.findings import Code, Severity
 from decktalk.inputs import Inputs
-from decktalk.machine import apply_fix
-from decktalk.results import CheckResult, Scope, SpendState
+from decktalk.machine.fixes import apply_fix
+from decktalk.results import CheckResult, CostState, Scope
 from decktalk.settings import BY_ID
 from decktalk.stages.check import NEEDS_A_FRAME, NEEDS_A_PAGE, check
-from decktalk.toolchain import assets
-from support.pages import a_project, catalog
+from support.pages import SCRIPT, TOML, a_project, catalog
 from support.runs import a_run, notes
+from support.takes import a_take, hold_take, write_takes
 
 from .conftest import Drawn
 
 CUES = {
-    "1": {"cues": [{"cue": "1.1:a", "on": "there"}, {"cue": "1.1:b", "on": "again"}]},
-    "2": {"cues": [{"cue": "2.1:a", "on": "speaks"}]},
+    "1": {"cues": [{"id": "1.1:a", "phrase": "there"}, {"id": "1.1:b", "phrase": "again"}]},
+    "2": {"cues": [{"id": "2.1:a", "phrase": "speaks"}]},
 }
 """A cue file whose phrases every section of the demo script really speaks."""
 
@@ -38,8 +38,8 @@ def test_a_run_with_no_pages_judges_the_script_and_opens_nothing(tmp_path: Path)
     run = a_run(tmp_path)
     result = check(inputs, run, pages=False)
     assert isinstance(result, CheckResult)
-    assert result.pages is False
-    assert result.frames is False
+    assert result.pages_opened is False
+    assert result.frames_compared is False
 
 
 def test_a_run_with_no_pages_says_which_judgements_it_could_not_reach(tmp_path: Path) -> None:
@@ -55,8 +55,8 @@ def test_a_run_with_no_pages_says_which_judgements_it_could_not_reach(tmp_path: 
 def test_a_run_prices_what_a_voiced_build_would_cost(tmp_path: Path) -> None:
     inputs = a_project(tmp_path, cues=CUES)
     result = check(inputs, a_run(tmp_path), pages=False)
-    assert result.spend.state is SpendState.ESTIMATE
-    assert result.spend.ceiling_dollars >= result.spend.dollars
+    assert result.cost.state is CostState.ESTIMATE
+    assert result.cost.ceiling_dollars >= result.cost.dollars
 
 
 def test_a_project_with_no_credential_is_priced_rather_than_refused(tmp_path: Path) -> None:
@@ -65,14 +65,53 @@ def test_a_project_with_no_credential_is_priced_rather_than_refused(tmp_path: Pa
     run = a_run(tmp_path)
     said = notes(run)
     result = check(inputs, run, pages=False)
-    assert result.spend.state is SpendState.ESTIMATE
+    assert result.cost.state is CostState.ESTIMATE
     # The plan says which credential was missing, and says it once.
     assert len([one for one in said if "is not set" in one]) == 1
     assert not any("priced as new" in one for one in said)
 
 
+PRICED = TOML.replace("[[section]]", "[elevenlabs]\ndollars_per_1000_characters = 0.30\n\n[[section]]", 1)
+"""The demo project at a stated rate, so a take it must buy has a price above nothing."""
+
+
+def voiced_once(tmp_path: Path) -> Inputs:
+    """The demo project with a voiced take of each section held and indexed, read with no voice named."""
+    inputs = a_project(tmp_path, toml=PRICED, cues=CUES)
+    rows = [a_take(section.number, spoken=section.spoken) for section in inputs.spoken()]
+    for row in rows:
+        hold_take(inputs, row.digest)
+    write_takes(inputs, *rows)
+    return inputs
+
+
+def test_a_check_reads_the_take_index_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    inputs = voiced_once(tmp_path)
+    reads: list[None] = []
+    real = Inputs.takes
+
+    def counted(self: Inputs) -> object:
+        reads.append(None)
+        return real(self)
+
+    monkeypatch.setattr(Inputs, "takes", counted)
+    check(inputs, a_run(tmp_path), pages=False)
+    assert len(reads) == 1
+
+
+def test_with_no_voice_named_an_edited_section_is_priced_as_certain(tmp_path: Path) -> None:
+    """A take of older words is needed whatever the voice is, so its characters go into the price."""
+    voiced_once(tmp_path)
+    edited = a_project(
+        tmp_path, toml=PRICED, script=SCRIPT.replace("Hello there again.", "Hello once more there again."), cues=CUES
+    )
+    result = check(edited, a_run(tmp_path), pages=False)
+    assert result.cost.sections == (1, 2)
+    assert result.cost.dollars > 0
+
+
 def test_a_cue_phrase_nothing_speaks_is_judged_before_anything_is_voiced(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path, cues={"1": {"cues": [{"cue": "1.1:a", "on": "nowhere"}]}})
+    inputs = a_project(tmp_path, cues={"1": {"cues": [{"id": "1.1:a", "phrase": "nowhere"}]}})
     result = check(inputs, a_run(tmp_path), pages=False)
     assert Code.CUE_UNRESOLVED in {one.code for one in result.findings}
     assert result.ok is False
@@ -99,13 +138,13 @@ def test_a_moment_the_cue_file_does_not_list_is_judged_from_the_catalog(tmp_path
     inputs = a_project(tmp_path)
     drawn.report("deck/index.html", *SCENES)
     result = check(inputs, a_run(tmp_path), frames=False)
-    missing = [one for one in result.findings if one.code is Code.CUE_MISSING]
+    missing = [one for one in result.findings if one.code is Code.CUE_UNLISTED]
     assert missing
     assert missing[0].fix is not None
 
 
 def test_a_row_no_page_declares_is_named_rather_than_deleted(tmp_path: Path, drawn: Drawn) -> None:
-    inputs = a_project(tmp_path, cues={"1": {"cues": [{"cue": "1.1:gone", "on": "there"}]}})
+    inputs = a_project(tmp_path, cues={"1": {"cues": [{"id": "1.1:gone", "phrase": "there"}]}})
     drawn.report("deck/index.html", *SCENES)
     result = check(inputs, a_run(tmp_path), frames=False)
     unknown = [one for one in result.findings if one.code is Code.CUE_UNKNOWN]
@@ -116,7 +155,7 @@ def test_a_run_without_frames_keeps_the_catalog_and_draws_nothing(tmp_path: Path
     inputs = a_project(tmp_path, cues=CUES)
     drawn.report("deck/index.html", *SCENES)
     result = check(inputs, a_run(tmp_path), frames=False)
-    assert result.frames is False
+    assert result.frames_compared is False
     assert drawn.shots == []
     assert result.storyboard is None
 
@@ -184,7 +223,7 @@ def test_a_cancelled_run_stops_inside_the_section_it_was_in(tmp_path: Path, draw
 
 def test_a_phrase_an_edit_moved_is_repaired_by_the_fix_its_finding_carries(tmp_path: Path) -> None:
     """The script was edited from "there again" to "there once again", and the cue kept the old phrase."""
-    edited = {"1": {"cues": [{"cue": "1.1:a", "on": "there agian"}]}}
+    edited = {"1": {"cues": [{"id": "1.1:a", "phrase": "there agian"}]}}
     inputs = a_project(tmp_path, cues=edited)
     run = a_run(tmp_path)
     result = check(inputs, run, pages=False)
@@ -197,57 +236,6 @@ def test_a_phrase_an_edit_moved_is_repaired_by_the_fix_its_finding_carries(tmp_p
     assert Code.CUE_UNRESOLVED not in {one.code for one in again.findings}
 
 
-def test_a_runtime_copy_an_older_engine_wrote_is_a_certain_finding_at_the_copy(tmp_path: Path) -> None:
-    """A copy an older engine wrote plays a contract this engine does not measure, which fails the check."""
-    inputs = a_project(tmp_path, cues=CUES)
-    (tmp_path / "deck" / "decktalk-runtime.js").write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
-    result = check(inputs, a_run(tmp_path), pages=False)
-    (found,) = [one for one in result.findings if one.code is Code.PAGE_RUNTIME_STALE]
-    assert found.location is not None and found.location.file == Path("deck/decktalk-runtime.js")
-    assert result.ok is False
-
-
-def test_the_safe_fix_replaces_a_runtime_copy_a_release_shipped_with_the_engines(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A copy a release shipped holds none of the author's work, so `check --fix` replaces it and says so."""
-    inputs = a_project(tmp_path, cues=CUES)
-    copy = tmp_path / "deck" / "decktalk-runtime.js"
-    copy.write_text('var VERSION = "0.4.0";\n', encoding="utf-8")
-    monkeypatch.setattr(assets, "SHIPPED_RUNTIMES", (hashlib.sha256(copy.read_bytes()).hexdigest(),))
-    run = a_run(tmp_path)
-    (found,) = [one for one in check(inputs, run, pages=False).findings if one.code is Code.PAGE_RUNTIME_STALE]
-    assert found.fix is not None and found.fix.applicability is Applicability.SAFE
-    assert "Run `decktalk check --fix`" in found.message
-    outcome = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=False)
-    assert outcome.applied and outcome.files == (Path("deck/decktalk-runtime.js"),)
-    assert copy.read_bytes() == assets.runtime_path().read_bytes()
-    again = check(Inputs.load(tmp_path, environ={}), a_run(tmp_path), pages=False)
-    assert Code.PAGE_RUNTIME_STALE not in {one.code for one in again.findings}
-
-
-def test_a_runtime_copy_no_release_shipped_is_kept_unless_the_caller_accepts_losing_its_edits(tmp_path: Path) -> None:
-    """A copy the author edited holds their work, so its fix is unsafe and the finding says what it would lose."""
-    inputs = a_project(tmp_path, cues=CUES)
-    copy = tmp_path / "deck" / "decktalk-runtime.js"
-    edited = assets.runtime_path().read_bytes() + b"window.__MINE__ = 1;\n"
-    copy.write_bytes(edited)
-    run = a_run(tmp_path)
-    (found,) = [one for one in check(inputs, run, pages=False).findings if one.code is Code.PAGE_RUNTIME_STALE]
-    assert found.fix is not None and found.fix.applicability is Applicability.UNSAFE
-    assert "edits" in found.message and "lose" in found.fix.title
-    kept = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=False)
-    assert not kept.applied and copy.read_bytes() == edited
-    replaced = apply_fix(run, found.code, found.fix, root=tmp_path, scope=Scope.PROJECT, unsafe=True)
-    assert replaced.applied and copy.read_bytes() == assets.runtime_path().read_bytes()
-
-
-def test_a_project_whose_pages_load_no_copy_of_the_runtime_is_told_nothing_about_one(tmp_path: Path) -> None:
-    inputs = a_project(tmp_path, cues=CUES)
-    result = check(inputs, a_run(tmp_path), pages=False)
-    assert Code.PAGE_RUNTIME_STALE not in {one.code for one in result.findings}
-
-
 def test_an_untrusted_project_opens_its_pages_untrusted(tmp_path: Path, drawn: Drawn) -> None:
     """A page `record` would sandbox must not reach the network through `check` instead."""
     a_project(tmp_path)
@@ -255,3 +243,46 @@ def test_an_untrusted_project_opens_its_pages_untrusted(tmp_path: Path, drawn: D
     drawn.report("deck/index.html", *SCENES)
     check(inputs, a_run(tmp_path), frames=False)
     assert drawn.policies == ["untrusted"]
+
+
+PAUSED_SCRIPT = """# Demo
+
+## 1. One
+
+Hello there. [pause 2] Again.
+
+## 2. Two
+
+Second section [beat] speaks as well.
+"""
+"""A script with one timed pause in section 1 and only a beat in section 2."""
+
+
+def on_model(model: str) -> str:
+    """The demo project read on `model`."""
+    return f'{TOML}\n[elevenlabs]\nmodel = "{model}"\n'
+
+
+def test_a_timed_pause_on_a_model_that_reads_no_break_tag_is_an_error(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=on_model("eleven_v3"), script=PAUSED_SCRIPT)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    dropped = [one for one in result.findings if one.code is Code.SCRIPT_PAUSE_DROPPED]
+    assert [one.location.section for one in dropped] == [1]
+    assert dropped[0].severity is Severity.ERROR
+    assert "eleven_v3" in dropped[0].message
+    assert result.ok is False
+
+
+def test_the_pause_finding_reads_the_voice_in_force(tmp_path: Path) -> None:
+    """The finding asks the voice the project is read in, never the provider's table again."""
+    inputs = a_project(tmp_path, toml=on_model("eleven_multilingual_v2"), script=PAUSED_SCRIPT)
+    dropping = replace(inputs, voice=replace(inputs.voice, model="a-model-that-drops-it", renders_pauses=False))
+    result = check(dropping, a_run(tmp_path), pages=False)
+    (dropped,) = [one for one in result.findings if one.code is Code.SCRIPT_PAUSE_DROPPED]
+    assert "a-model-that-drops-it" in dropped.message
+
+
+def test_a_model_that_reads_a_break_tag_earns_no_pause_finding(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=on_model("eleven_multilingual_v2"), script=PAUSED_SCRIPT)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    assert not [one for one in result.findings if one.code is Code.SCRIPT_PAUSE_DROPPED]

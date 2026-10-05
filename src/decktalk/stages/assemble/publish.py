@@ -20,7 +20,7 @@ import time
 from collections.abc import Mapping
 from pathlib import Path
 
-from decktalk.artifacts import Cut, Cuts, Takes, Words
+from decktalk.artifacts import Placement, Placements, Takes
 from decktalk.captions import (
     CaptionCue,
     Chapter,
@@ -37,14 +37,14 @@ from decktalk.errors import DeckTalkError, ToolError
 from decktalk.events import Level
 from decktalk.files import replace_all
 from decktalk.inputs import ClipSection, Inputs, PageSection
-from decktalk.machine import Run
-from decktalk.media import browser, ffmpeg
+from decktalk.machine.run import Run
+from decktalk.media import browser, ffmpeg, pages
 from decktalk.media.encode import iso_639_2
 from decktalk.media.origin import page_url
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.page import SECOND_DIGITS, Q
 from decktalk.pagescan import scene_entry, slide_cues
-from decktalk.results import SectionKind, Word, section_key
+from decktalk.results import SectionKind, Substitute, Word, section_key
 from decktalk.stages.assemble.cut import Rendered, rendered_starts
 from decktalk.stages.assemble.mix import effect_second
 from decktalk.stages.storyboard import open_project_page
@@ -52,9 +52,6 @@ from decktalk.stages.storyboard import open_project_page
 SOUND_CAPTION_SECONDS = 1.0
 """Calibration: how long a sound's caption stays on screen, which is what SC 1.2.2 expects of one."""
 
-
-WORK_MARK = "."
-"""What a work file's name opens with, so nothing a viewer can open is written until the film is whole."""
 
 POSTER_MARK = "poster"
 """What a poster's still is keyed under before its scene, so it never shares a key with a frozen state."""
@@ -76,9 +73,10 @@ def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], t
     punctuation and the case the script wrote.
     """
     cues: list[CaptionCue] = []
+    placed = takes.placed
     for take in takes.sections:
-        shift = offsets.get(take.section, 0.0) + (takes.start(take.section) or 0.0)
-        words = list(Words(words=inputs.words(take.section, take.hash)).shifted(shift))
+        shift = offsets.get(take.section, 0.0) + placed[take.section].start
+        words = list(inputs.words(take.section).shifted(shift))
         text = texts.get(take.section)
         cues += caption_cues(display_words(words, text) if text else words)
     return cues
@@ -96,8 +94,7 @@ def clip_captions(inputs: Inputs, run: Run, rows: list[Rendered]) -> list[Captio
         section = row.section
         if not isinstance(section, ClipSection) or not section.words or row.audio is None:
             continue
-        path = inputs.path(section.words)
-        found = Words.read(path)
+        found = inputs.clip_words(section)
         if found is None:
             run.note(
                 f"{section.words} is not there, so section {section.number} plays with no captions.",
@@ -204,8 +201,8 @@ def caption_texts(inputs: Inputs, takes: Takes) -> dict[int, str]:
     """
     texts = {take.section: take.spoken for take in takes.sections if take.spoken}
     if any(take.section not in texts for take in takes.sections):
-        for segment in inputs.script():
-            texts.setdefault(segment.index, segment.spoken)
+        for section in inputs.script():
+            texts.setdefault(section.number, section.spoken)
     return texts
 
 
@@ -251,9 +248,8 @@ def described_cues(inputs: Inputs, section: int, at: float) -> tuple[tuple[float
     The page records its own description beside each cue it ran, so a reveal a viewer cannot see is
     written down in the words its author chose rather than as a cue id.
 
-    The rows sort on the second alone. Sorting on the sentence as well broke a tie on its first
-    letter, which printed a step back before the arrival it belongs to, and the runtime now composes
-    one sentence per cue in document order, so the order the page gave them in is already right.
+    The rows sort on the second alone, and the sort is stable, so cues that share a second keep the
+    order the runtime wrote them in, which is one sentence per cue in document order.
     """
     log = inputs.recording_log(section_key(section))
     if log is None:
@@ -278,36 +274,36 @@ def clip_speech(inputs: Inputs, section: int) -> str:
     )
     if found is None or not found.words:
         return ""
-    words = Words.read(inputs.path(found.words))
+    words = inputs.clip_words(found)
     return "" if words is None else " ".join(word.word for word in words.words)
 
 
-def cut_note(cut: Cut) -> str:
+def placement_note(placement: Placement) -> str:
     """What plays in a section that spoke nothing, in one sentence, or nothing when it spoke."""
-    if cut.substitute is not None:
-        return f"A placeholder {cut.substitute.value} frame plays here."
-    return f"A clip plays here: {cut.source.as_posix()}." if cut.kind is SectionKind.CLIP else ""
+    if placement.substitute is not None:
+        return "A slate plays here." if placement.substitute is Substitute.SLATE else "A black frame plays here."
+    return f"A clip plays here: {placement.source.as_posix()}." if placement.kind is SectionKind.CLIP else ""
 
 
-def transcript_sections(inputs: Inputs, cuts: Cuts, texts: Mapping[int, str]) -> list[TranscriptSection]:
+def transcript_sections(inputs: Inputs, placements: Placements, texts: Mapping[int, str]) -> list[TranscriptSection]:
     """One transcript entry per chapter, in the order they play, as the chapter markers group them.
 
     Consecutive sections that share a chapter share one heading, which is how the film's own markers
     group them, and each section's speech stays its own paragraph inside it.
     """
     out: list[TranscriptSection] = []
-    for chapter, grouped in itertools.groupby(cuts.sections, key=lambda cut: cut.chapter):
+    for chapter, grouped in itertools.groupby(placements.sections, key=lambda placement: placement.chapter):
         run = list(grouped)
-        said = tuple(one for cut in run for one in _said(inputs, cut, texts))
-        shown = tuple(one for cut in run for one in described_cues(inputs, cut.section, cut.start))
+        said = tuple(one for placement in run for one in _said(inputs, placement, texts))
+        shown = tuple(one for placement in run for one in described_cues(inputs, placement.section, placement.start))
         out.append(TranscriptSection(chapter=chapter, start=run[0].start, end=run[-1].end, said=said, describes=shown))
     return out
 
 
-def _said(inputs: Inputs, cut: Cut, texts: Mapping[int, str]) -> tuple[Said, ...]:
+def _said(inputs: Inputs, placement: Placement, texts: Mapping[int, str]) -> tuple[Said, ...]:
     """What one section contributes to its chapter's text: its speech, then the note on what plays."""
-    spoken = texts.get(cut.section, "") or clip_speech(inputs, cut.section)
-    note = cut_note(cut)
+    spoken = texts.get(placement.section, "") or clip_speech(inputs, placement.section)
+    note = placement_note(placement)
     return ((Said(text=spoken, note=False),) if spoken else ()) + ((Said(text=note, note=True),) if note else ())
 
 
@@ -318,10 +314,10 @@ def poster_query(catalog: tuple[MeasuredScene, ...], section: PageSection) -> di
     """The freeze query for a section's opening slide with every one of its reveals already fired.
 
     A poster is the one picture that has to stand for the film, and a cue-driven slide before its
-    first cue is an empty stage, so the slide is frozen in the state it ends in.
+    first cue is an empty canvas, so the slide is frozen in the state it ends in.
     """
     slides = slide_cues(scene_entry(catalog, section.scene))
-    return None if not slides else {Q.SLIDE: next(iter(slides))}
+    return None if not slides else {Q.FREEZE: next(iter(slides))}
 
 
 def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
@@ -342,16 +338,17 @@ def render_poster(inputs: Inputs, run: Run, out: Path) -> Path | None:
         shutil.copyfile(kept, out)
         return out
     try:
-        with browser.chromium(inputs.settings.record.browser_path, policy=inputs.settings.record.page_policy) as chrome:
+        record = inputs.settings.record
+        with browser.chromium(inputs.settings.tools.chromium, policy=record.page_policy, spend=run.spend) as chrome:
             page, assets = open_project_page(chrome, inputs)
-            page.goto(page_url(section.page))
-            browser.await_ready(page)
-            query = poster_query(browser.read_report(page, out.stem).catalog, section)
+            pages.load(page, page_url(section.page))
+            pages.await_ready(page)
+            query = poster_query(pages.read_report(page, out.stem).catalog, section)
             if query is None:
                 run.note(f"{section.page} declares no slide for scene {section.scene}, so no poster is written.",
                          level=Level.WARNING)  # fmt: skip
                 return None
-            browser.screenshot(page, page_url(section.page, query), out)
+            pages.screenshot(page, page_url(section.page, query), out)
             inputs.stills.keep(key, out, assets.paths)
     except DeckTalkError as refused:
         run.note(f"The poster could not be drawn ({refused}), so the film is published without one.",
@@ -369,9 +366,7 @@ def publish(inputs: Inputs, work: Path, paths: Mapping[str, Path]) -> Path | Non
     Nothing a viewer can open is written until the film is whole, because a rename is the only step
     another process can observe.
     """
-    final_dir = inputs.workspace.final_dir
-    name = inputs.workspace.name
-    chaptered = final_dir / f"{WORK_MARK}{name}.chapters.mp4"
+    chaptered = inputs.workspace.work_file("chapters.mp4")
     mux_chapters(work, paths["chapters"], chaptered, inputs.document.language)
     chaptered.replace(work)
     if not work.exists() or work.stat().st_size == 0:
@@ -382,26 +377,25 @@ def publish(inputs: Inputs, work: Path, paths: Mapping[str, Path]) -> Path | Non
     work.replace(inputs.workspace.film)
     if not inputs.settings.output.timestamped_copy:
         return None
-    stamped = final_dir / f"{name}-{time.strftime(STAMP_FORMAT)}.mp4"
+    stamped = inputs.workspace.stamped_film(time.strftime(STAMP_FORMAT))
     shutil.copyfile(inputs.workspace.film, stamped)
     return stamped
 
 
-def write_transcript_page(inputs: Inputs, path: Path, cuts: Cuts, texts: Mapping[int, str]) -> None:
+def write_transcript_page(inputs: Inputs, path: Path, placements: Placements, texts: Mapping[int, str]) -> None:
     """The media alternative: one page with a heading per chapter, the speech and every reveal."""
-    sections = transcript_sections(inputs, cuts, texts)
+    sections = transcript_sections(inputs, placements, texts)
     replace_all({path: transcript_html(inputs.workspace.name, sections, language=inputs.document.language)})
 
 
 __all__ = [
     "SOUND_CAPTION_SECONDS",
-    "WORK_MARK",
     "build_captions",
     "build_chapters",
     "caption_texts",
     "clip_captions",
     "clip_speech",
-    "cut_note",
+    "placement_note",
     "described_cues",
     "mux_chapters",
     "one_at_a_time",

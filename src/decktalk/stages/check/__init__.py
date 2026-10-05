@@ -1,19 +1,20 @@
-"""Judge without producing, and price what a build would cost, before a single second is bought.
+"""Judge without writing what a stage reads, and price the narration a build would buy, before any second is bought.
 
     script.py   what the voice would read out or swallow, and what it may misread
     freeze.py   which two frozen states each cue is measured between
     scan.py     drawing those states and reading what the difference between two of them means
 
-`check` is the one command that says what a voiced build would spend and show while it can still be
-changed for nothing. It plans the takes the way `narrate` would, prices them, resolves every cue
-against the words those takes will carry, reads the catalog each page publishes, and freezes the
-frames either side of every cue so a reveal that would not be measured is met here rather than after
-the credits are gone.
+`check` is the one command that says what a voiced build's narration would cost and what the build
+would show while both can still be changed for nothing. It plans the takes the way `narrate` would,
+prices them, resolves every cue against the words those takes will carry, reads the catalog each
+page publishes, and freezes the frames either side of every cue so a reveal that would not be
+measured is met here rather than after the money is gone. The score is priced by its own
+stage, so a sound is never in this price.
 
-It has two scope flags and no others, because neither names a stage a run could skip nor a knob a
-project could turn. Without pages it judges the script, the cue phrases and the take plan with no
+It has two scope flags and no others, because neither names a stage a run could skip nor a setting a
+project could change. Without pages it judges the script, the cue phrases and the take plan with no
 browser at all and says which judgements it could not reach, so a hook that has no browser still
-prices a run and reads its script. Every judgement that scaffolds a `cues.json` row reads the
+prices the narration and reads its script. Every judgement that scaffolds a `cues.json` row reads the
 catalog a page publishes, so a new deck gets those rows from a run with pages. Without frames it keeps the
 browser and the catalog and drops the freeze comparison.
 
@@ -23,7 +24,6 @@ and `cue` still owns `build/cue-times.json`.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
@@ -31,19 +31,19 @@ from pathlib import Path
 
 from playwright.sync_api import Page
 
+from decktalk.artifacts import EstimatedWords
 from decktalk.errors import InputError
 from decktalk.files import current_text
-from decktalk.findings import Applicability, Code, Finding, Location, ProjectPath, RuntimeFix, judge
+from decktalk.findings import Code, Finding, Location, ProjectPath, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
-from decktalk.inputs.paths import at
-from decktalk.inputs.script import Segment
-from decktalk.machine import Run
+from decktalk.inputs.script import ScriptSection
+from decktalk.machine.run import Run
 from decktalk.media.browser import chromium
 from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene, PageReport
 from decktalk.pagescan import Slides, asset_findings, page_findings, scene_entry, slide_cues
-from decktalk.results import CheckResult, Panel, SectionCues, SpendState
+from decktalk.results import CheckResult, Panel, SectionCues
 from decktalk.stages import selects
 from decktalk.stages.check.scan import (
     judged_pages,
@@ -52,19 +52,16 @@ from decktalk.stages.check.scan import (
     seam_findings,
     static_findings,
 )
-from decktalk.stages.check.script import script_findings
+from decktalk.stages.check.script import pause_findings, script_findings
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections
-from decktalk.stages.narrate import TakePlan, planned_words, spend_of, voiced_plan
-from decktalk.stages.narrate.plan import voice_id_of
+from decktalk.stages.narrate import TakeStates, take_states
+from decktalk.stages.narrate.plan import NO_VOICE_NOTE, dropped_pauses
 from decktalk.stages.storyboard import Sheet, open_project_page, reports_of, write_page
 from decktalk.stages.verify import opted_out
-from decktalk.template import stale_runtime
-from decktalk.toolchain import assets
-from decktalk.toolchain.assets import RUNTIME_FILE
 
 NEEDS_A_PAGE: tuple[Code, ...] = (
-    Code.CUE_MISSING,
+    Code.CUE_UNLISTED,
     Code.CUE_UNKNOWN,
     Code.CUE_OVERLAP,
     Code.PAGE_MOTION_OVERRUN,
@@ -102,19 +99,21 @@ def check(
     pages: bool = True,
     frames: bool = True,
 ) -> CheckResult:
-    """Judge the script, the cue file and the pages, and price what a voiced build would cost."""
+    """Judge the script, the cue file and the pages, and price the narration a voiced build would buy."""
     wanted = selects(only)
     script = inputs.relative(inputs.script_path)
-    segments = _segments(inputs, run)
-    spoken = [one for one in segments if one.index not in inputs.document.clip_numbers and wanted(one.index)]
+    spoken = [
+        one
+        for one in _script_sections(inputs, run)
+        if one.number not in inputs.document.clip_numbers and wanted(one.number)
+    ]
     for found in script_findings(current_text(inputs.script_path), spoken, script=script):
         run.found(found)
 
     extra = _named_pages(inputs, paths)
-    _runtime_copies(inputs, run, extra)
-    plans = _plan(inputs, run, spoken)
-    spend = spend_of(plans, inputs, state=SpendState.ESTIMATE)
-    resolved, times = _resolve(inputs, run, plans, wanted)
+    states = _states(inputs, run, spoken)
+    cost = states.plan(spend=True).cost
+    resolved, times = _resolve(inputs, run, states, wanted)
     sections = [one for one in inputs.document.page_sections if wanted(one.number)]
 
     looked = _look(inputs, run, sections, extra, times, frames=frames) if pages else _unreached(run, frames=frames)
@@ -129,9 +128,9 @@ def check(
     return run.result(
         CheckResult,
         judged=_judged(inputs, script, resolved, sections if pages else (), extra if pages else ()),
-        pages=pages,
-        frames=pages and frames,
-        spend=spend,
+        pages_opened=pages,
+        frames_compared=pages and frames,
+        cost=cost,
         storyboard=None if sheet is None else inputs.relative(sheet),
     )
 
@@ -139,42 +138,7 @@ def check(
 # ---- the files the author writes ---------------------------------------------------------------
 
 
-def _runtime_copies(inputs: Inputs, run: Run, extra: Sequence[str]) -> None:
-    """Judge each of the project's copies of the runtime that is not the one this engine ships.
-
-    `decktalk init` copies the runtime beside the pages, and a copy an older engine wrote keeps
-    playing the older contract, so a reveal can pass on the author's machine and read differently to
-    this engine's recorder and verify. The copy that matters is the one beside each page, which is
-    the one a page loads.
-    """
-    pages = [*inputs.document.page_files, *extra]
-    for folder in dict.fromkeys(Path(page).parent for page in pages):
-        named = folder / RUNTIME_FILE
-        copy = inputs.path(named)
-        if stale_runtime(copy):
-            where = named.as_posix()
-            # Only a copy some release shipped is known to hold none of the author's work. Any other
-            # copy was edited, so replacing it is left to a caller who accepts losing the edits.
-            if hashlib.sha256(copy.read_bytes()).hexdigest() in assets.SHIPPED_RUNTIMES:
-                message = (
-                    f"{where} is not the runtime this engine ships, so its pages play a contract this engine does "
-                    "not measure. Run `decktalk check --fix` to replace it with the engine's."
-                )
-                title = f"Replace {where} with the runtime this engine ships."
-                fix = RuntimeFix(title=title, applicability=Applicability.SAFE, file=named)
-            else:
-                message = (
-                    f"{where} is not the runtime this engine ships, so its pages play a contract this engine does "
-                    "not measure. It matches no runtime a release shipped, so it holds edits that replacing it "
-                    "would lose, and `decktalk check --fix` leaves it as it is. Keep the edits somewhere else "
-                    "and apply the unsafe fix, which replaces it with the engine's."
-                )
-                title = f"Replace {where} with the runtime this engine ships, and lose the edits it holds."
-                fix = RuntimeFix(title=title, applicability=Applicability.UNSAFE, file=named)
-            run.found(judge(Code.PAGE_RUNTIME_STALE, message, at(copy, inputs.root), fix=fix))
-
-
-def _segments(inputs: Inputs, run: Run) -> list[Segment]:
+def _script_sections(inputs: Inputs, run: Run) -> list[ScriptSection]:
     """Every section of the script, or a judgement and no sections when it cannot be read."""
     try:
         return list(inputs.script())
@@ -190,40 +154,33 @@ def _segments(inputs: Inputs, run: Run) -> list[Segment]:
         return []
 
 
-def _plan(inputs: Inputs, run: Run, spoken: Sequence[Segment]) -> list[TakePlan]:
-    """What a voiced run would do with each spoken section, sending nothing and writing nothing."""
-    if not spoken:
-        return []
-    model = inputs.document.voice.model or inputs.settings.narration.model
-    plans, why = voiced_plan(inputs, list(spoken), model=model, voice_id=_voice_id(inputs))
-    if why:
-        run.note(why)
-    return plans
-
-
-def _voice_id(inputs: Inputs) -> str:
-    """The voice this project would be read in, or nothing when the project has not named one yet."""
-    try:
-        return voice_id_of(inputs)
-    except InputError:
-        # silent: a project that names no voice is judged for that elsewhere.
-        return ""
+def _states(inputs: Inputs, run: Run, spoken: Sequence[ScriptSection]) -> TakeStates:
+    """The take state of each spoken section, and every timed pause the voice in force would drop."""
+    if spoken:
+        voice = inputs.voice
+        dropped = dropped_pauses(inputs, list(spoken))
+        script = inputs.relative(inputs.script_path)
+        for found in pause_findings(dropped, provider=voice.provider, model=voice.model, script=script):
+            run.found(found)
+        if not voice.id:
+            run.note(NO_VOICE_NOTE)
+    return take_states(inputs, spoken)
 
 
 def _resolve(
-    inputs: Inputs, run: Run, plans: Sequence[TakePlan], wanted: Callable[[int], bool]
+    inputs: Inputs, run: Run, states: TakeStates, wanted: Callable[[int], bool]
 ) -> tuple[tuple[SectionCues, ...], dict[int, dict[str, float]]]:
     """Every cue resolved against the words a voiced run would leave, and the seconds they landed on.
 
     The words are the ones each section will have after the build this check is pricing, which is a
-    cached take's own words or the evenly spaced words of a placeholder, so a cue phrase is judged
+    held take's own words or the evenly spaced words of a placeholder, so a cue phrase is judged
     before anything is voiced rather than after.
     """
-    planned = {plan.segment.index: planned_words(inputs, plan) for plan in plans}
-    words = {number: row[0] for number, row in planned.items()}
-    estimated = {number for number, row in planned.items() if row[2]}
+    planned = {number: states.planned_words(number) for number in states}
+    words = {number: found.words for number, found in planned.items()}
+    estimated = {number for number, found in planned.items() if isinstance(found, EstimatedWords)}
     cued = [block for block in inputs.cues() if wanted(block.number)]
-    sections, found = resolve_sections(
+    sections, found, _notes = resolve_sections(
         cued,
         words,
         clips=inputs.document.clip_numbers,
@@ -234,7 +191,7 @@ def _resolve(
     for one in found:
         run.found(one)
     times = {
-        block.section: {row.cue: row.seconds for row in block.cues if row.seconds is not None} for block in sections
+        block.section: {row.id: row.seconds for row in block.cues if row.seconds is not None} for block in sections
     }
     return sections, times
 
@@ -285,7 +242,7 @@ def _look(
     looked = Look()
     if not files:
         return looked
-    with chromium(cfg.browser_path, policy=cfg.page_policy) as browser:
+    with chromium(inputs.settings.tools.chromium, policy=cfg.page_policy, spend=run.spend) as browser:
         opened: dict[str, tuple[Page, Assets]] = {}
         for page in files:
             if not inputs.path(page).exists():

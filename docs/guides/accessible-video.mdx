@@ -42,8 +42,8 @@ Every cued sound takes a `caption` string, and the build writes it into the capt
 its own, wrapped in square brackets.
 
 ```toml decktalk.toml
-[[mix.effects]]
-file = "build/soundscape/bounce.mp3"
+[[mix.effect]]
+file = "score/bounce.mp3"
 section = 2
 cue = "2.1:ball"
 caption = "ball bounces"
@@ -75,8 +75,8 @@ is built from.
 
 | Attribute | Where | What it carries |
 |---|---|---|
-| `data-describe` | an element or a slide | The subject of the reveal. The runtime gives it a verb for each moment, so the phrase is a subject rather than a sentence. An empty phrase means the reveal is decorative. |
-| `data-describe-class` | an element or a container | What each class change means, written as `moment:phrase` pairs separated by a vertical bar. It is the partner of `data-class`. |
+| `data-describe` | an element or a slide | The subject of the reveal. The runtime gives it a verb for each moment, so the description is a subject rather than a sentence. An empty phrase means the reveal is decorative. |
+| `data-describe-class` | an element or a container | What each class change means, written as `cue:description` pairs separated by a vertical bar. It is the partner of `data-class`. |
 | `data-describe-out` | an element | The departure sentence, for the case where a thing leaving means something of its own. |
 
 ```html
@@ -87,29 +87,29 @@ is built from.
 <li data-class="highlight:lit" data-describe-class="highlight:the second row is marked as the answer">
 ```
 
-Describe the reveals that carry meaning. A decorative flourish needs no phrase, and an empty
+Describe the reveals that carry meaning. A decorative flourish needs no description, and an empty
 `data-describe` is how you say so on purpose rather than by leaving the attribute off. A description
 of every flourish only makes the transcript harder to read.
 
-The starter writes a phrase on every cued element, so a first project's transcript already reads end
+The starter writes a description on every cued element, so a first project's transcript already reads end
 to end. [The page contract](/concepts/page-contract) is every attribute in context, and
-`decktalk schema page` prints all twenty-four with their values, their defaults and their codes.
+`decktalk schema page` prints every one with their values, their defaults and their codes.
 
 ## What holds each of them honest
 
 Every promise on this page has a judgement behind it, so nothing here depends on remembering to look.
 
-| What is missing | Code | Certainty | Reached by |
+| What is missing | Code | Severity | Reached by |
 |---|---|---|---|
-| An element changes the picture and describes nothing | [`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION) | certain | `decktalk check`, from the page's own catalog |
-| `data-class` names a class with no phrase in `data-describe-class` | [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED) | certain | any command that opens the page, reported by the runtime |
-| A class change declares no reduced form, so a reduced render would animate anyway | [`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED) | certain | any command that opens the page, reported by the runtime |
-| The mixed film misses the loudness it was mastered to | [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) | uncertain | `decktalk assemble`, measured on the finished mix |
-| A reveal did not land on the word it was cued to | [`CUE_OFF`](/reference/findings/CUE_OFF) | certain | `decktalk verify`, measured on the finished film |
-| A reveal cannot be told from the frame before it | [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE) | certain | `decktalk verify` and `decktalk check` |
+| An element changes the picture and describes nothing | [`PAGE_NO_DESCRIPTION`](/reference/findings/PAGE_NO_DESCRIPTION) | error | `decktalk check`, from the page's own catalog |
+| `data-class` names a class with no description in `data-describe-class` | [`PAGE_CLASS_UNDESCRIBED`](/reference/findings/PAGE_CLASS_UNDESCRIBED) | error | any command that opens the page, reported by the runtime |
+| A class change declares no reduced form, so a reduced render would animate anyway | [`PAGE_CLASS_NOT_REDUCED`](/reference/findings/PAGE_CLASS_NOT_REDUCED) | error | any command that opens the page, reported by the runtime |
+| The mixed film misses the loudness it was mastered to | [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) | warning | `decktalk assemble`, measured on the finished mix |
+| A reveal did not land on the word it was cued to | [`CUE_OFF`](/reference/findings/CUE_OFF) | error | `decktalk verify`, measured on the finished film |
+| A reveal cannot be told from the frame before it | [`CUE_NO_CHANGE`](/reference/findings/CUE_NO_CHANGE) | error | `decktalk verify` and `decktalk check` |
 
-`--fail-on certain` is the default, so the certain ones fail a run already. `--fail-on any` adds the
-uncertain ones, which is how a project says it wants the second opinions too, and `--allow CODE`
+`--fail-on error` is the default, so the errors fail a run already. `--fail-on warning` adds the
+warnings, which is how a project says it wants the second opinions too, and `--allow CODE`
 carries one code past the threshold and repeats.
 
 A cue that landed on the wrong word is an accessibility failure and not only a timing one: a viewer
@@ -122,7 +122,7 @@ A film that is quieter than everything else on a platform is a film a hard-of-he
 and then gets startled by. The mix is therefore mastered rather than left where the layers landed.
 
 `assemble` measures the whole soundtrack, applies one gain to reach
-[`[mix.loudness] target_lufs`](/reference/configuration#mix-loudness), runs a true-peak limiter at
+[`[audio] target_lufs`](/reference/configuration#audio), runs a true-peak limiter at
 `true_peak_max_dbtp`, and measures the result again. A plain gain keeps the mix's dynamics intact and
 the limiter touches only the peaks that would cross the ceiling, and it runs oversampled so that
 inter-sample peaks are caught, which is what a true-peak ceiling promises.
@@ -134,7 +134,7 @@ inter-sample peaks are caught, which is what a true-peak ceiling promises.
 | `range_max_lu` | `11.0` | The loudness range the measurement is made against. It is not a limit, and no mix fails on it. |
 
 The second measurement is reported, and a true peak over the ceiling or a programme loudness away
-from the target is `MIX_LOUDNESS`. It is uncertain, because the pass reports what it could not fix
+from the target is `MIX_LOUDNESS`. It is a warning, because the pass reports what it could not fix
 and a reader decides. [Sound](/concepts/sound#loudness) says exactly when it is raised.
 
 ## Reduced motion
@@ -145,7 +145,7 @@ DeckTalk renders that film rather than asking the viewer's player to.
 No flag duplicates a settings key, so both of these are `--set` on any command.
 
 ```console
-decktalk build --set motion.reduce=true --no-voice
+decktalk build --set motion.reduce=true --no-spend
 ```
 
 - `motion.reduce=true` renders every slide as its reduced-motion variant. Chromium is asked for
@@ -182,12 +182,12 @@ give the calm build its own `[project] build` directory.
 <Steps>
   <Step title="Judge the pages before you build">
     ```console
-    decktalk check --fail-on any
+    decktalk check --fail-on warning
     ```
 
-    `check` produces nothing and opens the pages, so this is where a missing description, an
-    undescribed class change and a class that animates under reduced motion are met. `--fail-on any`
-    adds the uncertain findings to the ones that already fail.
+    `check` opens the pages and writes nothing a stage reads, so this is where a missing description, an
+    undescribed class change and a class that animates under reduced motion are met. `--fail-on warning`
+    adds the warnings to the ones that already fail.
   </Step>
   <Step title="Measure the finished film">
     ```console
@@ -219,5 +219,5 @@ rather than the word "transcript" on its own.
 
 - **Read every page attribute:** [The page contract](/concepts/page-contract)
 - **Caption a cued sound:** [Put a sound effect on a cue](/guides/effects-on-a-cue)
-- **Read the loudness keys whole:** [Configuration](/reference/configuration#mix-loudness)
+- **Read the loudness keys whole:** [Configuration](/reference/configuration#audio)
 - **See what the film is measured against:** [Verify](/reference/verify)

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from decktalk.cli import machine as commands
+from decktalk.findings import Threshold
 
 from .conftest import ANSWERS, Fake, finding
 
@@ -14,7 +19,7 @@ def test_init_writes_the_project_and_reports_what_it_chose(run, machine, monkeyp
     made = Fake()
     monkeypatch.setattr(commands.machines, "init", lambda *args, **keywords: _record(made, *args, **keywords))
     machine()
-    ran = run("init", str(tmp_path / "demo"), "--defaults")
+    ran = run("--no-input", "init", str(tmp_path / "demo"))
     assert ran.exit_code == 0
     assert made.called("init")["skills"] is True
     assert "Wrote" in ran.out
@@ -30,7 +35,7 @@ def test_init_takes_the_flags_it_was_given_over_the_defaults(run, machine, monke
     made = Fake()
     monkeypatch.setattr(commands.machines, "init", lambda *args, **keywords: _record(made, *args, **keywords))
     machine()
-    run("init", str(tmp_path / "demo"), "--defaults", "--name", "lesson", "--example", "lesson", "--no-skills")
+    run("--no-input", "init", str(tmp_path / "demo"), "--name", "lesson", "--example", "lesson", "--no-skills")
     asked = made.called("init")
     assert asked["name"] == "lesson"
     assert asked["example"] == "lesson"
@@ -68,6 +73,15 @@ def test_doctor_measures_only_when_asked(run, machine, answers) -> None:
     assert made.called("doctor")["measure"] is True
 
 
+def test_doctor_is_judged_by_the_threshold_its_flags_name(run, machine) -> None:
+    """The machine is handed the session's threshold, so `ok` and the exit code agree on doctor too."""
+    made = machine(doctor=MISSING)
+    ran = run("doctor", "--json", "--fail-on", "never")
+    assert made.called("doctor")["threshold"] == Threshold(stop_on=None)
+    assert ran.exit_code == 0
+    assert json.loads(ran.out)["ok"] is True
+
+
 def test_doctor_applies_nothing_without_a_terminal_and_without_the_flag(run, machine) -> None:
     made = machine(doctor=MISSING, apply=None)
     ran = run("doctor")
@@ -78,4 +92,20 @@ def test_doctor_applies_nothing_without_a_terminal_and_without_the_flag(run, mac
 def test_doctor_fix_applies_and_reads_the_machine_again(run, machine) -> None:
     made = machine(doctor=MISSING, apply=None)
     run("doctor", "--fix")
+    assert [name for name, _, _ in made.calls] == ["doctor", "apply", "doctor"]
+
+
+def test_doctor_help_says_when_it_fetches(run) -> None:
+    """The help is the contract a person reads first, so it names the offer a terminal makes and the flags."""
+    said = " ".join(run("doctor", "--help").out.split())
+    assert "fetches nothing, and writes nothing" not in said, said
+    assert "offers once to fetch what is missing" in said, said
+    assert "--fix fetches it without asking, under --json or --no-input too" in said, said
+    assert "--no-input and --json without --fix" in said, said
+
+
+@pytest.mark.parametrize("flag", ["--json", "--no-input"])
+def test_doctor_fix_fetches_under_json_and_no_input_as_its_help_says(run, machine, flag: str) -> None:
+    made = machine(doctor=MISSING, apply=None)
+    run(flag, "doctor", "--fix")
     assert [name for name, _, _ in made.calls] == ["doctor", "apply", "doctor"]

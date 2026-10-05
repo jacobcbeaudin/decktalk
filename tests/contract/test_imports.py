@@ -9,10 +9,9 @@ order inside it.
 The walk reads the AST rather than the imports Python happens to run, so an import hidden in a
 function body counts exactly as much as one at the top of the file. It also resolves the alias form,
 `from decktalk.stages import record`, which names a module without ever spelling its dotted path:
-that form is how a stage reaches its neighbour and it was invisible to this guard before. The other
-blind spot is closed by `test_every_import_target_resolves_to_a_ranked_module`, which fails on a
-target that no longer exists, because an import of a deleted module used to pass the rank comparison
-by being unrankable rather than by being allowed.
+that form is how a stage reaches its neighbour. `test_every_import_target_resolves_to_a_ranked_module`
+fails on a target that no longer exists, so an import of a deleted module cannot pass the rank
+comparison by being unrankable rather than by being allowed.
 
 The ranks hold between packages and say nothing inside one, so two modules of one package could
 import each other and pass. The imports are also read as a graph of modules, and that graph has no
@@ -22,6 +21,7 @@ cycle at all, however far round it goes.
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -47,10 +47,8 @@ LAYERS: dict[str, tuple[str, ...]] = {
 """Every top-level module and package of decktalk under its layer, lowest first, each ranked by where it stands.
 
 A module's rank is its place in the whole table read top to bottom, so a layer is always one run of
-ranks and no two modules share one. `project` ranks above `stages` because it calls a stage by name
-through `import_module`, which is a string and which no AST walk can see. Declaring the rank the
-code really has is what keeps that one edge honest, and it is why `stages` may not import `project`
-back.
+ranks and no two modules share one. `project` ranks above `stages` because it calls the stages,
+which is why `stages` may not import `project` back.
 """
 
 RANKS: dict[str, tuple[str, int]] = {
@@ -60,15 +58,17 @@ RANKS: dict[str, tuple[str, int]] = {
 """Every module's layer and rank, read off `LAYERS` in order."""
 
 ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
-    # build runs the six stages in the order `PIPELINE` gives them.
-    ("stages.build", "stages.narrate"): "by design",
-    ("stages.build", "stages.cue"): "by design",
-    ("stages.build", "stages.record"): "by design",
-    ("stages.build", "stages.soundscape"): "by design",
-    ("stages.build", "stages.assemble"): "by design",
-    ("stages.build", "stages.verify"): "by design",
-    ("stages.build", "stages.storyboard"): "the checkpoint drawn before any credit is spent",
-    ("stages.build", "stages.status"): "an unchanged build keeps what the kept record says it already made",
+    # The stage table holds the six stages' functions, which build calls in the order `PIPELINE` gives them.
+    ("stages.table", "stages.narrate"): "by design",
+    ("stages.table", "stages.cue"): "by design",
+    ("stages.table", "stages.record"): "by design",
+    ("stages.table", "stages.score"): "by design",
+    ("stages.table", "stages.assemble"): "by design",
+    ("stages.table", "stages.verify"): "by design",
+    ("stages.build", "stages.table"): "how each stage is called",
+    ("stages.build", "stages.narrate"): "the price of the takes, held to the run's ceiling before anything is bought",
+    ("stages.build", "stages.score"): "the price of the score, held to the run's ceiling before anything is bought",
+    ("stages.build", "stages.kept"): "an unchanged build keeps what the kept record says it already made",
     # check rehearses what the stages downstream of it would judge, without producing any of it.
     ("stages.check", "stages.narrate"): "by design",
     ("stages.check", "stages.cue"): "by design",
@@ -76,19 +76,47 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.check", "stages.verify"): "by design",
     # The storyboard owns how a frozen page is opened, so the poster is drawn from a page opened the same way.
     ("stages.assemble", "stages.storyboard"): "the one way a frozen page is opened",
+    ("stages.assemble", "stages.score"): "which sound files are the score's to buy, so an absent one is a warning",
     # The recorder owns the query a page section is opened at, so the storyboard opens the same page
     # by reading that one rule rather than spelling it a second time.
     ("stages.storyboard", "stages.record"): "the page URL the recorder owns",
     # One rule decides whether a recording still matches the project, and the report that names a
     # stale one asks the stage that wrote it rather than comparing file times of its own.
     ("stages.status", "stages.record"): "the rule that decides a recording is stale",
-    # A clip is cut on the section clock, which is the one thing `words` computes.
-    ("stages.clip", "stages.words"): "the section clock a clip is cut on",
+    # A take is named by narrate's digest alone, so the report that lists the takes no section plays
+    # names each section's take the way narrate does rather than spelling a digest of its own.
+    ("stages.status", "stages.narrate"): "the take state of every section, which narrate plans by",
+    # The film still stands, and the next command is named, by the one rule a build keeps a stage by.
+    ("stages.status", "stages.kept"): "the rule that decides the film and its measurement still stand",
+    # The score is ready to mix once its bought music is joined, which the stage that joins it decides.
+    ("stages.kept", "stages.score"): "the rule that decides the score is ready to mix",
+    # A clip lists its words with the script's own spelling, which `words` puts back on every row.
+    ("stages.clip", "stages.words"): "the script's spelling a clip's words carry",
+    # Every stage that fans its sections out to workers shares one pool, so they all halt alike.
+    ("stages.narrate", "stages.pool"): "the one pool every stage fans out to",
+    ("stages.record", "stages.pool"): "the one pool every stage fans out to",
+    # Every stage that buys prices and charges through one cost rule, so no two of them disagree about a bill.
+    ("stages.narrate", "stages.cost"): "what the takes cost, priced and charged by the one cost rule",
+    ("stages.score", "stages.cost"): "what the sounds cost, priced and charged by the one cost rule",
+    ("stages.build", "stages.cost"): "the stages' costs added into the one total the run is capped and reported at",
 }
 """Every import that points sideways between stages, each with the reason it exists.
 
 An exception here is designed and not accidental, so a stage that reaches its neighbour for anything
 else fails until its reason is written down or the shared rule moves below both of them.
+"""
+
+
+ALLOWED_PRIVATE_MODULES: dict[tuple[str, str], str] = {
+    # Typer publishes `typer.Context` and no name for the help formatter, the parameter, the command
+    # or the refusals its parser raises, and Click's own classes are not the ones Typer makes.
+    ("cli.app", "typer._click"): "the Click classes Typer carries and publishes no name for",
+}
+"""Every private module of another distribution that one module of decktalk reaches into, with why.
+
+A module whose name starts with `_` is its distribution's own and may appear, move or vanish in any
+release, whatever floor `pyproject.toml` declares. One module per reason holds the reach, so a
+release that moves it breaks one import rather than every file that copied it.
 """
 
 
@@ -197,6 +225,41 @@ def unit(module: str) -> str:
 def private(name: str) -> bool:
     """Whether a name belongs to the module that defines it. A dunder such as __version__ does not."""
     return name.startswith("_") and not name.startswith("__")
+
+
+VENDOR = re.compile(r"eleven|xi-api-key", re.IGNORECASE)
+"""Every spelling of a speech or sound vendor DeckTalk ships: its name, its model ids and its key header."""
+
+VENDOR_ALLOWED: dict[str, str] = {}
+"""Every module above `speech/` that may still name a vendor, each with why. None does.
+
+`settings` ranks below `speech/` and holds each adapter's own table, which is where a vendor's
+fields are declared, so it is not above the boundary and needs no row here.
+"""
+
+
+def test_no_module_above_speech_names_a_vendor():
+    """Everything a vendor is particular about is declared by its adapter, so nothing above `speech/` names one.
+
+    A module ranked above `speech` reads the adapter's declaration and never spells the vendor, in
+    code, in a string or in a docstring, so a second voice or a change of vendor touches nothing above
+    the boundary.
+    """
+    _, boundary = RANKS["speech"]
+    bad = [
+        f"{dotted(path)}:{number}: {line.strip()}"
+        for path in modules()
+        if RANKS[unit(dotted(path))][1] > boundary and dotted(path) not in VENDOR_ALLOWED
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1)
+        if VENDOR.search(line)
+    ]
+    assert bad == [], "\n".join(bad)
+
+
+def test_every_vendor_allowance_is_still_needed():
+    """An allowance for a module that names no vendor any more is a hole left open."""
+    stale = [name for name in VENDOR_ALLOWED if not VENDOR.search((SRC / f"{name.replace('.', '/')}.py").read_text())]
+    assert stale == [], stale
 
 
 def test_every_module_is_placed_in_a_layer():
@@ -309,3 +372,51 @@ def test_no_module_imports_a_private_name_from_another_module():
                 if private(alias.name):
                     bad.append(f"{source.replace('.', '/')}.py:{node.lineno}: imports {alias.name} from {base}")
     assert not bad, "\n".join(sorted(set(bad)))
+
+
+def private_modules() -> list[tuple[str, str, int]]:
+    """Every import of a module outside decktalk whose dotted name has a private part, as source, name and line."""
+    found: list[tuple[str, str, int]] = []
+    for path in modules():
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.level == 0:
+                names = [node.module or ""]
+            elif isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            else:
+                continue
+            found += [
+                (dotted(path), name, node.lineno)
+                for name in names
+                if not name.startswith("decktalk") and any(private(part) for part in name.split("."))
+            ]
+    return found
+
+
+def reached(name: str) -> str:
+    """The private module an import reaches into, which is its name up to and including the first private part."""
+    parts = name.split(".")
+    first = next(index for index, part in enumerate(parts) if private(part))
+    return ".".join(parts[: first + 1])
+
+
+def test_no_module_reaches_into_another_distributions_private_module():
+    """A private module is not part of the version range a floor declares, so one module holds each reach.
+
+    A floor is a promise about public names. A private module can be missing at the floor and still
+    present in the lockfile, and then every file that imports it fails on a fresh install at the floor
+    while every test run from the lockfile passes.
+    """
+    bad = [
+        f"{source.replace('.', '/')}.py:{line}: imports {name}, which is private to its distribution"
+        for source, name, line in private_modules()
+        if (source, reached(name)) not in ALLOWED_PRIVATE_MODULES
+    ]
+    assert not bad, "\n".join(sorted(bad))
+
+
+def test_every_allowed_private_module_is_one_the_code_still_reaches():
+    """An exception nothing uses is a hole left open, so the list only holds reaches that are really made."""
+    made = {(source, reached(name)) for source, name, _ in private_modules()}
+    stale = sorted(pair for pair in ALLOWED_PRIVATE_MODULES if pair not in made)
+    assert stale == [], f"{stale} are allowed and no longer made, so the exception can go."

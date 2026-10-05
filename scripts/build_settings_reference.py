@@ -11,20 +11,22 @@ rather than the committed file, so the two can be written in either order.
 
 It names the keys only a machine may set, because a project file that sets one is refused. It then
 gives the index from a verdict to the keys that move it, because that is the lookup an agent makes
-after a failure, and it ends with the numbers that are deliberately not knobs, because the second
-lookup an agent makes is for a knob that does not exist.
+after a failure, and it ends with the numbers that are deliberately not settings, because the second
+lookup an agent makes is for a setting that does not exist.
 """
 
 from __future__ import annotations
 
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import tomlkit
 
 import build_settings_schema
 import generated
+from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE
+from decktalk.settings.layers import machine_config_path
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = ROOT / "docs" / "reference" / "configuration.mdx"
@@ -50,27 +52,6 @@ Bind the schema to your project file and an editor completes every key as you ty
 [verify]
 cue_offset_max_ms = 120
 ```
-
-## Which value wins
-
-Five layers can set a key. Each one overrides the layers before it.
-
-1. The default in the table below.
-2. The same table in the per-machine settings file.
-3. The same table in the project's `decktalk.toml`.
-4. The environment variable each key publishes, such as `DECKTALK_VIDEO_PRESET`.
-5. `--set table.key=value`, on any command, for one run.
-
-`decktalk config explain KEY` prints the value in force and the layer it comes from, so you never
-have to work out which one that is.
-
-The per-machine settings file holds machine keys alone. A key about the film in that file is
-refused by name, because the file that ships has to carry whatever the machine running it believes.
-`DECKTALK_CONFIG` names a different per-machine file.
-
-| Linux | macOS | Windows |
-|---|---|---|
-| `$XDG_CONFIG_HOME/decktalk/decktalk.toml`, or `~/.config/decktalk/decktalk.toml` | `~/Library/Application Support/decktalk/decktalk.toml` | `%APPDATA%\\decktalk\\decktalk.toml` |
 """
 
 FOOTER = """## Related
@@ -91,16 +72,48 @@ MACHINE_LEAD = """## Keys only a machine may set
 These keys describe the machine rather than the film: where a tool or a cache lives, and how hard
 this machine may be driven. A project file that sets one is refused by name, because a project
 travels and a path or a limit that is right on one machine is wrong on the next. Write one into this
-machine's file with `decktalk config set KEY VALUE --where machine`, or set its environment variable.
+machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 """
 
-NUMBERS_LEAD = """## The numbers that are not knobs
+NUMBERS_LEAD = """## The numbers that are not settings
 
 These are the numbers that decide something and are still not settings. A derived number is written
 as its expression, so it follows the keys it reads at every frame size and every rate. A constant is
 a fact about a codec, a standard, or a tool DeckTalk drives, and it is fixed for the same reason a
-sample rate is. Neither can be set, and both are here so that a knob you cannot find is a number you
+sample rate is. Neither can be set, and both are here so that a setting you cannot find is a number you
 can read.
+"""
+
+
+def layers() -> str:
+    """Which value wins, naming the variables and the machine file's place on each system as the code does."""
+    home = Path("~")
+    xdg = machine_config_path({"XDG_CONFIG_HOME": "$XDG_CONFIG_HOME"}, home, "linux").as_posix()
+    linux = machine_config_path({}, home, "linux").as_posix()
+    mac = machine_config_path({}, home, "darwin").as_posix()
+    windows = PureWindowsPath(machine_config_path({"APPDATA": "%APPDATA%"}, home, "win32"))
+    return f"""## Which value wins
+
+Every key has a scope, in the Scope column below, and the scope names the one file that may set it.
+A project key is set by these, each overriding the ones before it:
+
+1. The default in the table below.
+2. The same table in the project's `decktalk.toml`.
+3. The environment variable each key publishes, such as `{BY_ID["video.preset"].environment}`.
+4. `--set table.key=value`, on any command, for one run.
+
+A machine key is set the same way, with the per-machine settings file in place of `decktalk.toml`.
+
+`decktalk config explain KEY` prints the value in force and the layer it comes from, so you never
+have to work out which one that is.
+
+Each file refuses a key of the other scope by name. A key about the film in the per-machine file is
+refused because the file that ships has to carry whatever the machine running it believes.
+`{MACHINE_FILE_VARIABLE}` names a different per-machine file.
+
+| Linux | macOS | Windows |
+|---|---|---|
+| `{xdg}`, or `{linux}` | `{mac}` | `{windows}` |
 """
 
 
@@ -186,7 +199,7 @@ def _table(document: dict[str, Any], dotted: str) -> dict[str, Any]:
 
 
 def numbers(document: dict[str, Any]) -> list[str]:
-    """The `x-numbers` array as the page's closing section, which is where a missing knob is explained."""
+    """The `x-numbers` array as the page's closing section, which is where a missing setting is explained."""
     out = [NUMBERS_LEAD, "| Number | Kind | Formula | At the defaults | Why |", "|---|---|---|---|---|"]
     for number in document["x-numbers"]:
         unit = f" {number['unit']}" if number["unit"] else ""
@@ -198,10 +211,11 @@ def numbers(document: dict[str, Any]) -> list[str]:
 
 
 def render() -> str:
-    """The whole page, which is the header, the index, one section per table, the numbers and the links."""
+    """The whole page: the header, which value wins, the keys only a machine may set, the index, one section per
+    table, the numbers and the links."""
     document = build_settings_schema.document(machine=False)
     rows = keys(document)
-    parts = [HEADER, *machine(rows), *index(rows), *tables(document, rows), *numbers(document), FOOTER]
+    parts = [HEADER, layers(), *machine(rows), *index(rows), *tables(document, rows), *numbers(document), FOOTER]
     return "\n".join(parts).rstrip() + "\n"
 
 

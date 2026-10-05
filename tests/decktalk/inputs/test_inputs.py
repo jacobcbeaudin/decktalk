@@ -8,14 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import CueTimes, Words
-from decktalk.artifacts.words import words_file
-from decktalk.errors import ErrorCode, InputError
+from decktalk.artifacts import ClipWords, CueTimes, EstimatedWords, ProviderWords, Takes, Words
+from decktalk.errors import ErrorCode, InputError, NotBuiltError
+from decktalk.inputs import PAID_FOLDERS as LOADED_PAID_FOLDERS
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import ClipSection
 from decktalk.inputs.env import reading_dotenv
-from decktalk.results import CueTime, SectionCues, Word
+from decktalk.pipeline import Artifact
+from decktalk.results import BillingBasis, CueTime, SectionCues, Word
+from decktalk.speech import VoiceInForce
 from support.projects import MINIMAL_TOML, write_project
+from support.takes import a_take, narrated, write_takes
 
 TITLED_CLIP_TOML = """
 [project]
@@ -89,7 +92,7 @@ def test_project_loads_sections_in_order(tmp_path):
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[transition]\ndips = [[1, 9]]\n", "does not exist"),
         ("[[section]]\nnumber = 1\npage = 'deck/a.html'\n[bogus]\nx = 1\n", "unknown table"),
         (
-            "[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[mix.effects]]\nfile = 'x.mp3'\nsection = 1\n",
+            "[[section]]\nnumber = 1\npage = 'deck/a.html'\n[[mix.effect]]\nfile = 'x.mp3'\nsection = 1\n",
             "'cue' is required and is not there.",
         ),
     ],
@@ -138,27 +141,27 @@ def test_project_tuning_tables_reach_settings(tmp_path):
 def test_project_env_reads_dotenv_and_ignores_placeholders(tmp_path, monkeypatch):
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     root = write_project(tmp_path)
-    (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nELEVENLABS_VOICE_ID='abc' # comment\n", encoding="utf-8")
+    (root / ".env").write_text("ELEVENLABS_API_KEY=<fill me>\nOTHER_VARIABLE='abc' # comment\n", encoding="utf-8")
     p = Inputs.load(root, environ={})
     with reading_dotenv(True):
         assert not p.env.get("ELEVENLABS_API_KEY")  # the placeholder counts as unset
-        assert p.env.get("ELEVENLABS_VOICE_ID").reveal() == "abc"
+        assert p.env.get("OTHER_VARIABLE").reveal() == "abc"
         # A secret is named by its variable and never by its value, in a repr as in an error.
-        assert repr(p.env.get("ELEVENLABS_VOICE_ID")) == "<secret ELEVENLABS_VOICE_ID>"
+        assert repr(p.env.get("OTHER_VARIABLE")) == "<secret OTHER_VARIABLE>"
         with pytest.raises(InputError, match="ELEVENLABS_API_KEY") as info:
-            p.env.require("ELEVENLABS_API_KEY", "ELEVENLABS_VOICE_ID")
+            p.env.require("ELEVENLABS_API_KEY", "OTHER_VARIABLE")
     assert "abc" not in str(info.value)
 
 
 def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monkeypatch):
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "no-user-config.toml"))
+    monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(tmp_path / "no-user-config.toml"))
     toml = (
         "[project]\nname = 't'\nscirpt = 'script.md'\n"
         "[voice]\nstabilty = 0.4\n"
         "[[section]]\nnumber = 1\npage = 'deck/a.html'\nscnee = 2\nslate_seconds = 3\n"
         "[[section]]\nnumber = 2\nclip = 'b.mp4'\nzebra = 1\n"
         "[mix]\nmusic_dbb = -20\n"
-        "[soundscape.music]\nprompt = 'calm'\nsecond = 60\n"
+        "[score.music]\nprompt = 'calm'\nsecond = 60\n"
         "[video]\npresett = 'veryfast'\n"
     )
     p = Inputs.load(write_project(tmp_path, toml), environ={})
@@ -169,42 +172,56 @@ def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monk
         f"decktalk.toml: [[section]] number=1: ignoring unknown key 'scnee' (did you mean 'scene'?){page}",
         "decktalk.toml: [[section]] number=1: ignoring 'slate_seconds', which applies only to a clip section",
         f"decktalk.toml: [[section]] number=2: ignoring unknown key 'zebra'{page}",
-        f"decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?){page}",
         f"decktalk.toml: [mix]: ignoring unknown key 'music_dbb' (did you mean 'music_db'?){page}",
-        f"decktalk.toml: [soundscape.music]: ignoring unknown key 'second' (did you mean 'seconds'?){page}",
+        f"decktalk.toml: [score.music]: ignoring unknown key 'second' (did you mean 'duration_seconds'?){page}",
         f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",
+        f"decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'elevenlabs.stability'?){page}",
     )
     # A warning, not an error: the load succeeds and every misspelled key keeps its default.
-    assert p.settings.voice.stability == 0.55
+    assert p.settings.elevenlabs.stability == 0.55
     assert p.settings.video.preset == "medium"
-    music = p.document.soundscape.music
-    assert music is not None and music.seconds == 360
+    assert p.document.score.music is not None
+    assert p.settings.score.music.duration_seconds == 360
 
 
 def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     """Each key is written once, as a field, so a table's reader and its class cannot drift apart."""
     toml = (
         "[project]\nname = 't'\nscript = 'script.md'\ncues = 'cues.json'\nbuild = 'build'\nlanguage = 'fr'\n"
-        "[voice]\nprovider = 'elevenlabs'\nmodel = 'm'\nstability = 0.5\nprice_per_1000_characters = 0.3\n"
+        "[voice]\nprovider = 'elevenlabs'\n"
+        "[elevenlabs]\nmodel = 'm'\nstability = 0.5\ndollars_per_1000_characters = 0.3\n"
         "[transition]\ndips = [[1, 2]]\ndip_seconds = 0.2\npage_fades_in = true\n"
         "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
         "[[section]]\nnumber = 2\npage = 'deck/b.html'\n"
         "[mix]\nmusic_db = -20\n"
-        "[mix.loudness]\ntarget_lufs = -16\ntrue_peak_max_dbtp = -1.5\nrange_max_lu = 9\n"
-        "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\noffset = 0.1\ncaption = 'a chime'\n"
-        "[soundscape.effects.tap]\ntext = 'a tap'\nout = 'tap.mp3'\nduration_seconds = 0.5\n"
-        "prompt_influence = 0.4\nmodel_id = 'sound'\n"
-        "[soundscape.music]\nprompt = 'calm'\nseconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
-        "model_id = 'music'\n"
+        "[audio]\ntarget_lufs = -16\ntrue_peak_max_dbtp = -1.5\nrange_max_lu = 9\n"
+        "[[mix.effect]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\ndb = -16\n"
+        "offset_seconds = 0.1\ncaption = 'a chime'\n"
+        "[score.effects.tap]\nprompt = 'a tap'\nout = 'tap.mp3'\nduration_seconds = 0.5\n"
+        "prompt_influence = 0.4\nmodel = 'sound'\n"
+        "[score.music]\nprompt = 'calm'\nduration_seconds = 60\nforce_instrumental = true\nout = 'm.mp3'\n"
+        "model = 'music'\n"
     )
     p = Inputs.load(write_project(tmp_path, toml), environ={})
     assert p.notes == ()
     assert p.document.language == "fr"
-    # `[voice]` and `[mix]` are shared, so the document reads its half and neither warns about the other.
-    assert (p.document.voice.provider, p.document.voice.model) == ("elevenlabs", "m")
-    assert p.settings.voice.price_per_1000_characters == 0.3
-    assert p.settings.mix.loudness.range_max_lu == 9
+    # `[mix]` is shared, so the document reads its half and neither warns about the other.
+    assert (p.settings.voice.provider, p.settings.elevenlabs.model) == ("elevenlabs", "m")
+    assert p.settings.elevenlabs.dollars_per_1000_characters == 0.3
+    assert p.settings.audio.range_max_lu == 9
+    assert (p.settings.score.music.duration_seconds, p.settings.score.music.model) == (60, "music")
     assert p.document.mix.effects[0].caption == "a chime"
+
+
+def test_a_plural_effect_table_places_nothing_and_says_the_singular(tmp_path):
+    """An array of tables is named in the singular, like `[[section]]`, so `[[mix.effects]]` is an unknown key."""
+    toml = (
+        "[project]\nname = 't'\n[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
+        "[[mix.effects]]\nfile = 'a.wav'\nsection = 1\ncue = '1.1'\n"
+    )
+    p = Inputs.load(write_project(tmp_path, toml), environ={})
+    assert p.document.mix.effects == ()
+    assert p.notes == ("decktalk.toml: [mix]: ignoring unknown key 'effects' (did you mean 'effect'?).",)
 
 
 def test_a_section_with_no_chapter_is_titled_by_its_script_heading(tmp_path):
@@ -267,8 +284,8 @@ def test_every_path_key_of_the_document_goes_through_the_one_check(tmp_path):
         "music": "[mix]\nmusic = '/etc/hosts'\n",
         "ambience": "[mix]\nambience = '/etc/hosts'\n",
         "slate": "[mix]\nslate = '/etc/hosts'\n",
-        "file": "[[mix.effects]]\nfile = '/etc/hosts'\nsection = 1\ncue = '1.1a'\n",
-        "out": "[soundscape.ambience]\ntext = 'x'\nout = '/etc/hosts'\n",
+        "file": "[[mix.effect]]\nfile = '/etc/hosts'\nsection = 1\ncue = '1.1a'\n",
+        "out": "[score.ambience]\nprompt = 'x'\nout = '/etc/hosts'\n",
     }
     for index, (key, table) in enumerate(cases.items()):
         root = tmp_path / f"case{index}"
@@ -320,19 +337,175 @@ def test_the_artifacts_are_read_off_the_workspace_and_are_none_before_a_build(tm
     inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
     assert inputs.takes() is None
     assert inputs.cue_times() is None
-    assert inputs.cuts() is None
+    assert inputs.placements() is None
     assert inputs.recording_log("01") is None
 
 
-def test_a_take_words_are_shifted_by_their_own_section_lead(tmp_path):
+LEAD_TOML = MINIMAL_TOML.replace(
+    'clip = "media/open.mp4"', 'clip = "media/open.mp4"\nwords = "media/open.words.json"'
+) + ("\n[narration]\nlead_seconds = 0.5\n")
+"""A project whose page sections open on half a second of silence and whose clip names a words file."""
+
+HELLO = (Word(word="hello", start=0.0, end=0.4),)
+"""One word on its take's own clock, before any lead moves it."""
+
+
+def test_a_voiced_take_answers_the_words_its_provider_sent_moved_by_the_section_lead(tmp_path):
     """A cue resolves against the section clock, which starts before the first word rather than on it."""
-    toml = MINIMAL_TOML + "\n[narration]\nlead_seconds = 0.5\n"
-    inputs = Inputs.load(write_project(tmp_path, toml), environ={})
-    spoken = Words(words=(Word(word="hello", start=0.0, end=0.4),))
-    spoken.write(inputs.workspace.takes_dir / words_file("abc"))
-    assert inputs.words(1, "abc") == (Word(word="hello", start=0.5, end=0.9),)
-    assert inputs.words(0, "abc") == (Word(word="hello", start=0.0, end=0.4),)  # a clip has no lead
-    assert inputs.words(1, "nothing") == ()
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    narrated(inputs, a_take(1), words={1: HELLO})
+    heard = inputs.words(1)
+    assert type(heard) is ProviderWords and heard.audio is not None
+    assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
+    assert heard.estimated is False
+
+
+def test_a_placeholder_answers_the_words_decktalk_estimated_and_says_so(tmp_path):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    narrated(inputs, a_take(1, voiced=False), words={1: HELLO})
+    heard = inputs.words(1)
+    assert type(heard) is EstimatedWords and heard.estimated is True
+    assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
+
+
+def test_a_clip_section_answers_its_words_file_on_the_clip_own_clock(tmp_path):
+    """A clip has no lead: its words file already runs on the clip's own clock."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    ClipWords(words=HELLO).write(tmp_path / "media" / "open.words.json")
+    heard = inputs.words(0)
+    assert type(heard) is ClipWords and heard.words == HELLO and heard.estimated is False
+
+
+def test_a_clip_words_file_that_does_not_read_is_refused_as_the_author_input(tmp_path):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    path = tmp_path / "media" / "open.words.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(InputError) as refused:
+        inputs.words(0)
+    assert refused.value.code is ErrorCode.INPUT and "words names media/open.words.json" in str(refused.value)
+    assert path.read_text(encoding="utf-8") == "{not json"
+
+
+@pytest.mark.parametrize("missing", ["index", "row", "section"])
+def test_a_section_with_no_take_answers_no_words(tmp_path, missing):
+    """A reader that may run before narrate asks without a guard, and hears nothing rather than a refusal."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    if missing == "row":
+        narrated(inputs, a_take(2), words={2: HELLO})
+    elif missing == "section":
+        narrated(inputs, a_take(9), words={9: HELLO})
+    heard = inputs.words(9 if missing == "section" else 1)
+    assert type(heard) is Words and heard.words == ()
+
+
+@pytest.mark.parametrize(("paid", "kind"), [(True, ProviderWords), (False, EstimatedWords)])
+def test_a_take_whose_words_file_is_gone_answers_no_words_of_its_own_kind(tmp_path, paid, kind):
+    """A placeholder whose estimated words were deleted still says its times are estimates."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    write_takes(inputs, a_take(1, voiced=paid))
+    heard = inputs.words(1)
+    assert type(heard) is kind and heard.words == () and heard.estimated is not paid
+
+
+@pytest.mark.parametrize(
+    ("paid", "refusal", "code"), [(True, InputError, ErrorCode.INPUT), (False, NotBuiltError, ErrorCode.NOT_BUILT)]
+)
+def test_a_take_words_that_do_not_read_are_paid_exactly_when_the_take_is(tmp_path, paid, refusal, code):
+    """Only voicing a take again gives its words back, and a placeholder's cost nothing."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    (take,) = narrated(inputs, a_take(1, voiced=paid), words={1: HELLO}).sections
+    path = inputs.take_places.find(take.digest).words
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(refusal) as refused:
+        inputs.words(1)
+    assert refused.value.code is code
+    assert path.read_text(encoding="utf-8") == "{not json"
+
+
+def test_words_on_the_section_clock_are_never_written_over_the_record_they_were_read_from(tmp_path):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    (take,) = narrated(inputs, a_take(1), words={1: HELLO}).sections
+    path = inputs.take_places.find(take.digest).words
+    kept = path.read_bytes()
+    heard = inputs.words(1)
+    with pytest.raises(ValueError, match="never written"):
+        heard.write(path)
+    with pytest.raises(ValueError, match="never written"):
+        _ = heard.text
+    assert path.read_bytes() == kept
+    for number in (0, 2):
+        with pytest.raises(ValueError, match="never written"):
+            _ = inputs.words(number).text
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        pytest.param(a_take(1).model_dump(mode="json") | {"voiced": False}, id="not-voiced-on-a-voiced-digest"),
+        pytest.param(
+            a_take(1).model_dump(mode="json") | {"digest": "placeholder-0000000001"},
+            id="voiced-on-a-placeholder-digest",
+        ),
+    ],
+)
+def test_an_index_whose_row_disagrees_with_its_digest_is_a_cache_to_build_again(tmp_path, row):
+    """Whether a take was voiced is one fact, which its digest states, so a row that says otherwise is no index."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    path = inputs.workspace.takes_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    index = {"script": "script.md", "model": "m", "output_format": "mp3_44100_128", "sections": [row]}
+    path.write_text(json.dumps(index), encoding="utf-8")
+    assert inputs.takes() is None
+    with pytest.raises(NotBuiltError):
+        Takes.read(path)
+
+
+def test_the_take_index_is_read_once_while_its_file_is_unchanged(tmp_path, monkeypatch):
+    """Every stage asks for the index per section, so one unchanged file is parsed once for all of them."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    write_takes(inputs, a_take(1))
+    reads: list[Path] = []
+    real = Takes.parse.__func__
+
+    def counted(cls: type[Takes], path: Path) -> Takes | None:
+        reads.append(path)
+        return real(cls, path)
+
+    monkeypatch.setattr(Takes, "parse", classmethod(counted))
+    for _ in range(3):
+        assert inputs.takes() is not None
+    assert inputs.takes(required=True).of(1) is not None
+    assert len(reads) == 1
+    write_takes(inputs, a_take(1), a_take(2))
+    found = inputs.takes()
+    assert found is not None and found.of(2) is not None
+    assert len(reads) == 2
+
+
+def test_a_project_that_never_narrated_has_no_index_or_is_refused_naming_narrate(tmp_path):
+    """A project may move its build directory, so the refusal names the file and never `build/`."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    assert inputs.takes() is None
+    with pytest.raises(NotBuiltError) as refused:
+        inputs.takes(required=True)
+    assert str(refused.value) == "takes.json has not been built."
+    assert refused.value.hint == Artifact.TAKES.next_step
+
+
+def test_an_index_that_does_not_read_is_none_or_a_cache_to_build_again_as_asked(tmp_path, caplog):
+    """The index is a cache, so one that does not read is never built rather than a fault in the project."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML), environ={})
+    path = inputs.workspace.takes_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+    with caplog.at_level("INFO", logger="decktalk"):
+        assert inputs.takes() is None
+        assert inputs.takes() is None
+    assert len([record for record in caplog.records if "built again" in record.getMessage()]) == 1
+    with pytest.raises(NotBuiltError) as refused:
+        inputs.takes(required=True)
+    assert refused.value.code is ErrorCode.NOT_BUILT and "takes.json" in (refused.value.hint or "")
 
 
 def test_a_path_is_published_relative_to_the_project(tmp_path):
@@ -345,8 +518,8 @@ def test_the_voice_never_reads_a_clip_section(tmp_path):
     root = write_project(tmp_path, MINIMAL_TOML)
     (root / "script.md").write_text("## 0. Open\n\nA.\n\n## 1. One\n\nB.\n\n## 2. Two\n\nC.\n", encoding="utf-8")
     inputs = Inputs.load(root, environ={})
-    assert [s.index for s in inputs.script()] == [0, 1, 2]
-    assert [s.index for s in inputs.spoken()] == [1, 2]
+    assert [s.number for s in inputs.script()] == [0, 1, 2]
+    assert [s.number for s in inputs.spoken()] == [1, 2]
 
 
 def test_the_preview_document_is_empty_before_the_cues_are_resolved(tmp_path):
@@ -361,7 +534,7 @@ def test_the_preview_document_names_the_scene_each_section_plays(tmp_path):
                 section=1,
                 key="01",
                 estimated=False,
-                cues=(CueTime(cue="1.1:open", phrase="hello", seconds=1.5, offset=0.0),),
+                cues=(CueTime(id="1.1:open", phrase="hello", seconds=1.5, nudge_seconds=0.0),),
             ),
         )
     ).write(inputs.workspace.cue_times_path)
@@ -387,7 +560,7 @@ words = "media/broll.words.json"
 music = "media/bed.mp3"
 slate = "media/slate.png"
 
-[[mix.effects]]
+[[mix.effect]]
 file = "media/chime.wav"
 section = 1
 cue = "1.1:open"
@@ -503,3 +676,141 @@ def test_a_build_directory_linked_out_of_the_project_is_refused_at_load(tmp_path
     (root / "build").symlink_to(elsewhere, target_is_directory=True)
     with pytest.raises(InputError, match="outside the project"):
         Inputs.load(root, environ={})
+
+
+# ---- the machine's take store --------------------------------------------------------------------
+
+
+def store_named(named: str) -> dict[str, dict[str, str]]:
+    """The machine's own tables naming its take store, as a machine file would."""
+    return {"narration": {"store_dir": named}}
+
+
+@pytest.mark.parametrize("named", ["shared-takes", "./takes", "../takes"])
+def test_a_relative_take_store_is_refused_at_load(tmp_path: Path, named: str) -> None:
+    """A relative store would name a different folder inside every project, which `git add .` then commits."""
+    root = write_project(tmp_path)
+    with pytest.raises(InputError, match=r"\[narration\] store_dir") as refused:
+        Inputs.load(root, environ={}, machine=store_named(named))
+    assert "relative" in str(refused.value)
+    assert "~" in (refused.value.hint or "")
+
+
+def test_a_take_store_that_starts_with_a_tilde_is_under_the_machines_home(tmp_path: Path) -> None:
+    (tmp_path / "proj").mkdir()
+    root = write_project(tmp_path / "proj")
+    loaded = Inputs.load(root, environ={"HOME": str(tmp_path / "home")}, machine=store_named("~/dt-takes"))
+    assert loaded.workspace.store == tmp_path / "home" / "dt-takes"
+
+
+def test_a_take_store_inside_the_project_is_refused(tmp_path: Path) -> None:
+    """Voiced takes there would be a second takes directory with none of its rules, committed by `git add .`."""
+    root = write_project(tmp_path)
+    with pytest.raises(InputError, match="inside this project"):
+        Inputs.load(root, environ={}, machine=store_named(str(tmp_path / "machine-takes")))
+
+
+def test_a_project_reads_the_take_store_its_machine_keeps_unless_a_key_names_another(tmp_path: Path) -> None:
+    (tmp_path / "proj").mkdir()
+    root = write_project(tmp_path / "proj")
+    standard = tmp_path / "data" / "takes"
+    assert Inputs.load(root, environ={}, store=standard).workspace.store == standard
+    named = Inputs.load(root, environ={}, machine=store_named(str(tmp_path / "named")), store=standard)
+    assert named.workspace.store == tmp_path / "named"
+    assert Inputs.load(root, environ={}).workspace.store is None
+
+
+# ---- a paid folder and the build directory -------------------------------------------------------
+
+
+def with_folder(table: str, key: str, named: str, *, build: str | None = None) -> str:
+    """The minimal project with one paid folder named, and the build directory moved when `build` names one."""
+    project = f'name = "t"\nbuild = "{build}"' if build is not None else 'name = "t"'
+    return MINIMAL_TOML.replace('name = "t"', project) + f'\n[{table}]\n{key} = "{named}"\n'
+
+
+PAID_FOLDERS = [("narration", "takes_dir", "takes"), ("score", "dir", "score")]
+"""Every setting that names a folder of paid records, with its default name."""
+
+
+def test_every_paid_folder_setting_goes_through_the_one_check() -> None:
+    """The load reads each paid folder off one list, so these tests cover every key on it."""
+    assert set(LOADED_PAID_FOLDERS) == {f"{table}.{key}" for table, key, _ in PAID_FOLDERS}
+
+
+@pytest.mark.parametrize(("table", "key", "standard"), PAID_FOLDERS)
+@pytest.mark.parametrize(("build", "under"), [(None, "build"), ("out", "out")])
+@pytest.mark.parametrize("deeper", [True, False])
+def test_a_paid_folder_inside_the_build_directory_is_refused_at_load(
+    tmp_path: Path, table: str, key: str, standard: str, build: str | None, under: str, deeper: bool
+) -> None:
+    """The build directory is a cache that is deleted, so a paid record kept there would be bought again."""
+    named = f"{under}/{standard}" if deeper else under
+    root = write_project(tmp_path, with_folder(table, key, named, build=build))
+    with pytest.raises(InputError) as refused:
+        Inputs.load(root, environ={})
+    assert refused.value.code is ErrorCode.INPUT
+    message = str(refused.value)
+    assert f"[{table}] {key} is {named}" in message
+    assert f"[project] build is {under}" in message
+    assert "deleted" in message
+    assert "paid" in message
+
+
+@pytest.mark.parametrize(("table", "key"), [(table, key) for table, key, _ in PAID_FOLDERS])
+@pytest.mark.parametrize(
+    ("build", "named"), [(None, "buildings"), (None, "builds/x"), ("out", "outtakes"), ("out", "build/x")]
+)
+def test_a_paid_folder_that_only_shares_letters_with_the_build_directory_is_accepted(
+    tmp_path: Path, table: str, key: str, build: str | None, named: str
+) -> None:
+    root = write_project(tmp_path, with_folder(table, key, named, build=build))
+    loaded = Inputs.load(root, environ={})
+    held = {"narration": loaded.workspace.takes, "score": loaded.workspace.score_dir}[table]
+    assert held == root / named
+
+
+@pytest.mark.parametrize(("table", "key", "standard"), PAID_FOLDERS)
+@pytest.mark.parametrize("deeper", [True, False])
+def test_a_build_directory_inside_a_paid_folder_is_refused_at_load(
+    tmp_path: Path, table: str, key: str, standard: str, deeper: bool
+) -> None:
+    """Every build file would land in the folder the project commits, among the paid records."""
+    build = f"{standard}/build" if deeper else standard
+    root = write_project(tmp_path, with_folder(table, key, standard, build=build))
+    with pytest.raises(InputError) as refused:
+        Inputs.load(root, environ={})
+    assert refused.value.code is ErrorCode.INPUT
+    message = str(refused.value)
+    assert f"[{table}] {key} is {standard}" in message
+    assert f"[project] build is {build}" in message
+
+
+@pytest.mark.parametrize(("table", "key", "standard"), PAID_FOLDERS)
+def test_a_build_directory_that_only_shares_letters_with_a_paid_folder_is_accepted(
+    tmp_path: Path, table: str, key: str, standard: str
+) -> None:
+    build = f"{standard}helf"
+    root = write_project(tmp_path, with_folder(table, key, standard, build=build))
+    assert Inputs.load(root, environ={}).workspace.build == root / build
+
+
+def test_the_default_paid_folders_sit_beside_the_build_directory_and_load(tmp_path: Path) -> None:
+    loaded = Inputs.load(write_project(tmp_path), environ={})
+    assert loaded.workspace.takes == loaded.root / "takes"
+    assert loaded.workspace.score_dir == loaded.root / "score"
+
+
+def test_a_project_is_read_in_the_voice_its_settings_name_and_its_takes_are_named_by_it(tmp_path: Path) -> None:
+    """The voice is resolved once at load, and the suffix take places look under is the one it is asked for."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "dtsp"\n'), environ={})
+    assert inputs.voice == VoiceInForce.of(inputs.settings)
+    assert inputs.voice.provider == "dtsp"
+    assert inputs.workspace.suffix == inputs.voice.output.suffix
+
+
+def test_a_project_naming_a_voice_no_machine_answers_for_still_loads(tmp_path: Path) -> None:
+    """Only a run that must build the voice refuses an unknown name, so a watch that reloads never fails on one."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "nosuch"\n'), environ={})
+    assert inputs.voice.provider == "nosuch"
+    assert inputs.voice.billing is BillingBasis.UNDECLARED

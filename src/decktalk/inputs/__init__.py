@@ -2,6 +2,7 @@
 
     document.py    the frozen decktalk.toml tables and the two kinds of section
     workspace.py   every path under build/, named once
+    take_places.py every place a voiced take is kept, and every rule about its copies
     env.py         the project's .env, with every value handed back as a Secret
     script.py      script.md parsed into the sections the voice reads
     cues.py        cues.json parsed, and phrase matching over a take's words
@@ -9,10 +10,11 @@
     timeline.py    where the joined narration plays in the finished film
     paths.py       how a path and a place are published, which is project-relative
 
-`Inputs` is the thin composer of the parsed document, the workspace, the project's secrets and the
-tuning in force. It resolves relative paths against the project root, answers the questions that
-need more than one of the four, and reads the artifacts under `build/`. Every rule lives in one of
-the modules above, so a reader who wants the rule rather than the answer opens that module.
+`Inputs` is the thin composer of the parsed document, the workspace, the project's secrets, the
+settings in force and the voice in force. It resolves relative paths against the project root,
+answers the questions that need more than one of them, and reads the artifacts under `build/`. Every
+rule lives in one of the modules above, so a reader who wants the rule rather than the answer opens
+that module.
 
 This layer sits below the stages, which is why a stage is handed one of these and never a `Project`.
 It knows nothing about a run, a machine, an event or a result. Each loader takes a path rather than
@@ -23,16 +25,30 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal, overload
 
-from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words, content_digest, file_digest
+from decktalk.artifacts import (
+    ClipWords,
+    CueTimes,
+    EstimatedWords,
+    Placements,
+    ProviderWords,
+    RecordingLog,
+    Takes,
+    Unreadable,
+    Words,
+    content_digest,
+    file_digest,
+    is_placeholder,
+    on_section_clock,
+)
 from decktalk.artifacts.stills import Stills, still_key
-from decktalk.artifacts.words import words_file
-from decktalk.errors import InputError
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.files import current_text
 from decktalk.inputs.cues import CuedSection, load_cues
 from decktalk.inputs.document import (
@@ -42,25 +58,37 @@ from decktalk.inputs.document import (
     MixEffect,
     MusicSpec,
     PageSection,
+    Score,
     Section,
-    Soundscape,
     SoundSpec,
     Transition,
-    Voice,
 )
 from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
 from decktalk.inputs.paths import at, contained, relative
-from decktalk.inputs.script import Segment, read_script
+from decktalk.inputs.script import ScriptSection, read_script
+from decktalk.inputs.take_places import TakePlaces
 from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
-from decktalk.results import Word
-from decktalk.settings import PROJECT_FILE, Layers, Settings, key_warnings, load, read_project_toml
+from decktalk.pipeline import Artifact
+from decktalk.settings import BY_ID, PROJECT_FILE, Layers, Loaded, Settings
+from decktalk.settings.layers import key_warnings, load, machine_folder, read_project_toml, value_of
+from decktalk.speech import VoiceInForce
 
 log = logging.getLogger(__name__)
 
 ENV_FILE = ".env"
 """What a project calls the file its speech credential lives in, which is never committed."""
+
+PAID_FOLDERS: Mapping[str, str] = {
+    "narration.takes_dir": "the takes",
+    "score.dir": "the bought sounds",
+}
+"""Every setting that names a project folder of paid records, with what the folder holds.
+
+Each one is read through `Inputs._paid_folder`, so a folder added here is held to the project and
+kept out of the build directory without a check of its own.
+"""
 
 
 @dataclass(frozen=True)
@@ -73,6 +101,8 @@ class Inputs:
     env: Env
     settings: Settings
     layers: Layers
+    voice: VoiceInForce
+    """The voice this project is read in, resolved once from its settings, which every reader asks."""
     notes: tuple[str, ...] = ()
     """Every sentence the load wanted to say, which a caller reports as a line rather than printing."""
 
@@ -84,12 +114,15 @@ class Inputs:
         environ: Mapping[str, str],
         machine: Mapping[str, Any] | None = None,
         overrides: tuple[str, ...] = (),
+        store: Path | None = None,
     ) -> Inputs:
         """The project in `root`, with every layer above the defaults already applied.
 
         Nothing here reads the environment or the working directory. The caller passes the
         environment it wants read, the machine's own tuning tables and any override for this run,
         which is what lets one process hold two projects without either leaking into the other.
+        `store` is the take store the machine keeps when `[narration] store_dir` names none, or None
+        for a machine that keeps none.
         """
         root = root.resolve()
         if not (root / PROJECT_FILE).exists():
@@ -101,17 +134,28 @@ class Inputs:
         toml = read_project_toml(root)
         document = Document.from_toml(toml, default_name=root.name)
         loaded = load(root, project=toml, machine=machine, environ=environ, overrides=overrides)
-        takes_dir = cls._takes_dir(root, loaded.settings)
-        notes = document.notes + tuple(key_warnings(toml, PROJECT_FILE)) + cls._takes_note(root, takes_dir)
+        voice = VoiceInForce.of(loaded.settings)
         build = contained(root, document.build)
+        paid = {key: cls._paid_folder(root, loaded.settings, key, build, document.build) for key in PAID_FOLDERS}
+        store = cls._take_store(root, loaded, environ, store)
+        notes = document.notes + tuple(key_warnings(toml, PROJECT_FILE))
         cls._refuse_served_build(root, build, document)
         return cls(
             root=root,
             document=document,
-            workspace=Workspace(root=root, build=build, name=document.name, takes=takes_dir),
+            workspace=Workspace(
+                root=root,
+                build=build,
+                name=document.name,
+                suffix=voice.output.suffix,
+                takes=paid["narration.takes_dir"],
+                score_dir=paid["score.dir"],
+                store=store,
+            ),
             env=Env(file=root / ENV_FILE, environ=environ),
             settings=loaded.settings,
             layers=loaded.layers,
+            voice=voice,
             notes=notes,
         )
 
@@ -136,24 +180,67 @@ class Inputs:
                 )
 
     @staticmethod
-    def _takes_dir(root: Path, settings: Settings) -> Path | None:
-        """Where the take files live when `[narration] cache_dir` moves them out of the build directory."""
-        named = settings.narration.cache_dir
-        return (root / named).resolve() if named else None
+    def _paid_folder(root: Path, settings: Settings, key: str, build: Path, build_named: str) -> Path:
+        """The project directory one paid-folder key names, refused unless the project keeps it.
+
+        Every key in `PAID_FOLDERS` goes through here. The folder is committed and travels with the
+        project, so it is held to the project the way every file the project names is. An absolute
+        path is refused by its spelling even when it happens to point inside, because the same file on
+        another clone would point somewhere else, and the project directory itself is refused because
+        the paid records would then sit among the files an author writes. A folder inside the build
+        directory, which `[project] build` names, is refused too, and so is a build directory inside the
+        folder, because the build is a cache that is deleted and a paid record deleted with it is bought
+        again. The key's own range has already refused an empty value.
+        """
+        spec = BY_ID[key]
+        named = str(value_of(settings, key))
+        what = PAID_FOLDERS[key]
+        located = at(root / PROJECT_FILE, root)
+        suggestion = f'Name a directory inside the project, such as {spec.name} = "{spec.default}", and commit it.'
+        refusal = InputError(
+            f"[{spec.table}] {spec.name} is {named}, which is not a directory inside the project, "
+            f"so {what} would not travel with it.",
+            hint=suggestion,
+            location=located,
+        )
+        if Path(named).is_absolute():
+            raise refusal
+        try:
+            kept = contained(root, named)
+        except InputError as outside:
+            raise refusal from outside
+        if kept.resolve() == root.resolve():
+            raise refusal
+        held, cache = kept.resolve(), build.resolve()
+        if held.is_relative_to(cache) or cache.is_relative_to(held):
+            raise InputError(
+                f"[{spec.table}] {spec.name} is {named} and [project] build is {build_named}, so one is inside "
+                f"the other. The build directory is a cache that is deleted, and {what} are paid records that "
+                "must never be deleted with it or bought again.",
+                hint=suggestion,
+                location=located,
+            )
+        return kept
 
     @staticmethod
-    def _takes_note(root: Path, takes: Path | None) -> tuple[str, ...]:
-        """One sentence when the takes are kept outside the project, which the author should know about.
+    def _take_store(root: Path, loaded: Loaded, environ: Mapping[str, str], standard: Path | None) -> Path | None:
+        """The machine's take store, which `[narration] store_dir` names and is read after the project's.
 
-        A project file somebody else wrote should not send this machine's takes somewhere surprising
-        without saying so, and the path is the author's own to allow or to change.
+        When the key names none it is the machine's own standard folder, or none for a machine that
+        keeps none. It is refused inside this project, where it would be a second takes directory with
+        none of its rules. The machine refuses one inside its tool cache, where it knows that folder.
         """
-        if takes is None or takes.is_relative_to(root):
-            return ()
-        return (
-            f"[narration] cache_dir puts the takes at {takes}, which is outside this project. "
-            "Takes are named by content, so several projects may share one such directory.",
-        )
+        store = machine_folder(loaded, "narration.store_dir", environ) or standard
+        if store is None:
+            return None
+        if store.resolve().is_relative_to(root.resolve()):
+            raise InputError(
+                f"[narration] store_dir is {store}, which is inside this project, so the take store would be a "
+                "second takes directory that a commit could carry.",
+                hint="Name a folder outside every project, such as ~/decktalk-takes, or leave the key unset.",
+                location=at(root / PROJECT_FILE, root),
+            )
+        return store
 
     # ---- paths --------------------------------------------------------------------------
 
@@ -179,20 +266,20 @@ class Inputs:
 
     # ---- the files the author writes ------------------------------------------------------
 
-    def script(self) -> tuple[Segment, ...]:
+    def script(self) -> tuple[ScriptSection, ...]:
         """Every section of `script.md`, checked against `decktalk.toml`, parsed once per project."""
         return self._parsed
 
     @cached_property
-    def _parsed(self) -> tuple[Segment, ...]:
+    def _parsed(self) -> tuple[ScriptSection, ...]:
         """The script as `script` answers it, kept on this value alone so a replaced one reads it afresh."""
         declared = {section.number for section in self.document.sections}
         return tuple(read_script(self.script_path, self.root, declared=declared))
 
-    def spoken(self) -> tuple[Segment, ...]:
+    def spoken(self) -> tuple[ScriptSection, ...]:
         """Every section the voice reads, which is every one that does not play a clip."""
         clips = self.document.clip_numbers
-        return tuple(segment for segment in self.script() if segment.index not in clips)
+        return tuple(section for section in self.script() if section.number not in clips)
 
     def chapters(self) -> dict[int, str]:
         """One chapter title per section, which the film's chapter markers and a slate carry.
@@ -202,7 +289,7 @@ class Inputs:
         neither is named by its number.
         """
         try:
-            headings = {segment.index: segment.title for segment in self.script()}
+            headings = {section.number: section.title for section in self.script()}
         except InputError as unread:
             log.debug(
                 "The script did not parse, so a section with no chapter of its own is named by its number.",
@@ -221,6 +308,26 @@ class Inputs:
     def cues_text(self) -> str:
         """`cues.json` as it is written, which a fix that rewrites one row is worked out on, or nothing."""
         return current_text(self.cues_path)
+
+    def clip_words(self, section: ClipSection) -> ClipWords | None:
+        """The words file a clip section's `words` key names, or None when it names none or it is not there.
+
+        The author wrote that file, or kept the one `decktalk clip` wrote, so DeckTalk cannot build it
+        again. One that does not read is refused as `INPUT`, naming the key that named it, and nothing
+        here deletes it.
+        """
+        if not section.words:
+            return None
+        path = self.path(section.words)
+        try:
+            return ClipWords.parse(path)
+        except Unreadable as unread:
+            raise InputError(
+                f"{PROJECT_FILE}: [[section]] number={section.number} words names {section.words}, and {unread}",
+                hint=f"Fix {section.words}, write it again with decktalk clip, or take the words key off "
+                f"section {section.number} in {PROJECT_FILE}.",
+                location=at(path, self.root, section=section.number),
+            ) from unread
 
     def markers(self) -> Markers | None:
         """The parsed `[mix] music_markers` file, or None when the project names none."""
@@ -249,33 +356,82 @@ class Inputs:
     def tail_seconds(self, section: int) -> float:
         """Silence after the last sound of one section, in seconds.
 
-        It is the section's own `tail_seconds`, or `[narration] tail_min_seconds` when the section
+        It is the section's own `tail_seconds`, or `[narration] tail_seconds` when the section
         sets none, and like the lead it is placement rather than take content.
         """
         found = self.document.section(section)
         if not isinstance(found, PageSection):
             return 0.0
         own = found.tail_seconds
-        return round(self.settings.narration.tail_min_seconds if own is None else own, 3)
-
-    def words(self, section: int, digest: str) -> tuple[Word, ...]:
-        """One take's words in seconds after its section starts, which is after that section's lead."""
-        found = Words.read(self.workspace.takes_dir / words_file(digest))
-        if found is None:
-            return ()
-        lead = self.lead_seconds(section)
-        return found.shifted(lead) if lead else found.words
+        return round(self.settings.narration.tail_seconds if own is None else own, 3)
 
     # ---- the artifacts under build/ ---------------------------------------------------------
 
-    def takes(self) -> Takes | None:
-        return Takes.read(self.workspace.takes_path)
+    @cached_property
+    def take_places(self) -> TakePlaces:
+        """Every place this project's voiced takes are kept, which one instance serves for this value's whole life."""
+        return TakePlaces(self.workspace, wait_seconds=self.settings.narration.store_wait_seconds)
+
+    def words(self, number: int) -> Words:
+        """One section's words on its section clock, as the kind that timed them, and never None.
+
+        A page section answers its take's words, read through `take_words` by the digest its take index row
+        names and moved later by the section's lead. A row whose words file is gone answers no words of the
+        kind its digest names, so a placeholder still says its times are estimates. A clip section answers
+        the words file its `words` key names, which already runs on the clip's own clock, and one that does
+        not read is refused as `INPUT`. No take index, no row, or no such section answers an empty `Words`.
+        Every answer is a copy for reading, which no writer puts on disk.
+        """
+        found = self.document.section(number)
+        if isinstance(found, ClipSection):
+            return on_section_clock(self.clip_words(found) or Words(), 0.0)
+        index = self.takes()
+        take = index.of(number) if index is not None and found is not None else None
+        if take is None:
+            return on_section_clock(Words(), 0.0)
+        said = self.take_words(take.digest) or _words_kind(take.digest)()
+        return on_section_clock(said, self.lead_seconds(number))
+
+    def take_words(self, digest: str) -> Words | None:
+        """One take's words on the take's own clock, or None when it has none yet.
+
+        Every reader of a take's words comes here, because the digest says who timed them: the speech
+        provider sent back the words of a voiced take, which are a paid record refused rather than built
+        again when they do not read, and DeckTalk estimated a placeholder's, which are a cache.
+        """
+        return _words_kind(digest).read(self.take_places.find(digest).words)
+
+    @overload
+    def takes(self) -> Takes | None: ...
+    @overload
+    def takes(self, *, required: Literal[True]) -> Takes: ...
+    def takes(self, *, required: bool = False) -> Takes | None:
+        """The take index as narrate last wrote it, read once while its file is unchanged.
+
+        Plain, it is None before narrate has run or when the index does not read, which is what a reader
+        that may run first wants. With `required`, a stage that cannot run without the index is refused as
+        `NOT_BUILT`, naming the command that writes it. The index is a cache over the takes on disk, so
+        narrate builds one that does not read again for nothing and never buys a take for it.
+        """
+        found = self._take_index.get()
+        if isinstance(found, NotBuiltError):
+            if required:
+                raise found.with_traceback(None)
+            return None
+        if found is None and required:
+            raise NotBuiltError(f"{self.workspace.takes_path.name} has not been built.", hint=Artifact.TAKES.next_step)
+        return found
+
+    @cached_property
+    def _take_index(self) -> _TakeIndex:
+        """The take index held against its file's stat, which one instance serves for this value's whole life."""
+        return _TakeIndex(self.workspace.takes_path)
 
     def cue_times(self) -> CueTimes | None:
         return CueTimes.read(self.workspace.cue_times_path)
 
-    def cuts(self) -> Cuts | None:
-        return Cuts.read(self.workspace.cuts_path)
+    def placements(self) -> Placements | None:
+        return Placements.read(self.workspace.placements_path)
 
     def recording_log(self, key: str) -> RecordingLog | None:
         """One section's recording log, or None when that section was never recorded."""
@@ -298,7 +454,7 @@ class Inputs:
         """Every project-relative path the local origin may answer for, in the order the document names them.
 
         The origin serves the deck directory, the files the document declares and the files the
-        soundscape generates, and nothing else, so a recorded page and a preview an author leaves
+        score generates, and nothing else, so a recorded page and a preview an author leaves
         running both reach their own pictures and their own modules while the script, the cue file,
         the build directory and the credential beside them stay out of reach. A recorder and a
         preview reading two lists would be two answers to one security question.
@@ -310,8 +466,8 @@ class Inputs:
         mix = document.mix
         named += [name for name in (mix.music, mix.ambience, mix.slate, mix.music_markers) if name]
         named += [effect.file for effect in mix.effects]
-        soundscape = document.soundscape
-        generated = (soundscape.ambience, soundscape.music, *soundscape.effects.values())
+        score = document.score
+        generated = (score.ambience, score.music, *score.effects.values())
         named += [item.out for item in generated if item is not None and item.out]
         # A name is folded as a path rather than stripped as text, and one that folds to the root
         # itself is dropped, because a declared root would declare the whole project.
@@ -376,6 +532,47 @@ class Inputs:
         )
 
 
+def _words_kind(digest: str) -> type[ProviderWords] | type[EstimatedWords]:
+    """Who timed the words of the take with this digest: DeckTalk for a placeholder, its provider for any other."""
+    return EstimatedWords if is_placeholder(digest) else ProviderWords
+
+
+class _TakeIndex:
+    """The take index as last read, held while its file keeps the inode, size and times it was read at.
+
+    Narrate replaces the index in one atomic rename, which gives it a new inode, so a run that narrates
+    and then cues reads the new index without being told to. A file that does not read is held as the
+    refusal it earns, so its one "built again" record is written once while it stays as it is.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._lock = threading.Lock()
+        self._held: tuple[tuple[int, int, int, int], Takes | NotBuiltError] | None = None
+
+    def get(self) -> Takes | NotBuiltError | None:
+        """The index, the refusal its unreadable file earns, or None when there is no file."""
+        try:
+            stat = self._path.stat()
+        except FileNotFoundError:  # silent: no index is narrate not having run, which None says
+            return None
+        key = (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        with self._lock:
+            held = self._held
+        if held is not None and held[0] == key:
+            return held[1]
+        try:
+            found: Takes | NotBuiltError | None = Takes.read(self._path)
+        except NotBuiltError as unread:
+            log.info("%s It will be built again.", unread, extra={"data": {"file": self._path.name}})
+            found = unread
+        if found is None:
+            return None
+        with self._lock:
+            self._held = (key, found)
+        return found
+
+
 __all__ = [
     "ClipSection",
     "Document",
@@ -386,10 +583,9 @@ __all__ = [
     "MusicSpec",
     "PageSection",
     "Section",
-    "Segment",
+    "ScriptSection",
     "SoundSpec",
-    "Soundscape",
+    "Score",
     "Transition",
-    "Voice",
     "Workspace",
 ]

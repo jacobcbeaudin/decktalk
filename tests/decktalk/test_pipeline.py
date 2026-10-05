@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import re
 from graphlib import CycleError
 
 import pytest
 
 from decktalk import pipeline
 from decktalk.pipeline import NEEDS, PIPELINE, Artifact, Outcome, Stage, downstream, required
+from support.paths import SRC
 
 
 def test_the_six_stages_are_declared_in_run_order() -> None:
-    assert [stage.value for stage in Stage] == ["narrate", "cue", "record", "soundscape", "assemble", "verify"]
+    assert [stage.value for stage in Stage] == ["narrate", "cue", "record", "score", "assemble", "verify"]
 
 
 def test_the_pipeline_has_one_row_per_stage_in_the_same_order() -> None:
@@ -35,9 +37,10 @@ def test_every_artifact_is_read_or_written_by_some_stage() -> None:
     assert touched == set(Artifact)
 
 
-def test_every_artifact_path_is_project_relative_and_posix() -> None:
+def test_every_artifact_path_is_relative_to_the_build_directory_and_posix() -> None:
+    """The value never names the build directory itself, which `[project] build` may move."""
     for artifact in Artifact:
-        assert artifact.value.startswith("build/"), artifact
+        assert not artifact.value.startswith(("build/", "/")), artifact
         assert "\\" not in artifact.value, artifact
 
 
@@ -52,7 +55,7 @@ def test_the_next_step_names_the_stage_that_writes_the_artifact() -> None:
 def test_the_one_stage_that_spends_names_the_way_to_spend_nothing() -> None:
     """A reader stopped by a missing take index should not have to look up the free way to make one."""
     assert (
-        Artifact.TAKES.next_step == "Run `decktalk narrate` first, or `decktalk narrate --no-voice` to spend nothing."
+        Artifact.TAKES.next_step == "Run `decktalk narrate` first, or `decktalk narrate --no-spend` to spend nothing."
     )
     assert Artifact.RECORDINGS.next_step == "Run `decktalk record` first."
 
@@ -68,9 +71,9 @@ def test_the_graph_is_the_table_read_as_edges() -> None:
     assert NEEDS == {
         Stage.NARRATE: frozenset(),
         Stage.CUE: {Stage.NARRATE},
-        Stage.RECORD: {Stage.CUE},
-        Stage.SOUNDSCAPE: {Stage.NARRATE},
-        Stage.ASSEMBLE: {Stage.NARRATE, Stage.RECORD, Stage.SOUNDSCAPE},
+        Stage.RECORD: {Stage.NARRATE, Stage.CUE},
+        Stage.SCORE: frozenset(),
+        Stage.ASSEMBLE: {Stage.NARRATE, Stage.RECORD, Stage.SCORE},
         Stage.VERIFY: {Stage.CUE, Stage.ASSEMBLE},
     }
 
@@ -78,9 +81,9 @@ def test_the_graph_is_the_table_read_as_edges() -> None:
 @pytest.mark.parametrize(
     ("changed", "stale"),
     [
-        ((Stage.NARRATE,), (Stage.CUE, Stage.RECORD, Stage.SOUNDSCAPE, Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.NARRATE,), (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)),
         ((Stage.CUE,), (Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)),
-        ((Stage.SOUNDSCAPE,), (Stage.ASSEMBLE, Stage.VERIFY)),
+        ((Stage.SCORE,), (Stage.ASSEMBLE, Stage.VERIFY)),
         ((Stage.ASSEMBLE,), (Stage.VERIFY,)),
         ((Stage.VERIFY,), ()),
         ((Stage.RECORD, Stage.ASSEMBLE), (Stage.VERIFY,)),
@@ -102,8 +105,10 @@ def test_a_table_that_reads_in_a_circle_is_refused(monkeypatch: pytest.MonkeyPat
     ("plan", "wanted"),
     [
         (tuple(Stage), ()),
-        ((Stage.ASSEMBLE,), (Artifact.TAKES, Artifact.RECORDINGS, Artifact.SOUNDSCAPE)),
+        ((Stage.ASSEMBLE,), (Artifact.TAKES, Artifact.RECORDINGS, Artifact.SCORE)),
         ((Stage.VERIFY,), (Artifact.CUE_TIMES, Artifact.FINAL)),
+        ((Stage.RECORD,), (Artifact.TAKES, Artifact.CUE_TIMES)),
+        ((Stage.SCORE,), ()),
         ((Stage.NARRATE, Stage.CUE), ()),
     ],
 )
@@ -125,9 +130,47 @@ def test_a_span_whose_ends_are_the_wrong_way_round_is_empty() -> None:
 
 
 def test_one_outcome_field_replaces_four_event_names() -> None:
-    assert [outcome.value for outcome in Outcome] == ["ok", "kept", "skipped", "stopped", "failed"]
+    assert [outcome.value for outcome in Outcome] == ["ran", "kept", "skipped", "stopped", "failed"]
 
 
 def test_every_stage_reaches_its_own_row() -> None:
     for stage in Stage:
         assert stage.spec.stage is stage
+
+
+STAGES = SRC / "stages"
+"""Where each stage's module or package lives, which is what the trust columns are checked against."""
+
+
+def stage_source(stage: Stage) -> str:
+    """Every line of one stage's own code, whether it is one module or a package of them."""
+    package = STAGES / stage.value
+    files = sorted(package.rglob("*.py")) if package.is_dir() else [STAGES / f"{stage.value}.py"]
+    return "\n".join(path.read_text(encoding="utf-8") for path in files)
+
+
+def test_the_key_holders_are_the_stages_that_pass_the_spend_gate() -> None:
+    """A stage holds the key exactly when its code asks the run to approve a price, which is narrate and score."""
+    for stage in Stage:
+        assert stage.spec.holds_api_key == ("run.approve(" in stage_source(stage)), stage
+    assert Stage.keyed_stages() == (Stage.NARRATE, Stage.SCORE)
+
+
+def test_the_page_openers_are_the_stages_that_reach_the_browser() -> None:
+    """A stage opens a page exactly when its code reaches the browser: record, and assemble for its poster."""
+    reaches = re.compile(r"from decktalk\.media import [^\n]*\bbrowser\b|from decktalk\.media\.browser import")
+    for stage in Stage:
+        assert stage.spec.opens_pages == bool(reaches.search(stage_source(stage))), stage
+    assert [stage for stage in Stage if stage.spec.opens_pages] == [Stage.RECORD, Stage.ASSEMBLE]
+
+
+def test_no_stage_both_holds_the_key_and_opens_a_page() -> None:
+    for spec in PIPELINE:
+        assert not (spec.holds_api_key and spec.opens_pages), spec.stage
+
+
+def test_the_two_parts_split_the_pipeline_in_run_order() -> None:
+    """A host runs the voice part where the key is and the render part where it is not, and the two are the pipeline."""
+    assert Stage.keyless_stages() == (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)
+    assert sorted((*Stage.keyed_stages(), *Stage.keyless_stages()), key=list(Stage).index) == list(Stage)
+    assert not set(Stage.keyed_stages()) & set(Stage.keyless_stages())

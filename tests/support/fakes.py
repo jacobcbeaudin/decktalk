@@ -1,8 +1,9 @@
 """The tools a stage reaches for, faked at the seam the stage imports.
 
-A stage test runs the real stage. What it must not run is ffmpeg, Chromium and a paid voice, so
-ffmpeg and the voice are replaced at the one module attribute the stage reads, each fixture handing
-back the record of what the stage asked for, and `FakePage` is the page a browser seam hands a stage.
+A stage test runs the real stage. What it must not run is ffmpeg, Chromium and a provider that bills,
+so ffmpeg is replaced at the one module attribute the stage reads and the voice is registered in the
+table the test's runs are opened with, each fixture handing back the record of what the stage asked
+for, and `FakePage` is the page a browser seam hands a stage.
 `FakeChromium` stands one level lower, as the Playwright a launch is handed.
 Faking the seam rather than the stage is what keeps these tests about the stage: an argument list, a
 page call or a speech request that changes shape shows up here rather than passing unread.
@@ -13,6 +14,7 @@ here to type the fixture it asked for or to build one of its own.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
@@ -20,15 +22,43 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
-from playwright.sync_api import Browser, Page, Playwright
 from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import Page, Playwright
 
-from decktalk.media import browser
+from decktalk.media import pages
 from decktalk.results import Word
-from decktalk.speech import SpeechRequest
+from decktalk.speech import DECLARED, SpeechContext, SpeechFactory, SpeechProvider, SpeechRequest
 
-FAKE_VOICE_NAME = "test-voice"
-"""The `[voice] provider` value a project under test names, which `fake_voice` answers for."""
+BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
+"""The variable Playwright's driver reads for where its browsers live, spelled here as Playwright documents it."""
+
+FAKE_VOICE_NAME = "elevenlabs"
+"""The `[voice] provider` a project under test names, which `fake_voice` answers for in place of the shipped voice.
+
+A fake stands in under the shipped name, so the project reads the shipped voice's own table, its
+default model and its stated rate, and the fake is registered only on the machine of the test's runs.
+"""
+
+FREE_VOICE_NAME = "dtsp"
+"""The voice DeckTalk ships that bills nothing, which a project under test names to be read by a free voice."""
+
+
+def refusing_voices() -> dict[str, SpeechFactory]:
+    """A voice table naming every voice DeckTalk ships, each refusing to be built, for a test to put its fakes in.
+
+    A run on this table answers a fake registered under a name in place of the refusal, so a test that
+    forgot its fake fails at the build and never reaches a real adapter or a voice served on this machine.
+    """
+    return {name: _refused(name) for name in DECLARED}
+
+
+def _refused(name: str) -> SpeechFactory:
+    """A factory that refuses to build the shipped voice `name`."""
+
+    def build(_context: SpeechContext) -> SpeechProvider:
+        raise AssertionError(f"the test built the shipped voice {name!r}, which it never faked")
+
+    return build
 
 
 @dataclass
@@ -48,7 +78,7 @@ class FakeFfmpeg:
 
 NOTHING_REPORTED: dict[str, object] = {
     "version": "0.5.0",
-    "mode": "cue",
+    "mode": "record",
     "scene": None,
     "slide": None,
     "warnings": [],
@@ -81,9 +111,9 @@ class FakePage:
 
     def evaluate(self, script: str, *_args: object) -> object:
         self.scripts.append(script)
-        if browser.REPORT_JS in script:
+        if pages.REPORT_JS in script:
             return dict(self.report)
-        if browser.HAS_CATALOG_JS in script:
+        if pages.HAS_CATALOG_JS in script:
             return True
         return None
 
@@ -91,7 +121,7 @@ class FakePage:
         self.scripts.append(script)
 
     def wait_for_timeout(self, _ms: float) -> None:
-        """A recorder waits in real time and a test does not, so this passes the time by not spending it."""
+        """A recorder waits in real time and a test does not, so this passes the time by skipping it."""
 
     def screenshot(self, *, path: str | Path, **_kwargs: object) -> None:
         Path(path).write_bytes(b"")
@@ -115,9 +145,6 @@ class FakeVoice:
         self.requests.append(request)
         return self.audio, list(self.words)
 
-    def cache_key(self, request: SpeechRequest) -> str:  # noqa: ARG002  (the protocol names it)
-        return self.name
-
 
 class BareBrowser:
     """A launched Chromium, which opens pages that carry nothing and closes without a sound."""
@@ -126,10 +153,6 @@ class BareBrowser:
 
     def __init__(self) -> None:
         self.closed = False
-
-    def browser(self) -> Browser:
-        """This browser as the Playwright browser it stands in for."""
-        return cast("Browser", self)
 
     def new_page(self, **_kwargs: object) -> object:
         return object()
@@ -150,6 +173,7 @@ class FakeChromium:
         self.executable_path = str(executable)
         self.refusal, self.refusals = refusal, refusals
         self.asked: list[dict[str, object]] = []
+        self.looked_in: list[str | None] = []
 
     def launch(self, **options: object) -> BareBrowser:
         self.asked.append(options)
@@ -165,8 +189,17 @@ class FakeChromium:
         return cast("Playwright", SimpleNamespace(chromium=self))
 
     def started(self) -> Callable[[], AbstractContextManager[Playwright]]:
-        """`sync_playwright` as a seam that starts this Chromium's driver, for code that opens its own."""
-        return lambda: nullcontext(self.driver())
+        """`sync_playwright` as a seam that starts this Chromium's driver, for code that opens its own.
+
+        Each start keeps, in `looked_in`, the browser directory a real driver would read from the
+        environment it copies as it starts.
+        """
+
+        def start() -> AbstractContextManager[Playwright]:
+            self.looked_in.append(os.environ.get(BROWSERS_VARIABLE))
+            return nullcontext(self.driver())
+
+        return start
 
 
 class FakeRoute:

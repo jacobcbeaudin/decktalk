@@ -1,13 +1,13 @@
-"""One stream of progress: twelve moments, the four fields the library mints onto each, and the
+"""One stream of progress: thirteen events, the four fields the library mints onto each, and the
 subscribers that render them.
 
 Every call opens a run and writes to this stream. The Rich live region, the JSON lines `--events`
 prints on stderr, the per-run file under `build/events/` and any later dashboard are all subscribers
 to it, so a renderer never computes a fraction and there is only one channel to keep in step.
 
-`event` is the discriminator and there are twelve names. Skip, keep and fail are not names:
-`stage.done` and `section.done` carry an `outcome`, because four names for one moment would force four
-branches where one field read will do.
+`event` is the discriminator and there are thirteen names. Skip, keep and fail are not names:
+`stage.done` and `section.done` carry an `outcome`, because four names for one event would force
+four branches where one field read will do.
 
 The library mints `event`, `time`, `seq` and `run`, so an emitter states only what it measured.
 `seq` counts per run rather than per machine, because a machine-wide counter would leave gaps in
@@ -30,11 +30,11 @@ from pydantic import Field, field_validator, model_validator
 from decktalk.errors import ErrorInfo
 from decktalk.findings import Finding, Model, ProjectPath
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Elapsed, Run, SectionNumber, Spend
+from decktalk.results import Cost, Elapsed, RunId, SectionNumber, SoundKind
 from decktalk.secret import redacted
 
-MOMENT = "Which moment this line reports, which is what a reader dispatches on."
-"""The one sentence the discriminator publishes, so all twelve names describe themselves alike."""
+MOMENT = "Which event this line is, which is what a reader dispatches on."
+"""The one sentence the discriminator publishes, so all thirteen names describe themselves alike."""
 
 
 class Unit(Enum):
@@ -42,7 +42,7 @@ class Unit(Enum):
 
     TAKE = "take"
     SECTION = "section"
-    ASSET = "asset"
+    SCORE_ITEM = "score_item"
     PASS = "pass"
     PROBE = "probe"
 
@@ -57,12 +57,12 @@ class Level(Enum):
 
 
 class Event(Model):
-    """What every line of the stream carries, whichever moment it reports."""
+    """What every line of the stream carries, whichever event it is."""
 
     event: str = Field(description=MOMENT)
     time: datetime = Field(description="When this happened, as an instant.", json_schema_extra={"volatile": True})
     seq: int = Field(ge=0, description="This line's place in its run, counting from zero.")
-    run: Run
+    run: RunId
 
     @model_validator(mode="before")
     @classmethod
@@ -75,7 +75,7 @@ class RunStart(Event):
     """A run opened, and this is where its lines are being written."""
 
     event: Literal["run.start"] = Field("run.start", description=MOMENT)
-    events_path: ProjectPath | None = Field(
+    events_file: ProjectPath | None = Field(
         None, description="The file this run's lines are appended to, or null when no project holds one."
     )
 
@@ -85,13 +85,13 @@ class RunDone(Event):
 
     event: Literal["run.done"] = Field("run.done", description=MOMENT)
     outcome: Outcome = Field(description="Whether the run finished, was stopped, or failed.")
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
     error: ErrorInfo | None = Field(
         None,
         description="Why the run stopped or failed, in the shape a result's error takes, or null when it finished.",
     )
     dropped: int = Field(
-        0, ge=0, description="How many lines the events file left out once it reached output.events_max_bytes."
+        0, ge=0, description="How many lines the events file left out once it reached events.max_bytes."
     )
 
 
@@ -110,9 +110,9 @@ class StageDone(Event):
     event: Literal["stage.done"] = Field("stage.done", description=MOMENT)
     stage: Stage = Field(description="The stage this line is about.")
     outcome: Outcome = Field(
-        description="Whether the stage ran, was skipped, kept what an earlier run made, or failed."
+        description="Whether the stage ran, was skipped, kept what an earlier run made, was stopped, or failed."
     )
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
 
 
 class SectionStart(Event):
@@ -130,19 +130,19 @@ class SectionDone(Event):
     stage: Stage = Field(description="The stage this line is about.")
     section: SectionNumber
     outcome: Outcome = Field(
-        description="Whether the section ran, was skipped, kept what an earlier run made, or failed."
+        description="Whether the section ran, was skipped, kept what an earlier run made, was stopped, or failed."
     )
-    seconds: Elapsed
+    elapsed_seconds: Elapsed
 
 
-class Progress(Event):
+class StageProgress(Event):
     """How far through its own work one stage is, counted in the thing it is working on.
 
-    Narrate emits one per take, record one per section, soundscape one per asset, assemble one per
+    Narrate emits one per take, record one per section, score one per score item, assemble one per
     encoding pass and verify one per probe, so every stage that takes time reports the same shape.
     """
 
-    event: Literal["progress"] = Field("progress", description=MOMENT)
+    event: Literal["stage.progress"] = Field("stage.progress", description=MOMENT)
     stage: Stage = Field(description="The stage this line is about.")
     section: SectionNumber | None = Field(None, description="The section being worked on, or null.")
     done: int = Field(ge=0, description="How many of the things are finished.")
@@ -151,39 +151,74 @@ class Progress(Event):
     label: str = Field(description="What a renderer prints beside the count.")
 
 
-class FindingEvent(Event):
+class FindingRaised(Event):
     """A judgement was made, carried as it was found rather than held back until the result."""
 
-    event: Literal["finding"] = Field("finding", description=MOMENT)
+    event: Literal["finding.raised"] = Field("finding.raised", description=MOMENT)
     finding: Finding = Field(description="The judgement, in the same shape the result will carry.")
 
 
-class SpendEvent(Event):
-    """A price was worked out, either before the run buys anything or after it did."""
+class CostPriced(Event):
+    """A cost was worked out, either before the run buys anything or after it did."""
 
-    event: Literal["spend"] = Field("spend", description=MOMENT)
-    spend: Spend = Field(description="The price, with its state saying whether it is an estimate.")
+    event: Literal["cost.priced"] = Field("cost.priced", description=MOMENT)
+    cost: Cost = Field(description="The cost, with its state saying whether it is an estimate.")
 
 
 class TakeCharged(Event):
-    """The voice provider was paid for one take, which is the line a ledger of real spending reads.
+    """The voice provider was paid for one take, which is the line a ledger of real charges reads.
 
-    A spend event prices a whole run, before or after it. This one is written at the moment a take
+    A `cost.priced` event prices a whole run, before or after it. This one is written at the moment a take
     is bought, once per take, so a host that keeps its own ledger can record every charge as it
-    happens and can tell by the take's hash that a retried run did not buy the same take twice.
+    happens and can tell by the take's digest that a retried run did not buy the same take twice. A
+    provider that declares it bills nothing is paid nothing, so its takes write no line. A request
+    whose reply broke after it was sent may have been billed and is never sent again, so it writes a
+    line flagged `possibly_charged`, which a ledger counts toward a ceiling and never toward money spent.
     """
 
     event: Literal["take.charged"] = Field("take.charged", description=MOMENT)
     section: SectionNumber
-    take: str = Field(pattern=r"^[0-9a-f]+$", description="The take's content hash, which names its file in the cache.")
+    digest: str = Field(pattern=r"^[0-9a-f]+$", description="The take's digest, which names its files.")
     characters: int = Field(ge=0, description="How many characters were sent for this take.")
     dollars: float = Field(ge=0, description="What this take cost at the price in force, in US dollars.")
+    possibly_charged: bool = Field(
+        False,
+        description=(
+            "True when the reply broke after the request was sent, so the provider may or may not have billed "
+            "it and no take was written. Its dollars count toward the run's ceiling and never toward what it spent."
+        ),
+    )
 
 
-class Fetch(Event):
-    """A tool is being downloaded, which is the one moment a run stops for the network."""
+class SoundCharged(Event):
+    """The sound provider was paid for one request, which is a score item or one part of its music.
 
-    event: Literal["fetch"] = Field("fetch", description=MOMENT)
+    It is written the moment the provider answers, once per paid request, so a host that keeps its
+    own ledger records every sound it paid for and can tell by the digest that a retried run did not
+    buy the same request twice. A request whose reply broke after it was sent, or that a Ctrl-C
+    abandoned, may have been billed, so it writes a line flagged `possibly_charged`, as `take.charged` does.
+    """
+
+    event: Literal["sound.charged"] = Field("sound.charged", description=MOMENT)
+    name: str = Field(description="What the author calls the item in decktalk.toml.")
+    kind: SoundKind = Field(description="What kind of sound the item is: music, ambience or an effect.")
+    digest: str = Field(pattern=r"^[0-9a-f]+$", description="The digest of the request that was paid for.")
+    seconds: float = Field(ge=0, description="How many seconds of audio were asked for.")
+    dollars: float = Field(ge=0, description="What this request cost at the rate in force, in US dollars.")
+    possibly_charged: bool = Field(
+        False,
+        description=(
+            "True when the reply broke after the request was sent, or a Ctrl-C abandoned it, so the provider may or "
+            "may not have billed it and no sound was written. Its dollars count toward the run's ceiling and never "
+            "toward what it spent."
+        ),
+    )
+
+
+class ToolFetch(Event):
+    """A tool is being downloaded, which is the one time a run waits on the network."""
+
+    event: Literal["tool.fetch"] = Field("tool.fetch", description=MOMENT)
     tool: str = Field(description="What is being fetched, such as ffmpeg or chromium.")
     bytes: int = Field(ge=0, description="How many bytes have arrived.")
     total_bytes: int | None = Field(None, ge=0, description="How large the download is, or null when unstated.")
@@ -208,7 +243,7 @@ def _cut(text: str) -> str:
     return text if len(text) <= LINE_CHARS else text[:LINE_CHARS] + CUT
 
 
-class Log(Event):
+class RunLog(Event):
     """One sentence the library would have printed, had the library printed anything.
 
     A stage says its sentence through its run, and a module below the stages writes a standard
@@ -217,7 +252,7 @@ class Log(Event):
     without parsing the sentence.
     """
 
-    event: Literal["log"] = Field("log", description=MOMENT)
+    event: Literal["run.log"] = Field("run.log", description=MOMENT)
     level: Level = Field(description="How much this line matters.")
     message: str = Field(description="One sentence.")
     source: str | None = Field(
@@ -263,25 +298,26 @@ class Log(Event):
         }
 
 
-Line = Annotated[
+AnyEvent = Annotated[
     RunStart
     | RunDone
     | StageStart
     | StageDone
     | SectionStart
     | SectionDone
-    | Progress
-    | FindingEvent
-    | SpendEvent
+    | StageProgress
+    | FindingRaised
+    | CostPriced
     | TakeCharged
-    | Fetch
-    | Log,
+    | SoundCharged
+    | ToolFetch
+    | RunLog,
     Field(discriminator="event"),
 ]
 """One line of the stream, which a reader parses by its `event` and never by trying each shape."""
 
-EVENTS: dict[str, type[Event]] = {kind.model_fields["event"].default: kind for kind in get_args(get_args(Line)[0])}
-"""Every event by its name, which is the closed list `decktalk schema event` prints, read off `Line`."""
+EVENTS: dict[str, type[Event]] = {kind.model_fields["event"].default: kind for kind in get_args(get_args(AnyEvent)[0])}
+"""Every event by its name, which is the closed list `decktalk schema event` prints, read off `AnyEvent`."""
 
 Listener = Callable[[Event], None]
 
@@ -322,9 +358,9 @@ class Events:
     """Every event of every run, and the renderers watching them.
 
     The stream lives on the machine rather than on a project, because installing a toolchain and
-    reporting on a machine hold no project and would otherwise leave `--events` silent on the two
-    commands that download two hundred megabytes. A project's own view is one of these that hands
-    every subscription to the machine's stream, filtered to the runs that project opened.
+    reporting on a machine hold no project, and `install` downloads two hundred megabytes with nothing
+    else to report it. A project's own view is one of these that hands every subscription to the
+    machine's stream, filtered to the runs that project opened.
     """
 
     def __init__(self, *, source: Events | None = None) -> None:
@@ -347,11 +383,14 @@ class Events:
             if subscription in self._subscriptions:
                 self._subscriptions.remove(subscription)
 
-    def emit[E: Event](self, run: str, kind: type[E], **fields: Any) -> E:
+    def emit[E: Event](self, run: str, kind: type[E], /, **fields: Any) -> E:
         """Mint the four fields onto one event, hand it to every renderer, and give it back.
 
         The fields are typed Any because they are whatever the named event class declares, and the
         class validates them, so a narrower type here would only repeat every event's schema.
+
+        The run and the class are positional-only, so an event field that shares a parameter's name,
+        such as the `kind` of a `sound.charged` line, is always read as the field.
 
         The event is returned so a caller that needs what it just reported, such as the run id and
         the sink path on `run.start`, reads it off the line rather than working it out a second time.
@@ -397,15 +436,15 @@ class Events:
             DELIVERING.reset(token)
         if outermost:
             for message in failures:
-                self.emit(event.run, Log, level=Level.ERROR, message=message)
+                self.emit(event.run, RunLog, level=Level.ERROR, message=message)
 
 
-DROPPED_PAST_THE_BOUND = (Progress, Fetch, Log)
+DROPPED_PAST_THE_BOUND = (StageProgress, ToolFetch, RunLog)
 """The lines a bounded file may leave out, which are the ones the tools a run called can multiply.
 
 Every other line is the run's own shape, a judgement or a dollar it spent, which is bounded by the
 stages and sections of the run and is the ledger a host bills from, so it is always written. The
-list names what may go rather than what stays, so a moment added later is kept until someone
+list names what may go rather than what stays, so an event added later is kept until someone
 decides otherwise.
 """
 
@@ -424,8 +463,8 @@ class JsonlSink:
     """A subscriber that appends one JSON line per event to a file, creating it at the first line.
 
     One file per run, never truncated, so a watch loop running beside a build by hand cannot
-    overwrite what the other is writing. `max_bytes` bounds the file: once it is reached, progress,
-    fetch, debug and info lines are left out and counted, warnings and errors follow them past
+    overwrite what the other is writing. `max_bytes` bounds the file: once it is reached, `stage.progress`,
+    `tool.fetch`, debug and info lines are left out and counted, warnings and errors follow them past
     `LOUD_HEADROOM` times the bound, and every line not in `DROPPED_PAST_THE_BOUND` is always written.
     """
 
@@ -442,7 +481,7 @@ class JsonlSink:
         """Whether this line is written, given how much of the bound the file has already used."""
         if self.max_bytes is None or self.written < self.max_bytes or not isinstance(event, DROPPED_PAST_THE_BOUND):
             return True
-        loud = isinstance(event, Log) and event.level in LOUD
+        loud = isinstance(event, RunLog) and event.level in LOUD
         return loud and self.written < self.max_bytes * LOUD_HEADROOM
 
     def __call__(self, event: Event) -> None:
@@ -483,21 +522,22 @@ class JsonlSink:
 __all__ = [
     "Event",
     "Events",
-    "Fetch",
-    "FindingEvent",
+    "FindingRaised",
     "JsonlSink",
     "Level",
-    "Line",
-    "Log",
-    "Progress",
+    "AnyEvent",
+    "RunLog",
     "RunDone",
     "RunStart",
     "SectionDone",
     "SectionStart",
-    "SpendEvent",
+    "SoundCharged",
+    "CostPriced",
     "TakeCharged",
     "StageDone",
+    "StageProgress",
     "StageStart",
     "Subscription",
+    "ToolFetch",
     "Unit",
 ]

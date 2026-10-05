@@ -14,9 +14,10 @@ called all do what they say.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -173,22 +174,22 @@ def test_an_unknown_option_is_refused_rather_than_ignored(tmp_path: Path, source
 
 
 def test_a_failing_step_stops_the_install(failed_run: Install) -> None:
-    """The regression this file exists to prevent from coming back.
+    """A step that fails stops the script there, before the next step begins.
 
-    `step` used to read `$?` after an `if` whose condition had failed. An `if` with no `else` whose
-    condition is false exits 0, so the status read there was the if statement's own, not the
-    command's, and every failed step was recorded as a success. A 404 on uv's installer printed its
-    error, then reported a tick for installing uv from the empty file it had just failed to
-    download, then died three lines later complaining about PATH.
+    `step` reads the command's own status. An `if` with no `else` whose condition is false exits 0,
+    so a status read after one is the if statement's own, not the command's, and would record every
+    failed step as a success. A 404 on uv's installer would then print its error, report a tick for
+    installing uv from the empty file it failed to download, and die three lines later complaining
+    about PATH.
     """
     # No uv anywhere, so the script must download and run uv's installer, and curl fails when it
     # tries, which is the run `failed_run` makes.
     done = failed_run.done
     assert "Downloading uv" in done.stdout, f"never reached the failing step:\n{done.stdout}"
     assert done.returncode != 0, f"a failed download exited 0:\n{done.stdout}\n{done.stderr}"
-    # The load-bearing assertion, and the one that tells the bug apart from its symptom. With the
-    # bug the script did still exit non-zero, three steps later and for the wrong reason, so
-    # asserting only on the exit code passes on the broken script. What it must not do is begin
+    # The load-bearing assertion, and the one that tells the fault apart from its symptom. A script
+    # that misreads the status still exits non-zero, three steps later and for the wrong reason, so
+    # asserting only on the exit code passes on a broken script. What it must not do is begin
     # the next step, running uv's installer over the empty file the download just failed to write.
     assert "Installing uv" not in done.stdout, f"it started the next step anyway:\n{done.stdout}"
     called = failed_run.marker.read_text() if failed_run.marker.exists() else ""
@@ -229,8 +230,8 @@ def test_keep_log_keeps_it(tmp_path: Path, source: str) -> None:
 
 
 def test_it_reports_the_version_that_is_actually_on_disk(clean_run: Install) -> None:
-    """ "Installed" was a claim about the command that had just run, not about the one the reader is
-    about to type. It is now read back from the binary."""
+    """ "Installed" is a claim about the command the reader is about to type, not about the one that
+    just ran, so the version is read back from the binary."""
     done = clean_run.done
     assert "decktalk 0.0.0 is installed" in done.stdout, done.stdout
 
@@ -259,6 +260,17 @@ def test_the_plain_path_still_names_every_step(clean_run: Install) -> None:
 # /dev/tty then opens. Popen with a pty on stdout would leave that pointing at pytest's own.
 
 
+def interruptible() -> None:
+    """Give the forked run the default Ctrl-C, whatever disposition the process that started pytest had.
+
+    A shell that is not interactive starts a background job with SIGINT ignored, and a child inherits
+    that. POSIX lets a shell refuse a `trap` on a signal that was ignored when it started, so without
+    this a pytest started with `&` would run an installer whose INT trap never fires, and the
+    interrupt test would see a run that finished as if nothing had interrupted it.
+    """
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
 def run_pty(
     args: list[str],
     env: dict[str, str],
@@ -274,7 +286,13 @@ def run_pty(
     import pexpect  # noqa: PLC0415 - its pty spawn needs termios, which is what pytestmark refuses Windows on
 
     child = pexpect.spawn(
-        "/bin/sh", [str(SCRIPT), *args], env=env, timeout=timeout, encoding="utf-8", codec_errors="replace"
+        "/bin/sh",
+        [str(SCRIPT), *args],
+        env=env,
+        timeout=timeout,
+        encoding="utf-8",
+        codec_errors="replace",
+        preexec_fn=interruptible,
     )
     try:
         started = time.monotonic()
@@ -306,9 +324,23 @@ def test_no_color_is_honoured_on_a_terminal(tmp_path: Path) -> None:
     assert "\033[" not in out, repr(out)
 
 
+@pytest.fixture(params=["foreground", "background"], ids=["pytest in the foreground", "pytest as a background job"])
+def started(request: pytest.FixtureRequest) -> Iterator[None]:
+    """How the shell that started pytest left SIGINT: as it was, or ignored, as `pytest &` leaves it."""
+    if request.param == "foreground":
+        yield
+        return
+    previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
+@pytest.mark.usefixtures("started")
 def test_an_interrupt_puts_the_cursor_back_and_keeps_the_log(tmp_path: Path) -> None:
-    """The spinner hides the cursor. Before there was a trap, a Ctrl-C mid-spinner left a terminal
-    with no cursor in it until the next `reset`, and threw away the log of what had happened."""
+    """The spinner hides the cursor, so a trap restores it. Without one, a Ctrl-C mid-spinner leaves a
+    terminal with no cursor in it until the next `reset`, and throws away the log of what happened."""
     log = tmp_path / "install.log"
     called = tmp_path / "called"
     env = fake_path(tmp_path, called, slow=("uv",)) | {"DECKTALK_INSTALL_LOG": str(log)}

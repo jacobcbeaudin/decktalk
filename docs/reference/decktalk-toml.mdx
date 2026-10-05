@@ -11,9 +11,9 @@ clip, which voice reads it, what the sound is made of and how the cuts behave. E
 changes from presentation to presentation, it has no default worth publishing, and this page is its
 reference.
 
-The **settings** are the knobs. Every settings key publishes its default, its safe range, its unit,
+The **settings** are what a project changes. Every settings key publishes its default, its safe range, its unit,
 its scope and what a value at the edge risks, all from one declaration in the code, so
-`decktalk schema settings`, the JSON Schema, `decktalk config explain` and
+`decktalk schema setting`, the JSON Schema, `decktalk config explain` and
 [Configuration](/reference/configuration) are four renderings of one row. This page names the tables
 and sends you there rather than copying the numbers.
 
@@ -29,15 +29,14 @@ key's safe range before you save. `decktalk init` writes the line, and it costs 
 
 ## Which value wins
 
-Five layers can set a settings key. Each overrides the ones before it.
+A project key is set by its default, then by `decktalk.toml`, then by the environment variable it
+publishes, such as `DECKTALK_VIDEO_PRESET`, then by `--set table.key=value` for one run. A machine
+key takes the per-machine file in place of `decktalk.toml`, and a project file that sets one is
+refused. [Which value wins](/reference/configuration#which-value-wins) is the rule in full, and
+[Keys only a machine may set](/reference/configuration#keys-only-a-machine-may-set) lists the
+machine keys.
 
-1. The default the key publishes.
-2. The same table in the per-machine settings file.
-3. The same table in this project's `decktalk.toml`.
-4. The environment variable the key publishes, such as `DECKTALK_VIDEO_PRESET`.
-5. `--set table.key=value`, on any command that builds or reports on the project, for one run.
-
-The fifth layer writes nothing. `--set` overrides a key for exactly the run it is given to, and the
+`--set` writes nothing. `--set` overrides a key for exactly the run it is given to, and the
 file on disk is untouched, which is what makes it the right way to try a value. It takes the same
 spelling an environment variable takes, so a value cannot get in through one route that the other
 would refuse. No flag on any command duplicates a settings key, so reduced motion is
@@ -50,17 +49,16 @@ layer that sets the key.
 `decktalk config set KEY VALUE` is how you write one into a file. It reads the value under the same
 range the loader enforces, edits the document in place rather than rewriting it, so the comments you
 wrote around the key survive, and loads the would-be file whole before a byte lands, so a file no run
-could use never reaches the disk. `--where project` writes `decktalk.toml` and `--where machine`
+could use never reaches the disk. `--scope project` writes `decktalk.toml` and `--scope machine`
 writes the per-machine file. `--dry-run` reports the change and writes nothing.
 `decktalk config unset KEY` takes a key out again so the layer below it wins.
 
 A value outside a key's safe range is refused at load, by the dotted key that wrote it, with the
-range it missed and the sentence saying what goes wrong at the edge.
+range it missed, the layer it came from and the sentence saying what goes wrong at the edge.
 
-{/* sample: decktalk status in a starter project with crf = 99 added under [video] */}
-
+{/* sample: crf-out-of-range, decktalk status, on a fresh decktalk init my-lesson with crf = 99 added under [video], which exits 3 */}
 ```text
-error[INPUT]: video.crf: must be between 0 and 32, got 99
+error[INPUT]: video.crf: must be between 0 and 32, got 99 in decktalk.toml.
   hint: Above about 32 the encoder's own ringing is larger than a small reveal, so a cue that played reads as no change and the check that would have caught it passes instead.
   docs: https://docs.decktalk.ai/reference/errors/INPUT
 ```
@@ -73,13 +71,15 @@ refusal names what it read and would not accept.
 - A top-level table is neither a document table nor a settings table.
 - The file has no `[[section]]` table.
 - A required key is missing, such as a `[[section]]` with no `number`.
-- A value has the wrong type. `seconds = 120.5` under `[soundscape.music]` fails, because that key is
+- A value has the wrong type. `seconds = 120.5` under `[score.music]` fails, because that key is
   an integer and a mapping carries the type its author wrote.
+- A number is `nan` or `inf`, which TOML spells and no range can hold. The same refusal meets one in
+  a `DECKTALK_` variable or a `--set`, and it names the file, the variable or the flag that wrote it.
 - Two `[[section]]` tables share a `number`.
 - A section has both `page` and `clip`, or neither.
 - `record_margin_seconds`, `hold_seconds`, `lead_seconds` or `tail_seconds` is below 0.
 - `seamless` is set on the first section, which has no previous section.
-- A `[transition] dips` pair or a `[[mix.effects]]` row names a section that does not exist.
+- A `[transition] dips` pair or a `[[mix.effect]]` row names a section that does not exist.
 - A settings value is outside its safe range.
 - A `page` sits at the project root. The origin serves a page's whole directory, and the root holds
   the script, the cue file and the build directory.
@@ -92,10 +92,17 @@ refusal names what it read and would not accept.
 An unknown key inside a known table does not fail the load. DeckTalk warns, names the closest key it
 does read, ignores the key and carries on.
 
-{/* sample: decktalk status in a starter project with stability misspelled under [voice] */}
-
+{/* sample: misspelt-key, decktalk status, on a fresh decktalk init my-lesson with stability spelled stabilty under [elevenlabs], the first line */}
 ```text
-decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'stability'?).
+decktalk.toml: [elevenlabs]: ignoring unknown key 'stabilty' (did you mean 'stability'?).
+```
+
+A key spelled under a table it does not live in is warned about the same way, and the closest key is
+named with its own table, because no key is read under any name but its own.
+
+{/* sample: key-in-the-wrong-table, decktalk status, on a fresh decktalk init my-lesson with stability = 0.5 added under [voice], the first line */}
+```text
+decktalk.toml: [voice]: ignoring unknown key 'stability' (did you mean 'elevenlabs.stability'?).
 ```
 
 A page section key written on a clip section, or the reverse, gets a warning of its own that names
@@ -152,9 +159,9 @@ file does not matter. A section is a **page section**, which records one scene o
 | `record_margin_seconds` | number | `0.3` | How long the recording runs past the section's span. |
 | `hold_seconds` | number | `0` | How long the section's last frame holds after its narration. The narration waits for the hold, and the next section starts after it. |
 | `lead_seconds` | number | `[narration] lead_seconds` | Silence before the section's first word. |
-| `tail_seconds` | number | `[narration] tail_min_seconds` | Silence after the section's last word. |
-| `ambience` | boolean | `false` | Play the ambience bed under this section. |
-| `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `slide`, `cues`, `words`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads, and any other key is refused by name. Every value reaches the page as a string. |
+| `tail_seconds` | number | `[narration] tail_seconds` | Silence after the section's last word. |
+| `with_ambience` | boolean | `false` | Play the ambience bed under this section. |
+| `params` | table | none | Query parameters the page is opened with, written as `[section.params]`. Every key must be one of `scene`, `freeze`, `cues`, `words`, `t0`, `speed`, `hud`, `after` and `before`, which is the whole vocabulary a DeckTalk page reads. Loading the project accepts any key, and a command that opens the page or works out whether its recording is current refuses any other key by name, as `INPUT`: `check` with pages, `storyboard`, `status`, `record` and `build`. `narrate`, `cue` and `check --no-pages` never read it. Every value reaches the page as a string. |
 
 `lead_seconds` and `tail_seconds` are placed when the takes are joined and are never sent to the
 voice, so changing either voices nothing. The section starts where its silence starts, so
@@ -163,7 +170,7 @@ at zero. [script.md](/reference/script-md) has the whole rule.
 
 `record` sets `t0` itself so that the page starts its clock on the recorder's signal, and it fills
 `cues` and `words` from what `cue` and `narrate` resolved unless the section names them. A frozen
-frame, which `storyboard` and `check` draw, sets `cues`, `t0`, `slide`, `after` and `before` itself,
+frame, which `storyboard` and `check` draw, sets `cues`, `t0`, `freeze`, `after` and `before` itself,
 so those five are dropped from a section's `params` rather than passed through.
 
 ```toml decktalk.toml
@@ -177,7 +184,7 @@ hold_seconds = 2      # the last frame stays 2 seconds before section 5
 
 A page may load only what this file declares. Every page is opened at a local origin that answers
 for the directory each `page` sits in and for the files the document names, which are each clip and
-its `words`, every `[mix]` file, every `[[mix.effects]]` file and every `[soundscape]` `out`. Every
+its `words`, every `[mix]` file, every `[[mix.effect]]` file and every `[score]` `out`. Every
 other file in the project is refused, so the script, the cue file, `build/` and `.env` stay out of a
 page's reach. A declared file is reached by the spelling written here and by no other, so
 `media/Theme.mp3` does not answer a request for `media/theme.mp3` on any platform. A declared
@@ -207,76 +214,103 @@ hosts the project never named.
 
 ## `[voice]`
 
-`[voice]` is shared. Two keys are the document, saying which voice reads this presentation, and every
-other key in the table is a settings key saying how it reads. The reader of each half ignores the
-other, so neither warns about the other's keys.
+`[voice]` is a settings table of the three keys every voice has. Everything a provider is particular
+about is in that provider's own table, `[elevenlabs]` for ElevenLabs and `[dtsp]` for the local
+voice, so changing `provider` never sends one vendor's fields or model to another.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `provider` | string | `elevenlabs` | The speech provider this project is read by. It is a name the machine's own map answers, and an unregistered name fails when `narrate` runs rather than at load. ElevenLabs is the only provider DeckTalk ships. |
-| `model` | string | `[narration] model` | The provider model this project is read by. |
+| `provider` | string | `elevenlabs` | The speech provider this project is read by. It is a name the machine's own map answers. An unregistered name loads, and it fails when a run asks that voice for a take. A run that does not spend plays placeholders and never asks. DeckTalk ships `elevenlabs` and `dtsp`. |
+| `id` | string | empty | The voice that reads the script. It is a published name rather than a credential, so it is committed with the project, and `DECKTALK_VOICE_ID` in the environment overrides it for anyone who keeps it out of the file. |
+| `speed` | number | `1.0` | How fast the voice speaks, as a multiple of its natural pace. |
 
-The API key and the voice id are secrets rather than content, so they live in `.env` as
-`ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`, or in the environment.
+The ElevenLabs API key is the one secret, so it lives in `.env` as `ELEVENLABS_API_KEY`, or in the
+environment. The local voice needs none.
 
-The settings half of the table is `stability`, `similarity_boost`, `style`, `speaker_boost`, `speed`
-and `price_per_1000_characters`. [Configuration](/reference/configuration#voice) has each one with
-its range. Every one of them but `price_per_1000_characters` is part of a take's content hash, so
-changing one makes the next voiced build voice every section again.
+`[elevenlabs]` holds `model`, `stability`, `similarity_boost`, `style`, `speaker_boost`,
+`dollars_per_1000_characters`, `output_format` and `base_url`. ElevenLabs bills per character, so its
+rate is stated per thousand characters. `model` is the model that reads the script, and it is set
+here alone, never under `[voice]`. The score stage buys from the same API with the same key and
+`base_url`, and its own request settings and its rates per minute of audio are in `[score]`.
+[Configuration](/reference/configuration#elevenlabs) has each one with its range. The voice id, the
+model, `speed`, the four voice fields and `output_format` are part of a take's input digest, so
+changing one makes the next voiced build voice every section again. The price and the base URL are
+not. `base_url` is machine-scoped, so it is set in this machine's file and a `decktalk.toml` that
+sets it is refused.
 
-## `[soundscape]`
+`[dtsp]` holds `base_url` and `model` for the local voice, which speaks the DeckTalk speech protocol
+to `decktalk-voice`, a separate local server that is not part of this repository. `base_url` is
+machine-scoped like ElevenLabs's, so only this machine names where the script is sent. The local voice bills nothing, so buying its takes asks for no
+`--spend`, and a build still asks about a score it would buy. Its takes are named by `dtsp`, the voice id, the model and `speed`, so they never share a
+name with an ElevenLabs take of the same words. [Configuration](/reference/configuration#dtsp) has
+both keys.
 
-`[soundscape]` holds the prompts that `decktalk soundscape` generates from. It is optional, and no
-packaged project writes one. Every item writes to `build/soundscape/` unless the table names another
-path, and a generated file that `[mix]` then names is what the film actually plays.
+## `[score]`
+
+`[score]` holds the prompts that `decktalk score` generates from. It is optional, and no
+packaged project writes one. Every sound it buys is written to the score directory, `[score] dir`,
+which is `score/` by default and which you commit, unless the item names another path. A generated
+file that `[mix]` then names is what the film actually plays.
+
+Each item's table is shared: its prompt and its file are the document, and beside them sit the
+settings that size its request, spelled the same way in every table. [Configuration](/reference/configuration#score)
+has every setting with its range, and `[score] timeout_seconds` is how long one request may take.
 
 ```toml decktalk.toml
-[soundscape.ambience]
-text = "a quiet room, distant traffic, no music"
+[score.ambience]
+prompt = "a quiet room, distant traffic, no music"
 
-[soundscape.effects.chime]
-text = "one soft glass chime"
+[score.effects.chime]
+prompt = "one soft glass chime"
 
-[soundscape.music]
+[score.music]
 prompt = "calm piano under a lesson, unhurried"
-seconds = 360
+duration_seconds = 360
 ```
 
-### `[soundscape.ambience]`
-
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `text` | string | required | The prompt. |
-| `duration_seconds` | number | `[elevenlabs] ambience_seconds` | How long a bed to ask for. The bed loops under every section that sets `ambience = true`. |
-| `prompt_influence` | number | `[elevenlabs] ambience_prompt_influence` | How closely the sound follows the prompt. |
-| `model_id` | string | `[elevenlabs] sound_model` | The sound model to ask. |
-| `out` | path | `[mix] ambience`, else `build/soundscape/ambience.mp3` | Where to write it. |
-
-### `[soundscape.effects.<name>]`
-
-One table per effect, and `<name>` is the name the file is written under. The keys are the ambience
-keys, with `[elevenlabs] effect_seconds` and `[elevenlabs] effect_prompt_influence` as the two
-defaults and `build/soundscape/<name>.mp3` as the output path. A `[[mix.effects]]` row is what places
-the finished sound in the film.
-
-### `[soundscape.music]`
+### `[score.ambience]`
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `prompt` | string | required | The prompt. |
-| `seconds` | integer | `360` | How long a piece to ask for. It is an integer, so `120.5` fails the load. |
-| `force_instrumental` | boolean | `true` | Ask for no vocals. |
-| `model_id` | string | `[elevenlabs] music_model` | The music model to ask. |
-| `out` | path | `[mix] music`, else `build/soundscape/music.mp3` | Where to write it. |
+| `out` | path | `[mix] ambience`, else `score/ambience.mp3` | Where to write it. |
+| `duration_seconds` | number | `25` | A setting: how long a bed to ask for. The bed loops under every section that sets `with_ambience = true`. |
+| `prompt_influence` | number | `0.3` | A setting: how closely the sound follows the prompt. |
+| `model` | string | `eleven_text_to_sound_v2` | A setting: the sound model to ask. |
+| `dollars_per_minute` | number | `0` | A setting: what your plan charges for a minute of this audio. A spend cap refuses a score while it is still `0`. |
 
-A piece longer than `[elevenlabs] max_music_chunk_seconds` is asked for in parts and joined with a
-crossfade, because the service will not write a long piece in one answer.
+### `[score.effects]` and `[score.effects.<name>]`
+
+`[score.effects]` holds four settings for every effect: `duration_seconds`, which is `0.5`,
+`prompt_influence`, which is `0.5`, `model`, and `dollars_per_minute`, which is what your plan
+charges for a minute of effect audio. One `[score.effects.<name>]` table per effect
+names it, and `<name>` is the name the file is written under. It takes `prompt`, which is required, and
+`out`, which is `score/<name>.mp3` by default, and it may set `duration_seconds`, `prompt_influence` or
+`model` for itself. A `[[mix.effect]]` row is what places the finished sound in the film.
+
+### `[score.music]`
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `prompt` | string | required | The prompt. |
+| `force_instrumental` | boolean | `true` | Ask for no vocals. |
+| `out` | path | `[mix] music`, else `build/score/music.mp3` | Where to write the piece joined from its parts, which are bought into `score/music-part<n>.mp3`. |
+| `duration_seconds` | integer | `360` | A setting: how long a piece to ask for. It is an integer, so `120.5` fails the load. |
+| `model` | string | `music_v2` | A setting: the music model to ask. |
+| `bitrate` | string | `192k` | A setting: the bitrate of the file joined from the parts. |
+| `chunk_max_seconds` | integer | `300` | A setting: the longest one request asks for. |
+| `crossfade_seconds` | integer | `2` | A setting: the crossfade between two parts. |
+| `dollars_per_minute` | number | `0` | A setting: what your plan charges for a minute of this audio. A spend cap refuses a score while it is still `0`. |
+
+A piece longer than `chunk_max_seconds` is asked for in parts and joined with a crossfade, because the
+service will not write a long piece in one answer.
 
 ## `[mix]`
 
 `[mix]` is shared too. The keys below are the document, naming the sound files the film plays and the
-level each one plays at. `[mix.loudness]` is the settings half, and
-[Configuration](/reference/configuration#mix-loudness) has its three keys.
+level each one plays at. The settings half is how each layer is ramped, and
+[Configuration](/reference/configuration#mix) has its five keys. The loudness the final mix is
+mastered to is `[audio]`.
 
 Without `[mix]` the film carries the narration and the audio of any clip, and nothing else.
 
@@ -288,14 +322,14 @@ Without `[mix]` the film carries the narration and the audio of any clip, and no
 | `music_fade_in_seconds` | number | `2` | The fade in. |
 | `music_fade_out_seconds` | number | `3` | The fade out. |
 | `music_markers` | path | none | A markers file that swells and mutes the music at spoken phrases. |
-| `ambience` | path | none | The ambience bed for every section that sets `ambience = true`. |
+| `ambience` | path | none | The ambience bed for every section that sets `with_ambience = true`. |
 | `ambience_db` | number | `-20` | The ambience level. |
 | `slate` | path | a rendered slate | A PNG to show for a missing clip, instead of the titled slate DeckTalk renders. |
 
 A missing music or ambience file does not fail the build. `assemble` warns and plays the film
 without it.
 
-### `[[mix.effects]]`
+### `[[mix.effect]]`
 
 One table per sound effect, each of which plays at a cue.
 
@@ -303,9 +337,9 @@ One table per sound effect, each of which plays at a cue.
 |---|---|---|---|
 | `file` | path | required | The audio file to play. |
 | `section` | integer | required | The section whose cue places it. The section must exist. |
-| `cue` | string | required | The wire id of the cue in that section, such as `3.2:expand`. |
+| `cue` | string | required | The cue id of the cue in that section, such as `3.2:expand`. |
 | `db` | number | `-16` | The level. |
-| `offset` | number | `0` | Seconds added to the cue time. This offset belongs to the sound and not to the cue. |
+| `offset_seconds` | number | `0` | Seconds added to the cue time. This offset belongs to the sound and not to the cue. |
 | `caption` | string | none | The line a viewer reads when the sound plays, such as `ball bounces`. `assemble` gives it a line of its own in the captions. |
 
 A missing file or a cue that never resolved does not fail the build. `assemble` skips that effect and
@@ -321,21 +355,26 @@ writes one, so the block below is the shape rather than a starter's values.
   "boost_db": 3,
   "boost_seconds": 2,
   "markers": [
-    { "name": "turn", "section": 3, "on": "$start", "mute_seconds": 0.4 }
+    { "name": "turn", "section": 3, "phrase": "$start", "mute_seconds": 0.4 }
   ]
 }
 ```
 
-| Key | Type | Default | Meaning |
-|---|---|---|---|
-| `boost_db` | number | `3` | How far the music rises at each marker. |
-| `boost_seconds` | number | `2` | How long each swell lasts. |
-| `markers` | array | `[]` | The markers. |
+| Key | Where | Type | Default | Meaning |
+|---|---|---|---|---|
+| `boost_db` | top level | number | `3` | How far each marker raises the music, in dB. |
+| `boost_seconds` | top level | number | `2` | How long each swell lasts. |
+| `markers` | top level | array | `[]` | The markers. |
+| `name` | marker | string | none | The name a warning uses for it. |
+| `section` | marker | integer | required | The section that holds the phrase. |
+| `phrase` | marker | string | `$start` | A spoken phrase, `$start` or `$end`. |
+| `offset_seconds` | marker | number | `0` | Seconds added to the matched second. |
+| `occurrence` | marker | integer | `1` | Which match of the phrase to take. |
+| `case_sensitive` | marker | boolean | `false` | Whether the match compares case. |
+| `mute_seconds` | marker | number | `0` | Seconds of silence before the swell starts. |
 
-A marker names a moment in the narration, and `section`, `on`, `offset`, `occurrence` and
-`case_sensitive` resolve exactly as a cue's do. `name` is what a warning calls it, and `mute_seconds`
-drops the music there before the swell. A marker whose phrase is not spoken is reported by `assemble`
-and skipped.
+A marker resolves exactly as a cue does, against the words of its own section. A marker whose phrase
+is not spoken is reported by `assemble` and skipped.
 
 ## `[transition]`
 
@@ -350,32 +389,33 @@ show, which is also what a `seamless` section needs.
 
 ## The settings
 
-A settings table may be written here, and it then overrides the per-machine file for this project.
-These are the tables, and every key of each one is published with its default, its safe range, its
-unit, its scope and its hazard by `decktalk schema settings` and documented in full on
+A settings table may be written here with its project keys. Its machine keys go in the per-machine
+file instead, and `[tools]` holds nothing else, so it is never written here. These are the tables,
+and every key of each one is published with its default, its safe range, its unit, its scope and
+its hazard by `decktalk schema setting` and documented in full on
 [Configuration](/reference/configuration).
 
 | Table | What it sets |
 |---|---|
-| [`[narration]`](/reference/configuration#narration) | The speech model, the pacing, the lead and the tail, the take cache and where a take's sound ends. |
-| [`[voice]`](/reference/configuration#voice) | How the voice reads: its stability, its style, its speed and what your plan charges. |
-| [`[record]`](/reference/configuration#record) | How the recorder drives Chromium, finds narration t=0 and judges a stalled or short recording. |
-| [`[video]`](/reference/configuration#video) | The frame size, the frame rate and the encoding of every recording and of the final mp4. |
-| [`[audio]`](/reference/configuration#audio) | The ramps of the music duck, the ambience bed and each marker. |
-| [`[mix.loudness]`](/reference/configuration#mix-loudness) | The loudness, the true peak and the range the final mix is mastered to. |
+| [`[narration]`](/reference/configuration#narration) | The pacing, the lead and the tail, the take folders and where a take's sound ends. |
+| [`[voice]`](/reference/configuration#voice) | The three keys every voice has: its provider, its id and its speed. |
+| [`[elevenlabs]`](/reference/configuration#elevenlabs) | ElevenLabs's own keys: the fields its speech takes, its default model, what your plan charges and its API. |
+| [`[dtsp]`](/reference/configuration#dtsp) | The local voice's own keys: its model and where its server listens. |
+| [`[record]`](/reference/configuration#record) | How the recorder drives Chromium, finds the start of the section clock and judges a stalled or short recording. |
+| [`[video]`](/reference/configuration#video) | The frame size, the frame rate and the video encoding of every recording and of the final mp4. |
+| [`[audio]`](/reference/configuration#audio) | The final audio: its bitrate, its sample rate, its channels, and the loudness, the true peak and the range it is mastered to. |
+| [`[mix]`](/reference/configuration#mix) | The ramps of the music duck, the ambience bed and each marker. |
+| [`[score]`](/reference/configuration#score) | How each sound and the music are asked for: their models, their lengths and how the music is joined. |
 | [`[verify]`](/reference/configuration#verify) | Every limit the finished film is measured against. |
 | [`[motion]`](/reference/configuration#motion) | Reduced motion and the multiplier on every declared motion span. |
-| [`[output]`](/reference/configuration#output) | The timestamped copy and how many runs of event files are kept. |
-| [`[elevenlabs]`](/reference/configuration#elevenlabs) | The API base, the sound and music models and the request lengths. |
-| [`[tools]`](/reference/configuration#tools) | Where ffmpeg, ffprobe and the fetched builds live on this machine. |
+| [`[output]`](/reference/configuration#output) | The timestamped copy of the final mp4. |
+| [`[events]`](/reference/configuration#events) | How many runs of event files are kept, and how large one may grow. |
 
-The per-machine file holds machine-scoped keys alone. A key about the film written there is refused
-by name with the line it sits on, because the file that ships has to carry whatever the machine
-running it believes. `decktalk config list` prints every key with the layer that set it.
+`decktalk config list` prints every key with the layer that set it.
 
 ## Related
 
 - **Write the script:** [script.md](/reference/script-md)
 - **Land a reveal on a phrase:** [cues.json](/reference/cues-json)
-- **Turn a knob:** [Configuration](/reference/configuration)
+- **Change a setting:** [Configuration](/reference/configuration)
 - **See how the sound fits together:** [Sound](/concepts/sound)

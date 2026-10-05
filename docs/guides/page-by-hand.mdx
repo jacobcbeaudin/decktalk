@@ -8,8 +8,8 @@ to a second one. This guide is for the other case: a page written from an empty 
 deck belongs to a design that neither packaged example fits.
 
 Everything here is the same contract the starter obeys. A `[data-scene]` wrapper is one scene, each
-`<template data-slide>` inside it is one slide, an element has four moments and each moment is the
-local name of a cue. No attribute ever writes a second, because `cues.json` owns seconds.
+`<template data-slide>` inside it is one slide, an element has four moments and each moment is a
+cue name. No attribute says when a cue fires, because `cues.json` owns that.
 
 ## The skeleton
 
@@ -20,23 +20,23 @@ local name of a cue. No attribute ever writes a second, because `cues.json` owns
 <meta charset="utf-8">
 <title>My lesson</title>
 
-<link rel="stylesheet" href="./katex/katex.min.css">
-<script src="./katex/katex.min.js"></script>
-<script src="./decktalk-runtime.js"></script>
+<link rel="stylesheet" href="/__decktalk/katex/katex.min.css">
+<script src="/__decktalk/katex/katex.min.js"></script>
+<script src="/__decktalk/decktalk-runtime.js"></script>
 
 <style>
   :root { --ground: #ffffff; --ink: #0f0f12; --accent: #2c1fea;
           --sans: ui-sans-serif, system-ui, sans-serif; }
   html, body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans); }
   body { width: 100vw; height: 100vh; overflow: hidden; }
-  #dt-stage { background: var(--ground); }
+  #dt-canvas { background: var(--ground); }
 </style>
 </head>
 
 <body>
 
 <div data-scene="1" data-name="Open">
-  <template data-slide="1.1" data-hold="10" data-describe="the opening title">
+  <template data-slide="1.1" data-preview-seconds="10" data-describe="the opening title">
     <h1 data-in="title" data-describe="the title, My lesson">My lesson</h1>
   </template>
 </div>
@@ -50,9 +50,10 @@ records under the cue times a run resolves.
 
 ### Loading the runtime and KaTeX
 
-`decktalk init` copies two things into `deck/` beside the page: `decktalk-runtime.js`, the compiled
-runtime, and `katex/`, a pinned KaTeX release with its stylesheet, its licence and its font files.
-Load them with relative paths, as above.
+DeckTalk serves two things itself, under `/__decktalk/` on the origin it opens every page at:
+`decktalk-runtime.js`, the compiled runtime, and `katex/`, a pinned KaTeX release with its stylesheet
+and its font files. Both come from the installed engine, so the project holds no copy of either.
+Load them with the absolute paths above, which resolve the same from any directory a page sits in.
 
 KaTeX goes before the runtime, so the first slide is already typeset when the recorder starts the
 clock. The runtime waits for a typesetter a page asks for, and a page with `data-tex` on it and no
@@ -64,10 +65,10 @@ highlighter from somebody else's server is a film that depends on a host it does
 [`PAGE_CDN_ASSET`](/reference/findings/PAGE_CDN_ASSET). Copy the asset into `deck/` instead, which is
 what the lesson example does with its bundled OFL fonts.</Warning>
 
-### The stage
+### The canvas
 
-The runtime builds a stage element, `#dt-stage`, that is 1920 by 1080 CSS pixels, and scales it to
-fit the window. A page that declares its own `<div id="dt-stage">` keeps that element and the runtime
+The runtime builds a canvas element, `#dt-canvas`, that is 1920 by 1080 CSS pixels, and scales it to
+fit the window. A page that declares its own `<div id="dt-canvas">` keeps that element and the runtime
 builds around it, which is how a deck puts one background under all of its slides. Style it, and do
 not size it.
 
@@ -92,12 +93,12 @@ A slide is a `<template>` the runtime clones when the slide mounts. Four attribu
 | Attribute | Values | Default | What it does |
 |---|---|---|---|
 | `data-slide` | any id | required | Declares the slide. Its id qualifies every moment written inside it. |
-| `data-hold` | 1 to 60 seconds | 8 | How long a preview rests on this slide. No recording reads it. |
+| `data-preview-seconds` | 1 to 60 seconds | 8 | How long a preview rests on this slide. No recording reads it. |
 | `data-enter` | `crossfade`, `cut` | `crossfade` | How this slide replaces the one before it. A crossfade is 0.24 s and a cut is instant. |
-| `data-owns` | local names, space separated | none | The cues only a handler serves, which no moment attribute mentions. |
+| `data-owns` | cue names, space separated | none | The cues only a handler serves, which no moment attribute mentions. |
 
 ```html deck/mine.html
-<template data-slide="1.4" data-hold="20" data-enter="cut" data-owns="long short"
+<template data-slide="1.4" data-preview-seconds="20" data-enter="cut" data-owns="long short"
           data-describe="the error drawn as a hill the model walks down">
   <h1 data-in="hill" data-describe="the heading, picture the error as a hill">Picture the error as a hill.</h1>
 </template>
@@ -131,7 +132,7 @@ only in markup calls none of it.
 | `DeckTalk.on(cue, fn)` | Runs `fn` at one cue, wherever in the deck that cue belongs. Returns `DeckTalk`. |
 | `DeckTalk.waitFor(promise)` | Holds the page's readiness until a promise of your own has settled. |
 | `DeckTalk.start()` | Reads the page and starts it, which a page that loads the runtime late may have to call itself. |
-| `DeckTalk.startClock()` | Starts the narration clock. The recorder sends this once its cover has come off, and a page has no reason to call it. |
+| `DeckTalk.startClock()` | Starts the section clock. The recorder sends this once its cover has come off, and a page has no reason to call it. |
 | `DeckTalk.scenes` | Every scene the page declared, as a Map keyed by scene id. |
 | `DeckTalk.params` | The page's own query, as `URLSearchParams`. |
 | `DeckTalk.findSlide(id)` | The scene and slide one slide id names, or null. |
@@ -151,13 +152,12 @@ const step = (left) => (slide) => {
 DeckTalk.on("1.5:long", step("1500px")).on("1.5:short", step("90px"));
 ```
 
-<Note>`DeckTalk.on` takes a wire id, which is the slide id, a colon and the local name, because a
-handler may be registered anywhere in the deck and nothing around the call says which slide it means.
-A slide's own `owns` and `on` keys are local names, because the slide they belong to already says
-which slide that is.</Note>
+<Note>`DeckTalk.on` takes a [cue id](/concepts/cues#the-cue-id), because a handler may be registered anywhere in the deck
+and nothing around the call says which slide it means. A slide's own `owns` and `on` keys are cue
+names, because the slide they belong to already says which slide that is.</Note>
 
 A handler receives the mounted slide element, or null when no slide is mounted, and a context of
-`id`, the wire id of the cue, `at`, the second on the page clock, `frozen`, whether the page is a
+`id`, the cue id of the cue, `at`, the second on the page clock, `frozen`, whether the page is a
 still, and `slideId`. A handler that throws earns
 [`PAGE_HANDLER_THREW`](/reference/findings/PAGE_HANDLER_THREW), and the moment does nothing rather
 than the page failing.
@@ -180,12 +180,12 @@ DeckTalk.scene("2", {
   slides: [
     {
       id: "2.1",
-      hold: 14,
+      previewSeconds: 14,
       enter: "crossfade",
       owns: ["sweep"],
       render: ({ frozen }) => `<h1 data-in="heading" data-describe="the heading">The average</h1>`,
       entered: (el, ctx) => { /* the slide has just mounted */ },
-      on: { sweep: (el, ctx) => { /* the local name, not the wire id */ } },
+      on: { sweep: (el, ctx) => { /* the cue name, not the cue id */ } },
     },
   ],
 });
@@ -218,36 +218,32 @@ a missing file never hangs a build.
 ## The query keys the runtime reads
 
 One URL decides which of four things the page is doing: it lists its scenes, it previews one, it
-plays one against the narration clock, or it freezes one slide.
+plays one against the section clock, or it freezes one slide.
 
-| Key | What it asks the page for |
-|---|---|
-| `scene` | Play this scene from its first slide. |
-| `slide` | Freeze this slide with its cues already fired, which is what a still opens. |
-| `cues` | The cue times to fire at, as `id@seconds` pairs separated by a comma. |
-| `words` | The spoken words to sync a line against, as `word@seconds` pairs separated by a comma. |
-| `t0` | The narration second the page starts at, or `signal` when the recorder starts the clock. |
-| `speed` | Multiply the preview clock, so a long section is reviewed quickly. The slowest it goes is 0.05. |
-| `hud` | Set it to `1` to draw the on-page clock and cue list, which is for an author and never for a recording. |
-| `after` | Freeze after this cue, so the cues up to and including it fire and later ones stay hidden. |
-| `before` | Freeze just before this cue, so it and every later cue stay hidden. |
+[The query keys](/reference/runtime#the-query-keys) lists every key and what it asks for.
 
 `after` and `before` are answered by the probe that `decktalk check` and `decktalk storyboard` inject
-into the page. A page you open yourself with `?slide=1.1` freezes that slide with every one of its
+into the page. A page you open yourself with `?freeze=1.1` freezes that slide with every one of its
 cues fired, and a cue those two keys name that the slide does not declare is
 [`PAGE_FREEZE_CUE_UNKNOWN`](/reference/findings/PAGE_FREEZE_CUE_UNKNOWN).
 
 ## Open the page yourself
 
-The recorder opens every page over http, so open yours the same way rather than from a `file://` URL.
+The recorder opens every page over http, and `decktalk serve` is the one supported way to open it
+yourself.
 
 ```console
-decktalk serve
+$ decktalk serve
+Serving http://127.0.0.1:56257
 ```
 
+A page opened from a `file://` URL draws nothing. The browser resolves `/__decktalk/decktalk-runtime.js`
+against the root of the disk, finds no file there, and the page has no runtime to mount its slides.
+
 It serves the deck directory and the files `decktalk.toml` declares, and nothing else. It prints
-where the deck is served and then closes its output, so a caller that captured it reads one object
-and is not left waiting on a stream that never ends. `--host` and `--port` choose the interface and
+where the deck is served as one object, flushed at once, and then serves until you stop it. Its
+output stays open while it serves, so a caller reads the object as it arrives rather than waiting for
+the stream to end. `--host` and `--port` choose the interface and
 the port, and a port of 0 takes any free one.
 
 The deck directory is every directory a `page` sits in, so every name under it is served however the
@@ -264,7 +260,7 @@ From the URL it prints:
   cue times that run resolved and plays the film's own timing. With none to find, it fires each cue
   a second apart so a deck whose cues have never been resolved still shows its whole self.
 - `?scene=1&speed=4&hud=1` reviews a long scene quickly with the clock and the cue list on screen.
-- `?slide=1.1` freezes one slide with its cues fired.
+- `?freeze=1.1` freezes one slide with its cues fired.
 
 ## Put the page in the project
 

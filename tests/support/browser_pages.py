@@ -15,10 +15,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import sync_playwright
 
+from decktalk.page import DONE_ATTR
+from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.assets import katex_dir, runtime_path
-from support.tools import absent
+from support.tools import absent, machine_tools
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -52,9 +53,11 @@ def chromium_tab(instrument: Callable[[Page], object] | None = None) -> Iterator
     passes none gets the page a person opens.
 
     Only a test that carries the `browser` marker reaches this, and the marker is only collected when
-    a run names it, so a Chromium that will not launch fails the test rather than skipping it.
+    a run names it, so a Chromium that will not launch fails the test rather than skipping it. The
+    driver looks in the tool cache of the machine this process would build, where `decktalk install`
+    puts Chromium.
     """
-    with sync_playwright() as pw:
+    with machine_tools(), chromium_fetch.driver(chromium_fetch.browsers_dir()) as pw:
         try:
             browser = pw.chromium.launch()
         except PlaywrightError as exc:
@@ -91,4 +94,4 @@ def opened(page: Page, url: str) -> None:
 def settled(page: Page, url: str) -> None:
     """Open `url` and wait until the page has drawn everything the query asked it for."""
     page.goto(url)
-    page.wait_for_function("() => document.body.dataset.done === '1'")
+    page.wait_for_function(f"() => document.body.hasAttribute({DONE_ATTR!r})")

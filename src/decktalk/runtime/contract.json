@@ -1,12 +1,14 @@
 {
-  "milliseconds": 1000,
   "secondDigits": 3,
   "captureFps": 25,
   "pairSeparator": "|",
   "pairMark": ":",
-  "wireMark": ":",
+  "cueMark": ":",
   "timeMark": "@",
   "listSeparator": ",",
+  "t0Signal": "signal",
+  "doneAttr": "data-done",
+  "enginePath": "/__decktalk/",
   "previewCueTimes": "/__decktalk/cue-times.json",
   "motionScaleProperty": "--dt-motion-scale",
   "runtimeMark": "decktalk-runtime",
@@ -115,7 +117,7 @@
         "element",
         "slide"
       ],
-      "kind": "phrase",
+      "kind": "description",
       "values": [],
       "default": null,
       "range": null,
@@ -125,7 +127,7 @@
         "transcript",
         "catalog"
       ],
-      "summary": "The subject of the reveal, which the runtime gives a verb per moment. An empty phrase means decorative."
+      "summary": "The subject of the reveal, which the runtime gives a verb per moment. An empty description means decorative."
     },
     "data-tex": {
       "name": "data-tex",
@@ -304,7 +306,7 @@
         "transcript",
         "style"
       ],
-      "summary": "Adds a class at a moment, written as moment:name pairs, for the page's own stylesheet."
+      "summary": "Adds a class at a cue, written as cue:class pairs, for the page's own stylesheet."
     },
     "data-describe-class": {
       "name": "data-describe-class",
@@ -321,7 +323,7 @@
       "affects": [
         "transcript"
       ],
-      "summary": "What each class change means, as moment:phrase pairs separated by a vertical bar."
+      "summary": "What each class change means, as cue:description pairs separated by a vertical bar."
     },
     "data-stagger": {
       "name": "data-stagger",
@@ -344,8 +346,8 @@
       ],
       "summary": "The container's children arrive this far apart from one cue."
     },
-    "data-steps": {
-      "name": "data-steps",
+    "data-spotlight": {
+      "name": "data-spotlight",
       "on": [
         "container"
       ],
@@ -353,7 +355,7 @@
       "values": [],
       "default": null,
       "range": null,
-      "code": "PAGE_STAGGER_EMPTY",
+      "code": "PAGE_SPOTLIGHT_EMPTY",
       "span": null,
       "affects": [
         "cue-order",
@@ -428,7 +430,7 @@
       "on": [
         "element"
       ],
-      "kind": "phrase",
+      "kind": "description",
       "values": [],
       "default": null,
       "range": null,
@@ -460,7 +462,7 @@
       "on": [
         "scene"
       ],
-      "kind": "phrase",
+      "kind": "description",
       "values": [],
       "default": null,
       "range": null,
@@ -488,8 +490,8 @@
       ],
       "summary": "Declares a slide on a template. Its id qualifies every moment written inside it."
     },
-    "data-hold": {
-      "name": "data-hold",
+    "data-preview-seconds": {
+      "name": "data-preview-seconds",
       "on": [
         "slide"
       ],
@@ -524,7 +526,7 @@
         "cue-order",
         "catalog"
       ],
-      "summary": "Local names of cues only a handler serves, which no moment attribute mentions."
+      "summary": "Cue names only a handler serves, which no moment attribute mentions."
     },
     "data-enter": {
       "name": "data-enter",
@@ -548,205 +550,57 @@
     }
   },
   "exempt": {
-    "data-describe": "Any phrase clears the finding, so no value of it can change a verdict.",
-    "data-describe-class": "The transcript prints the phrase verbatim, so no value of it can change a verdict.",
+    "data-describe": "Any description clears the finding, so no value of it can change a verdict.",
+    "data-describe-class": "The transcript prints the description verbatim, so no value of it can change a verdict.",
     "data-describe-out": "It replaces one transcript sentence with another, and neither is measured.",
-    "data-hold": "The preview alone reads it, and a preview is never recorded.",
+    "data-preview-seconds": "The preview alone reads it, and a preview is never recorded.",
     "data-name": "It names a scene in the index, which no check and no finding reads."
   },
   "codes": {
-    "PAGE_UNKNOWN_ATTR": {
-      "message": "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_BAD_VALUE": {
-      "message": "{attr}={value} is not one of {allowed}, so write one of those instead.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_MOMENT_UNKNOWN": {
-      "message": "{attr}={value} names a cue slide {slide} does not own, so declare it on the slide or correct the name.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_MOMENT_ORDER": {
-      "message": "The exit {value} is at or before the entrance on the same element, so give the exit a later cue.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_CUE_UNKNOWN": {
-      "message": "The cue {cue} is not one this deck declares, so remove it or name it in a moment attribute.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_NO_OWNER": {
-      "message": "No slide owns the cue {cue}, so name it in a moment attribute or list it in data-owns.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_SCENE_EMPTY": {
-      "message": "The scene {slide} declares no slide, so add a template to it or remove the scene.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_SLIDE_NO_ID": {
-      "message": "A template carries no data-slide, so give it the id a section names.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_SLIDE_DOUBLED": {
-      "message": "Two templates claim the slide id {slide}, so every moment local to it has two owners.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_SLIDE_UNUSED": {
-      "message": "Slide {slide} is never shown, so nothing it declares reaches a recording.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_TEMPLATE_IGNORED": {
-      "message": "A template inside slide {slide} declares no slide of its own, so nothing ever mounts it.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_WORDS_NOT_FOUND": {
-      "message": "The line {value} is not among the spoken words, so it cannot be shown word by word.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_KATEX_MISSING": {
-      "message": "KaTeX is not loaded, so {attr} is left as the author wrote it.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_KATEX_ERROR": {
-      "message": "KaTeX refused {value}, so the element shows its readable fallback text.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_FREEZE_CUE_UNKNOWN": {
-      "message": "The cue {cue} is not one of slide {slide}'s cues, so the freeze stopped at nothing.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_RENDER_THREW": {
-      "message": "The render handler for slide {slide} threw {value}, so the slide is drawn as its markup stands.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_ENTER_THREW": {
-      "message": "The enter handler for slide {slide} threw {value}, so the slide arrived without it.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_SLIDE_HANDLER_THREW": {
-      "message": "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_HANDLER_THREW": {
-      "message": "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_WAIT_REJECTED": {
-      "message": "A promise the page waited for rejected with {value}, so the page was drawn without it.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_WAIT_UNSETTLED": {
-      "message": "A promise the page waited for never settled, so the page was drawn without it.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_CLASS_UNDESCRIBED": {
-      "message": "data-class names {value} with no phrase for it in data-describe-class, so the transcript loses it.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_CLASS_NOT_REDUCED": {
-      "message": "The class {value} still animates under reduced motion, so the page's own stylesheet must honour it.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_SWAP_AMBIGUOUS": {
-      "message": "data-swaps at cue {cue} found {value} elements leaving, so name the one it replaces with a shared cue.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_PREVIEW_AMBIGUOUS": {
-      "message": "Two sections name the scene {slide}, so a preview cannot tell which one's cue times to play.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_APPEAR_TOO_LONG": {
-      "message": "data-words=appear is on a line of {value} words, so shorten it or use highlight instead.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_STAGGER_EMPTY": {
-      "message": "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
-      "certainty": "certain",
-      "raisedBy": "runtime"
-    },
-    "PAGE_MOTION_OVERRUN": {
-      "message": "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
-      "certainty": "certain",
-      "raisedBy": "python"
-    },
-    "PAGE_STAGGER_OVERRUN": {
-      "message": "The stagger at cue {cue} runs {value} s in all, which passes the half second a cue may still move.",
-      "certainty": "certain",
-      "raisedBy": "python"
-    },
-    "PAGE_THIN_DRAW": {
-      "message": "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
-      "certainty": "uncertain",
-      "raisedBy": "python"
-    },
-    "PAGE_NO_DESCRIPTION": {
-      "message": "The element at cue {cue} has no text and no data-tex, so give it data-describe or an empty one.",
-      "certainty": "certain",
-      "raisedBy": "python"
-    },
-    "PAGE_SWAP_APART": {
-      "message": "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
-      "certainty": "uncertain",
-      "raisedBy": "python"
-    },
-    "PAGE_STALLED": {
-      "message": "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
-      "certainty": "certain",
-      "raisedBy": "python"
-    },
-    "PAGE_BLACK": {
-      "message": "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
-      "certainty": "certain",
-      "raisedBy": "python"
-    },
-    "PAGE_TRUNCATED": {
-      "message": "The recording ends {value} s before the narration does, so the last cues are not in it.",
-      "certainty": "certain",
-      "raisedBy": "python"
-    },
-    "PAGE_CDN_ASSET": {
-      "message": "The page loaded {value} from another origin, so the film depends on a host it does not own.",
-      "certainty": "certain",
-      "raisedBy": "python"
-    },
-    "PAGE_RUNTIME_STALE": {
-      "message": "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
-      "certainty": "certain",
-      "raisedBy": "python"
-    }
+    "PAGE_ATTR_UNKNOWN": "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
+    "PAGE_BAD_VALUE": "{attr}={value} is not one of {allowed}, so write one of those instead.",
+    "PAGE_MOMENT_UNKNOWN": "{attr}={value} names a cue slide {slide} does not own, so declare it on the slide or correct the name.",
+    "PAGE_MOMENT_ORDER": "The exit {value} is at or before the entrance on the same element, so give the exit a later cue.",
+    "PAGE_CUE_UNKNOWN": "The cue {cue} is not one this deck declares, so remove it or name it in a moment attribute.",
+    "PAGE_NO_OWNER": "No slide owns the cue {cue}, so name it in a moment attribute or list it in data-owns.",
+    "PAGE_SCENE_EMPTY": "The scene {slide} declares no slide, so add a template to it or remove the scene.",
+    "PAGE_SLIDE_NO_ID": "A template carries no data-slide, so give it the id a section names.",
+    "PAGE_SLIDE_DOUBLED": "Two templates claim the slide id {slide}, so every moment local to it has two owners.",
+    "PAGE_SLIDE_UNUSED": "Slide {slide} is never shown, so nothing it declares reaches a recording.",
+    "PAGE_TEMPLATE_IGNORED": "A template inside slide {slide} declares no slide of its own, so nothing ever mounts it.",
+    "PAGE_WORDS_NOT_FOUND": "The line {value} is not among the spoken words, so it cannot be shown word by word.",
+    "PAGE_KATEX_MISSING": "KaTeX is not loaded, so {attr} is left as the author wrote it.",
+    "PAGE_KATEX_ERROR": "KaTeX refused {value}, so the element shows its readable fallback text.",
+    "PAGE_FREEZE_CUE_UNKNOWN": "The cue {cue} is not one of slide {slide}'s cues, so the freeze stopped at nothing.",
+    "PAGE_RENDER_THREW": "The render handler for slide {slide} threw {value}, so the slide is drawn as its markup stands.",
+    "PAGE_ENTER_THREW": "The enter handler for slide {slide} threw {value}, so the slide arrived without it.",
+    "PAGE_SLIDE_HANDLER_THREW": "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
+    "PAGE_HANDLER_THREW": "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
+    "PAGE_WAIT_REJECTED": "A promise the page waited for rejected with {value}, so the page was drawn without it.",
+    "PAGE_WAIT_UNSETTLED": "A promise the page waited for never settled, so the page was drawn without it.",
+    "PAGE_CLASS_UNDESCRIBED": "data-class names {value} with no description for it in data-describe-class, so the transcript loses it.",
+    "PAGE_CLASS_NOT_REDUCED": "The class {value} still animates under reduced motion, so the page's own stylesheet must honour it.",
+    "PAGE_SWAP_AMBIGUOUS": "data-swaps at cue {cue} found {value} elements leaving, so name the one it replaces with a shared cue.",
+    "PAGE_PREVIEW_AMBIGUOUS": "Two sections name the scene {slide}, so a preview cannot tell which one's cue times to play.",
+    "PAGE_APPEAR_TOO_LONG": "data-words=appear is on a line of {value} words, so shorten it or use highlight instead.",
+    "PAGE_STAGGER_EMPTY": "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
+    "PAGE_SPOTLIGHT_EMPTY": "The spotlight on slide {slide} has no child with data-in, so give its children cues or remove the attribute.",
+    "PAGE_MOTION_OVERRUN": "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
+    "PAGE_STAGGER_OVERRUN": "The stagger at cue {cue} runs {value} s in all, which passes the half second a cue may still move.",
+    "PAGE_THIN_DRAW": "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
+    "PAGE_NO_DESCRIPTION": "The element at cue {cue} has no text and no data-tex, so give it data-describe or an empty one.",
+    "PAGE_SWAP_APART": "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
+    "PAGE_CDN_ASSET": "The page loaded {value} from another origin, so the film depends on a host it does not own.",
+    "RECORD_STALLED": "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
+    "RECORD_BLACK": "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
+    "RECORD_TRUNCATED": "The recording ends {value} s before the narration does, so the last cues are not in it."
   },
   "query": {
     "scene": "Play this scene from its first slide.",
-    "slide": "Freeze this slide with its cues already fired, which is what a screenshot opens.",
+    "freeze": "Freeze this slide with its cues already fired, which is what a screenshot opens.",
     "cues": "The cue times to fire at, as id@seconds pairs separated by a comma.",
     "words": "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
-    "t0": "The narration second the page starts at, or the word signal when the recorder starts the clock.",
+    "t0": "The second on the section clock the page starts at, or the word signal when the recorder starts the clock.",
     "speed": "Multiply the preview clock, so a long section is reviewed quickly.",
     "hud": "Draw the on-page clock and cue list, which is for an author and never for a recording.",
     "after": "Freeze after this cue, so the cues up to and including it fire and later ones stay hidden.",
@@ -754,7 +608,7 @@
   },
   "report": {
     "version": "The runtime version the page carries.",
-    "mode": "Which of index, preview, cue and freeze the page is in.",
+    "mode": "Which of index, preview, record and freeze the page is in.",
     "scene": "The scene the page is playing, or null on the index page.",
     "slide": "The slide on screen, or null when none is mounted.",
     "warnings": "Every distinct warning the page reported, as code, message, slide, cue and attr.",

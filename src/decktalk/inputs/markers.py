@@ -1,9 +1,9 @@
 """`media/markers.json` parsed into typed `Marker` rows, which shape the music under the video.
 
     {"boost_db": 3, "boost_seconds": 2,
-     "markers": [{"name": "turn", "section": 3, "on": "$start", "mute_seconds": 0.4}]}
+     "markers": [{"name": "turn", "section": 3, "phrase": "$start", "mute_seconds": 0.4}]}
 
-A marker names a moment in the narration: `section` with `on`, `offset`, `occurrence` and
+A marker names a moment in the narration: `section` with `phrase`, `offset_seconds`, `occurrence` and
 `case_sensitive` resolve exactly as a cue does. `mute_seconds` drops the music there, and the
 swell that follows lasts `boost_seconds` at `boost_db`. A marker whose phrase is not found is
 reported by `assemble` and skipped.
@@ -18,7 +18,7 @@ from decktalk.errors import InputError
 from decktalk.inputs.cues import SECTION_START, json_of
 from decktalk.inputs.document import fill
 from decktalk.inputs.paths import at, relative
-from decktalk.tomlmap import Table
+from decktalk.tomlmap.read import Table
 
 
 @dataclass(frozen=True)
@@ -27,8 +27,8 @@ class Marker:
 
     name: str
     section: int
-    on: str = SECTION_START
-    offset: float = 0.0
+    phrase: str = SECTION_START
+    offset_seconds: float = 0.0
     occurrence: int = 1
     case_sensitive: bool = False
     mute_seconds: float = 0.0

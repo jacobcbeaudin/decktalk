@@ -4,8 +4,7 @@ The release pull request regenerates with `--group generated --write`, and the r
 same command on every pull request. A write that skipped a generator the check runs would leave a
 file stale on the one branch nobody else pushes to, so the derivation is held here row by row. A row
 that declares a tool has to fetch it before its checks run, and a suite that still finds no tool has
-to fail, because a declared need with nothing behind it once let three suites pass with every test
-skipped.
+to fail, because a declared need with nothing behind it lets a suite pass with every test skipped.
 """
 
 from __future__ import annotations
@@ -13,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -45,11 +45,11 @@ def test_a_write_keeps_what_prepares_the_machine_in_its_place() -> None:
     group = check.BY_NAME["generated"]
     written = check.writer(group).steps
     assert written[: len(group.preparations)] == group.preparations
-    assert check.NPM_CI in group.preparations and check.INSTALL in group.preparations
+    assert check.NPM_CI in group.preparations
 
 
 def test_a_generator_that_needs_more_to_check_needs_the_same_to_write() -> None:
-    command = ("uv", "run", "--with", "fonttools", "python", "scripts/build_assets.py", "--check")
+    command = ("uv", "run", "--with", "jinja2", "python", "scripts/build_example.py", "--check")
     assert check.writing(command) == (*command[:-1], "--write")
 
 
@@ -80,12 +80,32 @@ def test_the_rehearsal_row_has_the_node_packages_and_the_history_it_reads() -> N
     assert "history" in rehearsal.tools
 
 
+@pytest.mark.parametrize("script", sorted((REPO / "scripts").glob("build_*.py")), ids=lambda path: path.name)
+def test_every_generator_is_checked_in_a_row_that_prepares_what_it_runs(script: Path) -> None:
+    """A generator no row runs is never held, and the samples' generator runs DeckTalk, which needs ffmpeg."""
+    rows = [group for group in check.GROUPS for command in group.commands if f"scripts/{script.name}" in command]
+    assert rows, f"no row checks {script.name}"
+    if script.stem == check.SAMPLES:
+        assert all("ffmpeg" in group.tools for group in rows), [group.name for group in rows]
+
+
+@pytest.mark.parametrize(
+    "group", [check.BY_NAME["generated"], check.BY_NAME["rehearsal"]], ids=lambda group: group.name
+)
+def test_a_row_that_runs_the_generators_fetches_chromium_only_when_one_launches_it(group) -> None:
+    # Both rows run every generator, and the rehearsal through `--group generated` itself. Fetching a
+    # browser no generator launches costs every pull request the download, and leaving out one a
+    # generator launches fails the row on a fresh runner.
+    launches = any("playwright" in (check.ROOT / "scripts" / f"{g}.py").read_text() for g in check.GENERATORS)
+    assert ("chromium" in group.tools) == launches
+
+
 # ---- every need a row declares has something behind it ------------------------------------------
 
 
 @pytest.mark.parametrize("group", check.GROUPS, ids=lambda group: group.name)
 def test_every_tool_a_row_declares_is_prepared_before_its_checks(group) -> None:
-    """A declared tool with no command behind it is how the browser and e2e rows once skipped every test."""
+    """A declared tool with no command behind it would leave a row's suite to skip every test it holds."""
     for tool in group.tools:
         prepare = check.NEEDS[tool].prepare
         if prepare is not None:
@@ -97,11 +117,12 @@ def test_a_preparation_fetches_only_what_the_tools_cache_keeps(monkeypatch: pyte
     """The row's own run installs the Node packages, so a preparation that did too installed them twice."""
     ran: list[tuple[str, ...]] = []
     monkeypatch.setattr(check, "run", lambda command, _env: ran.append(command) or True)
-    assert check.run_preparations((check.BY_NAME["generated"],)) == 0
+    both = replace(check.BY_NAME["generated"], tools=("npm", "chromium"))
+    assert check.run_preparations((both,)) == 0
     assert ran == [check.INSTALL]
 
 
-@pytest.mark.parametrize("marker", tools.SUITE_MARKERS)
+@pytest.mark.parametrize("marker", tools.INSTALLED)
 def test_every_suite_that_needs_a_tool_runs_after_the_install(marker: str) -> None:
     rows = [group for group in check.GROUPS if any(marker in command for command in group.commands)]
     assert rows, f"no row runs the {marker} suite"
@@ -202,11 +223,21 @@ def test_the_tools_cache_is_saved_to_the_key_it_is_restored_from() -> None:
     assert restore["with"]["key"] == "${{ matrix.cache }}"
 
 
+def test_the_tools_cache_is_the_one_directory_doctor_names() -> None:
+    """Chromium and ffmpeg both live in the directory `doctor --json` names, so a leg on any platform keeps one."""
+    restore = next(step for step in steps() if "actions/cache/restore" in step.get("uses", ""))
+    assert restore["with"]["path"] == "${{ env.TOOLS_CACHE }}"
+    named = [step for step in steps() if "TOOLS_CACHE=" in step.get("run", "")]
+    assert len(named) == 1, "no step names the directory the tools are kept in"
+    assert "decktalk doctor" in named[0]["run"] and '["cache"]' in named[0]["run"]
+    assert named[0]["if"] == restore["if"]
+
+
 # ---- cue timing ----------------------------------------------------------------------------------
 
 
 def test_the_linux_e2e_row_reports_timing_until_it_is_trusted_to_gate() -> None:
-    (command,) = check.BY_NAME["e2e"].commands
+    (command,) = [command for command in check.BY_NAME["e2e"].commands if "pytest" in command]
     assert (check.REPORT_TIMING in command) is not check.LINUX_GATES_TIMING
 
 
@@ -222,6 +253,17 @@ def test_a_file_the_unit_suite_leaves_elsewhere_runs_in_its_row_alone(path: str)
     assert f"--ignore={path}" in unit
 
 
+@pytest.mark.parametrize("marker", tools.BUILT)
+def test_a_suite_that_reads_a_build_runs_in_one_row_right_after_uv_build(marker: str) -> None:
+    rows = [
+        (group.name, group.commands) for group in check.GROUPS if marker in map(check.selected_marker, group.commands)
+    ]
+    assert [name for name, _ in rows] == ["wheel"], rows
+    ((_, commands),) = rows
+    assert commands[0] == ("uv", "build")
+    assert check.selected_marker(commands[1]) == marker
+
+
 def test_only_the_unit_row_runs_in_parallel() -> None:
     parallel = [group.name for group in check.GROUPS for command in group.commands if "-n" in command]
     assert parallel == ["unit"]
@@ -229,6 +271,17 @@ def test_only_the_unit_row_runs_in_parallel() -> None:
 
 def test_the_scaffold_build_judges_a_release_after_it_is_cut() -> None:
     assert check.BY_NAME["scaffold"].when == ("schedule",)
+
+
+def test_a_pull_request_runs_the_command_line_at_every_floor_pyproject_declares() -> None:
+    """The lockfile holds every dependency at its newest, so only a row that installs at the floors judges them."""
+    floors = check.BY_NAME["floors"]
+    ((*_, script, _, floor),) = floors.commands
+    assert "--resolution lowest-direct" in script
+    assert '--python "$1"' in script
+    assert floor == check.FLOOR
+    assert "--version" in script
+    assert "pr" in floors.when
 
 
 # ---- a suite the run named fails when its tool is missing -----------------------------------------
@@ -256,9 +309,15 @@ def doctor_reports(monkeypatch: pytest.MonkeyPatch, rows: list[dict[str, object]
             id="reported with no version",
         ),
         pytest.param([], ("ffmpeg",), ["ffmpeg"], id="never named"),
+        pytest.param(
+            [{"tool": "chromium", "version": "153"}, {"tool": "ffmpeg", "version": "8.1.2"}],
+            ("chromium", "ffmpeg"),
+            [],
+            id="every tool held",
+        ),
     ],
 )
-def test_a_tool_doctor_cannot_vouch_for_is_missing(
+def test_a_tool_is_missing_exactly_when_doctor_cannot_vouch_for_it(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     rows: list[dict[str, object]],
@@ -276,11 +335,6 @@ def test_a_missing_tool_fails_the_run_and_names_the_command_that_fetches_it(
     with pytest.raises(pytest.fail.Exception, match="ffmpeg") as failed:
         tools.require(("chromium", "ffmpeg"), tmp_path)
     assert tools.FETCH in str(failed.value)
-
-
-def test_a_machine_that_holds_every_tool_passes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    doctor_reports(monkeypatch, [{"tool": "chromium", "version": "153"}, {"tool": "ffmpeg", "version": "8.1.2"}])
-    tools.require(("chromium", "ffmpeg"), tmp_path)
 
 
 def test_a_named_suite_whose_fixture_finds_no_tool_fails_rather_than_skips(pytester: pytest.Pytester) -> None:

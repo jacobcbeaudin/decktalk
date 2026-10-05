@@ -19,9 +19,9 @@ permissions:
   contents: read
 
 # One run per branch, the tip's. A second push supersedes the first rather than racing it, on
-# `main` as well: GitHub keeps one queued run per group and drops the older one when a third
-# arrives, which once dropped the tip's run and left release.yml with no verdict to consume. The
-# tip is the only commit release.yml reads, so its run is the one worth keeping.
+# `main` as well. GitHub keeps one queued run per group and drops the older one when a third
+# arrives, so a queue could drop the tip's run and leave release.yml with no verdict to consume.
+# The tip is the only commit release.yml reads, so its run is the one worth keeping.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -88,23 +88,24 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       # The tools a leg fetches are cached per leg, under a key the table writes from the Playwright
-      # version and the ffmpeg pin, and saved only after the fetch succeeded. One key shared by every
-      # leg let whichever leg saved first decide what every later run found, so a suite ran all of
-      # its tests on one run and skipped most of them on the next. The three platforms keep a
-      # per-user cache in three places, so all six are named and the ones this runner lacks are
-      # simply not there.
+      # version and the ffmpeg pin, and saved only after the fetch succeeded. A key shared by every
+      # leg would let whichever leg saved first decide what every later run finds. DeckTalk keeps
+      # Chromium and ffmpeg in one directory, and `doctor --json` names it as `cache`, so the steps
+      # below keep the one directory this platform's machine names rather than a list of guesses.
+      # `doctor` exits 1 on a runner that has fetched nothing yet, which still names the directory.
+      - name: Ask DeckTalk where Chromium and ffmpeg live
+        if: matrix.cache != ''
+        shell: bash
+        run: |
+          uv run decktalk doctor --no-input --json > "$RUNNER_TEMP/doctor.json" || true
+          cache="$(uv run python -c 'import json, sys; print(json.load(open(sys.argv[1]))["cache"])' "$RUNNER_TEMP/doctor.json")"
+          echo "TOOLS_CACHE=$cache" >> "$GITHUB_ENV"
       - name: Restore Chromium and ffmpeg
         id: tools
         if: matrix.cache != ''
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: &tool-paths |
-            ~/.cache/ms-playwright
-            ~/.cache/decktalk
-            ~/Library/Caches/ms-playwright
-            ~/Library/Caches/decktalk
-            ~/AppData/Local/ms-playwright
-            ~/AppData/Local/decktalk
+          path: &tool-paths ${{ env.TOOLS_CACHE }}
           key: ${{ matrix.cache }}
       - name: Fetch what the row needs
         if: matrix.cache != ''
@@ -133,9 +134,8 @@ jobs:
         # it, so a reader who finds this job red never has to open a workflow file.
         #
         # The shell is named because the default on a Windows runner is PowerShell, where `$GROUP`
-        # is not a reference to an environment variable and expands to nothing. Every Windows leg
-        # therefore asked for no group at all and ran every group that gates the current moment,
-        # starting with a lint group that is a Linux row.
+        # is not a reference to an environment variable and expands to nothing, so a Windows leg
+        # would ask for no group and run every group that gates the current moment.
         shell: bash
         env:
           GROUP: ${{ matrix.group }}
@@ -255,7 +255,7 @@ jobs:
           git config user.name "decktalk-changelog[bot]"
           git config user.email "decktalk-changelog[bot]@users.noreply.github.com"
           git add -u
-          git add assets docs schemas src/decktalk
+          git add docs schemas src/decktalk
           git diff --cached --quiet && exit 0
           git commit -m "chore: regenerate what the version bump made stale"
           git push origin "HEAD:$BRANCH"

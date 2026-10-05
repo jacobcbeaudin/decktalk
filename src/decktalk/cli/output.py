@@ -6,7 +6,7 @@ events: a transient live region on a terminal, plain stage lines in a pipe, and 
 `--events` writes on stderr. The file under `build/events/` is the library's, so it is written
 whichever of these is on.
 
-Colour is the only difference between a terminal and a pipe. The tables are the same tables, the
+Colour and the live region are the only differences between a terminal and a pipe. The tables are the same tables, the
 error block is the same block, and nothing prints a second vocabulary for a reader who piped it.
 """
 
@@ -26,9 +26,9 @@ from rich.text import Text
 
 from decktalk.captions import clock
 from decktalk.errors import ErrorInfo
-from decktalk.events import Event, Fetch, Log, Progress, RunStart, StageDone, StageStart
+from decktalk.events import Event, Level, RunLog, RunStart, StageDone, StageProgress, StageStart, ToolFetch
 from decktalk.files import json_text
-from decktalk.findings import Applicability, Certainty, Finding, Location
+from decktalk.findings import Applicability, Finding, Location, Severity
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     AssembleResult,
@@ -47,11 +47,11 @@ from decktalk.results import (
     NarrateResult,
     RecordResult,
     Result,
+    ScoreResult,
     ServeResult,
-    SoundscapeResult,
-    SpendState,
     StatusResult,
     StoryboardResult,
+    TakeState,
     VerifyResult,
     WordsResult,
     counted,
@@ -59,13 +59,14 @@ from decktalk.results import (
 )
 
 STAGE_COLUMN = 12
-"""How wide the stage name sits in a progress line, which is the longest of the six plus a space."""
+"""How wide the stage name sits in a progress line, right-aligned, which is wider than every stage name and every
+word that shares the column."""
 
 REFRESH_PER_SECOND = 8
 """How often the live region redraws, which is fast enough to read and slow enough not to flicker."""
 
-CERTAIN_STYLE = "bold red"
-UNCERTAIN_STYLE = "yellow"
+ERROR_STYLE = "bold red"
+WARNING_STYLE = "yellow"
 CODE_STYLE = "bold"
 QUIET_STYLE = "dim"
 
@@ -89,7 +90,7 @@ class Report:
             text.append(f"   {clock(self.seconds)}", style=QUIET_STYLE)
         elif self.total:
             text.append(f"   {self.done}/{self.total}", style=QUIET_STYLE)
-        if self.outcome not in (None, Outcome.OK):
+        if self.outcome not in (None, Outcome.RAN):
             text.append(f"   {self.outcome.value}")
         return text
 
@@ -135,13 +136,13 @@ class Region(Renderer):
         """Take one line of the stream into the region."""
         if isinstance(event, StageStart):
             self._rows[event.stage] = Report(stage=event.stage)
-        elif isinstance(event, Progress):
+        elif isinstance(event, StageProgress):
             row = self._rows.setdefault(event.stage, Report(stage=event.stage))
             row.label, row.done, row.total = event.label, event.done, event.total
         elif isinstance(event, StageDone):
             row = self._rows.setdefault(event.stage, Report(stage=event.stage))
-            row.seconds, row.outcome = event.seconds, event.outcome
-        elif isinstance(event, Fetch):
+            row.seconds, row.outcome = event.elapsed_seconds, event.outcome
+        elif isinstance(event, ToolFetch):
             self._live.update(Text(f"{'Fetching'.rjust(STAGE_COLUMN)} {event.tool}, {decimal(event.bytes)}"))
             return
         else:
@@ -155,7 +156,7 @@ class Lines(Renderer):
     def __call__(self, event: Event) -> None:
         """Write one line for every stage that ended, and nothing for the moments in between."""
         if isinstance(event, StageDone):
-            row = Report(stage=event.stage, seconds=event.seconds, outcome=event.outcome)
+            row = Report(stage=event.stage, seconds=event.elapsed_seconds, outcome=event.outcome)
             self._console.print(row.line())
 
 
@@ -183,18 +184,18 @@ class Notes(Renderer):
 
     def __call__(self, event: Event) -> None:
         """Write one log line when its level passes the two flags that choose between them."""
-        if not isinstance(event, Log):
+        if not isinstance(event, RunLog):
             return
-        level = event.level.value
-        if level == "debug" and not self._verbose:
+        quiet = event.level in (Level.DEBUG, Level.INFO)
+        if event.level is Level.DEBUG and not self._verbose:
             return
-        if self._quiet and level in ("debug", "info"):
+        if self._quiet and quiet:
             return
         if self._heard is not None:
             if event.message in self._heard:
                 return
             self._heard.add(event.message)
-        style = QUIET_STYLE if level in ("debug", "info") else "yellow"
+        style = QUIET_STYLE if quiet else WARNING_STYLE
         # Under -v a line says which module wrote it, which is what tells a tool call from a stage's sentence.
         said = f"{event.source}: {event.message}" if self._verbose and event.source else event.message
         self._console.print(Text(said, style=style))
@@ -212,14 +213,14 @@ class Opening(Renderer):
         if not isinstance(event, RunStart) or self.said:
             return
         self.said = True
-        where = event.events_path.as_posix() if event.events_path else "no file"
+        where = event.events_file.as_posix() if event.events_file else "no file"
         self._console.print(Text(f"run {event.run}, events {where}", style=QUIET_STYLE))
 
 
 def error_block(info: ErrorInfo, console: Console) -> None:
     """The one layout an error takes, on a terminal and in a pipe, with colour the only difference."""
     block = Text()
-    block.append(f"error[{info.code.value}]", style="bold red")
+    block.append(f"error[{info.code.value}]", style=ERROR_STYLE)
     block.append(f": {info.message}\n")
     if info.hint:
         block.append(f"  hint: {info.hint}\n")
@@ -238,7 +239,7 @@ def finding_lines(findings: Sequence[Finding], console: Console) -> None:
 def _finding(found: Finding) -> Text:
     """One judgement: where it is, its code, its sentence, and the fix under it."""
     line = Text(f"{_where(found.location)}: ")
-    line.append(found.code.value, style=CODE_STYLE if found.certainty is Certainty.CERTAIN else UNCERTAIN_STYLE)
+    line.append(found.code.value, style=CODE_STYLE if found.severity is Severity.ERROR else WARNING_STYLE)
     line.append(f" {found.message}")
     if found.fix is not None:
         line.append(f"\n  fix ({found.fix.applicability.value}): {found.fix.title}", style=QUIET_STYLE)
@@ -246,10 +247,10 @@ def _finding(found: Finding) -> Text:
 
 
 def _counted(findings: Sequence[Finding]) -> Text:
-    """How many judgements there are, how many are certain, and how many `--fix` would apply."""
-    certain = sum(1 for found in findings if found.certainty is Certainty.CERTAIN)
+    """How many judgements there are, how many are errors, and how many `--fix` would apply."""
+    errors = sum(1 for found in findings if found.severity is Severity.ERROR)
     fixable = sum(1 for found in findings if found.fix is not None and found.fix.applicability is Applicability.SAFE)
-    text = Text(f"Found {counted(len(findings), 'finding')}, {certain} certain.")
+    text = Text(f"Found {counted(len(findings), 'finding')}, {counted(errors, 'error')}.")
     if fixable:
         text.append(f" {fixable} fixable with --fix.")
     return text
@@ -290,7 +291,7 @@ def _init(result: InitResult) -> Iterable[RenderableType]:
     yield Text(
         f"Wrote {result.root.as_posix()} from the {result.example} example, {counted(len(result.written), 'file')}."
     )
-    yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-voice", style=QUIET_STYLE)
+    yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-spend", style=QUIET_STYLE)
 
 
 def _tools(tools: Iterable[Any]) -> Table:
@@ -309,35 +310,37 @@ def _doctor(result: DoctorResult) -> Iterable[RenderableType]:
     yield _tools(result.tools)
     yield Text(f"Python    {result.python}")
     yield Text(f"Platform  {result.platform}")
-    yield Text(f"Voice key {_yes(result.voice_key)}")
+    yield Text(f"API key   {result.api_key_state.value.replace('_', ' ')}")
     if result.bias_ms is not None:
         yield Text(f"Bias      {result.bias_ms:.0f} ms")
 
 
 def _status(result: StatusResult) -> Iterable[RenderableType]:
-    table = _table("Section", "Key", "Plays", "Voiced", "Recorded", "Cut", "Stale")
+    table = _table("Section", "Key", "Plays", "Take", "Recorded", "Assembled", "Stale")
     for section in result.sections:
         table.add_row(
             str(section.section),
             section.key,
             section.source,
-            _yes(section.voiced),
+            section.take_state.value if section.take_state else "",
             _yes(section.recorded),
-            _yes(section.cut),
-            _yes(section.stale),
+            _yes(section.assembled),
+            _yes(section.recording_stale or section.take_state is TakeState.STALE),
         )
     yield table
     if result.film is not None:
         yield Text(f"Film   {result.film.as_posix()}, {clock(result.film_seconds or 0)} long")
     for run in result.runs:
-        yield Text(f"Live   {run.run} writing {run.events.as_posix()}", style=QUIET_STYLE)
+        yield Text(f"Live   {run.run} writing {run.events_file.as_posix()}", style=QUIET_STYLE)
+    if result.unplayed is not None and result.unplayed.sentence is not None:
+        yield Text(f"Takes  {result.unplayed.sentence}")
     if result.next is not None:
         yield Text(f"Next   {result.next}", style=QUIET_STYLE)
 
 
 def _check(result: CheckResult) -> Iterable[RenderableType]:
     yield Text(f"Checking {', '.join(path.as_posix() for path in result.judged)}.")
-    yield Text(result.spend.sentence)
+    yield Text(result.cost.sentence)
     if result.storyboard is not None:
         yield Text(f"Storyboard {result.storyboard.as_posix()}", style=QUIET_STYLE)
 
@@ -362,9 +365,14 @@ def _serve(result: ServeResult) -> Iterable[RenderableType]:
 def _narrate(result: NarrateResult) -> Iterable[RenderableType]:
     table = _table("Section", "Take", "Characters", "Seconds")
     for take in result.sections:
-        table.add_row(str(take.section), take.status.value, str(take.characters), f"{take.seconds or 0:.1f}")
+        table.add_row(str(take.section), take.outcome.value, str(take.characters), _length(take.seconds))
     yield table
-    yield Text(f"Spent {money(result.spend.dollars)} on {result.voice.value} narration.")
+    yield Text(result.cost.sentence)
+
+
+def _length(seconds: float | None) -> str:
+    """How long a take or a sound runs, or that it has no length yet, which a JSON null says."""
+    return "not yet" if seconds is None else f"{seconds:.1f}"
 
 
 def _cue(result: CueResult) -> Iterable[RenderableType]:
@@ -372,7 +380,7 @@ def _cue(result: CueResult) -> Iterable[RenderableType]:
     for section in result.sections:
         for cue in section.cues:
             seconds = "unresolved" if cue.seconds is None else f"{cue.seconds:.2f}"
-            table.add_row(str(section.section), cue.cue, cue.phrase, seconds)
+            table.add_row(str(section.section), cue.id, cue.phrase, seconds)
     yield table
 
 
@@ -389,15 +397,12 @@ def _record(result: RecordResult) -> Iterable[RenderableType]:
     yield table
 
 
-def _soundscape(result: SoundscapeResult) -> Iterable[RenderableType]:
-    table = _table("Item", "Kind", "Status", "Seconds")
+def _score(result: ScoreResult) -> Iterable[RenderableType]:
+    table = _table("Item", "Kind", "Outcome", "Seconds")
     for item in result.items:
-        table.add_row(item.name, item.kind.value, item.status.value, f"{item.seconds or 0:.1f}")
+        table.add_row(item.name, item.kind.value, item.outcome.value, _length(item.seconds))
     yield table
-    # A run that bought nothing still prices what it would have bought, and a bare "Spent" line over
-    # that number reads as a charge nobody made.
-    charged = result.spend.state is SpendState.CHARGED
-    yield Text(f"{'Spent' if charged else 'Would spend'} {money(result.spend.dollars)} on the soundscape.")
+    yield Text(result.cost.sentence)
 
 
 def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
@@ -411,7 +416,7 @@ def _assemble(result: AssembleResult) -> Iterable[RenderableType]:
 
 def _verify(result: VerifyResult) -> Iterable[RenderableType]:
     yield Text(f"Verifying {result.film.as_posix()}, {clock(result.film_seconds)} long.")
-    measured = [cue for cue in result.cues if cue.offset is not None]
+    measured = [cue for cue in result.cues if cue.offset_seconds is not None]
     if measured:
         table = _table("Section", "Cue", "Spoken", "Shown", "Offset")
         for cue in measured:
@@ -420,7 +425,7 @@ def _verify(result: VerifyResult) -> Iterable[RenderableType]:
                 cue.cue,
                 f"{cue.spoken:.2f}",
                 "" if cue.shown is None else f"{cue.shown:.2f}",
-                f"{cue.offset:+.2f}" if cue.offset is not None else "",
+                f"{cue.offset_seconds:+.2f}" if cue.offset_seconds is not None else "",
             )
         yield table
 
@@ -432,16 +437,14 @@ def _build(result: BuildResult) -> Iterable[RenderableType]:
     found = "nothing found" if not count else counted(count, "finding")
     if result.stopped_at is not None:
         stopped = f"at {result.stopped_at.value}"
-        yield Text(f"{'Stopped'.rjust(STAGE_COLUMN)} {stopped}, {money(result.spend.dollars)}, {found}")
+        yield Text(f"{'Stopped'.rjust(STAGE_COLUMN)} {stopped}, {money(result.cost.dollars)}, {found}")
     else:
         where = result.film.as_posix() if result.film else "nothing"
-        yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {money(result.spend.dollars)}, {found}")
-    if result.storyboard is not None:
-        yield Text(f"{'Next'.rjust(STAGE_COLUMN)} open {result.storyboard.as_posix()}", style=QUIET_STYLE)
+        yield Text(f"{'Built'.rjust(STAGE_COLUMN)} {where}, {money(result.cost.dollars)}, {found}")
 
 
 def _clip(result: ClipResult) -> Iterable[RenderableType]:
-    yield Text(f"Cut {result.film.as_posix()}, {result.seconds:.1f} seconds of section {result.section}.")
+    yield Text(f"Cut {result.file.as_posix()}, {result.seconds:.1f} seconds of section {result.section}.")
 
 
 def _config_list(result: ConfigListResult) -> Iterable[RenderableType]:
@@ -452,14 +455,15 @@ def _config_list(result: ConfigListResult) -> Iterable[RenderableType]:
 
 
 def _config_get(result: ConfigGetResult) -> Iterable[RenderableType]:
-    yield Text(f"{result.key.key} = {_scalar(result.key.value)} ({result.key.layer.value})")
+    yield Text(f"{result.setting.key} = {_scalar(result.setting.value)} ({result.setting.layer.value})")
 
 
 def _config_set(result: ConfigSetResult) -> Iterable[RenderableType]:
     verb = "would set" if result.dry_run else "set"
     yield Text(f"{result.file.as_posix()} {verb} {result.key} = {_scalar(result.value)}")
     if result.layer.value != result.scope.value:
-        yield Text(f"The {result.layer.value} layer still decides it, at {_scalar(result.effective)}.", style="yellow")
+        still = f"The {result.layer.value} layer still decides it, at {_scalar(result.effective)}."
+        yield Text(still, style=WARNING_STYLE)
 
 
 def _config_unset(result: ConfigUnsetResult) -> Iterable[RenderableType]:
@@ -473,7 +477,7 @@ def _config_explain(result: ConfigExplainResult) -> Iterable[RenderableType]:
     if result.unit:
         yield Text(f"  unit {result.unit}")
     if result.hazard:
-        yield Text(f"  hazard {result.hazard}", style="yellow")
+        yield Text(f"  hazard {result.hazard}", style=WARNING_STYLE)
     if result.decides:
         yield Text(f"  decides {', '.join(code.value for code in result.decides)}", style=QUIET_STYLE)
     yield Text(f"  docs {result.docs}", style=QUIET_STYLE)
@@ -501,7 +505,7 @@ RENDERERS: dict[type[Result], Callable[[Any], Iterable[RenderableType]]] = {
     NarrateResult: _narrate,
     RecordResult: _record,
     ServeResult: _serve,
-    SoundscapeResult: _soundscape,
+    ScoreResult: _score,
     StatusResult: _status,
     StoryboardResult: _storyboard,
     VerifyResult: _verify,

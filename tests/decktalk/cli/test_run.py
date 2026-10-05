@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -10,61 +11,74 @@ import pytest
 from decktalk.cli import run as commands
 from decktalk.cli.options import FailOn
 from decktalk.cli.session import Globals, Session
-from decktalk.errors import ErrorCode
+from decktalk.errors import Cancelled, ErrorCode, ErrorInfo, InputError
 from decktalk.events import RunStart
-from decktalk.findings import Certainty, Code
+from decktalk.findings import Code, Severity, Threshold
 from decktalk.pipeline import Stage
 from decktalk.results import (
     ApplyResult,
     AssembleResult,
+    BillingBasis,
     BuildResult,
     ClipResult,
+    CostState,
     CueResult,
     FixOutcome,
     NarrateResult,
     RecordResult,
-    SoundscapeResult,
+    ScoreResult,
     VerifyResult,
-    Voicing,
 )
-from support.spends import a_spend
+from support.costs import a_cost
 
 from .conftest import ANSWERS, Fake, finding
 
-NARRATE = NarrateResult(ok=True, run="r", voice=Voicing.PLACEHOLDER, sections=(), spend=a_spend(), seconds=1.0)
-CUE = CueResult(ok=True, run="r", sections=(), seconds=1.0)
-RECORD = RecordResult(ok=True, run="r", sections=(), seconds=1.0)
-SOUNDSCAPE = SoundscapeResult(ok=True, run="r", items=(), spend=a_spend(), seconds=1.0)
-ASSEMBLE = AssembleResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, sections=(), seconds=1.0)
-VERIFY = VerifyResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, seconds=1.0)
+NARRATE = NarrateResult(
+    ok=True,
+    run="r",
+    spend=False,
+    sections=(),
+    cost=a_cost(),
+    takes=Path("build/narrate/takes.json"),
+    elapsed_seconds=1.0,
+)
+CUE = CueResult(ok=True, run="r", sections=(), elapsed_seconds=1.0)
+RECORD = RecordResult(ok=True, run="r", sections=(), elapsed_seconds=1.0)
+SCORE = ScoreResult(ok=True, run="r", spend=False, items=(), cost=a_cost(), elapsed_seconds=1.0)
+ASSEMBLE = AssembleResult(
+    ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, sections=(), elapsed_seconds=1.0
+)
+VERIFY = VerifyResult(ok=True, run="r", film="build/final/demo.mp4", film_seconds=64.0, elapsed_seconds=1.0)
 MOVING = {
     "narrate": NARRATE,
     "cue": CUE,
     "record": RECORD,
-    "soundscape": SOUNDSCAPE,
+    "score": SCORE,
     "assemble": ASSEMBLE,
     "build": ANSWERS["build"],
 }
 """The answer each moving command's fake gives."""
 
+STYLING = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+"""The escapes a terminal's highlighting puts between the digits of a price, which a test reads past."""
+
 
 @pytest.mark.parametrize(
     ("argv", "keyword", "expected"),
     [
-        (("narrate", "--no-voice"), "voice", Voicing.PLACEHOLDER),  # never buys
-        # cue reads the allowed codes rather than a flag of its own
-        (("cue", "--allow", Code.CUE_UNKNOWN.value), "allow_unknown", True),
+        (("narrate", "--no-spend"), "spend", False),  # never buys
+        (("cue", "--section", "2"), "only", (2,)),
         (("record", "--section", "1,3-4"), "only", (1, 3, 4)),
-        (("soundscape", "--no-voice"), "voice", Voicing.PLACEHOLDER),  # the spending flags are shared
-        (("assemble", "--skip", "soundscape"), "soundscape", False),  # the one stage it can leave out
+        (("score", "--no-spend"), "spend", False),  # the spend flags are shared
+        (("assemble", "--skip", "score"), "score", False),  # the one stage it can leave out
         (
-            ("build", "--no-voice", "--from", "record", "--to", "assemble"),
+            ("build", "--no-spend", "--from", "record", "--to", "assemble"),
             "stages",
-            (Stage.RECORD, Stage.SOUNDSCAPE, Stage.ASSEMBLE),
+            (Stage.RECORD, Stage.SCORE, Stage.ASSEMBLE),
         ),
-        (("build", "--no-voice"), "stages", None),  # neither end runs the whole pipeline
+        (("build", "--no-spend"), "stages", None),  # neither end runs the whole pipeline
     ],
-    ids=["narrate", "cue", "record", "soundscape", "assemble", "build-span", "build-whole"],
+    ids=["narrate", "cue", "record", "score", "assemble", "build-span", "build-whole"],
 )
 def test_a_stage_flag_reaches_the_library_as_its_keyword(run, project, argv, keyword, expected) -> None:
     made = project(**{argv[0]: MOVING[argv[0]]})
@@ -76,15 +90,343 @@ def test_narrate_with_spend_buys_without_asking(run, project) -> None:
     made = project(narrate=NARRATE)
     run("narrate", "--spend", "--max-cost", "5")
     asked = made.called("narrate")
-    assert asked["voice"] is Voicing.PAID
+    assert asked["spend"] is True
     assert asked["max_cost"] == 5
+
+
+@pytest.mark.parametrize("tty", [True, False], ids=["terminal", "no-terminal"])
+def test_no_spend_never_prices_never_prompts_and_never_buys(run, project, tty: bool) -> None:
+    made = project(narrate=NARRATE)
+    ran = run("narrate", "--no-spend", tty=tty)
+    assert ran.exit_code == 0, ran.err
+    assert "Spend that now?" not in ran.err
+    assert made.called("narrate")["spend"] is False
+    assert [name for name, _, _ in made.calls if name == "check"] == []
+
+
+def test_an_unset_spend_with_no_terminal_refuses_and_names_both_flags(run, project) -> None:
+    made = project(narrate=NARRATE, price=a_cost())
+    ran = run("narrate")
+    assert ran.exit_code == ErrorCode.APPROVAL.exit_code
+    assert "decktalk narrate --spend" in ran.err
+    assert "decktalk narrate --no-spend" in ran.err
+    assert [name for name, _, _ in made.calls if name == "narrate"] == []
+
+
+@pytest.mark.parametrize(
+    ("command", "instead"),
+    [
+        (Stage.NARRATE.value, "play a placeholder wherever a take is missing"),
+        (Stage.SCORE.value, "play silence where a sound is unbought"),
+        ("build", "play a placeholder wherever a take is missing and silence where a sound is unbought"),
+    ],
+)
+def test_a_spend_refusal_says_what_no_spend_plays_for_what_the_command_buys(
+    run, project, command: str, instead: str
+) -> None:
+    """A score buys sounds and never a take, so its refusal never offers a placeholder in place of one."""
+    project(**{command: MOVING[command]}, price=a_cost())
+    ran = run(command)
+    assert ran.exit_code == ErrorCode.APPROVAL.exit_code, ran.err
+    said = " ".join(STYLING.sub("", ran.err).split())
+    assert f"decktalk {command} --no-spend to {instead}." in said, said
+
+
+@pytest.mark.parametrize("tty", [True, False], ids=["terminal", "no-terminal"])
+def test_an_unset_spend_with_nothing_to_buy_runs_without_asking(run, project, tty: bool) -> None:
+    made = project(narrate=NARRATE, price=a_cost(0.0, 0.0, sections=()))
+    ran = run("narrate", tty=tty)
+    assert ran.exit_code == 0, ran.err
+    assert "Spend that now?" not in ran.err
+    assert made.called("narrate")["spend"] is False
+
+
+def test_an_unset_score_is_priced_at_the_score_alone(run, project) -> None:
+    """A score whose items are all bought asks nothing, whatever the narration would cost."""
+    made = project(score=SCORE, price=a_cost(0.0, 0.0, sections=()))
+    ran = run("score")
+    assert ran.exit_code == 0, ran.err
+    assert [name for name, _, _ in made.calls] == ["select", "price", "score"]
+    assert made.called("price")["stages"] == [Stage.SCORE]
+    assert made.called("score")["spend"] is False
+
+
+def test_an_unset_score_with_sounds_to_buy_and_no_terminal_refuses(run, project) -> None:
+    made = project(score=SCORE, price=a_cost())
+    ran = run("score")
+    assert ran.exit_code == ErrorCode.APPROVAL.exit_code
+    assert "decktalk score --no-spend" in ran.err
+    assert [name for name, _, _ in made.calls] == ["select", "price"]
+
+
+@pytest.mark.parametrize("command", ["narrate", "build"])
+def test_an_unset_run_told_to_rebuild_with_nothing_to_buy_asks_nothing_and_buys_nothing(
+    run, project, command: str
+) -> None:
+    """`--force` rebuilds what is free, so with every take and sound held there is nothing to approve."""
+    made = project(**{command: MOVING[command]}, price=a_cost(0.0, 0.0, sections=()))
+    ran = run(command, "--force")
+    assert ran.exit_code == 0, ran.err
+    assert made.called(command)["spend"] is False
+    assert made.called(command)["force"] is True
+
+
+@pytest.mark.parametrize(
+    ("command", "flag"),
+    [
+        ("narrate", "--replace-voiced"),
+        ("build", "--replace-voiced"),
+        ("score", "--replace-score"),
+        ("build", "--replace-score"),
+    ],
+)
+def test_an_unset_run_told_to_replace_what_it_bought_asks_even_with_everything_on_disk(
+    run, project, command: str, flag: str
+) -> None:
+    made = project(**{command: MOVING[command]}, price=a_cost(0.0, 0.0, sections=()))
+    refused = run(command, flag)
+    assert refused.exit_code == ErrorCode.APPROVAL.exit_code
+    assert f"decktalk {command} --spend" in refused.err, refused.err
+    assert [name for name, _, _ in made.calls if name == command] == []
+
+
+@pytest.mark.parametrize("command", ["score", "build"])
+def test_replace_score_reaches_the_library_with_spend_and_is_confirmed_on_a_terminal(
+    run, project, command: str
+) -> None:
+    made = project(**{command: MOVING[command]}, storyboard=ANSWERS["storyboard"])
+    run(command, "--spend")
+    assert made.calls[-1][2]["replace_score"] is False
+    run(command, "--spend", "--replace-score")
+    assert made.calls[-1][2]["replace_score"] is True, "without a terminal the flag is the authorisation"
+    declined = run(command, "--spend", "--replace-score", tty=True, stdin="n\n")
+    assert "every bought sound" in declined.err
+    assert made.calls[-1][2]["replace_score"] is False
+    quiet = run(command, "--no-spend", "--replace-score", tty=True)
+    assert "every bought sound" not in quiet.err, "a run that may not spend has nothing to confirm"
+    assert made.calls[-1][2]["replace_score"] is False
+
+
+def test_each_replace_flag_names_what_it_replaces(run) -> None:
+    """A free voice's take is not paid, so the help says voiced take, and a bought sound is its own flag."""
+    for command in ("narrate", "build"):
+        said = " ".join(run(command, "--help").out.split())
+        assert "--replace-voiced Set aside each voiced take" in said
+        assert "each paid take" not in said
+    for command in ("score", "build"):
+        said = " ".join(run(command, "--help").out.split())
+        assert "--replace-score Buy each bought sound again" in said
+
+
+def test_score_takes_no_force_because_every_sound_it_makes_is_bought(run, project) -> None:
+    project(score=SCORE)
+    assert run("score", "--no-spend", "--force").exit_code == ErrorCode.USAGE.exit_code
+
+
+def test_an_unset_narrate_is_priced_for_the_sections_it_runs(run, project) -> None:
+    made = project(narrate=NARRATE, price=a_cost(0.0, 0.0, sections=()))
+    run("narrate", "--section", "2")
+    assert made.called("price")["only"] == (2,)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("narrate",),
+        ("score",),
+        ("build",),
+        ("build", "--spend"),
+        ("build", "--spend", "--max-cost", "5"),
+        ("narrate", "--spend"),
+        ("build", "--no-spend"),
+    ],
+    ids=["narrate", "score", "build", "build-spend", "build-spend-capped", "narrate-spend", "build-no-spend"],
+)
+def test_a_selection_the_project_refuses_is_refused_before_the_run_is_priced(
+    run, project, argv: tuple[str, ...]
+) -> None:
+    """A selection is judged before anything else in every spend path, so nothing is priced or drawn over it."""
+    refused = InputError("no section carries the number 99, so the run would select nothing.")
+    made = project(select=refused, price=a_cost(0.0, 0.0, sections=()), storyboard=ANSWERS["storyboard"])
+    assert run(*argv, "--section", "99").exit_code == ErrorCode.INPUT.exit_code
+    assert made.called("select") == {} and [name for name, _, _ in made.calls] == ["select"]
+
+
+def test_an_unset_build_is_priced_at_its_takes_and_its_sounds_together(run, project) -> None:
+    """The price a person approves is the whole run's, so one price covers every stage that buys."""
+    whole = a_cost(2.14, 2.14, sections=(1, 2))
+    made = project(build=ANSWERS["build"], price=whole, storyboard=ANSWERS["storyboard"])
+    declined = run("build", tty=True, stdin="n\n")
+    said = " ".join(STYLING.sub("", declined.err).split())
+    assert made.called("price")["stages"] == [Stage.NARRATE, Stage.SCORE]
+    assert " ".join(whole.sentence.split()) in said, said
+    assert "Spend that now?" in said
+    assert made.called("build")["spend"] is False
+
+
+def test_an_unset_build_that_could_not_be_priced_is_asked_about(run, project) -> None:
+    """A run nobody could price is never bought on the strength of a free voice beside it."""
+    made = project(build=ANSWERS["build"], price=InputError("cues.json is not valid JSON."))
+    ran = run("build")
+    assert ran.exit_code == ErrorCode.APPROVAL.exit_code
+    assert "could not be priced" in ran.err
+    assert [name for name, _, _ in made.calls if name == "build"] == []
+
+
+@pytest.mark.parametrize("command", ["narrate", "build"])
+@pytest.mark.parametrize("tty", [True, False], ids=["terminal", "no-terminal"])
+def test_an_unset_run_priced_free_runs_without_asking_and_buys(run, project, command: str, tty: bool) -> None:
+    free = a_cost(0.0, 0.0, sections=(1, 2), billing=BillingBasis.FREE)
+    made = project(**{command: MOVING[command]}, price=free, storyboard=ANSWERS["storyboard"])
+    ran = run(command, tty=tty)
+    assert ran.exit_code == 0, ran.err
+    assert "Spend that now?" not in ran.err
+    assert made.called(command)["spend"] is True
+    drawn = [name for name, _, _ in made.calls].count("storyboard")
+    assert drawn == (command == "build"), "a build that will spend draws its checkpoint once, and narrate none"
+
+
+@pytest.mark.parametrize(
+    ("flags", "tty"),
+    [(("--spend",), False), (("--spend",), True), ((), True)],
+    ids=["spend", "spend-terminal", "unset-terminal"],
+)
+def test_a_build_over_its_ceiling_is_refused_before_its_storyboard_is_drawn(
+    run, project, flags: tuple[str, ...], tty: bool
+) -> None:
+    """The checkpoint prices first, then draws, then asks, so a run the cap refuses draws nothing and asks nothing."""
+    made = project(build=ANSWERS["build"], price=a_cost(0.12, 0.15, sections=(1, 2)), storyboard=ANSWERS["storyboard"])
+    ran = run("build", *flags, "--max-cost", "0.05", tty=tty, stdin="y\n")
+    said = _said(ran.err)
+    assert ran.exit_code == ErrorCode.APPROVAL.exit_code, said
+    assert "over the $0.05 ceiling --max-cost set" in said, said
+    assert "Spend that now?" not in said
+    names = [name for name, _, _ in made.calls]
+    assert "storyboard" not in names and "build" not in names, names
+
+
+@pytest.mark.parametrize(
+    ("flags", "tty", "hint"),
+    [
+        ((), False, "Run decktalk build --max-cost 0.15 --spend, or narrow the run with --section."),
+        (
+            ("--section", "2"),
+            False,
+            "Run decktalk build --section 2 --max-cost 0.15 --spend, or narrow the run with --section.",
+        ),
+        ((), True, "Raise the ceiling to --max-cost 0.15, or narrow the run with --section."),
+        (("--spend",), False, "Raise the ceiling to --max-cost 0.15, or narrow the run with --section."),
+    ],
+    ids=["unset", "unset-section", "unset-terminal", "spend"],
+)
+def test_an_over_ceiling_hint_names_a_command_that_runs(
+    run, project, flags: tuple[str, ...], tty: bool, hint: str
+) -> None:
+    """With nobody to ask and no --spend, a raised ceiling alone is refused again, so the hint adds --spend.
+
+    The hint names the same run, so it keeps the run's selection: the ceiling it names was priced on it.
+    """
+    project(build=ANSWERS["build"], price=a_cost(0.12, 0.15, sections=(1, 2)), storyboard=ANSWERS["storyboard"])
+    said = _said(run("build", *flags, "--max-cost", "0.05", tty=tty, stdin="n\n").err)
+    assert f"hint: {hint}" in said, said
+
+
+@pytest.mark.parametrize(
+    ("flags", "spend", "no_spend"),
+    [
+        ((), "decktalk build --spend", "decktalk build --no-spend"),
+        (
+            ("--section", "2", "--max-cost", "0.20"),
+            "decktalk build --section 2 --max-cost 0.20 --spend",
+            "decktalk build --section 2 --no-spend",
+        ),
+    ],
+    ids=["whole", "section-capped"],
+)
+def test_a_spend_refusal_hint_names_the_same_run(
+    run, project, flags: tuple[str, ...], spend: str, no_spend: str
+) -> None:
+    """The command a hint offers to approve that cost approves that cost: the same sections under the same ceiling."""
+    project(build=ANSWERS["build"], price=a_cost(0.12, 0.15, sections=(2,)), storyboard=ANSWERS["storyboard"])
+    said = _said(run("build", *flags).err)
+    assert f"hint: Run {spend} to approve that cost, or {no_spend} to play" in said, said
+
+
+@pytest.mark.parametrize("flags", [("--spend",), ()], ids=["spend", "unset"])
+@pytest.mark.parametrize("tty", [True, False], ids=["terminal", "no-terminal"])
+def test_a_capped_build_that_could_not_be_priced_is_refused_before_it_draws_or_asks(
+    run, project, flags: tuple[str, ...], tty: bool
+) -> None:
+    """A ceiling cannot hold a run nobody priced, so the refusal comes first, the same way with or without --spend."""
+    unpriced = InputError("cues.json is not valid JSON.")
+    made = project(build=ANSWERS["build"], price=unpriced, storyboard=ANSWERS["storyboard"])
+    ran = run("build", *flags, "--max-cost", "0.05", tty=tty, stdin="y\n")
+    said = _said(ran.err)
+    assert ran.exit_code == ErrorCode.INPUT.exit_code, said
+    assert "cues.json is not valid JSON." in said and "Spend that now?" not in said, said
+    assert [name for name, _, _ in made.calls] == ["select", "price"]
+
+
+@pytest.mark.parametrize("flags", [("--spend",), ()], ids=["spend", "unset"])
+def test_a_build_within_its_ceiling_still_draws_its_storyboard(run, project, flags: tuple[str, ...]) -> None:
+    made = project(build=ANSWERS["build"], price=a_cost(0.12, 0.15, sections=(1, 2)), storyboard=ANSWERS["storyboard"])
+    ran = run("build", *flags, "--max-cost", "0.20", tty=True, stdin="y\n")
+    assert ran.exit_code == 0, ran.err
+    assert [name for name, _, _ in made.calls].count("storyboard") == 1
+    assert made.called("build")["spend"] is True
+
+
+@pytest.mark.parametrize("span", [("--from", "assemble"), ("--skip", "narrate", "--skip", "score")])
+def test_an_unset_build_that_runs_no_stage_that_buys_is_never_priced(run, project, span) -> None:
+    made = project(build=ANSWERS["build"], price=a_cost())
+    assert run("build", *span).exit_code == 0
+    assert [name for name, _, _ in made.calls if name == "price"] == []
+
+
+@pytest.mark.parametrize(
+    ("flags", "code"),
+    [
+        pytest.param((), 0, id="unset"),
+        pytest.param(("--fail-on", FailOn.WARNING.value), 1, id="fail-on-warning"),
+        pytest.param(
+            ("--fail-on", FailOn.WARNING.value, "--allow", Code.TAKE_MISSING.value), 0, id="fail-on-warning-allowed"
+        ),
+    ],
+)
+def test_a_missing_take_fails_a_build_only_at_the_threshold_that_names_it(
+    run, project, flags: tuple[str, ...], code: int
+) -> None:
+    missing = ANSWERS["build"].model_copy(update={"findings": (finding(Code.TAKE_MISSING),)})
+    project(build=missing)
+    ran = run("build", "--no-spend", "--json", *flags)
+    assert ran.exit_code == code, ran.err
+    assert json.loads(ran.out)["ok"] is (code == 0)
+
+
+def test_an_allowed_code_is_still_reported_and_only_stops_failing_the_run(run, project) -> None:
+    """`--allow` decides whether a finding fails the run, never whether the run reports it."""
+    unknown = CUE.model_copy(update={"ok": False, "findings": (finding(Code.CUE_UNKNOWN),)})
+    made = project(cue=unknown)
+    ran = run("cue", "--json", "--allow", Code.CUE_UNKNOWN.value)
+    assert ran.exit_code == 0, ran.err
+    written = json.loads(ran.out)
+    assert written["ok"] is True
+    assert [one["code"] for one in written["findings"]] == [Code.CUE_UNKNOWN.value]
+    assert set(made.called("cue")) == {"only", "cancel"}, "the stage was told what the caller allows"
+
+
+@pytest.mark.parametrize("command", ["narrate", "score", "build"])
+def test_no_voice_is_an_unknown_option(run, command: str) -> None:
+    ran = run(command, "--no-voice")
+    assert ran.exit_code == 2
+    assert "--no-voice" in ran.err
 
 
 def test_narrate_keeps_every_paid_take_unless_the_flag_says_otherwise(run, project) -> None:
     made = project(narrate=NARRATE)
-    run("narrate", "--no-voice")
+    run("narrate", "--no-spend")
     assert made.called("narrate")["replace_voiced"] is False
-    run("narrate", "--no-voice", "--replace-voiced")
+    run("narrate", "--no-spend", "--replace-voiced")
     assert made.calls[-1][2]["replace_voiced"] is True
 
 
@@ -92,15 +434,15 @@ def test_assemble_refuses_a_skip_that_names_a_stage_it_does_not_run(run, project
     project(assemble=ASSEMBLE)
     ran = run("assemble", "--skip", "record")
     assert ran.exit_code == 2
-    assert "soundscape alone" in ran.err
+    assert "score alone" in ran.err
 
 
-def test_soundscape_says_what_its_spending_flags_buy(run) -> None:
-    """The spending family is shared, and on soundscape the thing bought is sound rather than a voice."""
-    said = run("soundscape", "--help").out
-    assert "Placeholder narration" not in said
-    assert "Buy nothing" in said
-    assert "Placeholder narration" in run("narrate", "--help").out
+def test_score_says_what_its_spending_flags_buy(run) -> None:
+    """The spend family is shared, and on score the thing bought is sound rather than a voice."""
+    said = " ".join(run("score", "--help").out.split())
+    assert "play a placeholder" not in said
+    assert "buy nothing: report the plan" in said
+    assert "play a placeholder" in " ".join(run("narrate", "--help").out.split())
 
 
 def test_assemble_and_clip_describe_the_narrower_flags_they_take(run) -> None:
@@ -120,39 +462,39 @@ def test_verify_measures_the_film(run, project) -> None:
 def test_build_stops_where_the_exit_code_would_fail_and_carries_on_past_what_is_allowed(run, project, answers) -> None:
     """The threshold a build stops on is the one its exit code fails on, so the two cannot disagree."""
     made = project(build=answers["build"])
-    run("build", "--no-voice", "--allow", Code.CUE_UNKNOWN.value)
+    run("build", "--no-spend", "--allow", Code.CUE_UNKNOWN.value)
+    assert made.threshold == Threshold(stop_on=Severity.ERROR, allow=frozenset({Code.CUE_UNKNOWN}))
     asked = made.called("build")
-    assert asked["allow"] == frozenset({Code.CUE_UNKNOWN})
-    assert asked["stop_on"] is Certainty.CERTAIN
-    assert "soundscape" not in asked
+    assert "allow" not in asked and "stop_on" not in asked
+    assert "score" not in asked
 
 
-@pytest.mark.parametrize(("flag", "stops"), [(FailOn.ANY, Certainty.UNCERTAIN), (FailOn.NEVER, None)])
-def test_fail_on_moves_where_a_build_stops(run, project, answers, flag: FailOn, stops: Certainty | None) -> None:
+@pytest.mark.parametrize(("flag", "stops"), [(FailOn.WARNING, Severity.WARNING), (FailOn.NEVER, None)])
+def test_fail_on_moves_where_a_build_stops(run, project, answers, flag: FailOn, stops: Severity | None) -> None:
     made = project(build=answers["build"])
-    run("build", "--no-voice", "--fail-on", flag.value)
-    assert made.called("build")["stop_on"] is stops
+    run("build", "--no-spend", "--fail-on", flag.value)
+    assert made.threshold == Threshold(stop_on=stops)
 
 
 def test_a_build_that_stopped_on_a_finding_exits_1_and_says_where(run, project, answers) -> None:
     stopped = answers["build"].model_copy(update={"ok": False, "stopped_at": Stage.CUE, "findings": (finding(),)})
     project(build=stopped)
-    ran = run("build", "--no-voice")
+    ran = run("build", "--no-spend")
     assert ran.exit_code == 1
     assert f"Stopped at {Stage.CUE.value}" in ran.out
 
 
 def test_build_names_its_run_and_its_events_file_on_the_first_line_of_stderr(run, project, answers) -> None:
     made = project(build=answers["build"])
-    made.emits["build"] = (RunStart, {"events_path": Path("build/events/r.jsonl")})
-    ran = run("build", "--no-voice")
+    made.emits["build"] = (RunStart, {"events_file": Path("build/events/r.jsonl")})
+    ran = run("build", "--no-spend")
     assert ran.err.startswith("run r, events build/events/r.jsonl")
 
 
 def test_events_writes_one_json_line_per_moment_on_stderr(run, project, answers) -> None:
     made = project(build=answers["build"])
-    made.emits["build"] = (RunStart, {"events_path": Path("build/events/r.jsonl")})
-    ran = run("build", "--no-voice", "--events")
+    made.emits["build"] = (RunStart, {"events_file": Path("build/events/r.jsonl")})
+    ran = run("build", "--no-spend", "--events")
     assert '"event":"run.start"' in ran.err
     assert ran.out.strip().startswith("Built")
 
@@ -160,8 +502,8 @@ def test_events_writes_one_json_line_per_moment_on_stderr(run, project, answers)
 def test_every_stderr_line_under_events_is_one_json_object(run, project, answers) -> None:
     """A reader of `--events` parses every line of stderr, so a plain sentence among them breaks it."""
     made = project(build=answers["build"])
-    made.emits["build"] = (RunStart, {"events_path": Path("build/events/r.jsonl")})
-    ran = run("build", "--no-voice", "--events", "-v")
+    made.emits["build"] = (RunStart, {"events_file": Path("build/events/r.jsonl")})
+    ran = run("build", "--no-spend", "--events", "-v")
     lines = ran.err.splitlines()
     assert lines
     assert all(isinstance(json.loads(line), dict) for line in lines)
@@ -169,7 +511,7 @@ def test_every_stderr_line_under_events_is_one_json_object(run, project, answers
 
 
 def test_a_refusal_under_events_is_one_json_object_on_stderr(run, project, answers) -> None:
-    project(build=answers["build"], check=answers["check"])
+    project(build=answers["build"], price=a_cost())
     ran = run("build", "--events")
     assert ran.exit_code == 2
     [line] = ran.err.splitlines()
@@ -177,7 +519,7 @@ def test_a_refusal_under_events_is_one_json_object_on_stderr(run, project, answe
 
 
 def test_build_without_a_terminal_and_without_a_flag_refuses_the_spend(run, project, answers) -> None:
-    project(build=answers["build"], check=answers["check"])
+    project(build=answers["build"], price=a_cost())
     ran = run("build")
     assert ran.exit_code == 2
     assert "error[APPROVAL]" in ran.err
@@ -185,7 +527,7 @@ def test_build_without_a_terminal_and_without_a_flag_refuses_the_spend(run, proj
 
 
 def test_the_approval_refusal_is_one_object_under_json(run, project, answers) -> None:
-    project(build=answers["build"], check=answers["check"])
+    project(build=answers["build"], price=a_cost())
     ran = run("build", "--json")
     assert ran.exit_code == 2
     written = json.loads(ran.out)
@@ -199,10 +541,10 @@ def test_clip_needs_exactly_one_section(run, project) -> None:
             ok=True,
             run="r",
             section=1,
-            film="clip-1.mp4",
-            words="clip-1.words.json",
-            start=0.0,
-            end=2.0,
+            file="clip-1.mp4",
+            words_file="clip-1.words.json",
+            start_seconds=0.0,
+            end_seconds=2.0,
             seconds=2.0,
             hold_seconds=0.0,
             gain_db=0.0,
@@ -224,3 +566,99 @@ def test_applying_one_fix_says_so_in_the_singular(monkeypatch: pytest.MonkeyPatc
     built = answer.model_copy(update={"ok": False, "findings": (finding(fix=True),)})
     commands._offered(made, fake.project(), built, True)
     assert said == ["Applied 1 fix. Run decktalk build again to make the film from them."]
+
+
+@pytest.mark.parametrize("command", ["narrate", "build"])
+def test_a_run_told_to_replace_voiced_takes_is_priced_at_the_takes_it_replaces(run, project, command: str) -> None:
+    """A replaced take is bought again, so the question prices it rather than calling the run free."""
+    made = project(**{command: MOVING[command]}, price=a_cost())
+    run(command, "--replace-voiced")
+    assert made.called("price")["replace_voiced"] is True
+
+
+# ---- one run asks once ---------------------------------------------------------------------------
+
+PROMPT = "[y/N]"
+"""What a yes or no question ends with on a terminal, so a count of it is a count of the questions asked."""
+
+SETS_ASIDE = "sets aside every voiced take"
+BUYS_AGAIN = "every bought sound it replaces again"
+PAID = a_cost(2.14, 2.14, sections=(1, 2))
+FREE = a_cost(0.0, 0.0, sections=(1, 2), billing=BillingBasis.FREE)
+
+
+def _said(err: str) -> str:
+    return " ".join(STYLING.sub("", err).split())
+
+
+@pytest.mark.parametrize("command", ["narrate", "build"])
+@pytest.mark.parametrize("answer", ["y", "n"])
+def test_a_priced_run_told_to_replace_voiced_takes_asks_once_and_the_spend_question_carries_the_warning(
+    run, project, command: str, answer: str
+) -> None:
+    made = project(**{command: MOVING[command]}, price=PAID, storyboard=ANSWERS["storyboard"])
+    said = _said(run(command, "--replace-voiced", tty=True, stdin=f"{answer}\n").err)
+    assert said.count(PROMPT) == 1, said
+    question = said[: said.index(PROMPT)]
+    assert SETS_ASIDE in question and "Spend that now?" in question, said
+    called = made.called(command)
+    assert called["spend"] is (answer == "y")
+    assert called["replace_voiced"] is (answer == "y"), "one answer settles the spend and the replacing together"
+
+
+@pytest.mark.parametrize("command", ["narrate", "build"])
+@pytest.mark.parametrize(
+    ("flags", "price", "spend"),
+    [(("--spend",), PAID, True), (("--no-spend",), PAID, False), ((), FREE, True)],
+    ids=["spend", "no-spend", "voice-bills-nothing"],
+)
+@pytest.mark.parametrize("answer", ["y", "n"])
+def test_a_run_not_asked_to_spend_asks_the_replace_question_alone(
+    run, project, command: str, flags: tuple[str, ...], price, spend: bool, answer: str
+) -> None:
+    made = project(**{command: MOVING[command]}, price=price, storyboard=ANSWERS["storyboard"])
+    said = _said(run(command, *flags, "--replace-voiced", tty=True, stdin=f"{answer}\n").err)
+    assert said.count(PROMPT) == 1, said
+    assert SETS_ASIDE in said and "Spend that now?" not in said, said
+    called = made.called(command)
+    assert called["spend"] is spend
+    assert called["replace_voiced"] is (answer == "y")
+
+
+@pytest.mark.parametrize("flags", [(), ("--spend",)], ids=["unset", "spend"])
+def test_a_build_told_to_replace_takes_and_sounds_asks_once_with_both_warnings(run, project, flags) -> None:
+    made = project(build=ANSWERS["build"], price=PAID, storyboard=ANSWERS["storyboard"])
+    argv = ("build", *flags, "--replace-voiced", "--replace-score")
+    said = _said(run(*argv, tty=True, stdin="y\n").err)
+    assert said.count(PROMPT) == 1, said
+    assert SETS_ASIDE in said and BUYS_AGAIN in said, said
+    called = made.called("build")
+    assert called["replace_voiced"] is True and called["replace_score"] is True
+
+
+def stopped_narrate() -> Cancelled:
+    """A narrate stopped after one take, whose refusal carries the result of what it bought."""
+    stopped = Cancelled("The run was interrupted.")
+    stopped.result = NARRATE.model_copy(
+        update={"ok": False, "error": ErrorInfo.of(stopped), "cost": a_cost(0.12, 0.12, state=CostState.CHARGED)}
+    )
+    return stopped
+
+
+def test_a_stopped_run_prints_the_result_of_what_it_bought_under_json(run, project) -> None:
+    """The take.charged lines are not the only record: the one JSON object says what the stopped run spent."""
+    project(narrate=stopped_narrate())
+    ran = run("--json", "narrate", "--spend")
+    assert ran.exit_code == ErrorCode.CANCELLED.exit_code
+    printed = json.loads(ran.out)
+    assert printed["error"]["code"] == ErrorCode.CANCELLED.value
+    assert printed["cost"]["state"] == CostState.CHARGED.value
+    assert printed["cost"]["dollars"] == pytest.approx(0.12)
+
+
+def test_a_stopped_run_says_why_it_stopped_and_what_it_spent(run, project) -> None:
+    project(narrate=stopped_narrate())
+    ran = run("narrate", "--spend")
+    assert ran.exit_code == ErrorCode.CANCELLED.exit_code
+    assert "error[CANCELLED]" in ran.err
+    assert "This run spent $0.12" in STYLING.sub("", ran.out)

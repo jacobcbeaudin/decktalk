@@ -10,7 +10,7 @@ The command line is the instruction set, and it documents itself. Four calls tel
 - `decktalk --help` for the tree, the global flags and the exit codes.
 - `decktalk schema` for every command, every flag with its type and default, every error code and
   every finding code, as one JSON object.
-- `decktalk schema settings` for every knob with its default, its safe range, its unit and its
+- `decktalk schema setting` for every setting with its default, its safe range, its unit and its
   hazard, and `decktalk config explain KEY` for one of them whole.
 - `decktalk status --json` for a project and `decktalk doctor --json` for this machine.
 
@@ -21,14 +21,14 @@ Set up this machine:
   install         Fetch Chromium and ffmpeg before a build needs them.
   doctor          Report what is installed and what a run would use.
 
-Read the project, spending nothing:
+Read the project, buying nothing:
   status          Report what is written, what is built and what is stale.
   check           Judge script.md, cues.json and the pages before a build.
   words           Print every spoken word with its start and end.
   storyboard      Freeze every slide at every cue onto one page.
   serve           Serve the project on a local origin over http.
 
-Read the knobs and the contracts:
+Read the settings and the schemas:
   schema          Print the JSON Schema of a command, a setting or an event.
   config list     Print every key, its value and the layer that set it.
   config get      Print one key's value and the layer that set it.
@@ -40,7 +40,7 @@ Run one stage, in this order:
   narrate         Voice each section of script.md and time every word.
   cue             Turn each cue phrase into a second on its section clock.
   record          Record each page section in headless Chromium.
-  soundscape      Generate the music, the ambience bed and the effects.
+  score           Compose the music, the ambience bed and the effects.
   assemble        Cut, mix and encode the sections into one mp4.
   verify          Measure the finished mp4: every start, cut, seam and landing.
 
@@ -59,10 +59,11 @@ The suite mirrors the source tree: `src/decktalk/media/audio.py` is tested by
 `tests/decktalk/media/test_audio.py` and by nothing else, and `tests/contract/` is a closed list of
 the tests that belong to no module.
 
-Run `uv run scripts/check.py` before calling anything done, which runs lint, types, every suite and
-every generated-file check. `--fast` runs lint, types and the unit tests alone.
+Run `uv run scripts/check.py` before calling anything done. It runs every group a pull request gates
+on: lint and types, the suites and every generated-file check. `--fast` runs lint, types and the unit tests alone.
 
-Never edit a generated file. Change its source and run its script, which `CONTRIBUTING.md` lists.
+Never edit a generated file. Change its source and run its `scripts/build_*.py --write`, or
+`uv run scripts/check.py --group generated --write` to update them all.
 
 Every public sentence a key, a code, a command or a field publishes lives once, in the model or the
 registry the generators read.

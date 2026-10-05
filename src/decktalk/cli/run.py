@@ -1,18 +1,19 @@
 """The eight commands that move a project forward: the six stages, the whole run, and one cut of it.
 
-Every one of them is a thin client. It opens the project, asks the session what this run does about
-the voice, hands the library the options it was given and returns the result the library made. The
+Every one of them is a thin client. It opens the project, asks the session whether this run may
+spend, hands the library the options it was given and returns the result the library made. The
 order of the six is the order of the pipeline, which is the same list `--from`, `--to`, `--skip` and
 the `stage` of an event line all read.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated
 
 import typer
-from typer._click import Context
+from typer import Context
 
 from decktalk.cli import session as sessions
 from decktalk.cli import watch as watching
@@ -23,13 +24,13 @@ from decktalk.cli.options import (
     Group,
     Overrides,
     Panel,
+    ReplaceScore,
     ReplaceVoiced,
     Sections,
     Skip,
     one_section,
     sections_of,
 )
-from decktalk.findings import Code
 from decktalk.pipeline import Stage
 from decktalk.project import Project
 from decktalk.results import (
@@ -39,7 +40,7 @@ from decktalk.results import (
     CueResult,
     NarrateResult,
     RecordResult,
-    SoundscapeResult,
+    ScoreResult,
     VerifyResult,
     counted,
 )
@@ -52,23 +53,25 @@ FromStage = Annotated[
     typer.Option(
         "--from",
         metavar="STAGE",
-        rich_help_panel=Panel.SCOPE.value,
-        help="Start at this stage: narrate, cue, record, soundscape, assemble or verify.",
+        rich_help_panel=Panel.SELECTION.value,
+        help="Start at this stage: narrate, cue, record, score, assemble or verify.",
     ),
 ]
 ToStage = Annotated[
     Stage | None,
-    typer.Option("--to", metavar="STAGE", rich_help_panel=Panel.SCOPE.value, help="Stop after this stage, inclusive."),
+    typer.Option(
+        "--to", metavar="STAGE", rich_help_panel=Panel.SELECTION.value, help="Stop after this stage, inclusive."
+    ),
 ]
 # The flags below share a name with a family in `options.py` and mean something narrower on the one
 # command that declares them, so each says what it does there rather than what the family does.
-SkipSoundscape = Annotated[
+SkipScore = Annotated[
     Stage | None,
     typer.Option(
         "--skip",
         metavar="STAGE",
-        rich_help_panel=Panel.SCOPE.value,
-        help="Mix without this stage's audio. soundscape is the one stage assemble can leave out.",
+        rich_help_panel=Panel.SELECTION.value,
+        help="Mix without this stage's audio. score is the one stage assemble can leave out.",
     ),
 ]
 OneSection = Annotated[
@@ -76,21 +79,21 @@ OneSection = Annotated[
     typer.Option(
         "--section",
         metavar="N",
-        rich_help_panel=Panel.SCOPE.value,
+        rich_help_panel=Panel.SELECTION.value,
         help="The one section to cut the clip from, such as 3.",
     ),
 ]
-SOUNDSCAPE_SPENDING = {
-    "no_voice": "Buy nothing: report the plan and write nothing.",
-    "spend": "Buy what needs it without asking first.",
-    "force": "Buy every item again, even one the ledger already holds, which spends again.",
+SCORE_SPEND = {
+    "spend": "Buy what needs it without asking first, or buy nothing: report the plan and write nothing.",
 }
-"""The spending flags as `soundscape` means them, where the thing bought is sound rather than a voice."""
+"""The spend flags as `score` means them, where the thing bought is sound rather than a voice."""
 
 RECORD_AGAIN = {"force": "Record every section again, even one whose recording still matches its page."}
 """What `--force` redoes on `record`, which is the capture rather than the whole build."""
 
-BUILD_AGAIN = {"force": "Build again from nothing, keeping every voiced take, and measure the film again."}
+BUILD_AGAIN = {
+    "force": "Build again from nothing, keeping every voiced take and every bought sound, and measure the film again."
+}
 """What `--force` redoes on `build`, which also measures the film again."""
 
 Watch = Annotated[
@@ -113,19 +116,21 @@ def narrate(
 ) -> NarrateResult:
     """Voice each section of script.md and time every word.
 
-    It names the transformation, which is text to a spoken take, and it owns the take index and the
-    word clock every later stage measures against.
+    It owns the take index and the words every later stage measures against.
+    \f
+    It names the transformation, which is text to a spoken take.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
-    voice = session.voicing(project)
+    only = sections_of(section)
+    spending = session.spends(project, (Stage.NARRATE,), only=only, replace_voiced=replace_voiced)
     with session.watching(project.events):
         return project.narrate(
-            only=sections_of(section),
-            voice=voice,
+            only=only,
+            spend=spending.spend,
             max_cost=session.max_cost,
             force=force,
-            replace_voiced=_replacing(session, replace_voiced),
+            replace_voiced=spending.replace_voiced,
             cancel=session.cancel,
         )
 
@@ -134,17 +139,15 @@ def narrate(
 def cue(ctx: Context, section: Sections = None, set_: Overrides = None) -> CueResult:
     """Turn each cue phrase into a second on its section clock.
 
+    It reads cues.json, writes the cue times and reports the CUE findings.
+    \f
     The input is cues.json, the output is the cue times, the findings are the CUE codes and every
     page moment names a cue, so the stage is called what everything around it is called.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
     with session.watching(project.events):
-        return project.cue(
-            only=sections_of(section),
-            allow_unknown=Code.CUE_UNKNOWN in session.allowed,
-            cancel=session.cancel,
-        )
+        return project.cue(only=sections_of(section), cancel=session.cancel)
 
 
 @command(
@@ -165,35 +168,35 @@ def record(ctx: Context, section: Sections = None, force: Force = False, set_: O
 
 @command(
     group=Group.STAGE,
-    helps=SOUNDSCAPE_SPENDING,
+    helps=SCORE_SPEND,
 )
-def soundscape(
-    ctx: Context, section: Sections = None, force: Force = False, set_: Overrides = None
-) -> SoundscapeResult:
-    """Generate the music, the ambience bed and the effects.
+def score(
+    ctx: Context, section: Sections = None, replace_score: ReplaceScore = False, set_: Overrides = None
+) -> ScoreResult:
+    """Compose the music, the ambience bed and the effects.
 
-    It runs after `record` so that the unpaid draft loop stops at a recording, and before `assemble`
-    because the mix consumes what it writes.
+    It runs after `record` and before `assemble`, whose mix consumes what it writes.
+    \f
+    It runs after `record` so that the unpaid draft loop stops at a recording.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
-    voice = session.voicing(project)
+    only = sections_of(section)
+    spending = session.spends(project, (Stage.SCORE,), only=only, replace_score=replace_score)
     with session.watching(project.events):
-        return project.soundscape(
-            only=sections_of(section),
-            voice=voice,
+        return project.score(
+            only=only,
+            spend=spending.spend,
             max_cost=session.max_cost,
-            force=force,
+            replace_score=spending.replace_score,
             cancel=session.cancel,
         )
 
 
 @command(group=Group.STAGE)
-def assemble(
-    ctx: Context, section: Sections = None, skip: SkipSoundscape = None, set_: Overrides = None
-) -> AssembleResult:
+def assemble(ctx: Context, section: Sections = None, skip: SkipScore = None, set_: Overrides = None) -> AssembleResult:
     """Cut, mix and encode the sections into one mp4.
-
+    \f
     It is the editing room's word for joining shots into a cut, where render, encode and mix each
     name one of the things it does.
     """
@@ -202,16 +205,16 @@ def assemble(
     with session.watching(project.events):
         return project.assemble(
             only=sections_of(section),
-            soundscape=_skipped_here(skip) is not Stage.SOUNDSCAPE,
+            score=_skipped_here(skip) is not Stage.SCORE,
             cancel=session.cancel,
         )
 
 
 def _skipped_here(skip: Stage | None) -> Stage | None:
-    """The stage `--skip` names on a command that runs one stage, which is the soundscape alone."""
-    if skip is not None and skip is not Stage.SOUNDSCAPE:
+    """The stage `--skip` names on a command that runs one stage, which is the score alone."""
+    if skip is not None and skip is not Stage.SCORE:
         raise typer.BadParameter(
-            f"assemble runs one stage, so --skip names soundscape alone and not {skip.value}.", param_hint="--skip"
+            f"assemble runs one stage, so --skip names score alone and not {skip.value}.", param_hint="--skip"
         )
     return skip
 
@@ -222,8 +225,9 @@ def _skipped_here(skip: Stage | None) -> Stage | None:
 def verify(ctx: Context, section: Sections = None, set_: Overrides = None) -> VerifyResult:
     """Measure the finished mp4: every start, cut, seam and landing.
 
-    It measures the film against the clock the earlier stages promised, which is the product's whole
-    claim written as a measurement.
+    It measures the film against the clock the earlier stages promised.
+    \f
+    That clock is the product's whole claim written as a measurement.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
@@ -246,31 +250,40 @@ def build(
     fix: Fix = None,
     force: Force = False,
     replace_voiced: ReplaceVoiced = False,
+    replace_score: ReplaceScore = False,
     set_: Overrides = None,
     watch: Watch = False,
 ) -> BuildResult:
     """Run every stage in order, or a span of them with --from and --to.
 
-    A stage whose inputs have not changed is skipped. On a terminal a voiced build prices the spend
-    and asks before it buys. Without a terminal it refuses unless --spend or --no-voice is passed.
+    A stage whose inputs have not changed is skipped. A build that would buy from a provider that bills
+    prices it and asks on a terminal before it buys, and without a terminal it refuses unless --spend or
+    --no-spend is passed. A free provider makes its takes without asking once a voice is named.
     """
     session = sessions.of(ctx)
     project = session.opened(set_)
     only = sections_of(section)
     if watch:
         return watching.loop(session, project, skip=tuple(skip or ()), only=only, force=force)
-    voice = session.voicing(project, storyboard=True)
+    stages = _span(from_stage, to_stage)
+    spending = session.spends(
+        project,
+        _planned(stages, skip),
+        only=only,
+        replace_voiced=replace_voiced,
+        replace_score=replace_score,
+        storyboard=True,
+    )
     with session.watching(project.events, opening=True):
         built = project.build(
-            stages=_span(from_stage, to_stage),
+            stages=stages,
             skip=tuple(skip or ()),
             only=only,
-            voice=voice,
+            spend=spending.spend,
             max_cost=session.max_cost,
             force=force,
-            replace_voiced=_replacing(session, replace_voiced),
-            allow=session.allowed,
-            stop_on=session.fail_on.stops_on,
+            replace_voiced=spending.replace_voiced,
+            replace_score=spending.replace_score,
             cancel=session.cancel,
         )
     return _offered(session, project, built, fix)
@@ -283,11 +296,16 @@ def _span(first: Stage | None, last: Stage | None) -> tuple[Stage, ...] | None:
     return Stage.span(first, last)
 
 
+def _planned(stages: Sequence[Stage] | None, skip: Sequence[Stage] | None) -> set[Stage]:
+    """The stages a build with this span and these skips performs."""
+    return set(stages or Stage) - set(skip or ())
+
+
 def _offered(sessions_: sessions.Session, project: Project, built: BuildResult, fix: bool | None) -> BuildResult:
     """Apply the safe fixes a finished run offered, and say that the run has to be made again.
 
     A fix changes an input, so the film beside it is the film the old input made. The run is not
-    repeated here, because repeating a paid run without being asked is how credits are spent twice.
+    repeated here, because repeating a paid run without being asked is how the same take is bought twice.
     """
     offered = sessions_.fixes_wanted(built.findings, fix)
     if not offered:
@@ -316,7 +334,7 @@ def clip(
     set_: Overrides = None,
 ) -> ClipResult:
     """Cut a span of a built section into its own file.
-
+    \f
     A clip is one thing in this product, which is a short video file, so the command that makes one
     is called what the file is called.
     """
@@ -335,13 +353,4 @@ def clip(
         )
 
 
-def _replacing(session: sessions.Session, asked: bool) -> bool:
-    """Whether paid takes are discarded, confirmed once on a terminal because the answer destroys money.
-
-    Without a terminal the flag is the authorisation, because a run that was told to replace a take
-    was told so on purpose and the safe default without the flag is to keep every take.
-    """
-    return asked and (not session.asks or session.confirm("This discards every take it replaces. Carry on?"))
-
-
-__all__ = ["assemble", "build", "clip", "cue", "narrate", "record", "soundscape", "verify"]
+__all__ = ["assemble", "build", "clip", "cue", "narrate", "record", "score", "verify"]

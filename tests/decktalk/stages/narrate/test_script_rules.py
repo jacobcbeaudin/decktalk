@@ -69,13 +69,13 @@ def test_a_clean_script_raises_nothing() -> None:
 
 
 def test_a_digit_or_a_symbol_is_named_word_by_word() -> None:
-    (segment,) = parse_script("## 1. Open\n\nIt costs 40% of $2 today.\n")
-    assert symbol_tokens(segment) == ("$2", "40%")
+    (section,) = parse_script("## 1. Open\n\nIt costs 40% of $2 today.\n")
+    assert symbol_tokens(section) == ("$2", "40%")
 
 
 def test_a_section_the_voice_can_read_names_nothing() -> None:
-    (segment,) = parse_script("## 1. Open\n\nForty per cent of two dollars.\n")
-    assert symbol_tokens(segment) == ()
+    (section,) = parse_script("## 1. Open\n\nForty per cent of two dollars.\n")
+    assert symbol_tokens(section) == ()
 
 
 def test_a_finding_names_the_first_few_words_rather_than_all_of_them() -> None:
@@ -90,4 +90,4 @@ def test_headings_that_count_backwards_name_the_pair_that_does_not_ascend() -> N
     out_of_order = ascending(parse_script("## 2. Two\n\nx\n\n## 1. One\n\ny\n"))
     assert out_of_order is not None
     first, second = out_of_order
-    assert (first.index, second.index) == (2, 1)
+    assert (first.number, second.number) == (2, 1)

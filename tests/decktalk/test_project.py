@@ -7,14 +7,16 @@ the lock it holds, the arguments it hands down and the result it insists on.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import subprocess
 import sys
 import types
 import urllib.request
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -22,16 +24,20 @@ import pytest
 from filelock import FileLock, Timeout
 
 import decktalk
-from decktalk.errors import Cancel, ErrorCode, InputError, ProjectLocked
-from decktalk.events import Event, Level, Log
+from decktalk.errors import ApprovalRequired, Cancel, ErrorCode, InputError, ProjectLocked
+from decktalk.events import Event, Level, RunLog
 from decktalk.files import replace_all
-from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location
+from decktalk.findings import Applicability, Code, Edit, EditFix, Finding, Location, Severity, Threshold
 from decktalk.inputs import Inputs
-from decktalk.machine import Machine, Run
+from decktalk.inputs.workspace import LOCK_FILE, OWNER_FILE
+from decktalk.machine import Machine, Toolchain
+from decktalk.machine.run import Run
+from decktalk.media import audio
 from decktalk.page import PREVIEW_CUE_TIMES
 from decktalk.pipeline import Stage
-from decktalk.project import LOCK_FILE, OWNER_FILE, Origin, Project, section_numbers, stage_call
+from decktalk.project import Origin, Project, section_numbers
 from decktalk.results import (
+    BillingBasis,
     BuildResult,
     CheckResult,
     CueResult,
@@ -39,13 +45,17 @@ from decktalk.results import (
     RecordResult,
     Result,
     StatusResult,
-    Voicing,
 )
 from decktalk.results import Layer as SettingLayer
+from decktalk.settings import ToolsConfig
+from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders
+from decktalk.speech.sound import SoundProviders
+from decktalk.stages.table import CALLS
+from support.costs import a_cost
+from support.fakes import FAKE_VOICE_NAME, FakeChromium, FakeVoice
 from support.links import link
-from support.projects import MINIMAL_TOML, write_project
+from support.projects import MINIMAL_TOML, load_project, write_project
 from support.runs import a_machine
-from support.spends import a_spend
 
 
 def a_project(tmp_path: Path, toml: str = MINIMAL_TOML, **environ: str) -> Project:
@@ -59,10 +69,10 @@ Call = tuple[Any, Run, dict[str, Any]]
 
 @pytest.fixture
 def fake_stages(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Call]]:
-    """Every stage replaced by a module holding the one function the convention names.
+    """Every call the facade makes replaced, so nothing of a real stage runs.
 
-    The facade imports `decktalk.stages.<name>` and calls `<name>(inputs, run, **options)`, so a
-    fake module at that path is the whole seam and nothing of a real stage runs.
+    A stage is replaced in its row of the stage table and every other call by a module at
+    `decktalk.stages.<name>`, which together are the whole seam.
     """
     calls: dict[str, list[Call]] = {}
     answers: dict[str, type[Result]] = {
@@ -87,7 +97,10 @@ def fake_stages(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[Call]]:
 
 
 def a_stage(monkeypatch: pytest.MonkeyPatch, name: str, call: object) -> None:
-    """A module at `decktalk.stages.<name>` holding `call` under the stage's name, which is the whole seam."""
+    """`call` in place of the stage or the call named `name`, wherever the facade reaches it."""
+    if name in {stage.value for stage in Stage}:
+        monkeypatch.setitem(CALLS, Stage(name), replace(CALLS[Stage(name)], call=call))
+        return
     module = types.ModuleType(f"decktalk.stages.{name}")
     setattr(module, name, call)
     monkeypatch.setitem(sys.modules, module.__name__, module)
@@ -95,14 +108,20 @@ def a_stage(monkeypatch: pytest.MonkeyPatch, name: str, call: object) -> None:
 
 def _filler(name: str) -> dict[str, Any]:
     """The fields each faked result needs beyond the ones the run fills, and nothing more."""
-    priced = a_spend(0.0, 0.0, layer=SettingLayer.DEFAULT)
+    priced = a_cost(0.0, 0.0, layer=SettingLayer.DEFAULT)
     return {
-        "narrate": {"voice": Voicing.PLACEHOLDER, "sections": (), "spend": priced, "seconds": 0.0},
-        "cue": {"sections": (), "seconds": 0.0},
-        "record": {"sections": (), "seconds": 0.0},
-        "build": {"stages": (), "voice": Voicing.PLACEHOLDER, "spend": priced, "seconds": 0.0},
-        "status": {"name": "t", "script": Path("script.md"), "cues": Path("cues.json"), "sections": ()},
-        "check": {"judged": (), "pages": True, "frames": True, "spend": priced},
+        "narrate": {
+            "spend": False,
+            "sections": (),
+            "cost": priced,
+            "takes": Path("build/narrate/takes.json"),
+            "elapsed_seconds": 0.0,
+        },
+        "cue": {"sections": (), "elapsed_seconds": 0.0},
+        "record": {"sections": (), "elapsed_seconds": 0.0},
+        "build": {"stages": (), "spend": False, "cost": priced, "elapsed_seconds": 0.0},
+        "status": {"name": "t", "script": Path("script.md"), "cues_file": Path("cues.json"), "sections": ()},
+        "check": {"judged": (), "pages_opened": True, "frames_compared": True, "cost": priced},
     }[name]
 
 
@@ -112,8 +131,8 @@ def _filler(name: str) -> dict[str, Any]:
 def test_a_project_is_a_directory_and_open_is_what_opens_one(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     assert project.root == tmp_path.resolve()
-    assert project.document.name == "t"
-    assert project.workspace.build == tmp_path / "build"
+    assert project._inputs.document.name == "t"
+    assert project._inputs.workspace.build == tmp_path / "build"
     assert repr(project).startswith("Project(")
 
 
@@ -142,8 +161,8 @@ def test_a_directory_with_no_project_file_names_the_file_and_the_next_action(tmp
 def test_reloading_reads_the_project_again(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     write_project(tmp_path, MINIMAL_TOML.replace('name = "t"', 'name = "renamed"'))
-    assert project.document.name == "t"
-    assert project.reload().document.name == "renamed"
+    assert project._inputs.document.name == "t"
+    assert project.reload()._inputs.document.name == "renamed"
 
 
 def test_an_override_given_for_one_run_reaches_the_settings(tmp_path: Path) -> None:
@@ -153,13 +172,13 @@ def test_an_override_given_for_one_run_reaches_the_settings(tmp_path: Path) -> N
     assert project.reload().settings.video.crf == 20
 
 
-@pytest.mark.parametrize("pair", ["record.page_policy=trusted", "record.browser_path=/bin/echo"])
+@pytest.mark.parametrize("pair", ["record.page_policy=trusted", "tools.chromium=/bin/echo"])
 def test_an_override_at_open_cannot_set_a_key_that_belongs_to_the_host_machine(tmp_path: Path, pair: str) -> None:
     """A host that forwards a tenant's pairs would otherwise hand the tenant its browser and its trust level."""
     write_project(tmp_path)
     host = Machine.of(
         environ={},
-        config_path=tmp_path / "host.toml",
+        machine_file=tmp_path / "host.toml",
         cwd=tmp_path,
         cache_dir=tmp_path / "cache",
         overrides=("record.page_policy=untrusted",),
@@ -173,7 +192,7 @@ def test_an_override_given_to_open_without_a_machine_reaches_the_machine_it_make
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With no machine given, the caller is the one who owns the machine it makes, so every key is theirs."""
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "machine.toml"))
+    monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(tmp_path / "machine.toml"))
     write_project(tmp_path)
     project = decktalk.open(tmp_path, overrides=("record.concurrency=2", "video.crf=20"))
     assert (project.settings.record.concurrency, project.settings.video.crf) == (2, 20)
@@ -187,6 +206,39 @@ def test_the_layers_say_which_layer_set_each_key(tmp_path: Path) -> None:
 def test_a_changed_file_names_the_sections_a_watch_loop_must_rebuild(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     assert project.sections_touching(tmp_path / "deck" / "index.html") == (1, 2)
+
+
+def test_a_price_covers_the_stages_that_buy_and_a_span_that_buys_nothing_names_the_voices_rate(
+    tmp_path: Path,
+) -> None:
+    """The takes of a written script are priced from the plan alone, and a span that buys nothing still names a rate."""
+    project = a_project(tmp_path)
+    (tmp_path / "script.md").write_text("## 1. One\n\nHello there.\n\n## 2. Two\n\nAnd again.\n", encoding="utf-8")
+    priced = project.price(stages=[Stage.NARRATE], only=[1])
+    assert priced.sections == (1,)
+    nothing = project.price(stages=[Stage.RECORD, Stage.ASSEMBLE])
+    assert not nothing.buys
+    assert nothing.price_key == "elevenlabs.dollars_per_1000_characters"
+    assert nothing.price_layer is SettingLayer.DEFAULT
+    assert project.price(stages=()) == nothing
+    assert not (tmp_path / "build" / "events").exists(), "pricing opened a run"
+
+
+def test_what_a_run_writes_is_never_an_authored_file(tmp_path: Path) -> None:
+    project = a_project(tmp_path)
+    for written in ("build/takes.json", "node_modules/x/index.js", ".git/HEAD"):
+        (tmp_path / written).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / written).write_text("{}", encoding="utf-8")
+    (tmp_path / "script.md").write_text("one", encoding="utf-8")
+    assert set(project.authored_files()) == {tmp_path / "decktalk.toml", tmp_path / "script.md"}
+
+
+def test_a_build_folder_the_project_names_is_never_an_authored_file(tmp_path: Path) -> None:
+    """A run writes into this folder, so watching it would start the next build without end."""
+    project = a_project(tmp_path, MINIMAL_TOML.replace('name = "t"', 'name = "t"\nbuild = "out/film"'))
+    (tmp_path / "out" / "film").mkdir(parents=True)
+    (tmp_path / "out" / "film" / "takes.json").write_text("{}", encoding="utf-8")
+    assert set(project.authored_files()) == {tmp_path / "decktalk.toml"}
 
 
 # ---- the selection edge ------------------------------------------------------------------------
@@ -213,6 +265,63 @@ def test_a_run_written_backwards_is_refused_rather_than_selecting_nothing() -> N
     assert refused.value.hint == "Write the lower number first, as in 7-9."
 
 
+SELECTING: dict[str, Callable[[Project, tuple[int, ...]], object]] = {
+    "narrate": lambda project, only: project.narrate(only=only),
+    "cue": lambda project, only: project.cue(only=only),
+    "record": lambda project, only: project.record(only=only),
+    "score": lambda project, only: project.score(only=only),
+    "assemble": lambda project, only: project.assemble(only=only),
+    "verify": lambda project, only: project.verify(only=only),
+    "build": lambda project, only: project.build(only=only),
+    "price": lambda project, only: project.price(only=only),
+    "check": lambda project, only: project.check(only=only),
+    "words": lambda project, only: project.words(only=only),
+    "storyboard": lambda project, only: project.storyboard(only=only),
+}
+"""Every call that takes a selection, each made with the one it is handed."""
+
+
+@pytest.mark.parametrize("name", SELECTING)
+@pytest.mark.parametrize("only", [(99,), (1, 99), ()], ids=["no such section", "one of two missing", "empty"])
+def test_a_selection_that_names_a_number_no_section_carries_is_refused_before_any_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, only: tuple[int, ...]
+) -> None:
+    """One rule for every call: the refusal names the sections there are, and no run is opened to find out."""
+    reached: list[str] = []
+    for stage in SELECTING.keys() - {"price"}:
+        a_stage(monkeypatch, stage, lambda *_args, _stage=stage, **_options: reached.append(_stage))
+    project = a_project(tmp_path)
+    with pytest.raises(InputError) as refused:
+        SELECTING[name](project, only)
+    assert "99" in str(refused.value) if only else "names no section" in str(refused.value)
+    assert refused.value.hint == "The sections are [0, 1, 2]."
+    assert refused.value.location is not None and refused.value.location.file == Path("decktalk.toml")
+    assert not reached, f"{name} reached its stage"
+    assert not (tmp_path / "build").exists(), f"{name} did work before it refused the selection"
+
+
+def test_a_clip_of_a_section_no_section_carries_is_refused_before_any_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`clip --section 99` opened a run, left a lock and an events file, and refused in other words."""
+    reached: list[str] = []
+    a_stage(monkeypatch, "clip", lambda *_args, **_options: reached.append("clip"))
+    project = a_project(tmp_path)
+    with pytest.raises(InputError, match="no section carries the number 99") as refused:
+        project.clip(99, start=0.0, end=1.0, out=tmp_path / "cut.mp4")
+    assert refused.value.hint == "The sections are [0, 1, 2]."
+    assert not reached, "clip reached its stage"
+    assert not (tmp_path / "build").exists(), "clip did work before it refused the selection"
+
+
+def test_a_selection_of_sections_the_project_carries_reaches_the_stage(
+    tmp_path: Path, fake_stages: dict[str, list[Call]]
+) -> None:
+    project = a_project(tmp_path)
+    project.cue(only=(0, 2))
+    assert fake_stages["cue"][0][2]["only"] == (0, 2)
+
+
 # ---- the calls -----------------------------------------------------------------------------------
 
 
@@ -230,23 +339,97 @@ def test_a_stage_is_handed_the_inputs_the_run_and_its_own_options(
     project = a_project(tmp_path)
     project.narrate(only=(1, 2), force=True)
     inputs, run, options = fake_stages["narrate"][0]
-    assert inputs is project.inputs
+    assert inputs is project._inputs
     assert run.id and run.root == project.root
     assert options["only"] == (1, 2) and options["force"] is True
+
+
+PAYING_TOML = """
+[project]
+name = "t"
+
+[[section]]
+number = 1
+page = "deck/index.html"
+scene = "1"
+with_ambience = true
+
+[score.ambience]
+prompt = "a quiet room"
+"""
+"""One spoken page section with an ambience bed, so the project holds one take and one bought sound."""
+
+
+@dataclass
+class Bought:
+    """Every take and every sound the paid seams were asked for, counted rather than paid."""
+
+    name: str = "house"
+    voice: FakeVoice = field(default_factory=FakeVoice)
+    sounds: list[dict[str, object]] = field(default_factory=list)
+
+    def effect(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(dict(body))
+        return b"sound"
+
+    def music(self, body: Mapping[str, object], *, output_format: str) -> bytes:  # noqa: ARG002
+        self.sounds.append(dict(body))
+        return b"music"
+
+    @property
+    def counts(self) -> tuple[int, int]:
+        """(takes bought, sounds bought), which is what the runs cost read as two numbers."""
+        return len(self.voice.requests), len(self.sounds)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`force` rebuilds what is free, so a project that holds its take and its sound buys neither again.
+
+    The two paying stages run for real against counting fakes on the machine's own tables, and the
+    stages between them are left out of the build, because what is bought needs no browser.
+    """
+    load_project(tmp_path, PAYING_TOML, script="## 1. Open\n\nA bowl.\n")
+    bought = Bought()
+    machine = Machine(
+        environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+        tables={},
+        machine_file=tmp_path / "config.toml",
+        cwd=tmp_path,
+        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
+        speech_providers=SpeechProviders(factories={FAKE_VOICE_NAME: lambda _context: bought.voice}),
+        sound_providers=SoundProviders(factories={"elevenlabs": lambda _context: bought}),
+    )
+    monkeypatch.setattr(audio, "sound_end", lambda _path, **_levels: 0.8)
+    project = decktalk.open(tmp_path, machine=machine, threshold=Threshold(stop_on=None))
+    project.narrate(spend=True)
+    project.score(spend=True)
+    assert bought.counts == (1, 1)
+    project.narrate(spend=True, force=True)
+    assert bought.counts == (1, 1), "a forced narrate bought a take again"
+    besides = (Stage.CUE, Stage.RECORD, Stage.ASSEMBLE, Stage.VERIFY)
+    project.build(spend=True, force=True, skip=besides)
+    assert bought.counts == (1, 1), "a forced build bought a take or a sound again"
+    project.narrate(spend=True, replace_voiced=True)
+    assert bought.counts == (2, 1)
+    project.score(spend=True, replace_score=True)
+    assert bought.counts == (2, 2)
+    project.build(spend=False, replace_voiced=True, replace_score=True, skip=besides)
+    assert bought.counts == (2, 2), "a replace flag bought something without spend"
+    project.build(spend=True, replace_score=True, skip=besides)
+    assert bought.counts == (2, 3)
+    assert "force" not in inspect.signature(Project.score).parameters, "a force there could only buy again"
 
 
 def test_a_result_that_is_not_the_one_the_command_is_named_after_is_a_bug(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    answer = {"name": "t", "script": Path("s"), "cues": Path("c"), "sections": ()}
+    answer = {"name": "t", "script": Path("s"), "cues_file": Path("c"), "sections": ()}
     a_stage(monkeypatch, "cue", lambda _inputs, run, **_options: run.result(StatusResult, **answer))
     with pytest.raises(TypeError, match="cue answered with StatusResult"):
         a_project(tmp_path).cue()
-
-
-def test_the_stage_seam_is_one_function_named_after_its_own_stage(monkeypatch: pytest.MonkeyPatch) -> None:
-    a_stage(monkeypatch, "verify", "the one function")
-    assert stage_call(Stage.VERIFY.value) == "the one function"
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -256,7 +439,7 @@ def test_a_call_opens_a_run_on_the_project_view_of_the_stream(tmp_path: Path) ->
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    assert [line.event for line in seen if line.event != "log"] == ["run.start", "run.done"]
+    assert [line.event for line in seen if line.event != "run.log"] == ["run.start", "run.done"]
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -266,7 +449,7 @@ def test_a_writing_run_says_it_holds_the_build_directory(tmp_path: Path) -> None
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    [held] = [line for line in seen if isinstance(line, Log) and line.source == "project"]
+    [held] = [line for line in seen if isinstance(line, RunLog) and line.source == "project"]
     assert held.data == {"pid": os.getpid(), "lock": ".lock"}
 
 
@@ -279,8 +462,8 @@ def test_what_the_load_noticed_is_a_warning_on_every_run(tmp_path: Path, caplog:
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    warned = [line.message for line in seen if isinstance(line, Log) and line.level is Level.WARNING]
-    assert tuple(warned) == project.inputs.notes
+    warned = [line.message for line in seen if isinstance(line, RunLog) and line.level is Level.WARNING]
+    assert tuple(warned) == project._inputs.notes
     assert any("presett" in note for note in warned)
     assert not [record for record in caplog.records if "presett" in record.getMessage()], "said once, on the run"
 
@@ -302,7 +485,7 @@ def test_one_project_never_sees_another_project_lines(tmp_path: Path) -> None:
 def test_a_run_writes_its_own_lines_beside_the_build(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     result = project.cue()
-    assert (project.workspace.events_dir / f"{result.run}.jsonl").exists()
+    assert (project._inputs.workspace.events_dir / f"{result.run}.jsonl").exists()
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -313,9 +496,9 @@ def test_a_build_directory_linked_out_of_the_project_is_neither_pruned_nor_writt
     outside.mkdir()
     victim = outside / "victim.jsonl"
     victim.write_text("not the project's\n", encoding="utf-8")
-    project = a_project(root, MINIMAL_TOML + "\n[output]\nevents_keep_runs = 1\n")
-    project.workspace.build.mkdir()
-    project.workspace.events_dir.symlink_to(outside, target_is_directory=True)
+    project = a_project(root, MINIMAL_TOML + "\n[events]\nkeep_runs = 1\n")
+    project._inputs.workspace.build.mkdir()
+    project._inputs.workspace.events_dir.symlink_to(outside, target_is_directory=True)
     with pytest.raises(InputError) as refused:
         project.status()
     assert refused.value.code is ErrorCode.INPUT
@@ -329,12 +512,12 @@ def test_a_take_linked_out_of_the_build_directory_refuses_the_run_that_would_wri
     root.mkdir()
     outside.write_bytes(b"not the project's")
     project = a_project(root)
-    project.workspace.narrate_dir.mkdir(parents=True)
-    (project.workspace.narrate_dir / "narration.mp3").symlink_to(outside)
+    project._inputs.workspace.narrate_dir.mkdir(parents=True)
+    (project._inputs.workspace.narrate_dir / "narration.mp3").symlink_to(outside)
     with pytest.raises(InputError):
         project.narrate()
     assert outside.read_bytes() == b"not the project's"
-    assert not project.workspace.events_dir.exists()
+    assert not project._inputs.workspace.events_dir.exists()
 
 
 @pytest.mark.usefixtures("fake_stages")
@@ -344,7 +527,7 @@ def test_a_build_directory_that_is_itself_a_link_out_of_the_project_is_refused(t
     root.mkdir()
     outside.mkdir()
     project = a_project(root)
-    project.workspace.build.symlink_to(outside, target_is_directory=True)
+    project._inputs.workspace.build.symlink_to(outside, target_is_directory=True)
     with pytest.raises(InputError):
         project.cue()
     assert list(outside.iterdir()) == []
@@ -370,7 +553,7 @@ def free(build: Path) -> bool:
 @pytest.mark.usefixtures("fake_stages")
 def test_a_reporting_call_takes_no_lock_and_a_writing_call_does(tmp_path: Path) -> None:
     project = a_project(tmp_path)
-    build = project.workspace.build
+    build = project._inputs.workspace.build
     project.status()
     assert not (build / LOCK_FILE).exists()
     project.cue()
@@ -382,7 +565,7 @@ def test_a_reporting_call_takes_no_lock_and_a_writing_call_does(tmp_path: Path) 
 def test_a_check_that_opens_pages_holds_the_build_and_one_that_reads_alone_does_not(tmp_path: Path) -> None:
     """A check with pages freezes frames and draws the storyboard, which is a writer's work."""
     project = a_project(tmp_path)
-    with held(project.workspace.build):
+    with held(project._inputs.workspace.build):
         project.check(pages=False)
         with pytest.raises(ProjectLocked):
             project.check()
@@ -393,7 +576,7 @@ def test_a_check_that_opens_pages_holds_the_build_and_one_that_reads_alone_does_
 def test_a_lock_file_that_cannot_be_a_lock_is_a_refusal_that_names_it(tmp_path: Path, planted: str) -> None:
     """A link inside the build stays inside, so confinement lets it through, and the lock must refuse it."""
     project = a_project(tmp_path)
-    build = project.workspace.build
+    build = project._inputs.workspace.build
     build.mkdir(parents=True, exist_ok=True)
     (build / "kept.json").write_text("{}", encoding="utf-8")
     if planted == "link":
@@ -410,7 +593,7 @@ def test_a_lock_file_that_cannot_be_a_lock_is_a_refusal_that_names_it(tmp_path: 
 def test_a_second_writer_is_refused_while_the_first_holds_the_build(tmp_path: Path) -> None:
     """The trigger is a build run by hand under a live watch loop, not a service."""
     project = a_project(tmp_path)
-    with held(project.workspace.build), pytest.raises(ProjectLocked) as refused:
+    with held(project._inputs.workspace.build), pytest.raises(ProjectLocked) as refused:
         project.cue()
     assert refused.value.code is ErrorCode.LOCKED
     assert "process 1, run abc" in str(refused.value)
@@ -420,13 +603,13 @@ def test_a_second_writer_is_refused_while_the_first_holds_the_build(tmp_path: Pa
 def test_a_note_nobody_holds_is_taken_and_reported(tmp_path: Path) -> None:
     """A caller cannot clear a file it was never told about, so this is a line and not a refusal."""
     project = a_project(tmp_path)
-    note = project.workspace.build / OWNER_FILE
+    note = project._inputs.workspace.build / OWNER_FILE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.write_text("999999 gone\n", encoding="utf-8")
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    assert any(isinstance(line, Log) and line.level is Level.WARNING for line in seen)
+    assert any(isinstance(line, RunLog) and line.level is Level.WARNING for line in seen)
     assert not note.exists()
 
 
@@ -436,7 +619,7 @@ def test_a_note_that_is_a_link_is_never_followed(tmp_path: Path) -> None:
     project = a_project(tmp_path)
     elsewhere = tmp_path / "elsewhere.txt"
     elsewhere.write_text("7 secret\n", encoding="utf-8")
-    note = project.workspace.build / OWNER_FILE
+    note = project._inputs.workspace.build / OWNER_FILE
     note.parent.mkdir(parents=True, exist_ok=True)
     note.symlink_to(elsewhere)
     with pytest.raises(InputError, match="leads outside the build directory") as refused:
@@ -450,7 +633,7 @@ import os, sys
 from pathlib import Path
 from filelock import FileLock
 from decktalk.files import replace_all
-from decktalk.project import LOCK_FILE, OWNER_FILE
+from decktalk.inputs.workspace import LOCK_FILE, OWNER_FILE
 build = Path(sys.argv[1])
 lock = FileLock(build / LOCK_FILE)
 lock.acquire()
@@ -465,7 +648,7 @@ sys.stdin.read()
 def test_the_system_frees_the_lock_of_a_writer_that_was_killed(tmp_path: Path) -> None:
     """A killed holder releases nothing itself, and the operating system releases the lock for it."""
     project = a_project(tmp_path)
-    build = project.workspace.build
+    build = project._inputs.workspace.build
     build.mkdir(parents=True, exist_ok=True)
     command = [sys.executable, "-c", HOLDER, str(build)]
     with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as holder:
@@ -479,7 +662,7 @@ def test_the_system_frees_the_lock_of_a_writer_that_was_killed(tmp_path: Path) -
     seen: list[Event] = []
     with project.events.subscribe(seen.append):
         project.cue()
-    assert any(isinstance(line, Log) and OWNER_FILE in line.message for line in seen)
+    assert any(isinstance(line, RunLog) and OWNER_FILE in line.message for line in seen)
 
 
 def test_a_cancel_token_reaches_the_stage_that_checks_it(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
@@ -490,23 +673,46 @@ def test_a_cancel_token_reaches_the_stage_that_checks_it(tmp_path: Path, fake_st
     assert run.cancel is cancel
 
 
-def test_a_voicing_and_a_ceiling_reach_the_gate_rather_than_the_stage(
+def test_spend_and_a_ceiling_reach_the_gate_rather_than_the_stage(
     tmp_path: Path, fake_stages: dict[str, list[Call]]
 ) -> None:
     project = a_project(tmp_path)
-    project.build(voice=Voicing.PAID, max_cost=2.5)
+    project.build(spend=True, max_cost=2.5)
     _inputs, run, options = fake_stages["build"][0]
-    assert run.voice is Voicing.PAID and run.max_cost == 2.5
-    assert "voice" not in options and "max_cost" not in options
+    assert run.spend is True and run.max_cost == 2.5
+    assert "spend" not in options and "max_cost" not in options
 
 
-def test_the_callers_threshold_reaches_the_build(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
-    """`allow` and `stop_on` are how a caller says which findings may stop its run."""
-    project = a_project(tmp_path)
-    project.build(allow=[Code.PAGE_BLACK], stop_on=None)
-    _inputs, _run, options = fake_stages["build"][0]
-    assert options["allow"] == frozenset({Code.PAGE_BLACK})
-    assert options["stop_on"] is None
+def test_a_project_judges_every_call_by_the_threshold_it_was_opened_with(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ok` is read from the project's one threshold, so a call that is not a build honours it too."""
+    warning = Finding(code=Code.PAGE_SWAP_APART, message="y", location=Location(where="deck/index.html"))
+    assert warning.severity is Severity.WARNING
+
+    def check(_inputs: Inputs, run: Run, **_options: object) -> Result:
+        return run.result(CheckResult, findings=(warning,), **_filler("check"))
+
+    a_stage(monkeypatch, "check", check)
+    write_project(tmp_path, MINIMAL_TOML)
+    strict = decktalk.open(tmp_path, machine=a_machine(tmp_path), threshold=Threshold(stop_on=Severity.WARNING))
+    assert strict.check(pages=False).ok is False
+    assert strict.reload().check(pages=False).ok is False
+    assert decktalk.open(tmp_path, machine=a_machine(tmp_path)).check(pages=False).ok is True
+
+
+def test_every_run_a_project_opens_carries_its_threshold(tmp_path: Path, fake_stages: dict[str, list[Call]]) -> None:
+    """The build reads where a stage stops the run from the run, which the project gave its threshold."""
+    threshold = Threshold(stop_on=None, allow=frozenset({Code.RECORD_BLACK}))
+    write_project(tmp_path, MINIMAL_TOML)
+    project = decktalk.open(tmp_path, machine=a_machine(tmp_path), threshold=threshold)
+    project.build()
+    project.record()
+    assert [run.threshold for _inputs, run, _options in (*fake_stages["build"], *fake_stages["record"])] == [
+        threshold,
+        threshold,
+    ]
+    assert "stop_on" not in fake_stages["build"][0][2] and "allow" not in fake_stages["build"][0][2]
 
 
 # ---- applying a fix --------------------------------------------------------------------------------
@@ -515,7 +721,7 @@ def test_the_callers_threshold_reaches_the_build(tmp_path: Path, fake_stages: di
 def fixing(edit: Edit) -> Finding:
     """A finding whose one safe fix is `edit`."""
     fix = EditFix(title="Repair the row.", applicability=Applicability.SAFE, edits=(edit,))
-    return Finding(code=Code.CUE_MISSING, message="x", location=Location(where=edit.file.as_posix()), fix=fix)
+    return Finding(code=Code.CUE_UNLISTED, message="x", location=Location(where=edit.file.as_posix()), fix=fix)
 
 
 @pytest.mark.parametrize(
@@ -550,7 +756,7 @@ def test_an_edit_into_a_file_that_is_not_there_says_so_rather_than_raising(tmp_p
 
 def test_a_finding_with_no_fix_is_nothing_to_apply(tmp_path: Path) -> None:
     project = a_project(tmp_path)
-    found = Finding(code=Code.CUE_MISSING, message="x", location=Location(where="cues.json"))
+    found = Finding(code=Code.CUE_UNLISTED, message="x", location=Location(where="cues.json"))
     assert project.apply([found]).fixes == ()
 
 
@@ -570,4 +776,46 @@ def test_a_served_preview_reads_its_cue_times_from_the_alias_the_recorder_uses(t
     """A preview has no recorder to put its cues in its URL, so the origin answers the one alias."""
     project = a_project(tmp_path)
     with project.serve(port=0) as origin, urllib.request.urlopen(origin.result.url + PREVIEW_CUE_TIMES) as sent:
-        assert json.loads(sent.read()) == project.inputs.preview_cues()
+        assert json.loads(sent.read()) == project._inputs.preview_cues()
+
+
+def test_a_voiced_build_under_the_untrusted_policy_is_refused_before_it_buys_anything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A voiced build that would open an untrusted page is refused before its first stage buys anything."""
+    write_project(tmp_path, MINIMAL_TOML)
+    machine = Machine(
+        environ={},
+        tables={"record": {"page_policy": "untrusted"}},
+        machine_file=tmp_path / "config.toml",
+        cwd=tmp_path,
+        toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
+    )
+    a_stage(monkeypatch, "narrate", lambda *_a, **_k: pytest.fail("narrate was reached"))
+    chromium = FakeChromium(Path(__file__))
+    monkeypatch.setattr("playwright.sync_api.sync_playwright", chromium.started())
+    with pytest.raises(ApprovalRequired, match="untrusted page"):
+        decktalk.open(tmp_path, machine=machine).build(spend=True, max_cost=1.0)
+    assert chromium.asked == []
+
+
+def test_a_hosts_voice_table_never_changes_the_voice_a_project_is_read_in(tmp_path: Path) -> None:
+    """The voice in force is read from the project's settings, so no machine's table moves a digest or a price."""
+    load_project(tmp_path, MINIMAL_TOML, script="## 1. Open\n\nA bowl.\n")
+    tables: list[Mapping[str, SpeechFactory]] = [PROVIDERS, {"house": lambda _context: FakeVoice()}, {}]
+    voices, prices = [], []
+    for factories in tables:
+        machine = Machine(
+            environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+            tables={},
+            machine_file=tmp_path / "config.toml",
+            cwd=tmp_path,
+            toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(tmp_path / "cache"))),
+            speech_providers=SpeechProviders(factories=factories),
+        )
+        project = decktalk.open(tmp_path, machine=machine)
+        voices.append(project._inputs.voice)
+        prices.append(project.price())
+    assert voices[0] == voices[1] == voices[2]
+    assert prices[0] == prices[1] == prices[2]
+    assert prices[0].billing is BillingBasis.PER_CHARACTER

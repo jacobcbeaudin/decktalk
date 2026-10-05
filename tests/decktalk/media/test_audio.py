@@ -60,7 +60,7 @@ def test_sound_end_finds_the_last_sound_whether_or_not_the_container_counts_the_
 
 @pytest.mark.media
 def test_a_span_of_samples_is_read_at_the_rate_the_project_renders_at(tmp_path):
-    """`pcm_span` takes its rate from `[video] sample_rate`, so nothing below the mix defaults one."""
+    """`pcm_span` takes its rate from `[audio] sample_rate`, so nothing below the mix defaults one."""
     take = write_tone_with_tail(tmp_path / "tone.mp3", tail=0.2)
     samples = audio.pcm_span(take, 0.0, 0.5, sample_rate=48000)
     assert len(samples) == pytest.approx(24000, abs=2000)

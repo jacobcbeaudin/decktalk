@@ -6,7 +6,7 @@ on colored edges that did not change.
 
 A film is measured by decoding it once per size and keeping only the frames a measurement planned
 to read. `Wanted` is that plan, `decode` streams the film through it, and `Decoded` answers every
-comparison in this process. One ffmpeg call per frame compared read the same frame up to six times,
+comparison in this process. One ffmpeg call per frame compared would read the same frame up to six times,
 and holding every frame of a long film would cost more memory than the render it checks.
 """
 
@@ -153,9 +153,6 @@ LANE_BIAS = 256
 LANE_TOP = 1 << (LANE_BITS - 1)
 """Truth: the top bit of a lane, which a comparison sets when the pixel it holds changed."""
 
-PERCENT = 100
-"""Truth: a share is reported out of a hundred."""
-
 
 @dataclass(frozen=True)
 class Size:
@@ -256,7 +253,7 @@ class Decoded:
     def changed(self, t1: float, t2: float, *, level: int, size: Size) -> float:
         """Share (0-100) of pixels whose luma differs by more than `level` between the frames at t1 and t2."""
         a, b = self.at(t1, size), self.at(t2, size)
-        return changed_count(a, b, level) / len(a) * PERCENT
+        return changed_count(a, b, level) / len(a) * 100
 
     def series(self, ref_t: float, start: float, end: float, *, level: int, size: Size) -> list[tuple[float, float]]:
         """Changed share against the frame at ref_t for every frame from start up to end, as (time, percent) pairs.
@@ -268,7 +265,7 @@ class Decoded:
         kept = self.frames[size]
         rows: list[tuple[float, float]] = []
         for index in span_indices(start, end, self.rate, self.ends[size]):
-            share = changed_count(reference, kept[index], level) / len(reference) * PERCENT
+            share = changed_count(reference, kept[index], level) / len(reference) * 100
             rows.append((round(float(index / self.rate), 3), round(share, 4)))
         return rows
 

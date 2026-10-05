@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 from decktalk.errors import Cancel
-from decktalk.events import Event, Log
-from decktalk.machine import Machine, Run, Toolchain
-from decktalk.results import Voicing
+from decktalk.events import Event, RunLog
+from decktalk.findings import ERRORS_FAIL, Threshold
+from decktalk.machine import Machine, Toolchain
+from decktalk.machine.run import Run
 from decktalk.settings import ToolsConfig
+from decktalk.speech import SpeechFactory, SpeechProviders
+from decktalk.speech.sound import SoundProviders
+from support.fakes import refusing_voices
 
 RUN_ID = "r1"
 """The id of every run `a_run` opens, which a test that reads a result's run compares against."""
@@ -20,7 +26,7 @@ def a_machine(root: Path, **environ: str) -> Machine:
     return Machine(
         environ=environ,
         tables={},
-        config_path=root / "config.toml",
+        machine_file=root / "config.toml",
         cwd=root,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(root / "cache"))),
     )
@@ -29,16 +35,56 @@ def a_machine(root: Path, **environ: str) -> Machine:
 def a_run(
     root: Path,
     *,
-    voice: Voicing = Voicing.PLACEHOLDER,
+    spend: bool = False,
     max_cost: float | None = None,
     lines: list[Event] | None = None,
+    threshold: Threshold = ERRORS_FAIL,
+    speech_providers: Mapping[str, SpeechFactory] | None = None,
     **environ: str,
 ) -> Run:
-    """One run opened straight on a machine that read nothing, with every line it emits kept in `lines`."""
-    machine = Machine(environ=environ, tables={}, config_path=root / "machine.toml", cwd=root, toolchain=Toolchain())
+    """One run opened straight on a machine that read nothing, with every line it emits kept in `lines`.
+
+    `threshold` is the one a project opened with it would hand the run, which its results are judged by.
+    `speech_providers` is the voice table the machine answers with, by default every shipped voice
+    refusing to be built. The sound providers DeckTalk ships are kept.
+    """
+    machine = Machine(environ=environ, tables={}, machine_file=root / "machine.toml", cwd=root, toolchain=Toolchain())
+    voices = refusing_voices() if speech_providers is None else speech_providers
+    machine = replace(machine, speech_providers=replace(machine.speech_providers, factories=voices))
     if lines is not None:
         machine.events.subscribe(lines.append)
-    return Run(machine, id=RUN_ID, cancel=Cancel(), voice=voice, max_cost=max_cost, root=root)
+    return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, max_cost=max_cost, root=root, threshold=threshold)
+
+
+def a_voiced_run(root: Path, speech_providers: Mapping[str, Any], *, spend: bool = False) -> Run:
+    """One run on a machine whose host handed it this voice table and no sounds, as `Machine.of` resolves it."""
+    machine = Machine(
+        environ={},
+        tables={},
+        machine_file=root / "machine.toml",
+        cwd=root,
+        toolchain=Toolchain(),
+        speech_providers=SpeechProviders(factories=speech_providers),
+        sound_providers=SoundProviders(factories={}),
+    )
+    return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, root=root)
+
+
+def a_sounding_run(
+    root: Path, sounds: Mapping[str, Any], *, spend: bool = False, lines: list[Event] | None = None
+) -> Run:
+    """One run opened straight on a machine whose host handed it this sound table, as `Machine.of` takes it."""
+    machine = Machine(
+        environ={},
+        tables={},
+        machine_file=root / "machine.toml",
+        cwd=root,
+        toolchain=Toolchain(),
+        sound_providers=SoundProviders(factories=sounds),
+    )
+    if lines is not None:
+        machine.events.subscribe(lines.append)
+    return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, root=root)
 
 
 @dataclass
@@ -56,5 +102,5 @@ class Watched:
 def notes(run: Run) -> list[str]:
     """Every sentence the run puts on the stream from now on, which is where a reading that is not a code goes."""
     said: list[str] = []
-    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, Log) else None)
+    run.machine.events.subscribe(lambda event: said.append(event.message) if isinstance(event, RunLog) else None)
     return said

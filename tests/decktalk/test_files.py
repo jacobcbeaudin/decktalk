@@ -3,9 +3,9 @@
 The second half holds every JSON text a digest or a content key is taken over to the standard
 library's bytes. `json_text` puts no space between items, sorts no keys, escapes no non-ASCII
 character and writes a small float as `1e-7`, so a key taken over it would move, and a moved key
-re-records a section, rebuilds a cut or buys a paid take again. Each serialisation that names a take,
+re-records a section, rebuilds a cut or buys a voiced take again. Each serialisation that names a take,
 a recording, a cut, a still, a sound or a kept stage is fed the one value on which the two spellings
-part, and its bytes are held to what `json.dumps` wrote before the helper existed.
+part, and its bytes are held to what `json.dumps` writes.
 """
 
 from __future__ import annotations
@@ -20,16 +20,16 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts.stored import INDENT, engine_digest
+from decktalk.artifacts.stored import DIGEST_DIGITS, engine_digest
 from decktalk.artifacts.takes import Take, TakeInputs, Takes
 from decktalk.files import json_text, replace_all
 from decktalk.inputs import Inputs
 from decktalk.results import SoundKind
 from decktalk.settings import Settings
-from decktalk.stages import status
+from decktalk.stages import kept
 from decktalk.stages.assemble import cut
-from decktalk.stages.soundscape import Planned
-from decktalk.stages.soundscape.ledger import DIGEST_DIGITS, request_digest
+from decktalk.stages.score import Planned
+from decktalk.stages.score.ledger import request_digest
 from support.links import link
 
 
@@ -121,7 +121,7 @@ def test_a_kept_artifact_keeps_its_bytes(tmp_path: Path) -> None:
         section=1,
         key="01",
         chapter="Café",
-        hash="0123456789abcdef",
+        digest="0123456789abcdef",
         voiced=True,
         word_count=2,
         characters=10,
@@ -131,18 +131,18 @@ def test_a_kept_artifact_keeps_its_bytes(tmp_path: Path) -> None:
     )
     index = Takes(script="script.md", model="m", output_format="f", sections=(row,))
     written = index.write(tmp_path / "takes.json").read_text(encoding="utf-8")
-    assert written == json.dumps(index.model_dump(mode="json"), indent=INDENT, allow_nan=False) + "\n"
+    assert written == json.dumps(index.model_dump(mode="json"), indent=2, allow_nan=False) + "\n"
     assert "Caf\\u00e9" in written and "1e-07" in written
 
 
 def test_the_assemble_and_verify_keys_keep_their_bytes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     taken: list[tuple[str, ...]] = []
-    monkeypatch.setattr(status, "engine_digest", lambda *lines: taken.append(lines) or "k")
-    monkeypatch.setattr(status, "_assemble_reads", lambda _inputs: ())
+    monkeypatch.setattr(kept, "engine_digest", lambda *lines: taken.append(lines) or "k")
+    monkeypatch.setattr(kept, "_assemble_reads", lambda _inputs: ())
     (tmp_path / "film.mp4").write_bytes(b"film")
     inputs = SimpleNamespace(settings=Settings(), workspace=SimpleNamespace(film=tmp_path / "film.mp4"))
-    status.assemble_key(inputs, PARTING)  # ty: ignore[invalid-argument-type]
-    status.verify_key(inputs, "made", PARTING)  # ty: ignore[invalid-argument-type]
+    kept.assemble_digest(inputs, PARTING)  # ty: ignore[invalid-argument-type]
+    kept.verify_digest(inputs, "made", PARTING)  # ty: ignore[invalid-argument-type]
     (settings, options), (_made, _film, measured) = taken
     assert settings == json.dumps(dataclasses.asdict(Settings()), sort_keys=True, default=str)
     assert options == measured == json.dumps(PARTING, sort_keys=True)

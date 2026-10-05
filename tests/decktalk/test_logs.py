@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import logging
 import os
 import subprocess
@@ -16,36 +17,37 @@ from pathlib import Path
 import pytest
 from filelock import FileLock
 from pydantic import TypeAdapter
+from werkzeug import Request, Response
 
 import decktalk
 from decktalk import logs
-from decktalk.errors import ErrorCode, NotBuiltError, ProjectLocked, ProviderError
-from decktalk.events import Event, Level, Line, Log, RunDone
+from decktalk.errors import Cancel, ErrorCode, NotBuiltError, ProjectLocked, ProviderError
+from decktalk.events import AnyEvent, Event, Level, RunDone, RunLog
 from decktalk.findings import Applicability, Code, CommandFix
 from decktalk.logs import HANDLER, LOGGER, RunHandler, install, level_of, logging_into, within
-from decktalk.machine import Machine, Run, Toolchain, apply_fix
+from decktalk.machine import Machine, Toolchain
+from decktalk.machine.fixes import apply_fix
+from decktalk.machine.run import Run
 from decktalk.media import browser, ffmpeg, origin
 from decktalk.media.environment import children_see
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import Scope
-from decktalk.secret import Secret
+from decktalk.secret import Secret, redact
 from decktalk.settings import ToolsConfig
 from decktalk.speech import http as _http
-from decktalk.stages.narrate import _in_pool
-from decktalk.stages.narrate.plan import TakePlan
+from decktalk.stages.pool import Halt, Pool, nothing_to_open
 from decktalk.toolchain import chromium_fetch
 from support.fakes import FakeChromium, FakeRouter
 from support.logs import data_of
 from support.projects import write_project
 from support.runs import a_machine
 from support.service import Service
-from support.takes import planned
 
 log = logging.getLogger("decktalk.media.ffmpeg")
 
 
-def lines_of(seen: list[Event]) -> list[Log]:
-    return [line for line in seen if isinstance(line, Log)]
+def lines_of(seen: list[Event]) -> list[RunLog]:
+    return [line for line in seen if isinstance(line, RunLog)]
 
 
 def test_a_record_written_inside_a_run_becomes_a_line_of_that_run(tmp_path: Path) -> None:
@@ -53,7 +55,7 @@ def test_a_record_written_inside_a_run_becomes_a_line_of_that_run(tmp_path: Path
     seen: list[Event] = []
     with (
         here.events.subscribe(seen.append),
-        here.run() as run,
+        here._run() as run,
         run.stage(Stage.ASSEMBLE),
         run.section(Stage.ASSEMBLE, 3),
     ):
@@ -71,7 +73,7 @@ def test_a_record_written_inside_a_run_becomes_a_line_of_that_run(tmp_path: Path
 def test_a_stages_own_sentence_says_which_section_it_was_said_in(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run() as run, run.section(Stage.RECORD, 2):
+    with here.events.subscribe(seen.append), here._run() as run, run.section(Stage.RECORD, 2):
         run.note("kept.")
     [line] = lines_of(seen)
     assert (line.source, line.stage, line.section) == (None, Stage.RECORD, 2)
@@ -80,7 +82,7 @@ def test_a_stages_own_sentence_says_which_section_it_was_said_in(tmp_path: Path)
 def test_an_exception_on_a_record_is_named_and_its_traceback_is_not_kept(tmp_path: Path) -> None:
     here = a_machine(tmp_path)
     seen: list[Event] = []
-    with here.events.subscribe(seen.append), here.run():
+    with here.events.subscribe(seen.append), here._run():
         try:
             raise OSError("the disk is full\nand this second line is detail")
         except OSError:
@@ -126,12 +128,13 @@ def test_a_record_that_cannot_be_rendered_is_counted_and_never_printed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(logging, "raiseExceptions", True)
-    # pytest's own capture handler on the root logger raises on a bad record, and a host's handler is
-    # the host's business, so the record is kept to the package's handler alone.
-    monkeypatch.setattr(LOGGER, "propagate", False)
+    # pytest's own capture handlers raise on a bad record, and a host's handler is the host's
+    # business, so the record is kept to the package's handler alone.
+    monkeypatch.setattr(LOGGER, "handlers", [HANDLER])
+    monkeypatch.setattr(logging.getLogger(), "handlers", [])
     here = a_machine(tmp_path)
     before = HANDLER.failures
-    with here.run():
+    with here._run():
         log.warning("%d cues", "not a number")
     assert HANDLER.failures == before + 1
     assert capsys.readouterr().err == ""
@@ -145,9 +148,9 @@ def test_a_renderer_that_logs_does_not_recurse_into_the_stream(tmp_path: Path) -
         seen.append(event)
         log.info("rendered a %s line", event.event)
 
-    with here.events.subscribe(chatty), here.run() as run:
+    with here.events.subscribe(chatty), here._run() as run:
         run.note("one")
-    assert [line.event for line in seen] == ["run.start", "log", "run.done"]
+    assert [line.event for line in seen] == ["run.start", "run.log", "run.done"]
 
 
 def test_two_runs_on_two_threads_each_keep_their_own_lines(tmp_path: Path) -> None:
@@ -156,7 +159,7 @@ def test_two_runs_on_two_threads_each_keep_their_own_lines(tmp_path: Path) -> No
     both_bound = threading.Barrier(2)
 
     def one(section: int) -> None:
-        with here.run() as run, run.section(Stage.RECORD, section):
+        with here._run() as run, run.section(Stage.RECORD, section):
             both_bound.wait(timeout=5)
             # A worker a stage starts runs under a copy of its parent's context, as the pools do.
             copy_context().run(log.info, "recorded %d", section)
@@ -180,7 +183,7 @@ def test_a_hosts_own_handler_hears_the_record_stamped_with_the_run(
 ) -> None:
     """pytest's capture handler sits on the root logger, where a host's own handler would."""
     here = a_machine(tmp_path)
-    with here.run() as run, run.section(Stage.RECORD, 4):
+    with here._run() as run, run.section(Stage.RECORD, 4):
         log.info("stamped")
     [record] = [record for record in caplog.records if record.getMessage() == "stamped"]
     stamp = vars(record)
@@ -196,11 +199,13 @@ def test_a_level_the_host_chose_is_kept_and_the_handler_is_installed_once(monkey
     assert LOGGER.level == logging.WARNING
 
 
-def test_the_package_logger_hears_debug_when_nobody_chose_a_level(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_package_logger_hears_every_level_when_nobody_chose_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(LOGGER, "handlers", [])
     monkeypatch.setattr(LOGGER, "level", logging.NOTSET)
+    monkeypatch.setattr(LOGGER, "propagate", True)
     install()
-    assert LOGGER.level == logging.DEBUG
+    assert (LOGGER.level, LOGGER.propagate) == (logs.EVERY, False)
+    assert LOGGER.isEnabledFor(logging.DEBUG)
 
 
 def test_the_place_is_restored_when_a_block_closes() -> None:
@@ -223,13 +228,97 @@ def test_a_hosts_own_handler_never_sees_a_registered_secret(caplog: pytest.LogCa
     assert canary not in heard and "<secret ELEVENLABS_API_KEY>" in heard
 
 
+def test_a_host_that_admits_warnings_hears_nothing_below_them() -> None:
+    """Importing the package leaves the host's levels in charge of what the host's handlers print.
+
+    It runs in a fresh interpreter, because pytest's own handlers and levels would decide it here.
+    """
+    said = "\n".join(
+        f"logging.getLogger({name!r}).log({level}, 'a sentence the host did not admit')"
+        for name in ("decktalk", "decktalk.media.ffmpeg", "decktalk.stages.narrate")
+        for level in (logging.DEBUG, logging.INFO)
+    )
+    ran = subprocess.run(
+        [sys.executable, "-c", f"import logging\nlogging.basicConfig(level=logging.WARNING)\nimport decktalk\n{said}"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert (ran.stdout, ran.stderr) == ("", "")
+
+
+def test_a_host_hears_a_warning_and_a_level_it_set_on_the_package_logger() -> None:
+    script = """
+import logging
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
+import decktalk
+logging.getLogger("decktalk.media.ffmpeg").warning("a warning")
+logging.getLogger("decktalk.media.ffmpeg").info("not admitted")
+logging.getLogger("decktalk").setLevel(logging.DEBUG)
+logging.getLogger("decktalk.media.ffmpeg").debug("admitted by the host")
+"""
+    ran = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
+    assert ran.stderr.splitlines() == ["WARNING a warning", "DEBUG admitted by the host"]
+
+
+def test_the_run_hears_a_debug_record_the_host_does_not(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    printed = io.StringIO()
+    monkeypatch.setattr(logging.getLogger(), "handlers", [logging.StreamHandler(printed)])
+    monkeypatch.setattr(logging.getLogger(), "level", logging.WARNING)
+    here = a_machine(tmp_path)
+    seen: list[Event] = []
+    with here.events.subscribe(seen.append), here._run():
+        log.debug("only the run hears this")
+    assert [line.message for line in lines_of(seen)] == ["only the run hears this"]
+    assert printed.getvalue() == ""
+
+
+def raised_with(canary: str) -> None:
+    """Write a warning while an exception that names `canary` is being handled, as a module would."""
+    try:
+        raise OSError(f"refused the key {canary}\nand {canary} again on the second line")
+    except OSError:
+        log.warning("could not write", exc_info=True)
+
+
+def handed(field: str) -> Callable[[str], None]:
+    """Write a record that already carries `field` holding `canary`, as a host's own code can."""
+
+    def write(canary: str) -> None:
+        given = {"name": log.name, "levelno": logging.WARNING, "levelname": "WARNING", "msg": "could not write"}
+        log.handle(logging.makeLogRecord(given | {field: canary}))
+
+    return write
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        pytest.param(raised_with, id="exc_info"),
+        pytest.param(handed("exc_text"), id="exc_text"),
+        pytest.param(handed("stack_info"), id="stack_info"),
+    ],
+)
+def test_a_hosts_formatter_never_prints_a_secret_from_an_exception_or_a_stack(
+    written: Callable[[str], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A host's formatter appends the traceback and the stack to the sentence, so they are redacted as it is."""
+    canary = "sk_exception_canary_5e1d"
+    Secret(canary, "ELEVENLABS_API_KEY")
+    printed = io.StringIO()
+    monkeypatch.setattr(logging.getLogger(), "handlers", [logging.StreamHandler(printed)])
+    written(canary)
+    assert printed.getvalue() and canary not in printed.getvalue()
+    assert "<secret ELEVENLABS_API_KEY>" in printed.getvalue()
+
+
 # ---- every failure path leaves a record --------------------------------------------------------------
 #
 # Each row injects one fault inside a real run with a real events file, then reads the file back
-# through the `Line` adapter, as a host would, and names the one record the fault must leave. A path
+# through the `AnyEvent` adapter, as a host would, and names the one record the fault must leave. A path
 # that stops leaving its record fails its row, which is what keeps the table true as the code grows.
 
-LINES = TypeAdapter(Line)
+LINES = TypeAdapter(AnyEvent)
 
 
 @dataclass(frozen=True)
@@ -255,7 +344,7 @@ def a_host_machine(root: Path, *, limit: float = 600.0) -> Machine:
     return Machine(
         environ={},
         tables={},
-        config_path=root / "machine.toml",
+        machine_file=root / "machine.toml",
         cwd=root,
         toolchain=Toolchain(tools=ToolsConfig(cache_dir=str(root / "cache"), timeout_seconds=limit)),
     )
@@ -271,7 +360,7 @@ def recorded(root: Path, fault: Callable[[Run], object], *, limit: float = 600.0
     """Every line of the one run `fault` ran in, read back from its events file."""
     here = a_host_machine(root, limit=limit)
     events = root / "build" / "events"
-    with contextlib.suppress(Exception, KeyboardInterrupt), here.run(root=root, events_dir=events) as run:
+    with contextlib.suppress(Exception, KeyboardInterrupt), here._run(root=root, events_dir=events) as run:
         fault(run)
     return read_back(events)
 
@@ -341,7 +430,7 @@ def installer_hangs(_run: Run, monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> N
 
 def fix_command_fails(run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
     failed = subprocess.CompletedProcess([], 2, b"", b"OSError: the cache is read-only\n")
-    monkeypatch.setattr("decktalk.machine.subprocess.run", lambda argv, **_kwargs: failed)
+    monkeypatch.setattr("decktalk.machine.fixes.subprocess.run", lambda argv, **_kwargs: failed)
     fix = CommandFix(title="t", applicability=Applicability.SAFE, command=("decktalk", "install"))
     apply_fix(run, Code.FILE_MISSING, fix, root=tmp, scope=Scope.MACHINE, unsafe=False)
 
@@ -360,13 +449,15 @@ def router_breaks(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None
 def two_sections_fail(_run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
     both_sent = threading.Barrier(2)
 
-    def work(plan: TakePlan) -> None:
+    def one(_opened: None, section: int, halt: Halt) -> None:
         both_sent.wait(timeout=5)
-        if plan.segment.index == 2:
-            threading.Event().wait(0.1)
-        raise ProviderError(f"section {plan.segment.index} failed")
+        if section == 2:
+            # Section 1 has failed first by the time the pool halts.
+            halt.halted.wait(timeout=5)
+        raise ProviderError(f"section {section} failed")
 
-    _in_pool(work, planned(1, 2), workers=2)
+    with Pool([1, 2], 2, nothing_to_open, one, Cancel()) as pool:
+        pool.result(1)
 
 
 def browser_is_fetched_again(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Path) -> None:
@@ -375,7 +466,7 @@ def browser_is_fetched_again(_run: Run, monkeypatch: pytest.MonkeyPatch, tmp: Pa
     chromium = FakeChromium(executable, refusal="error while loading shared libraries: libnss3.so", refusals=1)
     fetched = subprocess.CompletedProcess([], 0, b"", b"")
     monkeypatch.setattr(chromium_fetch.subprocess, "run", lambda cmd, **_kwargs: fetched)
-    browser.launch(chromium.driver(), policy=browser.TRUSTED)
+    browser.launch(chromium.driver(), policy=browser.TRUSTED, spend=False)
 
 
 def run_is_cancelled(run: Run, _monkeypatch: pytest.MonkeyPatch, _tmp: Path) -> None:
@@ -439,16 +530,16 @@ FAILURES: dict[str, tuple[Callable[..., object], Record | None, Ended | None, fl
         Ended(Outcome.FAILED, ErrorCode.TOOL),
         600.0,
     ),
-    "a fix command fails": (fix_command_fails, Record(Level.WARNING, "machine", CALL), None, 600.0),
+    "a fix command fails": (fix_command_fails, Record(Level.WARNING, "machine.fixes", CALL), None, 600.0),
     "the origin cannot answer": (
         router_breaks,
         Record(Level.WARNING, "media.origin", frozenset({"url", "error"})),
         None,
         600.0,
     ),
-    "two narration sections fail": (
+    "two sections of one pool fail": (
         two_sections_fail,
-        Record(Level.WARNING, "stages.narrate", frozenset({"section", "error"})),
+        Record(Level.WARNING, "stages.pool", frozenset({"section", "error"})),
         Ended(Outcome.FAILED, ErrorCode.PROVIDER),
         600.0,
     ),
@@ -471,7 +562,7 @@ def test_every_failure_path_leaves_its_record_in_the_events_file(
     fault, record, ended, limit = FAILURES[name]
     lines = recorded(tmp_path, lambda run: fault(run, monkeypatch, tmp_path), limit=limit)
     if record is not None:
-        said = [line for line in lines if isinstance(line, Log) and line.source == record.source]
+        said = [line for line in lines if isinstance(line, RunLog) and line.source == record.source]
         matching = [line for line in said if line.level is record.level and record.keys <= set(line.data or {})]
         assert len(matching) == record.count, [line.model_dump() for line in said]
     last = lines[-1]
@@ -489,34 +580,61 @@ def test_a_busy_voice_leaves_a_warning_per_retry_and_a_trace_per_attempt(tmp_pat
         service.expect_oneshot_request("/speak").respond_with_data("", 429, {"Retry-After": "2"})
     service.expect_request("/speak").respond_with_json({"ok": True})
     url = service.url_for("/speak")
-    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=5, retries=3))
-    said = [line for line in lines if isinstance(line, Log) and line.source == "speech.http"]
+    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, secrets=(), timeout=5, retries=3))
+    said = [line for line in lines if isinstance(line, RunLog) and line.source == "speech.http"]
     retries = [line.data or {} for line in said if line.level is Level.WARNING]
     attempts = [line.data or {} for line in said if line.level is Level.DEBUG]
     assert [(data["wait_seconds"], data["wait_source"]) for data in retries] == [(2.0, "retry-after")] * 2
     assert [data["status"] for data in attempts] == [429, 429, 200]
 
 
+def _naming_the_key(status: int) -> Callable[[Request], Response]:
+    """A service that answers `status` and quotes the `X-API-Key` the request carried."""
+    return lambda request: Response(f"bad key {request.headers.get('X-API-Key')}", status)
+
+
 @pytest.mark.usefixtures("waits")
-def test_a_stalled_voice_is_retried_and_ends_as_a_provider_refusal(tmp_path: Path, service: Service) -> None:
-    service.expect_request("/speak").respond_with_handler(service.stalls)
+def test_a_key_sent_as_x_api_key_reaches_no_line_of_the_events_stream(tmp_path: Path, service: Service) -> None:
+    """The key travels under a name no list held, and the registry does not know it, so http.py alone keeps it out."""
+    key = "xk_vendor_key_the_events_stream_never_sees"
+    held = Secret(key, "FAKE_VENDOR_ACCESS")
+    assert redact(key) == key, "the registry holds this value, so it would hide what http.py misses"
+    for _ in range(2):
+        service.expect_oneshot_request("/speak").respond_with_handler(_naming_the_key(503))
+    service.expect_request("/speak").respond_with_handler(_naming_the_key(401))
     url = service.url_for("/speak")
-    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, timeout=1, retries=1))
-    retries = [line for line in lines if isinstance(line, Log) and line.level is Level.WARNING]
-    assert len(retries) == 1 and "stopped answering" in retries[0].message
+    headers = {"X-API-Key": held.reveal(), "Accept": "audio/mpeg"}
+    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, headers, secrets=(held,), timeout=5, retries=3))
+    said = [line for line in lines if isinstance(line, RunLog) and line.source == "speech.http"]
+    assert [line.level for line in said] == [Level.DEBUG, Level.WARNING] * 2 + [Level.DEBUG]
     last = lines[-1]
     assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.PROVIDER
+    assert "401" in last.error.message
+    assert all(key not in line.model_dump_json() for line in lines)
+
+
+@pytest.mark.usefixtures("waits")
+def test_a_stalled_voice_is_sent_once_and_ends_as_a_provider_refusal_that_says_possibly_charged(
+    tmp_path: Path, service: Service
+) -> None:
+    service.expect_request("/speak").respond_with_handler(service.stalls)
+    url = service.url_for("/speak")
+    lines = recorded(tmp_path, lambda _run: _http.post_json(url, {}, {}, secrets=(), timeout=0.1, retries=1))
+    assert [line for line in lines if isinstance(line, RunLog) and line.level is Level.WARNING] == []
+    last = lines[-1]
+    assert isinstance(last, RunDone) and last.error is not None and last.error.code is ErrorCode.PROVIDER
+    assert "possibly charged" in last.error.message
 
 
 def test_a_held_project_names_the_lock_on_its_last_line(tmp_path: Path) -> None:
     root = write_project(tmp_path)
     project = decktalk.open(root, machine=a_host_machine(root))
-    project.workspace.build.mkdir(parents=True, exist_ok=True)
+    project._inputs.workspace.build.mkdir(parents=True, exist_ok=True)
     held = threading.Event()
     done = threading.Event()
 
     def hold() -> None:
-        with FileLock(project.workspace.build / ".lock"):
+        with FileLock(project._inputs.workspace.build / ".lock"):
             held.set()
             done.wait(timeout=10)
 

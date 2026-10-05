@@ -11,12 +11,12 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from typer._click import Context
+from typer import Context
 
 from decktalk import machine as machines
 from decktalk.cli import session as sessions
 from decktalk.cli.app import command
-from decktalk.cli.options import Fix, Group
+from decktalk.cli.options import Fix, Group, answering
 from decktalk.errors import ApprovalRequired
 from decktalk.results import DoctorResult, InitResult, InstallResult
 from decktalk.template import STARTER, listed_names
@@ -28,25 +28,24 @@ from decktalk.template import STARTER, listed_names
 def init(
     ctx: Context,
     directory: Annotated[Path, typer.Argument(metavar="DIR", help="Where to write the project.")],
-    name: Annotated[str | None, typer.Option("--name", metavar="NAME", help="The project's name.")] = None,
+    name: Annotated[str | None, answering("--name", metavar="NAME", help="The project's name.")] = None,
     example: Annotated[
         str | None,
-        typer.Option("--example", metavar="NAME", help=f"The packaged example to write: {listed_names()}."),
+        answering("--example", metavar="NAME", help=f"The packaged example to write: {listed_names()}."),
     ] = None,
-    no_skills: Annotated[bool, typer.Option("--no-skills", help="Leave the packaged skills out.")] = False,
-    defaults: Annotated[bool, typer.Option("--defaults", help="Take every default and ask nothing.")] = False,
+    no_skills: Annotated[bool, answering("--no-skills", help="Leave the packaged skills out.")] = False,
     overwrite: Annotated[
-        bool, typer.Option("--overwrite", help="Write into a directory that already holds files.")
+        bool, answering("--overwrite", help="Write into a directory that already holds files.")
     ] = False,
 ) -> InitResult:
     """Create a project with a deck that already builds.
 
-    On a terminal it asks for the name, the example and whether to write the skills. Without one it
-    takes the defaults and reports what it chose.
+    On a terminal it asks for the name, the example and whether to write the skills. Without one, or
+    under `--no-input`, it takes the defaults and reports what it chose.
     """
     session = sessions.of(ctx)
     root = directory.expanduser()
-    chosen, picked, skills = _guided(session, root, name=name, example=example, no_skills=no_skills, ask=not defaults)
+    chosen, picked, skills = _guided(session, root, name=name, example=example, no_skills=no_skills)
     if _occupied(root) and not session.approve(
         overwrite or None, f"{root.name} is not empty. Write the project into it?"
     ):
@@ -61,7 +60,7 @@ def init(
             name=chosen,
             example=picked,
             skills=skills,
-            force=overwrite or _occupied(root),
+            overwrite=overwrite or _occupied(root),
         )
 
 
@@ -72,11 +71,10 @@ def _guided(
     name: str | None,
     example: str | None,
     no_skills: bool,
-    ask: bool,
 ) -> tuple[str, str | None, bool]:
     """The three answers `init` needs, asked on a terminal and taken from the flags without one."""
     chosen, picked, skills = name or root.name, example, not no_skills
-    if not ask or not session.asks:
+    if not session.asks:
         return chosen, picked, skills
     chosen = session.ask("Project name", default=chosen)
     picked = session.ask(f"Example ({listed_names()})", default=picked or STARTER)
@@ -98,7 +96,7 @@ def install(ctx: Context) -> InstallResult:
     was already there and fetches nothing.
     """
     session = sessions.of(ctx)
-    if _asks_for_sudo() and session.asks and not session.confirm(_SUDO_QUESTION, default=True):
+    if machines.installs_system_libraries() and session.asks and not session.confirm(_SUDO_QUESTION, default=True):
         raise ApprovalRequired(
             "installing Chromium's system libraries needs a password that was not given.",
             hint="Run decktalk install again when you can give one, or install the libraries yourself.",
@@ -111,14 +109,14 @@ _SUDO_QUESTION = "Installing Chromium's system libraries asks for your password.
 """The one question `install` asks, which is asked because the answer costs a password."""
 
 
-def _asks_for_sudo() -> bool:
-    """True on the platform where installing the browser also installs its system libraries."""
-    import sys  # noqa: PLC0415  (the platform is read once, by the one command that asks about it)
-
-    return sys.platform.startswith("linux")
-
-
-@command(group=Group.MACHINE, epilog="Reads this machine and fetches nothing, and writes nothing.")
+@command(
+    group=Group.MACHINE,
+    epilog=(
+        "Reads this machine first. On a terminal it then offers once to fetch what is missing. --fix fetches "
+        "it without asking, under --json or --no-input too, and --no-fix fetches nothing, as do --no-input and "
+        "--json without --fix."
+    ),
+)
 def doctor(
     ctx: Context,
     measure: Annotated[
@@ -133,11 +131,11 @@ def doctor(
     """
     session = sessions.of(ctx)
     with session.watching(session.machine.events):
-        reported = session.machine.doctor(measure=measure, cancel=session.cancel)
+        reported = session.machine.doctor(measure=measure, threshold=session.threshold, cancel=session.cancel)
     if reported.findings and session.approve(fix, "Fetch what is missing now?", default=True):
         with session.watching(session.machine.events):
             session.machine.apply(reported.findings)
-            return session.machine.doctor(measure=measure, cancel=session.cancel)
+            return session.machine.doctor(measure=measure, threshold=session.threshold, cancel=session.cancel)
     return reported
 
 

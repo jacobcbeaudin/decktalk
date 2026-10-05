@@ -18,15 +18,15 @@ from decktalk.events import Level, Unit
 from decktalk.findings import Code, Location, judge
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import frame_dip
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
 from decktalk.media.audio import FULL_SCALE, gain
 from decktalk.media.frames import Decoded, Size, Wanted
-from decktalk.page import MILLISECONDS
 from decktalk.pagescan import measured_rows, scene_entry
 from decktalk.pipeline import Stage
 from decktalk.results import CueCheck, SkipReason, section_key
-from decktalk.settings import CLICK_LEVEL_DBFS, reference_lead_seconds
+from decktalk.settings import CLICK_LEVEL_DBFS
+from decktalk.settings.numbers import reference_lead_seconds
 from decktalk.stages.verify.plan import (
     HALF_FRAME,
     Neighbour,
@@ -41,14 +41,15 @@ from decktalk.stages.verify.plan import (
 
 
 def film_starts(inputs: Inputs, film: Path) -> tuple[dict[int, float], float]:
-    """(where each section starts in the film, how long the film runs), read from the cut list.
+    """(where each section starts in the film, how long the film runs), read from the placements.
 
-    The cut list is the film's own record of its shape, so nothing here adds up section files a
-    second time and reaches a total the film does not have.
+    When the film has no placements file, the lengths of the section videos on disk are added up
+    instead. The placements are the film's own record of its shape, so they are read first and the
+    section files are counted only when they are missing.
     """
-    cuts = inputs.cuts()
-    if cuts is not None and cuts.sections:
-        return {cut.section: cut.start for cut in cuts.sections}, cuts.total_seconds
+    placements = inputs.placements()
+    if placements is not None and placements.sections:
+        return {row.section: row.start for row in placements.sections}, placements.total_seconds
     starts: dict[int, float] = {}
     at = 0.0
     for section in inputs.document.sections:
@@ -64,8 +65,8 @@ def declared_spans(inputs: Inputs, section: int) -> dict[str, float]:
     """How long each cue of one section keeps moving after it fires, from the catalog the page published.
 
     The page declares the span of every effect it draws, and the recording log keeps that catalog
-    whole, so the forward half of the neighbour allowance is the neighbour's own arithmetic rather
-    than one constant that was wrong for a draw and wrong again for a cut.
+    whole, so the forward half of the neighbour allowance is the neighbour's own arithmetic, which
+    is long for a draw and nothing for a cut.
     """
     found = inputs.document.section(section)
     log = inputs.recording_log(section_key(section))
@@ -116,7 +117,7 @@ def first_change_seconds(film: Decoded, before: float, after: float, cue_at: flo
     otherwise reads as a reveal a frame or two early.
     """
     verify = inputs.settings.verify
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     series, blocks = (
         film.series(before, before, after, level=verify.onset_diff_luma, size=size)
         for size in (frame_size(inputs.settings), block_size(inputs.settings))
@@ -126,7 +127,7 @@ def first_change_seconds(film: Decoded, before: float, after: float, cue_at: flo
         before,
         cue_at,
         verify.onset_rise_points,
-        tolerance=(verify.cue_offset_max_ms / MILLISECONDS) + HALF_FRAME / fps,
+        tolerance=(verify.cue_offset_max_ms / 1000) + HALF_FRAME / fps,
         blocks=dict(blocks),
     )
 
@@ -141,7 +142,7 @@ def click_seconds(
     `ceiling`, so the sound of a neighbouring section is never taken for the click.
     """
     verify = inputs.settings.verify
-    rate = inputs.settings.video.sample_rate
+    rate = inputs.settings.audio.sample_rate
     start = max(floor, expected - verify.click_search_seconds)
     stop = (
         expected + verify.click_search_seconds
@@ -269,7 +270,7 @@ def _planned(
     if section not in starts:
         return CueCheck(section=section, cue=cue, spoken=spoken, skipped=SkipReason.NOT_ASSEMBLED)
     verify = inputs.settings.verify
-    fps = inputs.settings.video.output_fps
+    fps = inputs.settings.video.fps
     flags = inputs.document.fade_flags
     found = inputs.document.section(section)
     key = found.key if found is not None else section_key(section)
@@ -368,12 +369,12 @@ def _judge(
             word = heard
             _judge_click(inputs, run, cue, where, promised=at, heard=heard)
     landed = round(shown - word, 3)
-    limit = verify.cue_offset_max_ms / MILLISECONDS
-    if abs(landed) > limit + HALF_FRAME / inputs.settings.video.output_fps:
+    limit = verify.cue_offset_max_ms / 1000
+    if abs(landed) > limit + HALF_FRAME / inputs.settings.video.fps:
         run.found(
             judge(
                 Code.CUE_OFF,
-                f"the reveal at {cue} first changed {landed * MILLISECONDS:+.0f} ms from the word it lands "
+                f"the reveal at {cue} first changed {landed * 1000:+.0f} ms from the word it lands "
                 f"on, which is outside the {verify.cue_offset_max_ms:.0f} ms the offset limit allows.",
                 where,
                 stage=Stage.VERIFY,
@@ -384,7 +385,7 @@ def _judge(
         cue=cue,
         spoken=round(word, 3),
         shown=shown,
-        offset=landed,
+        offset_seconds=landed,
         change_percent=round(changed, 2),
     )
 
@@ -396,7 +397,7 @@ def _judge_click(inputs: Inputs, run: Run, cue: str, where: Location, *, promise
     than the picture, which is what `av_offset_max_ms` is for.
     """
     verify = inputs.settings.verify
-    apart = (heard - promised) * MILLISECONDS
+    apart = (heard - promised) * 1000
     if abs(apart) <= verify.av_offset_max_ms:
         return
     run.found(

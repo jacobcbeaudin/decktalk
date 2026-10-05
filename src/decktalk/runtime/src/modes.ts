@@ -1,8 +1,8 @@
 /*! The four things a DeckTalk page can be doing, and the one URL that decides which.
  *
  * A page with no query lists its scenes. `?scene=` plays one at the speed a person reads it.
- * `?cues=` plays one against the narration clock, which is the mode a recording is made in.
- * `?slide=` freezes one slide with its cues already fired, which is what a screenshot opens.
+ * `?cues=` plays one against the section clock, which is the mode a recording is made in.
+ * `?freeze=` freezes one slide with its cues already fired, which is what a screenshot opens.
  *
  * Every key this module reads is one the contract publishes, and each is read once here so no other
  * module ever touches the URL. A preview goes one step further and asks the project for the cue
@@ -10,16 +10,33 @@
  * than an invented one, and nothing on that path may fail a page that has no such file.
  */
 
+import {
+  build,
+  CLASS,
+  frame,
+  hide,
+  pan,
+  reduced,
+  say,
+  scale,
+  slideSeconds,
+  span,
+  freeze as stopEverything,
+  style,
+  styleClass,
+} from "./canvas.ts";
 import { frameAt, now, round, run, schedule, start } from "./clock.ts";
 import {
+  cueId,
+  DONE_ATTR,
   FRAME_STEP_MS,
   LIST_SEPARATOR,
   MILLISECONDS,
   PREVIEW_CUE_TIMES,
   type Q,
   SLIDE_ENTRANCES,
+  T0_SIGNAL,
   TIME_MARK,
-  wireId,
 } from "./contract.ts";
 import { typeset, ready as typesetterReady } from "./katex.ts";
 import { fire, type Mounted, prepare } from "./reveal.ts";
@@ -37,36 +54,18 @@ import {
   type Scene,
   type Slide,
 } from "./scene.ts";
-import {
-  build,
-  CLASS,
-  frame,
-  hide,
-  pan,
-  reduced,
-  say,
-  scale,
-  slideSeconds,
-  span,
-  freeze as stopEverything,
-  style,
-  styleClass,
-} from "./stage.ts";
 import { type CatalogEntry, type Mode, type Probe, recorder } from "./telemetry.ts";
 import { key, type Spoken } from "./text.ts";
 import { warn } from "./warn.ts";
 
 /** Every query key this page reads, typed against the contract so a misspelling will not compile. */
 const SCENE: Q = "scene";
-const SLIDE: Q = "slide";
+const FREEZE: Q = "freeze";
 const CUES: Q = "cues";
 const WORDS: Q = "words";
 const T0: Q = "t0";
 const SPEED: Q = "speed";
 const HUD: Q = "hud";
-
-/** What `?t0=` says when the recorder means to start the clock itself rather than name a second. */
-const SIGNAL = "signal";
 
 /** What `?hud=` says when a page is asked to draw its own clock, which a recording never is. */
 const ON = "1";
@@ -76,9 +75,6 @@ const SLOWEST = 0.05;
 
 /** How long a preview without cue times rests before its first cue, and between two of them. */
 const PREVIEW_STEP_SECONDS = 1;
-
-/** How long after the deck is done a page says so, which is what a screenshot and a test wait for. */
-const DONE = "1";
 
 /** Everything the page knows about itself, which is what `window.__decktalk` is a view onto. */
 export const state = {
@@ -95,10 +91,10 @@ export const state = {
 const params = new URLSearchParams(location.search);
 
 /** Whether the page is a still, which every effect asks before it starts moving anything. */
-const frozen = params.has(SLIDE);
+const frozen = params.has(FREEZE);
 
-/** The second on the narration clock the page starts at, which the recorder names or sends. */
-const signalled = params.get(T0) === SIGNAL;
+/** The second on the section clock the page starts at, which the recorder names or sends. */
+const signalled = params.get(T0) === T0_SIGNAL;
 const origin = signalled ? 0 : Number.parseFloat(params.get(T0) ?? "") || 0;
 
 /** How much faster than life a preview runs, which a recording ignores. */
@@ -117,6 +113,11 @@ export function isFrozen(): boolean {
 /** The page's own query, which a deck reads to find the previous section's words or its own scene. */
 export function query(): URLSearchParams {
   return params;
+}
+
+/** Say the page has drawn everything its URL asked for, which is what a test waits for. */
+function done(): void {
+  document.body.toggleAttribute(DONE_ATTR, true);
 }
 
 // ---- building and mounting ---------------------------------------------------------------------------
@@ -144,7 +145,7 @@ export function buildSlide(scene: Scene, slide: Slide): HTMLElement {
 }
 
 /**
- * Put one slide on the stage, taking the one before it off once the incoming slide has arrived.
+ * Put one slide on the canvas, taking the one before it off once the incoming slide has arrived.
  *
  * The outgoing slide keeps full opacity underneath the incoming one for the whole crossfade, so the
  * composite of the two is opaque throughout and never shows the page's own background through the
@@ -213,7 +214,7 @@ function fireCue(cue: string, due: number): void {
   const slide = state.slide;
   const slideEl = state.mounted?.el ?? null;
   const ctx = context(cue, slide ? slide.id : "", now());
-  const local = slide ? cue.slice(wireId(slide.id, "").length) : cue;
+  const local = slide ? cue.slice(cueId(slide.id, "").length) : cue;
   const own = slide?.on[local];
   if (own) {
     try {
@@ -237,7 +238,7 @@ function fireCue(cue: string, due: number): void {
 
 // ---- the modes ---------------------------------------------------------------------------------------
 
-/** `?cues=` as the recorder writes it, which is a wire id and a second, sorted by the second. */
+/** `?cues=` as the recorder writes it, which is a cue id and a second, sorted by the second. */
 function parseCues(raw: string): { id: string; at: number }[] {
   return raw
     .split(LIST_SEPARATOR)
@@ -251,7 +252,7 @@ function parseCues(raw: string): { id: string; at: number }[] {
     .sort((a, b) => a.at - b.at);
 }
 
-/** `?words=` as `narrate` wrote it, which is every spoken word and the second the voice reaches it. */
+/** `?words=` as the recorder writes it, which is every spoken word and the second the voice reaches it. */
 function parseWords(raw: string): Spoken[] {
   return raw
     .split(LIST_SEPARATOR)
@@ -263,10 +264,10 @@ function parseWords(raw: string): Spoken[] {
 }
 
 /**
- * Play one scene against the narration clock, which is the mode every recording is made in.
+ * Play one scene against the section clock, which is the mode every recording is made in.
  *
  * The first cued slide is mounted before the clock starts and before the recorder's cover comes off,
- * so no frame of a recording is ever drawn on an empty stage, and its own reveals still wait for
+ * so no frame of a recording is ever drawn on an empty canvas, and its own reveals still wait for
  * their own cues.
  */
 function play(scene: Scene, cues: { id: string; at: number }[], mode: Mode): void {
@@ -289,18 +290,18 @@ function play(scene: Scene, cues: { id: string; at: number }[], mode: Mode): voi
   }
   // A preview plays whatever times it found, so a slide left out of them is not a slide left out of
   // a recording, and only a recording can leave a slide out of the film.
-  if (mode === "cue") {
+  if (mode === "record") {
     for (const slide of scene.slides) {
       if (!mountAt.has(slide)) warn("PAGE_SLIDE_UNUSED", slide.id);
     }
   }
   const last = (ordered[ordered.length - 1] as [Slide, number])[0];
   mount(scene, (ordered[0] as [Slide, number])[0], null, origin);
-  if ((ordered[0] as [Slide, number])[0] === last) document.body.dataset.done = DONE;
+  if ((ordered[0] as [Slide, number])[0] === last) done();
   for (const [slide] of ordered.slice(1)) {
     schedule(origin + (mountAt.get(slide) as number), "mount", slide.id, () => {
       mount(scene, slide, null, null);
-      if (slide === last) document.body.dataset.done = DONE;
+      if (slide === last) done();
     });
   }
   for (const cue of cues) {
@@ -330,11 +331,11 @@ function preview(scene: Scene): void {
           fireCue(cue, mountAt + ((order + 1) * PREVIEW_STEP_SECONDS) / speed),
         );
       });
-      if (slide === last) document.body.dataset.done = DONE;
+      if (slide === last) done();
     };
     if (index === 0) start();
     else schedule(mountAt, "mount", slide.id, start);
-    at += Math.max(slide.hold, (cues.length + 1) * PREVIEW_STEP_SECONDS) / speed;
+    at += Math.max(slide.previewSeconds, (cues.length + 1) * PREVIEW_STEP_SECONDS) / speed;
   });
 }
 
@@ -388,7 +389,7 @@ function stop(slideId: string, held: (order: readonly string[], slide: string) =
   const firing = held(order, found.slide.id);
   mount(found.scene, found.slide, new Set(order.slice(firing.length)), 0);
   state.fired = [...firing];
-  document.body.dataset.done = DONE;
+  done();
 }
 
 /** The index page, which lists every scene and every slide and links a preview and a still of each. */
@@ -401,16 +402,16 @@ function index(note?: string): void {
   div.appendChild(heading(title, note));
   for (const scene of all().values()) {
     const head = document.createElement("h2");
-    head.textContent = `Scene ${scene.id} — ${scene.name} `;
+    head.textContent = `Scene ${scene.id}: ${scene.name} `;
     head.appendChild(link(`?${SCENE}=${encodeURIComponent(scene.id)}`, "▶ play"));
     div.appendChild(head);
     const row = document.createElement("div");
     row.className = "dt-slides";
     for (const slide of scene.slides) {
       const cues = cueOrder(slide);
-      const anchor = link(`?${SLIDE}=${encodeURIComponent(slide.id)}`, `slide ${slide.id} `);
+      const anchor = link(`?${FREEZE}=${encodeURIComponent(slide.id)}`, `slide ${slide.id} `);
       const note_ = document.createElement("code");
-      note_.textContent = `(${slide.hold}s${cues.length ? `, cues ${cues.join(" ")}` : ""})`;
+      note_.textContent = `(${slide.previewSeconds}s${cues.length ? `, cues ${cues.join(" ")}` : ""})`;
       anchor.appendChild(note_);
       row.appendChild(anchor);
     }
@@ -447,7 +448,7 @@ function link(href: string, text: string): HTMLAnchorElement {
 /**
  * Read the page, pick the mode its URL asks for, and start the clock loop.
  *
- * The catalog is built before anything is mounted, because the index page hides the stage the boxes
+ * The catalog is built before anything is mounted, because the index page hides the canvas the boxes
  * would be measured in and because a static check reads the catalog rather than the markup.
  */
 export function begin(probe: Probe | null): Promise<void> {
@@ -464,12 +465,12 @@ export function begin(probe: Probe | null): Promise<void> {
   let listing = false;
   let waiting: Promise<void> = Promise.resolve();
   if (frozen) {
-    stop(params.get(SLIDE) ?? "", (order, slide) => probe?.freezeCues(order, slide, warn) ?? order);
+    stop(params.get(FREEZE) ?? "", (order, slide) => probe?.freezeCues(order, slide, warn) ?? order);
   } else if (chosen !== null || cues.length) {
     const scene =
       chosen !== null ? (all().get(chosen) ?? null) : (ownerOf((cues[0] as { id: string }).id)?.scene ?? null);
     if (!scene) index(`unknown scene ${chosen ?? ""}`);
-    else if (cues.length) play(scene, cues, "cue");
+    else if (cues.length) play(scene, cues, "record");
     else
       waiting = resolvedCues(scene.id).then((resolved) =>
         resolved ? play(scene, resolved, "preview") : preview(scene),

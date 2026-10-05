@@ -12,7 +12,7 @@ from decktalk.cli import catalog
 from decktalk.errors import ErrorCode
 from decktalk.findings import Code
 from decktalk.pipeline import PIPELINE
-from decktalk.results import RESULTS
+from decktalk.results import RESULTS, Scope
 from decktalk.settings import BY_ID, KEYS
 
 from .conftest import commands
@@ -84,7 +84,7 @@ def test_every_result_name_is_answerable() -> None:
         assert catalog.named(name)["title"]
 
 
-@pytest.mark.parametrize("name", ["finding", "error", "event", "settings", "page", "project"])
+@pytest.mark.parametrize("name", ["finding", "error", "event", "setting", "page", "cues"])
 def test_every_other_contract_name_is_answerable(name: str) -> None:
     assert catalog.named(name)
 
@@ -115,7 +115,7 @@ def _ids(properties: dict[str, object], prefix: str = "") -> list[str]:
 
 
 def test_the_machine_document_is_the_machine_scoped_keys() -> None:
-    machine = catalog.settings_schema(machine=True)["keys"]
+    machine = catalog.settings_schema(scope=Scope.MACHINE)["keys"]
     assert machine
     assert all(key["scope"] == "machine" for key in machine)
 
@@ -147,8 +147,9 @@ def test_every_finding_code_is_a_row_with_its_sentence_and_its_page() -> None:
     assert [row["code"] for row in rows] == [code.value for code in Code]
     for row, code in zip(rows, Code, strict=True):
         assert row["sentence"] == code.sentence
-        assert row["certainty"] == code.certainty.value
+        assert row["severity"] == code.severity.value
         assert row["raised_by"] == code.raised_by.value
+        assert row["raised_in"] == list(code.raised_in)
         assert row["docs"] == code.url
 
 

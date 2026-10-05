@@ -7,18 +7,16 @@ blocked. The fixture is copied under tests/out/e2e, which CI uploads when a test
 directory is one per machine, so a session takes a lock on it and skips rather than deleting another
 session's build, and E2E_OUT names another directory for a second session.
 
-This suite is the panel's integration sample rather than a policy test. It proves no proposition on
+This suite is an integration sample rather than a policy test. It proves no proposition on
 its own and samples the joint behaviour of Chromium, ffmpeg and the filesystem on one machine, so
 every assertion here is an exit code, an artifact, a JSON shape or a path, and never a pixel and
 never a millisecond of wall time. Every test is one property of the finished build, so a failure
 names what broke.
 
 The command line is driven as a real subprocess of `python -m decktalk`, so nothing about the CLI's
-internal module layout is assumed and nothing is faked. The commands and flags are spelled from
-`~/Documents/decktalk-plan/gen5/synthesis/design.md` section 3, the final vocabulary, with the flag
-families of `~/Documents/decktalk-plan/gen5/panels/cli/design.md` section 2 and the resolutions R7,
-R10, R24 and R26 applied. T8 had not landed when this was written, so a failure that names a missing
-command or an unknown flag is T8's spelling and not a broken property.
+internal module layout is assumed and nothing is faked. The commands and flags are spelled as
+`docs/reference/cli.mdx` documents them, so a failure that names a missing command or an unknown flag
+is a drift between the two and not a broken property.
 """
 
 from __future__ import annotations
@@ -38,17 +36,15 @@ from typing import IO, Any
 
 import pytest
 
-from decktalk.artifacts import CueTimes, Cuts, RecordingLog, Takes, Words
+from decktalk.artifacts import CueTimes, Placements, RecordingLog, Takes, Words
+from decktalk.errors import Exit
 from decktalk.events import Event, RunDone, RunStart, SectionDone, SectionStart, StageDone, StageStart
 from decktalk.findings import Code
 from decktalk.media import audio, ffmpeg, frames
-from decktalk.page import MILLISECONDS
 from decktalk.pipeline import Artifact, Outcome, Stage
-from decktalk.results import Layer, SectionKind, SpendState, Substitute, Voicing, Word
-from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing, runtime_path, vendor_katex
+from decktalk.results import CostState, Layer, SectionKind, Substitute, TakeState, Word
+from decktalk.toolchain.assets import RUNTIME_FILE, katex_missing
 from support.commands import (
-    FOUND_NOTHING,
-    FOUND_SOMETHING,
     HOSTILE_DIRECTORY,
     clean_environ,
     codes,
@@ -98,7 +94,7 @@ CUES = (
     "4:3.1:eq",
     "4:3.1:bar",
 )
-"""Every cue the fixture declares, as the section number, then the wire id of slide and local name."""
+"""Every cue the fixture declares, as the section number, then the cue id of slide id and cue name."""
 
 SLATE_SECONDS = 1.0
 """How long section 5's slate plays, which `decktalk.toml` states as `slate_seconds = 1`."""
@@ -132,7 +128,7 @@ SECOND_TOLERANCE = 0.05
 
 
 def qualified(row: dict[str, Any]) -> str:
-    """One cue as a reader names it, which is its section number and then its wire id."""
+    """One cue as a reader names it, which is its section number and then its cue id."""
     return f"{row['section']}:{row['cue']}"
 
 
@@ -167,7 +163,7 @@ class Run:
     def findings(self) -> list[dict[str, Any]]:
         return list(self.json["findings"])
 
-    def certain(self) -> list[Mapping[str, Any]]:
+    def errors(self) -> list[Mapping[str, Any]]:
         """Every finding the run is sure about that this leg holds the deck to, and prints the rest.
 
         Reading the rows through the timing policy here rather than in each test is what puts every
@@ -271,10 +267,10 @@ class Project:
         return json.loads(subprocess.run(command, capture_output=True, text=True, check=True).stdout)
 
     def spans(self) -> dict[str, tuple[float, float]]:
-        """Where every section starts and ends in the finished film, read from the cut list."""
-        cuts = Cuts.read(self.final_dir / "cuts.json")
-        assert cuts is not None, "the build wrote no cut list"
-        return {row.key: (row.start, row.end) for row in cuts.sections}
+        """Where every section starts and ends in the finished film, read from the placements."""
+        placements = Placements.read(self.final_dir / "placements.json")
+        assert placements is not None, "the build wrote no placements"
+        return {row.key: (row.start, row.end) for row in placements.sections}
 
 
 # ---- the fixture, built once -----------------------------------------------------------------------
@@ -313,7 +309,7 @@ def hold(path: Path) -> IO[str] | None:
 
 @pytest.fixture(scope="session")
 def built(pytestconfig: pytest.Config) -> Iterator[Project]:
-    """Copy the fixture, add the runtime and KaTeX, generate the media, and build it with no voice."""
+    """Copy the fixture, generate the media, and build it with no voice, with the runtime and KaTeX the engine's."""
     assert katex_missing() == [], "the packaged KaTeX copy is incomplete"
     OUT.mkdir(parents=True, exist_ok=True)
     lock = hold(OUT / "pipeline.lock")
@@ -326,13 +322,12 @@ def built(pytestconfig: pytest.Config) -> Iterator[Project]:
     shim.mkdir(parents=True)
     (shim / "sitecustomize.py").write_text(BLOCK_THE_NETWORK, encoding="utf-8")
     shutil.copytree(FIXTURE, root)
-    shutil.copyfile(runtime_path(), root / "deck" / RUNTIME_FILE)
-    vendor_katex(root / "deck")
+    assert not list(root.rglob(RUNTIME_FILE)) and not list(root.rglob("katex.min.js")), "the fixture holds a copy"
     generate_media(root)
 
     project = Project(root=root, shim=shim, attempts=shim / "attempts.txt", config=pytestconfig)
     try:
-        project.built = project.cli("build", "--no-voice", "--json")
+        project.built = project.cli("build", "--no-spend", "--json")
         # One reading over the sections that carry cues, kept on disk for the CI upload on a failure.
         project.verified = project.cli(
             "verify", "--json", "--fail-on", "never", "--section", "1", "--section", "2", "--section", "4"
@@ -370,8 +365,12 @@ def test_the_build_reports_every_stage_and_the_film_it_wrote(built: Project) -> 
     assert [row["stage"] for row in doc["stages"]] == [stage.value for stage in Stage]
     assert {row["outcome"] for row in doc["stages"]} <= {outcome.value for outcome in Outcome}
     assert doc["film"] == relative(built, built.film)
-    assert doc["voice"] == Voicing.PLACEHOLDER.value, "--no-voice never asks a provider for a take"
-    assert doc["spend"]["dollars"] == 0, doc["spend"]
+    assert doc["spend"] is False, "--no-spend never asks a provider for a take"
+    takes = Takes.read(built.build_dir / "narrate" / "takes.json")
+    assert takes is not None
+    missing = [row["location"]["section"] for row in doc["findings"] if row["code"] == Code.TAKE_MISSING.value]
+    assert missing == [take.section for take in takes.sections], "every placeholder take is one TAKE_MISSING"
+    assert doc["cost"]["dollars"] == 0, doc["cost"]
     assert relative(built, built.film) in set(doc["written"])
     assert doc["run"], "a build opens a run, so its id is on the result an agent reads"
 
@@ -401,16 +400,16 @@ def test_the_build_writes_one_events_file_an_agent_can_read(built: Project) -> N
 def test_the_build_writes_every_artifact_the_pipeline_declares(built: Project) -> None:
     """A path an agent finds from `Artifact` and nowhere else, so no reader spells a build path."""
     for artifact in (Artifact.TAKES, Artifact.CUE_TIMES, Artifact.RECORDINGS, Artifact.FINAL):
-        assert (built.root / artifact.value).exists(), artifact.value
+        assert (built.build_dir / artifact.value).exists(), artifact.value
 
 
 def test_the_missing_optional_clip_plays_its_slate(built: Project) -> None:
     """Section 5 names a clip file that is never there, so a titled slate plays for slate_seconds."""
     start, end = built.spans()["05"]
     assert end - start == pytest.approx(SLATE_SECONDS, abs=SECOND_TOLERANCE)
-    cuts = Cuts.read(built.final_dir / "cuts.json")
-    assert cuts is not None
-    [row] = [section for section in cuts.sections if section.key == "05"]
+    placements = Placements.read(built.final_dir / "placements.json")
+    assert placements is not None
+    [row] = [section for section in placements.sections if section.key == "05"]
     assert row.substitute == Substitute.SLATE
 
 
@@ -421,10 +420,12 @@ def test_every_recording_is_measured_and_checked_by_the_run_that_made_it(built: 
     assert all(log.checks is not None for log in logs.values())
     assert all(log.start is not None and not log.start.guessed for log in logs.values())
     assert all(log.recording.url.startswith("http://") for log in logs.values())
-    # Every project file the page loaded is named, which is what the next run keys its skip on.
+    # Every project file the page loaded is named, which is what the next run keys its skip on. The
+    # runtime is the engine's and no file of the project, so it is not one of them, and the page ran it.
     loaded = set(logs["01"].recording.assets)
     assert "deck/index.html" in loaded
-    assert f"deck/{RUNTIME_FILE}" in loaded
+    assert not any(RUNTIME_FILE in name for name in loaded), loaded
+    assert all(log.recording.page_errors == () and log.recording.report.version for log in logs.values())
 
 
 def test_no_page_loaded_anything_from_another_origin(built: Project) -> None:
@@ -438,7 +439,7 @@ def test_a_second_record_run_keeps_every_section(built: Project) -> None:
     before = {key: (built.build_dir / "recordings" / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
     again = built.cli("record", "--json")
     doc = again.json
-    assert again.code == FOUND_NOTHING, again.stderr
+    assert again.code == Exit.FOUND_NOTHING, again.stderr
     rows = {row["key"]: row for row in doc["sections"]}
     assert set(rows) == set(SPOKEN)
     assert all(row["kept"] for row in rows.values()), rows
@@ -450,7 +451,7 @@ def test_a_second_record_run_keeps_every_section(built: Project) -> None:
 
 
 def test_verify_measures_every_cue_every_start_every_cut_and_the_seam(built: Project) -> None:
-    """Every cue the fixture declares is measured, and nothing it measured is a certain finding.
+    """Every cue the fixture declares is measured, and nothing it measured is an error.
 
     What this test is about is which rows a reading produces, so a late landing on a runner that
     reports timing may not fail it. The test above it is the one that judges the landings.
@@ -461,7 +462,7 @@ def test_verify_measures_every_cue_every_start_every_cut_and_the_seam(built: Pro
     assert {row["section"] for row in doc["starts"]} == {1, 2, 4}
     assert {row["section"] for row in doc["cuts"]} == {1, 2, 4}
     assert [row["section"] for row in doc["seams"]] == [2], "section 2 is the one seamless section"
-    assert built.verified.certain() == [], built.verified.findings
+    assert built.verified.errors() == [], built.verified.findings
     assert doc["film_seconds"] > FILM_SECONDS_RANGE[0]
 
 
@@ -488,12 +489,12 @@ def test_every_cue_lands_inside_the_limit_the_project_publishes(built: Project, 
     """
     assert built.verified is not None
     published = built.cli("config", "get", "verify.cue_offset_max_ms", "--json")
-    stated_ms = float(published.json["key"]["value"])
+    stated_ms = float(published.json["setting"]["value"])
     allowed_ms = offset_limit_ms(stated_ms, gates_timing(pytestconfig))
     late = [
-        (qualified(row), abs(row["offset"]) * MILLISECONDS)
+        (qualified(row), abs(row["offset_seconds"]) * 1000)
         for row in built.verified.json["cues"]
-        if row["offset"] is not None and abs(row["offset"]) * MILLISECONDS > stated_ms
+        if row["offset_seconds"] is not None and abs(row["offset_seconds"]) * 1000 > stated_ms
     ]
     assert [(cue, out) for cue, out in late if out > allowed_ms] == [], late
     if late:
@@ -504,7 +505,7 @@ def test_section_2_opens_on_section_1s_last_frame(built: Project) -> None:
     assert built.verified is not None
     [seam] = built.verified.json["seams"]
     assert seam["section"] == 2
-    assert seam["drift"] is not None
+    assert seam["drift_seconds"] is not None
 
 
 # ---- the finished film ------------------------------------------------------------------------------
@@ -535,16 +536,16 @@ def test_the_two_blocks_sections_share_one_chapter(built: Project) -> None:
     assert float(chapters[0]["end_time"]) == pytest.approx(spans["02"][1], abs=SECOND_TOLERANCE)
 
 
-def test_the_cut_list_records_where_every_section_plays(built: Project) -> None:
-    cuts = Cuts.read(built.final_dir / "cuts.json")
-    assert cuts is not None
+def test_the_placements_record_where_every_section_plays(built: Project) -> None:
+    placements = Placements.read(built.final_dir / "placements.json")
+    assert placements is not None
     spans = built.spans()
-    rows = {row.key: row for row in cuts.sections}
+    rows = {row.key: row for row in placements.sections}
     assert set(rows) == set(EVERY_SECTION)
     assert rows["03"].kind is SectionKind.CLIP and rows["03"].source.as_posix() == "media/broll.mp4"
     assert rows["01"].source.as_posix() == "build/recordings/01.webm"
-    assert [row.key for row in cuts.sections if row.substitute is not None] == ["05"]
-    assert cuts.fps > 0
+    assert [row.key for row in placements.sections if row.substitute is not None] == ["05"]
+    assert placements.fps > 0
     for key, (start, end) in spans.items():
         assert (rows[key].start, rows[key].end) == pytest.approx((start, end), abs=1e-3)
 
@@ -553,7 +554,7 @@ def test_every_deliverable_beside_the_film_is_written(built: Project) -> None:
     """One command's worth of output: the captions, the chapters, the transcript and the poster."""
     for suffix in (".srt", ".vtt", ".chapters.txt", "-transcript.html", "-poster.png"):
         assert built.deliverable(suffix).stat().st_size > 0, suffix
-    assert (built.final_dir / "cuts.json").stat().st_size > 0
+    assert (built.final_dir / "placements.json").stat().st_size > 0
 
 
 def test_the_transcript_page_is_the_media_alternative(built: Project) -> None:
@@ -652,8 +653,10 @@ def test_status_reports_what_is_written_what_is_built_and_what_is_stale(built: P
     rows = {row["key"]: row for row in doc["sections"]}
     assert sorted(rows) == list(EVERY_SECTION)
     assert [key for key, row in rows.items() if row["recorded"]] == list(SPOKEN)
-    assert all(row["cut"] for row in rows.values())
-    assert not any(row["voiced"] for row in rows.values()), "an unvoiced build owns no paid take"
+    assert all(row["assembled"] for row in rows.values())
+    assert not any(row["take_state"] == TakeState.VOICED.value for row in rows.values()), (
+        "an unvoiced build owns no voiced take"
+    )
 
 
 def test_check_judges_the_inputs_and_prices_the_run_without_a_browser(built: Project) -> None:
@@ -665,12 +668,12 @@ def test_check_judges_the_inputs_and_prices_the_run_without_a_browser(built: Pro
     """
     run = built.cli("check", "--no-pages", "--json", "--fail-on", "never")
     doc = run.json
-    assert doc["pages"] is False
+    assert doc["pages_opened"] is False
     assert sorted(Path(path).name for path in doc["judged"]) == ["cues.json", "script.md"]
-    spend = doc["spend"]
-    assert spend["state"] == SpendState.ESTIMATE.value, spend
-    assert spend["sections"] == [int(key) for key in SPOKEN], spend
-    assert spend["dollars"] == 0 and spend["price_layer"] == Layer.DEFAULT.value, spend
+    cost = doc["cost"]
+    assert cost["state"] == CostState.ESTIMATE.value, cost
+    assert cost["sections"] == [int(key) for key in SPOKEN], cost
+    assert cost["dollars"] == 0 and cost["price_layer"] == Layer.DEFAULT.value, cost
 
 
 def test_words_prints_every_spoken_word_with_its_place_on_the_clock(built: Project) -> None:
@@ -685,7 +688,10 @@ def test_words_prints_every_spoken_word_with_its_place_on_the_clock(built: Proje
 
 
 def test_the_storyboard_is_one_page_of_every_slide_at_every_cue(built: Project) -> None:
-    """The storyboard is the human checkpoint before any credit is spent, so `build` writes it too."""
+    """The storyboard is the human checkpoint before any credit is spent, which `decktalk storyboard` draws.
+
+    `build` draws it only at the command line's checkpoint before a run that spends, and this build spends nothing.
+    """
     run = built.cli("storyboard", "--json")
     doc = run.json
     assert doc["storyboard"] == "build/storyboard.html"
@@ -702,22 +708,22 @@ def test_the_storyboard_narrows_to_one_slide(built: Project) -> None:
     assert {panel["slide"] for panel in doc["panels"]} == {"3.1"}
 
 
-def test_the_equation_typesets_from_the_deck_and_not_from_a_cdn(built: Project) -> None:
-    """KaTeX is vendored into deck/katex, so section 4 records with no finding and loads no host."""
+def test_the_equation_typesets_from_the_engine_and_not_from_a_cdn(built: Project) -> None:
+    """The engine serves KaTeX on the page's own origin, so section 4 records with no finding and loads no host."""
     log = built.recording_log("04")
     assert list(log.findings) == [] and list(log.recording.external) == []
-    assert any(name.startswith("deck/katex/") for name in log.recording.assets), log.recording.assets
+    assert not any("katex" in name for name in log.recording.assets), log.recording.assets
 
 
 def test_the_take_index_and_the_cue_times_agree_with_what_was_built(built: Project) -> None:
     """The two artifacts every later stage reads, checked as the models a caller reads them as."""
-    takes = Takes.read(built.root / Artifact.TAKES.value)
+    takes = Takes.read(built.build_dir / Artifact.TAKES.value)
     assert takes is not None
     assert [row.key for row in takes.sections] == list(SPOKEN)
     assert takes.estimated, "every take of an unvoiced build is a placeholder"
-    cue_times = CueTimes.read(built.root / Artifact.CUE_TIMES.value)
+    cue_times = CueTimes.read(built.build_dir / Artifact.CUE_TIMES.value)
     assert cue_times is not None
-    resolved = [f"{section.section}:{cue.cue}" for section in cue_times.sections for cue in section.cues]
+    resolved = [f"{section.section}:{cue.id}" for section in cue_times.sections for cue in section.cues]
     assert resolved == list(CUES)
     assert all(cue.seconds is not None for section in cue_times.sections for cue in section.cues)
 
@@ -749,28 +755,28 @@ def test_cues_resolve_by_occurrence_and_by_phrase_on_uneven_word_timestamps(buil
     shutil.copytree(built.build_dir, root / "build", ignore=shutil.ignore_patterns("final", "sections", "events"))
     project = Project(root=root, shim=built.shim, attempts=tmp_path / "attempts.txt", config=built.config)
 
-    takes = Takes.read(root / Artifact.TAKES.value)
+    takes = Takes.read(root / "build" / Artifact.TAKES.value)
     assert takes is not None
     [first] = [row for row in takes.sections if row.key == "01"]
     words = []
     for index, (token, start) in enumerate(UNEVEN):
         after = UNEVEN[index + 1][1] if index + 1 < len(UNEVEN) else start + TRAILING_WORD_SECONDS
         words.append(Word(word=token, start=start, end=round(after - WORD_GAP_SECONDS, 3)))
-    Words(words=tuple(words)).write(root / "build" / "narrate" / f"{first.hash}.words.json")
+    Words(words=tuple(words)).write(root / "build" / "narrate" / f"{first.digest}.words.json")
 
     cues = json.loads((root / "cues.json").read_text(encoding="utf-8"))
     cues["sections"]["1"]["cues"] = [
-        {"cue": "1.1:first", "on": "first"},
-        {"cue": "1.1:second", "on": "a", "occurrence": 3},
-        {"cue": "1.1:third", "on": "third below", "offset": -0.2},
+        {"id": "1.1:first", "phrase": "first"},
+        {"id": "1.1:second", "phrase": "a", "occurrence": 3},
+        {"id": "1.1:third", "phrase": "third below", "offset_seconds": -0.2},
     ]
     (root / "cues.json").write_text(json.dumps(cues), encoding="utf-8")
 
     run = project.cli("cue", "--json", "--section", "1")
     doc = run.json
-    assert run.code == FOUND_NOTHING, run.stderr
+    assert run.code == Exit.FOUND_NOTHING, run.stderr
     [section] = [row for row in doc["sections"] if row["key"] == "01"]
-    resolved = {row["cue"]: row["seconds"] for row in section["cues"]}
+    resolved = {row["id"]: row["seconds"] for row in section["cues"]}
     lead = first.lead_seconds
     assert resolved["1.1:first"] == pytest.approx(0.81 + lead, abs=1e-2)
     assert resolved["1.1:second"] == pytest.approx(4.05 + lead, abs=1e-2), "the third `a` is the one named"
@@ -784,9 +790,9 @@ def test_building_one_section_records_that_section_and_no_other(built: Project) 
     recordings = built.build_dir / "recordings"
     before = {key: (recordings / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
     length = ffmpeg.probe_duration(built.film)
-    run = built.cli("build", "--no-voice", "--section", "4", "--json")
-    assert run.certain() == [], run.stderr
-    assert run.code in (FOUND_NOTHING, FOUND_SOMETHING), run.stderr
+    run = built.cli("build", "--no-spend", "--section", "4", "--json")
+    assert run.errors() == [], run.stderr
+    assert run.code in (Exit.FOUND_NOTHING, Exit.FOUND_SOMETHING), run.stderr
     after = {key: (recordings / f"{key}.webm").stat().st_mtime_ns for key in SPOKEN}
     assert after["01"] == before["01"] and after["02"] == before["02"], "only section 4 is recorded again"
     assert after["04"] > before["04"]

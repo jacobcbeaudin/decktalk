@@ -22,8 +22,9 @@ offered.
 ## Name the sections with `--section`
 
 `--section` is the one selector, and it means the same thing on `build`, `narrate`, `cue`, `record`,
-`soundscape`, `assemble`, `verify`, `words`, `storyboard`, `check` and `clip`. It takes one number, a
-comma list or a range, and it repeats, so these four lines name the same kind of thing.
+`score`, `assemble`, `verify`, `words`, `storyboard` and `check`. It takes one number, a comma list
+or a range, and it repeats, so these four lines name the same kind of thing. `clip` takes
+`--section N` too, and there it names exactly one section.
 
 ```console
 decktalk build --section 3
@@ -33,22 +34,31 @@ decktalk build --section 3 --section 5
 ```
 
 A value that is not a number or a run of them is refused as a usage error, which exits 2. A number
-that no section carries is not: it simply selects nothing, and each stage says so in its own words.
+that no section carries is refused on every command as an `INPUT` error, which exits 3, before the
+command does any work or prices anything. The hint names the sections there are. A selection is
+never widened to the whole project: naming a section that is not there never means every section.
+
+A section that is there but is not the kind a command acts on is refused by that command: `narrate`
+and `words` name the spoken sections, and `record` names the page sections. `build` hands each stage
+the selected sections it can act on and skips a stage that has none, so `build --section N` on a clip
+section skips `narrate` and `record`, and `assemble` cuts that clip again when it changed.
 
 What the flag does depends on the stage, and the difference is the point of the flag.
 
 - On `record` it is an order. A named section is recorded whether or not its inputs moved, which is
   how you take a bad recording again.
 - On every other stage it is a narrowing. A named section still keeps its take, its generated sound
-  or its cut when nothing about it changed, because naming a section says which sections a run is
-  about and never that its work has to be redone.
+  or its section video when nothing about it changed, because naming a section says which sections a
+  run is about and never that its work has to be redone.
 - On `assemble` it never shortens the film. A film is always whole, so every section is in the
-  answer, and every cut is kept only while its key matches, named or not. `--section` decides which
-  sections the run judges, so a missing file in a section you left out is not reported again.
+  answer, and every section video is kept only while its key matches, named or not. `--section`
+  decides which sections the run judges, so a missing file in a section you left out is not reported
+  again.
 
 A section you leave out of `record` whose recording no longer matches the project is reported by
 name, with the reason, so a run never leaves an out-of-date picture in the film silently. A section
-with no recording at all is a certain [`FILE_MISSING`](/reference/findings/FILE_MISSING).
+you leave out that has no recording at all is not this run's finding, because the run did not touch
+it, and `decktalk status` shows it in its `Recorded` column.
 
 ## What makes a take stale
 
@@ -57,9 +67,16 @@ A take is one section's speech, and it is named by the digest of exactly six thi
 1. the speech provider's name
 2. the voice id
 3. the model
-4. the output format
-5. the voice settings, which are the `[voice]` keys sent with the request
-6. the exact text sent for that section
+4. the output format the provider declares, which for ElevenLabs is `[elevenlabs] output_format`
+5. the take identity the provider declares, which is `[voice] speed` and the provider's own voice
+   fields under the names its service reads, such as `[elevenlabs] stability`
+6. the section's text and pauses, written as one canonical text: each paragraph, a `[pause N]` as a
+   `<break time="Ns" />` tag after it and a beat as a dash, which is exactly the text ElevenLabs is
+   sent
+
+The six are joined with newlines and the text comes last, so every one of the first five is a single
+line: a provider, a voice id, a model or a format that holds a newline is refused before anything is
+sent, and no two sets of six can name the same take.
 
 Nothing else is in it, and each absence is a decision you can rely on.
 
@@ -67,18 +84,42 @@ Nothing else is in it, and each absence is a decision you can rely on.
 - The heading is not in it, so retitling a section voices nothing. The title is the chapter marker,
   which `assemble` writes fresh on every run.
 - The neighbours' text is not in it, so an edit to section 2 never voices section 3.
-- The lead and the tail are not in it. `[narration] lead_seconds`, `[narration] tail_min_seconds` and
+- The lead and the tail are not in it. `[narration] lead_seconds`, `[narration] tail_seconds` and
   a section's own `lead_seconds` and `tail_seconds` are placed when the takes are joined, so changing
   one moves the section on the clock and buys nothing.
 - Two sections with the same words come to one digest, so the second is kept rather than bought
   twice.
 
-A take file is named by its digest, so `narrate` sends nothing for a section whose take and words
-file are both on disk. Set [`narration.cache_dir`](/reference/configuration#narration) to keep
-those files outside `build/`, where a fresh clone and a second worktree find them again and several
-projects may share one directory. It is a machine key, so it is set with
-`decktalk config set narration.cache_dir DIR --where machine` and never in `decktalk.toml`. The take index and the joined narration stay under
-`build/narrate/`, because they belong to one project.
+A take file is named by its digest, under the suffix of the format it holds, which is `.mp3` for
+every ElevenLabs format. `narrate` sends nothing for a section whose take and words file are on disk
+and agree. It looks in two places, in this order:
+
+1. The takes directory, `takes/` inside the project unless
+   [`narration.takes_dir`](/reference/configuration#narration) names another. It holds every take the
+   film plays and the words its voice sent with each. Commit it, and a fresh clone builds the real film
+   with no key. Every take this project buys is written there, and a take found in the take store is
+   copied there, so the directory always holds the whole film.
+2. The take store, [`narration.store_dir`](/reference/configuration#narration), a folder outside every
+   project where this machine keeps a second copy of every take it buys. It is on by default, in the
+   per-user data folder, and `decktalk config set narration.store_dir DIR --scope machine` moves it.
+   It is written once per take, so a re-buy with `--replace-voiced` changes this project's takes
+   directory and never the take another project plays. It holds the spoken words of every script
+   voiced on this machine, so keep it out of a synced or shared folder. Two projects that need the
+   same take buy it once: a run that finds a good copy in the store once its turn comes copies it in
+   rather than buying it again, and one that finds another run still buying waits up to
+   [`narration.store_wait_seconds`](/reference/configuration#narration). A run told to replace that take
+   with `--replace-voiced` buys it anyway. A take bought while the takes directory cannot be written
+   is kept in the take store first, and the run stops and says so, so the next run copies it in for
+   nothing.
+
+A copy whose words do not read, or whose take does not hold the bytes they recorded, is skipped and
+moved aside as `<name>.unreadable`, or as `<name>.<n>.unreadable` with the first number free for both
+files when that name is taken, when a good copy replaces it. DeckTalk never deletes a take.
+
+A `takes_dir` that is empty, outside the project, an absolute path, the project directory itself,
+inside the build directory or a directory that holds it is refused when the project loads, and so is a `store_dir` that is relative, inside the project or inside
+the tool cache. A placeholder take, the take index and the joined narration are always under
+`build/narrate/`, because a build makes them again for nothing.
 
 A section that is voiced again costs the characters of its whole text and not only the changed
 sentence, so `decktalk check` is the call that prices an edit before you run it.
@@ -86,7 +127,7 @@ sentence, so `decktalk check` is the call that prices an edit before you run it.
 ## What makes a recording stale
 
 A recording is one page section captured in Chromium, and its key is written into its log beside the
-webm as `input_hash`. It holds everything that decides what those pixels look like:
+webm as `digest`. It holds everything that decides what those pixels look like:
 
 - the page URL the recorder opens, which already carries the scene, every cue resolved to its second
   and every spoken word with its start
@@ -116,6 +157,11 @@ another changes no line of HTML, so the markup alone would say that nothing had 
 One function answers this question, so what `record` skips and what `status` calls stale can never
 disagree, and neither of them compares file times.
 
+A section whose words do not read, provider words or estimated words, cannot be judged, because its
+words are in the page URL. `record --section` names it in one line, with the file, when the run
+passes it over, and records the sections it was asked for. Only a run that records that section is
+refused over them.
+
 ### What each edit does again
 
 | You changed | Voiced again | Recorded again |
@@ -128,75 +174,80 @@ disagree, and neither of them compares file times.
 | An image or a stylesheet the page loads | nothing | every section whose log lists that file |
 | `record_margin_seconds`, `lead_seconds` or `tail_seconds` on section N | nothing | section N, because the recorded length moves |
 | `hold_seconds` on section N | nothing | nothing, because the hold is picture that `assemble` adds |
-| The voice id, the model, the output format or a `[voice]` key | every section | every section, because every word time moves |
+| The voice id, the model, the output format, `[voice] speed` or a voice field of the provider's table | every section | every section, because every word time moves |
 | `motion.reduce` or `motion.scale` | nothing | every section |
 | A clip file, `[transition]` or `[mix]` | nothing | nothing |
 
 ## Read it before you run it
 
-`decktalk status` reads the project and writes nothing. It is the one call that says what is on disk
+`decktalk status` reads the project and writes only its run's events file. It is the one call that says what is on disk
 and whether that is still true. The one thing it judges is a file the project names and has not got,
-which is a certain [`FILE_MISSING`](/reference/findings/FILE_MISSING) and the only way it exits 1.
+which is a [`FILE_MISSING`](/reference/findings/FILE_MISSING) error and the only way it exits 1.
 
 ```console
 decktalk status
 ```
 
-{/* sample: decktalk status on a fresh starter */}
+{/* sample: status-fresh, decktalk status on a fresh starter */}
 ```text
- Section   Key   Plays                     Voiced   Recorded   Cut   Stale
- ─────────────────────────────────────────────────────────────────────────
- 1         01    deck/index.html?scene=1   no       no         no    no
- 2         02    deck/index.html?scene=2   no       no         no    no
- 3         03    deck/index.html?scene=3   no       no         no    no
+ Section   Key   Plays                     Take      Recorded   Assembled   Stale
+ ────────────────────────────────────────────────────────────────────────────────
+ 1         01    deck/index.html?scene=1   missing   no         no          no
+ 2         02    deck/index.html?scene=2   missing   no         no          no
+ 3         03    deck/index.html?scene=3   missing   no         no          no
 
-Next   decktalk narrate --no-voice
+Next   decktalk narrate --no-spend
 ```
 
 `--json` gives an agent the same reading as one flat object, and the `sections[]` rows are what a
 loop dispatches on.
 
-{/* sample: decktalk status --json on a fresh starter, the first section row */}
+{/* sample: status-json-fresh-one-row, decktalk status --json on a fresh decktalk init my-lesson, cut to the first section row */}
 ```json
 {
-  "schema": 2,
+  "schema": 1,
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "a383d9c7fdcf",
-  "name": "demo",
+  "run": "b2ece037731a",
+  "name": "my-lesson",
   "script": "script.md",
-  "cues": "cues.json",
+  "cues_file": "cues.json",
   "sections": [
     {
       "section": 1,
       "key": "01",
       "kind": "page",
       "source": "deck/index.html?scene=1",
-      "voiced": false,
+      "take_state": "missing",
+      "take_reason": "it has no voiced take yet",
       "recorded": false,
-      "cut": false,
-      "stale": false
+      "assembled": false,
+      "recording_stale": false
     }
   ],
   "film": null,
   "film_seconds": null,
   "runs": [],
-  "next": "decktalk narrate --no-voice"
+  "unplayed": null,
+  "next": "decktalk narrate --no-spend"
 }
 ```
 
 Two fields carry the two caches.
 
-- `voiced` is true when a take of this section's current script text is on disk. It goes false the
-  moment you edit the words, which is how you find what the next voiced run would buy.
-- `stale` is true when the recording on disk no longer matches the project. The row carries the fact
-  and the stream carries the sentence, so a reader that dispatches on the boolean is still told which
-  of the several things moved.
+- `take_state` is what the disk holds for this section, with `take_reason` saying why. It goes
+  `stale` when the text, the voice, the model or the voice settings change, and `voiced` again once a
+  voiced run buys the take, which is how you find what the next voiced run would buy.
+- `recording_stale` is true when the recording on disk no longer matches the project. The row
+  carries the fact and the stream carries the sentence, so a reader that dispatches on the boolean is
+  still told which of the several things moved.
 
 `next` is the whole command to run next, read off the pipeline rather than guessed. It is
-`decktalk build` whenever anything on disk is stale, and null once the film on disk is the one the
-last build measured, because then there is nothing to do. `runs` lists any run whose events file is
+`decktalk build` whenever anything on disk is stale, and `decktalk verify` when the film on disk has
+not been measured. It is null once the film on disk is the one the last build measured, because then
+there is nothing to do. It is also null when the takes directory holds none of the takes the project
+played, which `status` says in one warning line, because a build would buy those takes again. `runs` lists any run whose events file is
 still open, which is how a caller finds a build it started in the background.
 
 ## A build that finds nothing changed
@@ -206,51 +257,70 @@ reads has moved since the last build ran them, a build keeps both rather than do
 reports each with the outcome `kept` and reports its findings again, so the result reads as the run
 that made the film did.
 
-{/* sample: a second decktalk build --no-voice on an unchanged starter named my-lesson */}
-
+{/* sample: build-unchanged, a second decktalk build --no-spend on an unchanged starter named my-lesson */}
 ```text
+run f42dd9d969e7, events build/events/f42dd9d969e7.jsonl
+     Narrate    0:00
+         Cue    0:00
+      Record    0:00
+The project declares no score for this run, so there is nothing to generate.
+       Score    0:00
 Assemble kept what it made last time, because nothing it reads has changed.
-    Assemble    0:00
+    Assemble    0:00   kept
 Verify kept what it made last time, because nothing it reads has changed.
-      Verify    0:00
-       Built build/final/my-lesson.mp4, $0.00, nothing found
+      Verify    0:00   kept
+       Built build/final/my-lesson.mp4, $0.00, 3 findings
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
+Found 3 findings, 0 errors.
 ```
 
 On the starter that second build took under half a second. What a build compares is a digest of every
 file the two stages read and the options they ran with, kept in
 [`build/kept.json`](/reference/artifacts#build-kept-json), never a file time. Inside `assemble` each
-section cut has a key of its own in `build/sections/NN.json`, so an edit to one section cuts that
+section video has a key of its own in `build/sections/NN.json`, so an edit to one section encodes that
 section again and keeps the others.
 
 ## Ask for work you were not offered
 
-Two flags redo work, and only one of them can cost you anything you cannot get back.
+Three flags redo work. `--force` costs nothing, and the two replace flags buy again what you already
+own.
 
-`--force` builds again from nothing and keeps every voiced take. It ignores each stage's own cache,
-so `narrate` plans every section it was given as one to make, `record` records every section it
-planned, `soundscape` asks for every item again, and `assemble` and `verify` run and measure again
-even when nothing they read has moved. On a run with the voice, forcing therefore buys
-the speech again, and it buys the same words, so the take that lands is the take that was there.
+`--force` builds again from nothing and never spends. It keeps every voiced take and every sound the
+score bought, and makes again everything that costs nothing. `narrate` remakes the placeholders,
+`record` records every section it planned, and `assemble` and `verify` run and measure again even when
+nothing they read has moved. With `--spend` or `--no-spend`, a forced run buys only what is missing,
+as an unforced run does.
 
 ```console
-decktalk build --force --no-voice
+decktalk build --force --no-spend
 ```
 
-`--replace-voiced` is the one flag here that destroys money. Without it, a run with no voice refuses
-to write over a section that already holds a paid take, because the placeholder would take that row
-in the take index and the next voiced build would buy the section again. The refusal names the
-sections nobody has paid for, so a film you have already voiced still rehearses its new section for
-nothing.
+`--replace-voiced` spends money on words you already paid for. With
+`--spend` it voices each section it names again and plays the new take. Without it, a run that does
+not spend plays every voiced take on disk and puts a placeholder only where a take is missing, reporting
+each such section as [`TAKE_MISSING`](/reference/findings/TAKE_MISSING), so a film you have already
+voiced rehearses its new section for nothing. `--replace-voiced --no-spend` plays placeholders in
+place of the voiced takes for that one run, and the voiced takes stay on disk for the next. A voice
+that bills nothing, such as `dtsp`, voices each section it names again with or without `--spend`.
 
+{/* sample: replace-voiced-with-no-take, decktalk narrate --section 2 --replace-voiced --no-spend, on a fresh decktalk init my-lesson, the finding line */}
 ```text
-error[INPUT]: The take index holds paid takes for section(s) 1, and a run without voice would replace them, so the next voiced build would buy all of them again.
-  hint: Rehearse the sections nobody has paid for: --section 2 --section 3. Pass --replace-voiced to replace them anyway.
-  docs: https://docs.decktalk.ai/reference/errors/INPUT
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
 ```
 
-On a terminal, `--replace-voiced` is confirmed once before anything is replaced. Without a terminal
-the flag is the authorisation, because a run that was told to replace a take was told so on purpose.
-The safe default, in every other case, is to keep every take.
+`--replace-score` is the same for the score. With `--spend` it buys every bought sound again,
+each part of the music included, and it never buys a take. `--replace-voiced` never buys a sound.
+Without `--spend`, `--replace-score` keeps every bought sound on disk, so it never acts on its own.
+
+```console
+decktalk score --replace-score --spend
+```
+
+On a terminal, each replace flag is confirmed once before anything is replaced. Without a terminal
+the flag is the authorisation, because a run that was told to replace a take or a sound was told so
+on purpose. The safe default, in every other case, is to keep every take and every sound.
 
 `--max-cost N` refuses before the first call when the most a run can cost is over N dollars, and
 `--spend` approves the price without asking. Neither of them is a way to redo work: they only decide
@@ -259,7 +329,7 @@ what a run is allowed to buy.
 ## Write with the build running
 
 `decktalk build --watch` is the draft loop. It serves the project itself, prints the URL, builds once
-with placeholder narration, and then rebuilds on every save until you stop it.
+without buying, and then rebuilds on every save until you stop it.
 
 ```console
 decktalk build --watch
@@ -268,7 +338,7 @@ decktalk build --watch
 {/* sample: the two lines decktalk build --watch prints before its first build */}
 ```text
 Serving http://127.0.0.1:53017
-Watching for saves. Nothing here spends, so a voiced take goes stale rather than being replaced.
+Watching for saves. Nothing here spends: a free provider reads each change once a voice is named, and a take a voice bills for goes stale rather than being bought again.
 ```
 
 The origin listens on this machine alone and takes whichever port was free, so the number changes
@@ -276,20 +346,17 @@ from run to run and the line is the one place it is printed.
 
 Four things are worth knowing about it.
 
-- It never voices, whatever the settings say. The explicit spend is a different command, because the
-  safe default is the rule and the named escape is a separate act.
+- It never spends, whatever the settings say. A free provider such as `dtsp` still voices each change once a voice is named,
+  because spend gates money and nothing else. Buying from a voice that bills is a different command,
+  because the safe default is the rule and the named escape is a separate act.
 - It rebuilds the sections the saved file touches. A page belongs to the sections that play it, a
   clip to the section that plays it, and `script.md`, `cues.json` and `decktalk.toml` each belong to
   every section at once. A file that belongs to no section, such as a stylesheet, rebuilds all of
   them, because nothing can say which sections it reached.
-- After each rebuild it names every section that now holds a paid take that no longer matches the
-  script, and gives the whole command that would voice it again.
+- A section whose words changed under a voice that bills plays a placeholder until you voice it, and
+  `decktalk status` shows its take as `stale`. `decktalk narrate --section N --spend` voices it.
 - A save that breaks a file is printed as one error block and the loop keeps watching, so you fix the
   file and save again rather than restarting the loop.
-
-```text
-Section 1 has a voiced take that no longer matches the script. Run decktalk narrate --section 1 --spend to voice it again.
-```
 
 ## Run one stage at a time
 
@@ -301,7 +368,7 @@ stage, run that stage alone and the two after it that read what it wrote.
 | A slide moved and the script did not | `decktalk record --section N`, then `decktalk assemble`, then `decktalk verify --section N` |
 | A cue phrase moved | `decktalk cue`, then `decktalk record --section N`, then `decktalk assemble` |
 | A clip file, `[transition]` or a `[mix]` level moved | `decktalk assemble`, then `decktalk verify` |
-| A sound effect's prompt moved | `decktalk soundscape --spend`, then `decktalk assemble` |
+| A sound effect's prompt moved | `decktalk score --spend`, then `decktalk assemble` |
 
 `--from STAGE` and `--to STAGE` do the same thing through `build`, which is the way to say it when
 the span is more than one stage.

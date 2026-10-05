@@ -16,3 +16,6 @@ tests/out/
 .claude/
 .coverage*
 coverage.xml
+
+# Scratch folders a local tool or test run may leave in a checkout.
+.tmp/

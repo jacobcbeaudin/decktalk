@@ -1,0 +1,19 @@
+---
+title: Design decisions
+description: "One note per choice the code cannot explain by itself: what was decided, why, what it rules out, and what would change it."
+---
+
+One note per choice that the code cannot explain by itself. Each says what was decided, why, what it
+rules out, and what would change it. These are engineering notes for whoever reads or changes the
+code, and [ARCHITECTURE.md](https://github.com/jacobcbeaudin/decktalk/blob/main/ARCHITECTURE.md) is
+the overview they hang from. To see the stages from the outside first, read
+[How it works](/concepts/how-it-works).
+
+| Note | Decides |
+|---|---|
+| [Timing comes from the spoken words](/decisions/timing-from-the-spoken-words) | Every time in the system is derived from word timestamps |
+| [The recorder covers the page in magenta](/decisions/the-magenta-cover) | How the start of the section clock is found in a recording |
+| [The pipeline is six stages](/decisions/the-six-stages) | Why these six, why `score` follows `record`, and why `check` is a command |
+| [Providers, local voices and forced alignment](/decisions/the-provider-interface) | The closed set of voices, what each declares, and where word times come from |
+| [The skills are part of the product](/decisions/the-skills-contract) | Why six skills ship in the wheel and a test holds them true |
+| [No compatibility while DeckTalk is alpha](/decisions/no-compatibility-while-alpha) | Why nothing migrates and no name is kept alive |

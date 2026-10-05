@@ -11,18 +11,18 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import CueTimes, Take, Takes, Words
+from decktalk.artifacts import CueTimes, Takes
 from decktalk.errors import Cancel
-from decktalk.events import FindingEvent, Log, Progress
+from decktalk.events import FindingRaised, RunLog, StageProgress
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages.assemble.cut import Rendered
 from support.fakes import FakeFfmpeg
 from support.projects import load_project
 from support.runs import RUN_ID, Watched, a_machine
-from support.takes import a_take, write_takes
+from support.takes import a_take, narrated
 
 PAGES_TOML = """
 [project]
@@ -127,15 +127,15 @@ class Opened(Watched):
 
     def notes(self) -> list[str]:
         """Every sentence the run said, which is what a stage says instead of printing."""
-        return [line.message for line in self.of(Log)]
+        return [line.message for line in self.of(RunLog)]
 
     def codes(self) -> list[str]:
         """The code of every judgement the run made, in the order it made them."""
-        return [line.finding.code.name for line in self.of(FindingEvent)]
+        return [line.finding.code.name for line in self.of(FindingRaised)]
 
     def progress(self) -> list[str]:
         """The label of every progress line, which is how far through its own work the stage said it was."""
-        return [line.label for line in self.of(Progress)]
+        return [line.label for line in self.of(StageProgress)]
 
 
 def open_run(root: Path) -> Opened:
@@ -163,16 +163,18 @@ def take_index(inputs: Inputs, rows: dict[int, tuple[str, float, float | None, l
     Every span is the take alone, because these projects set `[narration] lead_seconds = 0`, so a
     section starts where the one before it ended and the words sit where the take names them.
     """
-    inputs.workspace.takes_dir.mkdir(parents=True, exist_ok=True)
-    takes: list[Take] = []
-    for number, (chapter, span, speech_end, words) in rows.items():
-        digest = f"{number:016x}"
-        Words(words=tuple(words)).write(inputs.workspace.takes_dir / f"{digest}.words.json")
-        spoken = " ".join(word.word for word in words)
-        takes.append(
-            a_take(number, seconds=span, chapter=chapter, voiced=voiced, speech_end_seconds=speech_end, spoken=spoken)
+    takes = [
+        a_take(
+            number,
+            seconds=span,
+            chapter=chapter,
+            voiced=voiced,
+            speech_end_seconds=speech_end,
+            spoken=" ".join(word.word for word in words),
         )
-    return write_takes(inputs, *takes)
+        for number, (chapter, span, speech_end, words) in rows.items()
+    ]
+    return narrated(inputs, *takes, words={number: row[3] for number, row in rows.items()})
 
 
 def cue_times(inputs: Inputs, rows: dict[int, dict[str, float]]) -> CueTimes:
@@ -183,7 +185,7 @@ def cue_times(inputs: Inputs, rows: dict[int, dict[str, float]]) -> CueTimes:
                 section=number,
                 key=f"{number:02d}",
                 estimated=False,
-                cues=tuple(CueTime(cue=cue, phrase=cue, seconds=at) for cue, at in cues.items()),
+                cues=tuple(CueTime(id=cue, phrase=cue, seconds=at) for cue, at in cues.items()),
             )
             for number, cues in rows.items()
         )

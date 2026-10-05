@@ -8,7 +8,7 @@ import pytest
 
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media.origin import Assets
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import page_findings, slide_cues
@@ -81,7 +81,7 @@ FLOOR = Settings().verify.changed_share_min_percent
         pytest.param(0.0, False, Code.CUE_NO_CHANGE, id="under the floor is a reveal that never happened"),
         # A stroke sweeps a thin area, so the same number means something else about it.
         pytest.param(0.0, True, Code.PAGE_THIN_DRAW, id="a stroke under the floor is too thin to see"),
-        pytest.param(FLOOR * 1.5, False, Code.CUE_THIN_CHANGE, id="only just passing is uncertain"),
+        pytest.param(FLOOR * 1.5, False, Code.CUE_THIN_CHANGE, id="only just passing is a warning"),
         pytest.param(FLOOR * 10, False, None, id="a clean reveal is no judgement at all"),
     ],
 )

@@ -9,8 +9,6 @@ The neighbour allowance is asymmetric. Backward it is the reference lead, which 
 plus the grid guard plus whatever extra lead the project asked for, because a reveal may land that
 early and still pass. Forward it is the neighbouring effect's own declared span, taken from the page
 contract, because an effect stops moving when its own animation ends and not a fixed distance later.
-One symmetric constant was wrong in both directions at once: too short for a draw and too long for a
-cut.
 """
 
 from __future__ import annotations
@@ -21,16 +19,8 @@ from dataclasses import dataclass
 from decktalk.artifacts import CueTimes
 from decktalk.inputs import Inputs
 from decktalk.media.frames import Size
-from decktalk.page import MILLISECONDS
-from decktalk.settings import (
-    Settings,
-    VerifyConfig,
-    block_height,
-    block_width,
-    probe_height,
-    probe_width,
-    reference_lead_seconds,
-)
+from decktalk.settings import Settings, VerifyConfig
+from decktalk.settings.numbers import block_height, block_width, probe_height, probe_width, reference_lead_seconds
 from decktalk.stages import selects
 
 EPSILON = 1e-6
@@ -148,7 +138,7 @@ def probe_plan(
     configured = [d for d in settings.probe_delays_seconds if cue_at + d <= sec_end - PROBE_TAIL_SECONDS]
     if not any(spoiled(d) for d in configured):
         return configured, False
-    shortest = settings.cue_offset_max_ms / MILLISECONDS + 1.0 / fps
+    shortest = settings.cue_offset_max_ms / 1000 + 1.0 / fps
     fits = (
         d if not spoiled(d) else _fitted(d, cue_at, before, others, lead, fps, shortest, spoiled) for d in configured
     )
@@ -194,12 +184,12 @@ def thin_change(changed: float, margin: float, settings: VerifyConfig) -> bool:
 
 
 def opted_out(inputs: Inputs) -> set[tuple[int, str]]:
-    """(section number, cue id) for every cue that `cues.json` marks `verify = false`.
+    """(section number, cue id) for every cue whose row in `cues.json` sets `"verify": false`.
 
     A reveal too small or too slow for a frame difference to see is the author's own call, so the
     row is skipped rather than measured and failed.
     """
-    return {(block.number, cue.cue) for block in inputs.cues() for cue in block.cues if not cue.verify}
+    return {(block.number, cue.id) for block in inputs.cues() for cue in block.cues if not cue.verify}
 
 
 def default_checks(cue_times: CueTimes | None, only: Sequence[int] | None = None) -> list[tuple[int, str]]:

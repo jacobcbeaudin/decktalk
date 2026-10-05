@@ -2,13 +2,13 @@
 
     uv run python tests/contract/test_vocabulary.py --write   # lower a count the code has shrunk
 
-A stage, an outcome, a finding code, an error code, a certainty, a layer, a scope, a take status, a
-sound status, a section kind, a skip reason, a substitute, a voicing, a spend state, a setting's
+A stage, an outcome, a finding code, an error code, a layer, a scope, a take outcome, a take
+state, a sound outcome, a section kind, a skip reason, a substitute, a spend state, a setting's
 nature and a setting's source are each a member of a plain enum, and a plain enum never compares
 equal to a string. So a string literal that spells one of them is either
 dead, because it is compared with a member and is always unequal, or it is a second spelling of the
-vocabulary that the enum cannot see. Either way it is how a test once compared a JSON object with a
-code and passed without testing anything. This walk reads the AST of every Python file under `src/`
+vocabulary that the enum cannot see. Either way a test that compares a JSON object with such a
+code passes without testing anything. This walk reads the AST of every Python file under `src/`
 and `tests/` and fails on a string literal equal to a member of any of them, wherever the literal
 stands for the thing itself.
 
@@ -33,7 +33,7 @@ does not pass today and a rule that fails on day one is suppressed on day two. A
 the baseline may spell no word at all, a file on it may never spell more than the count beside it,
 and `--write` can lower a count and never raise one.
 
-`ALSO_NAMES` is the other half of the rule, and it is the founder's one-word design rather than a
+`ALSO_NAMES` is the other half of the rule, and it is the one-word design rather than a
 suppression. One word names the stage, its module, its `decktalk.toml` table, its directory under
 `build/` and its event, so a literal spelling one of those names the table or the path and not the
 member. Each such word carries the sentence saying what else it names, and a test holds the list to
@@ -55,21 +55,22 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from decktalk.errors import ErrorCode
-from decktalk.findings import Applicability, Certainty, Code, RaisedBy
+from decktalk.findings import Applicability, Code, RaisedBy
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
+    BillingBasis,
+    CostState,
     Layer,
     Nature,
     Scope,
     SectionKind,
     SkipReason,
     SoundKind,
-    SoundStatus,
+    SoundOutcome,
     Source,
-    SpendState,
     Substitute,
-    TakeStatus,
-    Voicing,
+    TakeOutcome,
+    TakeState,
 )
 from support import ratchet
 from support.paths import REPO, SRC, TESTS
@@ -84,14 +85,14 @@ DEFINING = {
     "src/decktalk/page.py",
     "src/decktalk/results.py",
     "src/decktalk/events.py",
-    "src/decktalk/tomlmap.py",
+    "src/decktalk/tomlmap/__init__.py",
     "tests/decktalk/test_pipeline.py",
     "tests/decktalk/test_findings.py",
     "tests/decktalk/test_errors.py",
     "tests/decktalk/test_page.py",
     "tests/decktalk/test_results.py",
     "tests/decktalk/test_events.py",
-    "tests/decktalk/test_tomlmap.py",
+    "tests/decktalk/tomlmap/test_tomlmap.py",
 }
 """The modules that define the enums, where every word of the vocabulary is written once.
 
@@ -111,7 +112,6 @@ command, and the end to end runners."""
 WORD_ENUMS: tuple[type[Enum], ...] = (
     Stage,
     Outcome,
-    Certainty,
     RaisedBy,
     Applicability,
     Layer,
@@ -119,11 +119,12 @@ WORD_ENUMS: tuple[type[Enum], ...] = (
     SectionKind,
     SkipReason,
     SoundKind,
-    SoundStatus,
-    SpendState,
+    SoundOutcome,
+    CostState,
+    BillingBasis,
     Substitute,
-    TakeStatus,
-    Voicing,
+    TakeOutcome,
+    TakeState,
     Nature,
     Source,
 )
@@ -133,6 +134,10 @@ WORD_ENUMS: tuple[type[Enum], ...] = (
 the payload also uses as a key, such as the `error` a result carries and the `section` a location
 names, so a literal spelling one is no evidence of a second spelling. Both are held instead by the
 event assertions in `tests/contract/test_results.py`.
+
+`findings.Severity` is absent for the same reason. Its `error` and `warning` are also a log level, a
+console message's kind, the `error` schema and the `error` key a result carries, so a literal
+spelling one is no evidence either. The frozen list in `tests/decktalk/test_findings.py` holds it.
 """
 
 CODE_ENUMS: tuple[type[Enum], ...] = (Code, ErrorCode)
@@ -140,31 +145,39 @@ CODE_ENUMS: tuple[type[Enum], ...] = (Code, ErrorCode)
 
 SHARED = {
     "kept": "A take that was not re-voiced and a sound that was not regenerated are the same fact twice.",
-    "placeholder": "A run asks for a placeholder voicing and a row reports one, so it is the request and the outcome.",
     "project": "A layer is where a value was written and a scope is where it may be, and both are the project file.",
     "machine": "A layer is where a value was written and a scope is where it may be, and both are the machine file.",
+    "voiced": (
+        "A take state is the kind of take a section holds and a run's outcome for a take is the kind it made, "
+        "and both say a voiced take."
+    ),
+    "placeholder": (
+        "A take state is the kind of take a section holds and a run's outcome for a take is the kind it made, "
+        "and both say a placeholder."
+    ),
 }
 """Every word two families own, and the one sentence saying why one word names one thing in both."""
 
 ALSO_NAMES = {
     "project": "It names the `[project]` table and the module a caller opens, so a literal is one of those.",
-    "soundscape": "It names the `[soundscape]` table, the stage module and `build/soundscape`.",
+    "score": "It names the `[score]` table, the stage module and `build/score`.",
     "narrate": "It names the stage module and `build/narrate`, which the workspace joins a path from.",
-    "cue": "It names the stage module and the key of a row in `cues.json`.",
+    "cue": "It names the stage module and the `cue` a location, a cue time and a mix effect carry.",
     "clip": "It names the stage module, the `clip` key of a section and the command a caller calls.",
     "page": "It names the vocabulary module and the `page` key of a section.",
     "record": "It names the stage module and the `[record]` table.",
     "verify": "It names the stage module and the `[verify]` table.",
     "assemble": "It names the stage module the facade imports by name.",
     "machine": "It names the module that holds the machine and the file its settings are written to.",
-    "music": "It names the bed the `[mix]` table points a file at, which the `[soundscape]` table does not list.",
-    "ambience": "It names the bed the `[mix]` table points a file at, which the `[soundscape]` table does not list.",
+    "music": "It names the bed the `[mix]` table points a file at, which the `[score]` table does not list.",
+    "ambience": "It names the bed the `[mix]` table points a file at, which the `[score]` table does not list.",
     "derived": "It is the word a published number's sentence opens with, which `x-numbers` reads back.",
     "environment": "It names the layer and the kind of unknown key a refusal reports, which is the same fact.",
+    "missing": "It names a tool doctor cannot find and an API key that is not set, which is the same fact, absence.",
 }
 """Every word the one-word design gives a second job, and the sentence saying what that job is.
 
-This is not a suppression. The founder's design has one word name the stage, its module, its table,
+This is not a suppression. The design has one word name the stage, its module, its table,
 its directory and its event, so a literal spelling one of them names the table or the path rather
 than the member. A word leaves this list by leaving the enums, which the test below holds.
 """
@@ -311,7 +324,7 @@ def test_the_baseline_only_shrinks():
 
 PLANTED = [
     ("prose", '"""skipped"""\nwhy = f"{row} is not skipped"\nif row == "skipped": pass', [Outcome.SKIPPED.value]),
-    ("export", '__all__ = ["voiced"]\nSTATES = ["voiced"]', [TakeStatus.VOICED.value]),
+    ("export", '__all__ = ["voiced"]\nSTATES = ["voiced"]', [TakeOutcome.VOICED.value]),
     (
         "subscript",
         'closed = row["outcome"] == "skipped"\ncount = tally["CUE_OFF"]',
@@ -320,23 +333,23 @@ PLANTED = [
     ("dict key", 'row = {"skipped": 1}\ntally = {"CUE_OFF": 1}', [Code.CUE_OFF.value]),
     (
         "mapping read",
-        'seen = doc.get("certain")\nsure = row == "uncertain"',
-        [Certainty.UNCERTAIN.value],
+        'seen = doc.get("ran")\nsure = row == "skipped"',
+        [Outcome.SKIPPED.value],
     ),
     ("attribute", 'quiet = getattr(args, "quiet")\ncode = getattr(Code, "CUE_OFF")', [Code.CUE_OFF.value]),
     ("setitem", 'mp.setitem(HANDLERS, "voiced", f)\nmp.setitem(HANDLERS, "INPUT", f)', [ErrorCode.INPUT.value]),
     ("command line", 'main(["verify", "--json"], check=lambda d: d.code == "CUE_OFF")', [Code.CUE_OFF.value]),
-    ("flag list", 'lines = [("--strict", "voiced")]\nmore = [("--strict", "PAGE_BLACK")]', [Code.PAGE_BLACK.value]),
+    ("flag list", 'lines = [("--strict", "voiced")]\nmore = [("--strict", "RECORD_BLACK")]', [Code.RECORD_BLACK.value]),
     ("command", 'Command("clip", "cut a span")\nCommand("CUE_OFF", "judge")', [Code.CUE_OFF.value]),
     (
         "membership",
         'both = "voiced" in raw and "CUE_OFF" in tally\nmade = "generated" == item.status',
-        [Code.CUE_OFF.value, SoundStatus.GENERATED.value],
+        [Code.CUE_OFF.value, SoundOutcome.GENERATED.value],
     ),
     (
         "key tuple",
-        'WHERE_KEYS = ("where", "page")\nCODE_KEYS = ("PAGE_BLACK",)\nSTATES = ("kept",)',
-        [Code.PAGE_BLACK.value, TakeStatus.KEPT.value],
+        'WHERE_KEYS = ("where", "page")\nCODE_KEYS = ("RECORD_BLACK",)\nSTATES = ("kept",)',
+        [Code.RECORD_BLACK.value, TakeOutcome.KEPT.value],
     ),
 ]
 """Each exemption beside a literal it must still see: (the exemption, a source, the words it must find)."""

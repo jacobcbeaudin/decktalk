@@ -1,19 +1,20 @@
 """One terminal that serves the deck and rebuilds the section a save changed.
 
-The loop is the draft loop. It starts the local origin itself and prints the URL, builds once with
-placeholder narration, and on every save rebuilds only the sections the changed file touches. It
-never voices, whatever the settings say, and it says so when a save leaves a paid take behind. The
-explicit spend is a different command, `decktalk narrate --section 3`, because the safe default is
-the rule and the named escape is a separate act.
+The loop is the draft loop. It starts the local origin itself and prints the URL, builds once
+without buying, playing every take on disk, making each missing one with a voice that bills
+nothing, and playing a placeholder for each one a voice that bills would sell, and on every save
+rebuilds only the sections the changed file touches. It never spends, whatever the settings say,
+and it says so when a save leaves a voiced take behind. The explicit spend is a different command,
+`decktalk narrate --section 3 --spend`, because the safe default is the rule and the named escape
+is a separate act.
 
 Files are watched by their modification times rather than by an operating-system channel, because a
-poll a tenth of a second long is indistinguishable to an author and costs no dependency that three
+poll under half a second long is indistinguishable to an author and costs no dependency that three
 platforms would each have to be proved on.
 """
 
 from __future__ import annotations
 
-import os
 import time
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -22,13 +23,10 @@ from decktalk.cli import session as sessions
 from decktalk.errors import Cancelled, DeckTalkError, ErrorInfo
 from decktalk.pipeline import Stage
 from decktalk.project import Project
-from decktalk.results import BuildResult, Layer, Spend, SpendState, Voicing
+from decktalk.results import UNPRICED, BuildResult, TakeState
 
 POLL_SECONDS = 0.4
 """How long the loop sleeps between two readings of the tree, which is under an author's own pause."""
-
-IGNORED = frozenset({"build", ".git", ".venv", "node_modules", "__pycache__"})
-"""The directories a save never means, which are what a run writes rather than what an author edits."""
 
 
 def loop(
@@ -42,11 +40,16 @@ def loop(
     """Serve the project, build it once, and rebuild what each save touches until the caller stops.
 
     The result given back is the last build made, so a caller that stopped the loop still receives
-    the run it was watching rather than nothing.
+    the run it was watching rather than nothing. A selection the project refuses ends the loop before
+    it serves, because no save could make a section that is not there.
     """
+    project.select(only)
     origin = project.serve()
     session.say(f"Serving {origin.result.url}")
-    session.say("Watching for saves. Nothing here spends, so a voiced take goes stale rather than being replaced.")
+    session.say(
+        "Watching for saves. Nothing here spends: a free provider reads each change once a voice is named, "
+        "and a take a voice bills for goes stale rather than being bought again."
+    )
     built = _once(session, project, skip=skip, only=only, force=force)
     seen = _stamps(project)
     try:
@@ -60,8 +63,9 @@ def loop(
             project = project.reload()
             built = _once(session, project, skip=skip, only=_touched(project, changed) or only, force=force)
             _stale(session, project)
-    except KeyboardInterrupt:
-        # silent: an interrupt is how a person ends the watch loop.
+    except (KeyboardInterrupt, Cancelled):
+        # silent: an interrupt is how a person ends the watch loop, and one that lands in a rebuild's
+        # narrate arrives as `Cancelled`.
         session.say("Stopped.")
     finally:
         origin.close()
@@ -86,10 +90,8 @@ def _once(
             return project.build(
                 skip=tuple(skip),
                 only=only,
-                voice=Voicing.PLACEHOLDER,
+                spend=False,
                 force=force,
-                allow=session.allowed,
-                stop_on=session.fail_on.stops_on,
                 cancel=session.cancel,
             )
     except Cancelled:
@@ -103,24 +105,17 @@ def _once(
 def _nothing(refusal: ErrorInfo) -> BuildResult:
     """The result a refused rebuild leaves behind, which carries the refusal and no film.
 
-    A run that never opened bought nothing, so its price is nothing at a rate nobody stated.
+    A run that never opened bought nothing and asked no voice how it bills, so its price is nothing
+    on a bill nobody declared, at a rate nobody stated.
     """
     return BuildResult(
         ok=False,
         error=refusal,
         run="",
         stages=(),
-        voice=Voicing.PLACEHOLDER,
-        spend=Spend(
-            state=SpendState.ESTIMATE,
-            sections=(),
-            characters=0,
-            dollars=0.0,
-            ceiling_dollars=0.0,
-            price_per_1000_characters=0.0,
-            price_layer=Layer.DEFAULT,
-        ),
-        seconds=0.0,
+        spend=False,
+        cost=UNPRICED,
+        elapsed_seconds=0.0,
     )
 
 
@@ -136,34 +131,26 @@ def _touched(project: Project, changed: Iterable[Path]) -> tuple[int, ...] | Non
 
 
 def _stale(session: sessions.Session, project: Project) -> None:
-    """Say which sections now hold a paid take that no longer matches what the author wrote."""
+    """Say which sections hold a stale voiced take, with the clause that says what moved."""
     reported = project.status()
-    gone = [row.section for row in reported.sections if row.voiced and row.stale]
-    for section in gone:
-        session.say(
-            f"Section {section} has a voiced take that no longer matches the script. "
-            f"Run decktalk narrate --section {section} --spend to voice it again."
-        )
+    for row in reported.sections:
+        if row.take_state is TakeState.STALE:
+            number = row.section
+            session.say(
+                f"Section {number} has a stale voiced take, because {row.take_reason}. "
+                f"Run decktalk narrate --section {number} --spend to voice it again."
+            )
 
 
 def _stamps(project: Project) -> dict[Path, float]:
-    """Every file an author edits under the project, with when it was last written.
-
-    The walk prunes a directory before it descends, so it never stats what `node_modules` or `.git`
-    holds. The project's own build and take folders are pruned wherever its settings put them,
-    because a build that wrote into a watched folder would start the next build without end.
-    """
-    written = {project.workspace.build.resolve(), project.workspace.takes_dir.resolve()}
+    """Every file an author edits under the project, with when it was last written."""
     found: dict[Path, float] = {}
-    for folder, dirs, files in os.walk(project.root):
-        here = Path(folder)
-        dirs[:] = [name for name in dirs if name not in IGNORED and (here / name).resolve() not in written]
-        for name in files:
-            try:
-                found[here / name] = (here / name).stat().st_mtime
-            except OSError:
-                # silent: a file removed between the listing and its stat is not there to watch.
-                continue
+    for path in project.authored_files():
+        try:
+            found[path] = path.stat().st_mtime
+        except OSError:
+            # silent: a file removed between the listing and its stat is not there to watch.
+            continue
     return found
 
 

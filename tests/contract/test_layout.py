@@ -7,8 +7,8 @@ One test file per source module, at the same path: `src/decktalk/media/audio.py`
 `tests/support/` holds what several modules share and collects nothing.
 
 The two walks are equal in both directions, so a module with no test file is named here and a test
-file with no module is named here too. `NO_UNIT_TEST` is the one escape, it names the track that owes
-each entry, and it only ever shrinks.
+file with no module is named here too. `NO_UNIT_TEST` is the one escape, it says why of each entry,
+and it only ever shrinks.
 """
 
 from __future__ import annotations
@@ -20,30 +20,25 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.settings import ENV_PREFIX, env_warnings
+from decktalk.settings.layers import env_warnings
+from decktalk.tomlmap import ENV_PREFIX
 from support.paths import REPO, SRC, TESTS
 from support.tools import SUITE_MARKERS
 
 MIRROR = TESTS / "decktalk"
 
 NO_UNIT_TEST = {
-    "__init__.py": "T1 owes it. The package is the re-export surface, held by contract/test_api.py.",
-    "__main__.py": "T8 owes it. It is the two lines `python -m decktalk` runs, held by the wheel smoke.",
-    "artifacts/__init__.py": "T1 owes it. The package re-exports the artifact types and defines none.",
-    "artifacts/words.py": "T4 owes it. The word file is read and written by every artifact test and judged by none.",
-    "captions/__init__.py": "T6 owes it. The package re-exports the caption types and defines none.",
-    "media/__init__.py": "T6 owes it. The package re-exports the media modules and defines none.",
-    "media/ffmpeg.py": "T6 owes it. The return-code rule of must 4 is an AST walk with no file of its own yet.",
-    "speech/__init__.py": "T6 owes it. The package is the provider registry, exercised by every voiced test.",
-    "speech/elevenlabs.py": "T6 owes it. The one paid path, and the coverage floor names it by row.",
-    "stages/__init__.py": "T5 owes it. The package re-exports the six stage callables and defines none.",
-    "toolchain/__init__.py": "T6 owes it. The package re-exports the cache and the fetchers and defines none.",
-    "toolchain/cache.py": "T6 owes it. The cache directory is asserted through the fetchers that write it.",
+    "__init__.py": "The package is the re-export surface, held by contract/test_api.py.",
+    "__main__.py": "It is the two lines `python -m decktalk` runs, held by the wheel smoke.",
+    "captions/__init__.py": "The package re-exports the caption types and defines none.",
+    "media/__init__.py": "The package re-exports the media modules and defines none.",
+    "toolchain/__init__.py": "The package re-exports the cache and the fetchers and defines none.",
+    "toolchain/cache.py": "The cache directory is asserted through the fetchers that write it.",
 }
-"""Every module with no mirrored test file, the track that owes it, and the one sentence saying why."""
+"""Every module with no mirrored test file, and the one sentence saying why."""
 
-EXCUSED_CEILING = 20
-"""How many modules were excused when the mirror was first enforced.
+EXCUSED_CEILING = 6
+"""How many modules are excused from the mirror.
 
 The list is a ratchet: a module that gains its test leaves the list, and a module that loses its test
 has to be argued for in review. Raising this number is the edit a reviewer refuses.
@@ -51,23 +46,27 @@ has to be argued for in review. Raising this number is the edit a reviewer refus
 
 ALLOW = {
     "contract/test_api.py": "`decktalk.__all__`, which is the whole supported Python API.",
-    "contract/test_discoverable.py": (
-        "The founder's thesis: every command, key, code and attribute reachable from --help and the schemas."
-    ),
+    "contract/test_discoverable.py": ("Every command, key, code and attribute, reachable from --help and the schemas."),
     "contract/test_docs_claims.py": "The claims in `docs/` that a reader can act on.",
     "contract/test_env_ignore.py": "`.gitignore` and the wheel's exclude list, judged with git itself.",
     "contract/test_imports.py": "The layer rank of every module in `src/decktalk`.",
     "contract/test_installer.py": "`install.sh`, the one-line installer.",
     "contract/test_layout.py": "This mirror rule, which belongs to the suite rather than to a module.",
-    "contract/test_numbers.py": "`tests/contract/numbers-baseline.json`, every number written outside settings.py.",
+    "contract/test_numbers.py": "`tests/contract/numbers-baseline.json`, every number written outside settings.",
+    "contract/test_promise.py": "`docs/reference/stability.mdx`, what DeckTalk promises a caller.",
     "contract/test_probe.py": "`src/decktalk/runtime/decktalk-probe.js`, read as the compiled bundle.",
     "contract/test_prose.py": "Every tracked text file, judged by the two prose rules that are mechanical.",
     "contract/test_release_versions.py": "Every version release-please writes, and the config it reads.",
+    "contract/test_retired_words.py": (
+        "The **Not** column of `docs/reference/glossary.mdx`, held against the help, the docs and the skills."
+    ),
     "contract/test_results.py": "Every result a command returns, driven through its real stage.",
     "contract/test_runtime.py": "`src/decktalk/runtime/decktalk-runtime.js`, in a real Chromium.",
-    "contract/test_selection.py": "The collection hook in `tests/conftest.py`.",
+    "contract/test_selection.py": (
+        "The collection hook, the network guard and the Hypothesis profile in `tests/conftest.py`."
+    ),
     "contract/test_silent.py": "Every except block and every child process in `src/decktalk`, read as its AST.",
-    "contract/test_take_hash.py": "`tests/data/take_hash.json`, the golden digests of the founder's film.",
+    "contract/test_take_hash.py": "`tests/data/take_hash.json`, the golden digests of two paid films.",
     "contract/test_timing_policy.py": "`tests/support/timing_policy.py`, the suite's own timing rule.",
     "contract/test_vocabulary.py": (
         "`tests/contract/vocabulary-baseline.json`, every literal still spelling a closed vocabulary."
@@ -77,9 +76,9 @@ ALLOW = {
 """Every test file that belongs to no source module, and the repository artifact it holds instead."""
 
 PLATFORM_BRANCH_EXEMPT = {
-    "decktalk/toolchain/test_ffmpeg_fetch.py": "T6 owes the pair: the unpack policy on Linux, the run on the platform.",
+    "decktalk/toolchain/test_ffmpeg_fetch.py": "The pair is the unpack policy on Linux and the run on the platform.",
 }
-"""Every file that still branches on the platform outside `tests/platform/`, and the track that owes the pair."""
+"""Every file that still branches on the platform outside `tests/platform/`, and the pair it holds."""
 
 
 def mirrored_path(module: Path) -> Path:
@@ -135,8 +134,7 @@ def test_every_source_module_has_the_test_file_that_mirrors_it():
         want = mirrored_path(module)
         assert want.exists(), (
             f"src/decktalk/{key} has no test file. Create {want.relative_to(REPO).as_posix()}, or add "
-            f"{key!r} to NO_UNIT_TEST in tests/contract/test_layout.py with the track that owes it and "
-            "the one sentence saying why."
+            f"{key!r} to NO_UNIT_TEST in tests/contract/test_layout.py with the one sentence saying why."
         )
 
 
@@ -184,7 +182,8 @@ def test_the_excused_list_only_ever_shrinks():
     )
     for key, sentence in NO_UNIT_TEST.items():
         assert (SRC / key).exists(), f"{key} is excused from the mirror and is not a module any more."
-        assert sentence.startswith("T") and sentence.endswith("."), f"{key} names no track that owes it."
+        assert not mirrored_path(SRC / key).exists(), f"{key} has its test file now, so it leaves NO_UNIT_TEST."
+        assert sentence.endswith("."), f"{key} is excused without a sentence saying why."
 
 
 def test_nothing_under_support_collects():
@@ -199,7 +198,7 @@ def test_the_project_registers_exactly_the_markers_that_name_what_a_run_needs():
     for row in rows:
         name, description = row.split(":", 1)
         assert description.strip().startswith("needs "), (
-            f"the {name} marker must say what it needs first, so `pytest --markers` answers what a table used to."
+            f"the {name} marker must say what it needs first, so `pytest --markers` says what each suite needs."
         )
 
 
@@ -261,7 +260,7 @@ def named_in_the_settings_namespace(path: Path) -> set[str]:
     writes the shim that subprocess imports as a string, and a name inside that string reaches the
     real environment exactly as a name outside it does.
     """
-    return set(re.findall(rf"{ENV_PREFIX.upper()}_[A-Z0-9_]+", path.read_text(encoding="utf-8")))
+    return set(re.findall(rf"{ENV_PREFIX}[A-Z0-9_]+", path.read_text(encoding="utf-8")))
 
 
 def test_no_end_to_end_test_names_a_variable_decktalk_does_not_read():
@@ -275,7 +274,7 @@ def test_no_end_to_end_test_names_a_variable_decktalk_does_not_read():
         warnings = env_warnings(dict.fromkeys(named_in_the_settings_namespace(path), ""))
         assert warnings == [], (
             f"{path.relative_to(REPO).as_posix()}: {warnings} A variable a suite owns is spelled outside "
-            f"the {ENV_PREFIX.upper()}_ namespace, because every name inside that one is a key or a typo."
+            f"the {ENV_PREFIX} namespace, because every name inside that one is a key or a typo."
         )
 
 

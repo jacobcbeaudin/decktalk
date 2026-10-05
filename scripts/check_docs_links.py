@@ -2,16 +2,19 @@
 
     uv run scripts/check_docs_links.py    # every problem, or what was checked when there is none
 
-It exits 1 when something is wrong. Four things are checked, and no network is used.
+It exits 1 when something is wrong. Five things are checked, and no network is used.
 
 - Every page opens with front matter that YAML parses into a title and a description. The docs
   host parses it the same way and refuses the whole deploy when one page fails, and a plain value
   cannot hold a colon followed by a space, so a description with a colon in it is quoted.
-- Every internal link resolves: `/reference/cli` is a page, `/images/hero-light.svg` is a file,
+- Every internal link resolves, and no page holds an HTML comment, which MDX cannot parse:
+  `/reference/cli` is a page, `/images/hero-light.svg` is a file,
   and `#a-heading` is a heading on the page that links to it.
 - Every page under docs/ appears exactly once in the navigation, and every navigation entry is a
-  page that exists.
+  page that exists. An error or finding page is the exception: the code tables in the CLI
+  reference are its index, so that page links it instead.
 - Every redirect points at a page that exists, from a path that is no longer one.
+- Every logo and favicon docs/docs.json names is a file under docs/.
 
 Links inside a code fence, inside an inline code span and inside an MDX comment are page content,
 not links, so they are skipped. An external link is not fetched.
@@ -44,11 +47,15 @@ MD_LINK = re.compile(r"(?<!\\)\[[^\]]*\]\(\s*(?P<target>[^)\s]+)")
 ATTR_LINK = re.compile(r"\b(?:href|src)\s*=\s*\"(?P<target>[^\"]+)\"")
 HEADING = re.compile(r"^#{1,6}\s+(?P<text>.+?)\s*#*\s*$", re.MULTILINE)
 EXTERNAL = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//)")
+INDEXED = {"reference/errors/": "reference/cli", "reference/findings/": "reference/cli"}
+"""The folders whose pages are reached from an index page rather than the navigation, with that page."""
+PAGE_SUFFIXES = (".mdx", ".md")
+"""The files the docs host serves as pages, so a plain .md under docs/ is held to every rule an .mdx is."""
 
 
 @dataclass
 class Page:
-    """One .mdx file: the slug the site serves it at, its text, and the anchors it offers."""
+    """One page file: the slug the site serves it at, its text, and the anchors it offers."""
 
     slug: str
     path: Path
@@ -80,7 +87,7 @@ def prose(text: str) -> str:
 def read_pages() -> dict[str, Page]:
     """Every page under docs/, keyed by the slug the site serves it at."""
     pages: dict[str, Page] = {}
-    for path in sorted(DOCS.rglob("*.mdx")):
+    for path in sorted(p for p in DOCS.rglob("*") if p.suffix in PAGE_SUFFIXES):
         slug = path.relative_to(DOCS).with_suffix("").as_posix()
         text = path.read_text(encoding="utf-8")
         body = prose(text)
@@ -146,13 +153,22 @@ def page_problems(pages: dict[str, Page], redirects: dict[str, str]) -> list[str
     return found
 
 
+def index_of(slug: str) -> str | None:
+    """The page that indexes `slug` in place of the navigation, or None for a page the navigation lists."""
+    return next((index for folder, index in INDEXED.items() if slug.startswith(folder)), None)
+
+
 def navigation_problems(pages: dict[str, Page], listed: list[str]) -> list[str]:
-    """Every page outside the navigation, and every navigation entry that names no page."""
-    found = [
-        f"docs/docs.json: {slug} is a page and is in no navigation group" for slug in sorted(set(pages) - set(listed))
-    ]
+    """Every page reached by neither the navigation nor its index, and every navigation entry that names no page."""
+    found: list[str] = []
+    for slug in sorted(set(pages) - set(listed)):
+        index = index_of(slug)
+        if index is None:
+            found.append(f"docs/docs.json: {slug} is a page and is in no navigation group")
+        elif index not in pages or f"/{slug}" not in {link.partition("#")[0] for link in pages[index].links}:
+            found.append(f"docs/docs.json: {slug} is in no navigation group, and {index} does not link it")
     found += [
-        f"docs/docs.json: navigation names {slug}, and docs/{slug}.mdx is not there"
+        f"docs/docs.json: navigation names {slug}, and there is no docs/{slug}.mdx or .md"
         for slug in listed
         if slug not in pages
     ]

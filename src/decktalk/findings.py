@@ -5,9 +5,9 @@ because an error means DeckTalk could not run at all. Every judgement in the pro
 these, so a reader dispatches on a code and never on the absence of one.
 
 `Code` is the closed list of every judgement DeckTalk can make. A member carries its own sentence,
-its certainty and the side that raises it, so those sentences live once and the docs page,
+its severity, the side that raises it and the commands that report it, so those facts live once and the docs page,
 the JSON Schema and the printed line are three renderings of one row. A code never spells its own
-certainty, because an agent dispatching on a code would then meet two codes for one condition and
+severity, because an agent dispatching on a code would then meet two codes for one condition and
 have to know that one is the other's hedge.
 
 `MODEL` is the configuration every frozen model in the package shares, and `ProjectPath` is how
@@ -17,6 +17,8 @@ package and everything else that models anything sits above it.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal, Self
@@ -42,15 +44,19 @@ DOCS = "https://docs.decktalk.ai/reference"
 """Where every code's page lives, which is the one prefix a printed line and a schema both carry."""
 
 
-class Certainty(Enum):
-    """Whether a finding is wrong for sure or only probably wrong.
+class Severity(Enum):
+    """Whether a finding fails the default run or is reported and passes.
 
-    The threshold a run fails on is `--fail-on`, which names a threshold and never a field value, so
-    these two words are read and never compared against a flag.
+    `--fail-on` names the least severe finding that fails a run, so its values are these two words
+    plus `never`, and a reader meets one vocabulary on the flag and on the field.
     """
 
-    CERTAIN = "certain"
-    UNCERTAIN = "uncertain"
+    ERROR = "error"
+    WARNING = "warning"
+
+
+CONTRACT_SUBJECTS = frozenset({"PAGE", "RECORD"})
+"""The subjects whose codes the page contract publishes a sentence for: the page and its recording."""
 
 
 class RaisedBy(Enum):
@@ -72,8 +78,24 @@ class RaisedBy(Enum):
     PYTHON = "python", "DeckTalk measures it from what the run produced"
 
 
+CHECK = "check"
+"""The command that judges the files before a build, which raises most codes a stage also raises."""
+
+STATUS = "status"
+"""The command that reports what is built, which names a file the project lists and the disk lacks."""
+
+DOCTOR = "doctor"
+"""The command that reports the machine, which names a tool file the machine lists and the disk lacks."""
+
+PAGE_REPORTERS = (CHECK, Stage.RECORD.value, Stage.VERIFY.value)
+"""The commands that report every code the page raises itself.
+
+`check` and `record` open the page, and `verify` reports again what each recording log carries.
+"""
+
+
 class Code(Enum):
-    """Every judgement DeckTalk can make, with its sentence, its certainty and who raises it.
+    """Every judgement DeckTalk can make, with its sentence, its severity, who raises it and where.
 
     The member name is the code an agent dispatches on and passes to `--allow`. The prefix is the
     subject the finding judges, which groups the codes for sorting, for `--allow` and for the docs
@@ -81,31 +103,41 @@ class Code(Enum):
 
     A code does not list the settings that move it. Each settings key names the codes it decides,
     beside its range, and every rendering that shows a code's keys reads that one declaration in
-    reverse, because two lists of one relation had drifted apart.
+    reverse, so the relation is written once.
     """
 
     sentence: str
-    certainty: Certainty
+    severity: Severity
     raised_by: RaisedBy
+    raised_in: tuple[str, ...]
+    """The commands whose run can report this code, which a code's page names."""
 
     def __new__(
         cls,
         code: str,
         sentence: str,
         raised_by: RaisedBy = RaisedBy.RUNTIME,
-        certainty: Certainty = Certainty.CERTAIN,
+        raised_in: tuple[str, ...] = PAGE_REPORTERS,
+        severity: Severity = Severity.ERROR,
     ) -> Code:
-        # A row that names no certainty is certain and one that names no side is the page's, because
-        # most rows are both, and a row that differs says so where it is written.
+        # A row that names no severity is an error and one that names no side is the page's, which
+        # `check` and `record` report when they open it and `verify` repeats from the recording log,
+        # because most rows are reported by all three, and a row that differs says so where it is written.
         member = object.__new__(cls)
         member._value_ = code
         member.sentence = sentence
-        member.certainty = certainty
+        member.severity = severity
         member.raised_by = raised_by
+        member.raised_in = raised_in
         return member
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}.{self.name}"
+
+    @property
+    def subject(self) -> str:
+        """The prefix of the code's name, which names what the finding judges."""
+        return self.name.partition("_")[0]
 
     @property
     def url(self) -> str:
@@ -113,8 +145,8 @@ class Code(Enum):
         return f"{DOCS}/findings/{self.name}"
 
     # Reported by the page in the browser.
-    PAGE_UNKNOWN_ATTR = (
-        "PAGE_UNKNOWN_ATTR",
+    PAGE_ATTR_UNKNOWN = (
+        "PAGE_ATTR_UNKNOWN",
         "An element carries a data attribute the contract does not declare, so nothing reads it.",
     )
     PAGE_BAD_VALUE = (
@@ -221,143 +253,186 @@ class Code(Enum):
         "PAGE_STAGGER_EMPTY",
         "An element staggers its children and has none, so the stagger plays nothing.",
     )
+    PAGE_SPOTLIGHT_EMPTY = (
+        "PAGE_SPOTLIGHT_EMPTY",
+        "A spotlight container has no child with a cue, so nothing comes to the front.",
+    )
 
     # Measured in Python, about the page.
     PAGE_MOTION_OVERRUN = (
         "PAGE_MOTION_OVERRUN",
         "A motion span runs past the measurable ceiling, so the cue it carries cannot be verified.",
         RaisedBy.PYTHON,
+        (CHECK,),
     )
     PAGE_STAGGER_OVERRUN = (
         "PAGE_STAGGER_OVERRUN",
         "A staggered entrance totals past the measurable ceiling, and the arithmetic that says so is exact.",
         RaisedBy.PYTHON,
+        (CHECK,),
     )
     PAGE_THIN_DRAW = (
         "PAGE_THIN_DRAW",
         "A frozen slide draws less of the picture than a change must cross to be seen.",
         RaisedBy.PYTHON,
-        Certainty.UNCERTAIN,
+        (CHECK,),
+        Severity.WARNING,
     )
     PAGE_NO_DESCRIPTION = (
         "PAGE_NO_DESCRIPTION",
         "An element changes the picture and describes nothing, so the transcript loses the change.",
         RaisedBy.PYTHON,
+        (CHECK,),
     )
     PAGE_SWAP_APART = (
         "PAGE_SWAP_APART",
         "A swap's two halves land far enough apart that a viewer sees the gap between them.",
         RaisedBy.PYTHON,
-        Certainty.UNCERTAIN,
-    )
-    PAGE_STALLED = (
-        "PAGE_STALLED",
-        "The picture held still for longer than a recorded section ever should.",
-        RaisedBy.PYTHON,
-    )
-    PAGE_BLACK = (
-        "PAGE_BLACK",
-        "A recorded frame is black, so the film shows nothing at that moment.",
-        RaisedBy.PYTHON,
-    )
-    PAGE_TRUNCATED = (
-        "PAGE_TRUNCATED",
-        "A recording stopped before its section's clock ran out, so the film is short of picture.",
-        RaisedBy.PYTHON,
+        (CHECK,),
+        Severity.WARNING,
     )
     PAGE_CDN_ASSET = (
         "PAGE_CDN_ASSET",
         "The page loads an asset from a network origin, so the film depends on somebody else's server.",
         RaisedBy.PYTHON,
+        PAGE_REPORTERS,
     )
-    PAGE_RUNTIME_STALE = (
-        "PAGE_RUNTIME_STALE",
-        "The project's copy of the runtime is not the one this engine ships, so its pages play a contract "
-        "this engine does not measure.",
+    RECORD_STALLED = (
+        "RECORD_STALLED",
+        "The picture held still for longer than a recorded section ever should.",
         RaisedBy.PYTHON,
+        (Stage.RECORD.value, Stage.VERIFY.value),
+    )
+    RECORD_BLACK = (
+        "RECORD_BLACK",
+        "A recorded frame is black, so the film shows nothing at that moment.",
+        RaisedBy.PYTHON,
+        (Stage.RECORD.value, Stage.VERIFY.value),
+    )
+    RECORD_TRUNCATED = (
+        "RECORD_TRUNCATED",
+        "A recording stopped before its section's clock ran out, so the film is short of picture.",
+        RaisedBy.PYTHON,
+        (Stage.RECORD.value, Stage.VERIFY.value),
     )
 
     # Measured in Python, about the script, the cues, the cut and the files.
-    CUE_MISSING = (
-        "CUE_MISSING",
+    CUE_UNLISTED = (
+        "CUE_UNLISTED",
         "The page declares a moment that cues.json does not list, so nothing gives it a second.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.CUE.value),
     )
     CUE_UNKNOWN = (
         "CUE_UNKNOWN",
         "cues.json lists a cue no page declares, so nothing plays it.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.CUE.value),
     )
     CUE_UNRESOLVED = (
         "CUE_UNRESOLVED",
         "The cue's phrase is not spoken in its section, so there is no second to place it at.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.CUE.value, Stage.VERIFY.value),
     )
     CUE_STALE = (
         "CUE_STALE",
         "The cue times on disk were placed from a different cues.json than the project's, so the film "
         "is judged against moments nobody asked for until the project is built again.",
         RaisedBy.PYTHON,
+        (Stage.VERIFY.value,),
     )
     CUE_OFF = (
         "CUE_OFF",
-        "The change lands further from its word than the offset limit allows.",
+        "The change lands further from its word than verify.cue_offset_max_ms allows.",
         RaisedBy.PYTHON,
+        (Stage.VERIFY.value,),
     )
     CUE_NO_ONSET = (
         "CUE_NO_ONSET",
         "The cue resolved with no measured onset, so its second is the section's start and not its word's.",
         RaisedBy.PYTHON,
-        Certainty.UNCERTAIN,
+        (CHECK, Stage.CUE.value, Stage.VERIFY.value),
+        Severity.WARNING,
     )
     CUE_NO_CHANGE = (
         "CUE_NO_CHANGE",
         "Nothing in the picture changed at the cue's second, so the reveal never happened.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.VERIFY.value),
     )
     CUE_THIN_CHANGE = (
         "CUE_THIN_CHANGE",
         "Less of the picture changed at the cue than a visible reveal must cross.",
         RaisedBy.PYTHON,
-        Certainty.UNCERTAIN,
+        (CHECK, Stage.VERIFY.value),
+        Severity.WARNING,
     )
     CUE_OVERLAP = (
         "CUE_OVERLAP",
         "Two cues resolve close enough together that a viewer cannot tell them apart.",
         RaisedBy.PYTHON,
-        Certainty.UNCERTAIN,
+        (CHECK, Stage.CUE.value),
+        Severity.WARNING,
     )
-    TAKE_PLACEHOLDER = (
-        "TAKE_PLACEHOLDER",
-        "The script still holds an open placeholder, so a voiced run would read it out.",
+    SCRIPT_UNFINISHED = (
+        "SCRIPT_UNFINISHED",
+        "The script still holds an unfilled blank such as [NUMBER], so a voiced run would read it out.",
         RaisedBy.PYTHON,
+        (CHECK,),
     )
-    TAKE_SPOKEN_SYMBOL = (
-        "TAKE_SPOKEN_SYMBOL",
+    SCRIPT_SPOKEN_SYMBOL = (
+        "SCRIPT_SPOKEN_SYMBOL",
         "The script holds a symbol the voice reads as its name rather than as the thing it means.",
         RaisedBy.PYTHON,
-        Certainty.UNCERTAIN,
+        (CHECK,),
+        Severity.WARNING,
+    )
+    SCRIPT_PAUSE_DROPPED = (
+        "SCRIPT_PAUSE_DROPPED",
+        "The script asks for a timed pause the voice's model does not render, so a voiced run would drop it.",
+        RaisedBy.PYTHON,
+        (CHECK,),
+    )
+    TAKE_MISSING = (
+        "TAKE_MISSING",
+        "A section's take is not on disk, so a placeholder plays in its place until its voice makes one.",
+        RaisedBy.PYTHON,
+        (Stage.NARRATE.value,),
+        Severity.WARNING,
     )
     CUT_SPEECH = (
         "CUT_SPEECH",
         "Speech is still sounding at a section cut, so the film slices a word in two.",
         RaisedBy.PYTHON,
+        (Stage.VERIFY.value,),
     )
     CUT_POP = (
         "CUT_POP",
         "The picture steps at a section cut, so the film pops on the seam.",
         RaisedBy.PYTHON,
+        (CHECK, Stage.VERIFY.value),
     )
     MIX_LOUDNESS = (
         "MIX_LOUDNESS",
         "The mixed film misses the loudness it was mastered to.",
         RaisedBy.PYTHON,
-        Certainty.UNCERTAIN,
+        (Stage.ASSEMBLE.value,),
+        Severity.WARNING,
+    )
+    SOUND_MISSING = (
+        "SOUND_MISSING",
+        "A sound the `[score]` table declares has not been bought, so silence plays where it would until a run "
+        "with --spend buys it.",
+        RaisedBy.PYTHON,
+        (Stage.SCORE.value, Stage.ASSEMBLE.value),
+        Severity.WARNING,
     )
     FILE_MISSING = (
         "FILE_MISSING",
         "A file the project names is not on disk.",
         RaisedBy.PYTHON,
+        (CHECK, STATUS, DOCTOR, Stage.ASSEMBLE.value),
     )
 
 
@@ -384,7 +459,7 @@ class Location(Model):
     file: ProjectPath | None = Field(None, description="The file to open, project-relative, or null.")
     line: int | None = Field(None, ge=1, description="The line in that file, counting from one, or null.")
     section: int | None = Field(None, ge=0, description="The section number this is about, or null.")
-    cue: str | None = Field(None, description="The wire id of the cue this is about, or null.")
+    cue: str | None = Field(None, description="The cue id of the cue this is about, or null.")
 
 
 class Edit(Model):
@@ -427,16 +502,6 @@ class EditFix(Model):
     edits: tuple[Edit, ...] = Field(description="Every change this fix makes, applied together or not at all.")
 
 
-class SettingFix(Model):
-    """A fix that turns a knob, which is the same key space `config set` and `--set` take."""
-
-    kind: Literal["setting"] = Field("setting", description="The kind of fix, which is how a reader dispatches on it.")
-    title: str = Field(description="One sentence saying what applying this fix does.")
-    applicability: Applicability = Field(description="Whether this fix may be applied without asking.")
-    key: str = Field(description="The settings key to set, such as verify.cue_offset_max_ms.")
-    value: str = Field(description="The value to set it to, spelled as a command line would spell it.")
-
-
 FIX_COMMANDS: frozenset[tuple[str, ...]] = frozenset({("decktalk", "install")})
 """Every command a fix may run, which is a closed set of DeckTalk's own calls.
 
@@ -469,28 +534,14 @@ class CommandFix(Model):
         return command
 
 
-class RuntimeFix(Model):
-    """A fix that replaces a project's copy of the runtime with the one this engine ships.
-
-    A copy some release shipped holds none of the author's work, so its fix is safe. A copy that
-    matches no shipped runtime holds edits that replacing it would lose, so its fix is unsafe. The
-    fix names only where the copy is, because what goes there is always the engine's runtime.
-    """
-
-    kind: Literal["runtime"] = Field("runtime", description="The kind of fix, which is how a reader dispatches on it.")
-    title: str = Field(description="One sentence saying what applying this fix does.")
-    applicability: Applicability = Field(description="Whether this fix may be applied without asking.")
-    file: ProjectPath = Field(description="The project's copy of the runtime to replace, project-relative.")
-
-
-Fix = Annotated[EditFix | SettingFix | CommandFix | RuntimeFix, Field(discriminator="kind")]
-"""The four moves an agent can make: editing a file, turning a knob, running a command and replacing the runtime."""
+Fix = Annotated[EditFix | CommandFix, Field(discriminator="kind")]
+"""The two moves an agent can make: editing files, a settings key among them, and running a command."""
 
 
 class Finding(Model):
     """One judgement, in the shape every renderer, every schema and every agent receives.
 
-    `certainty` and `url` are the code's own and are written into the object rather than left for a
+    `severity` and `docs` are the code's own and are written into the object rather than left for a
     reader to look up, so one line of JSON carries everything a decision needs. A raiser leaves them
     out and the code fills them, and a value that disagrees with the code is refused. Both therefore
     carry a declared default, which says in the signature and in the schema that a raiser names the
@@ -500,51 +551,80 @@ class Finding(Model):
 
     code: Code = Field(description="The stable code a caller dispatches on, such as CUE_OFF.")
     message: str = Field(description="One sentence, with every measured number and its limit written into it.")
-    certainty: Certainty = Field(
-        Certainty.CERTAIN, description="Whether this is wrong for sure or only probably wrong."
+    severity: Severity = Field(
+        Severity.ERROR, description="Whether this fails the default run (error) or is reported and passes (warning)."
     )
     location: Location = Field(description="The object this judges, with its file, line, section and cue.")
     stage: Stage | None = Field(None, description="The stage that raised it, or null when no stage did.")
     fix: Fix | None = Field(None, description="A change that resolves it, or null when none is known.")
-    url: str = Field("", description="The docs page for this code.")
+    docs: str = Field("", description="The docs page for this code.")
 
     @model_validator(mode="before")
     @classmethod
     def _fill_from_code(cls, data: object) -> object:
-        """The code owns the certainty and the page, so a raiser names the code and nothing else."""
+        """The code owns the severity and the page, so a raiser names the code and nothing else."""
         if not isinstance(data, dict):
             return data
         code = data.get("code")
         member = code if isinstance(code, Code) else Code.__members__.get(code) if isinstance(code, str) else None
         if member is None:
             return data
-        return {"certainty": member.certainty, "url": member.url, **data}
+        return {"severity": member.severity, "docs": member.url, **data}
 
     @model_validator(mode="after")
     def _agrees_with_code(self) -> Self:
-        """A finding whose certainty or page differed from its code's would publish two answers."""
-        if self.certainty is not self.code.certainty:
-            raise ValueError(f"{self.code.name} is {self.code.certainty.value} and this finding says {self.certainty}")
-        if self.url != self.code.url:
-            raise ValueError(f"{self.code.name} is documented at {self.code.url} and this finding says {self.url}")
+        """A finding whose severity or page differed from its code's would publish two answers."""
+        if self.severity is not self.code.severity:
+            raise ValueError(f"{self.code.name} is {self.code.severity.value} and this finding says {self.severity}")
+        if self.docs != self.code.url:
+            raise ValueError(f"{self.code.name} is documented at {self.code.url} and this finding says {self.docs}")
         return self
 
 
 def judge(
     code: Code, message: str, location: Location, *, stage: Stage | None = None, fix: Fix | None = None
 ) -> Finding:
-    """One judgement, built through validation so the code fills its own certainty and its own page.
+    """One judgement, built through validation so the code fills its own severity and its own page.
 
-    A raiser names the code, the sentence, the place and sometimes the fix. Writing the certainty
+    A raiser names the code, the sentence, the place and sometimes the fix. Writing the severity
     out beside the code would be the second spelling of one fact, which is what the code owning it
     exists to prevent.
     """
     return Finding.model_validate({"code": code, "message": message, "location": location, "stage": stage, "fix": fix})
 
 
+@dataclass(frozen=True)
+class Threshold:
+    """Which findings fail a run: the least severe one that counts, and the codes that never count.
+
+    A project is opened with one, and it is the one rule `ok`, the exit code and the point a build
+    stops at are all read from, so a caller that reads `ok` and one that reads the exit code agree
+    about every run. The default fails on an error of any code.
+    """
+
+    stop_on: Severity | None = Severity.ERROR
+    """The least severe finding that fails the run, or None when no finding does."""
+
+    allow: frozenset[Code] = frozenset()
+    """Codes that never fail the run, whatever their severity, though they are still reported."""
+
+    def reaches(self, finding: Finding) -> bool:
+        """Whether one finding fails the run."""
+        if self.stop_on is None or finding.code in self.allow:
+            return False
+        return self.stop_on is Severity.WARNING or finding.severity is Severity.ERROR
+
+    def fails(self, findings: Iterable[Finding]) -> bool:
+        """Whether any of these findings fails the run."""
+        return any(self.reaches(found) for found in findings)
+
+
+ERRORS_FAIL = Threshold()
+"""The threshold of a caller that names none, which fails on an error of any code."""
+
+
 __all__ = [
     "Applicability",
-    "Certainty",
     "Code",
     "CommandFix",
     "Edit",
@@ -553,6 +633,6 @@ __all__ = [
     "Fix",
     "Location",
     "RaisedBy",
-    "RuntimeFix",
-    "SettingFix",
+    "Severity",
+    "Threshold",
 ]

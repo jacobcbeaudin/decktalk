@@ -3,9 +3,9 @@ title: Writing for the ear
 description: Write a script the voice can say, and a cue phrase the spoken words can match.
 ---
 
-The script is the clock. `decktalk narrate` turns `script.md` into spoken takes with a word clock,
+The script is the clock. `decktalk narrate` turns `script.md` into spoken takes with their words,
 and `decktalk cue` turns each phrase in `cues.json` into a second on its section's clock. Nothing on
-a deck page writes a second, so the only way to move a reveal is to change the words it waits for or
+a deck page says when a cue fires, so the only way to move a reveal is to change the words it waits for or
 to nudge it off them.
 
 This guide is about the two files that decide that timing: the sentences in `script.md` and the
@@ -31,20 +31,20 @@ guess. Write the words instead.
 | Write this in the script | Not this | Show this on the slide |
 |---|---|---|
 | forty one | 41 | `41` |
-| four hundred billion | 400 billion | `400 billion knobs` |
+| four hundred billion | 400 billion | `400 billion dials` |
 | version two point three | v2.3 | `v2.3` |
 | two x | 2x | `2x` |
 | decktalk dot AI | decktalk.ai | `decktalk.ai` |
 | x bar equals the mean of x | `\bar{x}` | the typeset formula |
 
 The starter's script says "Make your own at decktalk dot AI" while its end card shows `decktalk.ai`,
-and the lesson example says "four hundred billion" while its slide shows `400 billion knobs`. The
+and the lesson example says "four hundred billion" while its slide shows `400 billion dials`. The
 number on screen and the number in the ear are the same figure written twice, once for each sense.
 
-### The TAKE_SPOKEN_SYMBOL finding
+### The SCRIPT_SPOKEN_SYMBOL finding
 
 `decktalk check` scans the spoken text of every section and raises
-[`TAKE_SPOKEN_SYMBOL`](/reference/findings/TAKE_SPOKEN_SYMBOL) for a section whose words hold a digit
+[`SCRIPT_SPOKEN_SYMBOL`](/reference/findings/SCRIPT_SPOKEN_SYMBOL) for a section whose words hold a digit
 or one of the characters `$ € £ % & @ # * / + = < > ~ ^ |`. The finding names the section and lists
 the first five offending words.
 
@@ -53,13 +53,13 @@ decktalk check --no-pages
 ```
 
 `--no-pages` judges the written files with no browser at all, which is the fastest way to read this
-one finding. The finding is uncertain, because "41" may be exactly what you want the voice to try, so
-it does not fail a run under the default `--fail-on certain`. Two things clear it:
+one finding. The finding is a warning, because "41" may be exactly what you want the voice to try, so
+it does not fail a run under the default `--fail-on error`. Two things clear it:
 
 - **Rewrite the word.** Replace the digit or the symbol with the words the voice should say. This is
   the fix in almost every case, because it is also the only way a cue phrase can match.
-- **Accept it deliberately.** Pass `--allow TAKE_SPOKEN_SYMBOL` on the commands that would otherwise
-  report it, and `--fail-on any` when you want every uncertain finding to fail a run instead.
+- **Accept it deliberately.** Pass `--allow SCRIPT_SPOKEN_SYMBOL` on the commands that would otherwise
+  report it, and `--fail-on warning` when you want every warning to fail a run instead.
 
 A respelling meant to steady the voice becomes the spoken word, the cue phrase and the caption
 together, so say so in the project when you respell a name.
@@ -71,8 +71,8 @@ script asks for one, and they are never spoken.
 
 | Direction | What the voice receives | Use it for |
 |---|---|---|
-| `[beat]` | a dash appended to the paragraph before it | Use it freely, before any reveal that should land on its own. |
-| `[pause 4]` | a `<break time="4s" />` tag | Use it where the viewer should stop and think, and use it rarely. |
+| `[beat]` | a dash after the paragraph before it | Use it freely, before any reveal that should land on its own. |
+| `[pause 4]` | four seconds of silence, which ElevenLabs is sent as a `<break time="4s" />` tag | Use it where the viewer should stop and think, and use it rarely. |
 | Any other bracketed note, on a line of its own | nothing, and a beat after the paragraph before it | Use it as a note to yourself, such as which scene a section plays. |
 
 {/* input: src/decktalk/template/starter/script.md, section 1 */}
@@ -86,7 +86,10 @@ You write what you will say, [beat] and you write the slides that go with it. [b
 Then every picture waits for its own word.
 ```
 
-Only a timed pause sends a break tag, because frequent break tags unsettle the voice. Back-to-back
+Only a timed pause asks for measured silence, because frequent measured silences unsettle the voice.
+ElevenLabs renders a timed pause only on its v2 family, and v3 and v4 read no `<break>` tag, so
+`check` reports a section with a `[pause N]` on any other model as [`SCRIPT_PAUSE_DROPPED`](/reference/findings/SCRIPT_PAUSE_DROPPED) and `narrate` refuses to buy
+it, while a `[beat]` reads on every model. Back-to-back
 directions do not add up and the longest one wins, and a direction before the first paragraph of a
 section has nothing to pause after, so it is dropped.
 
@@ -95,23 +98,23 @@ section has nothing to pause after, so it is dropped.
 Inside a paragraph, `[beat]` and `[pause N]` are the only bracketed spans allowed, along with an
 ordinary Markdown link. Any other bracketed note inside a paragraph becomes a pause nobody asked for,
 so `decktalk narrate` refuses it and `decktalk check` reports it as
-[`TAKE_PLACEHOLDER`](/reference/findings/TAKE_PLACEHOLDER) with the line it sits on. A brace and an
+[`SCRIPT_UNFINISHED`](/reference/findings/SCRIPT_UNFINISHED) with the line it sits on. A brace and an
 HTML comment are refused for the opposite reason: the voice reads both of them out.
 
-A bracketed word in capitals, such as `[CUSTOMER_COUNT]`, is an open placeholder. Write one wherever
+A bracketed word in capitals, such as `[CUSTOMER_COUNT]`, is an unfilled blank. Write one wherever
 you have a claim nobody has confirmed, because a voiced run would otherwise buy the claim as it
-stands. `TAKE_PLACEHOLDER` is certain, so it fails a run until the placeholder is filled.
+stands. `SCRIPT_UNFINISHED` is an error, so it fails a run until the blank is filled.
 
 [script.md](/reference/script-md) lists every rule about the file.
 
 ## Choose a phrase the voice really says
 
-A cue row names a wire id and a phrase. The wire id is the slide and the local name the page wrote,
-joined by a colon, and the phrase is a word or a short phrase from that section of `script.md`.
+A cue row names a [cue id](/concepts/cues#the-cue-id) and a phrase. The phrase is a word or a short phrase from that
+section of `script.md`.
 
 {/* input: src/decktalk/template/examples/lesson/cues.json, section 1 */}
 ```json cues.json
-{ "cue": "1.4:downhill", "on": "steps downhill", "occurrence": 1 }
+{ "id": "1.4:downhill", "phrase": "steps downhill", "occurrence": 1 }
 ```
 
 The script says "So it steps downhill, again and again, and the steps shrink as the ground flattens",
@@ -132,7 +135,7 @@ Four rules decide whether a phrase works.
 Set `"case_sensitive": true` on a row when the case really is the difference between two matches.
 
 A phrase that is never spoken is [`CUE_UNRESOLVED`](/reference/findings/CUE_UNRESOLVED), which is
-certain, because there is no second to put the picture at. Fix it by quoting the script again, not by
+an error, because there is no second to put the picture at. Fix it by quoting the script again, not by
 moving the limit.
 
 ### occurrence, when the phrase is not unique
@@ -141,7 +144,7 @@ A repeated phrase matches every run of it, and the first match is usually too ea
 picks which one, counting from 1.
 
 ```json cues.json
-{ "cue": "3.2:zero", "on": "Zero", "occurrence": 2 }
+{ "id": "3.2:zero", "phrase": "Zero", "occurrence": 2 }
 ```
 
 That row lands on the second time section 3 says "zero". Prefer changing the phrase to naming an
@@ -151,11 +154,11 @@ move a picture by accident.
 
 ## offset, which moves a cue off the start of its word
 
-`offset` adds seconds to the resolved second. A positive value moves the cue later and a negative
+`offset_seconds` adds seconds to the resolved second. A positive value moves the cue later and a negative
 value moves it earlier.
 
 ```json cues.json
-{ "cue": "1.4:downhill", "on": "steps downhill", "offset": 0.2 }
+{ "id": "1.4:downhill", "phrase": "steps downhill", "offset_seconds": 0.2 }
 ```
 
 <Frame caption="A positive offset moves the cue time after the start of its word.">
@@ -182,7 +185,7 @@ Two anchors stand in for a phrase. `$start` is the section start, which is zero 
 lands as the voice stops.
 
 ```json cues.json
-{ "cue": "3.4:end", "on": "$end", "offset": 0.3 }
+{ "id": "3.4:end", "phrase": "$end", "offset_seconds": 0.3 }
 ```
 
 `$end` is the end of speech and not the end of the section's audio, so silence after the last word
@@ -194,24 +197,24 @@ every key a row may carry.
 Three commands read the clock without buying a take.
 
 ```console
-decktalk narrate --no-voice
+decktalk narrate --no-spend
 decktalk words --section 1
 decktalk check
 ```
 
-`decktalk narrate --no-voice` writes a placeholder take and a word clock for every section, and it
-spends nothing. On a project that has never been built, `words` has no clock to read until this runs.
+`decktalk narrate --no-spend` keeps every take on disk and writes a placeholder and its words
+for each section that has none, and it spends nothing. On a project that has never been built, `words` has no clock to read until this runs.
 
 `decktalk words` prints every spoken word with its start and its end, which is the clock every phrase
 is written against. Before a voiced run the words are estimated from the text, and after one they are
 the times the voice really took.
 
-`decktalk check` judges `script.md`, `cues.json` and the pages together, prices what a voiced build
-would cost and writes `build/storyboard.html`. It reports a moment on the page that no row names as
-[`CUE_MISSING`](/reference/findings/CUE_MISSING), a row the page does not declare as
+`decktalk check` judges `script.md`, `cues.json` and the pages together, prices the narration a
+voiced build would buy and writes `build/storyboard.html`. It reports a moment on the page that no
+row names as [`CUE_UNLISTED`](/reference/findings/CUE_UNLISTED), a row the page does not declare as
 [`CUE_UNKNOWN`](/reference/findings/CUE_UNKNOWN), and two cues close enough together to read as one
 as [`CUE_OVERLAP`](/reference/findings/CUE_OVERLAP). `decktalk check --fix` applies every safe fix,
-and the fix for `CUE_MISSING` adds the row with an empty `on` for you to write the phrase into.
+and the fix for `CUE_UNLISTED` adds the row with an empty `phrase` for you to write the phrase into.
 
 ## Next
 

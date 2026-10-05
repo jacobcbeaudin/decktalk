@@ -1,7 +1,7 @@
 """The environment a browser or an encoder DeckTalk starts is given, which is never the one the process holds.
 
 Playwright starts Chromium with a copy of the process environment unless it is handed another, and
-so does a plain subprocess, so a speech key, a cloud credential or any other secret the host holds
+so does a plain subprocess, so an API key, a cloud credential or any other secret the host holds
 would sit in the environment of the process that runs a page's script, and of the ffmpeg that opens
 a file someone else supplied. DeckTalk's own secret discipline never sees that path. So every
 Chromium launch and every ffmpeg and ffprobe call is handed an environment built here, from the

@@ -15,8 +15,8 @@ from rich.console import Console
 
 from decktalk.cli import output
 from decktalk.errors import ErrorCode, ErrorInfo, InputError
-from decktalk.events import Event, Fetch, Level, Log, Progress, RunStart, StageDone, StageStart
-from decktalk.findings import Certainty, Code
+from decktalk.events import Event, Level, RunLog, RunStart, StageDone, StageProgress, StageStart, ToolFetch
+from decktalk.findings import Code, Severity
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     RESULTS,
@@ -28,7 +28,13 @@ from decktalk.results import (
     Layer,
     Result,
     Scope,
+    ScoreResult,
     SettingValue,
+    SoundItem,
+    SoundKind,
+    SoundOutcome,
+    StatusResult,
+    TakeState,
     VerifyResult,
 )
 from support.samples import sample
@@ -66,12 +72,12 @@ def test_a_fix_is_printed_under_its_finding_with_its_applicability() -> None:
 
 def test_the_count_line_says_how_many_and_how_many_are_fixable() -> None:
     line = written(output.finding_lines, (finding(fix=True), finding(Code.CUE_THIN_CHANGE)))
-    assert "Found 2 findings, 1 certain." in line
+    assert "Found 2 findings, 1 error." in line
     assert "1 fixable with --fix." in line
 
 
 def test_one_finding_is_counted_in_the_singular() -> None:
-    assert "Found 1 finding, 1 certain." in written(output.finding_lines, (finding(),))
+    assert "Found 1 finding, 1 error." in written(output.finding_lines, (finding(),))
 
 
 def test_the_error_block_carries_the_code_the_sentence_the_hint_and_the_page() -> None:
@@ -82,10 +88,10 @@ def test_the_error_block_carries_the_code_the_sentence_the_hint_and_the_page() -
     assert f"  docs: {ErrorCode.INPUT.url}" in block
 
 
-def test_an_uncertain_finding_is_not_counted_as_certain() -> None:
+def test_a_warning_is_not_counted_as_an_error() -> None:
     soft = finding(Code.CUE_THIN_CHANGE)
-    assert soft.certainty is Certainty.UNCERTAIN
-    assert "0 certain" in written(output.finding_lines, (soft,))
+    assert soft.severity is Severity.WARNING
+    assert "0 errors" in written(output.finding_lines, (soft,))
 
 
 @pytest.mark.parametrize("model", sorted(output.RENDERERS, key=lambda model: model.__name__))
@@ -101,25 +107,25 @@ SHOWN = snapshot(
 Built build/film12, 0:13 long.
 Loudness 20.2 LUFS against 23.2.
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "BuildResult": """\
-     Stopped at cue, $19.25, 1 finding
-        Next open build/storyboard24
+     Stopped at score, $19.25, 1 finding
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "CheckResult": """\
 Checking build/judged12.
-This run spent $16.25 on 15 characters at $18.25 per 1,000 characters.
-Storyboard build/storyboard20
+This run spent $17.25 on 15 characters and about 16 seconds of audio, and up to $18.25 if the provider billed the
+requests it never answered, at the rates each stage states.
+Storyboard build/storyboard36
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "ClipResult": """\
-Cut build/film13, 17.2 seconds of section 12.
+Cut build/file13, 17.2 seconds of section 12.
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "ConfigExplainResult": """\
 key10 = value13 (override)
@@ -127,15 +133,15 @@ key10 = value13 (override)
   type type11, default default14, range16
   unit unit15
   hazard hazard41
-  decides PAGE_NO_DESCRIPTION
+  decides PAGE_THIN_DRAW
   docs docs42
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "ConfigGetResult": """\
 key10 = value11 (environment)
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "ConfigListResult": """\
 
@@ -144,27 +150,27 @@ Found 1 finding, 1 certain.
  key10   value11   environment   default12
 
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "ConfigSetResult": """\
-build/file15 would set key11 = value12
+build/file15 set key11 = value12
 The environment layer still decides it, at effective16.
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "ConfigUnsetResult": """\
 build/file14 no longer sets keys11.
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "CueResult": """\
 
- Section   Cue     Phrase     Seconds
- ────────────────────────────────────
- 12        cue14   phrase15   16.25
+ Section   Cue    Phrase     Seconds
+ ───────────────────────────────────
+ 12        id14   phrase15   16.25
 
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "DoctorResult": """\
 
@@ -174,16 +180,16 @@ Found 1 finding, 1 certain.
 
 Python    python15
 Platform  platform16
-Voice key yes
-Bias      17 ms
+API key   not needed
+Bias      18 ms
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "InitResult": """\
 Wrote build/root12 from the example14 example, 1 file.
-Next   cd build/root12 && decktalk build --no-voice
+Next   cd build/root12 && decktalk build --no-spend
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "InstallResult": """\
 
@@ -193,58 +199,62 @@ Found 1 finding, 1 certain.
 
 Cache  build/cache14
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "NarrateResult": """\
 
- Section   Take     Characters   Seconds
- ───────────────────────────────────────
- 13        voiced   16           17.2
+ Section   Take          Characters   Seconds
+ ────────────────────────────────────────────
+ 12        placeholder   15           16.2
 
-Spent $23.25 on placeholder narration.
+This run spent $23.25 on 21 characters, and up to $24.25 if the provider billed the requests it never answered, at
+$26.25 per 1,000 characters.
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "RecordResult": """\
 
  Section   File           Seconds   Frames   Kept
  ────────────────────────────────────────────────
- 12        build/file14   15.2      16       yes
+ 12        build/file14   15.2      16       no
 
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "ServeResult": """\
 Serving url11
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
-        "SoundscapeResult": """\
+        "ScoreResult": """\
 
- Item     Kind       Status      Seconds
+ Item     Kind       Outcome     Seconds
  ───────────────────────────────────────
  name12   ambience   generated   16.2
 
-Would spend $21.25 on the soundscape.
+This run costs $22.25 for the sections that certainly need a take, and up to $23.25 if the takes that could not be
+matched to a voice need one too, at the rates each stage states.
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "StatusResult": """\
 
- Section   Key     Plays      Voiced   Recorded   Cut   Stale
- ────────────────────────────────────────────────────────────
- 14        key15   source17   yes      yes        yes   yes
+ Section   Key     Plays      Take          Recorded   Assembled   Stale
+ ───────────────────────────────────────────────────────────────────────
+ 14        key15   source17   placeholder   no         yes         no
 
-Film   build/film18, 0:19 long
-Live   run20 writing build/events21
-Next   next23
+Film   build/film20, 0:21 long
+Live   run22 writing build/events_file23
+Takes  26 takes and 27 aligned words files in build/directory25/ that no section plays (28 bytes). DeckTalk never
+deletes from the takes directory, so remove the ones you no longer want with git rm.
+Next   next30
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "StoryboardResult": """\
 Wrote build/storyboard12, 1 panel.
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "VerifyResult": """\
 Verifying build/film11, 0:12 long.
@@ -254,7 +264,7 @@ Verifying build/film11, 0:12 long.
  23        cue24   25.25    26.25   +27.25
 
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
         "WordsResult": """\
 
@@ -263,7 +273,7 @@ Found 1 finding, 1 certain.
  word13       14.25   15.25
 
 2.1:formula: CUE_OFF It lands 340 ms late.
-Found 1 finding, 1 certain.
+Found 1 finding, 1 error.
 """,
     }
 )
@@ -320,27 +330,35 @@ def test_a_note_one_command_already_printed_is_not_printed_by_its_second_judgeme
 
 
 def test_the_opening_line_names_the_run_and_its_events_file_once() -> None:
-    line = RunStart(event="run.start", time=_now(), seq=0, run="abc", events_path=Path("build/events/abc.jsonl"))
+    line = RunStart(event="run.start", time=_now(), seq=0, run="abc", events_file=Path("build/events/abc.jsonl"))
     assert heard(output.Opening, line, line).count("run abc") == 1
 
 
 def _stage_done() -> StageDone:
     """One stage that ended, which is the moment both stage renderers print."""
     return StageDone(
-        event="stage.done", time=_now(), seq=0, run="r", stage=Stage.RECORD, outcome=Outcome.OK, seconds=58.0
+        event="stage.done", time=_now(), seq=0, run="r", stage=Stage.RECORD, outcome=Outcome.RAN, elapsed_seconds=58.0
     )
 
 
-def _progress(stage: Stage, done: int, total: int) -> Progress:
+def _progress(stage: Stage, done: int, total: int) -> StageProgress:
     """How far one stage has got through its sections."""
-    return Progress(
-        event="progress", time=_now(), seq=1, run="r", stage=stage, done=done, total=total, unit="section", label="s"
+    return StageProgress(
+        event="stage.progress",
+        time=_now(),
+        seq=1,
+        run="r",
+        stage=stage,
+        done=done,
+        total=total,
+        unit="section",
+        label="s",
     )
 
 
-def _log(level: Level) -> Log:
+def _log(level: Level) -> RunLog:
     """One line the library would have printed, at the level a test is about."""
-    return Log(event="log", time=_now(), seq=0, run="r", level=level, message="a debug line")
+    return RunLog(event="run.log", time=_now(), seq=0, run="r", level=level, message="a debug line")
 
 
 def _now() -> datetime:
@@ -383,7 +401,7 @@ def test_a_download_shows_its_size_in_the_unit_a_person_reads() -> None:
     console = Console(record=True, width=100, no_color=True, file=io.StringIO(), force_terminal=True)
     region = output.Region(console)
     region.open()
-    region(Fetch(event="fetch", time=_now(), seq=0, run="r", tool="ffmpeg", bytes=169_000_000))
+    region(ToolFetch(event="tool.fetch", time=_now(), seq=0, run="r", tool="ffmpeg", bytes=169_000_000))
     region.close()
     assert "Fetching ffmpeg, 169.0 MB" in console.export_text()
 
@@ -411,10 +429,10 @@ def test_verify_prints_a_row_per_measured_cue_with_its_signed_offset() -> None:
         film=Path("build/final/demo.mp4"),
         film_seconds=64.0,
         cues=(
-            CueCheck(section=2, cue="2:chart", spoken=12.4, shown=12.46, offset=0.06),
+            CueCheck(section=2, cue="2:chart", spoken=12.4, shown=12.46, offset_seconds=0.06),
             CueCheck(section=2, cue="2:skipped", spoken=13.0),
         ),
-        seconds=1.0,
+        elapsed_seconds=1.0,
     )
     said = recorded(measured)
     assert "Verifying build/final/demo.mp4, 1:04 long." in said
@@ -463,6 +481,30 @@ def test_an_unset_names_every_key_the_file_no_longer_sets() -> None:
 )
 def test_a_settings_value_prints_in_the_spelling_config_set_accepts(value: JsonValue, shown: str) -> None:
     got = ConfigGetResult(
-        ok=True, key=SettingValue(key="verify.strict", value=value, default=value, layer=Layer.DEFAULT)
+        ok=True, setting=SettingValue(key="verify.strict", value=value, default=value, layer=Layer.DEFAULT)
     )
     assert recorded(got) == f"verify.strict = {shown} (default)\n"
+
+
+def test_the_score_states_its_price_in_the_one_money_sentence() -> None:
+    """A price has one sentence, which tells what a run certainly spends from its ceiling."""
+    result = sample(ScoreResult, every=True)
+    assert result.cost.sentence in recorded(result, width=len(result.cost.sentence))
+
+
+def test_a_length_not_known_yet_is_said_rather_than_printed_as_zero() -> None:
+    """A planned sound has no length before it is bought, and null is not 0.0 seconds."""
+    planned = SoundItem(name="tick", kind=SoundKind.EFFECT, outcome=SoundOutcome.PLANNED, prompt="a tick")
+    result = sample(ScoreResult, every=True).model_copy(update={"items": (planned,)})
+    said = recorded(result, width=200)
+    (row,) = [line for line in said.splitlines() if "tick" in line]
+    assert row.split()[-2:] == ["not", "yet"], said
+
+
+def test_a_stale_take_shows_its_section_as_stale() -> None:
+    """A take whose inputs moved marks the Stale column as a recording that moved does."""
+    result = sample(StatusResult, every=True)
+    row = result.sections[0].model_copy(update={"take_state": TakeState.STALE, "recording_stale": False})
+    said = recorded(result.model_copy(update={"sections": (row,)}), width=200)
+    (line,) = [line for line in said.splitlines() if line.split()[:1] == [str(row.section)]]
+    assert line.split()[-1] == "yes", said

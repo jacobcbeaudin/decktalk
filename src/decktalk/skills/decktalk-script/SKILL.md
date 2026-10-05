@@ -14,7 +14,7 @@ written to be heard rather than to be read.
 
 ## What the file is
 
-A `## N. Title` heading opens section N, and one section is one cut of the film. Bracketed
+A `## N. Title` heading opens section N, and one section is one part of the film. Bracketed
 directions are not spoken: `[beat]` is a short pause and `[pause 4]` is a four second pause. A
 section's number, the scene its `[[section]]` table names, and the slide ids of its cues all agree,
 so section 3 plays scene 3 and its cues are `3.1:open` and `3.2:result`.
@@ -48,8 +48,9 @@ so section 3 plays scene 3 and its cues are `3.1:open` and `3.2:result`.
 
 - A change to a section's spoken text re-voices that section, and nothing else.
 - A change to a heading's title does not, as long as the section number stays.
-- A change to the voice, the model or a `[voice]` key re-voices everything. Never make one without
-  an answer from the author.
+- A change to the voice, the model, `[voice] speed` or a voice field of the provider's own table,
+  such as `[elevenlabs] stability`, re-voices everything. Never make one without an answer from the
+  author.
 - A take is named by its own text, so renumbering a section keeps its take. Adding a first section
   pays for that section alone.
 

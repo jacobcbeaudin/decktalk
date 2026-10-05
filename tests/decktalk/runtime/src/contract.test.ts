@@ -18,6 +18,8 @@ import {
   CAPTURE_FPS,
   CODES,
   COUNTS,
+  CUE_MARK,
+  cueId,
   ENTRANCES,
   EXEMPT,
   EXITS,
@@ -40,9 +42,7 @@ import {
   scaled,
   staggerSpan,
   TIME_MARK,
-  WIRE_MARK,
   WORD_STYLES,
-  wireId,
 } from "../../../../src/decktalk/runtime/src/contract.ts";
 
 test("the frame step is the capture rate written the other way round", () => {
@@ -50,20 +50,20 @@ test("the frame step is the capture rate written the other way round", () => {
 });
 
 test("a local moment qualifies into the id cues.json carries", () => {
-  assert.equal(wireId("4.1", "expand"), "4.1:expand");
+  assert.equal(cueId("4.1", "expand"), "4.1:expand");
 });
 
 test("a pair list keeps whole pairs and drops half written ones", () => {
   assert.deepEqual(pairs("cancel:stale|result:live"), [
-    { moment: "cancel", value: "stale" },
-    { moment: "result", value: "live" },
+    { cue: "cancel", value: "stale" },
+    { cue: "result", value: "live" },
   ]);
-  assert.deepEqual(pairs(" cancel : the h is struck out "), [{ moment: "cancel", value: "the h is struck out" }]);
+  assert.deepEqual(pairs(" cancel : the h is struck out "), [{ cue: "cancel", value: "the h is struck out" }]);
   assert.deepEqual(pairs("cancel|:live|result:"), []);
 });
 
 test("a pair's value may hold the mark that opened it", () => {
-  assert.deepEqual(pairs("cancel:a ratio of 3:4"), [{ moment: "cancel", value: "a ratio of 3:4" }]);
+  assert.deepEqual(pairs("cancel:a ratio of 3:4"), [{ cue: "cancel", value: "a ratio of 3:4" }]);
 });
 
 test("a message is filled from what the caller knows and keeps what it does not", () => {
@@ -116,7 +116,7 @@ test("the page plays every declared span at the length the contract publishes", 
   }
   for (const [name, row] of Object.entries(ATTRS)) {
     if (row.span !== null) declared.push([`${name} span`, row.span]);
-    if (row.range && name !== "data-hold") declared.push([`${name} range`, row.range.max]);
+    if (row.range && name !== "data-preview-seconds") declared.push([`${name} range`, row.range.max]);
   }
   for (const [name, seconds] of declared) {
     assert.equal(scaled(seconds, 1), seconds, `${name} declares ${seconds} s and the page would play less`);
@@ -141,7 +141,7 @@ test("every attribute either carries a code or is named in the closed exemption 
 test("no span an author can declare reaches the ceiling that makes a cue unmeasurable", () => {
   for (const [name, row] of Object.entries(ATTRS)) {
     if (row.span !== null) assert.ok(measurable(row.span), `${name} declares a span at or above the ceiling`);
-    if (row.range && row.range.unit === "seconds" && name !== "data-hold") {
+    if (row.range && row.range.unit === "seconds" && name !== "data-preview-seconds") {
       assert.ok(measurable(row.range.max), `${name} publishes a range whose top is unmeasurable`);
     }
   }
@@ -171,7 +171,7 @@ const CASES = JSON.parse(
 
 /** Each function of the table under the name its row carries, which is the Python spelling. */
 const FUNCTIONS: Record<string, (...args: never[]) => string | number | boolean> = {
-  wire_id: wireId,
+  cue_id: cueId,
   stagger_span: staggerSpan,
   measurable,
   scaled,
@@ -192,10 +192,10 @@ test("the contract's functions answer the case table the Python module answers",
 });
 
 test("every string a URL, a route or a stylesheet is spelled with is published once", () => {
-  const spelled = [WIRE_MARK, PAIR_MARK, PAIR_SEPARATOR, TIME_MARK, LIST_SEPARATOR];
+  const spelled = [CUE_MARK, PAIR_MARK, PAIR_SEPARATOR, TIME_MARK, LIST_SEPARATOR];
   for (const mark of spelled) assert.equal(mark.length, 1, `${mark} is not one character`);
   assert.notEqual(TIME_MARK, LIST_SEPARATOR);
-  assert.notEqual(TIME_MARK, WIRE_MARK);
+  assert.notEqual(TIME_MARK, CUE_MARK);
   assert.ok(PREVIEW_CUE_TIMES.startsWith("/"));
   assert.ok(MOTION_SCALE_PROPERTY.startsWith("--"));
 });

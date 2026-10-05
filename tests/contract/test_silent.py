@@ -11,7 +11,7 @@ comment on the `except` line or the first line inside it.
 
 A child process is started in exactly three places, each of which traces its command, its exit
 code, its time and its output: `ffmpeg._spawn`, `chromium_fetch.fetch_chromium` and
-`machine._run_command`. A call that starts one anywhere else fails here.
+`machine.fixes._run_command`. A call that starts one anywhere else fails here.
 """
 
 from __future__ import annotations
@@ -28,7 +28,11 @@ LOUD_OBJECTS = frozenset({"log", "logging"})
 """The names a call is made on to write a record, which is the module logger or the module itself."""
 
 TRACED = frozenset(
-    {("media/ffmpeg.py", "_spawn"), ("toolchain/chromium_fetch.py", "fetch_chromium"), ("machine.py", "_run_command")}
+    {
+        ("media/ffmpeg.py", "_spawn"),
+        ("toolchain/chromium_fetch.py", "fetch_chromium"),
+        ("machine/fixes.py", "_run_command"),
+    }
 )
 """The three functions that start a child process, each of which traces what it started."""
 
@@ -129,6 +133,6 @@ def test_the_guard_finds_a_quiet_block_and_an_untraced_child() -> None:
     assert untraced_starts(PLANTED, "planted.py") == ["planted.py:12: subprocess.run in starts"]
     tagged = PLANTED.replace("except ValueError:\n", "except ValueError:\n        # silent: not a number.\n")
     assert quiet_blocks(tagged, "planted.py") == []
-    assert untraced_starts(PLANTED, "machine.py") == ["machine.py:12: subprocess.run in starts"]
+    assert untraced_starts(PLANTED, "machine/fixes.py") == ["machine/fixes.py:12: subprocess.run in starts"]
     traced = PLANTED.replace("def starts", "def _run_command")
-    assert untraced_starts(traced, "machine.py") == []
+    assert untraced_starts(traced, "machine/fixes.py") == []

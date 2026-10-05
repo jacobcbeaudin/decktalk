@@ -7,7 +7,7 @@ description: Speech is still sounding at a section cut, so the film slices a wor
 
 Speech is still sounding at a section cut, so the film slices a word in two.
 
-This finding is certain, and DeckTalk measures it from what the run produced.
-Pass `--allow CUT_SPEECH` to carry on past it, and `--fail-on` to choose which certainty fails a run.
+This finding is an error, and DeckTalk measures it from what the run produced.
+Pass `--allow CUT_SPEECH` to carry on past it, and `--fail-on` to choose which severity fails a run.
 
-The settings that move this verdict are `narration.tail_min_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds`, `verify.cut_window_seconds`, `verify.cut_max_dbfs`.
+The settings that move this verdict are `narration.tail_seconds`, `narration.sound_end_noise_dbfs`, `narration.sound_end_min_run_seconds`, `verify.cut_window_seconds`, `verify.cut_max_dbfs`.

@@ -1,11 +1,10 @@
 """The one table: a command is its function's signature, and everything else is read off that.
 
-Under argparse the command line was a tuple of rows beside the functions. Under Typer the row is
-the function itself. Its parameters are its own flags, its return annotation is the result model it
+A command's row is the function itself. Its parameters are its own flags, its return annotation is the result model it
 answers with, and the flags it shares with other commands are derived from that annotation, so there
 is no side table to drift from the functions it describes.
 
-One walker over the parser feeds three renderings, which are `--help`, the generated reference page
+One parser feeds three renderings, which are `--help`, the generated reference page
 and `decktalk schema`. A command never prints: it returns its result and the session renders it, so
 the table, the JSON object and the exit code are one decision made in one place.
 
@@ -26,6 +25,12 @@ from pathlib import Path
 from typing import Annotated, Any, cast
 
 import typer
+
+# Typer carries its own copy of Click and publishes no name for the classes a subclass of its commands
+# is handed or for the refusals its parser raises. Click's own classes are different classes, so an
+# `except` or an annotation written against them would miss every object Typer makes. This module is
+# the one place that reaches into the copy, and `catalog.py` takes the two it needs from here. A
+# command function names its context as `typer.Context`, which is the name Typer publishes for it.
 from typer._click import Context, HelpFormatter, Parameter
 from typer._click.core import Command
 from typer._click.exceptions import ClickException, NoSuchOption, UsageError
@@ -33,10 +38,21 @@ from typer.core import TyperCommand, TyperGroup, TyperOption
 from typer.main import get_command
 
 from decktalk import __version__
-from decktalk.cli.options import DOCS, GLOBALS, SHARED, FailOn, Group, Panel, restated, shared_for
+from decktalk.cli.options import (
+    DOCS,
+    GLOBALS,
+    PROMPT_FLAGS,
+    SHARED,
+    SHARED_LINE,
+    FailOn,
+    Group,
+    Panel,
+    restated,
+    shared_for,
+)
 from decktalk.cli.session import Globals, Session
-from decktalk.errors import Cancelled, DeckTalkError, ErrorCode, ErrorInfo
-from decktalk.findings import Code
+from decktalk.errors import Cancelled, DeckTalkError, ErrorCode, ErrorInfo, Exit
+from decktalk.findings import Code, Threshold
 from decktalk.results import Result
 
 PROGRAM = "decktalk"
@@ -59,37 +75,27 @@ PURPOSE = (
     "into one narrated mp4."
 )
 
-EPILOG = """\
-Every command prints one JSON object with --json, carrying its own fields
-beside schema, ok, run, findings and error. Run decktalk schema for the whole
-contract in one call, and decktalk config explain KEY for a setting's
-sentence, range and default. Exit codes: 0 found nothing, 1 found something,
-2 refused the command line, 3 could not run, 130 interrupted.
-Docs: https://docs.decktalk.ai/reference/cli"""
+EPILOG_WIDTH = 78
+"""How wide a command's closing paragraph is wrapped, which is the width the tree's own footer is written at."""
 
-SHARED_LINE = "-p, --json, --events, --color, --no-input, -v and -q work on every command."
-"""The one line a command's help spends on the eight flags every command carries."""
+EPILOG = "\n".join(
+    (
+        textwrap.fill(
+            "Every command prints one JSON object with --json, carrying its own fields beside schema, ok, run, "
+            "findings and error. Run decktalk schema for the whole contract in one call, and decktalk config "
+            "explain KEY for a setting's sentence, range and default. Exit codes: "
+            + ", ".join(f"{code.value} {code.phrase}" for code in Exit)
+            + ".",
+            width=EPILOG_WIDTH,
+            break_on_hyphens=False,
+        ),
+        f"Docs: {DOCS}",
+    )
+)
+"""The tree's own footer, whose exit codes are read from the one exit table."""
 
 HELP_SENTENCE = "Print this help and exit."
 """What `-h` says, which is a sentence rather than Click's own line about showing a message."""
-
-PROMPT_FLAGS = frozenset(
-    {
-        "--all",
-        "--defaults",
-        "--example",
-        "--fix",
-        "--max-cost",
-        "--name",
-        "--no-fix",
-        "--no-skills",
-        "--no-voice",
-        "--overwrite",
-        "--replace-voiced",
-        "--spend",
-    }
-)
-"""Every flag that answers a prompt, which is what a refused `--yes` names back at its caller."""
 
 PANELS: tuple[str, ...] = tuple(panel.value for panel in Panel)
 """The order a command's own option panels are read in, which is the order a run meets them."""
@@ -99,9 +105,6 @@ _current: Session | None = None
 
 _order = itertools.count()
 """Where each command sits in the source, which is the order its group prints it in."""
-
-EPILOG_WIDTH = 78
-"""How wide a command's closing paragraph is wrapped, which is the width the tree's own footer is written at."""
 
 CONTEXT = {"help_option_names": ["-h", "--help"], "show_default": False}
 """Settings every command shares. A default is written into its own sentence, never in brackets."""
@@ -299,15 +302,6 @@ def _client(fn: Callable[..., object], name: str) -> Callable[..., int]:
         session = _begin(context, shared, command=name)
         if shared.get("yes"):
             raise _yes_refused(context)
-        session.judging(
-            fail_on=cast("FailOn", shared.get("fail_on") or FailOn.CERTAIN),
-            allow=frozenset(cast("Sequence[Code] | None", shared.get("allow")) or ()),
-        )
-        session.spending(
-            no_voice=bool(shared.get("no_voice")),
-            spend=bool(shared.get("spend")),
-            max_cost=cast("float | None", shared.get("max_cost")),
-        )
         answered = fn(ctx=context, **arguments)
         if isinstance(answered, Result):
             return session.report(answered)
@@ -322,7 +316,16 @@ def _begin(context: Context, shared: dict[str, object], *, command: str) -> Sess
     base = context.find_root().obj
     flags = base.flags if isinstance(base, Session) else Globals()
     merged = flags.merged({key: value for key, value in shared.items() if key in _GLOBAL_NAMES})
-    session = Session(merged, command=command)
+    fail_on = cast("FailOn", shared.get("fail_on") or FailOn.ERROR)
+    session = Session(
+        merged,
+        command=command,
+        threshold=Threshold(
+            stop_on=fail_on.stops_on, allow=frozenset(cast("Sequence[Code] | None", shared.get("allow")) or ())
+        ),
+        spend=cast("bool | None", shared.get("spend")),
+        max_cost=cast("float | None", shared.get("max_cost")),
+    )
     context.obj = session
     _current = session
     return session
@@ -335,7 +338,7 @@ _GLOBAL_NAMES = frozenset(name for name, _, _ in GLOBALS)
 def _yes_refused(context: Context) -> UsageError:
     """The refusal `--yes` earns, which names this command's own prompt flags rather than a topic.
 
-    One token that authorises a spend, an overwrite and a lost take is how an agent burns credits it
+    One token that authorises buying, an overwrite and a lost take is how an agent spends money it
     was told to ask about, so the flag is recognised and refused rather than left unknown.
     """
     named = sorted(
@@ -392,7 +395,6 @@ def _rooted(fn: Callable[..., int]) -> Callable[..., int]:
             name, inspect.Parameter.KEYWORD_ONLY, annotation=restated(annotation, hidden=False), default=default
         )
         for name, annotation, default in GLOBALS
-        if name != "yes"
     ]
     fn.__signature__ = signature.replace(  # ty: ignore[unresolved-attribute]
         parameters=[ctx, *flags, version.replace(kind=inspect.Parameter.KEYWORD_ONLY)]
@@ -421,17 +423,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         # silent: the interrupt is reported as the CANCELLED refusal below.
         return _session().failed(Cancelled("The caller stopped the run."))
     except DeckTalkError as refused:
-        return _session().failed(refused)
+        return _refused(_session(), refused)
     except Exception as failure:  # noqa: BLE001  (anything else is a bug, reported as one)
         return _session().bug(failure)
     return int(answered or 0)
 
 
+def _refused(session: Session, refused: DeckTalkError) -> int:
+    """Report a refusal, with the result of what the run made when it carries one.
+
+    A run stopped or refused after it bought something carries that result, which under `--json` is
+    the one object printed, its `error` the refusal. Otherwise the error block goes to stderr and the
+    result is rendered as a finished one is, so the reader sees what the run spent.
+    """
+    made = refused.result
+    if not isinstance(made, Result):
+        return session.failed(refused)
+    if not session.flags.json_out:
+        session.failed(refused)
+    return session.report(made)
+
+
 SUGGESTION_CUTOFF = 0.75
 """How alike an unknown flag and a real one must be before the refusal names the real one.
 
-Click's own cutoff of 0.6 offered `--verbose` for `--bogus`, which is a guess rather than a
-suggestion, while every one-letter slip of a real flag scores well above this.
+At this cutoff a one-letter slip of a real flag is named, and an unrelated word such as `--bogus`
+is not taken for `--verbose`.
 """
 
 

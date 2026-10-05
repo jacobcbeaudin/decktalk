@@ -24,7 +24,7 @@ from decktalk.stages.record.capture import (
     plan_job,
     scene_params,
     scene_url,
-    section_hash,
+    section_digest,
     words_param,
 )
 from support.pages import TWO_SCENE_PAGE, a_recording
@@ -53,7 +53,7 @@ words = "media/broll.words.json"
 music = "media/bed.mp3"
 slate = "media/slate.png"
 
-[[mix.effects]]
+[[mix.effect]]
 file = "media/chime.wav"
 section = 1
 cue = "1.1:open"
@@ -71,7 +71,7 @@ def section_of(inputs: Inputs, number: int) -> PageSection:
 
 
 def cue_times() -> CueTimes:
-    row = CueTime(cue="1.1:open", phrase="one", seconds=1.5, offset=0.0)
+    row = CueTime(id="1.1:open", phrase="one", seconds=1.5, nudge_seconds=0.0)
     return CueTimes(sections=(SectionCues(section=1, key="01", estimated=False, cues=(row,)),))
 
 
@@ -139,13 +139,13 @@ def test_editing_one_scene_moves_only_the_sections_that_play_it(tmp_path: Path) 
     inputs = a_project(tmp_path)
     one, two = section_of(inputs, 1), section_of(inputs, 2)
     before = (
-        section_hash(inputs, one, "url", 10.0, ()),
-        section_hash(inputs, two, "url", 10.0, ()),
+        section_digest(inputs, one, "url", 10.0, ()),
+        section_digest(inputs, two, "url", 10.0, ()),
     )
     edited = a_project(tmp_path, page=TWO_SCENE_PAGE.replace("two</p>", "two and a half</p>"))
     after = (
-        section_hash(edited, one, "url", 10.0, ()),
-        section_hash(edited, two, "url", 10.0, ()),
+        section_digest(edited, one, "url", 10.0, ()),
+        section_digest(edited, two, "url", 10.0, ()),
     )
     assert before[0] == after[0]
     assert before[1] != after[1]
@@ -154,7 +154,7 @@ def test_editing_one_scene_moves_only_the_sections_that_play_it(tmp_path: Path) 
 def test_the_motion_a_render_asks_for_joins_the_key(tmp_path: Path) -> None:
     plain = a_project(tmp_path)
     reduced = a_project(tmp_path / "other", TOML + "\n[motion]\nreduce = true\n")
-    assert section_hash(plain, section_of(plain, 1), "url", 10.0, ()) != section_hash(
+    assert section_digest(plain, section_of(plain, 1), "url", 10.0, ()) != section_digest(
         reduced, section_of(reduced, 1), "url", 10.0, ()
     )
 
@@ -163,7 +163,7 @@ def test_the_page_policy_a_render_runs_under_joins_the_key(tmp_path: Path) -> No
     """A recording made trusted is never kept for an untrusted run, whose page may draw without its other origins."""
     trusted = a_project(tmp_path)
     sealed = Inputs.load(tmp_path, environ={}, machine={"record": {"page_policy": "untrusted"}})
-    assert section_hash(trusted, section_of(trusted, 1), "url", 10.0, ()) != section_hash(
+    assert section_digest(trusted, section_of(trusted, 1), "url", 10.0, ()) != section_digest(
         sealed, section_of(sealed, 1), "url", 10.0, ()
     )
 
@@ -172,9 +172,9 @@ def test_a_swapped_asset_moves_the_key_although_no_markup_changed(tmp_path: Path
     inputs = a_project(tmp_path)
     picture = tmp_path / "deck" / "one.png"
     picture.write_bytes(b"first")
-    before = section_hash(inputs, section_of(inputs, 1), "url", 10.0, ("deck/one.png",))
+    before = section_digest(inputs, section_of(inputs, 1), "url", 10.0, ("deck/one.png",))
     picture.write_bytes(b"second")
-    assert section_hash(inputs, section_of(inputs, 1), "url", 10.0, ("deck/one.png",)) != before
+    assert section_digest(inputs, section_of(inputs, 1), "url", 10.0, ("deck/one.png",)) != before
 
 
 def test_a_job_with_no_recording_on_disk_has_not_been_made(tmp_path: Path) -> None:
@@ -190,7 +190,7 @@ def test_a_log_with_no_narration_start_in_it_is_a_recording_that_never_finished(
     job.out.parent.mkdir(parents=True, exist_ok=True)
     job.out.write_bytes(b"webm")
     RecordingLog(
-        section=1, input_hash=job.input_hash, recording=a_recording(requested_seconds=10.0, clock_start_seconds=1.5)
+        section=1, digest=job.digest, recording=a_recording(requested_seconds=10.0, clock_start_seconds=1.5)
     ).write(job.log_path)
     assert not plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0).unchanged
 
@@ -202,7 +202,7 @@ def test_a_log_an_earlier_engine_wrote_is_recorded_again_and_refused_by_a_stage_
     inputs = a_project(tmp_path)
     path = inputs.workspace.recording_log("01")
     path.parent.mkdir(parents=True)
-    path.write_text('{"section": 1, "input_hash": "abc", "trim_seconds": 1.5}', encoding="utf-8")
+    path.write_text('{"section": 1, "digest": "abc", "trim_seconds": 1.5}', encoding="utf-8")
     with caplog.at_level("INFO", logger="decktalk"):
         job = plan_job(inputs, section_of(inputs, 1), cue_times(), 10.0)
     assert job.previous is None and not job.unchanged

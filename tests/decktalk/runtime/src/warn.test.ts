@@ -23,7 +23,7 @@ test("a row carries the code, the sentence and the place, which is the whole wir
   assert.deepEqual(warnings(), [
     {
       code: "PAGE_SLIDE_UNUSED",
-      message: CODES.PAGE_SLIDE_UNUSED.message.replace("{slide}", "1.2"),
+      message: CODES.PAGE_SLIDE_UNUSED.replace("{slide}", "1.2"),
       slide: "1.2",
       cue: null,
       attr: null,

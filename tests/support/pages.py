@@ -66,10 +66,10 @@ def elements(moments: dict[str, list[str]], *, text: str = "x") -> dict[str, lis
     """One element per moment each slide declares, named by its cue and saying `text`."""
     return {
         slide: [
-            {"attrs": {"data-in": wire.split(":", 1)[-1]}, "moments": {"data-in": wire}, "text": text, "box": BOX}
-            for wire in wires
+            {"attrs": {"data-in": cue_id.split(":", 1)[-1]}, "moments": {"data-in": cue_id}, "text": text, "box": BOX}
+            for cue_id in cue_ids
         ]
-        for slide, wires in moments.items()
+        for slide, cue_ids in moments.items()
     }
 
 
@@ -97,7 +97,7 @@ def a_recording(**fields: object) -> Recording:
 
 def a_report(**fields: object) -> PageReport:
     """What the page says about its first scene, with every field a case names in place of the default."""
-    return PageReport.model_validate({"version": "0.5.0", "mode": "cue", "scene": "1", "slide": "1.1", **fields})
+    return PageReport.model_validate({"version": "0.5.0", "mode": "record", "scene": "1", "slide": "1.1", **fields})
 
 
 def write_log(
@@ -111,7 +111,7 @@ def write_log(
     """The log one section's recording left, carrying what its page said and what the recorder judged."""
     RecordingLog(
         section=section,
-        input_hash="abc",
+        digest="abc",
         recording=a_recording(requested_seconds=requested_seconds, report=report or PageReport()),
         findings=tuple(findings),
     ).write(inputs.workspace.recording_log(f"{section:02d}"))

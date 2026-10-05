@@ -2,9 +2,9 @@
 
     build/cue-times.json   one block per section, each holding every cue that section declares
 
-A row's `cue` is the wire id the page understands, `phrase` is the script phrase it was matched
-against, `seconds` is where it lands after its section starts, and `offset` is the author's own
-nudge, which is already inside `seconds`. The rows are the same `SectionCues` and `CueTime` a
+A row's `id` is the cue id the page understands, `phrase` is the script phrase it was matched
+against, `seconds` is where it lands after its section starts, and `nudge_seconds` is the author's
+own nudge, which is already inside `seconds`. The rows are the same `SectionCues` and `CueTime` a
 `cue` result carries, so the file the stage writes and the JSON a caller reads are one shape.
 
 The recorder passes this file's seconds to the page as the `cues` query, spelt with the marks the
@@ -17,7 +17,7 @@ the origin answers from this file and which is never itself a project file.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import Field
 
@@ -28,6 +28,8 @@ from decktalk.results import CueTime, SectionCues
 
 class CueTimes(Stored):
     """Every section's cues, each resolved against the words that section speaks."""
+
+    label: ClassVar[str] = "the second each cue lands on"
 
     sections: tuple[SectionCues, ...] = Field((), description="Every section that declares a cue, in section order.")
 
@@ -40,8 +42,8 @@ class CueTimes(Stored):
         return self.times(section).get(cue)
 
     def times(self, section: int) -> dict[str, float]:
-        """One section's resolved cues, keyed by wire id, with the unresolved ones left out."""
-        return {row.cue: row.seconds for row in self.rows(section) if row.seconds is not None}
+        """One section's resolved cues, keyed by cue id, with the unresolved ones left out."""
+        return {row.id: row.seconds for row in self.rows(section) if row.seconds is not None}
 
     def query(self, section: int) -> str | None:
         """The `cues` query value for one section, or None when it has no resolved cue."""
@@ -59,7 +61,7 @@ class CueTimes(Stored):
                 {
                     "key": block.key,
                     "scene": scenes[block.section],
-                    "cues": [{"cue": row.cue, "at": row.seconds} for row in block.cues if row.seconds is not None],
+                    "cues": [{"cue": row.id, "at": row.seconds} for row in block.cues if row.seconds is not None],
                 }
                 for block in self.sections
                 if block.section in scenes

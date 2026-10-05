@@ -6,9 +6,10 @@
    * URL and a report are spelled with.
    *
    * An element on a slide has four moments and one value type. It arrives, it steps back, it comes to
-   * the front, and it leaves, and each of those is the local name of a cue. Everything else is either
+   * the front, and it leaves, and each of those is the cue name of a cue. Everything else is either
    * how a moment looks, which is a closed word this file owns, or what a moment means, which is a
-   * sentence for the transcript. Seconds are never written on the page, because cues.json owns them.
+   * sentence for the transcript. A cue's second is never written on the page, because the cue stage
+   * resolves it from the phrase `cues.json` pairs with it.
    *
    * This module is the one home of that grammar. Every other runtime module reads its attribute names
    * from here rather than spelling a "data-" literal of its own, `scripts/build_runtime.py` prints
@@ -57,199 +58,64 @@
     front: { seconds: 0.2 },
   };
   var CODES = {
-    PAGE_UNKNOWN_ATTR: {
-      message: "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_BAD_VALUE: {
-      message: "{attr}={value} is not one of {allowed}, so write one of those instead.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_MOMENT_UNKNOWN: {
-      message: "{attr}={value} names a cue slide {slide} does not own, so declare it on the slide or correct the name.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_MOMENT_ORDER: {
-      message: "The exit {value} is at or before the entrance on the same element, so give the exit a later cue.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_CUE_UNKNOWN: {
-      message: "The cue {cue} is not one this deck declares, so remove it or name it in a moment attribute.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_NO_OWNER: {
-      message: "No slide owns the cue {cue}, so name it in a moment attribute or list it in data-owns.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_SCENE_EMPTY: {
-      message: "The scene {slide} declares no slide, so add a template to it or remove the scene.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_SLIDE_NO_ID: {
-      message: "A template carries no data-slide, so give it the id a section names.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_SLIDE_DOUBLED: {
-      message: "Two templates claim the slide id {slide}, so every moment local to it has two owners.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_SLIDE_UNUSED: {
-      message: "Slide {slide} is never shown, so nothing it declares reaches a recording.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_TEMPLATE_IGNORED: {
-      message: "A template inside slide {slide} declares no slide of its own, so nothing ever mounts it.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_WORDS_NOT_FOUND: {
-      message: "The line {value} is not among the spoken words, so it cannot be shown word by word.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_KATEX_MISSING: {
-      message: "KaTeX is not loaded, so {attr} is left as the author wrote it.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_KATEX_ERROR: {
-      message: "KaTeX refused {value}, so the element shows its readable fallback text.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_FREEZE_CUE_UNKNOWN: {
-      message: "The cue {cue} is not one of slide {slide}'s cues, so the freeze stopped at nothing.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_RENDER_THREW: {
-      message: "The render handler for slide {slide} threw {value}, so the slide is drawn as its markup stands.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_ENTER_THREW: {
-      message: "The enter handler for slide {slide} threw {value}, so the slide arrived without it.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_SLIDE_HANDLER_THREW: {
-      message: "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_HANDLER_THREW: {
-      message: "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_WAIT_REJECTED: {
-      message: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_WAIT_UNSETTLED: {
-      message: "A promise the page waited for never settled, so the page was drawn without it.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_CLASS_UNDESCRIBED: {
-      message: "data-class names {value} with no phrase for it in data-describe-class, so the transcript loses it.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_CLASS_NOT_REDUCED: {
-      message: "The class {value} still animates under reduced motion, so the page's own stylesheet must honour it.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_SWAP_AMBIGUOUS: {
-      message: "data-swaps at cue {cue} found {value} elements leaving, so name the one it replaces with a shared cue.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_PREVIEW_AMBIGUOUS: {
-      message: "Two sections name the scene {slide}, so a preview cannot tell which one's cue times to play.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_APPEAR_TOO_LONG: {
-      message: "data-words=appear is on a line of {value} words, so shorten it or use highlight instead.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_STAGGER_EMPTY: {
-      message: "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
-      certainty: "certain",
-      raisedBy: "runtime",
-    },
-    PAGE_MOTION_OVERRUN: {
-      message: "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
-    PAGE_STAGGER_OVERRUN: {
-      message: "The stagger at cue {cue} runs {value} s in all, which passes the half second a cue may still move.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
-    PAGE_THIN_DRAW: {
-      message: "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
-      certainty: "uncertain",
-      raisedBy: "python",
-    },
-    PAGE_NO_DESCRIPTION: {
-      message: "The element at cue {cue} has no text and no data-tex, so give it data-describe or an empty one.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
-    PAGE_SWAP_APART: {
-      message:
-        "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
-      certainty: "uncertain",
-      raisedBy: "python",
-    },
-    PAGE_STALLED: {
-      message:
-        "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
-    PAGE_BLACK: {
-      message: "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
-    PAGE_TRUNCATED: {
-      message: "The recording ends {value} s before the narration does, so the last cues are not in it.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
-    PAGE_CDN_ASSET: {
-      message: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
-    PAGE_RUNTIME_STALE: {
-      message:
-        "The runtime at {value} is not the one this engine ships, so the page plays a contract this engine does not measure.",
-      certainty: "certain",
-      raisedBy: "python",
-    },
+    PAGE_ATTR_UNKNOWN:
+      "{attr} is not an attribute this contract defines, so check its spelling against the attribute table.",
+    PAGE_BAD_VALUE: "{attr}={value} is not one of {allowed}, so write one of those instead.",
+    PAGE_MOMENT_UNKNOWN:
+      "{attr}={value} names a cue slide {slide} does not own, so declare it on the slide or correct the name.",
+    PAGE_MOMENT_ORDER:
+      "The exit {value} is at or before the entrance on the same element, so give the exit a later cue.",
+    PAGE_CUE_UNKNOWN: "The cue {cue} is not one this deck declares, so remove it or name it in a moment attribute.",
+    PAGE_NO_OWNER: "No slide owns the cue {cue}, so name it in a moment attribute or list it in data-owns.",
+    PAGE_SCENE_EMPTY: "The scene {slide} declares no slide, so add a template to it or remove the scene.",
+    PAGE_SLIDE_NO_ID: "A template carries no data-slide, so give it the id a section names.",
+    PAGE_SLIDE_DOUBLED: "Two templates claim the slide id {slide}, so every moment local to it has two owners.",
+    PAGE_SLIDE_UNUSED: "Slide {slide} is never shown, so nothing it declares reaches a recording.",
+    PAGE_TEMPLATE_IGNORED: "A template inside slide {slide} declares no slide of its own, so nothing ever mounts it.",
+    PAGE_WORDS_NOT_FOUND: "The line {value} is not among the spoken words, so it cannot be shown word by word.",
+    PAGE_KATEX_MISSING: "KaTeX is not loaded, so {attr} is left as the author wrote it.",
+    PAGE_KATEX_ERROR: "KaTeX refused {value}, so the element shows its readable fallback text.",
+    PAGE_FREEZE_CUE_UNKNOWN: "The cue {cue} is not one of slide {slide}'s cues, so the freeze stopped at nothing.",
+    PAGE_RENDER_THREW:
+      "The render handler for slide {slide} threw {value}, so the slide is drawn as its markup stands.",
+    PAGE_ENTER_THREW: "The enter handler for slide {slide} threw {value}, so the slide arrived without it.",
+    PAGE_SLIDE_HANDLER_THREW:
+      "The handler slide {slide} registered for cue {cue} threw {value}, so that moment did nothing.",
+    PAGE_HANDLER_THREW: "The handler the deck registered for cue {cue} threw {value}, so that moment did nothing.",
+    PAGE_WAIT_REJECTED: "A promise the page waited for rejected with {value}, so the page was drawn without it.",
+    PAGE_WAIT_UNSETTLED: "A promise the page waited for never settled, so the page was drawn without it.",
+    PAGE_CLASS_UNDESCRIBED:
+      "data-class names {value} with no description for it in data-describe-class, so the transcript loses it.",
+    PAGE_CLASS_NOT_REDUCED:
+      "The class {value} still animates under reduced motion, so the page's own stylesheet must honour it.",
+    PAGE_SWAP_AMBIGUOUS:
+      "data-swaps at cue {cue} found {value} elements leaving, so name the one it replaces with a shared cue.",
+    PAGE_PREVIEW_AMBIGUOUS:
+      "Two sections name the scene {slide}, so a preview cannot tell which one's cue times to play.",
+    PAGE_APPEAR_TOO_LONG: "data-words=appear is on a line of {value} words, so shorten it or use highlight instead.",
+    PAGE_STAGGER_EMPTY: "The container at cue {cue} staggers no children, so give it children or remove the attribute.",
+    PAGE_SPOTLIGHT_EMPTY:
+      "The spotlight on slide {slide} has no child with data-in, so give its children cues or remove the attribute.",
+    PAGE_MOTION_OVERRUN:
+      "The motion at cue {cue} is still playing {value} s later, at the frame the next cue is read from.",
+    PAGE_STAGGER_OVERRUN:
+      "The stagger at cue {cue} runs {value} s in all, which passes the half second a cue may still move.",
+    PAGE_THIN_DRAW: "The stroke at cue {cue} sweeps {value} percent of the frame, which is under the change floor.",
+    PAGE_NO_DESCRIPTION:
+      "The element at cue {cue} has no text and no data-tex, so give it data-describe or an empty one.",
+    PAGE_SWAP_APART:
+      "The swap at cue {cue} lands {value} percent over the box it replaces, so the two may read as unrelated.",
+    PAGE_CDN_ASSET: "The page loaded {value} from another origin, so the film depends on a host it does not own.",
+    RECORD_STALLED:
+      "The page stopped drawing {value} s into the recording, so every later cue was captured on a dead frame.",
+    RECORD_BLACK:
+      "The frame at cue {cue} is black, so nothing the slide declares was on screen when the voice arrived.",
+    RECORD_TRUNCATED: "The recording ends {value} s before the narration does, so the last cues are not in it.",
   };
   var READ_FROM_THE_PAGE = null;
   var IN_SECONDS_RANGE = { min: 0.12, max: 0.44, step: 0.04, unit: "seconds" };
   var STAGGER_RANGE = { min: 0.04, max: 0.2, step: 0.04, unit: "seconds" };
-  var HOLD_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
+  var PREVIEW_SECONDS_RANGE = { min: 1, max: 60, step: 1, unit: "seconds" };
   var ATTRS = {
     "data-in": {
       name: "data-in",
@@ -266,7 +132,7 @@
     "data-describe": {
       name: "data-describe",
       on: ["element", "slide"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -274,7 +140,7 @@
       span: 0,
       affects: ["transcript", "catalog"],
       summary:
-        "The subject of the reveal, which the runtime gives a verb per moment. An empty phrase means decorative.",
+        "The subject of the reveal, which the runtime gives a verb per moment. An empty description means decorative.",
     },
     "data-tex": {
       name: "data-tex",
@@ -382,7 +248,7 @@
       code: "PAGE_CLASS_UNDESCRIBED",
       span: READ_FROM_THE_PAGE,
       affects: ["cue-order", "motion", "transcript", "style"],
-      summary: "Adds a class at a moment, written as moment:name pairs, for the page's own stylesheet.",
+      summary: "Adds a class at a cue, written as cue:class pairs, for the page's own stylesheet.",
     },
     "data-describe-class": {
       name: "data-describe-class",
@@ -394,7 +260,7 @@
       code: null,
       span: 0,
       affects: ["transcript"],
-      summary: "What each class change means, as moment:phrase pairs separated by a vertical bar.",
+      summary: "What each class change means, as cue:description pairs separated by a vertical bar.",
     },
     "data-stagger": {
       name: "data-stagger",
@@ -408,14 +274,14 @@
       affects: ["motion"],
       summary: "The container's children arrive this far apart from one cue.",
     },
-    "data-steps": {
-      name: "data-steps",
+    "data-spotlight": {
+      name: "data-spotlight",
       on: ["container"],
       kind: "flag",
       values: [],
       default: null,
       range: null,
-      code: "PAGE_STAGGER_EMPTY",
+      code: "PAGE_SPOTLIGHT_EMPTY",
       span: READ_FROM_THE_PAGE,
       affects: ["cue-order", "motion", "transcript", "catalog"],
       summary: "Each cued child comes to the front as it arrives and the ones before it step back.",
@@ -459,7 +325,7 @@
     "data-describe-out": {
       name: "data-describe-out",
       on: ["element"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -483,7 +349,7 @@
     "data-name": {
       name: "data-name",
       on: ["scene"],
-      kind: "phrase",
+      kind: "description",
       values: [],
       default: null,
       range: null,
@@ -504,13 +370,13 @@
       affects: ["cue-order", "catalog"],
       summary: "Declares a slide on a template. Its id qualifies every moment written inside it.",
     },
-    "data-hold": {
-      name: "data-hold",
+    "data-preview-seconds": {
+      name: "data-preview-seconds",
       on: ["slide"],
       kind: "seconds",
       values: [],
       default: "8",
-      range: HOLD_RANGE,
+      range: PREVIEW_SECONDS_RANGE,
       code: null,
       span: 0,
       affects: ["preview"],
@@ -526,7 +392,7 @@
       code: "PAGE_CUE_UNKNOWN",
       span: 0,
       affects: ["cue-order", "catalog"],
-      summary: "Local names of cues only a handler serves, which no moment attribute mentions.",
+      summary: "Cue names only a handler serves, which no moment attribute mentions.",
     },
     "data-enter": {
       name: "data-enter",
@@ -545,28 +411,31 @@
   var MOMENT_SELECTOR = MOMENTS.map((name) => `[${name}]`).join(",");
   var PAIR_SEPARATOR = "|";
   var PAIR_MARK = ":";
-  var WIRE_MARK = ":";
+  var CUE_MARK = ":";
   var TIME_MARK = "@";
   var LIST_SEPARATOR = ",";
-  var PREVIEW_CUE_TIMES = "/__decktalk/cue-times.json";
+  var T0_SIGNAL = "signal";
+  var DONE_ATTR = "data-done";
+  var ENGINE_PATH = "/__decktalk/";
+  var PREVIEW_CUE_TIMES = `${ENGINE_PATH}cue-times.json`;
   var MOTION_SCALE_PROPERTY = "--dt-motion-scale";
-  function wireId(slide, local) {
-    return `${slide}${WIRE_MARK}${local}`;
+  function cueId(slide, local) {
+    return `${slide}${CUE_MARK}${local}`;
   }
   function pairs(value) {
     const out = [];
     for (const part of value.split(PAIR_SEPARATOR)) {
       const at = part.indexOf(PAIR_MARK);
       if (at < 0) continue;
-      const moment = part.slice(0, at).trim();
+      const cue = part.slice(0, at).trim();
       const rest = part.slice(at + 1).trim();
-      if (!moment || !rest) continue;
-      out.push({ moment, value: rest });
+      if (!cue || !rest) continue;
+      out.push({ cue, value: rest });
     }
     return out;
   }
   function message(code, fields = {}) {
-    return CODES[code].message.replace(/\{(\w+)\}/g, (whole, key2) => (key2 in fields ? String(fields[key2]) : whole));
+    return CODES[code].replace(/\{(\w+)\}/g, (whole, key2) => (key2 in fields ? String(fields[key2]) : whole));
   }
   function known(name) {
     return Object.hasOwn(ATTRS, name);
@@ -592,10 +461,215 @@
     return Math.min(span2 * scale2, PLAYABLE_SPAN_SECONDS);
   }
 
-  // src/decktalk/runtime/src/clock.ts
-  /*! The narration clock and the queue of everything the page has still to do.
+  // src/decktalk/runtime/src/canvas.ts
+  /*! The canvas a deck is drawn on, and the one stylesheet that renders every closed word.
    *
-   * Every second a DeckTalk page reasons in is a second after narration t=0, which is the frame the
+   * A DeckTalk page draws onto one canvas of a fixed size, named below and scaled to whatever window
+   * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
+   * This module owns that canvas, the fit, the heads-up display, and the stylesheet.
+   *
+   * Every rule below is generated from the registry, so a style word's length lives once. Each
+   * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
+   * to the head, so a page rule of equal weight wins on document order. An author's stylesheet is
+   * therefore always able to override the runtime without reaching for `!important`.
+   */
+  var CANVAS_WIDTH = 1920;
+  var CANVAS_HEIGHT = 1080;
+  var EASE = "cubic-bezier(.2,.7,.2,1)";
+  var POP_ENTRY_SCALE = 0.7;
+  var POP_OVERSHOOT_AT = 60;
+  var FALL_PIXELS = ENTRANCES.rise.liftPixels;
+  var SPAN_PROPERTY = "--dt-span";
+  var CLASS = {
+    slide: "dt-slide",
+    leaving: "dt-leaving",
+    arriving: "dt-arriving",
+    hidden: "dt-hidden",
+    shown: "dt-shown",
+    back: "dt-back",
+    front: "dt-front",
+    word: "dt-word",
+    frozen: "dt-frozen",
+    /** The class a reduced render puts on the root, which the page's own stylesheet must honour. */
+    reduced: "dt-reduced",
+  };
+  function frames(family, word2) {
+    return `dt-${family}-${word2}`;
+  }
+  function styleClass(family, word2) {
+    return frames(family, word2);
+  }
+  var ENTRANCE_BODY = {
+    rise: `from{opacity:0;transform:translateY(${ENTRANCES.rise.liftPixels}px)}to{opacity:1;transform:none}`,
+    settle: `from{opacity:0;transform:translateY(${ENTRANCES.settle.liftPixels}px)}to{opacity:1;transform:none}`,
+    fade: "from{opacity:0}to{opacity:1}",
+    pop: `0%{opacity:0;transform:scale(${POP_ENTRY_SCALE})}${POP_OVERSHOOT_AT}%{opacity:1;transform:scale(${1 + ENTRANCES.pop.overshootPercent / 100})}100%{opacity:1;transform:none}`,
+    draw: "from{opacity:1;stroke-dashoffset:1}to{opacity:1;stroke-dashoffset:0}",
+    cut: "from{opacity:1}to{opacity:1}",
+  };
+  var EXIT_BODY = {
+    fade: "from{opacity:1}to{opacity:0}",
+    fall: `from{opacity:1;transform:none}to{opacity:0;transform:translateY(${FALL_PIXELS}px)}`,
+  };
+  var WORD_BODY = {
+    highlight: `from{opacity:${BACK_OPACITY}}to{opacity:1}`,
+    appear: "from{opacity:0}to{opacity:1}",
+  };
+  var SLIDE_BODY = {
+    crossfade: "from{opacity:0}to{opacity:1}",
+    cut: "from{opacity:1}to{opacity:1}",
+  };
+  function rule(family, word2, seconds2, body, extra = "") {
+    const name = frames(family, word2);
+    return `@keyframes ${name}{${body}}
+:where(.${name}){animation-name:${name};animation-duration:var(${SPAN_PROPERTY},${seconds2}s);animation-timing-function:${EASE};animation-fill-mode:both;${extra}}
+`;
+  }
+  var CHROME_CSS = [
+    ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}\n",
+    ":where(#dt-index){font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}\n",
+    ":where(#dt-index h1){font-size:28px}:where(#dt-index h2){font-size:20px;margin-top:28px}\n",
+    ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
+    ":where(#dt-index code){color:inherit;opacity:.7}\n",
+    ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
+  ];
+  function sheet() {
+    const declared2 = Object.values(ATTRS)
+      .filter((row) => row.kind === "id")
+      .map((row) => `[${row.name}]`)
+      .join(",");
+    const parts = [
+      `:where(${declared2}){display:none}
+`,
+      `:where(#dt-canvas){position:absolute;left:0;top:0;width:${CANVAS_WIDTH}px;height:${CANVAS_HEIGHT}px;overflow:hidden;transform-origin:0 0}
+`,
+      ":where(#dt-camera,#dt-pan){position:absolute;inset:0}\n",
+      `:where(.${CLASS.slide}){position:absolute;inset:0}
+`,
+      // The outgoing slide keeps full opacity underneath the incoming one, so the composite of the two
+      // is opaque at every moment of a crossfade and never dips towards the page's own background.
+      `:where(.${CLASS.leaving}){opacity:1;z-index:0;pointer-events:none}
+`,
+      `:where(.${CLASS.arriving}){z-index:1}
+`,
+      `:where(.${CLASS.hidden}){opacity:0}
+`,
+      `:where(.${CLASS.shown}){opacity:1}
+`,
+    ];
+    for (const [word2, effect] of Object.entries(ENTRANCES)) {
+      const extra = word2 === "draw" ? "stroke-dasharray:1;animation-timing-function:linear;" : "";
+      parts.push(rule("in", word2, effect.seconds, ENTRANCE_BODY[word2], extra));
+    }
+    for (const [word2, effect] of Object.entries(EXITS))
+      parts.push(rule("out", word2, effect.seconds, EXIT_BODY[word2]));
+    for (const [word2, effect] of Object.entries(WORD_STYLES)) {
+      parts.push(rule("word", word2, effect.seconds, WORD_BODY[word2]));
+    }
+    for (const [word2, effect] of Object.entries(SLIDE_ENTRANCES)) {
+      parts.push(rule("enter", word2, effect.seconds, SLIDE_BODY[word2]));
+    }
+    parts.push(
+      `:where(.${CLASS.back}){opacity:${BACK_OPACITY};transition:opacity var(${SPAN_PROPERTY},${ATTENTION.back.seconds}s) ${EASE}}
+`,
+      `:where(.${CLASS.front}){opacity:1;transition:opacity var(${SPAN_PROPERTY},${ATTENTION.front.seconds}s) ${EASE}}
+`,
+    );
+    const fade = frames("in", "fade");
+    parts.push(
+      `:where(.${CLASS.reduced}) :where(${Object.keys(ENTRANCES)
+        .map((word2) => `.${frames("in", word2)}`)
+        .join(",")}){animation-name:${fade}}
+`,
+    );
+    parts.push(
+      `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}
+`,
+    );
+    parts.push(...CHROME_CSS);
+    return parts.join("");
+  }
+  var canvasEl = null;
+  var cameraEl = null;
+  var panEl = null;
+  var hudEl = null;
+  var fitScale = 1;
+  function style() {
+    if (document.getElementById("dt-style")) return;
+    const el = document.createElement("style");
+    el.id = "dt-style";
+    el.textContent = sheet();
+    const head = document.head || document.documentElement;
+    head.insertBefore(el, head.firstChild);
+  }
+  function reduced() {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+  }
+  function motionScale() {
+    const written2 = getComputedStyle(document.documentElement).getPropertyValue(MOTION_SCALE_PROPERTY).trim();
+    const scale2 = Number.parseFloat(written2);
+    return Number.isFinite(scale2) && scale2 > 0 ? scale2 : 1;
+  }
+  function span(el, seconds2) {
+    el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds2, motionScale())}s`);
+  }
+  function build(hud) {
+    if (canvasEl) return;
+    canvasEl = document.getElementById("dt-canvas") ?? document.createElement("div");
+    canvasEl.id = "dt-canvas";
+    if (!canvasEl.isConnected) document.body.appendChild(canvasEl);
+    cameraEl = document.createElement("div");
+    cameraEl.id = "dt-camera";
+    panEl = document.createElement("div");
+    panEl.id = "dt-pan";
+    cameraEl.appendChild(panEl);
+    canvasEl.appendChild(cameraEl);
+    if (hud) {
+      hudEl = document.createElement("div");
+      hudEl.id = "dt-hud";
+      document.body.appendChild(hudEl);
+    }
+    if (reduced()) document.documentElement.classList.add(CLASS.reduced);
+    fit();
+    window.addEventListener("resize", fit);
+  }
+  function fit() {
+    if (!canvasEl) return;
+    fitScale = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT);
+    const x = (window.innerWidth - CANVAS_WIDTH * fitScale) / 2;
+    const y = (window.innerHeight - CANVAS_HEIGHT * fitScale) / 2;
+    canvasEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
+  }
+  function pan() {
+    return panEl;
+  }
+  function frame() {
+    return canvasEl;
+  }
+  function scale() {
+    return fitScale;
+  }
+  function freeze() {
+    document.documentElement.classList.add(CLASS.frozen);
+  }
+  function hide() {
+    if (canvasEl) canvasEl.style.display = "none";
+    document.body.style.overflow = "auto";
+  }
+  function say(line2) {
+    if (hudEl) hudEl.textContent = line2;
+  }
+  function slideSeconds(word2) {
+    return scaled(SLIDE_ENTRANCES[word2].seconds, motionScale());
+  }
+  function countSeconds(word2) {
+    return scaled(COUNTS[word2].seconds, motionScale());
+  }
+
+  // src/decktalk/runtime/src/clock.ts
+  /*! The section clock and the queue of everything the page has still to do.
+   *
+   * Every second a DeckTalk page reasons in is a second on the section clock, whose start is the frame the
    * recorder's cover came off or the moment a preview started. This module owns that origin, the
    * queue of work sorted by the second it is due, and the one animation frame loop that drains it.
    *
@@ -607,7 +681,7 @@
   var MOUNT_FIRST = 0;
   var AFTER_THE_MOUNT = 1;
   var origin = null;
-  var frame = 0;
+  var frame2 = 0;
   var queue = [];
   var looping = false;
   function start() {
@@ -620,7 +694,7 @@
     return origin === null ? Number.NEGATIVE_INFINITY : (performance.now() - origin) / MILLISECONDS;
   }
   function frameAt() {
-    return origin === null ? null : round((frame - origin) / MILLISECONDS);
+    return origin === null ? null : round((frame2 - origin) / MILLISECONDS);
   }
   function round(seconds2) {
     return Number(seconds2.toFixed(SECOND_DIGITS));
@@ -636,7 +710,7 @@
     if (looping) return;
     looping = true;
     const tick = (at) => {
-      frame = at;
+      frame2 = at;
       const seconds2 = now();
       while (queue.length && queue[0].at <= seconds2) queue.shift().run();
       onFrame?.(seconds2);
@@ -686,11 +760,11 @@
    * names are derived from the registry rather than spelled here, an unknown `data-` word and a value
    * outside its published set are reported before a single pixel is drawn, and a moment is qualified
    * with the id of the template it was written in, so the author writes `expand` inside the slide
-   * `pitch.listing` and the wire carries `pitch.listing:expand`.
+   * `pitch.listing` and its cue id is `pitch.listing:expand`.
    *
    * Ownership is declared and never inferred. A slide owns exactly the cues its moment attributes
-   * name plus the local names it lists, which is what lets a cue id carry any characters an author
-   * likes and what replaced the longest-prefix rule that used to guess.
+   * name plus the cue names it lists, which is what lets a cue id carry any characters an author
+   * likes, with no prefix rule guessing which slide a cue belongs to.
    */
   var NAMES = Object.keys(ATTRS);
   var PREFIX = NAMES[0].slice(0, NAMES[0].indexOf("-") + 1);
@@ -701,7 +775,7 @@
     scene: named("scene"),
     name: named("name"),
     slide: named("slide"),
-    hold: named("hold"),
+    previewSeconds: named("preview-seconds"),
     owns: named("owns"),
     enter: named("enter"),
     in: named("in"),
@@ -711,7 +785,7 @@
     inStyle: named("in-style"),
     inSeconds: named("in-seconds"),
     outStyle: named("out-style"),
-    steps: named("steps"),
+    spotlight: named("spotlight"),
     stagger: named("stagger"),
     swaps: named("swaps"),
     words: named("words"),
@@ -726,9 +800,9 @@
   var SCENE_WORD = "Scene";
   var scenes = /* @__PURE__ */ new Map();
   var handlers = /* @__PURE__ */ new Map();
-  var motionScale = 1;
+  var motionScale2 = 1;
   function setMotionScale(scale2) {
-    motionScale = scale2;
+    motionScale2 = scale2;
   }
   function all() {
     return scenes;
@@ -783,26 +857,26 @@
   function staggerSeconds(el) {
     return seconds(el, ATTR.stagger);
   }
-  function holdSeconds(el) {
-    return seconds(el, ATTR.hold) ?? Number(ATTRS[ATTR.hold].default);
+  function previewSeconds(el) {
+    return seconds(el, ATTR.previewSeconds) ?? Number(ATTRS[ATTR.previewSeconds].default);
   }
   function momentsOf(el, slideId) {
     const out = [];
     for (const attr of MOMENTS) {
       const local = written(el, attr);
-      if (local) out.push({ attr, local, cue: wireId(slideId, local) });
+      if (local) out.push({ attr, local, cue: cueId(slideId, local) });
     }
     return out;
   }
-  function classMomentsOf(el, slideId) {
+  function classChangesOf(el, slideId) {
     const value = written(el, ATTR.class);
     if (!value) return [];
-    return pairs(value).map((pair) => ({ cue: wireId(slideId, pair.moment), local: pair.moment, name: pair.value }));
+    return pairs(value).map((pair) => ({ cue: cueId(slideId, pair.cue), local: pair.cue, name: pair.value }));
   }
-  function classPhraseOf(el, local) {
+  function classDescriptionOf(el, local) {
     const value = written(el, ATTR.describeClass);
     if (value === null) return null;
-    const found = pairs(value).find((pair) => pair.moment === local);
+    const found = pairs(value).find((pair) => pair.cue === local);
     return found ? found.value : null;
   }
   function momentElements(root) {
@@ -818,11 +892,11 @@
     if (slide.markup) {
       for (const el of momentElements(slide.markup.content)) {
         for (const moment of momentsOf(el, slide.id)) add(moment.cue);
-        for (const change of classMomentsOf(el, slide.id)) add(change.cue);
+        for (const change of classChangesOf(el, slide.id)) add(change.cue);
       }
     }
-    for (const local of Object.keys(slide.on)) add(wireId(slide.id, local));
-    for (const local of slide.owns) add(wireId(slide.id, local));
+    for (const local of Object.keys(slide.on)) add(cueId(slide.id, local));
+    for (const local of slide.owns) add(cueId(slide.id, local));
     return order2;
   }
   function ownerOf(cue, within = null) {
@@ -848,12 +922,12 @@
     if (!slide.markup) return spans;
     for (const el of momentElements(slide.markup.content)) {
       for (const moment of momentsOf(el, slide.id)) widen(moment.cue, spanOf(el, moment.attr));
-      for (const change of classMomentsOf(el, slide.id)) widen(change.cue, 0);
+      for (const change of classChangesOf(el, slide.id)) widen(change.cue, 0);
     }
     return spans;
   }
   function declared(span2) {
-    return Number((span2 * motionScale).toFixed(SECOND_DIGITS));
+    return Number((span2 * motionScale2).toFixed(SECOND_DIGITS));
   }
   function spanOf(el, attr) {
     if (attr === ATTR.back) return ATTENTION.back.seconds;
@@ -871,7 +945,7 @@
   }
   function measureClassSpans(slideEl, slide, into, reduced2) {
     for (const el of momentElements(slideEl)) {
-      for (const change of classMomentsOf(el, slide.id)) {
+      for (const change of classChangesOf(el, slide.id)) {
         el.classList.add(change.name);
         const span2 = longestMotion(el);
         el.classList.remove(change.name);
@@ -904,7 +978,7 @@
   function slideFrom(sceneId, input, at) {
     return {
       id: String(input.id ?? `${sceneId}.${at + 1}`),
-      hold: Number(input.hold ?? ATTRS[ATTR.hold].default),
+      previewSeconds: Number(input.previewSeconds ?? ATTRS[ATTR.previewSeconds].default),
       enter: input.enter ?? ATTRS[ATTR.enter].default,
       owns: (input.owns ?? []).map(String),
       markup: null,
@@ -956,7 +1030,7 @@
           scene.slides.push(slide);
         }
         if (!slide.render) slide.markup = tpl;
-        slide.hold = holdSeconds(tpl);
+        slide.previewSeconds = previewSeconds(tpl);
         slide.enter = slideEntranceOf(tpl);
         slide.owns = (written(tpl, ATTR.owns) ?? "").split(/\s+/).filter(Boolean);
         check(tpl.content, slideId, true);
@@ -973,7 +1047,7 @@
       for (const attribute of el.attributes) {
         if (!attribute.name.startsWith(PREFIX)) continue;
         if (!known(attribute.name)) {
-          warn("PAGE_UNKNOWN_ATTR", place, null, { attr: attribute.name });
+          warn("PAGE_ATTR_UNKNOWN", place, null, { attr: attribute.name });
           continue;
         }
         const row = ATTRS[attribute.name];
@@ -994,12 +1068,13 @@
       }
       describedClasses(el, place);
       staggered(el, place);
+      spotlit(el, place);
       swapped(el, root, place);
     }
   }
   function describedClasses(el, slideId) {
-    for (const change of classMomentsOf(el, slideId)) {
-      if (classPhraseOf(el, change.local) === null) {
+    for (const change of classChangesOf(el, slideId)) {
+      if (classDescriptionOf(el, change.local) === null) {
         warn("PAGE_CLASS_UNDESCRIBED", slideId, change.cue, { value: change.name, attr: ATTR.class });
       }
     }
@@ -1009,13 +1084,18 @@
     const moment = momentsOf(el, slideId).find((one) => one.attr === ATTR.in);
     warn("PAGE_STAGGER_EMPTY", slideId, moment ? moment.cue : null, { attr: ATTR.stagger });
   }
+  function spotlit(el, slideId) {
+    if (!flagged(el, ATTR.spotlight)) return;
+    if ([...el.children].some((child) => written(child, ATTR.in))) return;
+    warn("PAGE_SPOTLIGHT_EMPTY", slideId, null, { attr: ATTR.spotlight });
+  }
   function swapped(el, root, slideId) {
     if (!flagged(el, ATTR.swaps)) return;
     const local = written(el, ATTR.in);
     if (!local) return;
     const leaving = [...root.querySelectorAll(`[${ATTR.out}]`)].filter((other) => written(other, ATTR.out) === local);
     if (leaving.length === 1) return;
-    warn("PAGE_SWAP_AMBIGUOUS", slideId, wireId(slideId, local), { value: leaving.length, attr: ATTR.swaps });
+    warn("PAGE_SWAP_AMBIGUOUS", slideId, cueId(slideId, local), { value: leaving.length, attr: ATTR.swaps });
   }
   function order(slide) {
     if (!slide.markup) return;
@@ -1099,211 +1179,6 @@
       };
       look();
     });
-  }
-
-  // src/decktalk/runtime/src/stage.ts
-  /*! The stage a deck is drawn on, and the one stylesheet that renders every closed word.
-   *
-   * A DeckTalk page draws into one stage of a fixed size, named below and scaled to whatever window
-   * it is opened in, so an element measured on a laptop is at the pixel a recording will put it at.
-   * This module owns that stage, the fit, the heads-up display, and the stylesheet.
-   *
-   * Every rule below is generated from the registry, so a style word's length lives once. Each
-   * selector sits inside `:where()`, which gives it no specificity at all, and the sheet is prepended
-   * to the head, so a page rule of equal weight wins on document order. An author's stylesheet is
-   * therefore always able to override the runtime without reaching for `!important`.
-   */
-  var STAGE_WIDTH = 1920;
-  var STAGE_HEIGHT = 1080;
-  var EASE = "cubic-bezier(.2,.7,.2,1)";
-  var POP_ENTRY_SCALE = 0.7;
-  var POP_OVERSHOOT_AT = 60;
-  var FALL_PIXELS = ENTRANCES.rise.liftPixels;
-  var SPAN_PROPERTY = "--dt-span";
-  var CLASS = {
-    slide: "dt-slide",
-    leaving: "dt-leaving",
-    arriving: "dt-arriving",
-    hidden: "dt-hidden",
-    shown: "dt-shown",
-    back: "dt-back",
-    front: "dt-front",
-    word: "dt-word",
-    frozen: "dt-frozen",
-    /** The class a reduced render puts on the root, which the page's own stylesheet must honour. */
-    reduced: "dt-reduced",
-  };
-  function frames(family, word2) {
-    return `dt-${family}-${word2}`;
-  }
-  function styleClass(family, word2) {
-    return frames(family, word2);
-  }
-  var ENTRANCE_BODY = {
-    rise: `from{opacity:0;transform:translateY(${ENTRANCES.rise.liftPixels}px)}to{opacity:1;transform:none}`,
-    settle: `from{opacity:0;transform:translateY(${ENTRANCES.settle.liftPixels}px)}to{opacity:1;transform:none}`,
-    fade: "from{opacity:0}to{opacity:1}",
-    pop: `0%{opacity:0;transform:scale(${POP_ENTRY_SCALE})}${POP_OVERSHOOT_AT}%{opacity:1;transform:scale(${1 + ENTRANCES.pop.overshootPercent / 100})}100%{opacity:1;transform:none}`,
-    draw: "from{opacity:1;stroke-dashoffset:1}to{opacity:1;stroke-dashoffset:0}",
-    cut: "from{opacity:1}to{opacity:1}",
-  };
-  var EXIT_BODY = {
-    fade: "from{opacity:1}to{opacity:0}",
-    fall: `from{opacity:1;transform:none}to{opacity:0;transform:translateY(${FALL_PIXELS}px)}`,
-  };
-  var WORD_BODY = {
-    highlight: `from{opacity:${BACK_OPACITY}}to{opacity:1}`,
-    appear: "from{opacity:0}to{opacity:1}",
-  };
-  var SLIDE_BODY = {
-    crossfade: "from{opacity:0}to{opacity:1}",
-    cut: "from{opacity:1}to{opacity:1}",
-  };
-  function rule(family, word2, seconds2, body, extra = "") {
-    const name = frames(family, word2);
-    return `@keyframes ${name}{${body}}
-:where(.${name}){animation-name:${name};animation-duration:var(${SPAN_PROPERTY},${seconds2}s);animation-timing-function:${EASE};animation-fill-mode:both;${extra}}
-`;
-  }
-  var CHROME_CSS = [
-    ":where(#dt-hud){position:fixed;left:12px;top:12px;z-index:2147483000;font:14px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;pointer-events:none;white-space:pre}\n",
-    ":where(#dt-index){font:16px/1.5 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:inherit}\n",
-    ":where(#dt-index h1){font-size:28px}:where(#dt-index h2){font-size:20px;margin-top:28px}\n",
-    ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
-    ":where(#dt-index code){color:inherit;opacity:.7}\n",
-    ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
-  ];
-  function sheet() {
-    const declared2 = Object.values(ATTRS)
-      .filter((row) => row.kind === "id")
-      .map((row) => `[${row.name}]`)
-      .join(",");
-    const parts = [
-      `:where(${declared2}){display:none}
-`,
-      `:where(#dt-stage){position:absolute;left:0;top:0;width:${STAGE_WIDTH}px;height:${STAGE_HEIGHT}px;overflow:hidden;transform-origin:0 0}
-`,
-      ":where(#dt-camera,#dt-pan){position:absolute;inset:0}\n",
-      `:where(.${CLASS.slide}){position:absolute;inset:0}
-`,
-      // The outgoing slide keeps full opacity underneath the incoming one, so the composite of the two
-      // is opaque at every moment of a crossfade and never dips towards the page's own background.
-      `:where(.${CLASS.leaving}){opacity:1;z-index:0;pointer-events:none}
-`,
-      `:where(.${CLASS.arriving}){z-index:1}
-`,
-      `:where(.${CLASS.hidden}){opacity:0}
-`,
-      `:where(.${CLASS.shown}){opacity:1}
-`,
-    ];
-    for (const [word2, effect] of Object.entries(ENTRANCES)) {
-      const extra = word2 === "draw" ? "stroke-dasharray:1;animation-timing-function:linear;" : "";
-      parts.push(rule("in", word2, effect.seconds, ENTRANCE_BODY[word2], extra));
-    }
-    for (const [word2, effect] of Object.entries(EXITS))
-      parts.push(rule("out", word2, effect.seconds, EXIT_BODY[word2]));
-    for (const [word2, effect] of Object.entries(WORD_STYLES)) {
-      parts.push(rule("word", word2, effect.seconds, WORD_BODY[word2]));
-    }
-    for (const [word2, effect] of Object.entries(SLIDE_ENTRANCES)) {
-      parts.push(rule("enter", word2, effect.seconds, SLIDE_BODY[word2]));
-    }
-    parts.push(
-      `:where(.${CLASS.back}){opacity:${BACK_OPACITY};transition:opacity var(${SPAN_PROPERTY},${ATTENTION.back.seconds}s) ${EASE}}
-`,
-      `:where(.${CLASS.front}){opacity:1;transition:opacity var(${SPAN_PROPERTY},${ATTENTION.front.seconds}s) ${EASE}}
-`,
-    );
-    const fade = frames("in", "fade");
-    parts.push(
-      `:where(.${CLASS.reduced}) :where(${Object.keys(ENTRANCES)
-        .map((word2) => `.${frames("in", word2)}`)
-        .join(",")}){animation-name:${fade}}
-`,
-    );
-    parts.push(
-      `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}
-`,
-    );
-    parts.push(...CHROME_CSS);
-    return parts.join("");
-  }
-  var stageEl = null;
-  var cameraEl = null;
-  var panEl = null;
-  var hudEl = null;
-  var fitScale = 1;
-  function style() {
-    if (document.getElementById("dt-style")) return;
-    const el = document.createElement("style");
-    el.id = "dt-style";
-    el.textContent = sheet();
-    const head = document.head || document.documentElement;
-    head.insertBefore(el, head.firstChild);
-  }
-  function reduced() {
-    return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-  }
-  function motionScale2() {
-    const written2 = getComputedStyle(document.documentElement).getPropertyValue(MOTION_SCALE_PROPERTY).trim();
-    const scale2 = Number.parseFloat(written2);
-    return Number.isFinite(scale2) && scale2 > 0 ? scale2 : 1;
-  }
-  function span(el, seconds2) {
-    el.style.setProperty(SPAN_PROPERTY, `${scaled(seconds2, motionScale2())}s`);
-  }
-  function build(hud) {
-    if (stageEl) return;
-    stageEl = document.getElementById("dt-stage") ?? document.createElement("div");
-    stageEl.id = "dt-stage";
-    if (!stageEl.isConnected) document.body.appendChild(stageEl);
-    cameraEl = document.createElement("div");
-    cameraEl.id = "dt-camera";
-    panEl = document.createElement("div");
-    panEl.id = "dt-pan";
-    cameraEl.appendChild(panEl);
-    stageEl.appendChild(cameraEl);
-    if (hud) {
-      hudEl = document.createElement("div");
-      hudEl.id = "dt-hud";
-      document.body.appendChild(hudEl);
-    }
-    if (reduced()) document.documentElement.classList.add(CLASS.reduced);
-    fit();
-    window.addEventListener("resize", fit);
-  }
-  function fit() {
-    if (!stageEl) return;
-    fitScale = Math.min(window.innerWidth / STAGE_WIDTH, window.innerHeight / STAGE_HEIGHT);
-    const x = (window.innerWidth - STAGE_WIDTH * fitScale) / 2;
-    const y = (window.innerHeight - STAGE_HEIGHT * fitScale) / 2;
-    stageEl.style.transform = `translate(${x}px, ${y}px) scale(${fitScale})`;
-  }
-  function pan() {
-    return panEl;
-  }
-  function frame2() {
-    return stageEl;
-  }
-  function scale() {
-    return fitScale;
-  }
-  function freeze() {
-    document.documentElement.classList.add(CLASS.frozen);
-  }
-  function hide() {
-    if (stageEl) stageEl.style.display = "none";
-    document.body.style.overflow = "auto";
-  }
-  function say(line2) {
-    if (hudEl) hudEl.textContent = line2;
-  }
-  function slideSeconds(word2) {
-    return scaled(SLIDE_ENTRANCES[word2].seconds, motionScale2());
-  }
-  function countSeconds(word2) {
-    return scaled(COUNTS[word2].seconds, motionScale2());
   }
 
   // src/decktalk/runtime/src/telemetry.ts
@@ -1398,7 +1273,7 @@
       warn("PAGE_WORDS_NOT_FOUND", scene.slide, scene.cue, { value: text.slice(0, TEXT_MAX) });
       return;
     }
-    const lead = scaled(WORD_STYLES[style2].seconds, motionScale2());
+    const lead = scaled(WORD_STYLES[style2].seconds, motionScale());
     const due = [];
     el.textContent = "";
     let taken = 0;
@@ -1434,9 +1309,9 @@
             recorder().words({
               text: text.slice(0, TEXT_MAX),
               cueAt: round(cueAt),
-              runAt: spoken[start2].at,
+              spokenAt: spoken[start2].at,
               count: keys.length,
-              firstOn: round(at),
+              firstShown: round(at),
             });
           }
         } else waiting2 = true;
@@ -1498,15 +1373,15 @@
         const action = actionFor(element, moment.attr, moment.cue, slide, playing, held, onLeave);
         push(actions, moment.cue, action);
       }
-      for (const change of classMomentsOf(element, slide.id)) {
+      for (const change of classChangesOf(element, slide.id)) {
         push(actions, change.cue, {
           attr: ATTR.class,
           run: () => element.classList.add(change.name),
-          line: classPhraseOf(element, change.local) || null,
+          line: classDescriptionOf(element, change.local) || null,
         });
       }
     }
-    for (const container of el.querySelectorAll(`[${ATTR.steps}]`)) steps(container, slide, actions);
+    for (const container of el.querySelectorAll(`[${ATTR.spotlight}]`)) spotlight(container, slide, actions);
     if (playing.frozen) {
       for (const [cue, list] of actions) {
         if (playing.held?.has(cue)) continue;
@@ -1613,10 +1488,10 @@
       if (event.target === el) el.classList.remove(entrance);
     });
   }
-  function steps(container, slide, actions) {
+  function spotlight(container, slide, actions) {
     const cued = [...container.children].filter((child) => written(child, ATTR.in));
     cued.forEach((child, at) => {
-      const cue = wireId(slide.id, written(child, ATTR.in));
+      const cue = cueId(slide.id, written(child, ATTR.in));
       push(actions, cue, {
         attr: ATTR.front,
         run: () => {
@@ -1660,8 +1535,8 @@
   /*! The four things a DeckTalk page can be doing, and the one URL that decides which.
    *
    * A page with no query lists its scenes. `?scene=` plays one at the speed a person reads it.
-   * `?cues=` plays one against the narration clock, which is the mode a recording is made in.
-   * `?slide=` freezes one slide with its cues already fired, which is what a screenshot opens.
+   * `?cues=` plays one against the section clock, which is the mode a recording is made in.
+   * `?freeze=` freezes one slide with its cues already fired, which is what a screenshot opens.
    *
    * Every key this module reads is one the contract publishes, and each is read once here so no other
    * module ever touches the URL. A preview goes one step further and asks the project for the cue
@@ -1669,17 +1544,15 @@
    * than an invented one, and nothing on that path may fail a page that has no such file.
    */
   var SCENE = "scene";
-  var SLIDE = "slide";
+  var FREEZE = "freeze";
   var CUES = "cues";
   var WORDS = "words";
   var T0 = "t0";
   var SPEED = "speed";
   var HUD = "hud";
-  var SIGNAL = "signal";
   var ON = "1";
   var SLOWEST = 0.05;
   var PREVIEW_STEP_SECONDS = 1;
-  var DONE = "1";
   var state = {
     mode: "index",
     scene: null,
@@ -1691,8 +1564,8 @@
     words: null,
   };
   var params = new URLSearchParams(location.search);
-  var frozen = params.has(SLIDE);
-  var signalled = params.get(T0) === SIGNAL;
+  var frozen = params.has(FREEZE);
+  var signalled = params.get(T0) === T0_SIGNAL;
   var origin2 = signalled ? 0 : Number.parseFloat(params.get(T0) ?? "") || 0;
   var speed = Math.max(SLOWEST, Number.parseFloat(params.get(SPEED) ?? "") || 1);
   function waitsForSignal() {
@@ -1703,6 +1576,9 @@
   }
   function query() {
     return params;
+  }
+  function done() {
+    document.body.toggleAttribute(DONE_ATTR, true);
   }
   function buildSlide(scene, slide) {
     const el = document.createElement("div");
@@ -1763,7 +1639,7 @@
     const slide = state.slide;
     const slideEl = state.mounted?.el ?? null;
     const ctx = context(cue, slide ? slide.id : "", now());
-    const local = slide ? cue.slice(wireId(slide.id, "").length) : cue;
+    const local = slide ? cue.slice(cueId(slide.id, "").length) : cue;
     const own = slide?.on[local];
     if (own) {
       try {
@@ -1823,18 +1699,18 @@
       warn("PAGE_NO_OWNER", scene.id, cues.length ? cues[0].id : null);
       return;
     }
-    if (mode === "cue") {
+    if (mode === "record") {
       for (const slide of scene.slides) {
         if (!mountAt.has(slide)) warn("PAGE_SLIDE_UNUSED", slide.id);
       }
     }
     const last = ordered[ordered.length - 1][0];
     mount(scene, ordered[0][0], null, origin2);
-    if (ordered[0][0] === last) document.body.dataset.done = DONE;
+    if (ordered[0][0] === last) done();
     for (const [slide] of ordered.slice(1)) {
       schedule(origin2 + mountAt.get(slide), "mount", slide.id, () => {
         mount(scene, slide, null, null);
-        if (slide === last) document.body.dataset.done = DONE;
+        if (slide === last) done();
       });
     }
     for (const cue of cues) {
@@ -1856,11 +1732,11 @@
             fireCue(cue, mountAt + ((order2 + 1) * PREVIEW_STEP_SECONDS) / speed),
           );
         });
-        if (slide === last) document.body.dataset.done = DONE;
+        if (slide === last) done();
       };
       if (index2 === 0) start2();
       else schedule(mountAt, "mount", slide.id, start2);
-      at += Math.max(slide.hold, (cues.length + 1) * PREVIEW_STEP_SECONDS) / speed;
+      at += Math.max(slide.previewSeconds, (cues.length + 1) * PREVIEW_STEP_SECONDS) / speed;
     });
   }
   async function resolvedCues(sceneId) {
@@ -1896,7 +1772,7 @@
     const firing = held(order2, found.slide.id);
     mount(found.scene, found.slide, new Set(order2.slice(firing.length)), 0);
     state.fired = [...firing];
-    document.body.dataset.done = DONE;
+    done();
   }
   function index(note) {
     state.mode = "index";
@@ -1907,16 +1783,16 @@
     div.appendChild(heading(title, note));
     for (const scene of all().values()) {
       const head = document.createElement("h2");
-      head.textContent = `Scene ${scene.id} — ${scene.name} `;
+      head.textContent = `Scene ${scene.id}: ${scene.name} `;
       head.appendChild(link(`?${SCENE}=${encodeURIComponent(scene.id)}`, "▶ play"));
       div.appendChild(head);
       const row = document.createElement("div");
       row.className = "dt-slides";
       for (const slide of scene.slides) {
         const cues = cueOrder(slide);
-        const anchor = link(`?${SLIDE}=${encodeURIComponent(slide.id)}`, `slide ${slide.id} `);
+        const anchor = link(`?${FREEZE}=${encodeURIComponent(slide.id)}`, `slide ${slide.id} `);
         const note_ = document.createElement("code");
-        note_.textContent = `(${slide.hold}s${cues.length ? `, cues ${cues.join(" ")}` : ""})`;
+        note_.textContent = `(${slide.previewSeconds}s${cues.length ? `, cues ${cues.join(" ")}` : ""})`;
         anchor.appendChild(note_);
         row.appendChild(anchor);
       }
@@ -1958,11 +1834,11 @@
     let listing = false;
     let waiting2 = Promise.resolve();
     if (frozen) {
-      stop(params.get(SLIDE) ?? "", (order2, slide) => probe?.freezeCues(order2, slide, warn) ?? order2);
+      stop(params.get(FREEZE) ?? "", (order2, slide) => probe?.freezeCues(order2, slide, warn) ?? order2);
     } else if (chosen !== null || cues.length) {
       const scene = chosen !== null ? (all().get(chosen) ?? null) : (ownerOf(cues[0].id)?.scene ?? null);
       if (!scene) index(`unknown scene ${chosen ?? ""}`);
-      else if (cues.length) play(scene, cues, "cue");
+      else if (cues.length) play(scene, cues, "record");
       else
         waiting2 = resolvedCues(scene.id).then((resolved) =>
           resolved ? play(scene, resolved, "preview") : preview(scene),
@@ -2003,7 +1879,7 @@
     probe?.measure(state.catalog, {
       scenes: all(),
       pan: pan(),
-      origin: frame2(),
+      origin: frame(),
       scale: scale(),
       build: buildSlide,
     });
@@ -2014,7 +1890,7 @@
    *
    * Include it and declare a scene in markup. Nothing here needs JavaScript:
    *
-   *   <script src="decktalk-runtime.js"><\/script>
+   *   <script src="/__decktalk/decktalk-runtime.js"><\/script>
    *   <div data-scene="pitch" data-name="How often">
    *     <template data-slide="pitch.listing">
    *       <h1>Value still listed</h1>
@@ -2023,7 +1899,7 @@
    *     </template>
    *   </div>
    *
-   * An element has four moments, each the local name of a cue that `cues.json` gives a second to: it
+   * An element has four moments, each the cue name of a cue whose phrase `cues.json` names: it
    * arrives, it steps back, it comes to the front and it leaves. A page that wants behaviour of its
    * own adds it beside the markup, and a page that would rather build a slide in script gives that
    * slide a render function instead of a template.
@@ -2036,21 +1912,21 @@
   var GATE_SECONDS = 5;
   var gates = [];
   function injected() {
-    return window.__dtprobe ?? null;
+    return window.__decktalkProbe ?? null;
   }
   function gatesSettled() {
     if (!gates.length) return Promise.resolve();
-    let done = false;
+    let done2 = false;
     const all_ = Promise.all(
       gates.map((gate) =>
         Promise.resolve(gate).then(null, (err) => warn("PAGE_WAIT_REJECTED", null, null, { value: String(err) })),
       ),
     ).then(() => {
-      done = true;
+      done2 = true;
     });
     const limit = new Promise((resolve) => {
       setTimeout(() => {
-        if (!done) warn("PAGE_WAIT_UNSETTLED");
+        if (!done2) warn("PAGE_WAIT_UNSETTLED");
         resolve();
       }, GATE_SECONDS * MILLISECONDS);
     });
@@ -2061,7 +1937,7 @@
     if (running) return;
     running = true;
     setRecorder(injected()?.recorder);
-    setMotionScale(motionScale2());
+    setMotionScale(motionScale());
     const fonts = Promise.resolve(document.fonts ? document.fonts.ready : null).catch(() => null);
     const ready2 = fonts
       .then(gatesSettled)
@@ -2083,7 +1959,7 @@
     },
     /** Read the page and start it, which a page that loads the runtime late may need to call itself. */
     start: boot,
-    /** Start the narration clock, which is what the recorder sends once its cover has come off. */
+    /** Start the section clock, which is what the recorder sends once its cover has come off. */
     startClock: start,
     /** Hold readiness until a promise of the page's own has settled. */
     waitFor(promise) {

@@ -1,13 +1,12 @@
 """The one reader of what a page hands back, so nothing above this module trusts a page's own words.
 
-`window.__dtprobe.report()` answers with the ten fields `page.REPORT` names, written by JavaScript
+`window.__decktalkProbe.report()` answers with the ten fields `page.REPORT` names, written by JavaScript
 that a deck's own script shares a window with. Every row therefore arrives here and is read into a
 model before anything above uses it, and a row this contract cannot read is dropped with the reason
 rather than carried into an artifact or into a verdict.
 
-Every warning carries the finding code the page named, because `record` dispatches on the code. The
-channel this replaces was a sentence classified by matching substrings, with the sentence itself
-spelled in the runtime, in the recorder and in a test. A code the finding vocabulary does not hold
+Every warning carries the finding code the page named, because `record` dispatches on the code and
+never matches a sentence against a substring. A code the finding vocabulary does not hold
 is a page and a library that have drifted apart, so the row is refused rather than raised.
 
 The page speaks camelCase and the artifacts are snake_case, so this is the one boundary where the
@@ -20,7 +19,7 @@ from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from .. import page
 from ..findings import Code, Model, RaisedBy
-from ..page import MILLISECONDS, REPORT, Attr, stagger_span
+from ..page import REPORT, Attr, stagger_span
 
 
 class PageWarningRow(Model):
@@ -29,7 +28,7 @@ class PageWarningRow(Model):
     code: Code = Field(description="The page code this warning raises, which is what a check dispatches on.")
     message: str = Field(description="The sentence the page printed, which is written for a person to read.")
     slide: str | None = Field(None, description="The slide this is about, or null.")
-    cue: str | None = Field(None, description="The wire id of the cue this is about, or null.")
+    cue: str | None = Field(None, description="The cue id of the cue this is about, or null.")
     attr: str | None = Field(None, description="The attribute this is about, or null.")
 
     @field_validator("code")
@@ -46,15 +45,15 @@ class PageWarningRow(Model):
 
 
 class CueRow(Model):
-    """One cue as the page ran it, in seconds on the narration clock."""
+    """One cue as the page ran it, in seconds on the section clock."""
 
-    id: str = Field(description="The wire id of the cue that fired.")
+    id: str = Field(description="The cue id of the cue that fired.")
     due: float = Field(description="The second the cue was due.")
     ran: float = Field(description="The second the cue actually ran.")
     frame: float | None = Field(None, description="The second the frame that ran it began, or null before t=0.")
     describe: str | None = Field(None, description="What this cue's reveals describe themselves as, or null.")
     next: float | None = Field(None, description="The second the frame after that one began, or null.")
-    after: float | None = Field(None, description="The second the frame after that one began, or null.")
+    after: float | None = Field(None, description="The second the frame after the next one began, or null.")
 
 
 class WordRow(Model):
@@ -62,9 +61,9 @@ class WordRow(Model):
 
     text: str = Field(description="The opening of the line, which is enough to find it in the script.")
     cue_at: float = Field(alias="cueAt", description="The second the cue that started the line ran.")
-    run_at: float = Field(alias="runAt", description="The second the voice reaches the line's first word.")
+    spoken_at: float = Field(alias="spokenAt", description="The second the voice reaches the line's first word.")
     count: int = Field(ge=0, description="How many words the line holds.")
-    first_shown: float = Field(alias="firstOn", description="The second the first word was drawn.")
+    first_shown: float = Field(alias="firstShown", description="The second the first word was drawn.")
 
 
 class FrameGap(Model):
@@ -96,14 +95,14 @@ class ElementRow(Model):
     """One measured element of a slide, which is every element a slide draws whether or not it is cued."""
 
     attrs: dict[str, str] = Field(default_factory=dict, description="Every contract attribute the element carries.")
-    moments: dict[str, str] = Field(default_factory=dict, description="Each moment attribute against its wire id.")
+    moments: dict[str, str] = Field(default_factory=dict, description="Each moment attribute against its cue id.")
     text: str = Field("", description="The element's text, collapsed and cut to the contract's length.")
     children: int = Field(0, ge=0, description="How many children a staggered element reveals one after another.")
     box: Box
 
     @property
     def cue(self) -> str | None:
-        """The wire id of this element's entrance, which is the moment every span is measured from."""
+        """The cue id of this element's entrance, which is the moment every span is measured from."""
         return self.moments.get(Attr.IN.value)
 
     @property
@@ -127,9 +126,9 @@ class ElementRow(Model):
         The scale is applied without the clamp the runtime puts on it, because this is the
         judgement that tells an author the scale they chose has made their own cues unmeasurable.
         A staggered container's span is its step times the children after the first plus one
-        entrance, which is exact arithmetic rather than an estimate, so its judgement is certain.
-        The number of children is what the probe counted on the page, because `data-steps` is a flag
-        that says the children step, and a flag carries no count.
+        entrance, which is exact arithmetic rather than an estimate, so its judgement is an error.
+        The number of children is what the probe counted on the page, because `data-stagger` gives the
+        step between children and says nothing about how many there are.
         """
         entrance = self.entrance * scale
         step = self.attrs.get(Attr.STAGGER.value)
@@ -156,7 +155,7 @@ class MeasuredScene(Model):
     )
     slides: tuple[str, ...] = Field((), description="The slides of this scene, in the order the page declares them.")
     cues: dict[str, tuple[str, ...]] = Field(
-        default_factory=dict, description="The wire ids of the cues each slide declares, keyed by the slide id."
+        default_factory=dict, description="The cue ids of the cues each slide declares, keyed by the slide id."
     )
 
 
@@ -183,9 +182,9 @@ class PageReport(Model):
 
         Frames before t=0 sit under the cover and are trimmed from the cut, so a scene may warm up
         there. A gap is recorded when it ends, so a gap that began before t=0 counts only what fell
-        after it, and a gap with no time on the narration clock counts nothing.
+        after it, and a gap with no time on the section clock counts nothing.
         """
-        visible = (0.0 if gap.at is None else min(gap.ms, gap.at * MILLISECONDS) for gap in self.frame_gaps)
+        visible = (0.0 if gap.at is None else min(gap.ms, gap.at * 1000) for gap in self.frame_gaps)
         return int(max((seen for seen in visible if seen > 0), default=0))
 
 
@@ -201,7 +200,7 @@ ROWS: dict[str, type[Model]] = {
 
 
 class Recording(Model):
-    """One section recorded: what the page loaded, what it said, and where narration t=0 sits in the webm.
+    """One section recorded: what the page loaded, what it said, and where the section clock starts in the webm.
 
     This is what the recorder knows. Whether the recording still matches the project, and what the
     frames of it show, are the stage's to add when it writes the log. It is declared beside the
@@ -216,7 +215,9 @@ class Recording(Model):
     requested_seconds: float = Field(ge=0, description="How long the page was recorded for after the clock started.")
     load_seconds: float = Field(ge=0, description="How long the page took to load.")
     settle_seconds: float = Field(ge=0, description="How long the page was left to settle after it loaded.")
-    clock_start_seconds: float = Field(ge=0, description="Seconds from the recorder's start to narration t=0.")
+    clock_start_seconds: float = Field(
+        ge=0, description="Seconds from the recorder's start to the start of the section clock."
+    )
     page_errors: tuple[str, ...] = Field(description="Uncaught exceptions, or the one line for no runtime at all.")
     report: PageReport = Field(description="What the page said about itself, read once.")
 

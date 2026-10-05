@@ -1,15 +1,15 @@
 """`cues.json` parsed, and the phrase matching that resolves a cue against a section's words.
 
     {"sections": {"3": {"min_seconds": 25,
-                        "cues": [{"cue": "3.2:expand", "on": "On a typical"},
-                                 {"cue": "3.2:zero", "on": "Zero", "occurrence": 2},
-                                 {"cue": "3.4:end", "on": "$end", "offset": 0.3}]}}}
+                        "cues": [{"id": "3.2:expand", "phrase": "On a typical"},
+                                 {"id": "3.2:zero", "phrase": "Zero", "occurrence": 2},
+                                 {"id": "3.4:end", "phrase": "$end", "offset_seconds": 0.3}]}}}
 
-`cue` is the wire id of a moment the page declares, which is its slide and the local name the slide
-wrote. `on` is a word or a short phrase from that section's narration, matched on its first
+`id` is the cue id of a moment the page declares, which is its slide id, a colon and the cue name
+the slide wrote. `phrase` is a word or a short phrase from that section's narration, matched on its first
 occurrence, without case and with punctuation ignored, and `$start` and `$end` name the section's
 own two ends. A time counts from the section start, so a section's lead moves every word cue later
-and `$start` stays at zero. `occurrence`, `case_sensitive` and `offset` refine one match, and
+and `$start` stays at zero. `occurrence`, `case_sensitive` and `offset_seconds` refine one match, and
 `verify` set to false leaves the cue out of the measurement, for a reveal too small or too slow for
 a frame difference to see.
 
@@ -33,7 +33,7 @@ from decktalk.findings import Location
 from decktalk.inputs.document import fill
 from decktalk.inputs.paths import at
 from decktalk.results import Word
-from decktalk.tomlmap import Table
+from decktalk.tomlmap.read import Table
 
 SECTION_START = "$start"
 """The phrase that anchors a cue or a marker to its section's own beginning rather than to a spoken word."""
@@ -46,11 +46,11 @@ SECTION_END = "$end"
 class Cue:
     """One row of `cues.json`: which spoken phrase a visual lands on."""
 
-    cue: str
-    on: str
+    id: str
+    phrase: str
     occurrence: int = 1
     case_sensitive: bool = False
-    offset: float = 0.0
+    offset_seconds: float = 0.0
     verify: bool = True  # False leaves the cue out of a plain `decktalk verify`.
     occurrence_set: bool = False  # cues.json names the occurrence, so a repeated phrase is not ambiguous.
     line: int | None = None  # The line of cues.json the row's phrase is written on, when it could be found.
@@ -63,7 +63,7 @@ READ_HERE = frozenset({"occurrence_set", "line"})
 # `_comment`, the one key a row may carry that DeckTalk reads nothing from.
 CUE_KEYS = {f.name for f in fields(Cue) if f.name not in READ_HERE} | {"_comment"}
 
-PHRASE_KEY = re.compile(r'"on"\s*:\s*("(?:[^"\\]|\\.)*")')
+PHRASE_KEY = re.compile(r'"phrase"\s*:\s*("(?:[^"\\]|\\.)*")')
 """Where a row writes its phrase in the file's own text, which is how the line of each row is found.
 
 A quote inside a JSON string is escaped, so this spelling can only be the key of a row and never a
@@ -160,7 +160,7 @@ def phrase_lines(text: str) -> list[tuple[str, int]]:
 
 def _placed(cue: Cue, written: tuple[str, int] | None) -> Cue:
     """The row with the line its phrase is written on, when the text agrees with what was parsed."""
-    if written is None or written[0] != cue.on:
+    if written is None or written[0] != cue.phrase:
         return cue
     return replace(cue, line=written[1])
 
@@ -168,7 +168,7 @@ def _placed(cue: Cue, written: tuple[str, int] | None) -> Cue:
 def parse_cue(raw: dict[str, object], where: str, location: Location | None = None) -> Cue:
     """One cue row, refusing a key this file does not read so that a typo cannot move a cue in silence.
 
-    An `on` that is there and empty is a row a fix scaffolded and nobody has written the phrase into
+    A `phrase` that is there and empty is a row a fix scaffolded and nobody has written the phrase into
     yet, so it loads and `CUE_UNRESOLVED` judges it. A refusal here would mean the file a fix just
     wrote could not be read by the command run straight after it.
     """
@@ -180,8 +180,14 @@ def parse_cue(raw: dict[str, object], where: str, location: Location | None = No
             location=location,
         )
     cue = fill(Table(raw, where), Cue, occurrence_set="occurrence" in raw)
-    if not cue.cue:
-        raise InputError(f"{where}: 'cue' must not be empty", location=location)
+    if not cue.id:
+        raise InputError(f"{where}: 'id' must not be empty", location=location)
+    if cue.occurrence < 1:
+        raise InputError(
+            f"{where}: 'occurrence' is {cue.occurrence}, and occurrences count from 1.",
+            hint="Set it to 1 for the first time the phrase is spoken, or leave it out.",
+            location=location,
+        )
     return cue
 
 
@@ -196,48 +202,118 @@ APOSTROPHES = str.maketrans({"\u2019": "'", "\u02bc": "'"})
 """The typographic apostrophes a script or a voice's transcript may carry, read as the plain one."""
 
 
-def norm(token: str, case_sensitive: bool = False) -> str:
-    """One word as the matcher compares it: composed, apostrophes plain, punctuation dropped.
+def pieces(token: str, case_sensitive: bool = False) -> list[str]:
+    """One word as the parts the matcher compares: composed, apostrophes plain, split where it is punctuated.
 
     A word is composed first, because the same accented letter can arrive as one character from the
     script and as a letter plus a combining mark from a transcript, and the two must compare equal.
-    Case is folded rather than lowered, so letters whose lower case differs across forms still match.
+    Every ignored character but a combining mark divides two parts, so `state-of-the-art` is four
+    parts and `R&D` is two, while a mark is dropped from inside the letter it sits on. Case is folded
+    rather than lowered, so letters whose lower case differs across forms still match.
     """
-    token = UNMATCHED.sub("", unicodedata.normalize("NFC", token).translate(APOSTROPHES))
-    return token if case_sensitive else token.casefold()
+    composed = unicodedata.normalize("NFC", token).translate(APOSTROPHES)
+    spaced = "".join(_kept(char) for char in composed)
+    return [part if case_sensitive else part.casefold() for part in spaced.split()]
+
+
+def _kept(char: str) -> str:
+    """The character itself when the matcher keeps it, nothing for a combining mark, and a space for a divider."""
+    if not UNMATCHED.match(char):
+        return char
+    return "" if unicodedata.category(char).startswith("M") else " "
+
+
+def norm(token: str, case_sensitive: bool = False) -> str:
+    """One word as the matcher compares it whole, which is its parts written together."""
+    return "".join(pieces(token, case_sensitive))
 
 
 @dataclass(frozen=True)
-class Spoken:
-    """One section's words, with the form the matcher compares each of them in worked out once.
+class Reading:
+    """A section's words as one run of tokens, with the index of the word each token was read from."""
+
+    exact: tuple[str, ...]
+    """Every token as a case-sensitive match compares it."""
+
+    folded: tuple[str, ...]
+    """Every token as a match without case compares it."""
+
+    at: tuple[int, ...]
+    """The index in the section's words of the word each token was read from."""
+
+    @classmethod
+    def of_tokens(cls, tokens: Sequence[Sequence[str]]) -> Reading:
+        """The tokens of every word in order, each word given as its own tokens with case kept."""
+        placed = [(index, token) for index, word in enumerate(tokens) for token in word]
+        exact = tuple(token for _, token in placed)
+        return cls(exact=exact, folded=tuple(one.casefold() for one in exact), at=tuple(index for index, _ in placed))
+
+    def starts(self, target: Sequence[str], case_sensitive: bool) -> set[int]:
+        """The word every occurrence of these tokens starts in."""
+        said, width, wanted = self.exact if case_sensitive else self.folded, len(target), tuple(target)
+        return {self.at[i] for i in range(len(said) - width + 1) if said[i : i + width] == wanted}
+
+
+@dataclass(frozen=True)
+class Spoken(Reading):
+    """One section's words, read once into the tokens the matcher compares, each tied back to its word.
 
     A section is matched against once per cue, and a long section with many cues would otherwise
-    normalise every one of its words again for each of them, so the two forms are made here when the
+    normalise every one of its words again for each of them, so the tokens are made here when the
     words are read and every phrase is matched against these.
+
+    The words are read twice. Its own tokens read a word that punctuation divides as its parts, so
+    `state-of-the-art` is `state`, `of`, `the` and `art`, and `whole` reads each word as one token, so
+    the same word is `stateoftheart`. A word with no letter or digit in it, such as the `&` or the `/`
+    a voice gives back as a word of its own, is no token in either, and a phrase drops it the same way.
     """
 
     words: tuple[Word, ...]
-    folded: tuple[str, ...]
-    """Every word as a match without case compares it."""
+    whole: Reading
 
-    exact: tuple[str, ...]
-    """Every word as a case-sensitive match compares it."""
+    bare: frozenset[int]
+    """The index of every word that holds no token, which a phrase that opens on such a word lands on."""
 
     @classmethod
     def of(cls, words: Sequence[Word]) -> Spoken:
-        """These words with both of their matched forms worked out once."""
-        exact = tuple(norm(word.word, case_sensitive=True) for word in words)
-        return cls(words=tuple(words), folded=tuple(one.casefold() for one in exact), exact=exact)
+        """These words with both of their readings worked out once."""
+        split = [pieces(word.word, case_sensitive=True) for word in words]
+        parts, whole = Reading.of_tokens(split), Reading.of_tokens([["".join(word)] if word else [] for word in split])
+        return cls(
+            exact=parts.exact,
+            folded=parts.folded,
+            at=parts.at,
+            words=tuple(words),
+            whole=whole,
+            bare=frozenset(range(len(split))) - set(whole.at),
+        )
 
     def matches(self, phrase: str, case_sensitive: bool = False) -> list[int]:
-        """Index of the first word of every occurrence of phrase, in order."""
-        target = [t for t in (norm(t, case_sensitive) for t in phrase.split()) if t]
-        if not target:
+        """Index of the word every occurrence of phrase starts on, in order.
+
+        The phrase matches where its words equal a run of the words read whole, or where its parts
+        equal a run of the parts, so `state of the art` and `state-of-the-art` both find a spoken
+        `state-of-the-art`. A phrase that starts on a part inside a word lands on that word's start,
+        and one that opens on words holding no token lands on as many of those as the section speaks
+        straight before the match.
+        """
+        written = [pieces(token, case_sensitive) for token in phrase.split()]
+        whole = ["".join(word) for word in written if word]
+        if not whole:
             return []
-        said, width = self.exact if case_sensitive else self.folded, len(target)
-        return [i for i in range(len(said) - width + 1) if list(said[i : i + width]) == target]
+        lead = next(index for index, word in enumerate(written) if word)
+        found = self.whole.starts(whole, case_sensitive) | self.starts(
+            [part for word in written for part in word], case_sensitive
+        )
+        return sorted({self._opened(start, lead) for start in found})
+
+    def _opened(self, start: int, lead: int) -> int:
+        """The match's first word, moved back over up to `lead` words that hold no token."""
+        while lead and start - 1 in self.bare:
+            start, lead = start - 1, lead - 1
+        return start
 
     def find(self, phrase: str, occurrence: int = 1, case_sensitive: bool = False) -> int | None:
-        """Index of the first word of the n-th occurrence of phrase, or None."""
+        """Index of the word the n-th occurrence of phrase starts on, or None."""
         found = self.matches(phrase, case_sensitive)
         return found[occurrence - 1] if 1 <= occurrence <= len(found) else None

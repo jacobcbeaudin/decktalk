@@ -2,7 +2,7 @@
  *
  * Include it and declare a scene in markup. Nothing here needs JavaScript:
  *
- *   <script src="decktalk-runtime.js"></script>
+ *   <script src="/__decktalk/decktalk-runtime.js"></script>
  *   <div data-scene="pitch" data-name="How often">
  *     <template data-slide="pitch.listing">
  *       <h1>Value still listed</h1>
@@ -11,7 +11,7 @@
  *     </template>
  *   </div>
  *
- * An element has four moments, each the local name of a cue that `cues.json` gives a second to: it
+ * An element has four moments, each the cue name of a cue whose phrase `cues.json` names: it
  * arrives, it steps back, it comes to the front and it leaves. A page that wants behaviour of its
  * own adds it beside the markup, and a page that would rather build a slide in script gives that
  * slide a render function instead of a template.
@@ -21,11 +21,11 @@
  * reading the page back. Nothing imports it, which is what keeps every other module testable.
  */
 
+import { motionScale } from "./canvas.ts";
 import { now, start, started } from "./clock.ts";
 import { MILLISECONDS } from "./contract.ts";
 import { begin, buildSlide, isFrozen, query, state, waitsForSignal } from "./modes.ts";
 import { all, declare, findSlide, type Handler, on, type SceneInput, setMotionScale } from "./scene.ts";
-import { motionScale } from "./stage.ts";
 import { type Probe, type RuntimeView, setRecorder } from "./telemetry.ts";
 import { warn, warnings } from "./warn.ts";
 
@@ -45,7 +45,7 @@ const gates: Promise<unknown>[] = [];
 
 /** The probe the recorder injected, or null on every page a person opens for themselves. */
 function injected(): Probe | null {
-  return window.__dtprobe ?? null;
+  return window.__decktalkProbe ?? null;
 }
 
 /**
@@ -111,7 +111,7 @@ const DeckTalk = {
   },
   /** Read the page and start it, which a page that loads the runtime late may need to call itself. */
   start: boot,
-  /** Start the narration clock, which is what the recorder sends once its cover has come off. */
+  /** Start the section clock, which is what the recorder sends once its cover has come off. */
   startClock: start,
   /** Hold readiness until a promise of the page's own has settled. */
   waitFor(promise: unknown) {

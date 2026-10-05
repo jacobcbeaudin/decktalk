@@ -1,13 +1,13 @@
-"""The command line: eighteen commands, each a thin client of one library call.
+"""The command line, where every command is a thin client of one library call.
 
     decktalk init my-lesson          write a project that already builds
-    decktalk build --no-voice        run every stage with placeholder narration
-    decktalk check --json            judge the inputs and price a voiced run
+    decktalk build --no-spend        run every stage, a placeholder for each missing take
+    decktalk check --json            judge the inputs and price the narration
     decktalk schema                  read the whole instruction set in one call
 
 The command line is the instruction set. An agent runs `decktalk --help` for the tree, `decktalk
-schema` for every command, flag, exit code, error code and finding code, `decktalk schema settings`
-for every knob with its range and its sentence, and `decktalk config explain KEY` for one knob whole.
+schema` for every command, flag, exit code, error code and finding code, `decktalk schema setting`
+for every setting with its range and its sentence, and `decktalk config explain KEY` for one setting whole.
 Nothing on that path is a documentation page.
 
 A command opens the project or the machine, calls the library once and returns the result it was

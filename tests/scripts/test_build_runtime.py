@@ -1,6 +1,6 @@
-"""The banner `scripts/build_runtime.py` writes on the runtime bundle, which is how a copy names its engine.
+"""The banner `scripts/build_runtime.py` writes on the runtime bundle, which is how the bundle names its engine.
 
-`decktalk init` copies the runtime into a project, and a person who opens that copy reads which
+The origin serves the runtime from the engine, and a person who opens the file it served reads which
 engine shipped it on its first line. The committed bundles are held to their sources by
 `build_runtime.py --check`, which builds both sides the same way, so these tests are what holds the
 banner to the first line once the formatter has run.
@@ -32,5 +32,5 @@ def test_the_runtime_bundle_opens_with_the_banner_of_this_engine() -> None:
     assert first_line(RUNTIME / build_runtime.BANNERED) == f"/*! {MARK} {version} */"
 
 
-def test_the_probe_carries_no_banner_because_no_project_copies_it() -> None:
+def test_the_probe_carries_no_banner_because_no_page_loads_it() -> None:
     assert MARK not in first_line(RUNTIME / "decktalk-probe.js")

@@ -27,9 +27,8 @@ from decktalk.errors import DeckTalkError, ErrorCode, ErrorInfo, ProviderError
 from decktalk.findings import Applicability, Code, CommandFix, Finding, Location
 from decktalk.machine import Machine
 from decktalk.media import audio
-from decktalk.results import Voicing
 from decktalk.secret import Secret, redact, redacted, register, register_environment, secret_name
-from decktalk.settings import ALLOW_ANY_API_BASE, CONFIG_VARIABLE
+from decktalk.settings import MACHINE_FILE_VARIABLE
 from support.service import Service
 from support.speech import alignment
 
@@ -159,8 +158,8 @@ def test_a_secret_registers_its_value_so_a_sentence_holding_it_is_redacted():
 
 
 def test_a_published_name_read_beside_the_key_is_held_and_not_registered():
-    """The voice id is read from `.env` like the key and is a name a reader needs in every URL it is in."""
-    Secret("voice-canary-7f3b21", "ELEVENLABS_VOICE_ID")
+    """A name a reader needs in every URL it is in is never redacted, even when it is held as a `Secret`."""
+    Secret("voice-canary-7f3b21", "DECKTALK_VOICE_ID")
     assert redact("/v1/text-to-speech/voice-canary-7f3b21") == "/v1/text-to-speech/voice-canary-7f3b21"
 
 
@@ -178,7 +177,7 @@ def test_a_short_value_is_never_registered_so_ordinary_words_survive():
         ("HOST_DB_PASSWORD", True),
         ("password_file", True),
         ("PATH", False),
-        ("ELEVENLABS_VOICE_ID", False),
+        ("DECKTALK_VOICE_ID", False),
         ("KEYBOARD", False),
     ],
 )
@@ -219,10 +218,7 @@ name = "canary"
 
 [voice]
 provider = "elevenlabs"
-price_per_1000_characters = 0.30
-
-[elevenlabs]
-api_base = "{base}"
+dollars_per_1000_characters = 0.30
 
 [[section]]
 number = 1
@@ -278,9 +274,11 @@ class HostileVoice:
 
 
 def _canary_project(root: Path, base: str, key: str) -> Path:
+    """A project whose key is in `.env`, on a machine whose own file sends the voice to `base`."""
     (root / "deck").mkdir(parents=True)
     (root / "deck" / "index.html").write_text("<p>deck</p>", encoding="utf-8")
-    (root / "decktalk.toml").write_text(CANARY_TOML.format(base=base), encoding="utf-8")
+    (root / "decktalk.toml").write_text(CANARY_TOML, encoding="utf-8")
+    (root.parent / "machine.toml").write_text(f'[elevenlabs]\nbase_url = "{base}"\n', encoding="utf-8")
     (root / "script.md").write_text(CANARY_SCRIPT, encoding="utf-8")
     (root / ".env").write_text(f"ELEVENLABS_API_KEY={key}\n", encoding="utf-8")
     return root
@@ -295,6 +293,14 @@ def _chain(error: BaseException | None) -> str:
             said.append(ErrorInfo.of(error).model_dump_json())
         error = error.__cause__ or error.__context__
     return "\n".join(said)
+
+
+def _refused(project: decktalk.Project, voice: HostileVoice, script: list[str]) -> ProviderError:
+    """The refusal a paid narrate raises when the voice answers from `script`."""
+    voice.script = script
+    with pytest.raises(ProviderError) as refused:
+        project.narrate(spend=True)
+    return refused.value
 
 
 @pytest.mark.usefixtures("fake_ffmpeg", "waits")
@@ -315,14 +321,13 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
     host = f"pw_canary_{secrets.token_hex(8)}"
     voice = HostileVoice(service, key)
     root = _canary_project(tmp_path / "canary", service.url_for("/v1"), key)
-    environ = {"ELEVENLABS_API_KEY": key, "ELEVENLABS_VOICE_ID": "voice-canary", "HOST_DB_PASSWORD": host}
+    environ = {"ELEVENLABS_API_KEY": key, "DECKTALK_VOICE_ID": "voice-canary", "HOST_DB_PASSWORD": host}
     here = Machine.of(
         environ=environ,
-        config_path=tmp_path / "machine.toml",
+        machine_file=tmp_path / "machine.toml",
         cwd=root,
         cache_dir=tmp_path / "cache",
         dotenv=True,
-        allow_any_api_base=True,
     )
     project = decktalk.open(root, machine=here)
     raised: list[BaseException] = []
@@ -331,36 +336,35 @@ def test_no_path_of_a_run_lets_a_key_reach_a_log_a_file_an_error_or_a_terminal(
 
     with caplog.at_level("DEBUG", logger="decktalk"):
         project.check(pages=False, frames=False)
-        voice.script = ["refuse"]
-        with pytest.raises(ProviderError) as refused:
-            project.narrate(voice=Voicing.PAID)
-        raised.append(refused.value)
-        voice.script = ["busy", "gateway", "redirect"]
-        assert project.narrate(voice=Voicing.PAID).ok
+        raised.append(_refused(project, voice, ["refuse"]))
+        # A gateway page arrived where speech was paid for, so it is raised and never asked for again.
+        raised.append(_refused(project, voice, ["gateway"]))
+        assert "possibly charged" in str(raised[-1])
+        voice.script = ["busy", "redirect"]
+        assert project.narrate(spend=True).ok
         # A fix whose command fails and says the key and the host's password on its way out.
         failing = subprocess.CompletedProcess([], 2, b"", f"Traceback\nKeyError: {key} {host}\n".encode())
-        monkeypatch.setattr("decktalk.machine.subprocess.run", lambda argv, **_: failing)
+        monkeypatch.setattr("decktalk.machine.fixes.subprocess.run", lambda argv, **_: failing)
         fix = CommandFix(title="t", applicability=Applicability.SAFE, command=("decktalk", "install"))
         found = Finding(code=Code.FILE_MISSING, message="m", location=Location(where="ffmpeg"), fix=fix)
         applied = project.apply(found)
         assert not applied.fixes[0].applied
         # A run that fails on something DeckTalk did not mean to raise, with the key in its message.
-        with pytest.raises(RuntimeError) as broke, here.run(root=root, events_dir=root / "build" / "events"):
+        with pytest.raises(RuntimeError) as broke, here._run(root=root, events_dir=root / "build" / "events"):
             raise RuntimeError(f"a bug holding {key} and {host}")
         # The exception is the test's own and keeps its words, and what DeckTalk makes of it does not.
         internal = ErrorInfo.of_failure(broke.value).model_dump_json()
 
     # The command line in every mode a caller reads it in, against the same fake and the same key.
     monkeypatch.setenv("ELEVENLABS_API_KEY", key)
-    monkeypatch.setenv("ELEVENLABS_VOICE_ID", "voice-canary")
+    monkeypatch.setenv("DECKTALK_VOICE_ID", "voice-canary")
     monkeypatch.setenv("HOST_DB_PASSWORD", host)
-    monkeypatch.setenv(ALLOW_ANY_API_BASE, "1")
-    monkeypatch.setenv(CONFIG_VARIABLE, str(tmp_path / "machine.toml"))
+    monkeypatch.setenv(MACHINE_FILE_VARIABLE, str(tmp_path / "machine.toml"))
     printed: list[str] = []
     for mode in (["--json"], ["--events"], ["-v"], []):
         voice.script = ["refuse"]
         capsys.readouterr()
-        code = main(["-p", str(root), *mode, "narrate", "--spend", "--force"])
+        code = main(["-p", str(root), *mode, "narrate", "--spend", "--replace-voiced"])
         out, err = capsys.readouterr()
         assert code == ErrorCode.PROVIDER.exit_code, (mode, out, err)
         printed.append(out + err)

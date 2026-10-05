@@ -7,7 +7,7 @@ One schema describes the whole project file, its document tables and its tuning 
 because an editor binds one schema to one file and `#:schema` is a single directive. Every property
 carries the key's whole published record, so an agent that has the schema and nothing else has the
 safe range, the unit, the hazard, the scope and the findings the key decides. The numbers that are
-deliberately not knobs sit in `x-numbers` outside `properties`, so a reader who goes looking for one
+deliberately not settings sit in `x-numbers` outside `properties`, so a reader who goes looking for one
 finds the formula rather than nothing.
 
 The per-machine schema is a filter of the same document by `x-scope`, so the two can never disagree
@@ -31,14 +31,9 @@ from typing import Any
 
 import generated
 from decktalk.results import Scope
-from decktalk.settings import (
-    DOCUMENT_TABLES,
-    KEYS,
-    NUMBERS,
-    SHARED_TABLES,
-    Settings,
-    json_value,
-)
+from decktalk.settings import DOCUMENT_TABLES, KEYS, SHARED_TABLES, Settings
+from decktalk.settings.layers import json_value
+from decktalk.settings.numbers import NUMBERS
 from decktalk.tomlmap import Key
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -69,7 +64,6 @@ DOCUMENT_SENTENCES = {
     "project": "The film itself: its name, its deck and the files it is built from.",
     "section": "One section of the script, in the order the film plays them.",
     "transition": "How one section is joined to the next.",
-    "soundscape": "The music, the ambience and the sound effects a run generates.",
 }
 """One sentence for each table that is project content, which the document parser owns the keys of."""
 
@@ -140,7 +134,8 @@ def document_table(name: str) -> dict[str, Any]:
     """One table that is project content, declared so the top level can be closed without owning its keys.
 
     The document parser owns what is inside, so the schema names the table and leaves it open. The
-    closure that matters is at the top level, where an unknown table passes silently today.
+    closure that matters is at the top level, where an editor bound to the schema flags an unknown
+    table that the loader would refuse.
     """
     body: dict[str, Any] = {
         "type": "object",
@@ -154,7 +149,7 @@ def document_table(name: str) -> dict[str, Any]:
 
 
 def numbers() -> list[dict[str, Any]]:
-    """Every number that is deliberately not a knob, with its formula and its value at the defaults."""
+    """Every number that is deliberately not a setting, with its formula and its value at the defaults."""
     at_defaults = Settings()
     return [
         {

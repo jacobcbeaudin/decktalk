@@ -33,34 +33,34 @@ Four files hold the whole tutorial.
 | `cues.json` | One row per moment, naming the phrase the reveal waits for. |
 | `deck/index.html` | The slides, as HTML with `data-scene`, `data-slide` and the moment attributes. |
 
-A code slide is markup. An equation is a `data-tex` attribute typeset by the KaTeX files
-`decktalk init` copies into `deck/katex/`, so no equation needs a download. A reveal is a moment
+A code slide is markup. An equation is a `data-tex` attribute typeset by the KaTeX release DeckTalk
+serves on the page's own origin, so no equation needs a download. A reveal is a moment
 attribute naming a cue local to its slide, so `data-in="expand"` inside
 `<template data-slide="4.1">` waits for the cue `4.1:expand`, and `cues.json` is where that cue gets
-a phrase. `decktalk schema page` prints all twenty-four attributes with their values and ranges.
+a phrase. `decktalk schema page` prints every attribute with their values and ranges.
 
 ## The workflow
 
 <Steps>
   <Step title="Start a project">
-    `decktalk init my-tutorial` writes a deck that already builds: three sections, one equation,
-    the packaged runtime, KaTeX, six skills under `.agents/skills/`, and an `AGENTS.md` when the
-    directory has none. Add `--no-skills` to leave the skills out and `--defaults` to be asked
+    `decktalk init my-tutorial` writes a deck that already builds: three sections and one equation,
+    with the runtime and KaTeX served by the engine. It also writes six skills under
+    `.agents/skills/`, and an `AGENTS.md` when the directory has none. Add `--no-skills` to leave the skills out and `--no-input` to be asked
     nothing.
   </Step>
   <Step title="Judge it before you build it">
     `decktalk check` reads `script.md`, `cues.json` and the pages, freezes a frame either side of
-    every cue, and prints what a voiced run would cost. `decktalk check --no-pages` does the same
-    reading with no browser at all and names the judgements it could not reach.
+    every cue, and prints what the narration of a voiced run would cost. `decktalk check --no-pages`
+    does the same reading with no browser at all and names the judgements it could not reach.
   </Step>
   <Step title="Draft it with no voice">
-    `decktalk build --no-voice` runs the whole pipeline on placeholder narration that still carries
-    a real word clock. It spends nothing and needs no key, so the pacing is settled before a credit
-    is bought. `decktalk build --no-voice --to record` stops before the stage that generates audio.
+    `decktalk build --no-spend` runs the whole pipeline on placeholder narration that still carries
+    real word times. It spends nothing and needs no key, so the pacing is settled before anything
+    is bought. `decktalk build --no-spend --to record` stops before the stage that generates audio.
   </Step>
   <Step title="Look at the storyboard, then buy the voice">
     `decktalk storyboard` freezes every slide at every cue onto `build/storyboard.html`, which is
-    the human checkpoint before credits are spent. Then `decktalk build --spend` voices the
+    the human checkpoint before anything is bought. Then `decktalk build --spend` voices the
     sections that need it, and `--max-cost N` refuses the run before the first call if the most it
     could cost is over N US dollars.
   </Step>
@@ -77,7 +77,7 @@ script, and the first run that needs them downloads Chromium and ffmpeg.
 [What leaves your machine](/reference/what-leaves-your-machine) names every host and every request
 body, and [Requirements and costs](/requirements) covers the package index mirror, the browser path
 and the cache directory a managed machine needs. `decktalk install` fetches the toolchain up front
-rather than in the middle of a build, and a build with `--no-voice` contacts no speech service at
+rather than in the middle of a build, and a build with `--no-spend` contacts no speech service at
 all, so a finished video can exist before any approval does.
 
 ## Where to start

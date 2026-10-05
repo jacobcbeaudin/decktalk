@@ -1,11 +1,12 @@
-"""ElevenLabs, the only speech provider: text read aloud with a time for every word.
+"""ElevenLabs, the cloud voice: text read aloud with a time for every word.
 
 The `/text-to-speech` endpoint returns the audio and a start and an end time per character, which
 `words_from_alignment` groups into words, and that is the whole reason DeckTalk can cut on a word.
-The same key buys the sound effects and the music that the soundscape generates.
+The same service sells sound effects and music, which are bought by its own adapter in the sound
+table, `speech/sound/elevenlabs.py`, with this key and this `base_url`.
 
-The key travels in a header to whatever host `[elevenlabs] api_base` names, so the base is checked
-once when the provider is built, and the key is a `Secret` that only the header builder reveals. The
+The key travels in a header to whatever host `[elevenlabs] base_url` names, which only the machine
+sets, and the key is a `Secret` that only the header builder reveals. The
 voice id is not a secret: it names which voice reads the script, the way a model name names which
 model does, and it arrives in the request rather than being read from the environment here.
 """
@@ -14,46 +15,64 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from typing import Any
-from urllib.parse import urlsplit
+from dataclasses import dataclass
+from typing import Any, cast
 
 from ..errors import InputError, ProviderError
 from ..results import Word
 from ..secret import Secret
-from ..settings import ALLOW_ANY_API_BASE
-from . import PUNCT, SpeechRequest, VoiceContext
-from .http import post_bytes, post_json
+from ..settings import ElevenLabsConfig
+from . import DECLARED, PUNCT, Output, SpeechContext, SpeechRequest, canonical_text
+from .http import post_json
 
-ELEVENLABS_DOMAIN = "elevenlabs.io"
-
-SOUND_PATH = "/sound-generation"
-"""Where a sound request goes on the service, which is also part of what a soundscape ledger row is keyed by."""
-
-MUSIC_PATH = "/music"
-"""Where a music request goes on the service, which is the other endpoint a ledger row may be keyed by."""
+NAME = "elevenlabs"
+"""The name this adapter is registered and declared under, which `DECLARED` holds its key variable by."""
 
 
-def check_api_base(api_base: str, *, allow_any: bool) -> str:
-    """`api_base` when it is an https URL on an ElevenLabs host or the machine allows any, and otherwise an error.
+FORMAT_SEPARATOR = "_"
+"""What separates the codec, the sample rate and the bitrate in an ElevenLabs output format token."""
 
-    The key travels in a header to whatever host `api_base` names, so the value is checked here,
-    before the first request, wherever it came from. Whether any host is allowed is the machine's
-    own field, passed in, so a project file can never lift the check and a host that built its
-    machine by hand decides it rather than the process it runs in.
+
+BREAK_MODELS = frozenset(
+    {"eleven_multilingual_v2", "eleven_flash_v2_5", "eleven_flash_v2", "eleven_turbo_v2_5", "eleven_turbo_v2"}
+)
+"""The models that read a `<break time="1s" />` tag as silence, which is the v2 family.
+
+Eleven v3 and v4 read no `<break>` tag, so a timed pause sent to them would be dropped or read out.
+A model is named here only once it is known to read the tag, so a model nobody has checked is
+refused a timed pause rather than trusted with one.
+"""
+
+
+def voice_settings(table: ElevenLabsConfig, speed: float) -> dict[str, Any]:
+    """What `[elevenlabs]` and `[voice] speed` ask the service for, under the service's own names.
+
+    The names differ in one place, because the service calls the speaker boost `use_speaker_boost`
+    while the key an author writes is `speaker_boost`. These five values are sent with every request
+    and are also the settings a take's digest is taken over, so a voiced take keeps its name.
     """
-    if allow_any:
-        return api_base
-    parts = urlsplit(api_base)
-    host = (parts.hostname or "").lower()
-    if parts.scheme == "https" and (host == ELEVENLABS_DOMAIN or host.endswith(f".{ELEVENLABS_DOMAIN}")):
-        return api_base
-    # The value is not quoted, because it may be set from the environment and reaches an error
-    # that a --json payload carries, and only the switch that lifts this check may be printed.
-    raise InputError(
-        f"[elevenlabs] api_base must be an https URL on {ELEVENLABS_DOMAIN}.",
-        hint=f"Set {ALLOW_ANY_API_BASE}=1 to send the key to another host on purpose.",
-    )
+    return {
+        "stability": table.stability,
+        "similarity_boost": table.similarity_boost,
+        "style": table.style,
+        "use_speaker_boost": table.speaker_boost,
+        "speed": speed,
+    }
+
+
+def output(table: ElevenLabsConfig) -> Output:
+    """The format `[elevenlabs] output_format` asks for, and the suffix its codec names a take with.
+
+    ElevenLabs spells a format `codec_rate_bitrate`, such as `mp3_44100_128`, so its codec is the
+    file's own suffix and a take of `mp3_44100_128` is written `.mp3`.
+    """
+    codec = table.output_format.split(FORMAT_SEPARATOR, 1)[0]
+    return Output(format=table.output_format, suffix=f".{codec}")
+
+
+def renders_pauses(model: str) -> bool:
+    """Whether this ElevenLabs model renders a timed pause, which it does by reading a `<break>` tag."""
+    return model in BREAK_MODELS
 
 
 def words_from_alignment(chars: list[str], starts: list[float], ends: list[float]) -> list[Word]:
@@ -89,33 +108,22 @@ def words_from_alignment(chars: list[str], starts: list[float], ends: list[float
 
 @dataclass
 class ElevenLabs:
-    """Speech with word timestamps, sound effects and music, which is the one provider DeckTalk ships.
+    """Speech with word timestamps from the cloud voice.
 
     The key is a `Secret`, so no log line, error, `repr` or JSON payload that reaches this provider
-    can print it, and `_headers` is the one place it is revealed. The base URL is checked once, when
-    the provider is built.
+    can print it, and `_headers` is the one place it is revealed.
     """
 
-    context: VoiceContext
-    """The tuning that shapes every request, and the machine's switch and retries that `get_provider` set on it."""
+    context: SpeechContext
+    """The tuning that shapes every request, and the retries that `SpeechProviders.provider` set on it."""
     api_key: Secret
-    name: str = "elevenlabs"
-    checked_base: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        # Every URL is built from the base that passed the check, and never from the setting again.
-        checked = check_api_base(self.context.api_base, allow_any=self.context.allow_any_api_base)
-        self.checked_base = checked.rstrip("/")
+    name: str = NAME
 
     @classmethod
-    def for_context(cls, context: VoiceContext) -> ElevenLabs:
+    def for_context(cls, context: SpeechContext) -> ElevenLabs:
         """The provider one project asks for: its key, and the tuning that shapes its requests."""
-        (api_key,) = context.secrets.require("ELEVENLABS_API_KEY")
+        (api_key,) = context.secrets.require(cast("str", DECLARED[NAME].key_variable))
         return cls(context, api_key)
-
-    def cache_key(self, request: SpeechRequest) -> str:
-        """Everything but the text that changes the audio. The voice id is part of the take hash."""
-        return f"{self.name}\n{request.voice_id}\n{request.model}\n{request.output_format}"
 
     def _headers(self) -> dict[str, str]:
         """The one place the key is revealed, which is the request that is allowed to carry it."""
@@ -128,20 +136,28 @@ class ElevenLabs:
         cut, trimmed to the characters the tuning allows, and the alignment that comes back is what
         every later stage measures against.
         """
-        url = f"{self.checked_base}/text-to-speech/{request.voice_id}/with-timestamps"
+        if not renders_pauses(request.model) and any(piece.timed for piece in request.pieces):
+            # A pause this model would drop is refused before anything is sent, so nothing is bought.
+            raise InputError(
+                f"the ElevenLabs model {request.model!r} reads no <break> tag, so a timed pause would be dropped.",
+                hint=f"Use one of {', '.join(sorted(BREAK_MODELS))}, or take the timed pauses out of the script.",
+            )
+        url = f"{self.context.base_url.rstrip('/')}/text-to-speech/{request.voice_id}/with-timestamps"
         payload: dict[str, Any] = {
-            "text": request.text,
+            # The pieces in the canonical text, which writes a timed pause as the <break> tag these models read.
+            "text": canonical_text(request.pieces),
             "model_id": request.model,
             "voice_settings": request.voice_settings,
         }
         if request.previous_text:
-            payload["previous_text"] = request.previous_text[-self.context.context_chars :]
+            payload["previous_text"] = request.previous_text[-self.context.context_characters :]
         if request.next_text:
-            payload["next_text"] = request.next_text[: self.context.context_chars]
+            payload["next_text"] = request.next_text[: self.context.context_characters]
         reply = post_json(
-            f"{url}?output_format={request.output_format}",
+            f"{url}?output_format={request.output_format}" if request.output_format else url,
             payload,
             self._headers(),
+            secrets=(self.api_key,),
             timeout=self.context.speech_timeout_seconds,
             retries=self.context.retries,
         )
@@ -171,11 +187,4 @@ class ElevenLabs:
             alignment.get("characters", []),
             alignment.get("character_start_times_seconds", []),
             alignment.get("character_end_times_seconds", []),
-        )
-
-    def generate(self, path: str, body: dict[str, Any], *, output_format: str) -> bytes:
-        """One sound bought from `SOUND_PATH` or `MUSIC_PATH`, which take the same request and answer alike."""
-        url = f"{self.checked_base}{path}?output_format={output_format}"
-        return post_bytes(
-            url, body, self._headers(), timeout=self.context.sound_timeout_seconds, retries=self.context.retries
         )

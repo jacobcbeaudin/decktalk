@@ -1,7 +1,8 @@
 """The fixtures that install the fakes in `support.fakes` at the seam a stage imports.
 
-Each fixture replaces one module attribute through `monkeypatch`, so the real tool is back when the
-test ends, and hands back the fake so the test reads what the stage asked of it.
+Each fixture replaces one module attribute through `monkeypatch`, or, for a voice, registers the fake in
+the table the test's runs are opened with, so the real tool is back when the test ends, and hands back
+the fake so the test reads what the stage asked of it.
 """
 
 from __future__ import annotations
@@ -12,9 +13,9 @@ from pathlib import Path
 import pytest
 
 from decktalk.media import ffmpeg
-from decktalk.speech import PROVIDERS
+from decktalk.speech import SpeechFactory
 from decktalk.speech import http as speech_http
-from support.fakes import FAKE_VOICE_NAME, FakeFfmpeg, FakeVoice
+from support.fakes import FAKE_VOICE_NAME, FakeFfmpeg, FakeVoice, refusing_voices
 from support.service import Service
 
 
@@ -46,15 +47,16 @@ def fake_ffmpeg(monkeypatch: pytest.MonkeyPatch) -> FakeFfmpeg:
 
 
 @pytest.fixture
-def fake_voice(monkeypatch: pytest.MonkeyPatch) -> FakeVoice:
-    """A provider registered under `test-voice`, with the registry as it was when the test ends.
+def voices() -> dict[str, SpeechFactory]:
+    """The voice table this test's runs answer with: each shipped voice refusing to be built till a fake replaces it."""
+    return refusing_voices()
 
-    `PROVIDERS` is a process-global mapping, so a test that registers a provider and leaves it there
-    decides what the next test resolves. Setting the entry through `monkeypatch` is what keeps one
-    test out of another.
-    """
+
+@pytest.fixture
+def fake_voice(voices: dict[str, SpeechFactory]) -> FakeVoice:
+    """A fake registered under the shipped voice's name on the machine every run of this test is opened on."""
     voice = FakeVoice()
-    monkeypatch.setitem(PROVIDERS, FAKE_VOICE_NAME, lambda _context: voice)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
     return voice
 
 

@@ -7,17 +7,17 @@ from typing import Any
 
 import pytest
 
-from decktalk.artifacts import Words, words_file
+from decktalk.artifacts import Words
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.inputs import Inputs
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.results import ClipResult, Word
 from decktalk.stages.clip import clip
 from support.fakes import FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
 from support.runs import a_run, notes
-from support.takes import a_take, write_takes
+from support.takes import a_take, narrated
 
 TOML = """
 [project]
@@ -42,7 +42,7 @@ WORDS = (
 """The words section one speaks, before its own lead of half a second is added to them."""
 
 FPS = 25
-"""The rate `[video] output_fps` is left at, which is what turns a second into whole frames here."""
+"""The rate `[video] fps` is left at, which is what turns a second into whole frames here."""
 
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
@@ -52,11 +52,9 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 def a_project(tmp_path: Path, *, voiced: bool = True, cut: bool = True, take_on_disk: bool = True) -> Inputs:
     """A project whose section one is narrated and cut, which is what a clip is taken out of."""
     inputs = load_project(tmp_path, TOML, page=SCENE_ONE, media=("media/b-roll.mp4",))
-    take = a_take(1, seconds=2.0, hash="0123456789abcdef", voiced=voiced, lead_seconds=0.5)
-    write_takes(inputs, take)
-    Words(words=WORDS).write(inputs.workspace.takes_dir / words_file("0123456789abcdef"))
-    if take_on_disk:
-        (inputs.workspace.takes_dir / take.file).write_bytes(b"")
+    (take,) = narrated(inputs, a_take(1, seconds=2.0, voiced=voiced, lead_seconds=0.5), words={1: WORDS}).sections
+    if not take_on_disk:
+        inputs.take_places.find(take.digest).audio.unlink()
     if cut:
         inputs.workspace.section_video("01").parent.mkdir(parents=True, exist_ok=True)
         inputs.workspace.section_video("01").write_bytes(b"")
@@ -77,9 +75,9 @@ def test_a_clip_reports_its_span_its_hold_and_the_two_files_it_wrote(tmp_path: P
     inputs = a_project(tmp_path)
     result = cut_a_clip(inputs, a_run(tmp_path), hold_seconds=0.2)
     assert result.section == 1
-    assert result.film == Path("media/answer.mp4")
-    assert result.words == Path("media/answer.words.json")
-    assert (result.start, result.end) == (0.0, 0.8)
+    assert result.file == Path("media/answer.mp4")
+    assert result.words_file == Path("media/answer.words.json")
+    assert (result.start_seconds, result.end_seconds) == (0.0, 0.8)
     assert result.hold_seconds == 0.2
     assert result.seconds == 1.0
     assert set(result.written) == {Path("media/answer.mp4"), Path("media/answer.words.json")}
@@ -88,7 +86,7 @@ def test_a_clip_reports_its_span_its_hold_and_the_two_files_it_wrote(tmp_path: P
 def test_the_span_is_rounded_to_whole_frames(tmp_path: Path) -> None:
     """A clip that began mid-frame would play its first frame twice, so the span names frames."""
     result = cut_a_clip(a_project(tmp_path), a_run(tmp_path), start=0.01, end=0.79)
-    assert (result.start, result.end) == (0.0, 0.8)
+    assert (result.start_seconds, result.end_seconds) == (0.0, 0.8)
 
 
 def test_the_words_file_holds_every_word_wholly_inside_the_span(tmp_path: Path) -> None:
@@ -180,7 +178,7 @@ def test_the_filter_graph_carries_what_the_clip_asked_for(
         pytest.param({"start": 0.401, "end": 0.409}, "holds no whole frame", id="a span holding no whole frame"),
         pytest.param({"hold_seconds": -1.0}, "less than no time", id="a hold of less than no time"),
         # A clip written over the cut it reads would leave the film with no section at all.
-        pytest.param({"out": Path("build/sections/01.mp4")}, "which is the section cut", id="an out over the cut"),
+        pytest.param({"out": Path("build/sections/01.mp4")}, "which is the section video", id="an out over the cut"),
     ],
 )
 def test_a_clip_the_project_cannot_cut_is_refused(tmp_path: Path, options: dict[str, object], match: str) -> None:
@@ -188,8 +186,8 @@ def test_a_clip_the_project_cannot_cut_is_refused(tmp_path: Path, options: dict[
         cut_a_clip(a_project(tmp_path), a_run(tmp_path), **options)
 
 
-def test_a_section_with_no_cut_names_the_command_that_makes_one(tmp_path: Path) -> None:
-    with pytest.raises(NotBuiltError, match="has no cut at") as refused:
+def test_a_section_with_no_video_names_the_command_that_makes_one(tmp_path: Path) -> None:
+    with pytest.raises(NotBuiltError, match="has no section video at") as refused:
         cut_a_clip(a_project(tmp_path, cut=False), a_run(tmp_path))
     assert refused.value.hint == "Run `decktalk assemble` first."
 

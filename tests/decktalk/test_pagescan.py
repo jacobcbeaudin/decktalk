@@ -33,8 +33,8 @@ def codes(found: list) -> list[Code]:
 def entry(scene: str, moments: dict[str, list[str]], **extra: object) -> MeasuredScene:
     """One scene of a catalog, with one element per moment the slide declares."""
     elements = {
-        slide: [{"attrs": {}, "moments": {"data-in": wire}, "text": "", "box": BOX} for wire in wires]
-        for slide, wires in moments.items()
+        slide: [{"attrs": {}, "moments": {"data-in": cue_id}, "text": "", "box": BOX} for cue_id in cue_ids]
+        for slide, cue_ids in moments.items()
     }
     return MeasuredScene.model_validate({"scene": scene, "elements": elements, **extra})
 
@@ -102,8 +102,8 @@ def test_every_page_warning_becomes_the_finding_of_the_code_the_page_carried() -
                 "attr": None,
             },
             {
-                "code": Code.PAGE_UNKNOWN_ATTR.value,
-                "message": "data-nope is not a knob.",
+                "code": Code.PAGE_ATTR_UNKNOWN.value,
+                "message": "data-nope is not an attribute.",
                 "slide": None,
                 "cue": "1.1:open",
                 "attr": "data-nope",
@@ -111,7 +111,7 @@ def test_every_page_warning_becomes_the_finding_of_the_code_the_page_carried() -
         ]
     )
     found = page_findings(report, page=PAGE, section=1, stage=Stage.RECORD)
-    assert [row.code for row in found] == [Code.PAGE_KATEX_ERROR, Code.PAGE_UNKNOWN_ATTR]
+    assert [row.code for row in found] == [Code.PAGE_KATEX_ERROR, Code.PAGE_ATTR_UNKNOWN]
     assert [row.location.where for row in found] == ["1.1", "1.1:open"]
     assert found[0].location.file == Path(PAGE)
     assert {row.stage for row in found} == {Stage.RECORD}
@@ -134,16 +134,16 @@ def test_a_motion_past_the_ceiling_makes_its_own_cue_unmeasurable() -> None:
 
 def test_a_staggered_container_is_judged_by_its_own_exact_arithmetic() -> None:
     """The last child starts one step per earlier child after the cue and then plays its entrance."""
-    container = row(**{"data-stagger": "0.12", "data-steps": "", "data-in-seconds": "0.24"})
+    container = row(**{"data-stagger": "0.12", "data-spotlight": "", "data-in-seconds": "0.24"})
     container = container.model_copy(update={"children": 5})
     (found,) = pagescan.motion_findings([container], where=PAGE, section=1, scale=NONE)
     assert found.code is Code.PAGE_STAGGER_OVERRUN
-    assert found.certainty is Code.PAGE_STAGGER_OVERRUN.certainty
+    assert found.severity is Code.PAGE_STAGGER_OVERRUN.severity
 
 
 def test_the_steps_flag_is_never_read_as_a_count_of_children() -> None:
-    """`data-steps` is a flag, so a page that writes it as `true` is a stepped stagger and not a crash."""
-    container = row(**{"data-stagger": "0.12", "data-steps": "true", "data-in-seconds": "0.24"})
+    """`data-spotlight` is a flag, so a page that writes it as `true` is a spotlit stagger and not a crash."""
+    container = row(**{"data-stagger": "0.12", "data-spotlight": "true", "data-in-seconds": "0.24"})
     assert pagescan.motion_findings([container], where=PAGE, section=1, scale=NONE) == []
     counted = container.model_copy(update={"children": 5})
     assert [one.code for one in pagescan.motion_findings([counted], where=PAGE, section=1, scale=NONE)] == [
@@ -152,7 +152,7 @@ def test_the_steps_flag_is_never_read_as_a_count_of_children() -> None:
 
 
 def test_a_reduced_render_that_slows_a_motion_past_the_ceiling_is_judged_for_it() -> None:
-    """`motion.scale` is the knob the code names, so turning it too far has to say so."""
+    """`motion.scale` is the setting the code names, so setting it too far has to say so."""
     slowed = row(**{"data-in-seconds": "0.24"})
     assert pagescan.motion_findings([slowed], where=PAGE, section=1, scale=NONE) == []
     (found,) = pagescan.motion_findings([slowed], where=PAGE, section=1, scale=3.0)

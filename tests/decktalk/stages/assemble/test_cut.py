@@ -8,18 +8,19 @@ import pytest
 
 from decktalk.artifacts import Takes
 from decktalk.errors import InputError, NotBuiltError, ToolError
-from decktalk.events import FindingEvent
+from decktalk.events import FindingRaised
 from decktalk.inputs import Inputs
-from decktalk.media import browser, ffmpeg
+from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.results import SectionKind, Substitute
 from decktalk.settings import BY_ID
+from decktalk.stages.assemble import slate
 from decktalk.stages.assemble.cut import (
     _judge_missing,
     concat,
-    cut_list,
     page_target,
-    remove_stray_cuts,
+    placements_of,
+    remove_stray_videos,
     render_clip,
     render_sections,
     rendered_starts,
@@ -36,7 +37,7 @@ pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
 
 def test_a_path_with_an_apostrophe_in_it_survives_the_concat_list(tmp_path, monkeypatch):
-    """A build under `jacob's films/` died at the join, so the list is written by the one escaper."""
+    """A build under `jacob's films/` has an apostrophe to escape, so the list is written by the one escaper."""
     written: list[str] = []
 
     def run(*args: str) -> None:
@@ -65,7 +66,7 @@ def test_section_targets_are_frame_exact(tmp_path):
     assert abs(targets[1] + targets[2] - takes.total_seconds) < 1 / 30
 
 
-def test_a_page_section_with_no_recording_plays_black_and_is_a_certain_finding(tmp_path):
+def test_a_page_section_with_no_recording_plays_black_and_is_an_error(tmp_path):
     """A film that quietly played black where a recording should be would publish a lie about itself."""
     inputs = write_project(tmp_path)
     opened = open_run(tmp_path)
@@ -73,7 +74,7 @@ def test_a_page_section_with_no_recording_plays_black_and_is_a_certain_finding(t
     rows = render_sections(inputs, opened.run, takes, only=None, strict=False)
     assert [row.substitute for row in rows] == [Substitute.BLACK] * 3
     assert opened.codes() == ["FILE_MISSING"] * 3
-    said = next(line.finding.message for line in opened.of(FindingEvent))
+    said = next(line.finding.message for line in opened.of(FindingRaised))
     assert "build/recordings/01.webm" in said
     assert "a black frame plays" in said
 
@@ -90,7 +91,7 @@ def test_strict_refuses_a_missing_recording_and_names_the_stage_that_writes_one(
 def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, monkeypatch):
     """A section that declares `optional` says the slate is what it wants when the clip is not there.
 
-    A certain `FILE_MISSING` stopped the build on that very slate, so a project could declare the
+    A `FILE_MISSING` error stopped the build on that very slate, so a project could declare the
     slot and never build, which made `optional` mean nothing to anybody running a command.
     """
     toml = (
@@ -99,7 +100,7 @@ def test_an_optional_clip_plays_its_slate_and_earns_no_judgement(tmp_path, monke
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
     monkeypatch.setattr("decktalk.stages.assemble.cut.section_slate", lambda *_args: None)
-    enc = Encoder(inputs.settings.video)
+    enc = Encoder(inputs.settings.video, inputs.settings.audio)
     (slot,) = inputs.document.clip_sections
     row = render_clip(inputs, opened.run, enc, slot, tmp_path / "out.mp4", 0.0, strict=False)
     _judge_missing(opened.run, [row])
@@ -117,7 +118,7 @@ def test_strict_refuses_a_missing_clip_unless_the_section_is_optional(tmp_path, 
     inputs = write_project(tmp_path, toml)
     opened = open_run(tmp_path)
     monkeypatch.setattr("decktalk.stages.assemble.cut.section_slate", lambda *_args: None)
-    enc = Encoder(inputs.settings.video)
+    enc = Encoder(inputs.settings.video, inputs.settings.audio)
     real, slot = inputs.document.clip_sections
     out = tmp_path / "out.mp4"
 
@@ -141,7 +142,7 @@ def test_a_cut_the_run_did_not_name_is_kept_only_under_its_own_key(tmp_path, fak
     assert fake_ffmpeg.wrote(".mp4") == []
 
     planted = inputs.workspace.section_video("02")
-    for key in ("absent", "stale"):
+    for key in ("absent", "mismatched"):
         planted.write_bytes(b"a film this build never made")
         if key == "absent":
             planted.with_suffix(".json").unlink()
@@ -233,16 +234,16 @@ def test_every_cut_kept_or_encoded_says_why(tmp_path, fake_ffmpeg, caplog):
         assert said == {("01.mp4", False, "no-key"), ("02.mp4", False, "key-changed"), ("03.mp4", True, "unchanged")}
 
 
-def test_the_cut_list_records_where_each_section_plays_and_what_stood_in(tmp_path):
+def test_the_placements_record_where_each_section_plays_and_what_stood_in(tmp_path):
     inputs = write_project(tmp_path, TITLED_TOML)
     rows = rendered(inputs, {1: 2.0, 2: 3.0, 3: 2.5, 4: 1.5})
-    cuts = cut_list(inputs, rows)
-    assert [cut.section for cut in cuts.sections] == [1, 2, 3, 4]
-    assert [cut.start for cut in cuts.sections] == [0.0, 2.0, 5.0, 7.5]
-    assert cuts.total_seconds == 9.0
-    assert [cut.kind for cut in cuts.sections[:2]] == [SectionKind.PAGE, SectionKind.CLIP]
-    assert cuts.sections[2].chapter == "The edit"
-    assert cuts.fps == inputs.settings.video.output_fps
+    placements = placements_of(inputs, rows)
+    assert [row.section for row in placements.sections] == [1, 2, 3, 4]
+    assert [row.start for row in placements.sections] == [0.0, 2.0, 5.0, 7.5]
+    assert placements.total_seconds == 9.0
+    assert [row.kind for row in placements.sections[:2]] == [SectionKind.PAGE, SectionKind.CLIP]
+    assert placements.sections[2].chapter == "The edit"
+    assert placements.fps == inputs.settings.video.fps
 
 
 def test_rendered_starts_add_up_in_the_order_the_film_plays(tmp_path):
@@ -281,7 +282,7 @@ def test_a_leftover_cut_and_key_of_a_section_nobody_declares_are_removed(tmp_pat
     sections.mkdir(parents=True)
     for name in ("01.mp4", "01.json", "09.mp4", "09.json"):
         (sections / name).write_bytes(b"")
-    remove_stray_cuts(inputs)
+    remove_stray_videos(inputs)
     assert sorted(path.name for path in sections.iterdir()) == ["01.json", "01.mp4"]
 
 
@@ -293,7 +294,13 @@ def test_a_clip_the_project_names_opens_as_one_file_and_follows_no_name_inside_i
     (tmp_path / "media" / "clip.mp4").write_bytes(b"")
     (slot,) = inputs.document.clip_sections
     render_clip(
-        inputs, open_run(tmp_path).run, Encoder(inputs.settings.video), slot, tmp_path / "out.mp4", 0.0, strict=True
+        inputs,
+        open_run(tmp_path).run,
+        Encoder(inputs.settings.video, inputs.settings.audio),
+        slot,
+        tmp_path / "out.mp4",
+        0.0,
+        strict=True,
     )
     opened = ffmpeg.source(inputs.path("media/clip.mp4"))
     assert any(call[: len(opened)] == opened for call in fake_ffmpeg.calls)
@@ -310,7 +317,7 @@ def test_an_untrusted_project_draws_its_slate_untrusted(tmp_path, monkeypatch):
         asked.append(named["policy"])
         return draw_slate(out)
 
-    monkeypatch.setattr(browser, "render_slate", draw)
+    monkeypatch.setattr(slate, "render_slate", draw)
     (slot,) = inputs.document.clip_sections
     section_slate(inputs, open_run(tmp_path).run, slot)
     assert asked == ["untrusted"]
@@ -330,7 +337,7 @@ def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch
         draw_slate(out).write_text(picture, encoding="utf-8")
         return out
 
-    monkeypatch.setattr(browser, "render_slate", draw)
+    monkeypatch.setattr(slate, "render_slate", draw)
     base = "[project]\nname = 't'\n{video}[[section]]\nnumber = 1\nclip = 'media/slot.mp4'\nchapter = '{chapter}'\n"
     out = tmp_path / "build" / "sections" / "01.mp4"
     out.parent.mkdir(parents=True)
@@ -339,7 +346,7 @@ def test_a_slate_is_drawn_again_when_what_it_shows_changes(tmp_path, monkeypatch
         inputs = write_project(tmp_path, base.format(chapter=chapter, video=video))
         (slot,) = inputs.document.clip_sections
         run = open_run(tmp_path).run
-        render_clip(inputs, run, Encoder(inputs.settings.video), slot, out, 0.0, strict=False)
+        render_clip(inputs, run, Encoder(inputs.settings.video, inputs.settings.audio), slot, out, 0.0, strict=False)
         return section_slate(inputs, run, slot), out.with_suffix(".json").read_text(encoding="utf-8")
 
     first, first_key = cut("Demo one")
@@ -396,9 +403,9 @@ MANIFEST = (
 )
 @pytest.mark.usefixtures("real_ffmpeg")
 def test_a_planted_cut_that_names_another_tenants_film_is_never_followed(tmp_path, planted):
-    """0.5.0 joined a supplied `build/sections/01.mp4` that was a DASH manifest, and so read the film it named.
+    """A supplied `build/sections/01.mp4` that is a DASH manifest names another tenant's film, and is never joined.
 
-    The refusal is the measure, since 0.5.0 made a film out of the other tenant's where this makes none.
+    The refusal is the measure, since joining it would make a film out of the other tenant's.
     """
     outside = _film(tmp_path / "tenant-b" / "film.mp4")
     sections = tmp_path / "tenant-a" / "build" / "sections"

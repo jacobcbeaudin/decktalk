@@ -7,7 +7,7 @@ from pathlib import Path
 
 from decktalk.cli import report as commands
 from decktalk.results import ApplyResult
-from support.spends import a_spend
+from support.costs import a_cost
 
 from .conftest import ANSWERS, Fake, finding
 
@@ -30,7 +30,7 @@ def test_status_never_fails_on_a_finding_because_it_takes_no_threshold(run) -> N
 
 
 def test_status_help_says_the_one_thing_it_exits_1_for(run) -> None:
-    """status raises a certain FILE_MISSING, so its help cannot promise that it never exits 1."""
+    """status raises a FILE_MISSING error, so its help cannot promise that it never exits 1."""
     said = " ".join(run("status", "--help").out.split())
     assert "never exits 1" not in said
     assert "exits 1 only then" in said
@@ -41,7 +41,7 @@ def test_check_judges_the_written_files_and_prices_a_voiced_run(run, project, an
     ran = run("check", "--json")
     assert ran.exit_code == 0
     written = json.loads(ran.out)
-    assert written["spend"]["ceiling_dollars"] == a_spend().ceiling_dollars
+    assert written["cost"]["ceiling_dollars"] == a_cost().ceiling_dollars
     assert made.called("check")["pages"] is True
 
 
@@ -72,7 +72,7 @@ def test_check_fix_applies_the_safe_fixes_and_judges_again(run, project) -> None
 
 def test_the_second_judgement_after_a_fix_keeps_the_sections_it_was_asked_about(run, project) -> None:
     """A re-check that widened to the whole project priced sections the caller never named."""
-    judged = FIXABLE.model_copy(update={"pages": False, "frames": False})
+    judged = FIXABLE.model_copy(update={"pages_opened": False, "frames_compared": False})
     made = Fake(check=judged, apply=ApplyResult(ok=True, run="r", fixes=()))
     _install(project, made)
     run("check", "--section", "4", "--no-pages", "--fix")

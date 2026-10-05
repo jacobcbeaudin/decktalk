@@ -5,7 +5,7 @@ Every path DeckTalk publishes is relative to the project root and spelled with f
 Paths are made relative the moment a stage fills them rather than at serialisation time, which is
 why this sits at the bottom of the input layer where every filler can reach it.
 
-A path outside the project, such as a take directory `[narration] cache_dir` moved elsewhere, is
+A path outside the project, such as a take found in the machine's `[narration] store_dir`, is
 published as it is, because a relative path with `..` in it names nothing a reader can open.
 
 Every file the project itself names is read through `contained`, which is the one rule that says a
@@ -14,11 +14,12 @@ spelling, and a link is what that spelling cannot see: a `script.md` that links 
 on the machine would have its lines voiced, captioned and published. So the rule resolves every link
 before it compares, and it lives here, where every reader of a project path already reaches.
 
-The build directory is the one place DeckTalk writes and deletes, and a project that arrives with a
-`build/` tree already in it chose every name in that tree. `confined` is the rule for that tree: it
-resolves every entry under the directory and refuses the tree when one leads out of it, so a link
-at `build/narrate` or a take file linked to a file elsewhere cannot turn a write or a prune into
-one outside the project.
+The build directory, the takes directory and the score directory are the places DeckTalk writes in
+the project, and a project that arrives with any of those trees already in it chose every name in that
+tree.
+`confined` is the rule for such a tree: it resolves every entry under the directory and refuses the
+tree when one leads out of it, so a link at `build/narrate` or a committed take file linked to a file
+elsewhere cannot turn a read, a write or a prune into one outside the project.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ def contained(root: Path, named: str | Path) -> Path:
     return path
 
 
-def confined(root: Path, directory: Path) -> Path:
+def confined(root: Path, directory: Path, *, named: str = "the build directory") -> Path:
     """`directory` resolved, once it and everything under it are known to stay inside it.
 
     The directory itself is held to the project by `contained`. Every entry under it is then
@@ -67,7 +68,7 @@ def confined(root: Path, directory: Path) -> Path:
     outside the directory or a file shares its contents with another name through a hard link,
     because a write that follows either one lands wherever the tree's author pointed it. A link that
     stays inside the directory is harmless and is left alone. A directory that is not there yet holds
-    nothing to refuse.
+    nothing to refuse. `named` is what the refusal calls the directory.
     """
     top = contained(root, directory).resolve()
     if not top.is_dir():
@@ -81,8 +82,8 @@ def confined(root: Path, directory: Path) -> Path:
                 home = root.resolve()
                 shown = entry.relative_to(home) if entry.is_relative_to(home) else entry.relative_to(top)
                 raise InputError(
-                    f"{shown.as_posix()} leads outside the build directory, so DeckTalk writes nothing there.",
-                    hint="Delete the build directory, or the entry named here, and run again.",
+                    f"{shown.as_posix()} leads outside {named}, so DeckTalk writes nothing there.",
+                    hint=f"Delete {named}, or the entry named here, and run again.",
                     location=Location(where=entry.name, file=shown),
                 )
     return top

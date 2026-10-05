@@ -8,7 +8,7 @@ from pathlib import Path
 from decktalk.findings import Applicability, Code
 from decktalk.inputs.cues import Cue, CuedSection
 from decktalk.inputs.document import PageSection
-from decktalk.machine import apply_fix
+from decktalk.machine.fixes import apply_fix
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pipeline import Stage
 from decktalk.results import Scope
@@ -55,28 +55,28 @@ def test_a_section_whose_page_published_nothing_is_left_unjudged() -> None:
 # ---- the judgements ---------------------------------------------------------------------------
 
 
-def test_a_moment_with_no_row_is_one_certain_finding_per_section(tmp_path: Path) -> None:
-    path = write_cues(tmp_path, {"1": {"cues": [{"cue": "1.1:a", "on": "hello"}]}})
+def test_a_moment_with_no_row_is_one_error_per_section(tmp_path: Path) -> None:
+    path = write_cues(tmp_path, {"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}]}})
     found = cue_findings({1: ("1.1:a", "1.1:b", "1.1:c")}, _cued(1, [("1.1:a", "hello")]),
                          cues_path=path, root=tmp_path, stage=Stage.CUE)  # fmt: skip
     (judged,) = found
-    assert judged.code is Code.CUE_MISSING and judged.stage is Stage.CUE
+    assert judged.code is Code.CUE_UNLISTED and judged.stage is Stage.CUE
     assert "2 moment(s)" in judged.message and "1.1:b, 1.1:c" in judged.message
     assert judged.location.section == 1 and judged.location.file == Path("cues.json")
 
 
 def test_the_scaffold_fix_adds_the_rows_and_leaves_the_phrase_to_the_author(tmp_path: Path) -> None:
-    path = write_cues(tmp_path, {"1": {"cues": [{"cue": "1.1:a", "on": "hello"}]}})
+    path = write_cues(tmp_path, {"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}]}})
     found = cue_findings({1: ("1.1:a", "1.1:b")}, _cued(1, [("1.1:a", "hello")]), cues_path=path, root=tmp_path)
     fix = found[0].fix
     assert fix is not None and fix.applicability is Applicability.SAFE
     applied(path, tmp_path, found)
     rows = json.loads(path.read_text(encoding="utf-8"))["sections"]["1"]["cues"]
-    assert {row["cue"]: row["on"] for row in rows} == {"1.1:a": "hello", "1.1:b": ""}
+    assert {row["id"]: row["phrase"] for row in rows} == {"1.1:a": "hello", "1.1:b": ""}
 
 
 def test_the_scaffold_fix_is_idempotent_because_it_only_ever_adds(tmp_path: Path) -> None:
-    path = write_cues(tmp_path, {"1": {"cues": [{"cue": "1.1:a", "on": "hello"}]}})
+    path = write_cues(tmp_path, {"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}]}})
     declared = {1: ("1.1:a", "1.1:b")}
     applied(path, tmp_path, cue_findings(declared, _cued(1, [("1.1:a", "hello")]), cues_path=path, root=tmp_path))
     again = cue_findings(declared, _cued(1, [("1.1:a", "hello"), ("1.1:b", "")]), cues_path=path, root=tmp_path)
@@ -88,77 +88,78 @@ def test_an_empty_cue_array_is_rewritten_rather_than_inserted_into(tmp_path: Pat
     path = write_cues(tmp_path, {"1": {"cues": []}})
     found = cue_findings({1: ("1.1:a",)}, _cued(1, []), cues_path=path, root=tmp_path)
     applied(path, tmp_path, found)
-    assert json.loads(path.read_text(encoding="utf-8"))["sections"]["1"]["cues"] == [{"cue": "1.1:a", "on": ""}]
+    assert json.loads(path.read_text(encoding="utf-8"))["sections"]["1"]["cues"] == [{"id": "1.1:a", "phrase": ""}]
 
 
 def test_a_section_the_file_holds_no_block_for_gets_a_whole_block(tmp_path: Path) -> None:
-    path = write_cues(tmp_path, {"1": {"cues": [{"cue": "1.1:a", "on": "hello"}]}})
+    path = write_cues(tmp_path, {"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}]}})
     found = cue_findings({2: ("2.1:a",)}, _cued(1, [("1.1:a", "hello")]), cues_path=path, root=tmp_path)
     applied(path, tmp_path, found)
     sections = json.loads(path.read_text(encoding="utf-8"))["sections"]
-    assert sections["2"]["cues"] == [{"cue": "2.1:a", "on": ""}]
-    assert sections["1"]["cues"] == [{"cue": "1.1:a", "on": "hello"}]
+    assert sections["2"]["cues"] == [{"id": "2.1:a", "phrase": ""}]
+    assert sections["1"]["cues"] == [{"id": "1.1:a", "phrase": "hello"}]
 
 
 def test_two_sections_scaffolded_by_one_call_do_not_land_on_top_of_each_other(tmp_path: Path) -> None:
     """Each edit is worked out against the file as the edit before it would leave it."""
-    path = write_cues(tmp_path, {"1": {"cues": [{"cue": "1.1:a", "on": "hello"}]},
-                                 "2": {"cues": [{"cue": "2.1:a", "on": "there"}]}})  # fmt: skip
+    path = write_cues(tmp_path, {"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}]},
+                                 "2": {"cues": [{"id": "2.1:a", "phrase": "there"}]}})  # fmt: skip
     cued = [_one(1, [("1.1:a", "hello")]), _one(2, [("2.1:a", "there")])]
     found = cue_findings({1: ("1.1:a", "1.1:b"), 2: ("2.1:a", "2.1:b")}, cued, cues_path=path, root=tmp_path)
     assert len(found) == 2
     applied(path, tmp_path, found)
     sections = json.loads(path.read_text(encoding="utf-8"))["sections"]
-    assert [row["cue"] for row in sections["1"]["cues"]] == ["1.1:b", "1.1:a"]
-    assert [row["cue"] for row in sections["2"]["cues"]] == ["2.1:b", "2.1:a"]
+    assert [row["id"] for row in sections["1"]["cues"]] == ["1.1:b", "1.1:a"]
+    assert [row["id"] for row in sections["2"]["cues"]] == ["2.1:b", "2.1:a"]
 
 
 def test_a_project_with_no_cue_file_is_one_finding_whose_fix_writes_the_whole_file(tmp_path: Path) -> None:
     path = tmp_path / "cues.json"
     found = cue_findings({1: ("1.1:a",), 2: ("2.1:b",)}, [], cues_path=path, root=tmp_path)
     (judged,) = found
-    assert judged.code is Code.CUE_MISSING and "there is no cues.json" in judged.message
+    assert judged.code is Code.CUE_UNLISTED and "there is no cues.json" in judged.message
     assert judged.fix is not None and judged.fix.applicability is Applicability.SAFE
     applied(path, tmp_path, found)
     sections = json.loads(path.read_text(encoding="utf-8"))["sections"]
-    assert sections == {"1": {"cues": [{"cue": "1.1:a", "on": ""}]}, "2": {"cues": [{"cue": "2.1:b", "on": ""}]}}
+    assert sections == {"1": {"cues": [{"id": "1.1:a", "phrase": ""}]}, "2": {"cues": [{"id": "2.1:b", "phrase": ""}]}}
 
 
 def test_a_row_no_page_declares_is_named_and_never_deleted(tmp_path: Path) -> None:
-    path = write_cues(tmp_path, {"1": {"cues": [{"cue": "1.1:a", "on": "hello"}, {"cue": "9.9:x", "on": "there"}]}})
+    path = write_cues(
+        tmp_path, {"1": {"cues": [{"id": "1.1:a", "phrase": "hello"}, {"id": "9.9:x", "phrase": "there"}]}}
+    )
     found = cue_findings({1: ("1.1:a",)}, _cued(1, [("1.1:a", "hello"), ("9.9:x", "there")]),
                          cues_path=path, root=tmp_path)  # fmt: skip
     (judged,) = found
     assert judged.code is Code.CUE_UNKNOWN and judged.location.cue == "9.9:x"
     assert "nothing plays it" in judged.message
-    assert json.loads(path.read_text(encoding="utf-8"))["sections"]["1"]["cues"][1]["cue"] == "9.9:x"
+    assert json.loads(path.read_text(encoding="utf-8"))["sections"]["1"]["cues"][1]["id"] == "9.9:x"
 
 
-def test_allow_unknown_keeps_the_row_out_of_the_findings(tmp_path: Path) -> None:
-    path = write_cues(tmp_path, {"1": {"cues": [{"cue": "9.9:x", "on": "there"}]}})
+def test_a_missing_moment_and_an_unknown_row_are_both_reported(tmp_path: Path) -> None:
+    path = write_cues(tmp_path, {"1": {"cues": [{"id": "9.9:x", "phrase": "there"}]}})
     cued = _cued(1, [("9.9:x", "there")])
-    assert cue_findings({1: ("1.1:a",)}, cued, cues_path=path, root=tmp_path, allow_unknown=True)[0].code is (
-        Code.CUE_MISSING
-    )
     codes = {one.code for one in cue_findings({1: ("1.1:a",)}, cued, cues_path=path, root=tmp_path)}
-    assert codes == {Code.CUE_MISSING, Code.CUE_UNKNOWN}
+    assert codes == {Code.CUE_UNLISTED, Code.CUE_UNKNOWN}
 
 
 def test_one_stale_row_beside_one_new_moment_reads_as_a_rename(tmp_path: Path) -> None:
     """The phrase is what survives a rename, so the row that carries it is the row for that moment."""
-    path = write_cues(tmp_path, {"1": {"cues": [{"cue": "1.1:old", "on": "hello"}]}})
+    path = write_cues(tmp_path, {"1": {"cues": [{"id": "1.1:old", "phrase": "hello"}]}})
     found = cue_findings({1: ("1.1:new",)}, _cued(1, [("1.1:old", "hello")]), cues_path=path, root=tmp_path)
-    missing = next(one for one in found if one.code is Code.CUE_MISSING)
+    missing = next(one for one in found if one.code is Code.CUE_UNLISTED)
     unknown = next(one for one in found if one.code is Code.CUE_UNKNOWN)
     assert "looks like 1.1:new renamed" in unknown.message
     assert unknown.fix is not None and unknown.fix.applicability is Applicability.UNSAFE
     assert missing.fix is None, "the rename resolves it, so nothing adds a second row for the same moment"
     applied(path, tmp_path, [unknown])
-    assert json.loads(path.read_text(encoding="utf-8"))["sections"]["1"]["cues"] == [{"cue": "1.1:new", "on": "hello"}]
+    assert json.loads(path.read_text(encoding="utf-8"))["sections"]["1"]["cues"] == [
+        {"id": "1.1:new", "phrase": "hello"}
+    ]
 
 
 def _one(number: int, rows: list[tuple[str, str]]) -> CuedSection:
-    return CuedSection(number=number, cues=tuple(Cue(cue=wire, on=phrase) for wire, phrase in rows))
+    return CuedSection(number=number, cues=tuple(Cue(id=cue_id, phrase=phrase) for cue_id, phrase in rows))
 
 
 def _cued(number: int, rows: list[tuple[str, str]]) -> list[CuedSection]:

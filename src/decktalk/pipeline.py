@@ -1,13 +1,17 @@
 """The run declared once: the six stages in order, the artifacts they pass between them, and how a
-moment ended.
+stage or a section ended.
 
-The pipeline used to be described in three places, which were the stage order, an if-chain that
-worked out what a partial run still needed, and about ten sentences across the stages telling a
-reader to run an earlier command first. `PIPELINE` is the one declaration all three are read from,
-so the precondition check, the `--from` and `--to` validation, the hint a `NOT_BUILT` error carries
-and the next step `status` reports are one table a reader can see whole. `NEEDS` reads the same
-table as a graph of stages, so which records a change leaves describing other inputs is derived
-from the edges rather than kept as a rule of its own.
+`PIPELINE` is the one declaration the stage order, what a partial run still needs and the command a
+reader runs first are read from, so the precondition check, the `--from` and `--to` validation, the
+hint a `NOT_BUILT` error carries and the next step `status` reports are one table a reader can see
+whole. `NEEDS` reads the same table as a graph of stages, so which records a change leaves
+describing other inputs is derived from the edges rather than kept as a rule of its own.
+
+Each row also says which of two trusts its stage needs. `holds_api_key` is a stage that may buy, and so
+reaches for the provider's key, and `opens_pages` is a stage that launches a browser and runs a
+page's script. No row is both, and a host that runs strangers' decks reads the two parts off the
+table, `Stage.keyed_stages()` in a process that holds the key and `Stage.keyless_stages()` in one that
+holds none, rather than keeping its own list of which stage is which.
 
 A stage is a member of `Stage` and never its name as a string, so a misspelt stage fails where it is
 written rather than making a comparison quietly false. The value of a member is the one word that
@@ -29,7 +33,7 @@ class Stage(Enum):
     NARRATE = "narrate"
     CUE = "cue"
     RECORD = "record"
-    SOUNDSCAPE = "soundscape"
+    SCORE = "score"
     ASSEMBLE = "assemble"
     VERIFY = "verify"
 
@@ -46,9 +50,19 @@ class Stage(Enum):
         end = stages.index(last) if last is not None else len(stages) - 1
         return tuple(stages[begin : end + 1])
 
+    @staticmethod
+    def keyed_stages() -> tuple[Stage, ...]:
+        """The stages that hold the key, in run order, which a host runs in a process that opens no page."""
+        return tuple(spec.stage for spec in PIPELINE if spec.holds_api_key)
+
+    @staticmethod
+    def keyless_stages() -> tuple[Stage, ...]:
+        """The stages that hold no key, in run order, which a host runs in a process the key never reaches."""
+        return tuple(spec.stage for spec in PIPELINE if not spec.holds_api_key)
+
 
 class Outcome(Enum):
-    """How a stage or a section ended, which is the one field that replaces four event names.
+    """How a stage or a section ended, read from one field rather than from four event names.
 
     A caller reads one field to learn what happened, where `stage.done`, `stage.kept`, `stage.skip`
     and `stage.fail` would make it branch four ways to learn the same fact. `kept` is a stage the
@@ -57,7 +71,7 @@ class Outcome(Enum):
     caller cancelled or interrupted, which is kept apart from `failed` because nothing went wrong.
     """
 
-    OK = "ok"
+    RAN = "ran"
     KEPT = "kept"
     SKIPPED = "skipped"
     STOPPED = "stopped"
@@ -67,16 +81,17 @@ class Outcome(Enum):
 class Artifact(Enum):
     """A file or a directory one stage writes and a later stage reads.
 
-    The value is the artifact's path under the project root, written with forward slashes, because
-    every path DeckTalk reports is project-relative and posix on all three platforms. `FINAL` is the
-    directory the deliverables are written into, because the film is named after the project.
+    The value is the artifact's path under the project's build directory, written with forward
+    slashes, because `[project] build` moves that directory and `Workspace.of` is what joins the two.
+    `FINAL` is the directory the deliverables are written into, because the film is named after the
+    project.
     """
 
-    TAKES = "build/narrate/takes.json"
-    CUE_TIMES = "build/cue-times.json"
-    RECORDINGS = "build/recordings"
-    SOUNDSCAPE = "build/soundscape"
-    FINAL = "build/final"
+    TAKES = "narrate/takes.json"
+    CUE_TIMES = "cue-times.json"
+    RECORDINGS = "recordings"
+    SCORE = "score"
+    FINAL = "final"
 
     @property
     def written_by(self) -> Stage | None:
@@ -94,19 +109,25 @@ class Artifact(Enum):
         if writer is None:
             return f"Nothing in the pipeline writes {self.value}."
         if writer is Stage.NARRATE:
-            # The one stage that spends money on every run has a way to make its artifact for nothing,
-            # and a reader stopped by a missing take index should not have to find that flag elsewhere.
-            return f"Run `decktalk {writer.value}` first, or `decktalk {writer.value} --no-voice` to spend nothing."
+            # Narrate is the first stage that may buy, and it can make its artifact without buying, and a
+            # reader stopped by a missing take index should not have to find that flag elsewhere.
+            return f"Run `decktalk {writer.value}` first, or `decktalk {writer.value} --no-spend` to spend nothing."
         return f"Run `decktalk {writer.value}` first."
 
 
 @dataclass(frozen=True)
 class StageSpec:
-    """One row of the pipeline: a stage, what it reads, what it writes and why it sits where it does."""
+    """One row of the pipeline: a stage, what it reads and writes, the trust it needs and why it sits there.
+
+    `holds_api_key` is true on a stage that may buy, and so reaches for the provider's key. `opens_pages`
+    is true on a stage that launches a browser and runs a page's script.
+    """
 
     stage: Stage
     reads: tuple[Artifact, ...]
     writes: tuple[Artifact, ...]
+    holds_api_key: bool
+    opens_pages: bool
     why: str
 
 
@@ -115,41 +136,53 @@ PIPELINE: tuple[StageSpec, ...] = (
         stage=Stage.NARRATE,
         reads=(),
         writes=(Artifact.TAKES,),
-        why="The script becomes spoken takes with a word clock, which every later stage measures against.",
+        holds_api_key=True,
+        opens_pages=False,
+        why="The script becomes spoken takes with their words, which every later stage measures against.",
     ),
     StageSpec(
         stage=Stage.CUE,
         reads=(Artifact.TAKES,),
         writes=(Artifact.CUE_TIMES,),
+        holds_api_key=False,
+        opens_pages=False,
         why="Each cue phrase becomes a second on its section clock, which the recorder plays to.",
     ),
     StageSpec(
         stage=Stage.RECORD,
-        reads=(Artifact.CUE_TIMES,),
+        reads=(Artifact.TAKES, Artifact.CUE_TIMES),
         writes=(Artifact.RECORDINGS,),
+        holds_api_key=False,
+        opens_pages=True,
         why="The pages are recorded against those seconds, so the picture lands on its word.",
     ),
     StageSpec(
-        stage=Stage.SOUNDSCAPE,
-        reads=(Artifact.TAKES,),
-        writes=(Artifact.SOUNDSCAPE,),
+        stage=Stage.SCORE,
+        reads=(),
+        writes=(Artifact.SCORE,),
+        holds_api_key=True,
+        opens_pages=False,
         why="The music, the ambience and the effects are generated last of the paid work, so the unpaid "
         "draft loop stops at record.",
     ),
     StageSpec(
         stage=Stage.ASSEMBLE,
-        reads=(Artifact.TAKES, Artifact.RECORDINGS, Artifact.SOUNDSCAPE),
+        reads=(Artifact.TAKES, Artifact.RECORDINGS, Artifact.SCORE),
         writes=(Artifact.FINAL,),
-        why="The recordings, the narration and the soundscape are cut, mixed and encoded into one film.",
+        holds_api_key=False,
+        opens_pages=True,
+        why="The recordings, the narration and the score are cut, mixed and encoded into one film.",
     ),
     StageSpec(
         stage=Stage.VERIFY,
         reads=(Artifact.CUE_TIMES, Artifact.FINAL),
         writes=(),
+        holds_api_key=False,
+        opens_pages=False,
         why="The finished film is measured against the clock the earlier stages promised.",
     ),
 )
-"""Every stage in run order, with the artifacts it reads and writes and the reason it runs there."""
+"""Every stage in run order, with the artifacts it reads and writes, the trust it needs and the reason it runs there."""
 
 SPECS: dict[Stage, StageSpec] = {spec.stage: spec for spec in PIPELINE}
 """Each stage's row, so `Stage.spec` is one lookup rather than a scan."""
@@ -161,8 +194,8 @@ NEEDS: dict[Stage, frozenset[Stage]] = {
 }
 """Each stage against the stages whose artifacts it reads, which is the table above read as a graph.
 
-The declared order is one the graph admits and not the only one, because `soundscape` reads nothing
-`cue` or `record` writes and runs after them only so the unpaid draft loop stops at `record`.
+The declared order is one the graph admits and not the only one, because `score` reads nothing
+another stage writes and runs after `record` only so the unpaid draft loop stops there.
 """
 
 

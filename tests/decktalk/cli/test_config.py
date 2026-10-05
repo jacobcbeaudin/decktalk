@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from decktalk import settings as knobs
+from decktalk import settings
 from decktalk.cli import config as commands
 from decktalk.results import ConfigGetResult, ConfigListResult, Layer
 from support.links import link
@@ -16,7 +16,7 @@ from support.projects import write_project
 @pytest.fixture
 def project_dir(tmp_path, monkeypatch):
     """A project directory the config verbs act on, which is where a write lands."""
-    monkeypatch.setenv("DECKTALK_CONFIG", str(tmp_path / "machine.toml"))
+    monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(tmp_path / "machine.toml"))
     return write_project(tmp_path)
 
 
@@ -44,7 +44,7 @@ def test_get_prints_one_key(run, project_dir) -> None:
     written = ConfigGetResult.model_validate_json(
         run("-p", str(project_dir), "config", "get", "video.crf", "--json").out
     )
-    assert written.key.key == "video.crf"
+    assert written.setting.key == "video.crf"
 
 
 def test_get_refuses_a_key_that_is_not_one(run, project_dir) -> None:
@@ -81,7 +81,7 @@ def test_set_refuses_a_project_file_that_links_out_of_the_project(run, project_d
 def test_an_out_of_range_refusal_is_two_sentences(run, project_dir) -> None:
     """The loader's refusal ends on the value it got, and the reason it was refused is a new sentence."""
     said = " ".join(run("-p", str(project_dir), "config", "set", "video.crf", "99").err.split())
-    assert "got 99. " in said
+    assert "got 99 in config set. " in said
 
 
 def test_unset_refuses_a_name_that_is_neither_a_key_nor_a_table(run, project_dir) -> None:
@@ -103,6 +103,24 @@ def test_set_on_a_dry_run_reports_the_change_and_writes_nothing(run, project_dir
     assert "crf" not in (project_dir / "decktalk.toml").read_text(encoding="utf-8")
 
 
+def test_a_project_write_names_its_file_project_relative(run, project_dir) -> None:
+    """`written` and `file` are project-relative like every other result's, wherever the command runs from."""
+    written = json.loads(run("-p", str(project_dir), "config", "set", "video.crf", "20", "--json").out)
+    assert (written["written"], written["file"]) == (["decktalk.toml"], "decktalk.toml")
+    removed = json.loads(run("-p", str(project_dir), "config", "unset", "video.crf", "--json").out)
+    assert (removed["written"], removed["file"]) == (["decktalk.toml"], "decktalk.toml")
+
+
+def test_a_machine_write_names_the_machine_file_by_its_absolute_path(run, project_dir, tmp_path) -> None:
+    """The machine file sits outside every project, so no project-relative path could name it."""
+    machine = (tmp_path / "machine.toml").absolute().as_posix()
+    argv = ("-p", str(project_dir), "config")
+    written = json.loads(run(*argv, "set", "record.concurrency", "2", "--scope", "machine", "--json").out)
+    assert (written["written"], written["file"]) == ([machine], machine)
+    removed = json.loads(run(*argv, "unset", "record.concurrency", "--scope", "machine", "--json").out)
+    assert (removed["written"], removed["file"]) == ([machine], machine)
+
+
 def test_unset_takes_one_key_back_out(run, project_dir) -> None:
     run("-p", str(project_dir), "config", "set", "video.crf", "20")
     ran = run("-p", str(project_dir), "config", "unset", "video.crf", "--json")
@@ -116,8 +134,17 @@ def test_unset_prints_the_value_that_now_applies_and_the_layer_it_comes_from(run
     run("-p", str(project_dir), "config", "set", "video.crf", "20")
     written = json.loads(run("-p", str(project_dir), "config", "unset", "video.crf", "--json").out)
     assert written["previous"] == 20
-    assert written["effective"] == knobs.BY_ID["video.crf"].default
+    assert written["effective"] == settings.BY_ID["video.crf"].default
     assert written["layer"] == Layer.DEFAULT.value
+
+
+def test_unset_of_one_key_on_a_terminal_asks_nothing(run, project_dir) -> None:
+    """One key needs no permission, so only a whole table is confirmed."""
+    run("-p", str(project_dir), "config", "set", "video.crf", "20")
+    ran = run("-p", str(project_dir), "config", "unset", "video.crf", tty=True, stdin="n\n")
+    assert ran.exit_code == 0, ran.err
+    assert "Remove everything" not in ran.err
+    assert "crf" not in (project_dir / "decktalk.toml").read_text(encoding="utf-8")
 
 
 def test_unset_of_a_key_the_file_does_not_set_says_so(run, project_dir) -> None:
@@ -130,17 +157,17 @@ def test_unset_of_a_whole_table_without_a_terminal_refuses_and_names_all(run, pr
     run("-p", str(project_dir), "config", "set", "video.crf", "20")
     ran = run("-p", str(project_dir), "config", "unset", "video")
     assert ran.exit_code == 3
-    assert "--all" in ran.err
+    assert "--table" in ran.err
 
 
 def test_unset_of_a_whole_table_with_all_takes_every_key_it_set(run, project_dir) -> None:
     run("-p", str(project_dir), "config", "set", "video.crf", "20")
-    ran = run("-p", str(project_dir), "config", "unset", "video", "--all", "--json")
+    ran = run("-p", str(project_dir), "config", "unset", "video", "--table", "--json")
     assert ran.exit_code == 0
     assert json.loads(ran.out)["keys"] == ["video.crf"]
 
 
-def test_explain_reads_one_knob_whole(run, project_dir) -> None:
+def test_explain_reads_one_setting_whole(run, project_dir) -> None:
     ran = run("-p", str(project_dir), "config", "explain", "video.crf", "--json")
     assert ran.exit_code == 0
     written = json.loads(ran.out)
@@ -150,8 +177,17 @@ def test_explain_reads_one_knob_whole(run, project_dir) -> None:
     assert written["docs"].endswith("/configuration#video")
 
 
+def test_explain_reads_the_projects_takes_dir(run, project_dir) -> None:
+    ran = run("-p", str(project_dir), "config", "explain", "narration.takes_dir", "--json")
+    assert ran.exit_code == 0
+    written = json.loads(ran.out)
+    assert written["key"] == "narration.takes_dir"
+    assert written["scope"] == "project"
+    assert written["environment"] == "DECKTALK_NARRATION_TAKES_DIR"
+
+
 def test_explain_holds_a_candidate_to_the_same_range(run, project_dir) -> None:
-    ran = run("-p", str(project_dir), "config", "explain", "video.crf", "--value", "99")
+    ran = run("-p", str(project_dir), "config", "explain", "video.crf", "--candidate", "99")
     assert ran.exit_code == 2
 
 

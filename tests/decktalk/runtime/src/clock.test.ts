@@ -1,4 +1,4 @@
-/*! The narration clock and its queue, tested without a browser.
+/*! The section clock and its queue, tested without a browser.
  *
  * Everything the clock owns but the frame loop is arithmetic over a sorted list, so `node --test`
  * reads the module directly. The loop itself belongs to a browser and is held by the browser tests
@@ -14,7 +14,7 @@ beforeEach(() => {
   clear();
 });
 
-test("a page has no narration second until its clock has started", () => {
+test("a page has no second on the section clock until its clock has started", () => {
   assert.equal(started(), false);
   assert.equal(now(), Number.NEGATIVE_INFINITY);
 });

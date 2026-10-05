@@ -6,9 +6,9 @@
  * so the line reports itself through the telemetry seam instead of being measured in pixels.
  */
 
+import { CLASS, motionScale, styleClass } from "./canvas.ts";
 import { now, round } from "./clock.ts";
 import { APPEAR_WORDS_MAX, BACK_OPACITY, MILLISECONDS, scaled, WORD_STYLES, type WordStyle } from "./contract.ts";
-import { CLASS, motionScale, styleClass } from "./stage.ts";
 import { recorder } from "./telemetry.ts";
 import { warn } from "./warn.ts";
 
@@ -60,7 +60,7 @@ const EASE_POWER = 3;
 /** Every group of digits a thousands separator goes in front of, which is how the author wrote it. */
 const THOUSANDS = /\B(?=(\d{3})+(?!\d))/g;
 
-/** The share of the count still to run after a given share of its length, which is a cubic ease out. */
+/** The share of the count already run after a given share of its length, which is a cubic ease out. */
 function eased(part: number): number {
   return 1 - (1 - part) ** EASE_POWER;
 }
@@ -163,9 +163,9 @@ export function line(el: HTMLElement, text: string, style: WordStyle, scene: Sce
           recorder().words({
             text: text.slice(0, TEXT_MAX),
             cueAt: round(cueAt),
-            runAt: (spoken[start] as Spoken).at,
+            spokenAt: (spoken[start] as Spoken).at,
             count: keys.length,
-            firstOn: round(at),
+            firstShown: round(at),
           });
         }
       } else waiting = true;

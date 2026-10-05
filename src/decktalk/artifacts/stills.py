@@ -28,11 +28,11 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import Field
 
-from decktalk.artifacts.recordings import HASH_DIGITS
-from decktalk.artifacts.stored import Stored, engine_digest, file_digest
+from decktalk.artifacts.stored import DIGEST_DIGITS, Stored, engine_digest, file_digest
 from decktalk.logs import cache_decision
 
 log = logging.getLogger(__name__)
@@ -49,11 +49,13 @@ IDLE_SECONDS = 14 * 24 * 60 * 60
 
 def still_key(parts: Sequence[str]) -> str:
     """The name of one frozen frame, from everything that decides how it looks and the engine that drew it."""
-    return engine_digest(*parts)[:HASH_DIGITS]
+    return engine_digest(*parts)[:DIGEST_DIGITS]
 
 
 class StillManifest(Stored):
     """The project files a page had loaded when one frame of it was drawn, each with its digest then."""
+
+    label: ClassVar[str] = "the list of files one frame was drawn from"
 
     files: dict[str, str] = Field(description="Each project-relative file against the digest it had when drawn.")
 

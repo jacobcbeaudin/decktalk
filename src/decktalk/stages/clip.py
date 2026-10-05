@@ -20,18 +20,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import WORDS_SUFFIX, Take, Takes, Words
+from decktalk.artifacts import WORDS_SUFFIX, ClipWords, Take
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
 from decktalk.inputs import Inputs, PageSection
 from decktalk.inputs.paths import at
-from decktalk.machine import Run
+from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.media.encode import Encoder
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Artifact
 from decktalk.results import ClipResult, SectionWords, Word
-from decktalk.stages.words import section_words
+from decktalk.stages.words import row_of
 
 FRAME_SLACK = 0.5
 """Truth: half a frame, which is the most a span may pass the last frame by and still name it."""
@@ -72,45 +72,47 @@ def clip(
 ) -> ClipResult:
     """Cut the span from `start` to `end` of one built page section into `out`, with its words beside it.
 
-    The span is rounded outward to whole frames, because a clip that began mid-frame would play its
-    first frame twice. `hold_seconds` holds the last frame in silence after the span, which is how a
-    clip ends on the picture it made rather than on the next thing the film did.
+    Each end of the span is rounded to the nearest whole frame, because a clip that began mid-frame
+    would play its first frame twice, and a span that rounds to no frame is refused. `hold_seconds`
+    holds the last frame in silence after the span, which is how a clip ends on the picture it made
+    rather than on the next thing the film did.
     """
     played = _page_section(inputs, section)
     video = _section_video(inputs, played)
     take, source = _take_of(inputs, section)
     settings = inputs.settings.video
-    fps = settings.output_fps
+    fps = settings.fps
     span = _span(inputs, video, start=start, end=end, hold_seconds=hold_seconds, fps=fps)
     film = _out_path(inputs, out, video)
     words_file = film.with_name(film.stem + WORDS_SUFFIX)
 
     _render(inputs, video, source, film, span=span, lead=take.lead_seconds, gain_db=gain_db, fps=fps)
-    inside, cut = _clip_words(inputs, section, span.first_seconds, span.last_seconds)
+    said = row_of(inputs, take)
+    inside, cut = _clip_words(said, span.first_seconds, span.last_seconds)
     for word in cut:
         run.note(
             f"The span from {span.first_seconds:g}s to {span.last_seconds:g}s cuts the word {word!r} in two, "
             "so the words file leaves it out.",
             level=Level.WARNING,
         )
-    if not take.voiced:
+    if said.estimated:
         run.note(
             f"Section {section} carries placeholder narration, so every word time in this clip is an estimate.",
             level=Level.WARNING,
         )
     run.wrote(film)
-    run.wrote(Words(words=inside).write(words_file))
+    run.wrote(ClipWords(words=inside).write(words_file))
     return run.result(
         ClipResult,
         section=section,
-        film=inputs.relative(film),
-        words=inputs.relative(words_file),
-        start=span.first_seconds,
-        end=span.last_seconds,
+        file=inputs.relative(film),
+        words_file=inputs.relative(words_file),
+        start_seconds=span.first_seconds,
+        end_seconds=span.last_seconds,
         seconds=span.total_seconds,
         hold_seconds=span.hold_seconds,
         gain_db=gain_db,
-        estimated=not take.voiced,
+        estimated=said.estimated,
     )
 
 
@@ -161,11 +163,11 @@ def _page_section(inputs: Inputs, number: int) -> PageSection:
 
 
 def _section_video(inputs: Inputs, section: PageSection) -> Path:
-    """The cut of one section, or a refusal naming the command that makes it."""
+    """The video of one section, or a refusal naming the command that makes it."""
     video = inputs.workspace.section_video(section.key)
     if not video.is_file():
         raise NotBuiltError(
-            f"section {section.number} has no cut at {inputs.relative(video)}.",
+            f"section {section.number} has no section video at {inputs.relative(video)}.",
             hint=Artifact.FINAL.next_step,
             location=at(video, inputs.root, section=section.number),
         )
@@ -174,7 +176,7 @@ def _section_video(inputs: Inputs, section: PageSection) -> Path:
 
 def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
     """One section's take and the file that holds it, or a refusal naming the command that makes it."""
-    takes = Takes.require(inputs.workspace.takes_path, Artifact.TAKES)
+    takes = inputs.takes(required=True)
     take = takes.of(number)
     if take is None:
         raise NotBuiltError(
@@ -182,10 +184,10 @@ def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
             hint=Artifact.TAKES.next_step,
             location=at(inputs.workspace.takes_path, inputs.root, section=number),
         )
-    source = inputs.workspace.takes_dir / take.file
+    source = inputs.take_places.find(take.digest).audio
     if not source.is_file():
         raise NotBuiltError(
-            f"section {number} names the take {take.file}, which is not on disk.",
+            f"section {number} names the take {source.name}, which is not on disk.",
             hint=Artifact.TAKES.next_step,
             location=at(source, inputs.root, section=number),
         )
@@ -221,11 +223,11 @@ def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds
 
 
 def _out_path(inputs: Inputs, out: Path, video: Path) -> Path:
-    """Where the clip is written, refusing a name that is the section cut it reads."""
+    """Where the clip is written, refusing a name that is the section video it reads."""
     film = out if out.is_absolute() else inputs.root / out
     if film.resolve() == video.resolve():
         raise InputError(
-            f"--out names {inputs.relative(video)}, which is the section cut this clip is read from.",
+            f"--out names {inputs.relative(video)}, which is the section video this clip is read from.",
             hint="Write the clip somewhere else, such as under media/.",
             location=at(video, inputs.root),
         )
@@ -242,7 +244,7 @@ def _render(
     frames after a trim otherwise, and the sound is the take moved to where the span starts so that
     a span opening inside the section's lead opens on the silence the film has there.
     """
-    settings = inputs.settings.video
+    rate = inputs.settings.audio.sample_rate
     head = max(0.0, lead - span.first_seconds)
     begins = max(0.0, span.first_seconds - lead)
     ends = max(begins + LEAST_AUDIO_SECONDS, span.last_seconds - lead)
@@ -250,8 +252,8 @@ def _render(
     fade_out_at = max(played - EDGE_FADE_SECONDS, 0.0)
     total = span.total_seconds
     sound = (
-        f"[1:a]aresample={settings.sample_rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,"
-        f"adelay=delays={round(head * settings.sample_rate)}S:all=1,volume={gain_db:g}dB,"
+        f"[1:a]aresample={rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,"
+        f"adelay=delays={round(head * rate)}S:all=1,volume={gain_db:g}dB,"
         f"afade=t=in:d={EDGE_FADE_SECONDS},afade=t=out:st={fade_out_at:.6f}:d={EDGE_FADE_SECONDS},"
         f"apad=whole_dur={total:.6f},atrim=duration={total:.6f}[a]"
     )
@@ -259,7 +261,7 @@ def _render(
         f"[0:v]trim=start_frame={span.first}:end_frame={span.last},setpts=PTS-STARTPTS,fps={fps},"
         f"tpad=stop_mode=clone:stop={span.hold}[v]"
     )
-    encoder = Encoder(settings)
+    encoder = Encoder(inputs.settings.video, inputs.settings.audio)
     ffmpeg.run(
         *ffmpeg.source(video), *ffmpeg.source(source),
         "-filter_complex", f"{picture};{sound}",
@@ -268,11 +270,8 @@ def _render(
     )  # fmt: skip
 
 
-def _clip_words(inputs: Inputs, number: int, first: float, last: float) -> tuple[tuple[Word, ...], tuple[str, ...]]:
+def _clip_words(said: SectionWords, first: float, last: float) -> tuple[tuple[Word, ...], tuple[str, ...]]:
     """(the words wholly inside the span, in seconds after it starts, the words the span cuts in two)."""
-    said: SectionWords | None = section_words(inputs, number)
-    if said is None:
-        return (), ()
     inside: list[Word] = []
     cut: list[str] = []
     for word in said.words:

@@ -1,7 +1,7 @@
 {
   "about": "Cases for the four pure functions the page contract publishes. The node suite runs every case against contract.ts, and pytest runs the cases of the two that Python also computes against the generated page.py, so both implementations answer one table.",
   "tolerance": 1e-9,
-  "wire_id": [
+  "cue_id": [
     { "args": ["4.1", "expand"], "want": "4.1:expand" },
     { "args": ["intro", "a:b"], "want": "intro:a:b" }
   ],
