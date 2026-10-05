@@ -173,6 +173,7 @@ Every call in the table also appends its own events file, `build/events/<run>.js
 | `score` | `assemble` | False leaves the score's audio out of the mix. |
 | `loudness` | `assemble`, `build` | False skips the loudness pass, so the soundtrack is encoded as it was mixed. A placeholder narration skips it in any case. |
 | `strict` | `assemble`, `build` | True raises `ToolError` when the mix misses the loudness it was mastered to, rather than reporting `MIX_LOUDNESS` and writing the film. |
+
 A project's `Threshold` has two fields. `stop_on` is the least severe finding that fails a call:
 `Severity.ERROR`, the default, fails on an error, `Severity.WARNING` on any finding, and None on
 nothing. `allow` is a set of codes that never fail a call, whatever their severity, and they are

@@ -184,3 +184,31 @@ def test_the_rule_sees_a_dash_a_sentence_writes_and_not_one_a_string_carries(tmp
     )
     found = [line.split(":")[1] for line in offences(path, EM_DASH)]
     assert found == ["3"], found
+
+
+TABLE_ROW = re.compile(r"^\|.*\|\s*$")
+"""A line of a markdown table, which a line straight after it joins as one more row."""
+
+STARTS_A_BLOCK = ("|", "<", "{")
+"""What a line after a table may start with: another row, or an HTML or MDX block that ends the table."""
+
+
+def rows_that_swallow_text(path: Path) -> list[str]:
+    """Every line of a page that follows a table row with no blank line, outside a code fence."""
+    found: list[str] = []
+    fenced = False
+    previous = ""
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if CODE_FENCE.match(line):
+            fenced = not fenced
+        if not fenced and TABLE_ROW.match(previous) and line.strip() and not line.lstrip().startswith(STARTS_A_BLOCK):
+            found.append(f"{path.relative_to(REPO).as_posix()}:{number}: {line[:70]}")
+        previous = "" if fenced else line
+    return found
+
+
+def test_no_page_runs_text_straight_on_from_a_table():
+    """A sentence written on the line after a table renders as table rows, so a blank line must part them."""
+    pages = [path for path in tracked() if path.suffix in {".md", ".mdx"} and readable(path)]
+    found = [line for path in pages for line in rows_that_swallow_text(path)]
+    assert found == [], "\n".join(found)
