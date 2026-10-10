@@ -40,7 +40,7 @@ from decktalk.page import SECOND_DIGITS, Q
 from decktalk.pagescan import Slides, scene_entry, slide_cues
 from decktalk.results import Panel, StoryboardResult, counted
 from decktalk.stages import SECTION_START_SECONDS, selects
-from decktalk.stages.record.capture import as_query, words_query
+from decktalk.stages.record.capture import as_query, spoken_query
 
 LABEL_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 """Everything a frozen state's name may not carry into a file name, which becomes one underscore."""
@@ -195,8 +195,8 @@ class Sheet:
     directory: Path
     drawn: dict[str, Path] = field(default_factory=dict)
     panels: list[Panel] = field(default_factory=list)
-    words: dict[int, str | None] = field(default_factory=dict)
-    """Each section's spoken words as the page is handed them, read once per section rather than per state."""
+    spoken: dict[int, dict[Q, str]] = field(default_factory=dict)
+    """Each section's spoken words and turns as the page is handed them, read once per section rather than per state."""
 
     @cached_property
     def documents(self) -> dict[str, bytes]:
@@ -205,9 +205,9 @@ class Sheet:
 
     def url(self, section: PageSection, freeze: Freeze) -> str:
         """The URL of one frozen state of one section."""
-        if section.number not in self.words:
-            self.words[section.number] = words_query(self.inputs, section)
-        return freeze_url(section, freeze, self.words[section.number])
+        if section.number not in self.spoken:
+            self.spoken[section.number] = spoken_query(self.inputs, section)
+        return freeze_url(section, freeze, self.spoken[section.number])
 
     def frozen(self, section: PageSection, freeze: Freeze) -> Path:
         """The file holding one frozen state of one section, drawn now or read back from the kept frames."""
@@ -236,16 +236,14 @@ class Sheet:
         )
 
 
-def freeze_url(section: PageSection, freeze: Freeze, words: str | None) -> str:
-    """The URL of one frozen state of one section, with the section's own params and its own `words`.
+def freeze_url(section: PageSection, freeze: Freeze, spoken: Mapping[Q, str]) -> str:
+    """The URL of one frozen state of one section, with the section's own params and its own words and turns.
 
     A still asks the page for a state where a recording asks it to play, so the recorder's own scene
     and clock keys are left off and the freeze keys go on instead. Everything else is what the
     recorder passes, because a still that differed from the film would not be a still of it.
     """
-    query: dict[Q, str] = dict(as_query(section.freeze_params))
-    if words and Q.WORDS not in query:
-        query[Q.WORDS] = words
+    query: dict[Q, str] = {**spoken, **as_query(section.freeze_params)}
     return page_url(section.page, {**query, **freeze.query()})
 
 

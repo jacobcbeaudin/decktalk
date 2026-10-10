@@ -210,7 +210,7 @@ rather than keeping a clock.
 | Member | What it holds |
 |---|---|
 | `DeckTalk.cues` | Every cue the page plays, keyed by cue id, against its second on the section clock. |
-| `DeckTalk.words` | Every word the section speaks, as `{ word, at }`. Each word is lower case with its punctuation taken out, which is how the runtime matches it. |
+| `DeckTalk.words` | Every word the section speaks, as `{ word, at, voice, turn }`. Each word is lower case with its punctuation taken out, which is how the runtime matches it, and `voice` and `turn` say who says it, so a dialogue can place each voice's words on a side of its own without naming anyone. |
 | `DeckTalk.frame(fn, { region })` | The hook that draws each frame from its second, inside the region it names. |
 
 Key every change on a cue's second from `DeckTalk.cues` rather than on a number of your own, so a

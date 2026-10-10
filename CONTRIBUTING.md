@@ -185,6 +185,7 @@ src/decktalk/
       table.py           The six stages against the functions that run them, which `build` and the facade both call through.
       words.py           Every spoken word with its span, which is how a cue phrase is written.
       assemble/          Stage 5: the recordings, the narration, the clips and the score become one film.
+        captioned.py     The captioned copy: the film with its captions drawn into the picture by the project's own page.
         cut.py           Every section becomes one silent mp4, and the placements record where each one plays.
         loudness.py      EBU R128 loudness: measure, apply one gain, limit the true peaks, and measure again.
         mix.py           The whole soundtrack as one ffmpeg filter graph, one `MixInput` per layer.

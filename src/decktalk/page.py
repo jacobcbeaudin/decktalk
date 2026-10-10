@@ -214,6 +214,8 @@ class Q(Enum):
     FREEZE = "freeze"
     CUES = "cues"
     WORDS = "words"
+    TURNS = "turns"
+    CAPTION = "caption"
     T0 = "t0"
     SPEED = "speed"
     HUD = "hud"
@@ -802,6 +804,10 @@ QUERY = {
     Q.FREEZE: "Freeze this slide with its cues already fired, which is what a screenshot opens.",
     Q.CUES: "The cue times to fire at, as id@seconds pairs separated by a comma.",
     Q.WORDS: "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
+    Q.TURNS: "Each turn of the section as voice@seconds pairs in turn order, the second each turn begins.",
+    Q.CAPTION: (
+        "Set to 1, draws the caption band alone over a clear frame, one caption at a time, for the captioned copy."
+    ),
     Q.T0: ("The second on the section clock the page starts at, or the word signal when the recorder steps the clock."),
     Q.SPEED: "Multiply the preview clock, so a long section is reviewed quickly.",
     Q.HUD: "Draw the on-page clock and cue list, which is for an author and never for a recording.",
@@ -812,7 +818,7 @@ QUERY = {
 
 REPORT = {
     "version": "The runtime version the page carries.",
-    "mode": "Which of index, preview, record and freeze the page is in.",
+    "mode": "Which of index, preview, record, freeze and caption the page is in.",
     "scene": "The scene the page is playing, or null on the index page.",
     "slide": "The slide on screen, or null when none is mounted.",
     "warnings": "Every distinct warning the page reported, as code, message, slide, cue and attr.",

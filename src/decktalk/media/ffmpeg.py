@@ -34,7 +34,7 @@ import shutil
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from fractions import Fraction
@@ -458,16 +458,21 @@ JOINED_FORMATS = ("concat", "mov")
 """The demuxers a join may open, which are the concat list itself and the mp4 every section video is written as."""
 
 
-def concat_source(listing: Path | str) -> list[str]:
-    """The arguments that open a concat list, allowing the file protocol and `JOINED_FORMATS` alone.
+LAYERED_FORMATS = ("concat", "png_pipe")
+"""The demuxers a list of stills may open, which are the concat list itself and the PNG every still is drawn as."""
+
+
+def concat_source(listing: Path | str, formats: Sequence[str] = JOINED_FORMATS) -> list[str]:
+    """The arguments that open a concat list, allowing the file protocol and `formats` alone.
 
     The concat demuxer copies both whitelists to every file the list names, so a cut that is really a
     playlist or a manifest is refused at the join rather than followed to the files it names. The
-    list is written with absolute paths, which is why it is read with `-safe 0`.
+    list is written with absolute paths, which is why it is read with `-safe 0`. A list of section
+    videos opens with `JOINED_FORMATS`, and a list of stills with `LAYERED_FORMATS`.
     """
     return [
         "-f", "concat", "-safe", "0",
-        "-protocol_whitelist", SOURCE_PROTOCOLS, "-format_whitelist", ",".join(JOINED_FORMATS),
+        "-protocol_whitelist", SOURCE_PROTOCOLS, "-format_whitelist", ",".join(formats),
         "-i", str(listing),
     ]  # fmt: skip
 

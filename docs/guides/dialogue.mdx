@@ -83,6 +83,13 @@ unless you turn on `[output] caption_voices`, which names the voice of every cap
 caption_voices = true
 ```
 
+The page knows who says each word whatever you choose: every item of `DeckTalk.words` carries its
+`voice` and its `turn`, and in the captioned copy that `[output] captioned` writes, every caption
+carries them as `data-voice` and `data-turn`. The interview example sets the guest's captions on
+the right that way, under the guest's bubbles, and no caption it draws names a voice.
+[Accessible video](/guides/accessible-video#a-captioned-copy-for-a-place-that-cannot-load-a-caption-file)
+has the whole of the captioned copy.
+
 ## Check it before you build
 
 `decktalk check --no-pages` reads the directions against the voices you declared, and says how much

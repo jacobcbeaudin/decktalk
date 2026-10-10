@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from decktalk.artifacts import Placement, Placements, Words
-from decktalk.captions import CAPTION_MAX_CHARS, CaptionCue, Said
+from decktalk.captions import CAPTION_MAX_CHARS, CaptionCue, Said, srt_text, vtt_text
 from decktalk.errors import ErrorCode, InputError, ToolError
 from decktalk.inputs import Inputs
 from decktalk.media import browser, pages
@@ -145,8 +145,27 @@ def test_captions_name_the_voice_of_a_dialogue_only_when_the_project_asks(tmp_pa
     narrated(inputs, first, second, alone, words=words)
     takes = inputs.takes(required=True)
     cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
-    expected = ["guest", "narrator", None] if named else [None, None, None]
-    assert [cue.voice for cue in cues] == expected
+    expected = [True, True, False] if named else [False, False, False]
+    assert [cue.named for cue in cues] == expected
+    assert ("guest: alpha beta" in srt_text(cues)) is named
+
+
+def test_every_spoken_caption_carries_its_voice_and_turn_whether_or_not_the_files_name_them(tmp_path):
+    """A page draws the captioned copy and places a caption by who says it, so the cue knows that without naming it."""
+    inputs = write_project(tmp_path, TWO_VOICES)
+    first = a_take(1, seconds=1.0, spoken="alpha beta", tail_seconds=0.3, voice="guest", digest="0000000000000001")
+    second = a_take(1, turn=2, seconds=1.0, spoken="gamma delta", digest="0000000000000002")
+    alone = a_take(2, seconds=1.0, spoken="epsilon", digest="0000000000000003")
+    words = {(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta"), 2: spoken("epsilon")}
+    narrated(inputs, first, second, alone, words=words)
+    takes = inputs.takes(required=True)
+    cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
+    assert [(cue.voice, cue.turn, cue.named) for cue in cues] == [
+        ("guest", 1, False),
+        ("narrator", 2, False),
+        ("narrator", 1, False),
+    ]
+    assert "guest" not in srt_text(cues) and "<v " not in vtt_text(cues)
 
 
 def test_a_named_voice_leaves_room_on_the_line_for_its_name(tmp_path):
@@ -159,12 +178,12 @@ def test_a_named_voice_leaves_room_on_the_line_for_its_name(tmp_path):
     narrated(inputs, first, second, words={(1, 1): spoken(said), (1, 2): spoken(near)})
     takes = inputs.takes(required=True)
     cues = build_captions(inputs, takes, {1: 0.0}, caption_texts(inputs, takes))
-    assert all(len(f"{cue.voice}: {cue.lines[0]}") <= CAPTION_MAX_CHARS for cue in cues)
+    assert all(cue.named and len(f"{cue.voice}: {cue.lines[0]}") <= CAPTION_MAX_CHARS for cue in cues)
     assert len(cues[-1].lines) == 2
 
 
 def test_a_sound_before_a_voiced_line_stays_outside_the_voice():
-    speech = CaptionCue(start=1.2, end=3.0, lines=("Says who?",), voice="guest")
+    speech = CaptionCue(start=1.2, end=3.0, lines=("Says who?",), voice="guest", turn=1, named=True)
     sound = CaptionCue(start=1.0, end=1.0 + SOUND_CAPTION_SECONDS, lines=("[door opens]",))
     (joined,) = with_sound_captions([speech], [sound])
     assert joined.lines == ("[door opens]", "Says who?") and joined.voice == "guest" and joined.spoken == (1, 2)

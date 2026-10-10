@@ -13,6 +13,7 @@
  * knowing whether anyone is listening.
  */
 
+import type { Caption } from "./canvas.ts";
 import type { Code, Ease, PageWarning, ReportField } from "./contract.ts";
 
 /** One cue, as the runtime alone can describe it, in seconds on the section clock. */
@@ -80,7 +81,7 @@ export function setRecorder(next: Recorder | null | undefined): void {
 // ---- what crosses the seam on window ------------------------------------------------------------
 
 /** What the page is doing, which the probe reports and a person reads in the heads-up display. */
-export type Mode = "index" | "preview" | "record" | "freeze";
+export type Mode = "index" | "preview" | "record" | "freeze" | "caption";
 
 /** A box in canvas pixels, which is the coordinate system every static check reasons in. */
 export type Box = { x: number; y: number; w: number; h: number };
@@ -192,6 +193,8 @@ export type RuntimeView = {
   readonly signalled: boolean;
   now(): number;
   started(): boolean;
+  /** Draw one caption in the band of a page opened with `?caption=1`, or none, and answer once it has painted. */
+  caption(caption: Caption | null): Promise<boolean>;
 };
 
 declare global {

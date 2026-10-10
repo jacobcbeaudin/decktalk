@@ -183,11 +183,13 @@ uv run python -c "from decktalk import page; print(page.QUERY)"
 | `freeze` | Freeze this slide with its cues already fired, which is what a still opens. |
 | `cues` | The cue times to fire at, as `id@seconds` pairs separated by a comma. |
 | `words` | The spoken words to sync a line against, as `word@seconds` pairs separated by a comma. |
+| `turns` | Each turn of the section as `voice@seconds` pairs in turn order, the second each turn begins. A word belongs to the last turn that began at or before it, and the turns are counted from one in the order they are listed. |
 | `t0` | The second on the section clock the page starts at, or the word `signal` when the recorder starts the clock. |
 | `speed` | Multiply the preview clock, so a long section is reviewed quickly. |
 | `hud` | Set to `1`, draws the on-page clock and cue list, which is for an author and never for a recording. |
 | `after` | Freeze after this cue, so the cues up to and including it fire and later ones stay hidden. |
 | `before` | Freeze just before this cue, so it and every later cue stay hidden. |
+| `caption` | Set to `1`, draws the caption band alone over a clear frame, one caption at a time, which is what the captioned copy is drawn from. |
 
 `after` and `before` are read by the probe alone, so a page opened by hand at `?freeze=2.1` shows
 every reveal and ignores both.
@@ -202,8 +204,9 @@ The URL picks one, and `window.__decktalk.mode` reports it.
 | `preview` | `?scene=N` | The scene plays at the speed a person reads it. The page asks the origin for the cue times the last run resolved and uses them, and falls back to one second per cue when there are none. |
 | `record` | `?cues=…` | The scene plays against the section clock, which is the mode a recording is made in. |
 | `freeze` | `?freeze=ID` | One slide is drawn with its cues already fired and nothing in motion, which is what makes two frozen frames comparable. |
+| `caption` | `?caption=1` | No scene is mounted. The root takes the class `dt-captioning`, which clears the page's background and hides everything but the caption band `#dt-captions` at the bottom of the canvas, and `assemble` hands the page one caption at a time through `window.__decktalk.caption()` to draw the captioned copy. |
 
-`freeze` wins over `scene` and `cues`. With `cues` and no `scene`, the scene that owns the earliest
+`caption` wins over every other key, and `freeze` wins over `scene` and `cues`. With `cues` and no `scene`, the scene that owns the earliest
 cue plays. `speed` divides preview time and its floor is 0.05. With `t0=signal` the clock waits for the
 recorder, which moves it one frame at a time through `DeckTalk.stepTo(t)`.
 
@@ -222,7 +225,7 @@ behaviour of its own drives this object.
 | `DeckTalk.frame(fn, { region })` | Call `fn(t)` every frame with the section second, to draw a canvas, a typed line or anything else that moves. `region` is the element, or a selector for it, that the hook draws inside, which verify masks. A hook with no region raises `PAGE_MOTION_UNDECLARED`, and a hook that throws is reported once as `PAGE_FRAME_THREW` and stops. It returns `DeckTalk`. |
 | `DeckTalk.motion(el, { from, to, ease, draw })` | Draw a motion from script between two cue ids. `draw(progress, seconds)` is called every frame from the departure, with the progress eased by `ease`, which is `firm` when it is left out, and the last call is exactly at the arrival with progress 1. `el` is the element, or a selector for it, the motion draws inside. A cue the page does not play raises `PAGE_MOTION_CUE_UNKNOWN`. It returns `DeckTalk`. |
 | `DeckTalk.cues` | Every cue this page plays, keyed by cue id, against the second on the section clock it is due, which a composition page keys its drawing on. |
-| `DeckTalk.words` | Every word the section speaks as `{ word, at }`, with the word lower case and its punctuation taken out, and the second the voice reaches it. A preview carries no words, so it is empty there. |
+| `DeckTalk.words` | Every word the section speaks as `{ word, at, voice, turn }`, with the word lower case and its punctuation taken out, the second the voice reaches it, the voice that says it and the turn of the section it is said in, counted from one. A page places what it draws by `voice` or `turn` without showing a name. `voice` and `turn` are null on a page handed no turns, and a preview carries no words, so it is empty there. |
 | `DeckTalk.waitFor(promise)` | Hold readiness until a promise of the page's own has settled. It returns `DeckTalk`. |
 | `DeckTalk.scenes` | Every scene the page declared, which a deck reads to walk its own slides. |
 | `DeckTalk.params` | The page's own query, for anything the contract does not answer. |
@@ -244,6 +247,10 @@ than save one.
 so a reader sees the page as it stands: `version`, `ready`, `mode`, `scene`, `slide`, `cues`,
 `fired`, `warnings`, `catalog`, `motions`, `frozen` and `signalled`. `now()` and `started()` are the clock's own
 two functions, which say the second on the section clock and whether the clock has begun.
+`caption({ lines, voice, turn, spoken })` draws one caption in the band of a page opened with
+`?caption=1`, or none when it is handed null, and answers once the caption's fonts have loaded and
+two frames have painted. `spoken` is the first line the voice speaks and the line after its last,
+and every other line is a sound, which takes `data-sound`.
 
 ## The probe
 

@@ -201,9 +201,11 @@ def test_the_stylesheet_is_prepended_and_carries_no_specificity(page, tmp_path):
     opened(page, write_page(tmp_path, "weight.html", MARKUP_SCENE, head=head + KATEX))
     sheet = page.evaluate("() => document.getElementById('dt-style').textContent")
     assert sheet.strip().startswith(":where(")
-    # A still is the one rule the page may not be argued out of, so it is the only forced one.
+    # A still and the clear frame the caption band is drawn on are the two things a page may not argue,
+    # so theirs are the only forced rules.
     forced = [line for line in sheet.splitlines() if "!important" in line]
-    assert all("dt-frozen" in line for line in forced)
+    assert all("dt-frozen" in line or "dt-captioning" in line for line in forced)
+    assert all(line.startswith(":where(") for line in sheet.splitlines() if "{" in line and "@keyframes" not in line)
     assert page.evaluate("() => document.head.firstElementChild.id") == "dt-style"
     settled(page, f"{write_page(tmp_path, 'weight-shown.html', MARKUP_SCENE, head=head + KATEX)}?freeze=1.1")
     assert page.evaluate("() => getComputedStyle(document.querySelector('.ball')).color") == "rgb(1, 2, 3)"
@@ -496,9 +498,50 @@ def test_a_composition_reads_every_cue_s_second_and_every_spoken_word_from_the_r
     """A composition page keys its own drawing on the section's cues and words, which the runtime hands it."""
     script = 'DeckTalk.scene(19, { slides: [{ id: "19.1", owns: ["go"], render: () => "<canvas id=c></canvas>" }] });'
     url = script_page(tmp_path, "composition.html", script)
-    opened(page, f"{url}?scene=19&t0=signal&cues=19.1:go@1.25&words=one@0.5,two@1.1")
+    opened(page, f"{url}?scene=19&t0=signal&cues=19.1:go@1.25&words=one@0.5,two@1.1&turns=narrator@0.40,guest@1.00")
     assert page.evaluate("() => window.DeckTalk.cues") == {"19.1:go": 1.25}
-    assert page.evaluate("() => window.DeckTalk.words") == [{"word": "one", "at": 0.5}, {"word": "two", "at": 1.1}]
+    assert page.evaluate("() => window.DeckTalk.words") == [
+        {"word": "one", "at": 0.5, "voice": "narrator", "turn": 1},
+        {"word": "two", "at": 1.1, "voice": "guest", "turn": 2},
+    ]
+
+
+CAPTION_JS = """() => window.__decktalk.caption({
+  lines: ["[door opens]", "Says who?"], voice: "guest", turn: 2, spoken: [1, 2],
+}).then(() => {
+  const caption = document.querySelector("#dt-captions .dt-caption");
+  return {
+    voice: caption.dataset.voice,
+    turn: caption.dataset.turn,
+    lines: [...caption.children].map((line) => [line.textContent, "sound" in line.dataset]),
+    text: caption.textContent,
+    body: getComputedStyle(document.body).visibility,
+    band: getComputedStyle(caption).visibility,
+    ground: getComputedStyle(document.documentElement).backgroundColor,
+    align: getComputedStyle(caption).textAlign,
+  };
+})"""
+
+
+def test_caption_mode_draws_one_caption_in_the_band_that_names_its_voice_only_as_data(page, tmp_path):
+    """The captioned copy is drawn from this mode: the page's own picture is cleared and the band styled by the page."""
+    head = '<style>html,body{background:#123456}.dt-caption[data-voice="guest"]{text-align:right}</style>'
+    opened(page, f"{write_page(tmp_path, 'caption.html', MARKUP_SCENE, head=head)}?caption=1")
+    assert page.evaluate("() => window.__decktalk.mode") == "caption"
+    drawn = page.evaluate(CAPTION_JS)
+    assert drawn == {
+        "voice": "guest",
+        "turn": "2",
+        "lines": [["[door opens]", True], ["Says who?", False]],
+        "text": "[door opens]Says who?",
+        "body": "hidden",
+        "band": "visible",
+        "ground": "rgba(0, 0, 0, 0)",
+        "align": "right",
+    }
+    page.evaluate("() => window.__decktalk.caption(null)")
+    assert page.evaluate("() => document.querySelector('#dt-captions').children.length") == 0
+    assert page.evaluate("() => window.__decktalk.fired") == []
 
 
 def test_freeze_mode_fires_every_cue_the_slide_declares(page, tmp_path):

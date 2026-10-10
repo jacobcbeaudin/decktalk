@@ -12,6 +12,7 @@ of the page runs, so the measurements come from the instrumentation the recorder
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Iterator, Mapping
@@ -65,6 +66,8 @@ READY_JS = "() => window.__decktalkProbe.ready()"
 # through layout and paint before a frozen frame is taken.
 PAINTED_JS = "() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))"
 REPORT_JS = "() => window.__decktalkProbe.report()"
+# Draw one caption, given as JSON, in the band of a page opened with `?caption=1`, and wait until it has painted.
+CAPTION_JS = "() => window.__decktalk.caption(%s)"
 # Whether the runtime is present and the page registered at least one scene.
 HAS_CATALOG_JS = "() => !!(window.__decktalk && window.__decktalk.catalog && window.__decktalk.catalog.length)"
 NO_CATALOG = (
@@ -198,11 +201,11 @@ def load(page: Page, url: str) -> None:
         page.goto(url)
 
 
-def write_frame(page: Page, out: Path) -> None:
-    """Write what `page` shows now to `out` as a PNG."""
+def write_frame(page: Page, out: Path, *, clear: bool = False) -> None:
+    """Write what `page` shows now to `out` as a PNG, with an alpha channel where it draws nothing when `clear`."""
     out.parent.mkdir(parents=True, exist_ok=True)
     with driving(f"could not write {out.name}"):
-        page.screenshot(path=str(out))
+        page.screenshot(path=str(out), omit_background=clear)
 
 
 def await_ready(page: Page) -> None:
@@ -274,6 +277,16 @@ def read_report(page: Page, label: str) -> PageReport:
     for line in report.unreadable:
         log.debug("[page] %s  %s", label, line)
     return report
+
+
+def caption_frame(page: Page, caption: Mapping[str, object] | None, out: Path) -> None:
+    """Write one caption as the page draws it in its band, over a clear frame, to `out` as a PNG.
+
+    The page must be open with `?caption=1`. The runtime answers once the caption's fonts have
+    loaded and two frames have painted, so no fixed wait is spent on top of it.
+    """
+    evaluate(page, CAPTION_JS % json.dumps(caption))
+    write_frame(page, out, clear=True)
 
 
 def screenshot(page: Page, url: str, out: Path) -> PageReport:

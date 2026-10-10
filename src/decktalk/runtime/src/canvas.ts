@@ -59,7 +59,16 @@ export const CLASS = {
   frozen: "dt-frozen",
   /** The class a reduced render puts on the root, which the page's own stylesheet must honour. */
   reduced: "dt-reduced",
+  /** The class a page drawing the caption band alone puts on the root, which clears everything else. */
+  captioning: "dt-captioning",
+  /** One caption in the band, which carries `data-voice` and `data-turn` for a page to place it by. */
+  caption: "dt-caption",
+  /** One line of a caption, which carries `data-sound` when it says what is heard rather than said. */
+  captionLine: "dt-caption-line",
 } as const;
+
+/** The id of the band the captions are drawn in, inside the canvas so a page styles it in canvas pixels. */
+const CAPTIONS_ID = "dt-captions";
 
 /** The name of the keyframes one closed word animates through, which the sheet and the runtime share. */
 function frames(family: string, word: string): string {
@@ -132,6 +141,25 @@ const CHROME_CSS = [
 ];
 
 /**
+ * The caption band as DeckTalk draws it before a page styles it: centred lines along the bottom of the frame.
+ *
+ * Every rule but the clearing ones sits inside `:where()`, so a page restyles a caption, or places
+ * one by its `data-voice` or `data-turn`, with a rule of its own. The lengths are typography no check
+ * reads, sized as broadcast captions are, so they are one binding rather than numbers weighed one at
+ * a time. The clearing rules carry `!important`, because a page's own background and picture must
+ * not reach a frame that is laid over the film, which is the one other thing a page may not argue.
+ */
+const CAPTION_CSS = [
+  `:where(#${CAPTIONS_ID}){position:absolute;left:0;right:0;bottom:0;padding:0 160px 72px;pointer-events:none}\n`,
+  `:where(.${CLASS.caption}){margin:0;text-align:center;font:600 46px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;` +
+    "color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.85),0 0 18px rgba(0,0,0,.6)}\n",
+  `:where(.${CLASS.captionLine}){display:block}\n`,
+  `:where(.${CLASS.captioning}),:where(.${CLASS.captioning}) body{background:transparent!important}\n`,
+  `:where(.${CLASS.captioning}) body{visibility:hidden!important}\n`,
+  `:where(.${CLASS.captioning} #${CAPTIONS_ID}){visibility:visible!important}\n`,
+];
+
+/**
  * The whole stylesheet, generated from the registry so no length is written twice.
  *
  * The attribute selectors below are derived from the registry as well: every row whose value is an
@@ -186,7 +214,7 @@ function sheet(): string {
   parts.push(
     `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}\n`,
   );
-  parts.push(...CHROME_CSS);
+  parts.push(...CHROME_CSS, ...CAPTION_CSS);
   return parts.join("");
 }
 
@@ -306,4 +334,60 @@ export function slideSeconds(word: SlideEntrance): number {
 /** How long a count runs, which the registry owns and `motion.scale` scales like any other length. */
 export function countSeconds(word: keyof typeof COUNTS): number {
   return scaled(COUNTS[word].seconds, motionScale());
+}
+
+// ---- the caption band ------------------------------------------------------------------------------
+
+/** One caption as the engine hands it to the page: its lines, who says them, and which lines are spoken. */
+export type Caption = {
+  readonly lines: readonly string[];
+  readonly voice: string | null;
+  readonly turn: number | null;
+  /** The first line the voice speaks and the line after its last, the rest being sounds. */
+  readonly spoken: readonly [number, number];
+};
+
+/** The band, made once when the page is asked to draw captions. */
+let bandEl: HTMLElement | null = null;
+
+/** Clear everything but the caption band, which is what a page drawing captions alone shows. */
+export function captioning(): void {
+  document.documentElement.classList.add(CLASS.captioning);
+  if (bandEl || !canvasEl) return;
+  bandEl = document.createElement("div");
+  bandEl.id = CAPTIONS_ID;
+  canvasEl.appendChild(bandEl);
+}
+
+/**
+ * Draw one caption in the band, or none, and answer once its fonts have loaded and two frames have painted.
+ *
+ * The caption carries its voice and its turn as data attributes and never as text, so a page places
+ * a caption by its speaker with a rule of its own and the caption still names nobody. A font a
+ * caption is the first to use loads only once the caption is in the document, so the answer waits
+ * for the document's fonts again before it waits for the paint.
+ */
+export function showCaption(caption: Caption | null): Promise<boolean> {
+  captioning();
+  const band = bandEl as HTMLElement;
+  band.replaceChildren();
+  if (caption) {
+    const p = document.createElement("p");
+    p.className = CLASS.caption;
+    if (caption.voice !== null) p.dataset.voice = caption.voice;
+    if (caption.turn !== null) p.dataset.turn = String(caption.turn);
+    const [first, after] = caption.spoken;
+    caption.lines.forEach((text, index) => {
+      const line = document.createElement("span");
+      line.className = CLASS.captionLine;
+      line.textContent = text;
+      if (index < first || index >= after) line.dataset.sound = "";
+      p.appendChild(line);
+    });
+    band.appendChild(p);
+  }
+  const fonts = Promise.resolve(document.fonts ? document.fonts.ready : null).catch(() => null);
+  return fonts.then(
+    () => new Promise<boolean>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true)))),
+  );
 }

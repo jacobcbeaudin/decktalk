@@ -34,7 +34,7 @@ from pathlib import Path
 
 from decktalk.artifacts import CueTimes, RecordingLog, content_digest, file_digest, stored
 from decktalk.errors import InputError
-from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs import Inputs, PageSection, TurnWords
 from decktalk.media.origin import page_url
 from decktalk.page import LIST_SEPARATOR, SECOND_DIGITS, T0_SIGNAL, TIME_MARK, Q
 from decktalk.results import Word
@@ -85,9 +85,29 @@ def words_param(words: tuple[Word, ...]) -> str | None:
     return LIST_SEPARATOR.join(f"{said}{TIME_MARK}{start:.{WORD_DIGITS}f}" for said, start in pairs)
 
 
-def words_query(inputs: Inputs, section: PageSection) -> str | None:
-    """The section's spoken words with their seconds, which is what a word-synced line is drawn on."""
-    return words_param(inputs.words(section.number).words)
+def turns_param(turns: Sequence[TurnWords]) -> str | None:
+    """A section's turns as voice@seconds pairs in turn order, each the second on the section clock the turn begins.
+
+    The page numbers the turns by their place in the list, so a turn that says no word is still
+    written, and a word belongs to the last turn that began at or before its own second. The second
+    is written as a word's is, so the first word of a turn is never written before its turn begins.
+    """
+    if not turns:
+        return None
+    return LIST_SEPARATOR.join(f"{turn.voice}{TIME_MARK}{max(0.0, turn.start):.{WORD_DIGITS}f}" for turn in turns)
+
+
+def spoken_query(inputs: Inputs, section: PageSection) -> dict[Q, str]:
+    """The section's spoken words with their seconds and the turns that say them, as the page reads them.
+
+    The words are what a word-synced line is drawn on, and the turns are what `DeckTalk.words` reads
+    the voice and the turn of each word from. A key with nothing to carry is left out.
+    """
+    found = {
+        Q.WORDS: words_param(inputs.words(section.number).words),
+        Q.TURNS: turns_param(inputs.turn_words(section.number)),
+    }
+    return {key: value for key, value in found.items() if value}
 
 
 def scene_url(inputs: Inputs, section: PageSection, params: dict[Q, str]) -> str:
@@ -98,10 +118,7 @@ def scene_url(inputs: Inputs, section: PageSection, params: dict[Q, str]) -> str
             f"section {section.number} plays {section.page}, which is not there.",
             hint="Write the page, or point the section at the file you meant.",
         )
-    query: dict[Q, str] = {Q.SCENE: section.scene, **params}
-    words = words_query(inputs, section)
-    if words and Q.WORDS not in query:
-        query[Q.WORDS] = words
+    query: dict[Q, str] = {Q.SCENE: section.scene, **spoken_query(inputs, section), **params}
     query[Q.T0] = T0_SIGNAL
     return page_url(section.page, query)
 
@@ -529,5 +546,6 @@ __all__ = [
     "scene_url",
     "turn_parts",
     "words_param",
-    "words_query",
+    "spoken_query",
+    "turns_param",
 ]

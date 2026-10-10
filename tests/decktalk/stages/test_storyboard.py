@@ -148,7 +148,7 @@ def test_a_selector_that_matches_nothing_draws_nothing() -> None:
 
 def test_a_frozen_url_asks_for_a_state_and_never_for_the_recorder_clock(tmp_path: Path) -> None:
     inputs = a_project(tmp_path)
-    url = freeze_url(inputs.document.page_sections[0], Freeze("1.1", cue="1.1:a"), "")
+    url = freeze_url(inputs.document.page_sections[0], Freeze("1.1", cue="1.1:a"), {})
     assert "freeze=1.1" in url
     assert "after=1.1" in url
     assert "t0=" not in url
@@ -159,7 +159,7 @@ def test_a_sheet_reads_each_sections_words_and_the_documents_once_however_many_s
 ) -> None:
     """A storyboard draws many states of one section, and each read is a file and a validation."""
     reads: list[str] = []
-    monkeypatch.setattr(stage, "words_query", lambda _inputs, section: reads.append(f"words {section.number}") or "")
+    monkeypatch.setattr(stage, "spoken_query", lambda _inputs, section: reads.append(f"words {section.number}") or {})
     documents = published.documents
     monkeypatch.setattr(type(published), "documents", lambda self: reads.append("documents") or documents())
     pages = {"deck/index.html": (FakePage(FakeContext(tmp_path)).page(), Assets(published.root))}

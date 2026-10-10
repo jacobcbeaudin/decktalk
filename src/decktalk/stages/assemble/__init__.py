@@ -4,12 +4,14 @@
     mix.py        the whole soundtrack as one filter graph, one `MixInput` per layer
     loudness.py   the two-pass normalization and what it measured
     publish.py    captions, chapters, the transcript, the poster and the atomic final file
+    captioned.py  the captioned copy, whose captions the page draws over the finished film
 
 The order is fixed. Each section is cut to its span and the sections are joined with no gaps. The
 soundtrack is mixed over a silent anchor of the picture's length. The mix is normalized to the EBU
 R128 target unless any take is a placeholder, whose clicks the a/v check listens for, or the run
 asks for no loudness pass. Then the captions, the chapters, the placements and the transcript are
-written, the finished film is renamed into place in one step, and the poster is drawn last.
+written, the finished film is renamed into place in one step, and the poster is drawn. When
+`[output] captioned` asks for it, the captioned copy is drawn over the finished film last.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from decktalk.artifacts import Placements, Takes
+from decktalk.captions import CaptionCue
 from decktalk.errors import ToolError
 from decktalk.events import Unit
 from decktalk.inputs import Inputs
@@ -27,6 +30,7 @@ from decktalk.media import audio, ffmpeg
 from decktalk.page import SECOND_DIGITS
 from decktalk.pipeline import Stage
 from decktalk.results import AssembleResult, RenderedSection, counted
+from decktalk.stages.assemble.captioned import remove_captioned, write_captioned
 from decktalk.stages.assemble.cut import Rendered, placements_of, remove_stray_videos, render_sections, rendered_starts
 from decktalk.stages.assemble.loudness import loudness_findings, measured, normalize_loudness
 from decktalk.stages.assemble.mix import MixPlan, encode_soundtrack, mix_soundtrack
@@ -50,6 +54,8 @@ DELIVERY_PASSES: tuple[str, ...] = (
     "write the captions",
     "publish the film",
 )
+CAPTIONED_PASS = "draw the captioned copy"
+"""Truth: the pass that follows the others when `[output] captioned` asks for the captioned copy."""
 """Truth: the passes that follow the section videos, in the order the encoder and the writers run them.
 
 They are named rather than counted, so the count a renderer reads and the label it prints beside it
@@ -64,9 +70,9 @@ class Passes:
     naming each step's number where it happens, which is how the count and the plan stay equal.
     """
 
-    def __init__(self, run: Run, sections: int) -> None:
+    def __init__(self, run: Run, sections: int, *, captioned: bool) -> None:
         self.run = run
-        self.total = sections + len(DELIVERY_PASSES)
+        self.total = sections + len(DELIVERY_PASSES) + captioned
         self.done = sections
 
     def finished(self, label: str) -> None:
@@ -87,7 +93,8 @@ def assemble(
     """Cut, mix, normalize and publish the whole film, with everything a viewer receives beside it."""
     takes = inputs.takes(required=True)
     remove_stray_videos(inputs)
-    passes = Passes(run, len(inputs.document.sections))
+    captioned = inputs.settings.output.captioned
+    passes = Passes(run, len(inputs.document.sections), captioned=captioned)
     rows = render_sections(
         inputs, run, takes, only=list(only) if only is not None else None, strict=strict, passes=passes.total
     )
@@ -105,7 +112,7 @@ def assemble(
         mixed.unlink(missing_ok=True)
     passes.finished(DELIVERY_PASSES[1])
 
-    _write_deliverables(inputs, run, rows, takes)
+    placements, cues = _write_deliverables(inputs, run, rows, takes)
     passes.finished(DELIVERY_PASSES[2])
     stamped = publish(inputs, work, inputs.workspace.deliverables())
     run.wrote(inputs.workspace.film)
@@ -116,6 +123,11 @@ def assemble(
     if poster is not None:
         run.wrote(poster)
     passes.finished(DELIVERY_PASSES[3])
+    if captioned:
+        run.wrote(write_captioned(inputs, run, cues, placements))
+        passes.finished(CAPTIONED_PASS)
+    else:
+        remove_captioned(inputs)
 
     return run.result(
         AssembleResult,
@@ -150,8 +162,9 @@ def _deliver(inputs: Inputs, run: Run, mixed: Path, work: Path, takes: Takes, *,
     return after
 
 
-def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes) -> Placements:
-    """The captions, the chapters, the placements and the transcript, and the placements they are read from."""
+def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: Takes
+                        ) -> tuple[Placements, list[CaptionCue]]:  # fmt: skip
+    """The captions, the chapters, the placements and the transcript, and the placements and captions written."""
     paths = inputs.workspace.deliverables()
     starts = rendered_starts(rows)
     texts = caption_texts(inputs, takes)
@@ -167,7 +180,7 @@ def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: T
     write_transcript_page(inputs, paths["transcript"], placements, texts, takes)
     for name in ("srt", "vtt", "chapters", "placements", "transcript"):
         run.wrote(paths[name])
-    return placements
+    return placements, cues
 
 
 def _rendered_rows(inputs: Inputs, rows: list[Rendered]) -> tuple[RenderedSection, ...]:

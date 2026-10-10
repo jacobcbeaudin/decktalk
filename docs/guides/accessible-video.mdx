@@ -21,6 +21,7 @@ Everything below lands in `build/final/`, beside the film, and `<name>` is `[pro
 | `<name>.chapters.txt` | The chapter markers, one per section, named by the section's `chapter` and falling back to its script heading. |
 | `<name>-transcript.html` | The transcript page, which is the media alternative for a viewer who cannot see the film. |
 | `<name>-poster.png` | The film's opening slide with every one of its reveals fired, drawn by the page rather than taken from the mp4. |
+| `<name>-captioned.mp4` | Only when `[output] captioned` is on: the film with its captions drawn into the picture by your page. See [A captioned copy](#a-captioned-copy-for-a-place-that-cannot-load-a-caption-file). |
 
 The chapters are muxed into the mp4 as well, so a player shows them without the text file, and the
 text file is there for a platform that wants to be handed one.
@@ -67,6 +68,42 @@ In a section spoken in more than one voice, `[output] caption_voices = true` nam
 caption: a WebVTT voice span such as `<v guest>` in the `.vtt`, and `guest: ` before the line in the
 `.srt`. It is off by default, so the captions carry the words alone, and the transcript names the
 voices of a dialogue either way. [Write a dialogue](/guides/dialogue) has the whole of it.
+
+## A captioned copy, for a place that cannot load a caption file
+
+A social feed, a slide embedded in another deck and a screen in a lobby play an mp4 and nothing
+beside it. Ask for a second film with the captions drawn into its picture:
+
+```toml
+[output]
+captioned = true
+```
+
+`assemble` then writes `<name>-captioned.mp4` beside the film. The film itself is the same frames
+either way, with no caption in it, and it keeps the `.srt`, the `.vtt` and the transcript, so a
+player that can load a caption file still gets captions a viewer can turn off and resize.
+
+Your own page draws each caption, so the copy is set in your deck's fonts. The page is opened with
+`?caption=1`, which clears everything but a band the runtime lays out along the bottom of the frame,
+and is handed one caption at a time. Each caption is a `<p class="dt-caption">` holding one
+`<span class="dt-caption-line">` per line, and every rule the runtime gives them carries no
+specificity, so a rule of your own restyles them:
+
+```css
+.dt-caption { font-family: var(--sans); color: var(--ink); }
+.dt-caption[data-voice="guest"] { text-align: right; }
+```
+
+A caption carries the voice that says it as `data-voice` and the section's turn as `data-turn`, and
+never as text, so a dialogue can set each voice's captions on a side of its own and still name
+nobody. A line that says what is heard, such as `[ball bounces]`, carries `data-sound`. A caption
+shows on the frames from the one its start rounds to up to the one its end rounds to, which are the
+frames a player shows the same caption on from the `.vtt`. A caption over a clip section, or over a
+section a command renders, is drawn by the first page the film plays.
+
+Each caption is drawn once and kept in `build/stills/` under everything it was drawn from, so a
+rebuild that changed one line draws one caption again. The sound and the chapter markers are copied
+from the film untouched, and only the picture is encoded again.
 
 ## The transcript, and the words a reveal is described in
 

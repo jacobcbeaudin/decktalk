@@ -1566,6 +1566,16 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_OUTPUT_CAPTION_VOICES"
+        },
+        "captioned": {
+          "description": "Also write `<name>-captioned.mp4`, the film with its captions drawn into the picture, for a place that cannot load a caption file. The page draws each caption in its own fonts and styles, and places it by the voice that says it without naming the voice. The film, its caption files and its transcript are the same either way.",
+          "type": "boolean",
+          "default": false,
+          "x-range": "takes any value of its type",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_OUTPUT_CAPTIONED"
         }
       },
       "additionalProperties": false

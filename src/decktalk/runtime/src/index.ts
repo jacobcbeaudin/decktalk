@@ -21,7 +21,7 @@
  * reading the page back. Nothing imports it, which is what keeps every other module testable.
  */
 
-import { motionScale } from "./canvas.ts";
+import { type Caption, motionScale, showCaption } from "./canvas.ts";
 import { earliest, every, now, observe, started, stepTo } from "./clock.ts";
 import { MILLISECONDS } from "./contract.ts";
 import { begin, buildSlide, cueAt, isFrozen, query, state, waitsForSignal } from "./modes.ts";
@@ -196,9 +196,19 @@ const DeckTalk = {
   get cues(): Record<string, number> {
     return Object.fromEntries(state.cues.map((cue) => [cue.id, cueAt(cue.id) ?? cue.at]));
   },
-  /** Every word the section speaks, as the runtime matches it, and the second the voice reaches it. */
-  get words(): { word: string; at: number }[] {
-    return (state.words ?? []).map((spoken) => ({ word: spoken.key, at: spoken.at }));
+  /**
+   * Every word the section speaks, as the runtime matches it, the second the voice reaches it, and who says it.
+   *
+   * `voice` names the voice and `turn` counts the section's turns from one, so a page can place what
+   * it draws by its voice without showing the name.
+   */
+  get words(): { word: string; at: number; voice: string | null; turn: number | null }[] {
+    return (state.words ?? []).map((spoken) => ({
+      word: spoken.key,
+      at: spoken.at,
+      voice: spoken.voice,
+      turn: spoken.turn,
+    }));
   },
   /** Every scene the page declared, which a deck reads to walk its own slides. */
   get scenes() {
@@ -253,6 +263,7 @@ const view: RuntimeView = {
   },
   now,
   started,
+  caption: (caption: Caption | null) => showCaption(caption),
 };
 
 window.DeckTalk = DeckTalk;

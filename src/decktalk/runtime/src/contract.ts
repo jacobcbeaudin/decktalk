@@ -711,6 +711,8 @@ export const QUERY = {
   freeze: "Freeze this slide with its cues already fired, which is what a screenshot opens.",
   cues: "The cue times to fire at, as id@seconds pairs separated by a comma.",
   words: "The spoken words to sync a line against, as word@seconds pairs separated by a comma.",
+  turns: "Each turn of the section as voice@seconds pairs in turn order, the second each turn begins.",
+  caption: "Set to 1, draws the caption band alone over a clear frame, one caption at a time, for the captioned copy.",
   t0: "The second on the section clock the page starts at, or the word signal when the recorder steps the clock.",
   speed: "Multiply the preview clock, so a long section is reviewed quickly.",
   hud: "Draw the on-page clock and cue list, which is for an author and never for a recording.",
@@ -725,7 +727,7 @@ export type Q = keyof typeof QUERY;
 /** Every field the probe's one `report()` call answers with, and what a reader does with it. */
 export const REPORT = {
   version: "The runtime version the page carries.",
-  mode: "Which of index, preview, record and freeze the page is in.",
+  mode: "Which of index, preview, record, freeze and caption the page is in.",
   scene: "The scene the page is playing, or null on the index page.",
   slide: "The slide on screen, or null when none is mounted.",
   warnings: "Every distinct warning the page reported, as code, message, slide, cue and attr.",
@@ -754,10 +756,10 @@ export const PAIR_MARK = ":";
 /** The separator between a slide id and a cue name in the cue id that cues.json carries. */
 export const CUE_MARK = ":";
 
-/** What joins a cue's cue id, or a spoken word, to its second in `?cues=` and `?words=`. */
+/** What joins a cue's cue id, a spoken word or a turn's voice to its second in `?cues=`, `?words=` and `?turns=`. */
 export const TIME_MARK = "@";
 
-/** What separates two entries of `?cues=` and of `?words=`. */
+/** What separates two entries of `?cues=`, of `?words=` and of `?turns=`. */
 export const LIST_SEPARATOR = ",";
 
 /** What `?t0=` says when the recorder starts the clock itself rather than naming a second. */

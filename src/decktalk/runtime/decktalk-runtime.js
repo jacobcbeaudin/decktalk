@@ -579,7 +579,14 @@
     frozen: "dt-frozen",
     /** The class a reduced render puts on the root, which the page's own stylesheet must honour. */
     reduced: "dt-reduced",
+    /** The class a page drawing the caption band alone puts on the root, which clears everything else. */
+    captioning: "dt-captioning",
+    /** One caption in the band, which carries `data-voice` and `data-turn` for a page to place it by. */
+    caption: "dt-caption",
+    /** One line of a caption, which carries `data-sound` when it says what is heard rather than said. */
+    captionLine: "dt-caption-line",
   };
+  var CAPTIONS_ID = "dt-captions";
   function frames(family, word2) {
     return `dt-${family}-${word2}`;
   }
@@ -619,6 +626,20 @@
     ":where(#dt-index a){color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-right:16px}\n",
     ":where(#dt-index code){color:inherit;opacity:.7}\n",
     ":where(#dt-index .dt-slides){display:flex;flex-wrap:wrap;gap:8px 4px}\n",
+  ];
+  var CAPTION_CSS = [
+    `:where(#${CAPTIONS_ID}){position:absolute;left:0;right:0;bottom:0;padding:0 160px 72px;pointer-events:none}
+`,
+    `:where(.${CLASS.caption}){margin:0;text-align:center;font:600 46px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.85),0 0 18px rgba(0,0,0,.6)}
+`,
+    `:where(.${CLASS.captionLine}){display:block}
+`,
+    `:where(.${CLASS.captioning}),:where(.${CLASS.captioning}) body{background:transparent!important}
+`,
+    `:where(.${CLASS.captioning}) body{visibility:hidden!important}
+`,
+    `:where(.${CLASS.captioning} #${CAPTIONS_ID}){visibility:visible!important}
+`,
   ];
   function sheet() {
     const declared2 = Object.values(ATTRS)
@@ -673,7 +694,7 @@
       `:where(.${CLASS.frozen}) *{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important}
 `,
     );
-    parts.push(...CHROME_CSS);
+    parts.push(...CHROME_CSS, ...CAPTION_CSS);
     return parts.join("");
   }
   var canvasEl = null;
@@ -751,6 +772,38 @@
   }
   function countSeconds(word2) {
     return scaled(COUNTS[word2].seconds, motionScale());
+  }
+  var bandEl = null;
+  function captioning() {
+    document.documentElement.classList.add(CLASS.captioning);
+    if (bandEl || !canvasEl) return;
+    bandEl = document.createElement("div");
+    bandEl.id = CAPTIONS_ID;
+    canvasEl.appendChild(bandEl);
+  }
+  function showCaption(caption) {
+    captioning();
+    const band = bandEl;
+    band.replaceChildren();
+    if (caption) {
+      const p = document.createElement("p");
+      p.className = CLASS.caption;
+      if (caption.voice !== null) p.dataset.voice = caption.voice;
+      if (caption.turn !== null) p.dataset.turn = String(caption.turn);
+      const [first, after] = caption.spoken;
+      caption.lines.forEach((text, index2) => {
+        const line2 = document.createElement("span");
+        line2.className = CLASS.captionLine;
+        line2.textContent = text;
+        if (index2 < first || index2 >= after) line2.dataset.sound = "";
+        p.appendChild(line2);
+      });
+      band.appendChild(p);
+    }
+    const fonts = Promise.resolve(document.fonts ? document.fonts.ready : null).catch(() => null);
+    return fonts.then(
+      () => new Promise((done2) => requestAnimationFrame(() => requestAnimationFrame(() => done2(true)))),
+    );
   }
 
   // src/decktalk/runtime/src/clock.ts
@@ -1642,6 +1695,26 @@
   function key(word2) {
     return word2.toLowerCase().replace(/[^a-z\d]/g, "");
   }
+  function entries(raw) {
+    return raw
+      .split(LIST_SEPARATOR)
+      .map((item) => {
+        const mark = item.lastIndexOf(TIME_MARK);
+        return { name: item.slice(0, mark), at: Number.parseFloat(item.slice(mark + 1)) };
+      })
+      .filter((entry) => entry.name && !Number.isNaN(entry.at));
+  }
+  function parseWords(raw, turnsRaw) {
+    const turns = turnsRaw ? entries(turnsRaw) : [];
+    return entries(raw)
+      .map((entry) => {
+        let turn = 0;
+        while (turn < turns.length && turns[turn].at <= entry.at) turn += 1;
+        const voice = turn ? turns[turn - 1].name : null;
+        return { key: key(entry.name), at: entry.at, voice, turn: turn || null };
+      })
+      .filter((word2) => word2.key);
+  }
   var TEXT_MAX = 24;
   var NEAR_THE_CUE_SECONDS = 1.5;
   var LAST_NUMBER = /(\d[\d,]*(?:\.\d+)?)(?!.*\d)/;
@@ -1974,9 +2047,11 @@
   var FREEZE = "freeze";
   var CUES = "cues";
   var WORDS = "words";
+  var TURNS = "turns";
   var T0 = "t0";
   var SPEED = "speed";
   var HUD = "hud";
+  var CAPTION = "caption";
   var ON = "1";
   var SLOWEST = 0.05;
   var PREVIEW_STEP_SECONDS = 1;
@@ -2098,15 +2173,6 @@
       })
       .filter((cue) => cue.id && !Number.isNaN(cue.at))
       .sort((a, b) => a.at - b.at);
-  }
-  function parseWords(raw) {
-    return raw
-      .split(LIST_SEPARATOR)
-      .map((item) => {
-        const mark = item.lastIndexOf(TIME_MARK);
-        return { key: key(item.slice(0, mark)), at: Number.parseFloat(item.slice(mark + 1)) };
-      })
-      .filter((word2) => word2.key && !Number.isNaN(word2.at));
   }
   function play(scene, cues, mode) {
     state.mode = mode;
@@ -2257,13 +2323,16 @@
     if (!signalled) start();
     build(params.get(HUD) === ON);
     const wordsRaw = params.get(WORDS);
-    state.words = wordsRaw ? parseWords(wordsRaw) : null;
+    state.words = wordsRaw ? parseWords(wordsRaw, params.get(TURNS)) : null;
     const cuesRaw = params.get(CUES);
     const cues = cuesRaw ? parseCues(cuesRaw) : [];
     const chosen = params.get(SCENE);
     let listing = false;
     let waiting3 = Promise.resolve();
-    if (frozen) {
+    if (params.get(CAPTION) === ON) {
+      state.mode = "caption";
+      captioning();
+    } else if (frozen) {
       stop(params.get(FREEZE) ?? "", (order2, slide) => probe?.freezeCues(order2, slide, warn) ?? order2);
     } else if (chosen !== null || cues.length) {
       const scene = chosen !== null ? (all().get(chosen) ?? null) : (ownerOf(cues[0].id)?.scene ?? null);
@@ -2559,9 +2628,19 @@
     get cues() {
       return Object.fromEntries(state.cues.map((cue) => [cue.id, cueAt(cue.id) ?? cue.at]));
     },
-    /** Every word the section speaks, as the runtime matches it, and the second the voice reaches it. */
+    /**
+     * Every word the section speaks, as the runtime matches it, the second the voice reaches it, and who says it.
+     *
+     * `voice` names the voice and `turn` counts the section's turns from one, so a page can place what
+     * it draws by its voice without showing the name.
+     */
     get words() {
-      return (state.words ?? []).map((spoken) => ({ word: spoken.key, at: spoken.at }));
+      return (state.words ?? []).map((spoken) => ({
+        word: spoken.key,
+        at: spoken.at,
+        voice: spoken.voice,
+        turn: spoken.turn,
+      }));
     },
     /** Every scene the page declared, which a deck reads to walk its own slides. */
     get scenes() {
@@ -2609,6 +2688,7 @@
     },
     now,
     started,
+    caption: (caption) => showCaption(caption),
   };
   window.DeckTalk = DeckTalk;
   window.__decktalk = view;

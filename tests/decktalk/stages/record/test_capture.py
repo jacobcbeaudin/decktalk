@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import CueTimes, RecordingLog, stored
+from decktalk.artifacts import CueTimes, RecordingLog, Words, stored
 from decktalk.errors import InputError, NotBuiltError
-from decktalk.inputs import Inputs, PageSection
+from decktalk.inputs import Inputs, PageSection, TurnWords
 from decktalk.page import Q
 from decktalk.results import CueTime, SectionCues, Word
 from decktalk.stages.record.capture import (
@@ -29,6 +29,7 @@ from decktalk.stages.record.capture import (
     said,
     scene_params,
     scene_url,
+    turns_param,
     words_param,
 )
 from support.pages import TWO_SCENE_PAGE, a_recording
@@ -121,6 +122,17 @@ def test_a_word_never_carries_the_separators_the_query_uses() -> None:
 
 def test_no_words_is_no_query_value() -> None:
     assert words_param(()) is None
+
+
+def test_each_turn_is_written_as_its_voice_and_the_second_it_begins() -> None:
+    """The page reads which voice says each word, and in which turn, from the second every turn begins."""
+    said = Words(words=(Word(word="hi", start=0.5, end=0.8),))
+    turns = (
+        TurnWords(turn=1, voice="narrator", spoken="hi", words=said, start=0.4),
+        TurnWords(turn=2, voice="guest", spoken="", words=Words(), start=3.104),
+    )
+    assert turns_param(turns) == "narrator@0.40,guest@3.10"
+    assert turns_param(()) is None
 
 
 def test_a_page_is_cut_into_the_scene_a_section_plays_and_the_part_every_scene_shares() -> None:

@@ -34,8 +34,8 @@ def voice_label(voice: str) -> str:
 
 
 def _srt_lines(cue: CaptionCue) -> str:
-    """One cue's text as SubRip writes it, with the voice's name before the first line it speaks."""
-    if cue.voice is None:
+    """One cue's text as SubRip writes it, with the voice's name before the first line it speaks when it is named."""
+    if not cue.named or cue.voice is None:
         return cue.text
     first, _after = cue.speech
     lines = list(cue.lines)
@@ -44,8 +44,8 @@ def _srt_lines(cue: CaptionCue) -> str:
 
 
 def _vtt_lines(cue: CaptionCue) -> str:
-    """One cue's text as WebVTT writes it, with the lines a voice speaks inside a `<v>` span that names it."""
-    if cue.voice is None:
+    """One cue's text as WebVTT writes it, with the lines a named voice speaks inside a `<v>` span that names it."""
+    if not cue.named or cue.voice is None:
         return cue.text
     first, after = cue.speech
     lines = list(cue.lines)

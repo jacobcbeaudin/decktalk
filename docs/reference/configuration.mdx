@@ -368,6 +368,7 @@ These keys switch the files a build writes beside the final mp4.
 |---|---|---|---|---|---|---|---|
 | `timestamped_copy` | boolean | `false` | takes any value of its type |  | project |  | Write a second copy of the final mp4 named with the date and time. |
 | `caption_voices` | boolean | `false` | takes any value of its type |  | project |  | Name the voice of every caption in a section spoken in more than one voice: a WebVTT voice span such as `<v narrator>` in the .vtt, and the name before the line, such as `narrator: `, in the .srt. Off, the captions carry the words alone, and the transcript names the voices of a dialogue either way. |
+| `captioned` | boolean | `false` | takes any value of its type |  | project |  | Also write `<name>-captioned.mp4`, the film with its captions drawn into the picture, for a place that cannot load a caption file. The page draws each caption in its own fonts and styles, and places it by the voice that says it without naming the voice. The film, its caption files and its transcript are the same either way. |
 
 ## `[events]`
 

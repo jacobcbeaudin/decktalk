@@ -1028,6 +1028,13 @@ class OutputConfig:
         "`<v narrator>` in the .vtt, and the name before the line, such as `narrator: `, in the .srt. Off, the "
         "captions carry the words alone, and the transcript names the voices of a dialogue either way.",
     )
+    captioned: bool = tune(
+        False,
+        "Also write `<name>-captioned.mp4`, the film with its captions drawn into the picture, for a place that "
+        "cannot load a caption file. The page draws each caption in its own fonts and styles, and places it by the "
+        "voice that says it without naming the voice. The film, its caption files and its transcript are the same "
+        "either way.",
+    )
 
 
 @dataclass(frozen=True)

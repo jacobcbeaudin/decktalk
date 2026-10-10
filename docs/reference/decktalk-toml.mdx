@@ -483,7 +483,7 @@ its hazard by `decktalk schema setting` and documented in full on
 | [`[score]`](/reference/configuration#score) | How each sound and the music are asked for: their models, their lengths and how the music is joined. |
 | [`[verify]`](/reference/configuration#verify) | Every limit the finished film is measured against. |
 | [`[motion]`](/reference/configuration#motion) | Reduced motion and the multiplier on every declared motion span. |
-| [`[output]`](/reference/configuration#output) | The timestamped copy of the final mp4, and whether the captions of a dialogue name its voices. |
+| [`[output]`](/reference/configuration#output) | The timestamped copy of the final mp4, the captioned copy, and whether the captions of a dialogue name its voices. |
 | [`[events]`](/reference/configuration#events) | How many runs of event files are kept, and how large one may grow. |
 
 `decktalk config list` prints every key with the layer that set it.
@@ -504,6 +504,11 @@ caption_voices = true
 
 The `.srt` writes the same caption as `engineer: Says who? Every demo says that.`, and those turns
 are wrapped short enough that the name and the line still fit on one caption line.
+
+`captioned = true` also writes `<name>-captioned.mp4`, the film with its captions drawn into the
+picture by your page, for a place that cannot load a caption file. The film itself is the same
+frames either way. [Accessible video](/guides/accessible-video#a-captioned-copy-for-a-place-that-cannot-load-a-caption-file)
+says how a page styles the captions and places them by voice.
 
 ## Related
 

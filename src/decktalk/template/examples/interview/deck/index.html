@@ -47,6 +47,12 @@
   .bubble.narrator { left: 120px; background: var(--ink); }
   .bubble.guest { left: 700px; background: var(--accent); }
 
+  /* The captioned copy: the captions are set in the deck's own ink on a halo of its ground, the
+     guest's on the right under the guest's bubbles and the narrator's centred. A caption carries its
+     voice as data-voice and never as text, so it names nobody. */
+  .dt-caption { font-family: var(--sans); color: var(--ink); text-shadow: 0 0 6px var(--ground), 0 0 18px var(--ground); }
+  .dt-caption[data-voice="guest"] { text-align: right; color: var(--accent); }
+
   .end { position: absolute; left: 120px; top: 620px; width: 980px; height: 240px; box-sizing: border-box;
          display: flex; align-items: center; padding: 0 56px; border-radius: 24px; background: var(--accent);
          color: #fff; font: 700 92px/1 var(--sans); letter-spacing: -.02em; }

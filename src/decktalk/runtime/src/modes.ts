@@ -13,6 +13,7 @@
 import {
   build,
   CLASS,
+  captioning,
   frame,
   hide,
   pan,
@@ -56,7 +57,7 @@ import {
   type Slide,
 } from "./scene.ts";
 import { type CatalogEntry, type Mode, type Probe, recorder } from "./telemetry.ts";
-import { key, type Spoken } from "./text.ts";
+import { parseWords, type Spoken } from "./text.ts";
 import { warn } from "./warn.ts";
 
 /** Every query key this page reads, typed against the contract so a misspelling will not compile. */
@@ -64,9 +65,11 @@ const SCENE: Q = "scene";
 const FREEZE: Q = "freeze";
 const CUES: Q = "cues";
 const WORDS: Q = "words";
+const TURNS: Q = "turns";
 const T0: Q = "t0";
 const SPEED: Q = "speed";
 const HUD: Q = "hud";
+const CAPTION: Q = "caption";
 
 /** What `?hud=` says when a page is asked to draw its own clock, which a recording never is. */
 const ON = "1";
@@ -256,17 +259,6 @@ function parseCues(raw: string): { id: string; at: number }[] {
     })
     .filter((cue) => cue.id && !Number.isNaN(cue.at))
     .sort((a, b) => a.at - b.at);
-}
-
-/** `?words=` as the recorder writes it, which is every spoken word and the second the voice reaches it. */
-function parseWords(raw: string): Spoken[] {
-  return raw
-    .split(LIST_SEPARATOR)
-    .map((item) => {
-      const mark = item.lastIndexOf(TIME_MARK);
-      return { key: key(item.slice(0, mark)), at: Number.parseFloat(item.slice(mark + 1)) };
-    })
-    .filter((word) => word.key && !Number.isNaN(word.at));
 }
 
 /**
@@ -468,13 +460,17 @@ export function begin(probe: Probe | null): Promise<void> {
   if (!signalled) start();
   build(params.get(HUD) === ON);
   const wordsRaw = params.get(WORDS);
-  state.words = wordsRaw ? parseWords(wordsRaw) : null;
+  state.words = wordsRaw ? parseWords(wordsRaw, params.get(TURNS)) : null;
   const cuesRaw = params.get(CUES);
   const cues = cuesRaw ? parseCues(cuesRaw) : [];
   const chosen = params.get(SCENE);
   let listing = false;
   let waiting: Promise<void> = Promise.resolve();
-  if (frozen) {
+  if (params.get(CAPTION) === ON) {
+    // The captioned copy is drawn one caption at a time over a clear frame, so no scene is mounted.
+    state.mode = "caption";
+    captioning();
+  } else if (frozen) {
     stop(params.get(FREEZE) ?? "", (order, slide) => probe?.freezeCues(order, slide, warn) ?? order);
   } else if (chosen !== null || cues.length) {
     const scene =

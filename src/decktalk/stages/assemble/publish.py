@@ -77,9 +77,10 @@ def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], t
     punctuation and the case of the text it was narrated from, and a section of one turn falls back
     to `texts`, which lends it the script's.
 
-    A caption carries its words alone unless `[output] caption_voices` is on, and then every caption
-    of a section spoken in more than one voice names its voice. The .srt writes that name before the
-    line, so those turns are wrapped short enough that the name and the line still fit in
+    Every caption knows the voice and the turn that speak it, which a page drawing the captioned copy
+    places it by. The files carry the words alone unless `[output] caption_voices` is on, and then
+    every caption of a section spoken in more than one voice is named. The .srt writes that name
+    before the line, so those turns are wrapped short enough that the name and the line still fit in
     `CAPTION_MAX_CHARS`.
     """
     named = inputs.settings.output.caption_voices
@@ -93,11 +94,11 @@ def build_captions(inputs: Inputs, takes: Takes, offsets: Mapping[int, float], t
             words = list(turn.words.shifted(shift))
             text = turn.spoken or (texts.get(number) if len(turns) == 1 else None)
             shown = display_words(words, text) if text else words
-            if not dialogue:
-                cues += caption_cues(shown)
-                continue
-            room = CAPTION_MAX_CHARS - len(voice_label(turn.voice))
-            cues += [replace(cue, voice=turn.voice) for cue in caption_cues(shown, max_chars=room)]
+            room = CAPTION_MAX_CHARS - len(voice_label(turn.voice)) if dialogue else CAPTION_MAX_CHARS
+            cues += [
+                replace(cue, voice=turn.voice, turn=turn.turn, named=dialogue)
+                for cue in caption_cues(shown, max_chars=room)
+            ]
     return cues
 
 

@@ -452,7 +452,7 @@ class Inputs:
             # A section of one turn is moved by the lead its settings name today, as it always has been.
             offset = self.lead_seconds(number) if len(rows) == 1 else round(at + row.lead_seconds, 3)
             said = on_section_clock(self.take_words_of(row), offset)
-            out.append(TurnWords(turn=row.turn, voice=row.voice, spoken=row.spoken, words=said))
+            out.append(TurnWords(turn=row.turn, voice=row.voice, spoken=row.spoken, words=said, start=offset))
             at += row.span_seconds
         return tuple(out)
 
@@ -625,12 +625,17 @@ class Inputs:
 
 @dataclass(frozen=True)
 class TurnWords:
-    """One turn's words on its section's clock, with the voice that reads it and the text it says."""
+    """One turn's words on its section's clock, with the voice that reads it, the text it says and where it begins.
+
+    `start` is the second on the section clock the turn's take begins at, which is where its first
+    word can be said at the earliest and where the turn before it has finished.
+    """
 
     turn: int
     voice: str
     spoken: str
     words: Words
+    start: float
 
     @property
     def estimated(self) -> bool:

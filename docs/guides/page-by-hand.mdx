@@ -135,7 +135,7 @@ only in markup calls none of it.
 | `DeckTalk.frame(fn, { region })` | Calls `fn(t)` every frame with the section second, so something that moves is drawn from the second rather than from the wall clock. `region` is the element or selector it draws inside, which verify masks, and a hook with none is `PAGE_MOTION_UNDECLARED`. Returns `DeckTalk`. |
 | `DeckTalk.motion(el, { from, to, ease, draw })` | Calls `draw(progress, seconds)` every frame between two cue ids, with the progress eased. Returns `DeckTalk`. |
 | `DeckTalk.cues` | Every cue the page plays, keyed by cue id, against its second on the section clock. |
-| `DeckTalk.words` | Every word the section speaks, as `{ word, at }`. |
+| `DeckTalk.words` | Every word the section speaks, as `{ word, at, voice, turn }`: the second it is said, the voice that says it and the turn it is said in. |
 | `DeckTalk.stepTo(t)` | Moves the section clock to second `t` and shows it. The recorder calls this once a frame, and a page has no reason to call it. |
 | `DeckTalk.scenes` | Every scene the page declared, as a Map keyed by scene id. |
 | `DeckTalk.params` | The page's own query, as `URLSearchParams`. |

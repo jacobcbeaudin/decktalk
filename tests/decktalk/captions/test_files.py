@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -26,7 +27,7 @@ def test_vtt_opens_with_its_header_and_stamps_with_a_full_stop():
 
 
 VOICED = CaptionCue(start=0.0, end=2.0, lines=("[door opens]", "Says who?", "Every demo says that.", "[ball bounces]"),
-                    voice="engineer", spoken=(1, 3))  # fmt: skip
+                    voice="engineer", turn=1, named=True, spoken=(1, 3))  # fmt: skip
 """A cue a voice speaks, with a sound caption before its speech and another after it."""
 
 
@@ -41,8 +42,10 @@ def test_srt_puts_the_voice_before_the_first_line_it_speaks():
     assert "[door opens]\nengineer: Says who?\nEvery demo says that.\n[ball bounces]\n" in text
 
 
-def test_a_cue_no_voice_is_named_on_is_written_as_it_reads():
-    plain = CaptionCue(start=0.0, end=1.0, lines=("Hello.",))
+@pytest.mark.parametrize("voice", [None, "engineer"])
+def test_a_cue_no_voice_is_named_on_is_written_as_it_reads(voice):
+    """A cue knows the voice that speaks it, and the files name that voice only where the project asks them to."""
+    plain = CaptionCue(start=0.0, end=1.0, lines=("Hello.",), voice=voice, turn=1 if voice else None)
     assert "<v" not in vtt_text([plain]) and ": " not in srt_text([plain]).split("\n", 2)[2]
 
 

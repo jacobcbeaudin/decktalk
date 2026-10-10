@@ -12,7 +12,7 @@
                         and the poster all read before they draw one
     build/storyboard/   one still per panel, under the page that lays them out
     build/final/        the deliverables: the film, its captions, chapters, placements,
-                        transcript page and poster
+                        transcript page and poster, and the captioned copy when it is asked for
     build/events/       one JSON lines file per run, which is what a run says it is doing
     build/kept.json     what the last build's assemble and verify read, wrote and found
     build/.lock         the lock a writing run holds, and `.lock.owner` beside it naming who
@@ -197,6 +197,11 @@ class Workspace:
     @property
     def film(self) -> Path:
         return self.final_dir / f"{self.name}.mp4"
+
+    @property
+    def captioned_film(self) -> Path:
+        """The film with its captions drawn into the picture, which `[output] captioned` asks for."""
+        return self.final_dir / f"{self.name}-captioned.mp4"
 
     def stamped_film(self, stamp: str) -> Path:
         """A copy of the film named with when it was made, which `[output] timestamped_copy` asks for."""

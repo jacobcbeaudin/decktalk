@@ -67,7 +67,7 @@ class FakePage:
     def set_content(self, html: str) -> None:
         self.html = html
 
-    def screenshot(self, *, path: str) -> None:
+    def screenshot(self, *, path: str, **_options: object) -> None:
         Path(path).write_bytes(b"png")
 
     def close(self) -> None:

@@ -8,16 +8,64 @@
 
 import { CLASS, motionScale, styleClass } from "./canvas.ts";
 import { every, now, round } from "./clock.ts";
-import { APPEAR_WORDS_MAX, BACK_OPACITY, scaled, WORD_STYLES, type WordStyle } from "./contract.ts";
+import {
+  APPEAR_WORDS_MAX,
+  BACK_OPACITY,
+  LIST_SEPARATOR,
+  scaled,
+  TIME_MARK,
+  WORD_STYLES,
+  type WordStyle,
+} from "./contract.ts";
 import { recorder } from "./telemetry.ts";
 import { warn } from "./warn.ts";
 
-/** One word of the section's narration, reduced to what a match compares and the second it is said. */
-export type Spoken = { readonly key: string; readonly at: number };
+/**
+ * One word of the section's narration, reduced to what a match compares, the second it is said, and who says it.
+ *
+ * `voice` is the voice that says the word and `turn` the turn of the section it is said in, counted
+ * from one, so a page can place a word by its voice without ever showing a name. Both are null on
+ * a page that was handed no turns.
+ */
+export type Spoken = {
+  readonly key: string;
+  readonly at: number;
+  readonly voice: string | null;
+  readonly turn: number | null;
+};
 
 /** The characters a match ignores, because punctuation and case are the script's and not the voice's. */
 export function key(word: string): string {
   return word.toLowerCase().replace(/[^a-z\d]/g, "");
+}
+
+/** One `?words=` or `?turns=` list as its name@seconds entries, each split at its last time mark. */
+function entries(raw: string): { name: string; at: number }[] {
+  return raw
+    .split(LIST_SEPARATOR)
+    .map((item) => {
+      const mark = item.lastIndexOf(TIME_MARK);
+      return { name: item.slice(0, mark), at: Number.parseFloat(item.slice(mark + 1)) };
+    })
+    .filter((entry) => entry.name && !Number.isNaN(entry.at));
+}
+
+/**
+ * `?words=` and `?turns=` as the recorder writes them: every spoken word, the second the voice reaches it, and who says it.
+ *
+ * The turns are numbered by their place in their list, and a word belongs to the last turn that
+ * began at or before its own second, so a turn that says no word still keeps the numbers after it.
+ */
+export function parseWords(raw: string, turnsRaw: string | null): Spoken[] {
+  const turns = turnsRaw ? entries(turnsRaw) : [];
+  return entries(raw)
+    .map((entry) => {
+      let turn = 0;
+      while (turn < turns.length && (turns[turn] as { at: number }).at <= entry.at) turn += 1;
+      const voice = turn ? (turns[turn - 1] as { name: string }).name : null;
+      return { key: key(entry.name), at: entry.at, voice, turn: turn || null };
+    })
+    .filter((word) => word.key);
 }
 
 /** The opening of a line, which is enough to find it again in the script without carrying the whole of it. */
