@@ -7,7 +7,7 @@ description: The closed set of voices, what each one declares, and where word ti
 
 The voices DeckTalk can call are a closed set of adapters inside the engine. Each section of
 narration ends as audio plus a start and an end time for every word. The words come from the voice
-itself, and once alignment is built they may come from an aligner run over the audio instead.
+itself, or, when the voice sends none, from an aligner run over the audio.
 Everything a vendor is particular about, its settings, its key, its hosts, its pause markup, its
 bill and its file format, is declared by its adapter and read from there, so nothing above `speech/`
 names a vendor.
@@ -20,7 +20,7 @@ The engine ships two speech adapters and names each one in `PROVIDERS` in
 - `elevenlabs`, the cloud voice, over https.
 - `dtsp`, one HTTP client that talks to `decktalk-voice`, a separate local server that is not part
   of this repository and runs the local speech and alignment models. It needs no key and speaks
-  to the address the machine names, a loopback address by default.
+  to the address the machine names, `127.0.0.1:9361` by default. The same client is the aligner.
 
 There are no entry points and no plugin loading. A project file names an adapter by its key in
 `PROVIDERS` and can never name code. A host that embeds the library may hand `Machine.of` its own
@@ -126,22 +126,32 @@ moving to another host of the same service or to a local mock buys nothing again
 
 ### Alignment
 
-Alignment is planned and not built yet. Every voice DeckTalk ships today returns its own word times,
-so nothing below runs in a build. What is decided is its shape.
+Alignment runs inside `narrate`, not as a seventh stage. Words a voice returns with its audio are
+used as they come, and are kept beside the take. A take whose voice sent no word times, the local
+voice or a cloud reply with no alignment in it, is timed by the aligner on the same local server
+`[dtsp] base_url` names, so a voice without timestamps is a usable voice.
 
-Alignment is a seam inside `narrate`, not a seventh stage. Words a voice returns with its audio are
-used as they come, and are kept beside the take. A voice that returns no word times is paired with
-an aligner, which reads the take's audio and the script's words and returns a time for every word.
-An aligner's words are kept in a words cache of their own, keyed by the digest of the audio plus the
-aligner's id and revision, so a better aligner re-aligns every take and buys none of them again.
+- **When it runs.** After every take is made, on the caller's thread, one take at a time, so no
+  worker waits on it and a Ctrl-C stops the alignment in flight.
+- **The handshake.** `GET /v1/models` is asked at most once per run, with its own short wait,
+  `[dtsp] handshake_seconds`, and no retry. It names the service, the contract and the aligner's
+  identity: its id, its revision and the digest of its model.
+- **The request.** `POST /v1/align` is sent the take decoded to a mono WAV and the words it should
+  hold, and answers one time per word, spelled as sent.
+- **Where the words live.** Aligned words are kept in `takes/aligned/`, committed with the takes,
+  keyed by the take's audio print and its words and by the aligner, its revision and its model
+  digest. A new aligner keeps the old words beside its own.
+- **No server needed for a kept take.** A take whose aligned words are kept plays them without asking
+  the server, so a build of a project that commits them opens no socket. `--force` asks the aligner
+  again, and so does the next run that has a take to align.
+- **The aligner down.** A take with aligned words kept plays the ones the film last played, and a
+  take with none plays words estimated over its sound with a `TAKE_UNALIGNED` warning. An aligner
+  that answers wrongly fails the run.
+- **The served model.** A voice that names the model it served has it recorded on the take's row.
 
-A voice without timestamps will therefore be a usable voice.
-
-DeckTalk will own the client side of `/v1/align`: the request and response types it sends to
-`decktalk-voice` and reads back, in `decktalk.speech`, with a fake server that proves the whole path
-in CI. No adapter that reads an author's own recording is planned with it. This record states only
-the shape decided so far: the seam sits in `narrate`, the words have their own key, and the server is
-out of process.
+The contract is pinned in this repository: `tests/data/aligner/` holds a copy of `decktalk-voice`'s
+OpenAPI spec and fixtures, which the client and a fake server are tested against. No adapter reads
+an author's own recording.
 
 ## Why
 
@@ -177,8 +187,8 @@ without changing any digest that exists. The take digest leaves out the neighbou
 prosody, so a take is kept when the section before it changes, which costs a little continuity and
 saves buying a take.
 
-The words have their own key because the audio does not depend on the aligner. Putting the aligner in
-the take digest would buy the audio again to re-align it.
+The aligned words have their own key because the audio does not depend on the aligner. Putting the
+aligner in the take digest would buy the audio again to re-align it.
 
 Alignment is not a stage because the six-stage rule makes a step a stage when a user runs it alone on
 files another step did not just write. Re-aligning is `narrate` finding the audio cached and the words

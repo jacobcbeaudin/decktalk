@@ -59,7 +59,10 @@ my-lesson/takes/
   <digest>.mp3                    one take, named by the content that produced it, under the suffix of
                                 the format its voice declares, which is .mp3 for ElevenLabs
   <digest>.words.json             that take's words, in seconds after the take starts, with the size
-                                and BLAKE3 of the take they came with
+                                and BLAKE3 of the take they came with, or none when its voice sent no times
+  aligned/<match>-<identity>.words.json
+                                the words an aligner measured in a take whose voice sent no times, keyed
+                                by the take and its words and by the aligner, its revision and its model
 my-lesson/score/
   ambience.mp3                  the ambience bed, when the project declares one
   <name>.mp3                    one file per declared effect
@@ -70,10 +73,12 @@ my-lesson/score/
 Each sound is named by its item, so `--replace-score` with `--spend` writes over the same file.
 
 A take stays in the takes directory after the script moves on from it, such as after a voice change.
-`decktalk status` lists the takes there that no section plays, and any aligned words under
-`aligned/`, with their size, and `--json` carries them as `unplayed`. DeckTalk never deletes one,
-so remove the ones you no longer want with `git rm`. A take counts as played when the take index or
-a section's current text, voice and settings name it, and with no voice named `unplayed` is null.
+`decktalk status` lists the takes there that no section plays, and the aligned words under
+`aligned/` that time none of the takes a section plays, with their size, and `--json` carries them
+as `unplayed`. DeckTalk never deletes one, so remove the ones you no longer want with `git rm`. A
+take counts as played when the take index or a section's current text, voice and settings name it,
+and its aligned words count as played whichever aligner measured them, because with the aligner down
+an older aligner's words are what the take plays. With no voice named `unplayed` is null.
 
 Everything else a run writes is under the build directory:
 
@@ -155,7 +160,10 @@ from the takes on disk, keeps every take it finds and buys nothing for it.
       "sound_end_seconds": 12.667,
       "lead_seconds": 0.5,
       "tail_seconds": 1.3,
-      "spoken": "This is DeckTalk. Four files sit in one folder, and you write two of them. You write what you will say, and you write the slides that go with it. Then every picture waits for its own word."
+      "spoken": "This is DeckTalk. Four files sit in one folder, and you write two of them. You write what you will say, and you write the slides that go with it. Then every picture waits for its own word.",
+      "timed_by": "provider",
+      "alignment": null,
+      "model_digest": null
     }
   ]
 }
@@ -180,6 +188,9 @@ from the takes on disk, keeps every take it finds and buys nothing for it.
 | `sections[].lead_seconds` | Silence placed before the take, which is not in the file. |
 | `sections[].tail_seconds` | Silence placed after the take's sound, which is also not in the file. |
 | `sections[].spoken` | The words the voice says, with the script's punctuation, which the captions borrow. |
+| `sections[].timed_by` | Who timed this take's words: `provider`, `aligned` for an aligner, or `estimated` for DeckTalk from the script's pace. |
+| `sections[].alignment` | The key of the aligned words this take plays, in the takes directory's `aligned/` folder, or null when no aligner timed it. |
+| `sections[].model_digest` | The digest of the model the voice served this take with, when it named one, or null. |
 
 A section runs for its lead, then its take up to where the take's sound ends, then its tail, and the
 sections run in section order. Where each one sits in the joined narration is therefore arithmetic
@@ -254,7 +265,9 @@ DeckTalk estimated for a placeholder take are a cache under `build/narrate/`, li
     { "word": "is", "start": 0.333, "end": 0.667 },
     { "word": "DeckTalk", "start": 0.667, "end": 1.0 }
   ],
-  "audio": { "bytes": 101791, "blake3": "fffe804f5695880d", "suffix": ".mp3" }
+  "audio": { "bytes": 101791, "blake3": "fffe804f5695880d", "suffix": ".mp3" },
+  "timed": true,
+  "model_digest": null
 }
 ```
 

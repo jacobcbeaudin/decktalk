@@ -23,14 +23,20 @@ from decktalk.results import BillingBasis
 from decktalk.settings import Settings
 from decktalk.settings.layers import load, value_of
 from decktalk.speech import (
+    ALIGNER,
+    ALIGNERS,
     DECLARED,
     HOST_OUTPUT,
     PROVIDERS,
+    AlignerContext,
     Output,
+    Speech,
     VoiceInForce,
     canonical_text,
 )
+from decktalk.speech.dtsp import DtspAligner
 from support.paths import DATA, REPO, SRC, TESTS
+from support.voice_server import VoiceServer
 
 SPEECH = Path(decktalk.speech.__file__).parent
 
@@ -109,7 +115,7 @@ EXPECTED: dict[str, dict[str, Any]] = {
         "billing": BillingBasis.FREE,
         "price_key": None,
         "renders_pauses": True,
-        "base_url": "http://127.0.0.1:8765",
+        "base_url": "http://127.0.0.1:9361",
         "key_variable": None,
         "start_hint": "Start decktalk-voice at the address [dtsp] base_url names",
         "identity": {"speed": 1.0},
@@ -191,7 +197,9 @@ def test_the_price_key_names_the_rate_the_bill_is_read_at() -> None:
     assert value_of(settings, voice.price_key) == settings.elevenlabs.dollars_per_1000_characters == 0.42
 
 
-SHIPPED_TABLE_WRITE = re.compile(r"setitem\((PROVIDERS|DECLARED)\b|\b(PROVIDERS|DECLARED)\[[^\]]+\]\s*=")
+SHIPPED_TABLE_WRITE = re.compile(
+    r"setitem\((PROVIDERS|DECLARED|ALIGNERS)\b|\b(PROVIDERS|DECLARED|ALIGNERS)\[[^\]]+\]\s*="
+)
 """A test writing into a shipped voice table, by pytest's `setitem` or by assignment."""
 
 
@@ -201,6 +209,17 @@ def test_the_shipped_tables_cannot_be_changed_in_place() -> None:
         PROVIDERS["elevenlabs"] = PROVIDERS["dtsp"]  # ty: ignore[invalid-assignment]
     with pytest.raises(TypeError):
         DECLARED["dtsp"] = DECLARED["elevenlabs"]  # ty: ignore[invalid-assignment]
+    with pytest.raises(TypeError):
+        ALIGNERS["other"] = ALIGNERS[ALIGNER]  # ty: ignore[invalid-assignment]
+
+
+def test_the_one_aligner_shipped_is_the_local_server(voice_server: VoiceServer) -> None:
+    """The aligner is `[dtsp] base_url`'s server, never chosen by `[voice] provider`."""
+    assert list(ALIGNERS) == [ALIGNER] == ["dtsp"]
+    context = AlignerContext(base_url=voice_server.base_url, handshake_seconds=5, timeout_seconds=5)
+    built = ALIGNERS[ALIGNER](context)
+    assert isinstance(built, DtspAligner)
+    assert built.identity.id == voice_server.identity["id"]
 
 
 def test_no_test_patches_the_shipped_voice_tables() -> None:
@@ -247,3 +266,11 @@ def test_only_the_voice_in_force_reads_the_voice_table() -> None:
     ]
     assert of.end_lineno is not None
     assert [line for line in reads["speech/__init__.py"] if not of.lineno <= line <= of.end_lineno] == []
+
+
+def test_speech_with_no_words_says_none_and_never_an_empty_list() -> None:
+    """`None` is the one spelling of a voice that sent no word times, so no reader must tell it from `()`."""
+    assert Speech(b"take", None).words is None
+    assert Speech(b"take", None).model_digest is None
+    with pytest.raises(ValueError, match="None"):
+        Speech(b"take", ())

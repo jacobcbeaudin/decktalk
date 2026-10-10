@@ -18,21 +18,22 @@ from __future__ import annotations
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 
-from decktalk.artifacts import EstimatedWords, ProviderWords, Take, on_section_clock
+from decktalk.artifacts import EstimatedWords, ProviderWords, Take, Words, on_section_clock
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
-from decktalk.inputs.script import ScriptSection
+from decktalk.inputs.script import ScriptSection, estimated_words, spoken_words
 from decktalk.inputs.take_places import TakeFiles
 from decktalk.results import Cost, CostState, TakeOutcome, TakeState, counted
 from decktalk.settings import PROJECT_FILE
 from decktalk.speech import SpeechRequest, canonical_text
 from decktalk.stages.cost import Buy, cost_of, is_free
+from decktalk.stages.narrate.align import kept_alignment
 from decktalk.stages.narrate.plan import (
     VOICE_ID_VARIABLE,
     placeholder_inputs,
     take_inputs,
 )
-from decktalk.stages.narrate.takes import estimated_words
+from decktalk.stages.narrate.takes import sound_end_of
 
 CHANGED = "the text, the voice, the model or the voice settings changed"
 """Why a section's words are on disk under another digest, which only one of a take's inputs moving explains."""
@@ -283,12 +284,15 @@ class TakeStates(Mapping[int, SectionTakeState]):
             for plan in self.plan(spend=False).takes
         )
 
-    def planned_words(self, number: int) -> ProviderWords | EstimatedWords:
+    def planned_words(self, number: int) -> Words:
         """The words section `number` will have after a voiced run, counted from its start.
 
         They are the held take's own words for a voiced section, the matched row's take's own words for
-        an unchecked one, and estimated words at the placeholder pace for any other. The kind is the one
-        read from disk, and never a placeholder's words passed off as a provider's.
+        an unchecked one, and estimated words at the placeholder pace for any other. A take whose voice
+        sent no word times plays its kept aligned words, read with no take index and no server, or
+        words estimated over its sound, which the row names when it names the take and is measured
+        only when no row does. The kind is the one read from disk, and never a placeholder's words passed
+        off as a provider's.
         """
         state = self._states[number]
         section = state.section
@@ -297,9 +301,25 @@ class TakeStates(Mapping[int, SectionTakeState]):
         if digest is not None:
             found = self._inputs.take_words(digest)
             if isinstance(found, ProviderWords):
-                return on_section_clock(found, lead)
+                return on_section_clock(found if found.timed else self._untimed_words(number, digest, found), lead)
         length = section.placeholder_seconds(self._inputs.settings.narration)
-        return on_section_clock(EstimatedWords(words=tuple(estimated_words(section, length))), lead)
+        return on_section_clock(EstimatedWords(words=tuple(section.estimated_words(length))), lead)
+
+    def _untimed_words(self, number: int, digest: str, said: ProviderWords) -> Words:
+        """The words a take whose voice sent no word times plays: its kept aligned words, or estimated words."""
+        row = self._reading.rows.get(number)
+        named = row if row is not None and row.digest == digest else None
+        spoken = named.spoken if named is not None else self._states[number].section.spoken
+        if said.audio is not None:
+            prefer = named.alignment if named is not None else None
+            aligned = kept_alignment(self._inputs, said.audio.blake3, spoken_words(spoken), prefer=prefer)
+            if aligned is not None:
+                return aligned
+        if named is not None and named.sound_end_seconds is not None:
+            end = named.sound_end_seconds
+        else:
+            end = sound_end_of(self._inputs, self._inputs.take_places.find(digest).audio)
+        return EstimatedWords(words=tuple(estimated_words(spoken, end)))
 
     def plan(self, *, spend: bool, force: bool = False) -> NarratePlan:
         """What one narrate run does with each selected section, sending nothing and writing nothing.

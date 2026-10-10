@@ -51,7 +51,7 @@ Every other public type lives in the module that defines its kind:
 | `decktalk.events` | Every event line, `AnyEvent`, `Level`, `Unit` and `Subscription`. |
 | `decktalk.findings` | The fix and location types: `Location`, `Fix`, `EditFix`, `Edit`, `CommandFix`, `Applicability` and `RaisedBy`. |
 | `decktalk.settings` | `Settings`, one `*Config` class per table, `ProviderTable` and `Layers`. |
-| `decktalk.speech` | The voice protocol: `SpeechProvider`, `SpeechRequest`, `Piece`, `SpeechFactory`, `SpeechContext`, `Secrets`, `Secret`, `SpeechProviders`, `Billing`, `Output` and `BEAT`. |
+| `decktalk.speech` | The voice protocol: `SpeechProvider`, `SpeechRequest`, `Piece`, `SpeechFactory`, `SpeechContext`, `Secrets`, `Secret`, `SpeechProviders`, `Billing`, `Output` and `BEAT`. The aligner protocol: `Aligner`, `AlignerIdentity`, `AlignmentRequest` and `AlignerContext`. |
 | `decktalk.speech.sound` | The sound protocol: `SoundProvider`, `SoundContext`, `SoundFactory` and `SoundProviders`. |
 
 A type any public field, parameter or return value names is importable from one of them, which
@@ -689,6 +689,7 @@ strings, spelled as `--set` spells them.
 | `api_key_state` | `ApiKeyState.SET`, `MISSING` or `NOT_NEEDED`: whether the API key a voiced run would use is set, which is asked and never revealed. `doctor` reports it as `api_key`. |
 | `speech_providers` | The voices this machine answers with by name, as `decktalk.speech.SpeechFactory` values, or None for the closed set DeckTalk ships. A host's table replaces the shipped one rather than sitting over it. |
 | `sound_providers` | The sound providers it answers with, as `decktalk.speech.sound.SoundFactory` values, or None for the ones its voices imply. |
+| `aligners` | The aligners it answers with by name, each a function from a `decktalk.speech.AlignerContext` to a `decktalk.speech.Aligner`, which time a take whose voice sent no word times. |
 | `dotenv` | Whether a project's `.env` is read. True from the environment, false from `Machine.of` unless the host says otherwise. |
 | `install(*, cancel=None)` | Fetch the browser and the encoder, before a build asks for them. |
 | `doctor(*, measure=False, threshold=Threshold(), cancel=None)` | Report what this machine holds and what a run on it would use, fetching nothing. `threshold` is which of its findings make `ok` false. |
@@ -717,7 +718,7 @@ contract a host builds on.
 
 ```python
 decktalk.Machine.of(*, environ, machine_file, cwd, cache_dir, store_dir=None, speech_providers=None,
-                    sound_providers=None, overrides=(), dotenv=False) -> Machine
+                    sound_providers=None, aligners=None, overrides=(), dotenv=False) -> Machine
 ```
 
 `Machine.from_environment()` reads the process. `Machine.of` reads nothing, so every value a job may
@@ -732,6 +733,7 @@ see is one the host chose.
 | `store_dir` | The take store a project on this machine keeps a second copy of every voiced take in, when `[narration] store_dir` names none. The default is none, so a host that runs other people's projects shares no takes across them unless it passes one. |
 | `speech_providers` | The voices this machine answers with by name. It replaces the shipped table, so a machine built with a fake voice reaches no real one by a name the host left out. [Speech providers](#speech-providers) shows one. |
 | `sound_providers` | The sound providers it answers with by name. A machine given `speech_providers` and no sound table answers with none. |
+| `aligners` | The aligners it answers with by name, which time a take whose voice sent no word times. A machine given `speech_providers` and no aligner table answers with none, and one given neither answers with the local server `[dtsp] base_url` names. |
 | `overrides` | `key=value` strings, spelled as `--set` spells them, that override settings on this machine. A project opened on it starts from them, and the overrides `decktalk.open` is given come after them. |
 | `dotenv` | False by default, so a project's `.env` is never read and a tenant's upload cannot supply a credential. |
 
@@ -882,7 +884,7 @@ from pathlib import Path
 
 import decktalk
 from decktalk.results import Word
-from decktalk.speech import SpeechRequest, SpeechContext
+from decktalk.speech import Speech, SpeechRequest, SpeechContext
 
 
 class Silent:
@@ -890,9 +892,9 @@ class Silent:
 
     name = "silent"
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> Speech:
         words: Sequence[str] = [w for piece in request.pieces for w in piece.text.split()]
-        return b"ID3", [Word(word=w, start=i * 0.5, end=i * 0.5 + 0.4) for i, w in enumerate(words)]
+        return Speech(b"ID3", tuple(Word(word=w, start=i * 0.5, end=i * 0.5 + 0.4) for i, w in enumerate(words)))
 
 
 def silent(context: SpeechContext) -> Silent:

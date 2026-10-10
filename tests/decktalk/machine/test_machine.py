@@ -30,13 +30,13 @@ from decktalk.media.ffmpeg import bound_tools
 from decktalk.project import open as open_project
 from decktalk.results import ApiKeyState, ClipResult, CueResult
 from decktalk.settings import BY_ID, ToolsConfig
-from decktalk.speech import SpeechContext
+from decktalk.speech import ALIGNER, ALIGNERS, AlignerContext, SpeechContext
 from decktalk.speech.sound import SOUNDS, SoundContext
 from decktalk.stages.narrate.plan import speech_provider
 from decktalk.toolchain import chromium_fetch
 from decktalk.toolchain.announce import announce
 from decktalk.toolchain.cache import cache_dir, standard_cache_dir, standard_data_dir
-from support.fakes import BareBrowser, FakeChromium, FakeVoice
+from support.fakes import BareBrowser, FakeAligner, FakeChromium, FakeVoice
 from support.logs import data_of
 from support.paths import REPO
 from support.runs import a_machine
@@ -428,6 +428,26 @@ def test_the_sound_providers_a_host_supplies_are_the_ones_every_run_carries(tmp_
     with here._run() as run:
         run.machine.sound_providers.provider("house", SoundContext(secrets=NoSecrets(), base_url="", timeout_seconds=1))
     assert seen[0].retries == 5
+
+
+def test_a_machine_whose_host_gave_no_table_answers_with_the_shipped_aligner(tmp_path: Path) -> None:
+    assert dict(a_host(tmp_path).aligners) == dict(ALIGNERS)
+
+
+def test_a_host_that_gave_its_voices_and_no_aligners_reaches_no_shipped_aligner(tmp_path: Path) -> None:
+    """A machine built with a fake voice must not reach a local server by a table its host left out."""
+    here = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: FakeVoice()})
+    assert dict(here.aligners) == {}
+
+
+def test_the_aligners_a_host_supplies_are_the_ones_every_run_carries(tmp_path: Path) -> None:
+    aligner = FakeAligner()
+    here = a_host(tmp_path, aligners={ALIGNER: lambda _context: aligner})
+    with here._run() as run:
+        built = run.machine.aligners[ALIGNER](
+            AlignerContext(base_url="http://127.0.0.1:1", handshake_seconds=1, timeout_seconds=1)
+        )
+    assert built is aligner
 
 
 def keyed(voice: FakeVoice) -> Callable[[SpeechContext], FakeVoice]:

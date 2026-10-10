@@ -126,3 +126,16 @@ def test_a_committed_take_linked_out_of_the_project_is_refused_before_a_run(tmp_
     )
     with pytest.raises(InputError, match="leads outside the takes directory"):
         space.confine()
+
+
+def test_aligned_words_are_kept_in_the_takes_directory_under_their_key() -> None:
+    workspace = Workspace(
+        root=Path("p"),
+        build=Path("p/build"),
+        name="demo",
+        suffix=TAKE_SUFFIX,
+        takes=Path("p/takes"),
+        score_dir=Path("p/score"),
+    )
+    assert workspace.aligned_dir == Path("p/takes/aligned")
+    assert workspace.aligned_words("ab-cd") == Path("p/takes/aligned/ab-cd.words.json")

@@ -30,7 +30,7 @@ from decktalk.cli.app import docs_for
 from decktalk.explain import explain
 from decktalk.results import Layer
 from decktalk.settings import BY_ID, KEYS, Scope
-from decktalk.speech import SpeechRequest, Word
+from decktalk.speech import Speech, SpeechRequest
 from support.fakes import FAKE_VOICE_NAME, FakeVoice
 from support.installer import fake_path
 from support.links import link
@@ -250,7 +250,7 @@ class ClosedVoice(FakeVoice):
     """A voice that keeps every request it is sent and then fails it, so a run the gate let through
     stops at the voice rather than going on to measure a take with tools a unit test does not fetch."""
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> Speech:
         self.requests.append(request)
         raise ProviderError("the voice under test sells nothing")
 

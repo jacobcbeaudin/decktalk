@@ -91,6 +91,12 @@ SCORE_SPEND = {
 RECORD_AGAIN = {"force": "Record every section again, even one whose recording still matches its page."}
 """What `--force` redoes on `record`, which is the capture rather than the whole build."""
 
+NARRATE_AGAIN = {
+    "force": "Build every placeholder again, keep every voiced take, and ask the aligner again for every take whose "
+    "voice sent no word times."
+}
+"""What `--force` redoes on `narrate`, which never buys a take and does ask the aligner again."""
+
 BUILD_AGAIN = {
     "force": "Build again from nothing, keeping every voiced take and every bought sound, and measure the film again."
 }
@@ -106,7 +112,10 @@ Watch = Annotated[
 ]
 
 
-@command(group=Group.STAGE)
+@command(
+    group=Group.STAGE,
+    helps=NARRATE_AGAIN,
+)
 def narrate(
     ctx: Context,
     section: Sections = None,

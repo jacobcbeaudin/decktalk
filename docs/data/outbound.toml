@@ -23,12 +23,20 @@ credential = "The request carries the value of `ELEVENLABS_API_KEY` in a header,
 note = "Rebuilding one section still sends that section's neighbours, because the voice reads them for intonation. A run with `--no-spend` sends nothing at all."
 
 [[service]]
-host = "127.0.0.1:8765"
+host = "127.0.0.1:9361"
 name = "Narration by the local voice"
 sent_by = "`decktalk narrate` and `decktalk build`, when `[voice] provider = \"dtsp\"`"
 body = "The section's spoken text, the voice id, the model name, the speed and the audio format."
-credential = "No key is sent. The host is the one `[dtsp] base_url` names, `127.0.0.1:8765` by default, and only this machine's own file, environment or `--set` can name another. A project file that sets it is refused."
+credential = "No key is sent. The host is the one `[dtsp] base_url` names, `127.0.0.1:9361` by default, and only this machine's own file, environment or `--set` can name another. A project file that sets it is refused."
 note = "The local voice bills nothing, so a run with `--no-spend` still sends the text. At the default address the text never leaves the machine."
+
+[[service]]
+host = "127.0.0.1:9361"
+name = "Word timing by the local aligner"
+sent_by = "`decktalk narrate` and `decktalk build`, when a take came with no word times and no aligned words are kept for it, or under `--force`"
+body = "One `GET /v1/models` per run, which sends nothing, then one `POST /v1/align` per take to time: the take's audio as a WAV and the words it should hold."
+credential = "No key is sent. The host is the one `[dtsp] base_url` names, the same server the local voice speaks to, and only this machine's own file, environment or `--set` can name another."
+note = "The aligner bills nothing. A take whose aligned words are kept in `takes/aligned/` plays them without asking it, so a build of a project that commits them sends nothing."
 
 [[service]]
 host = "api.elevenlabs.io"

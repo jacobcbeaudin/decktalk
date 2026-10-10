@@ -30,6 +30,10 @@ sound ends, then its tail, and the sections run in section order, so where each 
 joined narration is arithmetic over the rows rather than a second file that can disagree with them.
 Each of those three numbers is a pure function of the take's own bytes and its own section's
 settings, so a section lands the same way whether this run voiced its take or found it on disk.
+
+Each row also says who timed its take's words, `timed_by`: the provider, an aligner, whose kept words
+the row names by `alignment`, or DeckTalk, on a placeholder or on a take no aligner could time. It
+keeps the model the voice served the take with, when the voice named one.
 """
 
 from __future__ import annotations
@@ -37,6 +41,7 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+from enum import Enum
 from typing import Any, ClassVar, NamedTuple
 
 from pydantic import Field, model_validator
@@ -67,6 +72,25 @@ TAKE_DIGEST = rf"^(?:[0-9a-f]{{{TAKE_DIGITS}}}|{PLACEHOLDER_PREFIX}[0-9a-f]{{{PL
 A take's digest becomes a file name under the takes directory or build/narrate, so an index a user
 supplied could otherwise name `../` and have the narration read a file from anywhere on the machine.
 """
+
+
+ALIGNMENT_KEY = rf"^[0-9a-f]{{{TAKE_DIGITS}}}-[0-9a-f]{{{TAKE_DIGITS}}}$"
+"""Derived: the key aligned words are kept under, the take's match and the aligner's identity, each a sha256 head.
+
+It names a file in the takes directory's `aligned/` folder, so an index a user supplied could otherwise
+name `../` and have a section read a file from anywhere on the machine.
+"""
+
+
+class TimedBy(Enum):
+    """Who timed a take's words, which is what its words file is and what a reader of them can trust."""
+
+    PROVIDER = "provider"
+    """The speech provider sent the times back with the take."""
+    ALIGNED = "aligned"
+    """An aligner measured them in the take's audio."""
+    ESTIMATED = "estimated"
+    """DeckTalk spread them over the take from the script's pace, on a placeholder or a take no aligner timed."""
 
 
 class _Digested(Model):
@@ -188,6 +212,27 @@ class Take(Model):
     lead_seconds: float = Field(0.0, ge=0, description="Silence placed before the take, which is not in the file.")
     tail_seconds: float = Field(0.0, ge=0, description="Silence placed after the take's sound, also not in the file.")
     spoken: str = Field(description="The words the voice says, with the script's punctuation, which captions borrow.")
+    timed_by: TimedBy = Field(
+        description="Who timed this take's words: its provider, an aligner, or DeckTalk from the script's pace."
+    )
+    alignment: str | None = Field(
+        pattern=ALIGNMENT_KEY,
+        description="The key of the aligned words this take plays, in the takes directory's `aligned/` folder, or null "
+        "when no aligner timed it.",
+    )
+    model_digest: str | None = Field(
+        description="The digest of the model the voice served this take with, when it named one."
+    )
+
+    @model_validator(mode="after")
+    def _timing_agrees_with_itself(self) -> Take:
+        """Refuse a row that names an alignment it is not timed by, or is timed by an aligner and names none."""
+        if (self.alignment is not None) != (self.timed_by is TimedBy.ALIGNED):
+            raise ValueError(
+                f"the row of section {self.section} is timed by {self.timed_by.value} and names the alignment "
+                f"{self.alignment}, and only a row an aligner timed names one"
+            )
+        return self
 
     @property
     def sound_seconds(self) -> float:
@@ -227,7 +272,10 @@ class Takes(Stored):
 
     @model_validator(mode="after")
     def _rows_agree_with_their_digests(self) -> Takes:
-        """Refuse a row whose `voiced` disagrees with its digest, so whether a take was voiced is one fact."""
+        """Refuse a row whose `voiced` or `timed_by` disagrees with its digest, so each is one fact.
+
+        A placeholder's words are always the ones DeckTalk estimated, so its row is timed by DeckTalk.
+        """
         for take in self.sections:
             if take.voiced == is_placeholder(take.digest):
                 spoken = "was" if take.voiced else "was not"
@@ -235,11 +283,16 @@ class Takes(Stored):
                     f"the row of section {take.section} says its take {take.digest} {spoken} spoken by a provider, "
                     "and its digest says otherwise"
                 )
+            if is_placeholder(take.digest) and take.timed_by is not TimedBy.ESTIMATED:
+                raise ValueError(
+                    f"the row of section {take.section} plays the placeholder {take.digest}, whose words DeckTalk "
+                    f"estimated, and says they were timed by {take.timed_by.value}"
+                )
         return self
 
     @property
     def estimated(self) -> bool:
-        """True when any row is a placeholder, which is what tells a reader the clock is a guess."""
+        """True when any row is a placeholder, whose click audio the loudness pass and the cue check treat apart."""
         return any(not take.voiced for take in self.sections)
 
     @property
@@ -277,6 +330,7 @@ class Takes(Stored):
 
 
 __all__ = [
+    "ALIGNMENT_KEY",
     "PLACEHOLDER_PREFIX",
     "PLACEHOLDER_SUFFIX",
     "TAKE_DIGITS",
@@ -286,6 +340,7 @@ __all__ = [
     "Take",
     "TakeInputs",
     "Takes",
+    "TimedBy",
     "is_placeholder",
     "take_file",
 ]

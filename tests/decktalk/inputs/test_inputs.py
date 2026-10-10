@@ -8,15 +8,27 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import ClipWords, CueTimes, EstimatedWords, ProviderWords, Takes, Words
+from decktalk.artifacts import (
+    AlignedWords,
+    AlignmentInputs,
+    ClipWords,
+    CueTimes,
+    EstimatedWords,
+    ProviderWords,
+    Takes,
+    TimedBy,
+    Words,
+)
 from decktalk.errors import ErrorCode, InputError, NotBuiltError
 from decktalk.inputs import PAID_FOLDERS as LOADED_PAID_FOLDERS
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import ClipSection
 from decktalk.inputs.env import reading_dotenv
+from decktalk.inputs.script import estimated_words, spoken_words
 from decktalk.pipeline import Artifact
 from decktalk.results import BillingBasis, CueTime, SectionCues, Word
 from decktalk.speech import VoiceInForce
+from support.paths import SRC
 from support.projects import MINIMAL_TOML, write_project
 from support.takes import a_take, narrated, write_takes
 
@@ -814,3 +826,83 @@ def test_a_project_naming_a_voice_no_machine_answers_for_still_loads(tmp_path: P
     inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "nosuch"\n'), environ={})
     assert inputs.voice.provider == "nosuch"
     assert inputs.voice.billing is BillingBasis.UNDECLARED
+
+
+SPOKEN = "A bowl, a ball."
+"""What the rows here say, which the words an aligner times and DeckTalk estimates are read from."""
+
+
+def an_alignment(inputs: Inputs, *, audio: str = "0123456789abcdef") -> AlignedWords:
+    """Aligned words of `SPOKEN`, kept where the takes directory keeps them."""
+    words = spoken_words(SPOKEN)
+    keyed = AlignmentInputs(audio=audio, words=words, aligner="a", revision="1", model_digest="m")
+    aligned = AlignedWords(words=tuple(estimated_words(SPOKEN, 2.0)), inputs=keyed, generation=1)
+    inputs.workspace.aligned_dir.mkdir(parents=True, exist_ok=True)
+    aligned.write(inputs.workspace.aligned_words(keyed.key))
+    return aligned
+
+
+def test_a_section_timed_by_an_aligner_reads_the_aligned_words_its_row_names(tmp_path):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    aligned = an_alignment(inputs)
+    write_takes(inputs, a_take(1, spoken=SPOKEN, timed_by=TimedBy.ALIGNED, alignment=aligned.inputs.key))
+    heard = inputs.words(1)
+    assert type(heard) is AlignedWords and heard.estimated is False
+    assert heard.words == aligned.shifted(0.5)
+
+
+def test_a_voiced_section_no_aligner_timed_reads_estimated_words_over_its_sound(tmp_path):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    write_takes(inputs, a_take(1, seconds=3.0, spoken=SPOKEN, timed_by=TimedBy.ESTIMATED))
+    heard = inputs.words(1)
+    assert type(heard) is EstimatedWords and heard.estimated is True
+    assert heard.words == EstimatedWords(words=tuple(estimated_words(SPOKEN, 3.0))).shifted(0.5)
+
+
+@pytest.mark.parametrize("fault", ["gone", "another-key"])
+def test_a_section_whose_aligned_words_are_gone_reads_estimated_words_over_its_sound(tmp_path, fault):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    aligned = an_alignment(inputs)
+    path = inputs.workspace.aligned_words(aligned.inputs.key)
+    named = aligned.inputs.key
+    if fault == "gone":
+        path.unlink()
+    else:
+        named = f"{aligned.inputs.match}-{'0' * len(aligned.inputs.identity)}"
+        path.rename(inputs.workspace.aligned_words(named))
+    write_takes(inputs, a_take(1, seconds=3.0, spoken=SPOKEN, timed_by=TimedBy.ALIGNED, alignment=named))
+    heard = inputs.words(1)
+    assert type(heard) is EstimatedWords and len(heard.words) == len(aligned.words)
+
+
+def test_an_index_whose_row_names_an_alignment_and_is_not_timed_by_one_is_a_cache_to_build_again(tmp_path):
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    with pytest.raises(ValueError, match="alignment"):
+        a_take(1, timed_by=TimedBy.PROVIDER, alignment=f"{'a' * 16}-{'b' * 16}")
+    with pytest.raises(ValueError, match="alignment"):
+        a_take(1, timed_by=TimedBy.ALIGNED, alignment=None)
+    with pytest.raises(ValueError, match="whose words DeckTalk estimated"):
+        Takes(script="s", model="m", output_format="f", sections=(a_take(1, voiced=False, timed_by=TimedBy.PROVIDER),))
+    row = a_take(1).model_dump(mode="json")
+    index = {"script": "script.md", "model": "m", "output_format": "f", "sections": [{**row, "alignment": "a-b"}]}
+    inputs.workspace.takes_path.parent.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.takes_path.write_text(json.dumps(index), encoding="utf-8")
+    assert Takes.previous(inputs.workspace.takes_path) is None
+
+
+TAKE_WORDS_READERS = {
+    "inputs/__init__.py",
+    "stages/narrate/align.py",
+    "stages/narrate/state.py",
+    "stages/status.py",
+}
+"""The modules that know a take's own words file may say its voice sent no times, which alone may read one."""
+
+
+def test_only_the_readers_that_know_an_untimed_take_read_a_takes_own_words():
+    readers = {
+        path.relative_to(SRC).as_posix()
+        for path in SRC.rglob("*.py")
+        if ".take_words(" in path.read_text(encoding="utf-8")
+    }
+    assert readers <= TAKE_WORDS_READERS, readers - TAKE_WORDS_READERS

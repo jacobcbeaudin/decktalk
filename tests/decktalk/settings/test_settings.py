@@ -213,3 +213,23 @@ class TestTheTables:
         for key in KEYS:
             for code in key.decides:
                 assert isinstance(code, Code)
+
+
+def test_the_local_server_listens_on_a_port_the_setting_gives_its_reason_for() -> None:
+    key = BY_ID["dtsp.base_url"]
+    assert key.default == "http://127.0.0.1:9361"
+    assert "9361" in key.description
+    assert "IANA" in key.description
+
+
+def test_the_handshake_has_its_own_short_wait() -> None:
+    """A port held by a process that never answers costs this wait, not the alignment request's."""
+    key = BY_ID["dtsp.handshake_seconds"]
+    assert key.default == 5
+    assert key.unit == "seconds"
+    assert key.bounds == Bounds(ge=1, le=60)
+    assert key.scope is Scope.MACHINE and key.nature is Nature.APPARATUS
+    assert key.see_also == ("dtsp.base_url", "narration.timeout_seconds")
+    assert key.default < BY_ID["narration.timeout_seconds"].default
+    assert "alignment" in BY_ID["narration.timeout_seconds"].description
+    assert "aligner" in BY_ID["narration.retries"].description

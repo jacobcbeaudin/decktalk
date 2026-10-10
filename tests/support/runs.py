@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -13,9 +13,9 @@ from decktalk.findings import ERRORS_FAIL, Threshold
 from decktalk.machine import Machine, Toolchain
 from decktalk.machine.run import Run
 from decktalk.settings import ToolsConfig
-from decktalk.speech import SpeechFactory, SpeechProviders
+from decktalk.speech import Aligner, AlignerContext, SpeechFactory, SpeechProviders
 from decktalk.speech.sound import SoundProviders
-from support.fakes import refusing_voices
+from support.fakes import refusing_aligners, refusing_voices
 
 RUN_ID = "r1"
 """The id of every run `a_run` opens, which a test that reads a result's run compares against."""
@@ -40,17 +40,23 @@ def a_run(
     lines: list[Event] | None = None,
     threshold: Threshold = ERRORS_FAIL,
     speech_providers: Mapping[str, SpeechFactory] | None = None,
+    aligners: Mapping[str, Callable[[AlignerContext], Aligner]] | None = None,
     **environ: str,
 ) -> Run:
     """One run opened straight on a machine that read nothing, with every line it emits kept in `lines`.
 
     `threshold` is the one a project opened with it would hand the run, which its results are judged by.
     `speech_providers` is the voice table the machine answers with, by default every shipped voice
-    refusing to be built. The sound providers DeckTalk ships are kept.
+    refusing to be built. `aligners` is the aligner table, by default the shipped aligner refusing to be
+    built. The sound providers DeckTalk ships are kept.
     """
     machine = Machine(environ=environ, tables={}, machine_file=root / "machine.toml", cwd=root, toolchain=Toolchain())
     voices = refusing_voices() if speech_providers is None else speech_providers
-    machine = replace(machine, speech_providers=replace(machine.speech_providers, factories=voices))
+    machine = replace(
+        machine,
+        speech_providers=replace(machine.speech_providers, factories=voices),
+        aligners=refusing_aligners() if aligners is None else aligners,
+    )
     if lines is not None:
         machine.events.subscribe(lines.append)
     return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, max_cost=max_cost, root=root, threshold=threshold)
@@ -66,6 +72,7 @@ def a_voiced_run(root: Path, speech_providers: Mapping[str, Any], *, spend: bool
         toolchain=Toolchain(),
         speech_providers=SpeechProviders(factories=speech_providers),
         sound_providers=SoundProviders(factories={}),
+        aligners={},
     )
     return Run(machine, id=RUN_ID, cancel=Cancel(), spend=spend, root=root)
 

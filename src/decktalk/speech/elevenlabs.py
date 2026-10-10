@@ -22,7 +22,7 @@ from ..errors import InputError, ProviderError
 from ..results import Word
 from ..secret import Secret
 from ..settings import ElevenLabsConfig
-from . import DECLARED, PUNCT, Output, SpeechContext, SpeechRequest, canonical_text
+from . import DECLARED, PUNCT, Output, Speech, SpeechContext, SpeechRequest, canonical_text
 from .http import post_json
 
 NAME = "elevenlabs"
@@ -129,7 +129,7 @@ class ElevenLabs:
         """The one place the key is revealed, which is the request that is allowed to carry it."""
         return {"xi-api-key": self.api_key.reveal(), "Content-Type": "application/json", "Accept": "audio/mpeg"}
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> Speech:
         """One section read aloud, as the mp3 bytes and a start and an end time per word.
 
         The neighbouring sections travel with the request so the voice carries its prosody across a
@@ -161,7 +161,7 @@ class ElevenLabs:
             timeout=self.context.speech_timeout_seconds,
             retries=self.context.retries,
         )
-        return self._audio(reply), self._words(reply)
+        return Speech(self._audio(reply), tuple(self._words(reply)) or None)
 
     def _audio(self, reply: Mapping[str, Any]) -> bytes:
         """The mp3 the reply carries, refused as a provider failure when it carries none.
@@ -180,7 +180,8 @@ class ElevenLabs:
         """The word times the reply carries, which is what the whole cut is measured against.
 
         The normalised alignment is the fallback, because a service that could not align the text as
-        written still aligned what it spoke.
+        written still aligned what it spoke. A reply with neither, or one whose characters give no word,
+        gives none, and the take is then timed by the aligner.
         """
         alignment = reply.get("alignment") or reply.get("normalized_alignment") or {}
         return words_from_alignment(

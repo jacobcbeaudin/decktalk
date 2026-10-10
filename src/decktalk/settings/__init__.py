@@ -138,7 +138,8 @@ class NarrationConfig:
     )
     retries: int = tune(
         3,
-        "How many more times `narrate` asks again when the voice provider answers that it is busy or failed.",
+        "How many more times `narrate` asks again when the voice provider or the aligner answers that it is busy or "
+        "failed.",
         bounds=Bounds(ge=0, le=10),
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
@@ -224,7 +225,7 @@ class NarrationConfig:
     )
     timeout_seconds: int = tune(
         180,
-        "Seconds before a speech request times out.",
+        "Seconds before a speech or alignment request times out.",
         unit="seconds",
         bounds=Bounds(ge=10, le=1800),
         nature=Nature.APPARATUS,
@@ -794,18 +795,33 @@ class ElevenLabsConfig:
 
 @dataclass(frozen=True)
 class DtspConfig:
-    """These keys are the `dtsp` provider's own: where its local server listens and the model it reads with.
+    """These keys are the `dtsp` provider's own: where its local server listens, the model it reads with, and
+    how long the server has to say which aligner it serves.
 
     `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is
-    not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.
+    not part of this repository. The same server times the words of a take whose voice sent none. It
+    needs no key, bills nothing, and `base_url` is the machine's to set.
     """
 
     base_url: str = tune(
-        "http://127.0.0.1:8765",
-        "Base URL of the local speech server, which the script is sent to.",
+        "http://127.0.0.1:9361",
+        "Base URL of decktalk-voice, the local server that reads the script for `dtsp` and times the words of a "
+        "take that came without them. Port 9361 is assigned to nothing at IANA and listed in no /etc/services, so "
+        "no other service is expected to answer there.",
         scope=Scope.MACHINE,
         nature=Nature.APPARATUS,
         hazard=BASE_URL_HAZARD,
+    )
+    handshake_seconds: int = tune(
+        5,
+        "Seconds the local server has to say which aligner it serves, asked at most once per run and only when a "
+        "take has no aligned words kept. It is short because a server that is up answers at once, so a port held "
+        "by a process that never answers costs this wait and not `[narration] timeout_seconds`.",
+        unit="seconds",
+        bounds=Bounds(ge=1, le=60),
+        scope=Scope.MACHINE,
+        nature=Nature.APPARATUS,
+        see_also=("dtsp.base_url", "narration.timeout_seconds"),
     )
     model: str = tune(
         "kokoro-82m",

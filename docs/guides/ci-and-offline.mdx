@@ -250,8 +250,10 @@ that runs `decktalk-voice` beside it gets every missing take voiced under the sa
 
 A take is found by its content, so a repository that commits its takes builds its real film on a
 runner with no API key. Run `decktalk narrate --spend` once on your own machine and commit `takes/`.
-It holds the takes and their words files and nothing else, because a placeholder, the take index and
-the joined narration stay under `build/`, so a job that plays them changes no tracked file. A project
+It holds the takes and their words files, and in `takes/aligned/` the words an aligner measured in a
+take whose voice sent none, so a job with no aligner plays them as they were timed. A placeholder,
+the take index and the joined narration stay under `build/`, so a job that plays them changes no
+tracked file. A project
 with a score does the same with `decktalk score --spend` and `score/`, which holds the bought sounds
 and their ledger, while the music joined from its parts stays under `build/score/`.
 

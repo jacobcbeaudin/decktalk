@@ -112,6 +112,7 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`SCRIPT_SPOKEN_SYMBOL`](/reference/findings/SCRIPT_SPOKEN_SYMBOL) | warning | The script holds a symbol the voice reads as its name rather than as the thing it means. |
 | [`SCRIPT_PAUSE_DROPPED`](/reference/findings/SCRIPT_PAUSE_DROPPED) | error | The script asks for a timed pause the voice's model does not render, so a voiced run would drop it. |
 | [`TAKE_MISSING`](/reference/findings/TAKE_MISSING) | warning | A section's take is not on disk, so a placeholder plays in its place until its voice makes one. |
+| [`TAKE_UNALIGNED`](/reference/findings/TAKE_UNALIGNED) | warning | A take came with no word times and no aligner timed them, so its section plays estimated words. Only narrate raises it. |
 | [`CUT_SPEECH`](/reference/findings/CUT_SPEECH) | error | Speech is still sounding at a section cut, so the film slices a word in two. |
 | [`CUT_POP`](/reference/findings/CUT_POP) | error | The picture steps at a section cut, so the film pops on the seam. |
 | [`MIX_LOUDNESS`](/reference/findings/MIX_LOUDNESS) | warning | The mixed film misses the loudness it was mastered to. |
@@ -355,7 +356,7 @@ It answers with the `narrate` result: `decktalk schema narrate`.
 | Option | Meaning |
 |---|---|
 | `--section` `N` | Only these sections: 3, 3,5 or 7-9. Repeats. |
-| `--force` | Build again from nothing, keeping every voiced take. |
+| `--force` | Build every placeholder again, keep every voiced take, and ask the aligner again for every take whose voice sent no word times. |
 | `--replace-voiced` | Set aside each voiced take: voice it again with --spend, or play a placeholder with --no-spend. |
 | `--set` `KEY=VALUE` | Override one setting here. Repeats. See config explain. |
 | `--spend`, `--no-spend` | Buy what is missing without asking, or buy nothing and play a placeholder where a voiced take is missing. A free provider such as dtsp makes its takes either way once a voice is named. Unset, a terminal is asked and a run without one is refused. |

@@ -45,7 +45,7 @@ Yes, a local one. DeckTalk ships two voices: `elevenlabs`, the cloud voice, and 
 the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this
 repository. Set `provider = "dtsp"` under `[voice]`. It needs no key and costs nothing, so it makes
 its takes with or without `--spend`, `--no-spend` included. The server's address is
-`[dtsp] base_url`, `http://127.0.0.1:8765` by default, and only this machine sets it, so a project
+`[dtsp] base_url`, `http://127.0.0.1:9361` by default, and only this machine sets it, so a project
 someone else wrote cannot send its script anywhere else. When the server is not running, each missing take plays a placeholder with a
 `TAKE_MISSING` finding that says to start it, and the build still exits 0.
 

@@ -286,3 +286,11 @@ def test_a_model_that_reads_a_break_tag_earns_no_pause_finding(tmp_path: Path) -
     inputs = a_project(tmp_path, toml=on_model("eleven_multilingual_v2"), script=PAUSED_SCRIPT)
     result = check(inputs, a_run(tmp_path), pages=False)
     assert not [one for one in result.findings if one.code is Code.SCRIPT_PAUSE_DROPPED]
+
+
+def test_check_marks_a_take_with_no_word_times_estimated_and_reports_no_unresolved_cue(tmp_path: Path) -> None:
+    """A take its voice sent no word times with has words estimated over its sound until an aligner times it."""
+    inputs = voiced_once(tmp_path)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    assert Code.CUE_UNRESOLVED not in {one.code for one in result.findings}
+    assert result.ok is True

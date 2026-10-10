@@ -43,7 +43,7 @@ from decktalk.media import audio
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import CostState, NarrateResult, TakeOutcome, Word, up_to_the_cent
 from decktalk.settings import MACHINE_FILE_VARIABLE
-from decktalk.speech import Piece, SpeechContext, SpeechFactory, SpeechRequest
+from decktalk.speech import Piece, Speech, SpeechContext, SpeechFactory, SpeechRequest
 from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import narrate as narrate_stage
 from decktalk.stages.cost import charge_of
@@ -453,7 +453,7 @@ class Unreachable:
     requests: list[SpeechRequest] = field(default_factory=list)
     name: str = FAKE_VOICE_NAME
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> Speech:
         self.requests.append(request)
         raise ProviderError("could not reach http://127.0.0.1:1/v1/speech/timed: refused", reached=False)
 
@@ -838,12 +838,12 @@ class RefusesOneSection:
         self.refused = refused
         self.answered = threading.Event()
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> Speech:
         if request.pieces == self.refused:
             assert self.answered.wait(timeout=10), "no other section was answered"
             raise ProviderError("the voice stopped answering.", retryable=True)
         self.answered.set()
-        return b"take", [Word(word="A", start=0.0, end=0.4)]
+        return Speech(b"take", (Word(word="A", start=0.0, end=0.4),))
 
 
 def test_the_index_is_checkpointed_after_every_take(
@@ -881,7 +881,7 @@ class Overlapping:
         self.most = 0
         self.sent = 0
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:  # noqa: ARG002  (the name the protocol calls it by)
+    def speak(self, request: SpeechRequest) -> Speech:  # noqa: ARG002  (the name the protocol calls it by)
         with self.lock:
             self.sent += 1
             self.in_flight += 1
@@ -890,7 +890,7 @@ class Overlapping:
         try:
             if held and self.together is not None:
                 self.together.wait()
-            return b"take", [Word(word="A", start=0.0, end=0.4)]
+            return Speech(b"take", (Word(word="A", start=0.0, end=0.4),))
         finally:
             with self.lock:
                 self.in_flight -= 1
@@ -965,7 +965,7 @@ class HeldVoice:
         self.in_flight = threading.Event()
         self.release = threading.Event()
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:  # noqa: ARG002  (the name the protocol calls it by)
+    def speak(self, request: SpeechRequest) -> Speech:  # noqa: ARG002  (the name the protocol calls it by)
         with self.lock:
             self.sent += 1
             held = self.sent <= self.hold
@@ -975,7 +975,7 @@ class HeldVoice:
             assert self.release.wait(timeout=10), "the test never let the takes in flight go"
         with self.lock:
             self.answered += 1
-        return b"take", [Word(word="A", start=0.0, end=0.4)]
+        return Speech(b"take", (Word(word="A", start=0.0, end=0.4),))
 
 
 def six_sections(make_inputs: Callable[..., Inputs]) -> Inputs:
@@ -1038,10 +1038,10 @@ class StoppingVoice:
         self.cancel = cancel
         self.sent = 0
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:  # noqa: ARG002  (the name the protocol calls it by)
+    def speak(self, request: SpeechRequest) -> Speech:  # noqa: ARG002  (the name the protocol calls it by)
         self.sent += 1
         self.cancel.cancel()
-        return b"take", [Word(word="A", start=0.0, end=0.4)]
+        return Speech(b"take", (Word(word="A", start=0.0, end=0.4),))
 
 
 def test_a_run_stopped_after_a_take_answers_with_what_it_bought(
@@ -1166,7 +1166,7 @@ class BrokenReplyVoice:
 
     name = FAKE_VOICE_NAME
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:  # noqa: ARG002  (the name the protocol calls it by)
+    def speak(self, request: SpeechRequest) -> Speech:  # noqa: ARG002  (the name the protocol calls it by)
         raise ProviderError(
             "https://api.test/v1/speech stopped answering (TimeoutError: timed out). The request was possibly "
             "charged, so it is not sent again.",

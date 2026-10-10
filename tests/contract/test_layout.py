@@ -46,6 +46,13 @@ has to be argued for in review. Raising this number is the edit a reviewer refus
 
 ALLOW = {
     "contract/test_api.py": "`decktalk.__all__`, which is the whole supported Python API.",
+    "contract/test_aligner_spec.py": (
+        "`tests/data/aligner/`, the pinned spec of decktalk-voice's /v1/models, /v1/align and /v1/speech/timed, "
+        "and its fixtures."
+    ),
+    "contract/test_config_take_digests.py": (
+        "`tests/data/config_take_digests.json`, the take digests a one-voice project's config resolves to."
+    ),
     "contract/test_discoverable.py": ("Every command, key, code and attribute, reachable from --help and the schemas."),
     "contract/test_docs_claims.py": "The claims in `docs/` that a reader can act on.",
     "contract/test_env_ignore.py": "`.gitignore` and the wheel's exclude list, judged with git itself.",

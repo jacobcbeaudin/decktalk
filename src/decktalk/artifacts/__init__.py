@@ -6,7 +6,7 @@ page runtime all read them, and the reference page documents them as JSON. The c
 name is the JSON key, and `Stored` is the one place a file is read from disk or written to it.
 
     takes/<digest>.words.json          words.py       the time base everything shares, beside its take (a placeholder's
-                                                      under build/narrate/)
+                                                      under build/narrate/, and an aligner's under takes/aligned/)
     build/narrate/takes.json           takes.py       the take index and where each take sits in the narration
     build/cue-times.json               cue_times.py   every cue resolved against those words
     build/recordings/NN.json           recordings.py  what `record` did, judged and measured
@@ -37,6 +37,7 @@ from decktalk.artifacts.stored import (
     file_digest,
 )
 from decktalk.artifacts.takes import (
+    ALIGNMENT_KEY,
     PLACEHOLDER_PREFIX,
     PLACEHOLDER_SUFFIX,
     TAKE_DIGITS,
@@ -44,25 +45,32 @@ from decktalk.artifacts.takes import (
     Take,
     TakeInputs,
     Takes,
+    TimedBy,
     is_placeholder,
     take_file,
 )
 from decktalk.artifacts.words import (
     WORDS_SUFFIX,
+    AlignedWords,
+    AlignmentInputs,
     AudioPrint,
     ClipWords,
     EstimatedWords,
     ProviderWords,
     Words,
+    alignment_match,
     on_section_clock,
     words_file,
 )
 
 __all__ = [
+    "ALIGNMENT_KEY",
     "PLACEHOLDER_PREFIX",
     "PLACEHOLDER_SUFFIX",
     "TAKE_DIGITS",
     "WORDS_SUFFIX",
+    "AlignedWords",
+    "AlignmentInputs",
     "AudioPrint",
     "ClipWords",
     "CueTimes",
@@ -82,7 +90,9 @@ __all__ = [
     "Take",
     "TakeInputs",
     "Takes",
+    "TimedBy",
     "Words",
+    "alignment_match",
     "content_digest",
     "file_digest",
     "input_digest",

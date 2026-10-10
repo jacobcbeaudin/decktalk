@@ -30,9 +30,14 @@ that has paid for eight sections therefore builds its film with no key, and rehe
 nothing. A free voice that nothing answers is a server that is not running, so its sections play
 placeholders too, and their findings say to start it rather than to buy anything.
 
-`TAKE_MISSING` is the one judgement this stage makes. What a script says badly is `check`'s to
-report, because a judgement belongs where an author can act on it before anything is bought, and
-what the voice must not receive at all is refused here before a single request is sent.
+A take its voice sent no word times with is timed by the aligner, `[dtsp] base_url`'s server, after
+every take is made, and its words are kept in `takes/aligned/`. A take whose aligned words are kept
+plays them without asking the server, and `--force` asks again. A take with none kept and no aligner
+answering plays estimated words with a `TAKE_UNALIGNED` finding.
+
+`TAKE_MISSING` and `TAKE_UNALIGNED` are the two judgements this stage makes. What a script says badly
+is `check`'s to report, because a judgement belongs where an author can act on it before anything is
+bought, and what the voice must not receive at all is refused here before a single request is sent.
 """
 
 from __future__ import annotations
@@ -52,10 +57,11 @@ from decktalk.inputs.script import ScriptSection
 from decktalk.logs import cache_decision
 from decktalk.machine.run import Run
 from decktalk.pipeline import Outcome, Stage
-from decktalk.results import Cost, NarrateResult, SectionTake, TakeOutcome, Word
-from decktalk.speech import SpeechProvider
+from decktalk.results import Cost, NarrateResult, SectionTake, TakeOutcome
+from decktalk.speech import Speech, SpeechProvider
 from decktalk.stages import selects
 from decktalk.stages.cost import is_free
+from decktalk.stages.narrate.align import first_words, time_takes
 from decktalk.stages.narrate.plan import (
     NO_VOICE_NOTE,
     VOICE_ID_VARIABLE,
@@ -81,7 +87,6 @@ from decktalk.stages.narrate.state import (
 )
 from decktalk.stages.narrate.takes import (
     charge_take,
-    estimated_words,
     join_takes,
     place,
     take_row,
@@ -149,6 +154,7 @@ def narrate(
     progress = _Progress(rows={take.section: take for take in previous.sections} if previous is not None else {})
     try:
         rows, made, unreached = _write_takes(inputs, run, plan.takes, provider, progress, free=free)
+        rows, unaligned = time_takes(inputs, run, rows, previous, made=set(progress.made), force=force)
         index = _index(inputs, rows)
         run.wrote(index.write(inputs.workspace.takes_path))
         run.wrote(join_takes(inputs, index))
@@ -177,6 +183,7 @@ def narrate(
             level=Level.WARNING,
         )
     missing += [_take_missing(inputs, section, UNREACHED, unreached=True) for section in unreached]
+    missing += unaligned
     for found in sorted(missing, key=lambda found: found.location.section or 0):
         run.found(found)
     return run.result(
@@ -405,8 +412,8 @@ def _one_take(
     )
     if hit:
         inputs.take_places.keep(digest, run, section=plan.section.number)
-        voiced = not is_placeholder(digest)
-        return take_row(inputs, plan.section, chapter, digest, voiced=voiced), TakeOutcome.KEPT
+        words, said = first_words(inputs, plan.section.spoken, digest)
+        return take_row(inputs, plan.section, chapter, digest, words, said=said), TakeOutcome.KEPT
     if down is not None and down.is_set() and plan.outcome is not TakeOutcome.PLACEHOLDER:
         # A take the voice would make, or one another section was making, cannot come from a voice that is down.
         return _stand_in(inputs, run, plan, chapter, progress)
@@ -446,7 +453,7 @@ def _buy(
 
     number = plan.section.number
 
-    def speak() -> tuple[bytes, Sequence[Word]]:
+    def speak() -> Speech:
         with progress.lock:
             progress.sent.add(number)
         try:
@@ -473,7 +480,8 @@ def _buy(
             raise
         down.set()
         return _stand_in(inputs, run, plan, chapter, progress)
-    return take_row(inputs, plan.section, chapter, digest, voiced=True), outcome
+    words, said = first_words(inputs, plan.section.spoken, digest)
+    return take_row(inputs, plan.section, chapter, digest, words, said=said), outcome
 
 
 def _stand_in(inputs: Inputs, run: Run, plan: TakePlan, chapter: str, progress: _Progress) -> tuple[Take, TakeOutcome]:
@@ -538,7 +546,6 @@ __all__ = [
     "SectionTakeState",
     "TakePlan",
     "TakeStates",
-    "estimated_words",
     "narrate",
     "place",
     "price",

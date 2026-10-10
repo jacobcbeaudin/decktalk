@@ -14,10 +14,18 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import EstimatedWords, ProviderWords, Take, is_placeholder
+from decktalk.artifacts import (
+    AlignedWords,
+    AlignmentInputs,
+    EstimatedWords,
+    ProviderWords,
+    Take,
+    TimedBy,
+    is_placeholder,
+)
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
-from decktalk.inputs.script import ScriptSection
+from decktalk.inputs.script import ScriptSection, estimated_words, spoken_words
 from decktalk.results import TakeOutcome, TakeState, Word
 from decktalk.speech import canonical_text
 from decktalk.stages.cost import cost_of
@@ -618,3 +626,55 @@ def test_the_take_index_is_read_once_per_reading(inputs: Inputs, monkeypatch: py
     states.planned_words(1)
     states.planned_words(2)
     assert len(reads) == 1
+
+
+def held_without_times(inputs: Inputs, number: int) -> ProviderWords:
+    """Hold a voiced take of this section whose voice sent no word times, and give back its words file."""
+    digest = digest_of(inputs, number)
+    hold_take(inputs, digest)
+    said = inputs.take_words(digest)
+    assert isinstance(said, ProviderWords) and said.timed is False and said.audio is not None
+    return said
+
+
+def test_planned_words_of_a_take_with_no_words_are_its_kept_alignment_with_no_take_index(inputs: Inputs) -> None:
+    """A fresh clone has no take index, and still plays the alignment committed beside the take."""
+    said = held_without_times(inputs, 1)
+    assert said.audio is not None
+    keyed = AlignmentInputs(
+        audio=said.audio.blake3, words=spoken_words(section_of(inputs, 1).spoken), aligner="a", revision="1",
+        model_digest="m",
+    )  # fmt: skip
+    aligned = AlignedWords(words=tuple(estimated_words(section_of(inputs, 1).spoken, 2.0)), inputs=keyed, generation=1)
+    inputs.workspace.aligned_dir.mkdir(parents=True, exist_ok=True)
+    aligned.write(inputs.workspace.aligned_words(keyed.key))
+    words = take_states(inputs).planned_words(1)
+    assert type(words) is AlignedWords
+    assert words.words == aligned.shifted(inputs.lead_seconds(1))
+
+
+def test_planned_words_of_a_take_with_no_words_and_none_kept_are_estimated_over_its_sound(inputs: Inputs) -> None:
+    """The row's sound end is read when the row names the take, and the take is measured only when none does."""
+    held_without_times(inputs, 1)
+    spoken = section_of(inputs, 1).spoken
+    lead = inputs.lead_seconds(1)
+    measured = take_states(inputs).planned_words(1)
+    assert type(measured) is EstimatedWords
+    assert measured.words == EstimatedWords(words=tuple(estimated_words(spoken, 0.8))).shifted(lead)
+    write_takes(inputs, a_take(1, digest=digest_of(inputs, 1), seconds=2.0, spoken=spoken, timed_by=TimedBy.ESTIMATED))
+    indexed = take_states(reload(inputs)).planned_words(1)
+    assert indexed.words == EstimatedWords(words=tuple(estimated_words(spoken, 2.0))).shifted(lead)
+
+
+def test_settled_judges_takes_and_not_their_timing(inputs: Inputs) -> None:
+    """A take no aligner timed is still the take the script names, so nothing about it is for narrate to buy."""
+    for number in (1, 2, 3):
+        held_without_times(inputs, number)
+    write_takes(
+        inputs,
+        *(
+            a_take(n, digest=digest_of(inputs, n), spoken=section_of(inputs, n).spoken, timed_by=TimedBy.ESTIMATED)
+            for n in (1, 2, 3)
+        ),
+    )
+    assert take_states(reload(inputs)).settled is True

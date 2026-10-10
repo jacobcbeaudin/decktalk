@@ -322,7 +322,8 @@ class Project:
         finding. A provider that declares it bills nothing, such as `dtsp`, makes every missing take
         either way, and one that cannot be reached plays a placeholder with a `TAKE_MISSING` finding
         that says to start it. `max_cost` is a ceiling in US dollars, checked before the first paid
-        request. `force` makes each placeholder again and never buys: every voiced take on disk is kept.
+        request. `force` makes each placeholder again and never buys: every voiced take on disk is kept,
+        and every take whose voice sent no word times is checked against the aligner again.
         `replace_voiced` is the one way a voiced take is made again. A run that may call the voice makes
         each targeted take again, and one that may not plays a placeholder in its place and keeps the
         voiced take on disk.

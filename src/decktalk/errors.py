@@ -148,8 +148,11 @@ class ProviderError(DeckTalkError):
         retryable: bool = False,
         reached: bool = True,
         possibly_charged: bool = False,
+        status: int | None = None,
     ) -> None:
         super().__init__(message, hint=hint, location=location)
+        self.status = status
+        """The HTTP status the provider answered with, or None when no status came back."""
         self.retryable = retryable
         """True when the same request may succeed later, which is what decides whether a caller waits."""
         self.reached = reached

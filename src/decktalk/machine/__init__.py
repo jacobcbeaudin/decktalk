@@ -25,7 +25,7 @@ import os
 import platform
 import sys
 import time
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from importlib import import_module
@@ -81,7 +81,15 @@ from decktalk.settings.layers import (
     route,
     scoped,
 )
-from decktalk.speech import PROVIDERS, SpeechFactory, SpeechProviders, VoiceInForce
+from decktalk.speech import (
+    ALIGNERS,
+    PROVIDERS,
+    Aligner,
+    AlignerContext,
+    SpeechFactory,
+    SpeechProviders,
+    VoiceInForce,
+)
 from decktalk.speech.sound import SOUNDS, SoundFactory, SoundProviders
 from decktalk.toolchain import assets, chromium_fetch
 from decktalk.toolchain.announce import announcing
@@ -237,6 +245,14 @@ class Machine:
     that gave a voice table and no sound table gets none, so a machine built with a fake voice can
     reach no real sound provider either.
     """
+    aligners: Mapping[str, Callable[[AlignerContext], Aligner]] = field(
+        default_factory=lambda: _aligners(None, None), repr=False, compare=False
+    )
+    """The aligners this machine answers with by name, which time a take whose voice sent no word times.
+
+    A machine whose host gave neither table answers with the aligner DeckTalk ships. A host that gave a
+    voice table and no aligners gets none, so a machine built with a fake voice reaches no local server.
+    """
     dotenv: bool = True
     """Whether a project's `.env` is read, which is true for the author's own machine and false for a host's."""
     notes: tuple[str, ...] = field(default=(), compare=False)
@@ -274,6 +290,7 @@ class Machine:
         store_dir: Path | None = None,
         speech_providers: Mapping[str, SpeechFactory] | None = None,
         sound_providers: Mapping[str, SoundFactory] | None = None,
+        aligners: Mapping[str, Callable[[AlignerContext], Aligner]] | None = None,
         overrides: Iterable[str] = (),
         dotenv: bool = False,
     ) -> Machine:
@@ -282,10 +299,11 @@ class Machine:
         Nothing here reads the process. `environ` is every variable a run on this machine may see,
         which for a render job is none and for a voice job is the key and the voice id. The machine
         file at `machine_file` is read when it is there and is where a machine-scope fix lands.
-        `speech_providers` replaces the shipped voices by name, and `sound_providers` the shipped sound
-        providers. A project's `.env` is left unread unless `dotenv` says otherwise, because it is what
-        a tenant's upload would reach for, and every base URL a request goes to is a machine-scoped key,
-        so no project can send the key or the script anywhere this machine did not name.
+        `speech_providers` replaces the shipped voices by name, `sound_providers` the shipped sound
+        providers, and `aligners` the shipped aligner. A project's `.env` is left unread unless `dotenv`
+        says otherwise, because it is what a tenant's upload would reach for, and every base URL a
+        request goes to is a machine-scoped key, so no project can send the key or the script anywhere
+        this machine did not name.
         """
         register_environment(environ)
         tables = read_machine_toml(machine_file)
@@ -316,6 +334,7 @@ class Machine:
             overrides=pairs,
             speech_providers=_speech(speech_providers, retries),
             sound_providers=_sounds(sound_providers, speech_providers, retries),
+            aligners=_aligners(aligners, speech_providers),
             dotenv=dotenv,
             notes=(*env_warnings(environ), *key_warnings(tables, machine_file.name), *refused),
             store=store_dir,
@@ -613,6 +632,15 @@ def _sounds(
     if given is not None:
         return SoundProviders(factories=given, retries=retries)
     return SoundProviders(factories=SOUNDS if voices is None else {}, retries=retries)
+
+
+def _aligners(
+    given: Mapping[str, Callable[[AlignerContext], Aligner]] | None, voices: Mapping[str, SpeechFactory] | None
+) -> Mapping[str, Callable[[AlignerContext], Aligner]]:
+    """The aligners a machine answers with, which are none when its host gave voices and no aligners."""
+    if given is not None:
+        return given
+    return ALIGNERS if voices is None else {}
 
 
 def _machine_overrides(overrides: tuple[str, ...]) -> tuple[str, ...]:

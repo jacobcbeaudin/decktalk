@@ -53,6 +53,7 @@ import decktalk
 from decktalk.machine import Machine
 from decktalk.media import browser, ffmpeg
 from decktalk.results import TakeOutcome, Word
+from decktalk.speech import Speech
 
 root, cache, out = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 KEY, SENTINEL = "ELEVENLABS_API_KEY", "sk-split-sentinel-not-a-credential"
@@ -80,7 +81,7 @@ class Tone:
         seconds = max(1.0, len(words) / 3)
         ffmpeg.run("-f", "lavfi", "-i", "sine=f=220:r=44100", "-t", f"{seconds:.2f}", "-c:a", "libmp3lame", str(clip))
         timed = [Word(word=w, start=i / 3, end=(i + 1) / 3) for i, w in enumerate(words)]
-        return clip.read_bytes(), timed
+        return Speech(clip.read_bytes(), tuple(timed))
 
 
 import os

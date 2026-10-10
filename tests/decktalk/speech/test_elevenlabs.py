@@ -125,7 +125,9 @@ def test_the_base_url_the_machine_names_is_where_every_request_goes(monkeypatch)
 def test_one_section_read_aloud_comes_back_as_audio_and_a_time_for_every_word(monkeypatch):
     """The whole reason DeckTalk can cut on a word: the reply's character alignment becomes words."""
     asked = answers(monkeypatch, REPLY)
-    audio, words = provider().speak(request(previous_text="before" * 5, next_text="after" * 5))
+    speech = provider().speak(request(previous_text="before" * 5, next_text="after" * 5))
+    audio, words = speech.audio, speech.words
+    assert words is not None
     assert audio == AUDIO
     assert [w.word for w in words] == ["Hi", "there", "world"]
     assert words[0].start == 0.0 and words[0].end == 0.2
@@ -211,7 +213,8 @@ def test_elevenlabs_declares_it_bills_per_character_at_the_rate_its_own_table_st
 def test_the_normalised_alignment_is_read_when_the_written_one_is_absent(monkeypatch):
     """A service that could not align the text as written still aligned what it spoke."""
     answers(monkeypatch, {"audio_base64": base64.b64encode(AUDIO).decode(), "normalized_alignment": alignment("Hi")})
-    _audio, words = provider().speak(request())
+    words = provider().speak(request()).words
+    assert words is not None
     assert [w.word for w in words] == ["Hi"]
 
 
@@ -310,3 +313,15 @@ def test_the_speaker_boost_key_is_the_one_the_service_reads():
     rendered = voice_settings(ElevenLabsConfig(speaker_boost=False), 1.0)
     assert rendered["use_speaker_boost"] is False
     assert "speaker_boost" not in rendered
+
+
+@pytest.mark.parametrize("alignment_field", [None, {"characters": [], "character_start_times_seconds": []}])
+def test_a_reply_with_no_alignment_is_a_take_with_no_word_times(monkeypatch, alignment_field):
+    """A take with no word times is timed by the aligner, never kept as a take that says nothing."""
+    reply: dict[str, Any] = {"audio_base64": base64.b64encode(AUDIO).decode()}
+    if alignment_field is not None:
+        reply["alignment"] = alignment_field
+    answers(monkeypatch, reply)
+    speech = provider().speak(request())
+    assert speech.audio == AUDIO
+    assert speech.words is None

@@ -20,9 +20,10 @@ from typing import Any
 
 from decktalk.errors import InputError
 from decktalk.inputs.paths import at
-from decktalk.results import section_key
+from decktalk.page import SECOND_DIGITS
+from decktalk.results import Word, section_key
 from decktalk.settings import NarrationConfig
-from decktalk.speech import BEAT, Piece
+from decktalk.speech import BEAT, PUNCT, Piece
 
 DIRECTION_MARK = "\x00DIR\x00"
 # "## 3. The demo - 1:40 to 3:40"  (the dash and time range are optional, and a hyphen, an en dash or an
@@ -39,6 +40,39 @@ TAG_RE = re.compile(r"<break\b[^>]*>", re.IGNORECASE)
 """Any break tag, which is refused when `BREAK_RE` cannot read a length from it."""
 BEAT_DASH_RE = re.compile(r"\s+—(?=\s|$)")
 """A dash standing alone, which the voice pauses on rather than says."""
+
+WORD_GAP_SECONDS = 0.02
+"""Calibration: the gap an estimated word leaves before the next one, so two clicks are never one sound."""
+
+SHORTEST_PLACEHOLDER_SECONDS = 0.1
+"""Calibration: the least a placeholder take may run, so a section of one short word still has room for a click."""
+
+
+def spoken_words(spoken: str) -> tuple[str, ...]:
+    """The words of spoken text, each with its punctuation stripped, and no token that was only punctuation.
+
+    It is the one tokenizer: the words DeckTalk estimates and the words an aligner is asked to time are
+    both read through it, so the two never disagree about what a take says.
+    """
+    return tuple(word for token in spoken.split() if (word := token.strip(PUNCT)))
+
+
+def estimated_words(spoken: str, seconds: float) -> list[Word]:
+    """The words of spoken text spread evenly over `seconds`, so every cue resolves to a plausible time.
+
+    Each word leaves a gap before the next, unless its share of the time is shorter than the gap,
+    when it ends where it starts.
+    """
+    tokens = spoken_words(spoken)
+    if not tokens:
+        return []
+    per = max(SHORTEST_PLACEHOLDER_SECONDS, seconds) / len(tokens)
+    words: list[Word] = []
+    for place, token in enumerate(tokens):
+        start = round(place * per, SECOND_DIGITS)
+        end = round((place + 1) * per - WORD_GAP_SECONDS, SECOND_DIGITS)
+        words.append(Word(word=token, start=start, end=max(start, end)))
+    return words
 
 
 @dataclass
@@ -65,6 +99,10 @@ class ScriptSection:
     @property
     def word_count(self) -> int:
         return len(self.spoken.split())
+
+    def estimated_words(self, seconds: float) -> list[Word]:
+        """This section's spoken words spread evenly over `seconds`, so every cue resolves to a plausible time."""
+        return estimated_words(self.spoken, seconds)
 
     @property
     def target_seconds(self) -> float | None:

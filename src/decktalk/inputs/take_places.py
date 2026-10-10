@@ -37,7 +37,7 @@ import os
 import secrets
 import threading
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -59,7 +59,8 @@ from decktalk.events import Level
 from decktalk.files import DRAFT_TOKEN_BYTES, replace_all
 from decktalk.inputs.paths import at, relative
 from decktalk.inputs.workspace import Workspace
-from decktalk.results import TakeOutcome, Word
+from decktalk.results import TakeOutcome
+from decktalk.speech import Speech
 
 STORE_LOCK_SUFFIX = ".lock"
 """What the take store's lock on one take is called after its digest, which a voicing holds while it voices."""
@@ -189,7 +190,7 @@ class TakePlaces:
     def voice(
         self,
         digest: str,
-        speak: Callable[[], tuple[bytes, Sequence[Word]]],
+        speak: Callable[[], Speech],
         charge: Callable[[], None],
         witness: Witness,
         *,
@@ -226,13 +227,11 @@ class TakePlaces:
                     self._preflight(writes.place, digest)
                 except OSError as failed:
                     raise self._store_unwritable(digest, failed) from failed
-            audio, words = speak()
+            speech = speak()
             try:
                 charge()
             finally:
-                self._write(
-                    digest, audio, words, witness, section=section, replacing=replacing, takes=takes, store=writes
-                )
+                self._write(digest, speech, witness, section=section, replacing=replacing, takes=takes, store=writes)
         return TakeOutcome.VOICED
 
     # ---- the places ---------------------------------------------------------------------------------
@@ -403,8 +402,7 @@ class TakePlaces:
     def _write(
         self,
         digest: str,
-        audio: bytes,
-        words: Sequence[Word],
+        speech: Speech,
         witness: Witness,
         *,
         section: int,
@@ -412,10 +410,19 @@ class TakePlaces:
         takes: _Copy,
         store: _Copy | None,
     ) -> None:
-        """Write the voiced pair to the store when `store` is given, then to the takes directory, then say so."""
+        """Write the voiced pair to the store when `store` is given, then to the takes directory, then say so.
+
+        The words file records whether the voice sent word times and the model it served, so a take that
+        came with none is whole, fingerprinted, and timed by the aligner.
+        """
         workspace = self._workspace
-        audio_name, words_name = workspace.take_file(digest), words_file(digest)
-        text = ProviderWords(words=tuple(words), audio=AudioPrint.of(audio, suffix=workspace.suffix)).text
+        audio, audio_name, words_name = speech.audio, workspace.take_file(digest), words_file(digest)
+        text = ProviderWords(
+            words=speech.words or (),
+            timed=speech.words is not None,
+            model_digest=speech.model_digest,
+            audio=AudioPrint.of(audio, suffix=workspace.suffix),
+        ).text
 
         def pair(place: Path) -> dict[Path, str | bytes]:
             # The words come last, so a run stopped while it writes never leaves a words file vouching for audio

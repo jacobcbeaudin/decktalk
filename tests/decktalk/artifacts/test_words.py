@@ -7,8 +7,18 @@ from pathlib import Path
 import pytest
 
 from decktalk.artifacts.stored import file_digest
-from decktalk.artifacts.words import WORDS_SUFFIX, AudioPrint, ProviderWords, Words, on_section_clock, words_file
-from decktalk.errors import InputError
+from decktalk.artifacts.words import (
+    WORDS_SUFFIX,
+    AlignedWords,
+    AlignmentInputs,
+    AudioPrint,
+    ProviderWords,
+    Words,
+    alignment_match,
+    on_section_clock,
+    words_file,
+)
+from decktalk.errors import InputError, NotBuiltError
 from decktalk.results import Word
 
 SPOKEN = Words(words=(Word(word="two", start=0.0, end=0.4), Word(word="friends", start=0.4, end=0.9)))
@@ -45,7 +55,7 @@ def test_every_words_file_is_named_by_who_timed_it_and_only_a_provider_s_words_a
     row here and says which it is.
     """
     timers = {kind.__name__: kind.paid for kind in Words.__subclasses__()}
-    assert timers == {"ProviderWords": True, "EstimatedWords": False, "ClipWords": False}
+    assert timers == {"ProviderWords": True, "EstimatedWords": False, "ClipWords": False, "AlignedWords": False}
 
 
 def test_a_providers_words_that_do_not_read_say_only_voicing_the_take_again_gives_them_back(tmp_path: Path) -> None:
@@ -108,3 +118,76 @@ def test_words_on_a_section_clock_equal_the_same_fields_read_from_the_file(tmp_p
     assert moved == read and read == moved
     assert hash(moved) == hash(read)
     assert on_section_clock(read, 0.5) != read
+
+
+def test_a_providers_words_file_without_the_new_fields_reads_as_timed_by_an_unnamed_model(tmp_path: Path) -> None:
+    path = tmp_path / words_file("abc123")
+    path.write_text('{"words": [{"word": "two", "start": 0.0, "end": 0.4}], "audio": null}', encoding="utf-8")
+    said = ProviderWords.read(path)
+    assert said is not None
+    assert said.timed is True
+    assert said.model_digest is None
+
+
+def test_an_older_empty_providers_words_file_reads_as_a_take_with_no_word_times(tmp_path: Path) -> None:
+    """A take that says nothing would leave every cue unresolved, so an empty older file goes to the aligner."""
+    path = tmp_path / words_file("abc123")
+    path.write_text('{"words": [], "audio": null}', encoding="utf-8")
+    said = ProviderWords.read(path)
+    assert said is not None
+    assert said.timed is False
+
+
+def test_a_words_file_that_says_its_voice_sent_no_times_holds_no_words() -> None:
+    with pytest.raises(ValueError, match="sent no word times"):
+        ProviderWords(words=SPOKEN.words, timed=False)
+    assert ProviderWords(words=(), timed=False).words == ()
+
+
+ALIGNED = AlignmentInputs(
+    audio="0123456789abcdef",
+    words=("two", "friends"),
+    aligner="fake-aligner",
+    revision="1",
+    model_digest="sha256:0f00",
+)
+
+
+@pytest.mark.parametrize(
+    ("moved", "same_match"),
+    [
+        ({"audio": "fedcba9876543210"}, False),
+        ({"words": ("two", "enemies")}, False),
+        ({"words": ("twof", "riends")}, False),
+        ({"aligner": "other-aligner"}, True),
+        ({"revision": "2"}, True),
+        ({"model_digest": "sha256:5eed"}, True),
+    ],
+    ids=["print", "word", "word-boundary", "aligner", "revision", "model-digest"],
+)
+def test_aligned_words_are_a_cache_kept_under_a_key_that_moves_with_every_input(
+    moved: dict[str, object], same_match: bool
+) -> None:
+    """The take and its words name the match, and the aligner names the identity, so one take's alignments share a
+    prefix."""
+    other = ALIGNED.model_copy(update=moved)
+    assert other.key != ALIGNED.key
+    assert (other.match == ALIGNED.match) is same_match
+    assert ALIGNED.key == f"{ALIGNED.match}-{ALIGNED.identity}"
+    assert ALIGNED.match == alignment_match(ALIGNED.audio, ALIGNED.words)
+    assert AlignedWords.paid is False
+
+
+def test_aligned_words_that_do_not_read_are_built_again(tmp_path: Path) -> None:
+    path = tmp_path / f"{ALIGNED.key}{WORDS_SUFFIX}"
+    good = AlignedWords(
+        words=(Word(word="two", start=0.0, end=0.4), Word(word="friends", start=0.4, end=0.9)),
+        inputs=ALIGNED,
+        generation=1,
+    )
+    assert AlignedWords.read(good.write(path)) == good
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(NotBuiltError):
+        AlignedWords.read(path)
+    with pytest.raises(ValueError, match="spelled as"):
+        AlignedWords(words=(Word(word="two", start=0.0, end=0.4),), inputs=ALIGNED, generation=1)

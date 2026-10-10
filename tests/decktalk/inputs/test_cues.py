@@ -16,7 +16,6 @@ from decktalk.inputs.cues import Spoken, load_cues, norm
 from decktalk.inputs.script import parse_script
 from decktalk.results import Word
 from decktalk.speech import PUNCT
-from decktalk.stages.narrate.takes import estimated_words
 
 
 def write_cues(root: Path, rows: list[dict[str, object]]) -> Path:
@@ -244,7 +243,7 @@ def test_a_hyphenated_word_counts_once_where_its_whole_and_its_parts_both_match(
 @pytest.mark.parametrize(("phrase", "index"), [("R & D", 1), ("state of the art", 6), ("tools / fast", 7)])
 def test_the_placeholder_words_of_a_run_without_voice_resolve_the_same_phrases(phrase: str, index: int) -> None:
     (section,) = parse_script(f"## 1. Open\n\n{SCRIPT}\n")
-    assert Spoken.of(estimated_words(section, 8.0)).find(phrase) == index
+    assert Spoken.of(section.estimated_words(8.0)).find(phrase) == index
 
 
 SYMBOL = st.sampled_from(["&", "/", "+", "-", "—", "..."])

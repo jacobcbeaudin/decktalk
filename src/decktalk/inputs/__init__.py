@@ -33,6 +33,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Literal, overload
 
 from decktalk.artifacts import (
+    AlignedWords,
     ClipWords,
     CueTimes,
     EstimatedWords,
@@ -40,6 +41,7 @@ from decktalk.artifacts import (
     ProviderWords,
     RecordingLog,
     Takes,
+    TimedBy,
     Unreadable,
     Words,
     content_digest,
@@ -66,7 +68,7 @@ from decktalk.inputs.document import (
 from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
 from decktalk.inputs.paths import at, contained, relative
-from decktalk.inputs.script import ScriptSection, read_script
+from decktalk.inputs.script import ScriptSection, estimated_words, read_script
 from decktalk.inputs.take_places import TakePlaces
 from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
@@ -375,11 +377,14 @@ class Inputs:
     def words(self, number: int) -> Words:
         """One section's words on its section clock, as the kind that timed them, and never None.
 
-        A page section answers its take's words, read through `take_words` by the digest its take index row
-        names and moved later by the section's lead. A row whose words file is gone answers no words of the
-        kind its digest names, so a placeholder still says its times are estimates. A clip section answers
-        the words file its `words` key names, which already runs on the clip's own clock, and one that does
-        not read is refused as `INPUT`. No take index, no row, or no such section answers an empty `Words`.
+        A page section answers its take's words as its take index row says they were timed, moved later by the
+        section's lead. A row its provider timed answers the words read through `take_words` by its digest, and
+        one whose words file is gone answers no words of the kind its digest names, so a placeholder still says
+        its times are estimates. A row an aligner timed answers the aligned words its `alignment` names, when
+        that file reads under its own key. A voiced row no aligner timed, or whose aligned words are gone,
+        answers the row's spoken words estimated over the take's sound. A clip section answers the words file
+        its `words` key names, which already runs on the clip's own clock, and one that does not read is refused
+        as `INPUT`. No take index, no row, or no such section answers an empty `Words`.
         Every answer is a copy for reading, which no writer puts on disk.
         """
         found = self.document.section(number)
@@ -389,8 +394,24 @@ class Inputs:
         take = index.of(number) if index is not None and found is not None else None
         if take is None:
             return on_section_clock(Words(), 0.0)
+        lead = self.lead_seconds(number)
+        aligned = self._aligned(take.alignment) if take.alignment is not None else None
+        if aligned is not None:
+            return on_section_clock(aligned, lead)
+        if take.voiced and take.timed_by is not TimedBy.PROVIDER:
+            estimate = estimated_words(take.spoken, take.sound_seconds)
+            return on_section_clock(EstimatedWords(words=tuple(estimate)), lead)
         said = self.take_words(take.digest) or _words_kind(take.digest)()
-        return on_section_clock(said, self.lead_seconds(number))
+        return on_section_clock(said, lead)
+
+    def _aligned(self, key: str) -> AlignedWords | None:
+        """The aligned words kept under `key`, or None when there are none that read under that key."""
+        try:
+            aligned = AlignedWords.read(self.workspace.aligned_words(key))
+        except NotBuiltError:
+            # silent: aligned words that do not read are aligned again, and the take plays estimated words till then.
+            return None
+        return aligned if aligned is not None and aligned.inputs.key == key else None
 
     def take_words(self, digest: str) -> Words | None:
         """One take's words on the take's own clock, or None when it has none yet.

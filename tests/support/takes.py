@@ -10,6 +10,7 @@ from decktalk.artifacts import (
     ProviderWords,
     Take,
     Takes,
+    TimedBy,
     Words,
     is_placeholder,
     take_file,
@@ -26,9 +27,10 @@ TAKE_SUFFIX = ".mp3"
 def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: object) -> Take:
     """One voiced take that runs `seconds` long, with its speech and its sound ending where it ends.
 
-    The count of words and characters is read off `spoken`, so a row stays consistent with its own
-    text. A call site names every other field its assertions read, and those replace the defaults. A row
-    that says it was not voiced is named by a placeholder digest, as narrate names one.
+    The count of words and characters is read off `spoken`, so a row stays consistent with its own text. Its
+    provider timed its words, unless it is a placeholder, whose words DeckTalk estimated. A call site names
+    every other field its assertions read, and those replace the defaults. A row that says it was not voiced is
+    named by a placeholder digest, as narrate names one.
     """
     row: dict[str, object] = {
         "section": section,
@@ -46,6 +48,9 @@ def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: o
     }
     if fields.get("voiced") is False and "digest" not in fields:
         row["digest"] = f"{PLACEHOLDER_PREFIX}{section:0{PLACEHOLDER_DIGITS}x}"
+    row["timed_by"] = TimedBy.ESTIMATED if fields.get("voiced") is False else TimedBy.PROVIDER
+    row["alignment"] = None
+    row["model_digest"] = None
     return Take.model_validate({**row, **fields})
 
 

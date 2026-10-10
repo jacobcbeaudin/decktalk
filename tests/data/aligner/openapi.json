@@ -1,0 +1,419 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "decktalk-voice",
+    "version": "1",
+    "description": "The local server DeckTalk's dtsp voice and aligner speak to. Fields are only ever added within v1, and both sides ignore a field they do not know. Every time is in seconds from the first sample sent, rounded to the millisecond."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:9361"
+    }
+  ],
+  "paths": {
+    "/v1/models": {
+      "get": {
+        "operationId": "models",
+        "description": "Which service this is, which contract it speaks and which aligner it serves. DeckTalk asks it once per run, with no retry. The server answers 200 with the aligner's identity while the aligner's model is still loading, so a client never mistakes a loading server for one that is not there.",
+        "responses": {
+          "200": {
+            "description": "The service, its contract and its aligner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelsReply"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The server is still starting and cannot yet say which aligner it serves.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/align": {
+      "post": {
+        "operationId": "align",
+        "description": "The start and end of every word sent, in the audio sent.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "audio",
+                  "request"
+                ],
+                "properties": {
+                  "audio": {
+                    "type": "string",
+                    "contentMediaType": "audio/wav",
+                    "description": "The take as a mono 16-bit WAV."
+                  },
+                  "request": {
+                    "$ref": "#/components/schemas/AlignRequest"
+                  }
+                }
+              },
+              "encoding": {
+                "audio": {
+                  "contentType": "audio/wav"
+                },
+                "request": {
+                  "contentType": "application/json"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One timed word per word sent, in the order sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlignReply"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not one the server can read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The audio is longer than the server takes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A word cannot be aligned, such as one outside the aligner's vocabulary, which `word` names.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The aligner's model is still loading, or the aligner is busy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/speech/timed": {
+      "post": {
+        "operationId": "speech",
+        "description": "One section read aloud, with a time for every word when the voice gives them.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpeechRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The audio, and the word times when the voice gives them.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpeechReply"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The voice's model is still loading, or the voice is busy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorReply"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ModelsReply": {
+        "type": "object",
+        "required": [
+          "service",
+          "contract",
+          "aligner"
+        ],
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "Always decktalk-voice, so a client knows the port is held by this server."
+          },
+          "contract": {
+            "type": "integer",
+            "description": "The version of this contract the server speaks."
+          },
+          "aligner": {
+            "$ref": "#/components/schemas/AlignerIdentity"
+          }
+        }
+      },
+      "AlignerIdentity": {
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "model_digest"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The aligner's name."
+          },
+          "revision": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The aligner's revision."
+          },
+          "model_digest": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The digest of the model the aligner serves."
+          }
+        }
+      },
+      "AlignRequest": {
+        "type": "object",
+        "required": [
+          "words"
+        ],
+        "properties": {
+          "words": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "The words the take should hold, in order."
+          },
+          "language": {
+            "type": "string",
+            "default": "en",
+            "description": "The language the words are in."
+          }
+        }
+      },
+      "AlignReply": {
+        "type": "object",
+        "required": [
+          "words"
+        ],
+        "properties": {
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimedWord"
+            }
+          },
+          "aligner": {
+            "$ref": "#/components/schemas/AlignerIdentity"
+          }
+        }
+      },
+      "TimedWord": {
+        "type": "object",
+        "required": [
+          "word",
+          "start",
+          "end"
+        ],
+        "properties": {
+          "word": {
+            "type": "string",
+            "description": "The word as it was sent."
+          },
+          "start": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Seconds from the first sample sent, to the millisecond."
+          },
+          "end": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Seconds from the first sample sent, to the millisecond."
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "How sure the aligner is of this word's times, when it says."
+          }
+        }
+      },
+      "SpeechRequest": {
+        "type": "object",
+        "required": [
+          "pieces",
+          "voice",
+          "model",
+          "speed",
+          "format"
+        ],
+        "properties": {
+          "pieces": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "text",
+                "pause"
+              ],
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "pause": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "voice": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "speed": {
+            "type": "number"
+          },
+          "format": {
+            "type": "string"
+          }
+        }
+      },
+      "SpeechReply": {
+        "type": "object",
+        "required": [
+          "audio_base64",
+          "format"
+        ],
+        "properties": {
+          "audio_base64": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "format": {
+            "type": "string"
+          },
+          "words": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimedWord"
+            },
+            "description": "Absent or empty when the voice gives no word times."
+          },
+          "model_digest": {
+            "type": "string",
+            "description": "The digest of the model that spoke."
+          }
+        }
+      },
+      "ErrorReply": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Such as MODEL_LOADING, BUSY or WORD_OUTSIDE_VOCABULARY."
+              },
+              "message": {
+                "type": "string"
+              },
+              "word": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The word the error is about, when there is one."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

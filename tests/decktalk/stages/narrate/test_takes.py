@@ -4,39 +4,40 @@ from __future__ import annotations
 
 import pytest
 
-from decktalk.artifacts import Takes, Words, take_file, words_file
+from decktalk.artifacts import (
+    AlignedWords,
+    AlignmentInputs,
+    AudioPrint,
+    EstimatedWords,
+    ProviderWords,
+    Takes,
+    TimedBy,
+    Words,
+    take_file,
+    words_file,
+)
 from decktalk.events import TakeCharged
 from decktalk.inputs import Inputs
-from decktalk.inputs.script import parse_script
 from decktalk.media import audio
+from decktalk.results import Word
 from decktalk.speech import canonical_text
 from decktalk.stages.cost import Buy
+from decktalk.stages.narrate.align import first_words
 from decktalk.stages.narrate.plan import placeholder_inputs
 from decktalk.stages.narrate.takes import (
     PLACEHOLDER_CLOSE_SECONDS,
     charge_take,
-    estimated_words,
     join_takes,
     place,
+    retimed,
+    take_row,
     write_placeholder_take,
 )
+from support.fakes import FakeFfmpeg
 from support.runs import Watched
 from support.takes import TAKE_SUFFIX
 
 from .conftest import a_paid_take
-
-
-def test_estimated_words_space_the_section_evenly_and_drop_its_punctuation() -> None:
-    (section,) = parse_script("## 1. Open\n\nA bowl, a ball.\n")
-    words = estimated_words(section, 4.0)
-    assert [word.word for word in words] == ["A", "bowl", "a", "ball"]
-    assert words[0].start == 0.0
-    assert words[-1].end == pytest.approx(3.98)
-
-
-def test_a_section_that_says_nothing_has_no_estimated_words() -> None:
-    (section,) = parse_script("## 1. Open\n\n[A direction alone.]\n")
-    assert estimated_words(section, 4.0) == []
 
 
 def test_placing_a_take_reads_its_own_bytes_and_its_own_section(inputs: Inputs) -> None:
@@ -126,3 +127,43 @@ def test_the_narration_is_joined_in_the_order_the_index_holds(inputs: Inputs, mo
     assert [part.lead for part in placed] == [0.5, 0.1]
     assert [part.play for part in placed] == [0.8, 0.4]
     assert [part.tail for part in placed] == [0.7, 0.2]
+
+
+VOICED = "0000000000000abc"
+"""A voiced take's digest, held in the takes directory by the tests that read its words."""
+
+SAID = (Word(word="A", start=0.0, end=0.3), Word(word="bowl", start=0.3, end=0.7))
+
+
+@pytest.mark.usefixtures("fake_ffmpeg")
+def test_a_row_says_who_timed_its_words_and_the_model_that_spoke(inputs: Inputs) -> None:
+    (section,) = [s for s in inputs.spoken() if s.number == 1]
+    said = ProviderWords(words=SAID, model_digest="sha256:5eed")
+    row = take_row(inputs, section, "Open", VOICED, said, said=said)
+    assert (row.voiced, row.timed_by, row.alignment, row.model_digest) == (True, TimedBy.PROVIDER, None, "sha256:5eed")
+    assert row.speech_end_seconds == SAID[-1].end
+    keyed = AlignmentInputs(audio="a" * 16, words=("A", "bowl"), aligner="x", revision="1", model_digest="m")
+    aligned = AlignedWords(words=SAID, inputs=keyed, generation=1)
+    moved = retimed(row, aligned)
+    assert (moved.timed_by, moved.alignment, moved.model_digest) == (TimedBy.ALIGNED, keyed.key, "sha256:5eed")
+    assert retimed(moved, EstimatedWords(words=SAID)).alignment is None
+    placeholder = placeholder_inputs(inputs, section).digest
+    row = take_row(inputs, section, "Open", placeholder, EstimatedWords(words=SAID), said=None)
+    assert (row.voiced, row.timed_by, row.model_digest) == (False, TimedBy.ESTIMATED, None)
+
+
+def test_a_take_with_no_word_times_keeps_the_model_its_voice_served_on_its_row(
+    inputs: Inputs, fake_ffmpeg: FakeFfmpeg
+) -> None:
+    """The served model belongs to the take, so it reaches the row even while DeckTalk estimates its words."""
+    fake_ffmpeg.duration_seconds = 2.0
+    inputs.workspace.takes.mkdir(parents=True, exist_ok=True)
+    (inputs.workspace.takes / take_file(VOICED, TAKE_SUFFIX)).write_bytes(b"take")
+    held = ProviderWords(timed=False, model_digest="sha256:5eed", audio=AudioPrint.of(b"take", suffix=TAKE_SUFFIX))
+    held.write(inputs.workspace.takes / words_file(VOICED))
+    (section,) = [s for s in inputs.spoken() if s.number == 1]
+    words, said = first_words(inputs, section.spoken, VOICED)
+    assert said == held
+    assert type(words) is EstimatedWords and [w.word for w in words.words] == ["A", "bowl", "A", "ball"]
+    row = take_row(inputs, section, "Open", VOICED, words, said=said)
+    assert (row.timed_by, row.model_digest, row.alignment) == (TimedBy.ESTIMATED, "sha256:5eed", None)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import wave
 from pathlib import Path
 
 import pytest
@@ -117,3 +119,12 @@ def test_a_level_becomes_the_factor_that_plays_it() -> None:
     assert audio.gain(0) == 1.0
     assert round(audio.gain(-6), 3) == 0.501
     assert round(audio.gain(20), 3) == 10.0
+
+
+@pytest.mark.media
+def test_a_take_decodes_to_a_mono_wav_of_its_own_length(tmp_path):
+    """The aligner is sent a WAV whose every size field is true, which a WAV piped out of ffmpeg's own muxer is not."""
+    take = write_tone_with_tail(tmp_path / "take.mp3", tail=0.5)
+    with wave.open(io.BytesIO(audio.wav(take, sample_rate=16000)), "rb") as sound:
+        assert (sound.getnchannels(), sound.getsampwidth(), sound.getframerate()) == (1, 2, 16000)
+        assert sound.getnframes() / sound.getframerate() == pytest.approx(1.5, abs=0.06)

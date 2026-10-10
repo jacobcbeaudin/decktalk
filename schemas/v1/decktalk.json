@@ -140,7 +140,7 @@
           "x-environment": "DECKTALK_NARRATION_CONCURRENCY"
         },
         "retries": {
-          "description": "How many more times `narrate` asks again when the voice provider answers that it is busy or failed.",
+          "description": "How many more times `narrate` asks again when the voice provider or the aligner answers that it is busy or failed.",
           "type": "integer",
           "default": 3,
           "minimum": 0,
@@ -283,7 +283,7 @@
           "x-environment": "DECKTALK_NARRATION_CONTEXT_CHARACTERS"
         },
         "timeout_seconds": {
-          "description": "Seconds before a speech request times out.",
+          "description": "Seconds before a speech or alignment request times out.",
           "type": "integer",
           "default": 180,
           "minimum": 10,
@@ -1300,19 +1300,36 @@
     },
     "dtsp": {
       "type": "object",
-      "description": "These keys are the `dtsp` provider's own: where its local server listens and the model it reads with. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. It needs no key, bills nothing, and `base_url` is the machine's to set.",
+      "description": "These keys are the `dtsp` provider's own: where its local server listens, the model it reads with, and how long the server has to say which aligner it serves. `dtsp` speaks the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this repository. The same server times the words of a take whose voice sent none. It needs no key, bills nothing, and `base_url` is the machine's to set.",
       "x-kind": "tuning",
       "properties": {
         "base_url": {
-          "description": "Base URL of the local speech server, which the script is sent to.",
+          "description": "Base URL of decktalk-voice, the local server that reads the script for `dtsp` and times the words of a take that came without them. Port 9361 is assigned to nothing at IANA and listed in no /etc/services, so no other service is expected to answer there.",
           "type": "string",
-          "default": "http://127.0.0.1:8765",
+          "default": "http://127.0.0.1:9361",
           "x-range": "takes any value of its type",
           "x-scope": "machine",
           "x-nature": "apparatus",
           "x-source": "chosen",
           "x-hazard": "The script, and for a provider that bills the API key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.",
           "x-environment": "DECKTALK_DTSP_BASE_URL"
+        },
+        "handshake_seconds": {
+          "description": "Seconds the local server has to say which aligner it serves, asked at most once per run and only when a take has no aligned words kept. It is short because a server that is up answers at once, so a port held by a process that never answers costs this wait and not `[narration] timeout_seconds`.",
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "x-range": "must be between 1 and 60",
+          "x-unit": "seconds",
+          "x-scope": "machine",
+          "x-nature": "apparatus",
+          "x-source": "chosen",
+          "x-see-also": [
+            "dtsp.base_url",
+            "narration.timeout_seconds"
+          ],
+          "x-environment": "DECKTALK_DTSP_HANDSHAKE_SECONDS"
         },
         "model": {
           "description": "The model the local server reads the script with when `[voice] provider` is `dtsp`, as the server names it.",

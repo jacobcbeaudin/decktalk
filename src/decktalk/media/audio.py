@@ -14,6 +14,7 @@ audio rather than a choice about a film.
 from __future__ import annotations
 
 import array
+import io
 import math
 import re
 import shutil
@@ -47,6 +48,9 @@ CLICK_SECONDS = 0.008
 
 PCM_BYTES_PER_SAMPLE = 2
 """Truth: the width of one signed 16-bit sample, which is what the s16le calls below read and write."""
+
+MONO = 1
+"""Truth: the one channel an aligner is sent, which is all a word's timing needs."""
 
 FULL_SCALE = 32767
 """Truth: the largest magnitude a sixteen bit sample can carry, which every level is measured against."""
@@ -145,6 +149,22 @@ def pcm_span(path: Path, start: float, seconds: float, *, sample_rate: int) -> l
     samples = array.array("h")
     samples.frombytes(out[: len(out) - len(out) % PCM_BYTES_PER_SAMPLE])
     return list(samples)
+
+
+def wav(path: Path, *, sample_rate: int) -> bytes:
+    """The whole take as a mono 16-bit WAV at `[audio] sample_rate`, which is what an aligner is sent.
+
+    ffmpeg decodes the samples raw and the standard library wraps them, because a WAV ffmpeg writes to
+    a pipe leaves its size fields unset, which a reader takes for audio that never ends.
+    """
+    pcm = ffmpeg.raw(*ffmpeg.source(path), "-vn", "-ac", str(MONO), "-ar", str(sample_rate), "-f", "s16le", "-")
+    out = io.BytesIO()
+    with wave.open(out, "wb") as sound:
+        sound.setnchannels(MONO)
+        sound.setsampwidth(PCM_BYTES_PER_SAMPLE)
+        sound.setframerate(sample_rate)
+        sound.writeframes(pcm[: len(pcm) - len(pcm) % PCM_BYTES_PER_SAMPLE])
+    return out.getvalue()
 
 
 @dataclass(frozen=True)

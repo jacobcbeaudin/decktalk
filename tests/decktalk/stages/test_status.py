@@ -8,13 +8,24 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import Take, file_digest, take_file, words_file
+from decktalk.artifacts import (
+    AlignedWords,
+    AlignmentInputs,
+    ProviderWords,
+    Take,
+    TimedBy,
+    file_digest,
+    take_file,
+    words_file,
+)
 from decktalk.events import Level, RunLog
 from decktalk.findings import Code
 from decktalk.inputs import Inputs
+from decktalk.inputs.script import spoken_words
 from decktalk.page import Q
 from decktalk.pipeline import Stage
-from decktalk.results import SectionKind, StatusResult, TakeState
+from decktalk.results import SectionKind, StatusResult, TakeState, Word
+from decktalk.speech import http as speech_http
 from decktalk.stages import kept
 from decktalk.stages import status as stage
 from decktalk.stages.narrate.plan import placeholder_inputs, take_inputs
@@ -24,7 +35,7 @@ from support.fakes import FREE_VOICE_NAME, FakeFfmpeg
 from support.pages import SCENE_ONE
 from support.projects import load_project
 from support.runs import a_run, notes
-from support.takes import TAKE_SUFFIX, a_take, damage_take, write_takes
+from support.takes import TAKE_SUFFIX, a_take, damage_take, hold_take, write_takes
 
 TOML = """
 [project]
@@ -607,3 +618,84 @@ def test_a_clip_row_has_no_take_state(tmp_path: Path) -> None:
     result = status(a_project(tmp_path), a_run(tmp_path))
     assert result.sections[1].kind is SectionKind.CLIP
     assert (result.sections[1].take_state, result.sections[1].take_reason) == (None, None)
+
+
+# ---- a take no aligner timed -------------------------------------------------------------------
+
+
+def aligned_of(inputs: Inputs, audio_print: str, words: tuple[str, ...], aligner: str) -> Path:
+    """Aligned words of this audio and these words by `aligner`, kept where the takes directory keeps them."""
+    keyed = AlignmentInputs(audio=audio_print, words=words, aligner=aligner, revision="1", model_digest="m")
+    timed = tuple(Word(word=word, start=float(i), end=float(i) + 0.5) for i, word in enumerate(words))
+    inputs.workspace.aligned_dir.mkdir(parents=True, exist_ok=True)
+    return AlignedWords(words=timed, inputs=keyed, generation=1).write(inputs.workspace.aligned_words(keyed.key))
+
+
+def held_without_times(inputs: Inputs) -> str:
+    """Hold the take section one plays, as a voice that sent no word times leaves it, and give back its print."""
+    digest = played_digest(inputs)
+    hold_take(inputs, digest)
+    said = inputs.take_words(digest)
+    assert isinstance(said, ProviderWords) and said.audio is not None and said.timed is False
+    return said.audio.blake3
+
+
+def test_aligned_words_of_a_played_take_are_not_unplayed_with_no_take_index(tmp_path: Path) -> None:
+    """A fresh clone has no build, and the aligned words its takes play are the ones a clean machine needs."""
+    inputs = a_project(tmp_path, toml=VOICED)
+    audio_print = held_without_times(inputs)
+    words = spoken_words("Hello there again.")
+    aligned_of(inputs, audio_print, words, "a")
+    aligned_of(inputs, audio_print, words, "b")
+    assert inputs.takes() is None
+    unplayed = status(inputs, a_run(tmp_path)).unplayed
+    assert unplayed is not None
+    assert (unplayed.takes, unplayed.aligned) == (0, 0)
+
+
+def test_aligned_words_of_audio_no_section_plays_are_listed(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=VOICED)
+    audio_print = held_without_times(inputs)
+    aligned_of(inputs, audio_print, spoken_words("Hello there again."), "a")
+    gone = aligned_of(inputs, "f" * 16, ("Older", "words"), "a")
+    unplayed = status(inputs, a_run(tmp_path)).unplayed
+    assert unplayed is not None
+    assert unplayed.aligned == 1
+    assert unplayed.files == (inputs.relative(gone),)
+
+
+def test_a_take_playing_estimated_words_warns_and_leaves_the_next_step_to_the_pipeline(tmp_path: Path) -> None:
+    """Where no aligner ever runs that state is for good, so it is a warning and never a step that loops."""
+    timed = a_project(tmp_path / "timed")
+    built_up_to(timed, 1)
+    pipeline = status(timed, a_run(tmp_path / "timed")).next
+    inputs = a_project(tmp_path / "untimed")
+    built_up_to(inputs, 1)
+    index = inputs.takes()
+    assert index is not None
+    estimated = tuple(row.model_copy(update={"timed_by": TimedBy.ESTIMATED}) for row in index.sections)
+    write_takes(inputs, *estimated)
+    run = a_run(tmp_path / "untimed")
+    said = notes(run)
+    assert status(inputs, run).next == pipeline
+    assert (
+        "Section(s) [1] play estimated words over a take no aligner timed. Start decktalk-voice at the address "
+        "[dtsp] base_url names, then run decktalk narrate." in said
+    )
+
+
+def test_status_opens_no_socket_on_an_aligned_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    inputs = a_project(tmp_path, toml=VOICED)
+    audio_print = held_without_times(inputs)
+    aligned = aligned_of(inputs, audio_print, spoken_words("Hello there again."), "a")
+    key = aligned.name.removesuffix(".words.json")
+    write_takes(
+        inputs,
+        a_take(1, digest=played_digest(inputs), spoken="Hello there again.", timed_by=TimedBy.ALIGNED, alignment=key),
+    )
+
+    def refused(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("status opened a socket")
+
+    monkeypatch.setattr(speech_http, "urlopen", refused)
+    assert status(inputs, a_run(tmp_path)).ok

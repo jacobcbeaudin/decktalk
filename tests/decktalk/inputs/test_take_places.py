@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +23,7 @@ from decktalk.inputs.paths import at
 from decktalk.inputs.take_places import TakeFiles, TakePlaces, Witness
 from decktalk.inputs.workspace import Workspace
 from decktalk.results import TakeOutcome, Word
+from decktalk.speech import Speech
 from support.takes import TAKE_SUFFIX
 
 DIGEST = "00000000000000af"
@@ -90,15 +91,17 @@ class Voice:
     speaking: threading.Event = field(default_factory=threading.Event)
     fails: Exception | None = None
     bill_fails: Exception | None = None
+    words: tuple[Word, ...] | None = WORDS
+    model_digest: str | None = None
 
-    def speak(self) -> tuple[bytes, Sequence[Word]]:
+    def speak(self) -> Speech:
         self.spoken += 1
         self.speaking.set()
         if self.gate is not None:
             assert self.gate.wait(timeout=MEET)
         if self.fails is not None:
             raise self.fails
-        return self.audio, WORDS
+        return Speech(self.audio, self.words, self.model_digest)
 
     def charge(self) -> None:
         self.charged += 1
@@ -762,3 +765,22 @@ def test_a_placeholder_is_never_voiced(workspace: Workspace) -> None:
     with pytest.raises(ValueError, match="is a placeholder"):
         places(workspace).voice(PLACEHOLDER, spoken.speak, spoken.charge, Witnessed(), section=1, replacing=False)
     assert spoken.spoken == 0
+
+
+def test_a_take_whose_voice_sent_no_words_is_kept_as_a_whole_fingerprinted_pair_that_says_so(
+    workspace: Workspace,
+) -> None:
+    """The aligner times it later, so the pair is whole, holds no words, and records that none were sent."""
+    spoken = Voice(words=None)
+    assert voice(places(workspace), spoken, Witnessed()) is TakeOutcome.VOICED
+    said = ProviderWords.read(workspace.takes / words_file(DIGEST))
+    assert said == ProviderWords(words=(), timed=False, audio=AudioPrint.of(b"VOICED", suffix=TAKE_SUFFIX))
+    assert places(workspace).find(DIGEST).held
+
+
+def test_the_model_a_voice_served_is_kept_with_its_words(workspace: Workspace) -> None:
+    voice(places(workspace), Voice(model_digest="sha256:5eed"), Witnessed())
+    said = ProviderWords.read(workspace.takes / words_file(DIGEST))
+    assert said is not None
+    assert said.model_digest == "sha256:5eed"
+    assert said.timed is True

@@ -7,16 +7,17 @@ the fake so the test reads what the stage asked of it.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 
 from decktalk.media import ffmpeg
-from decktalk.speech import SpeechFactory
+from decktalk.speech import Aligner, AlignerContext, SpeechFactory
 from decktalk.speech import http as speech_http
-from support.fakes import FAKE_VOICE_NAME, FakeFfmpeg, FakeVoice, refusing_voices
+from support.fakes import FAKE_VOICE_NAME, FakeFfmpeg, FakeVoice, refusing_aligners, refusing_voices
 from support.service import Service
+from support.voice_server import VoiceServer
 
 
 @pytest.fixture
@@ -53,6 +54,13 @@ def voices() -> dict[str, SpeechFactory]:
 
 
 @pytest.fixture
+def aligners() -> dict[str, Callable[[AlignerContext], Aligner]]:
+    """The aligner table this test's runs answer with: the shipped aligner refusing to be built till a fake
+    replaces it."""
+    return refusing_aligners()
+
+
+@pytest.fixture
 def fake_voice(voices: dict[str, SpeechFactory]) -> FakeVoice:
     """A fake registered under the shipped voice's name on the machine every run of this test is opened on."""
     voice = FakeVoice()
@@ -79,3 +87,9 @@ def service() -> Iterator[Service]:
         held.released.set()
         held.clear()
         held.stop()
+
+
+@pytest.fixture
+def voice_server(service: Service) -> VoiceServer:
+    """A fake decktalk-voice on the test's local service, answering from the pinned fixtures."""
+    return VoiceServer(service)

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from decktalk.errors import InputError
-from decktalk.inputs.script import parse_script, read_script, strip_markdown
+from decktalk.inputs.script import estimated_words, parse_script, read_script, spoken_words, strip_markdown
 from decktalk.settings import Settings
 from decktalk.speech import BEAT, Piece
 
@@ -103,3 +105,36 @@ def test_a_break_tag_refused_while_reading_the_file_names_the_file(tmp_path):
     with pytest.raises(InputError) as caught:
         read_script(script, tmp_path, declared={1})
     assert caught.value.location is not None and "script.md" in str(caught.value.location)
+
+
+def test_the_spoken_words_drop_a_token_that_is_only_punctuation() -> None:
+    """A dash the author wrote is a beat, never a word an aligner could be asked to find."""
+    assert spoken_words("A bowl - a ball.") == ("A", "bowl", "a", "ball")
+    assert spoken_words("“Quoted,” he said… — then")[:3] == ("Quoted", "he", "said")
+    assert spoken_words("") == ()
+
+
+def test_estimated_words_space_the_section_evenly_and_drop_its_punctuation() -> None:
+    (section,) = parse_script("## 1. Open\n\nA bowl, a ball.\n")
+    words = section.estimated_words(4.0)
+    assert [word.word for word in words] == ["A", "bowl", "a", "ball"]
+    assert words[0].start == 0.0
+    assert words[-1].end == pytest.approx(3.98)
+
+
+def test_a_section_that_says_nothing_has_no_estimated_words() -> None:
+    (section,) = parse_script("## 1. Open\n\n[A direction alone.]\n")
+    assert section.estimated_words(4.0) == []
+
+
+SPOKEN_TOKEN = st.sampled_from(["A", "bowl", "ball.", "-", "—", "...", "R&D", "“said”", "it's", "/"])
+
+
+@given(tokens=st.lists(SPOKEN_TOKEN, max_size=12), seconds=st.floats(min_value=0.0, max_value=60.0))
+def test_every_estimated_word_is_one_of_the_spoken_words(tokens: list[str], seconds: float) -> None:
+    """The estimate and the aligner's request read one tokenizer, so they never disagree on a word."""
+    sections = parse_script("## 1. Open\n\n" + " ".join(["Open", *tokens]) + "\n")
+    (section,) = sections
+    assert tuple(word.word for word in section.estimated_words(seconds)) == spoken_words(section.spoken)
+    assert all(word.word for word in section.estimated_words(seconds))
+    assert section.estimated_words(seconds) == estimated_words(section.spoken, seconds)

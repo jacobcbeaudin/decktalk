@@ -198,6 +198,7 @@ src/decktalk/
         catalog.py       `cues.json` read against the catalog the page itself published, and the fixes that reconcile them.
         resolve.py       The arithmetic that turns one cue phrase into one second on its section's own clock.
       narrate/           Stage one: `script.md` becomes one take per section, indexed by input digest.
+        align.py         Timing the words of a take whose voice sent none, through the aligner, after every take is made.
         plan.py          What a take is named by, and the refusals a run meets before it voices one.
         script_rules.py  What the voice must never receive, and the scans `check` judges a script by.
         state.py         The take state: what the disk holds for each spoken section, and what one narrate run does about it.

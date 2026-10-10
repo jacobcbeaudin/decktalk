@@ -22,9 +22,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from decktalk.artifacts import (
+    AlignedWords,
     EstimatedWords,
+    ProviderWords,
     Take,
     Takes,
+    TimedBy,
+    Words,
+    is_placeholder,
     words_file,
 )
 from decktalk.events import TakeCharged
@@ -32,19 +37,11 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.script import ScriptSection
 from decktalk.machine.run import Run
 from decktalk.media import audio, ffmpeg
-from decktalk.page import SECOND_DIGITS
-from decktalk.results import Word
-from decktalk.speech import PUNCT, canonical_text
+from decktalk.speech import canonical_text
 from decktalk.stages.cost import Buy, charge_of
 
 PLACEHOLDER_CLOSE_SECONDS = 0.1
 """Calibration: the silence a placeholder's click audio ends on, long enough to measure where its sound ends."""
-
-WORD_GAP_SECONDS = 0.02
-"""Calibration: the gap an estimated word leaves before the next one, so two clicks are never one sound."""
-
-SHORTEST_PLACEHOLDER_SECONDS = 0.1
-"""Calibration: the least a placeholder take may run, so a section of one short word still has room for a click."""
 
 
 def sound_end_of(inputs: Inputs, path: Path) -> float:
@@ -78,39 +75,52 @@ def place(inputs: Inputs, number: int, row: Take) -> Take:
     )
 
 
-def estimated_words(section: ScriptSection, duration: float) -> list[Word]:
-    """Evenly spaced words for a run without voice, so every cue resolves to a plausible time."""
-    tokens = section.spoken.split()
-    if not tokens:
-        return []
-    per = max(SHORTEST_PLACEHOLDER_SECONDS, duration) / len(tokens)
-    return [
-        Word(
-            word=token.strip(PUNCT),
-            start=round(at * per, SECOND_DIGITS),
-            end=round((at + 1) * per - WORD_GAP_SECONDS, SECOND_DIGITS),
-        )
-        for at, token in enumerate(tokens)
-    ]
+def _timing(words: Words) -> tuple[TimedBy, str | None]:
+    """Who timed these words, and the key of the alignment they are when an aligner did."""
+    if isinstance(words, AlignedWords):
+        return TimedBy.ALIGNED, words.inputs.key
+    return (TimedBy.ESTIMATED if words.estimated else TimedBy.PROVIDER), None
 
 
-def take_row(inputs: Inputs, section: ScriptSection, chapter: str, digest: str, *, voiced: bool) -> Take:
-    """The take index row for one section, placed, with the fields every kind of take shares."""
-    written = inputs.take_words(digest)
+def take_row(
+    inputs: Inputs,
+    section: ScriptSection,
+    chapter: str,
+    digest: str,
+    words: Words,
+    *,
+    said: ProviderWords | None,
+) -> Take:
+    """The take index row for one section, placed, with the fields every kind of take shares.
+
+    `words` are the words the take plays, which say who timed it and where its last word ends, and
+    `said` is the take's own words file, which names the model its voice served, or None for a
+    placeholder.
+    """
+    timed_by, alignment = _timing(words)
     row = Take(
         section=section.number,
         key=section.key,
         chapter=chapter,
         digest=digest,
-        voiced=voiced,
+        voiced=not is_placeholder(digest),
         word_count=section.word_count,
         characters=len(canonical_text(section.pieces)),
         estimated_seconds=section.estimated_seconds(inputs.settings.narration),
         duration_seconds=ffmpeg.probe_duration(inputs.take_places.find(digest).audio),
-        speech_end_seconds=written.end if written is not None else None,
+        speech_end_seconds=words.end,
         spoken=section.spoken,
+        timed_by=timed_by,
+        alignment=alignment,
+        model_digest=said.model_digest if said is not None else None,
     )
     return place(inputs, section.number, row)
+
+
+def retimed(row: Take, words: Words) -> Take:
+    """The row playing `words` in place of what it played, which moves who timed it and where its last word ends."""
+    timed_by, alignment = _timing(words)
+    return row.model_copy(update={"timed_by": timed_by, "alignment": alignment, "speech_end_seconds": words.end})
 
 
 def write_placeholder_take(
@@ -121,7 +131,7 @@ def write_placeholder_take(
     home = inputs.workspace.narrate_dir
     out = home / inputs.workspace.take_file(digest)
     duration = section.placeholder_seconds(cfg)
-    words = estimated_words(section, duration)
+    words = section.estimated_words(duration)
     clicks = [word.start for word in words] + ([words[-1].end] if words else [])
     audio.write_clicks(
         out,
@@ -131,8 +141,9 @@ def write_placeholder_take(
         bitrate=cfg.mp3_bitrate,
     )
     written = home / words_file(digest)
-    EstimatedWords(words=tuple(words)).write(written)
-    return take_row(inputs, section, chapter, digest, voiced=False), [out, written]
+    estimated = EstimatedWords(words=tuple(words))
+    estimated.write(written)
+    return take_row(inputs, section, chapter, digest, estimated, said=None), [out, written]
 
 
 def charge_take(
@@ -193,9 +204,9 @@ def join_takes(inputs: Inputs, takes: Takes) -> Path:
 __all__ = [
     "PLACEHOLDER_CLOSE_SECONDS",
     "charge_take",
-    "estimated_words",
     "join_takes",
     "place",
+    "retimed",
     "sound_end_of",
     "take_row",
     "write_placeholder_take",

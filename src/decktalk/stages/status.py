@@ -45,13 +45,22 @@ from pathlib import Path
 
 from pydantic import TypeAdapter, ValidationError
 
-from decktalk.artifacts import WORDS_SUFFIX, UnreadableCache, UnreadablePaidRecord, is_placeholder
+from decktalk.artifacts import (
+    WORDS_SUFFIX,
+    ProviderWords,
+    TimedBy,
+    UnreadableCache,
+    UnreadablePaidRecord,
+    alignment_match,
+    is_placeholder,
+)
 from decktalk.artifacts.takes import TAKE_DIGEST
 from decktalk.errors import DeckTalkError
 from decktalk.events import AnyEvent, Level, StageStart
 from decktalk.findings import Code, Location, judge
 from decktalk.inputs import ClipSection, Inputs, PageSection, Section
 from decktalk.inputs.paths import at
+from decktalk.inputs.script import spoken_words
 from decktalk.inputs.workspace import EVENTS_SUFFIX
 from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
@@ -66,9 +75,6 @@ log = logging.getLogger(__name__)
 
 LINE = TypeAdapter(AnyEvent)
 """The one reader of an event file, so a line this library cannot read is never taken for a run."""
-
-ALIGNED_DIR = "aligned"
-"""The folder inside the takes directory that aligned words are kept in, beside the takes they time."""
 
 BUILD = "build"
 """The command a stale project runs, which redoes what moved and keeps every stage whose inputs did not."""
@@ -322,13 +328,34 @@ def _take_of(name: str) -> str | None:
     return digest if rest == WORDS_SUFFIX.removeprefix(".") or rest.isalnum() else None
 
 
+def _played_matches(inputs: Inputs, states: TakeStates | None, played: set[str]) -> set[str]:
+    """The match of every played take whose voice sent no word times, which names every alignment of it.
+
+    A take's words are its index row's spoken text when the index names it, and its section's otherwise.
+    """
+    index = inputs.takes()
+    spoken = {state.digest: state.section.spoken for state in (states or {}).values() if state.digest is not None}
+    spoken |= {row.digest: row.spoken for row in index.sections} if index is not None else {}
+    matches: set[str] = set()
+    for digest in played & spoken.keys():
+        try:
+            said = inputs.take_words(digest)
+        except (UnreadableCache, UnreadablePaidRecord):
+            # silent: a words file that does not read is reported by the section's own row, and times nothing.
+            continue
+        if isinstance(said, ProviderWords) and not said.timed and said.audio is not None:
+            matches.add(alignment_match(said.audio.blake3, spoken_words(spoken[digest])))
+    return matches
+
+
 def unplayed_takes(inputs: Inputs, states: TakeStates | None) -> UnplayedTakes | None:
     """The takes and aligned words in the takes directory that no section plays, read and never touched.
 
     Each is a paid record or the measured timing of one, so DeckTalk lists them for their author to
-    remove with `git rm` and deletes none of them. No stage of this version reads aligned words, so
-    every file under `aligned/` is one no section plays. A file that is not named like a take, such
-    as a damaged copy set aside as `.unreadable`, is not a take and is left out.
+    remove with `git rm` and deletes none of them. Aligned words are played when they time a take a
+    section plays, whatever aligner measured them, because with the aligner down an older one's words
+    are what the take plays. A file that is not named like a take, such as a damaged copy set aside as
+    `.unreadable`, is not a take and is left out.
     """
     played = played_takes(inputs, states)
     if played is None:
@@ -338,9 +365,10 @@ def unplayed_takes(inputs: Inputs, states: TakeStates | None) -> UnplayedTakes |
     pairs = [(path, digest) for path, digest in named if digest is not None and path.is_file()]
     gone = {digest for _path, digest in pairs if digest not in played}
     unplayed = [path for path, digest in pairs if digest in gone]
-    aligned_dir = takes / ALIGNED_DIR
+    aligned_dir = inputs.workspace.aligned_dir
+    matches = _played_matches(inputs, states, played)
     aligned = sorted(aligned_dir.glob(f"*{WORDS_SUFFIX}")) if aligned_dir.is_dir() else []
-    aligned = [path for path in aligned if path.is_file()]
+    aligned = [path for path in aligned if path.is_file() and path.name.partition("-")[0] not in matches]
     files = sorted([*unplayed, *aligned])
     return UnplayedTakes(
         directory=inputs.relative(takes),
@@ -349,6 +377,21 @@ def unplayed_takes(inputs: Inputs, states: TakeStates | None) -> UnplayedTakes |
         bytes=sum(path.stat().st_size for path in files),
         files=tuple(inputs.relative(path) for path in files),
     )
+
+
+def _note_estimated(inputs: Inputs, run: Run) -> None:
+    """Warn when a voiced take plays estimated words because no aligner timed it, which narrate alone can mend."""
+    index = inputs.takes()
+    numbers = [
+        row.section for row in (index.sections if index is not None else ()) if row.voiced
+        and row.timed_by is TimedBy.ESTIMATED
+    ]  # fmt: skip
+    if numbers:
+        run.note(
+            f"Section(s) {numbers} play estimated words over a take no aligner timed. Start decktalk-voice at the "
+            "address [dtsp] base_url names, then run decktalk narrate.",
+            level=Level.WARNING,
+        )
 
 
 def status(inputs: Inputs, run: Run) -> StatusResult:
@@ -368,6 +411,7 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
             "Point [narration] takes_dir at the folder that holds them.",
             level=Level.WARNING,
         )
+    _note_estimated(inputs, run)
     film = inputs.workspace.film
     built = film.is_file()
     return run.result(

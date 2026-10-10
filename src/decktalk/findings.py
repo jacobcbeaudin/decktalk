@@ -401,6 +401,14 @@ class Code(Enum):
         (Stage.NARRATE.value,),
         Severity.WARNING,
     )
+    TAKE_UNALIGNED = (
+        "TAKE_UNALIGNED",
+        "A take came with no word times and no aligner timed them, so its section plays estimated words. Only "
+        "narrate raises it.",
+        RaisedBy.PYTHON,
+        (Stage.NARRATE.value,),
+        Severity.WARNING,
+    )
     CUT_SPEECH = (
         "CUT_SPEECH",
         "Speech is still sounding at a section cut, so the film slices a word in two.",

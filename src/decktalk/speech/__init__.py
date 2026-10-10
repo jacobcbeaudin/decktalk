@@ -1,7 +1,9 @@
 """The speech boundary, which is anything that reads text aloud and says when each word was spoken.
 
-DeckTalk needs exactly one thing from a voice: audio, and a start and an end time for every word,
-because the cut is made on words. The voices a project can name are a closed set of adapters in this
+DeckTalk needs a start and an end time for every word, because the cut is made on words. A voice
+answers one `Speech` per section: the audio, the time of every word when it sends them, and the model
+it served when it names one. A voice that sends no word times answers `None` for them, and an aligner
+times the take instead. The voices a project can name are a closed set of adapters in this
 package, each declared once in `DECLARED`:
 
     elevenlabs   the cloud voice, over https, bought with ELEVENLABS_API_KEY
@@ -28,6 +30,11 @@ table a run reads, so nothing can fall back to a shipped voice that bills.
 
 Where a provider sends its requests is its table's `base_url`, which is the machine's to set, so a
 project someone else wrote can send neither the key nor the script anywhere the machine did not name.
+
+A take whose voice sent no word times is timed by an aligner. The protocol is public here too: an
+`Aligner` is built from an `AlignerContext` by a function in `ALIGNERS`, or in a host's own table,
+and names its `AlignerIdentity` before it is sent any `AlignmentRequest`. DeckTalk ships one, the
+local server `[dtsp] base_url` names, and a host or a test hands a machine its own.
 
 The voice id is a published name rather than a credential. It names which voice reads the script,
 the way a model name names which model does, and it travels in the request and in the take digest.
@@ -132,8 +139,26 @@ class SpeechContext:
     """How many more times a busy or failed request is sent, which the machine sets from `[narration] retries`."""
 
 
+@dataclass(frozen=True)
+class Speech:
+    """What a voice answers for one section: the audio, the time of every word, and the model it served.
+
+    `words` is None when the voice sent no word times, so an aligner times them. `model_digest` is the
+    digest of the model that spoke, when the voice names one.
+    """
+
+    audio: bytes
+    words: tuple[Word, ...] | None
+    model_digest: str | None = None
+
+    def __post_init__(self) -> None:
+        """Refuse an empty word list, so None is the one spelling of a voice that sent no word times."""
+        if self.words == ():
+            raise ValueError("a voice that sent no word times answers None for its words, never an empty list")
+
+
 class SpeechProvider(Protocol):
-    """Reads one section and returns the audio and a time for every word.
+    """Reads one section and returns its `Speech`: the audio, a time for every word when it has them, and its model.
 
     What a take is named by is not the provider's to say. The digest is taken in one place above this
     boundary, from the take's `TakeInputs`, which hold the output format its adapter declares in `DECLARED`.
@@ -141,7 +166,7 @@ class SpeechProvider(Protocol):
 
     name: str
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]: ...
+    def speak(self, request: SpeechRequest) -> Speech: ...
 
 
 SpeechFactory = Callable[[SpeechContext], SpeechProvider]
@@ -379,6 +404,68 @@ table can be changed in place: a test hands its fake voice to the run's machine,
 """
 
 
+ALIGNER = "dtsp"
+"""The name the one aligner DeckTalk ships is built under, which is the local server `[dtsp] base_url` names."""
+
+
+@dataclass(frozen=True)
+class AlignerIdentity:
+    """Who times a take's words: an aligner's name, its revision and the digest of the model it serves.
+
+    Every field is part of the key aligned words are kept under, so a new revision or model aligns every take again.
+    """
+
+    id: str
+    revision: str
+    model_digest: str
+
+
+@dataclass(frozen=True)
+class AlignmentRequest:
+    """One take to time: its audio as a mono 16-bit WAV that DeckTalk decoded, and the words it should hold."""
+
+    wav: bytes
+    words: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AlignerContext:
+    """What an aligner is built from: where its server listens, how long the handshake and each request may take,
+    and the retries."""
+
+    base_url: str
+    handshake_seconds: int
+    timeout_seconds: int
+    retries: int = 0
+
+
+class Aligner(Protocol):
+    """Times the words of a take whose voice sent none, from its audio and the script's words.
+
+    Building one asks its server who it is, once, and raises a `ProviderError` with `reached` false when
+    nothing answers as an aligner, which a run takes as the aligner being down.
+    """
+
+    @property
+    def identity(self) -> AlignerIdentity: ...
+
+    def align(self, request: AlignmentRequest) -> list[Word]: ...
+
+
+def _dtsp_aligner(context: AlignerContext) -> Aligner:
+    from .dtsp import DtspAligner  # noqa: PLC0415  (an aligner is built only when a take needs one)
+
+    return DtspAligner.for_context(context)
+
+
+ALIGNERS: Mapping[str, Callable[[AlignerContext], Aligner]] = MappingProxyType({ALIGNER: _dtsp_aligner})
+"""The aligners DeckTalk ships, which is the table a machine answers with unless its host gave another.
+
+There is one, the local server's, and it is never chosen by `[voice] provider`: a take of any voice that
+sent no word times is timed by it. Like `PROVIDERS`, it cannot be changed in place.
+"""
+
+
 @dataclass(frozen=True)
 class SpeechProviders:
     """The voices one machine answers with, and how often each asks again."""
@@ -403,11 +490,16 @@ class SpeechProviders:
 
 __all__ = [
     "BEAT",
+    "Aligner",
+    "AlignerContext",
+    "AlignerIdentity",
+    "AlignmentRequest",
     "Billing",
     "Output",
     "Piece",
     "Secret",
     "Secrets",
+    "Speech",
     "SpeechContext",
     "SpeechFactory",
     "SpeechProvider",

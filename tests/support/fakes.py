@@ -14,7 +14,9 @@ here to type the fixture it asked for or to build one of its own.
 
 from __future__ import annotations
 
+import io
 import os
+import wave
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
@@ -25,9 +27,22 @@ from typing import cast
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page, Playwright
 
+from decktalk.errors import ProviderError
 from decktalk.media import pages
 from decktalk.results import Word
-from decktalk.speech import DECLARED, SpeechContext, SpeechFactory, SpeechProvider, SpeechRequest
+from decktalk.speech import (
+    ALIGNERS,
+    DECLARED,
+    Aligner,
+    AlignerContext,
+    AlignerIdentity,
+    AlignmentRequest,
+    Speech,
+    SpeechContext,
+    SpeechFactory,
+    SpeechProvider,
+    SpeechRequest,
+)
 
 BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
 """The variable Playwright's driver reads for where its browsers live, spelled here as Playwright documents it."""
@@ -57,6 +72,22 @@ def _refused(name: str) -> SpeechFactory:
 
     def build(_context: SpeechContext) -> SpeechProvider:
         raise AssertionError(f"the test built the shipped voice {name!r}, which it never faked")
+
+    return build
+
+
+def refusing_aligners() -> dict[str, Callable[[AlignerContext], Aligner]]:
+    """An aligner table naming the aligner DeckTalk ships, refusing to be built, for a test to put its fake in.
+
+    A run on this table that needs an aligner and was given no fake fails at the build, so no test
+    ever reaches a local server by a table it left alone.
+    """
+    return {name: _refused_aligner(name) for name in ALIGNERS}
+
+
+def _refused_aligner(name: str) -> Callable[[AlignerContext], Aligner]:
+    def build(_context: AlignerContext) -> Aligner:
+        raise AssertionError(f"the test built the shipped aligner {name!r}, which it never faked")
 
     return build
 
@@ -137,13 +168,15 @@ class FakeVoice:
     name: str = FAKE_VOICE_NAME
     requests: list[SpeechRequest] = field(default_factory=list)
     audio: bytes = b"take"
-    words: list[Word] = field(
+    words: list[Word] | None = field(
         default_factory=lambda: [Word(word="hello", start=0.0, end=0.5), Word(word="there", start=0.5, end=1.0)]
     )
+    """The words every take comes with, or None for a voice that sends no word times."""
+    model_digest: str | None = None
 
-    def speak(self, request: SpeechRequest) -> tuple[bytes, list[Word]]:
+    def speak(self, request: SpeechRequest) -> Speech:
         self.requests.append(request)
-        return self.audio, list(self.words)
+        return Speech(self.audio, tuple(self.words) if self.words else None, self.model_digest)
 
 
 class BareBrowser:
@@ -239,3 +272,62 @@ class FakeRouter:
     def page(self) -> Page:
         """This router as the page `route_pages` is handed, typed as the one it stands in for."""
         return cast("Page", self)
+
+
+FAKE_IDENTITY = AlignerIdentity(id="fake-aligner", revision="1", model_digest="sha256:0f00")
+"""Who the fake aligner says it is, unless a test names another."""
+
+
+@dataclass
+class FakeAligner:
+    """An aligner in this process: who it says it is, what it was asked, and the words it answers.
+
+    It answers `words` when a test gives them, and otherwise spreads the words it was sent evenly over
+    the WAV it was sent, or over `seconds` when the WAV holds no samples. `down` makes every request
+    fail as a server that went away does, `fails` is the failure every request raises instead,
+    `handshake` is the failure building it raises, and
+    `on_align` runs before each answer, so a test can cancel or interrupt the run mid-pass.
+    """
+
+    identity: AlignerIdentity = FAKE_IDENTITY
+    words: list[Word] | None = None
+    seconds: float = 1.0
+    requests: list[AlignmentRequest] = field(default_factory=list)
+    contexts: list[AlignerContext] = field(default_factory=list)
+    down: bool = False
+    fails: ProviderError | None = None
+    handshake: ProviderError | None = None
+    on_align: Callable[[AlignmentRequest], None] | None = None
+
+    def build(self, context: AlignerContext) -> FakeAligner:
+        """This aligner as a factory builds it, failing as `handshake` says."""
+        self.contexts.append(context)
+        if self.handshake is not None:
+            raise self.handshake
+        return self
+
+    def align(self, request: AlignmentRequest) -> list[Word]:
+        self.requests.append(request)
+        if self.on_align is not None:
+            self.on_align(request)
+        if self.down:
+            raise ProviderError("could not reach the fake aligner: Connection refused", reached=False)
+        if self.fails is not None:
+            raise self.fails
+        if self.words is not None:
+            return list(self.words)
+        seconds = _wav_seconds(request.wav) or self.seconds
+        step = seconds / len(request.words)
+        return [
+            Word(word=word, start=round(i * step, 3), end=round((i + 1) * step, 3))
+            for i, word in enumerate(request.words)
+        ]
+
+
+def _wav_seconds(wav: bytes) -> float:
+    """How long a WAV plays, or zero when it is not one or holds no samples."""
+    try:
+        with wave.open(io.BytesIO(wav), "rb") as sound:
+            return sound.getnframes() / sound.getframerate()
+    except (wave.Error, EOFError):
+        return 0.0

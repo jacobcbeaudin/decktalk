@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from decktalk.artifacts.stored import DIGEST_DIGITS, engine_digest
-from decktalk.artifacts.takes import Take, TakeInputs, Takes
+from decktalk.artifacts.takes import Take, TakeInputs, Takes, TimedBy
 from decktalk.files import json_text, replace_all
 from decktalk.inputs import Inputs
 from decktalk.results import SoundKind
@@ -128,6 +128,9 @@ def test_a_kept_artifact_keeps_its_bytes(tmp_path: Path) -> None:
         estimated_seconds=1e-07,
         duration_seconds=2.0,
         spoken="Zoë speaks",
+        timed_by=TimedBy.PROVIDER,
+        alignment=None,
+        model_digest=None,
     )
     index = Takes(script="script.md", model="m", output_format="f", sections=(row,))
     written = index.write(tmp_path / "takes.json").read_text(encoding="utf-8")

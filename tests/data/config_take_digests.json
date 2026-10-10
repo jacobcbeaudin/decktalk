@@ -1,0 +1,112 @@
+{
+  "source": "Written from the code at 33d6f314, which is the definition of a one-voice project's take digests.",
+  "rule": "A digest here that moves means a one-voice project buys every take again. Each case's config and environ may be rewritten into a new config shape that states the same voice, and its digests never change.",
+  "project": "[project]\nname = \"golden\"\n\n[[section]]\nnumber = 1\npage = \"deck/index.html\"\nscene = \"1\"\n\n[[section]]\nnumber = 2\npage = \"deck/index.html\"\nscene = \"2\"\n\n[[section]]\nnumber = 3\npage = \"deck/index.html\"\nscene = \"3\"\n",
+  "script": "## 1. Two friends\n\n[Scene 1. A dark stage. The street map is not there yet. Two dots, then the city, then the gap between them, then the texts that go nowhere.]\n\nTwo friends, [beat] one city, [beat] forty minutes apart. [beat] So they text, [beat] and they never meet.\n\n## 2. The map\n\nThe map fills in, street by street. [pause 2] Then the gap closes. [beat] They meet halfway.\n\n## 3. Again\n\nThe map fills in, street by street. [pause 2] Then the gap closes. [beat] They meet halfway.\n",
+  "cases": [
+    {
+      "case": "elevenlabs-defaults",
+      "covers": "The shipped cloud provider at every default, its voice id written in the file.",
+      "config": "[voice]\nprovider = \"elevenlabs\"\nid = \"03SG2XsqDqqfP8RMUXX1\"\n",
+      "environ": {},
+      "digests": {
+        "1": "edcbaaa1db7507bd",
+        "2": "00756ebda5a3a77f",
+        "3": "00756ebda5a3a77f"
+      }
+    },
+    {
+      "case": "elevenlabs-environment-id",
+      "covers": "The same voice named by DECKTALK_VOICE_ID over another id in the file.",
+      "config": "[voice]\nprovider = \"elevenlabs\"\nid = \"file-voice\"\n",
+      "environ": {
+        "DECKTALK_VOICE_ID": "03SG2XsqDqqfP8RMUXX1"
+      },
+      "digests": {
+        "1": "edcbaaa1db7507bd",
+        "2": "00756ebda5a3a77f",
+        "3": "00756ebda5a3a77f"
+      }
+    },
+    {
+      "case": "elevenlabs-tuned",
+      "covers": "A non-default model and format, a lower stability, a style, no speaker boost and a faster speed.",
+      "config": "[voice]\nprovider = \"elevenlabs\"\nid = \"03SG2XsqDqqfP8RMUXX1\"\nspeed = 1.1\n\n[elevenlabs]\nmodel = \"eleven_flash_v2_5\"\nstability = 0.4\nstyle = 0.2\nspeaker_boost = false\noutput_format = \"mp3_44100_192\"\n",
+      "environ": {},
+      "digests": {
+        "1": "1f08efbd01bd5960",
+        "2": "fd2622df9bb34700",
+        "3": "fd2622df9bb34700"
+      }
+    },
+    {
+      "case": "dtsp-defaults",
+      "covers": "The shipped local provider at every default.",
+      "config": "[voice]\nprovider = \"dtsp\"\nid = \"af_heart\"\n",
+      "environ": {},
+      "digests": {
+        "1": "0b619a9083b7aa11",
+        "2": "b06ae8ad91a5b7ff",
+        "3": "b06ae8ad91a5b7ff"
+      }
+    },
+    {
+      "case": "dtsp-tuned",
+      "covers": "The local provider on a non-default model at a slower speed, its voice named by DECKTALK_VOICE_ID.",
+      "config": "[voice]\nprovider = \"dtsp\"\nspeed = 0.9\n\n[dtsp]\nmodel = \"kokoro-82m-int8\"\n",
+      "environ": {
+        "DECKTALK_VOICE_ID": "af_heart"
+      },
+      "digests": {
+        "1": "2be6909668004623",
+        "2": "e349242290a375a8",
+        "3": "e349242290a375a8"
+      }
+    }
+  ],
+  "renames": [
+    {
+      "rename": "project",
+      "project": [
+        [
+          "name = \"golden\"",
+          "name = \"renamed\""
+        ]
+      ],
+      "script": []
+    },
+    {
+      "rename": "titles",
+      "project": [],
+      "script": [
+        [
+          "## 1. Two friends",
+          "## 1. Old friends"
+        ],
+        [
+          "## 3. Again",
+          "## 3. Once more"
+        ]
+      ]
+    },
+    {
+      "rename": "numbers",
+      "project": [
+        [
+          "number = 3",
+          "number = 7"
+        ],
+        [
+          "scene = \"3\"",
+          "scene = \"7\""
+        ]
+      ],
+      "script": [
+        [
+          "## 3. Again",
+          "## 7. Again"
+        ]
+      ]
+    }
+  ]
+}
