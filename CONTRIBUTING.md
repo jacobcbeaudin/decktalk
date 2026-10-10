@@ -121,6 +121,7 @@ src/decktalk/
       edit.py            One key written into, or removed from, a settings file, judged whole before the file is replaced.
       layers.py          The five layers that set a key, read and merged into one settings tree with the record of who set each.
       numbers.py         Every number that is deliberately not a setting, published with its formula and its reason.
+      voices.py          Each voice a project declares, resolved over its provider's table, with the refusals that keep a voice whole.
   leaves                 one job each, and no knowledge of a project
     toolchain/           What DeckTalk fetches or ships for one machine, and where it keeps it.
       announce.py        How a download says it is happening, so a run that stops for the network says so as it happens.
@@ -197,11 +198,11 @@ src/decktalk/
       cue/               Stage 2: every cue phrase becomes a second on its own section's clock.
         catalog.py       `cues.json` read against the catalog the page itself published, and the fixes that reconcile them.
         resolve.py       The arithmetic that turns one cue phrase into one second on its section's own clock.
-      narrate/           Stage one: `script.md` becomes one take per section, indexed by input digest.
+      narrate/           Stage one: `script.md` becomes one take per turn, indexed by input digest.
         align.py         Timing the words of a take whose voice sent none, through the aligner, after every take is made.
         plan.py          What a take is named by, and the refusals a run meets before it voices one.
         script_rules.py  What the voice must never receive, and the scans `check` judges a script by.
-        state.py         The take state: what the disk holds for each spoken section, and what one narrate run does about it.
+        state.py         The take state: what the disk holds for each turn of each spoken section, and what one narrate run does about it.
         takes.py         Writing a placeholder take, charging a voiced one, placing each, and joining every take into one narration track.
       record/            Stage 3: record each page section in a headless browser, find where the section clock starts, and judge the result.
         capture.py       The URL a page section is opened at, and what its recording is keyed on.

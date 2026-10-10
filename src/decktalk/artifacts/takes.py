@@ -25,11 +25,15 @@ with newlines, reads back as one set of inputs and no two sets share a digest.
 The voice id is one of the inputs because two voices reading one sentence are two different takes,
 and it is a published name rather than a secret, so it is written into the file a reader can see.
 
-The index is also the time base. A section runs for its lead, then its take up to where the take's
-sound ends, then its tail, and the sections run in section order, so where each one sits in the
-joined narration is arithmetic over the rows rather than a second file that can disagree with them.
-Each of those three numbers is a pure function of the take's own bytes and its own section's
-settings, so a section lands the same way whether this run voiced its take or found it on disk.
+The index has one row per turn, the stretch of a section one voice reads, and it is also the time
+base. A section runs for its lead, then each turn's take up to where that take's sound ends, each
+followed by the gap before the next turn, then its tail after the last, and the sections run in
+section order, so where each one sits in the joined narration is arithmetic over the rows rather than
+a second file that can disagree with them. Only a section's first turn carries its lead, and every
+turn but its last carries the gap after it where its tail would be. Each of those numbers is a pure
+function of the take's own bytes and its own section's settings and script, so a section lands the
+same way whether this run voiced its take or found it on disk, and a section of one turn lands
+exactly as one take always has.
 
 Each row also says who timed its take's words, `timed_by`: the provider, an aligner, whose kept words
 the row names by `alignment`, or DeckTalk, on a placeholder or on a take no aligner could time. It
@@ -50,6 +54,7 @@ from decktalk.artifacts.stored import Stored
 from decktalk.errors import InputError
 from decktalk.findings import Model
 from decktalk.results import SectionKey, SectionNumber
+from decktalk.settings import VOICE_NAME
 
 TAKE_DIGITS = 16
 """How much of the sha256 names a take, which is far more than enough that two never collide."""
@@ -59,6 +64,10 @@ PLACEHOLDER_PREFIX = "placeholder-"
 
 PLACEHOLDER_SUFFIX = ".mp3"
 """What a placeholder is written under, which is the mp3 of click audio DeckTalk writes itself."""
+
+VOICED_SUFFIX = ".mp3"
+"""Truth: what every shipped adapter and a host's provider write a voiced take as, which a take whose words file
+records no suffix is looked for under."""
 
 FIELD_SEPARATOR = "\n"
 """What joins the fields of a digest's payload, which no field but the last may hold."""
@@ -109,7 +118,7 @@ class TakeInputs(_Digested):
     who wants to know why a take was voiced again compares two of these rather than guessing.
     """
 
-    provider: str = Field(description="The speech provider that spoke this take, as `[voice] provider` names it.")
+    provider: str = Field(description="The speech provider that spoke this take, as `[voices.NAME] provider` names it.")
     voice: str = Field(description="The provider's id for the voice, which is a published name and not a secret.")
     model: str = Field(description="The provider's model id, which changes how the same words are read.")
     output_format: str = Field(description="The audio format asked for, such as mp3_44100_128.")
@@ -129,7 +138,7 @@ class TakeInputs(_Digested):
                 raise InputError(
                     f"the take's {name.replace('_', ' ')} {value!r} holds a newline, and no field a take is named "
                     "by may hold one but its text, so nothing was sent.",
-                    hint="Take the newline out of the [voice] or provider setting that names it, then run it again.",
+                    hint="Take the newline out of the voice or provider setting that names it, then run it again.",
                 )
         return self
 
@@ -190,10 +199,18 @@ def is_placeholder(digest: str) -> bool:
     return digest.startswith(PLACEHOLDER_PREFIX)
 
 
+class TurnKey(NamedTuple):
+    """One turn of one section, which is how the take index, a plan and a run's ledger name it."""
+
+    section: int
+    turn: int
+
+
 class Take(Model):
-    """One section's take: the files it names, what it cost to make, and where it lands."""
+    """One turn's take: the files it names, what it cost to make, and where it lands."""
 
     section: SectionNumber
+    turn: int = Field(ge=1, description="The turn of its section this take reads, counted from one.")
     key: SectionKey
     chapter: str = Field(description="The section's title, which the film's chapter marker carries.")
     digest: str = Field(
@@ -209,9 +226,21 @@ class Take(Model):
     duration_seconds: float = Field(ge=0, description="How long the audio file runs, measured from its own bytes.")
     speech_end_seconds: float | None = Field(None, ge=0, description="Where the last word ends, or null.")
     sound_end_seconds: float | None = Field(None, ge=0, description="Where the take's sound ends, or null.")
-    lead_seconds: float = Field(0.0, ge=0, description="Silence placed before the take, which is not in the file.")
-    tail_seconds: float = Field(0.0, ge=0, description="Silence placed after the take's sound, also not in the file.")
+    lead_seconds: float = Field(
+        0.0, ge=0, description="Silence placed before the take, which is not in the file, and only a first turn has."
+    )
+    tail_seconds: float = Field(
+        0.0,
+        ge=0,
+        description="Silence placed after the take's sound, also not in the file: the section's tail after its last "
+        "turn, and the gap before the next turn after any other.",
+    )
     spoken: str = Field(description="The words the voice says, with the script's punctuation, which captions borrow.")
+    voice: str = Field(
+        pattern=VOICE_NAME,
+        description="The voice that reads this take, by its name in decktalk.toml, a label that is never part of the "
+        "take's digest.",
+    )
     timed_by: TimedBy = Field(
         description="Who timed this take's words: its provider, an aligner, or DeckTalk from the script's pace."
     )
@@ -241,8 +270,13 @@ class Take(Model):
 
     @property
     def span_seconds(self) -> float:
-        """How long the section runs in the joined narration: its lead, its take to its last sound, its tail."""
+        """How long the turn runs in the joined narration: its lead, its take to its last sound, its tail or gap."""
         return round(self.lead_seconds + self.sound_seconds + self.tail_seconds, 3)
+
+    @property
+    def turn_key(self) -> TurnKey:
+        """The turn this row reads, by its section and its number."""
+        return TurnKey(self.section, self.turn)
 
 
 class Placed(NamedTuple):
@@ -266,9 +300,29 @@ class Takes(Stored):
     label: ClassVar[str] = "the take index"
 
     script: str = Field(description="The script these takes were made from, project-relative.")
-    model: str = Field(description="The provider model the last run that wrote this index asked for.")
-    output_format: str = Field(description="The audio format the last run that wrote this index asked for.")
-    sections: tuple[Take, ...] = Field((), description="One row per narrated section, in section order.")
+    model: str = Field(description="The model the default voice of the last run that wrote this index asked for.")
+    output_format: str = Field(
+        description="The audio format the default voice of the last run that wrote this index asked for."
+    )
+    sections: tuple[Take, ...] = Field(
+        (), description="One row per turn of every narrated section, in section order and turn order."
+    )
+
+    @model_validator(mode="after")
+    def _turns_ascend_from_one(self) -> Takes:
+        """Refuse rows out of section and turn order, a section whose turns do not count 1, 2, 3, and a lead on a
+        turn other than a section's first."""
+        keys = [take.turn_key for take in self.sections]
+        if keys != sorted(set(keys)):
+            raise ValueError("the take index holds its rows out of section and turn order, or one turn twice")
+        for take in self.sections:
+            if take.turn > 1 and TurnKey(take.section, take.turn - 1) not in keys:
+                raise ValueError(f"section {take.section}'s turns do not count from one without a gap")
+            if take.turn > 1 and take.lead_seconds:
+                raise ValueError(
+                    f"section {take.section} has a lead on turn {take.turn}, and only its first turn has a lead"
+                )
+        return self
 
     @model_validator(mode="after")
     def _rows_agree_with_their_digests(self) -> Takes:
@@ -297,28 +351,42 @@ class Takes(Stored):
 
     @property
     def total_seconds(self) -> float:
-        """How long the joined narration runs, which is every section's span added up."""
+        """How long the joined narration runs, which is every turn's span added up."""
         return round(sum(take.span_seconds for take in self.sections), 3)
 
     def of(self, section: int) -> Take | None:
-        """One section's row, or None when that section has no take."""
+        """One section's first turn's row, or None when that section has no take."""
         return next((take for take in self.sections if take.section == section), None)
+
+    def turns_of(self, section: int) -> tuple[Take, ...]:
+        """Every turn's row of one section, in turn order, which is empty when that section has no take."""
+        return tuple(take for take in self.sections if take.section == section)
+
+    @property
+    def numbers(self) -> tuple[int, ...]:
+        """Every section with a row, in order."""
+        return tuple(dict.fromkeys(take.section for take in self.sections))
 
     @property
     def voiced_sections(self) -> tuple[int, ...]:
-        """Every section holding a voiced take."""
-        return tuple(take.section for take in self.sections if take.voiced)
+        """Every section holding a voiced take of any of its turns."""
+        return tuple(dict.fromkeys(take.section for take in self.sections if take.voiced))
 
     @property
-    def placed(self) -> dict[int, Placed]:
-        """Where each section's take sits in the joined narration, added up in one pass in the order they are joined.
+    def voiced_turns(self) -> tuple[TurnKey, ...]:
+        """Every turn holding a voiced take."""
+        return tuple(take.turn_key for take in self.sections if take.voiced)
 
-        A caller that walks the sections reads this once, so a film of many sections is placed in one
-        pass rather than once per lookup.
-        """
+    def span_seconds(self, section: int) -> float:
+        """How long one section runs in the joined narration: its lead, every turn with its gap, and its tail."""
+        return round(sum(take.span_seconds for take in self.turns_of(section)), 3)
+
+    @property
+    def placed_turns(self) -> dict[TurnKey, Placed]:
+        """Where each turn's take sits in the joined narration, added up in one pass in the order they are joined."""
         ats = itertools.accumulate((take.span_seconds for take in self.sections), initial=0.0)
         return {
-            take.section: Placed(
+            take.turn_key: Placed(
                 start=round(at, 3),
                 end=round(at + take.span_seconds, 3),
                 speech_end=None
@@ -328,6 +396,23 @@ class Takes(Stored):
             for take, at in zip(self.sections, ats, strict=False)
         }
 
+    @property
+    def placed(self) -> dict[int, Placed]:
+        """Where each section sits in the joined narration: its first turn's start, its last turn's end, and where
+        its last turn's last word ends.
+
+        A caller that walks the sections reads this once, so a film of many sections is placed in one
+        pass rather than once per lookup.
+        """
+        turns = self.placed_turns
+        out: dict[int, Placed] = {}
+        for take in self.sections:
+            at = turns[take.turn_key]
+            first = out.get(take.section)
+            start = at.start if first is None else first.start
+            out[take.section] = Placed(start=start, end=at.end, speech_end=at.speech_end)
+        return out
+
 
 __all__ = [
     "ALIGNMENT_KEY",
@@ -335,12 +420,14 @@ __all__ = [
     "PLACEHOLDER_SUFFIX",
     "TAKE_DIGITS",
     "TAKE_DIGEST",
+    "VOICED_SUFFIX",
     "PlaceholderInputs",
     "Placed",
     "Take",
     "TakeInputs",
     "Takes",
     "TimedBy",
+    "TurnKey",
     "is_placeholder",
     "take_file",
 ]

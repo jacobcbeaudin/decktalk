@@ -123,11 +123,11 @@ def stale_recording(inputs: Inputs, section: PageSection) -> str | None:
     what `status` calls stale are the same question answered once, and neither compares file times.
     """
     takes = inputs.takes()
-    take = takes.of(section.number) if takes is not None else None
-    if take is None or not take.span_seconds:
+    span = takes.span_seconds(section.number) if takes is not None else 0.0
+    if not span:
         return f"section {section.number} has no narration span yet"
     cue_times = inputs.cue_times()
-    job = plan_job(inputs, section, cue_times, take.span_seconds + section.record_margin_seconds)
+    job = plan_job(inputs, section, cue_times, span + section.record_margin_seconds)
     if job.unchanged:
         return None
     if not job.out.exists():
@@ -160,11 +160,11 @@ def plan(inputs: Inputs, run: Run, only: Sequence[int] | None) -> list[Job]:
         )
     planned: list[Job] = []
     for section in chosen:
-        take = takes.of(section.number)
-        if take is None or not take.span_seconds:
+        span = takes.span_seconds(section.number)
+        if not span:
             run.note(f"Section {section.number} has no narration span yet, so it is not recorded.", level=Level.WARNING)
             continue
-        planned.append(plan_job(inputs, section, cue_times, take.span_seconds + section.record_margin_seconds))
+        planned.append(plan_job(inputs, section, cue_times, span + section.record_margin_seconds))
     if not planned:
         raise InputError(
             "no page section has a length to record.",

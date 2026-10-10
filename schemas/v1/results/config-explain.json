@@ -64,6 +64,10 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
         "TAKE_UNALIGNED",
         "CUT_SPEECH",
@@ -421,6 +425,19 @@
           "default": null,
           "description": "The line in that file, or null.",
           "title": "Line"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The key this row was stated under, when the key it explains inherits it, such as elevenlabs.stability for a voice's stability.",
+          "title": "Key"
         }
       },
       "required": [

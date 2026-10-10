@@ -37,6 +37,7 @@ from decktalk.toolchain import assets
 
 STARTER = "starter"
 LESSON = "lesson"
+INTERVIEW = "interview"
 
 
 def packaged(name: str) -> Path:
@@ -48,7 +49,7 @@ def packaged(name: str) -> Path:
     return assets.package_file(f"template/{found.path}")
 
 
-PROJECTS = {name: packaged(name) for name in (STARTER, LESSON)}
+PROJECTS = {name: packaged(name) for name in (STARTER, LESSON, INTERVIEW)}
 SKILLS = assets.package_file("skills")
 
 
@@ -142,11 +143,11 @@ PARSED = {name: read(name) for name in PROJECTS}
 # ---- the exercised attribute table ----------------------------------------------------------
 
 EXERCISED: dict[Attr, tuple[str, ...]] = {
-    Attr.IN: (STARTER, LESSON),
-    Attr.DESCRIBE: (STARTER, LESSON),
+    Attr.IN: (STARTER, LESSON, INTERVIEW),
+    Attr.DESCRIBE: (STARTER, LESSON, INTERVIEW),
     Attr.TEX: (STARTER,),
     Attr.TEX_DISPLAY: (STARTER,),
-    Attr.IN_STYLE: (STARTER, LESSON),
+    Attr.IN_STYLE: (STARTER, LESSON, INTERVIEW),
     Attr.BACK: (STARTER,),
     Attr.FRONT: (STARTER,),
     Attr.OUT: (LESSON,),
@@ -160,10 +161,10 @@ EXERCISED: dict[Attr, tuple[str, ...]] = {
     Attr.OUT_STYLE: (LESSON,),
     Attr.SWAPS: (LESSON,),
     Attr.DESCRIBE_OUT: (LESSON,),
-    Attr.SCENE: (STARTER, LESSON),
-    Attr.NAME: (STARTER, LESSON),
-    Attr.SLIDE: (STARTER, LESSON),
-    Attr.PREVIEW_SECONDS: (STARTER, LESSON),
+    Attr.SCENE: (STARTER, LESSON, INTERVIEW),
+    Attr.NAME: (STARTER, LESSON, INTERVIEW),
+    Attr.SLIDE: (STARTER, LESSON, INTERVIEW),
+    Attr.PREVIEW_SECONDS: (STARTER, LESSON, INTERVIEW),
     Attr.OWNS: (LESSON,),
     Attr.ENTER: (LESSON,),
 }
@@ -378,8 +379,8 @@ def test_the_agents_file_init_writes_points_at_the_help_rather_than_repeating_it
     assert len(text.split()) < 200, "AGENTS.md is a few lines, not a manual"
 
 
-def test_the_two_projects_are_the_only_ones_the_wheel_ships() -> None:
+def test_the_starter_and_the_shipped_examples_are_the_only_projects_the_wheel_ships() -> None:
     """A reserved example name has no directory, so nothing can be written from it by accident."""
     shipped = {found.name for found in template.EXAMPLES if found.shipped}
-    assert shipped == {LESSON}
+    assert shipped == {LESSON, INTERVIEW}
     assert json.loads((PROJECTS[STARTER] / "cues.json").read_text(encoding="utf-8"))["sections"]

@@ -117,7 +117,7 @@ the line it sits on.
 {/* sample: bracket-in-a-paragraph, decktalk narrate --no-spend --section 3, starter with [maybe] added inside a paragraph */}
 ```text
 error[INPUT]: script.md has 1 thing the voice must not receive:
-  line 29: [maybe] inside a paragraph, which becomes a pause nobody asked for
+  line 32: [maybe] inside a paragraph, which becomes a pause nobody asked for
   hint: A direction goes on a line of its own. Inside a paragraph, write [beat] or [pause N] and nothing else.
   docs: https://docs.decktalk.ai/reference/errors/INPUT
 ```
@@ -133,6 +133,43 @@ first heading or under an unnumbered heading is left alone.
 | After a section's last prose | The direction is removed and makes no pause. |
 | Two or more in a row | They make one pause, which is the longest of them. |
 | A beat beside `[pause N]` | The timed pause wins, because it is the longer of the two. |
+| Where the voice changes | The two turns are joined across a gap of `[narration] turn_gap_seconds`, `0.3` by default. A `[pause N]` written between the two turns' prose wins, the longest one when there are several, and a beat there makes no pause of its own. The gap is placement, in neither turn's take. |
+
+## Voice directions and turns
+
+A line holding only `[voice NAME]` is a voice direction. It hands the turns after it to the voice
+`[voices.NAME]` declares in `decktalk.toml`, until the next voice direction or the next section, and
+it is never spoken. Every section starts again with the default voice, which `[narration] voice`
+names, so a section that names no voice is read by the default voice whole, exactly as before.
+
+```markdown script.md
+## 2. The interview
+
+[voice narrator]
+
+How do you write a film one sentence at a time?
+
+[voice guest]
+
+I write the sentence first, [beat] and the picture waits for it.
+```
+
+A **turn** is the stretch of one section that one voice reads, from one voice direction to the next.
+A section one voice reads is one turn. Each turn is voiced as its own take, so two turns with the
+same text and the same voice share one take, and changing one turn voices that turn alone. A voice
+direction naming the voice already reading starts no new turn.
+
+Four rules keep a direction from being misread.
+
+| Written | Result |
+|---|---|
+| `[voice gest]`, a name no `[voices.NAME]` table declares | Refused as [`SCRIPT_VOICE_UNKNOWN`](/reference/findings/SCRIPT_VOICE_UNKNOWN), with the voices there are and the nearest name. Every whole line whose bracket opens with the word voice is read as a voice direction, so `[voice]` alone and `[Voice over the title]` are refused the same way rather than kept as notes. |
+| A section that names a voice, with prose before its first direction | Refused as [`SCRIPT_VOICE_UNMARKED`](/reference/findings/SCRIPT_VOICE_UNMARKED). A section that names a voice names one before every turn, its first included. |
+| `[guest]`, a note that is exactly a voice's name | Warned about as [`SCRIPT_VOICE_BARE`](/reference/findings/SCRIPT_VOICE_BARE), naming `[voice guest]`. It plays as a beat, the way any note does. |
+| A voice the project declares that no turn reads | Warned about as [`VOICE_UNUSED`](/reference/findings/VOICE_UNUSED). |
+
+The captions and the transcript carry the words of each turn alone, never the voice's name, and a
+caption never spans two turns.
 
 ## What the voice receives
 
@@ -200,20 +237,23 @@ with a space before it counts as a beat wherever it appears, including one typed
 defaults are 140 words per minute, 150 for a placeholder, 0.7 seconds for a beat and for
 `tail_seconds`, and 0.5 seconds for `lead_seconds`.
 
-## The three findings a script can earn
+## The findings a script can earn
 
 `decktalk check` judges the script without voicing it, reports every line at once rather than
-stopping on the first, and prices what a voiced run would cost. Three codes cover the script.
+stopping on the first, and prices what a voiced run would cost. Six codes cover the script.
 
 | Code | Severity | What it names |
 |---|---|---|
 | `SCRIPT_UNFINISHED` | error | One line of the spoken text holds something a voiced run would read out or swallow. That is an unfilled blank such as `[NUMBER]`, and it is also each of the three things `narrate` refuses. One finding is raised per thing found, carrying the line and the section it sits in. |
 | `SCRIPT_PAUSE_DROPPED` | error | One section holds a `[pause N]` and the model in the voice provider's own table, such as `[elevenlabs] model`, renders no timed pause, which on ElevenLabs is every model outside its v2 family, v3 and v4 among them. One finding is raised per section, and `narrate` refuses to buy the take. |
+| `SCRIPT_VOICE_UNKNOWN` | error | One voice direction names no voice the project declares, or one line opens its bracket with the word voice and is not a voice direction. `narrate` refuses the script. |
+| `SCRIPT_VOICE_UNMARKED` | error | One section names a voice and starts a turn, its first included, that no voice direction names. `narrate` refuses the script. |
+| `SCRIPT_VOICE_BARE` | warning | One note is exactly the name of a voice the project declares, such as `[guest]`, so it plays as a beat rather than handing the turns after it to that voice. The finding names `[voice guest]`. |
 | `SCRIPT_SPOKEN_SYMBOL` | warning | One section speaks a word holding a digit or one of the currency signs for dollar, euro and pound, or one of `%`, `&`, `@`, `#`, `*`, `/`, `+`, `=`, `<`, `>`, `~`, `^` and the vertical bar. One finding is raised per section, naming the first five such words. |
 
 {/* sample: open-placeholder, decktalk check --no-pages, starter with [IDEA] added to section 3, the finding line and the count */}
 ```text
-script.md:29: SCRIPT_UNFINISHED script.md line 29 holds something a voiced run would read out or swallow, which is that [IDEA] is still open, so a voiced run would read 'IDEA' out.
+script.md:32: SCRIPT_UNFINISHED script.md line 32 holds something a voiced run would read out or swallow, which is that [IDEA] is still open, so a voiced run would read 'IDEA' out.
 Found 1 finding, 1 error.
 ```
 

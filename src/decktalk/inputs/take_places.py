@@ -46,6 +46,8 @@ from typing import Protocol
 from filelock import FileLock, Timeout
 
 from decktalk.artifacts import (
+    PLACEHOLDER_SUFFIX,
+    VOICED_SUFFIX,
     AudioPrint,
     ProviderWords,
     Unreadable,
@@ -157,7 +159,7 @@ class TakePlaces:
         workspace = self._workspace
         if is_placeholder(digest):
             audio, words = (
-                workspace.narrate_dir / workspace.take_file(digest),
+                workspace.narrate_dir / take_file(digest, PLACEHOLDER_SUFFIX),
                 workspace.narrate_dir / words_file(digest),
             )
             return TakeFiles(digest, audio, words, held=audio.is_file() and words.is_file(), in_takes_directory=False)
@@ -196,6 +198,7 @@ class TakePlaces:
         *,
         section: int,
         replacing: bool,
+        suffix: str,
     ) -> TakeOutcome:
         """Voice this take once on this machine, and write it to every place, or keep the copy another run left.
 
@@ -203,7 +206,8 @@ class TakePlaces:
         whether this section's plan was told to replace its voiced take. Otherwise each place is proved
         writable, `speak` is asked, `charge` is called, and the pair is written to the store, unless it
         holds a good copy, then to the takes directory. A charge that raises still leaves the pair, and
-        is raised after it.
+        is raised after it. The audio is written under `suffix`, which the voice that speaks it declares
+        for what it returns, and its words file records it.
         """
         if is_placeholder(digest):
             raise ValueError(
@@ -231,7 +235,16 @@ class TakePlaces:
             try:
                 charge()
             finally:
-                self._write(digest, speech, witness, section=section, replacing=replacing, takes=takes, store=writes)
+                self._write(
+                    digest,
+                    speech,
+                    witness,
+                    section=section,
+                    replacing=replacing,
+                    suffix=suffix,
+                    takes=takes,
+                    store=writes,
+                )
         return TakeOutcome.VOICED
 
     # ---- the places ---------------------------------------------------------------------------------
@@ -248,7 +261,7 @@ class TakePlaces:
     def _judge(self, place: Path, digest: str, *, whole: bool) -> _Copy:
         """This place's copy of a voiced take, judged by its size alone or by its whole BLAKE3."""
         words = place / words_file(digest)
-        audio = place / take_file(digest, _recorded_suffix(words) or self._workspace.suffix)
+        audio = place / take_file(digest, _recorded_suffix(words) or VOICED_SUFFIX)
         audio_there, words_there = audio.is_file(), words.is_file()
         fault: str | None = None
         if audio_there and words_there:
@@ -407,6 +420,7 @@ class TakePlaces:
         *,
         section: int,
         replacing: bool,
+        suffix: str,
         takes: _Copy,
         store: _Copy | None,
     ) -> None:
@@ -416,12 +430,12 @@ class TakePlaces:
         came with none is whole, fingerprinted, and timed by the aligner.
         """
         workspace = self._workspace
-        audio, audio_name, words_name = speech.audio, workspace.take_file(digest), words_file(digest)
+        audio, audio_name, words_name = speech.audio, take_file(digest, suffix), words_file(digest)
         text = ProviderWords(
             words=speech.words or (),
             timed=speech.words is not None,
             model_digest=speech.model_digest,
-            audio=AudioPrint.of(audio, suffix=workspace.suffix),
+            audio=AudioPrint.of(audio, suffix=suffix),
         ).text
 
         def pair(place: Path) -> dict[Path, str | bytes]:
@@ -531,7 +545,7 @@ def _damaged(workspace: Workspace, section: int, digest: str, place: Path, fault
     return InputError(
         f"{fault} No place holds a good copy of the take section {section} plays, and only voicing it again "
         "gives it back, so DeckTalk neither buys it again nor deletes it.",
-        hint=f"Put a good copy of {workspace.take_file(digest)} and {words_file(digest)} in {takes}, or run "
+        hint=f"Put a good copy of {take_file(digest, VOICED_SUFFIX)} and {words_file(digest)} in {takes}, or run "
         f"decktalk narrate --section {section} --replace-voiced --spend knowing that it buys the take again.",
         location=at(place / words_file(digest), workspace.root, section=section),
     )
@@ -564,7 +578,7 @@ def _recorded_suffix(words: Path) -> str | None:
     """The suffix a take's words file says its audio was written under, or None when it says none or cannot be read.
 
     A words file that cannot be read is judged by `_pair_fault`, which says what is wrong with it, so
-    here it only means the take is looked for under the voice's own suffix.
+    here it only means the take is looked for under `VOICED_SUFFIX`, which every shipped voice writes.
     """
     try:
         said = ProviderWords.parse(words)

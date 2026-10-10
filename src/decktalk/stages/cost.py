@@ -3,15 +3,18 @@
 A stage hands over what it buys, or would buy, as one `Buy` per take or sound request, counted every
 way a provider could bill it: a take's characters and the seconds it is expected to run, a sound's
 seconds. This module reads who is paid, the rate, the bill, the settings layer that stated the rate
-and the units, so no stage works any of them out. A take is paid to `[voice] provider` at the bill
+and the units, so no stage works any of them out. A take is paid to its voice's provider at the bill
 it declares, and a sound to `[score] provider` at its kind's rate per minute of audio.
 
 `charge_of` is one request's exact figure, which a `take.charged` or `sound.charged` line carries.
-`cost_of` prices one stage, or nothing: its price and its ceiling are its charges added as the
-decimals they print as and rounded up to the cent, so a run that can pay anything never reads as
-free and a host adding the charge lines comes to the same cent. `total` adds the stages of one run,
-to the nearest cent, because each is rounded already. `is_free` says whether the voice bills at all,
-which is the one place DeckTalk decides it.
+`cost_of` prices one stage, or nothing. A stage holds one row per provider it pays: the narration
+one per provider its voices name, since each take is priced at the bill of the voice that reads it,
+and the score one. A row's price and ceiling are its charges added as the decimals they print as and
+rounded up to the cent, so a run that can pay anything never reads as free and a host adding the
+charge lines comes to the same cent. Rows are combined by one rule, the one `total` adds the stages of
+a run by, to the nearest cent, because each is rounded already: a free row never names the bill, so a
+paid take beside a free one is never read as free. Whether a voice bills at all is what its provider
+declares, which `VoiceInForce.free` reads.
 """
 
 from __future__ import annotations
@@ -36,6 +39,7 @@ from decktalk.results import (
     up_to_the_cent,
 )
 from decktalk.settings.layers import value_of
+from decktalk.speech import VoiceInForce
 from decktalk.speech.sound import SOUND_DECLARED
 
 SECONDS_PER_MINUTE = 60
@@ -53,7 +57,8 @@ class Buy:
     """One take or one sound request a stage buys, or would buy, counted every way a provider could bill it.
 
     A buy with a `kind` is a sound, paid to `[score] provider`, and one without is a take, paid to
-    `[voice] provider`. The stage counts both the characters and the seconds and never decides which is billed.
+    the provider of the voice that reads it. The stage counts both the characters and the seconds and never
+    decides which is billed.
     """
 
     characters: int = 0
@@ -64,11 +69,23 @@ class Buy:
     after it was sent and which the provider may have billed, which counts into the ceiling alone."""
     kind: SoundKind | None = None
     """The kind of sound, whose `[score]` table states its rate, or None for a take."""
+    voice: VoiceInForce | None = None
+    """The voice that reads a take, whose provider's bill it is priced at, or None for a sound."""
 
     def __post_init__(self) -> None:
-        # loud: a count below zero is a programming error in a stage, never something an author typed.
+        # loud: a count below zero, or a take with no voice, is a programming error in a stage, never something an
+        # author typed.
         if self.characters < 0 or self.seconds < 0:
             raise ValueError("nothing bought is counted below zero.")
+        if self.kind is None and self.voice is None:
+            raise ValueError("a take names the voice that reads it, whose bill it is priced at.")
+        if self.kind is not None and self.voice is not None:
+            raise ValueError("a sound names no voice, because the score's provider is paid for it.")
+
+    @property
+    def provider(self) -> str:
+        """Who is paid for this buy: the provider of the voice that reads a take, or the score's for a sound."""
+        return self.voice.provider if self.voice is not None else ""
 
 
 @dataclass(frozen=True)
@@ -92,24 +109,25 @@ def _layer(inputs: Inputs, key: str | None) -> Layer:
         return Layer.DEFAULT
 
 
-def _bill(inputs: Inputs, kind: SoundKind | None) -> _Bill:
-    """The bill a take, or a sound of `kind`, is priced at.
-
-    A take is priced at the voice in force's bill, read at the key it names, and a sound at the score
-    provider's.
-    """
-    if kind is None:
-        voice = inputs.voice
-        if voice.price_key is None:
-            return _Bill(voice.billing, 0.0, None, Layer.DEFAULT)
-        rate = float(cast("float", value_of(inputs.settings, voice.price_key)))
-        return _Bill(voice.billing, rate, voice.price_key, _layer(inputs, voice.price_key))
+def _bill(inputs: Inputs, buy: Buy) -> _Bill:
+    """The bill one buy is priced at: a take's at its own voice's bill, and a sound's at the score provider's."""
+    if buy.voice is not None:
+        return _voice_bill(inputs, buy.voice)
+    kind = cast("SoundKind", buy.kind)
     if inputs.settings.score.provider not in SOUND_DECLARED:
         return _Bill(BillingBasis.UNDECLARED, 0.0, None, Layer.DEFAULT)
     table = SOUND_TABLES[kind]
     key = f"score.{table}.{SOUND_RATE_KEY}"
     rate = float(getattr(getattr(inputs.settings.score, table), SOUND_RATE_KEY))
     return _Bill(BillingBasis.PER_SECOND, rate, key, _layer(inputs, key))
+
+
+def _voice_bill(inputs: Inputs, voice: VoiceInForce) -> _Bill:
+    """The bill one voice's takes are priced at, read at the key its provider names."""
+    if voice.price_key is None:
+        return _Bill(voice.billing, 0.0, None, Layer.DEFAULT)
+    rate = float(cast("float", value_of(inputs.settings, voice.price_key)))
+    return _Bill(voice.billing, rate, voice.price_key, _layer(inputs, voice.price_key))
 
 
 def charge_of(inputs: Inputs, buy: Buy) -> float | None:
@@ -122,7 +140,7 @@ def charge_of(inputs: Inputs, buy: Buy) -> float | None:
     line is money paid. Settling a sum of these to the nanodollar is exact while a rate has at most 4
     decimals, which `up_to_the_cent` relies on.
     """
-    bill = _bill(inputs, buy.kind)
+    bill = _bill(inputs, buy)
     if bill.by is BillingBasis.FREE:
         return None
     if bill.by is BillingBasis.PER_CHARACTER:
@@ -132,38 +150,35 @@ def charge_of(inputs: Inputs, buy: Buy) -> float | None:
     return 0.0
 
 
-def is_free(inputs: Inputs) -> bool:
-    """Whether the voice in force declares that it bills nothing, which lets a run that may not spend call it.
-
-    Free is what the provider declares and never a rate of zero, because a zero rate on a voice that
-    bills is somebody's statement about their plan, and a cap or a question still guards it.
-    """
-    return inputs.voice.billing is BillingBasis.FREE
-
-
 def cost_of(inputs: Inputs, buys: Iterable[Buy] = (), *, state: CostState = CostState.ESTIMATE) -> Cost:
-    """What one stage's buys cost at its provider's bill, or the price of nothing when it buys nothing.
+    """What one stage's buys cost at each provider's bill, or the price of nothing when it buys nothing.
 
     A buy that is not certain counts into the ceiling alone, in an estimate and in a charged cost
-    alike. The price and the ceiling are the buys' `charge_of` figures added exactly and
+    alike. Each provider's price and ceiling are its buys' `charge_of` figures added exactly and
     rounded up to the cent, so a price whose every buy is certain has a ceiling equal to it. The
     characters and the seconds count the buys the price is for. Several sound kinds bought at their
     own rates give the rate their exact sum comes to per minute, `averaged`, and the key and layer of
-    the rate least surely stated. The price of nothing is billed the way the voice in force bills, so
-    a reader always finds a rate, and has no stage row. Any other price is one stage's, and holds that
-    stage's one row. Takes and sounds are two stages, so one cost never holds both.
+    the rate least surely stated. The price of nothing is billed the way the default voice bills, so
+    a reader always finds a rate, and has no stage row. Any other price is one stage's: one row per
+    provider its takes are paid to, or the score's one, and a price of one row is that row. Takes and
+    sounds are two stages, so one cost never holds both.
     """
     bought = list(buys)
     if not bought:
         return _nothing(inputs, state)
     if len({buy.kind is None for buy in bought}) > 1:
         raise ValueError("one cost prices one stage, so takes and sounds are priced apart and added by total.")
-    return _stage(inputs, bought, state)
+    paid = dict.fromkeys(buy.provider for buy in bought)
+    rows = tuple(_stage(inputs, [buy for buy in bought if buy.provider == provider], state) for provider in paid)
+    if len(rows) == 1:
+        (row,) = rows
+        return Cost(**row.model_dump(exclude={"stage", "provider"}), stages=rows)
+    return _combined(state, rows, rows)
 
 
 def _nothing(inputs: Inputs, state: CostState) -> Cost:
-    """The price of buying nothing, billed and rated the way the voice in force bills."""
-    bill = _bill(inputs, None)
+    """The price of buying nothing, billed and rated the way the default voice bills."""
+    bill = _voice_bill(inputs, inputs.voices[inputs.default_voice])
     return Cost(
         state=state,
         sections=(),
@@ -181,19 +196,21 @@ def _nothing(inputs: Inputs, state: CostState) -> Cost:
     )
 
 
-def _stage(inputs: Inputs, bought: Sequence[Buy], state: CostState) -> Cost:
-    """What one stage's buys cost, which `cost_of` has checked are all takes or all sounds."""
+def _stage(inputs: Inputs, bought: Sequence[Buy], state: CostState) -> StageCost:
+    """What one provider's buys of one stage cost, which `cost_of` has checked are all takes or all sounds."""
     certain = [buy for buy in bought if buy.certain]
     possible = [buy for buy in bought if not buy.certain]
     sections = tuple(dict.fromkeys(number for buy in certain + possible for number in buy.sections))
     charges = {id(buy): charge_of(inputs, buy) or 0.0 for buy in bought}
-    bills = {buy.kind: _bill(inputs, buy.kind) for buy in bought}
+    bills = {buy.kind: _bill(inputs, buy) for buy in bought}
     bill = _named(list(bills.values()))
     rates = {each.rate for each in bills.values()}
     averaged = bill.by is BillingBasis.PER_SECOND and len(rates) > 1
     rate = _averaged(certain, charges) if averaged else bill.rate
-    row = StageCost(
-        stage=Stage.NARRATE if bought[0].kind is None else Stage.SCORE,
+    take = bought[0].kind is None
+    return StageCost(
+        stage=Stage.NARRATE if take else Stage.SCORE,
+        provider=bought[0].provider if take else inputs.settings.score.provider,
         state=state,
         sections=sections,
         characters=sum(buy.characters for buy in certain),
@@ -207,7 +224,6 @@ def _stage(inputs: Inputs, bought: Sequence[Buy], state: CostState) -> Cost:
         averaged=averaged,
         price_layer=bill.layer,
     )
-    return Cost(**row.model_dump(exclude={"stage"}), stages=(row,))
 
 
 def _named(bills: Sequence[_Bill]) -> _Bill:
@@ -250,6 +266,17 @@ def total(costs: Sequence[Cost]) -> Cost:
     counted = [cost for cost in costs if cost.state is state]
     if len(counted) == 1:
         return counted[0].model_copy(update={"stages": rows})
+    return _combined(state, counted, rows)
+
+
+def _combined(state: CostState, counted: Sequence[Cost | StageCost], rows: tuple[StageCost, ...]) -> Cost:
+    """Several prices of one state added into one, with `rows` as its stage rows, by the one rule both a stage's
+    providers and a run's stages are added by.
+
+    A price that buys nothing and a free one never name the bill while another buys at a price, so a
+    paid take beside a free one is never read as free, and the rate named is the first one no layer
+    stated. A bill nobody declared makes the whole price undeclared.
+    """
     buying = [cost for cost in counted if cost.buys] or counted
     deciding = [cost for cost in buying if not cost.free] or buying
     bills = list(dict.fromkeys(cost.billing for cost in deciding))
@@ -277,13 +304,15 @@ def total(costs: Sequence[Cost]) -> Cost:
 
 
 def _rows(costs: Sequence[Cost]) -> tuple[StageCost, ...]:
-    """Every stage row of these costs, counted or not, in pipeline order, each stage at most once."""
-    found: dict[Stage, StageCost] = {}
+    """Every stage row of these costs, counted or not, in pipeline order, each stage and provider at most once."""
+    found: dict[tuple[Stage, str], StageCost] = {}
     for row in (row for cost in costs for row in cost.stages):
-        if row.stage in found:
-            raise ValueError(f"{row.stage.value} is in two of the costs added, which would count it twice.")
-        found[row.stage] = row
-    return tuple(found[stage] for stage in Stage if stage in found)
+        if (row.stage, row.provider) in found:
+            raise ValueError(
+                f"{row.stage.value} on {row.provider} is in two of the costs added, which would count it twice."
+            )
+        found[(row.stage, row.provider)] = row
+    return tuple(row for stage in Stage for (held, _provider), row in found.items() if held is stage)
 
 
 _CHARACTERS_ALONE = frozenset({BillingBasis.PER_CHARACTER})
@@ -293,4 +322,4 @@ _SECONDS_ALONE = frozenset({BillingBasis.PER_SECOND})
 """The bills a total counts only the seconds of, because the characters beside them are not billed."""
 
 
-__all__ = ["Buy", "charge_of", "cost_of", "is_free", "total"]
+__all__ = ["Buy", "charge_of", "cost_of", "total"]

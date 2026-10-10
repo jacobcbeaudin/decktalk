@@ -83,6 +83,8 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     # One rule decides whether a recording still matches the project, and the report that names a
     # stale one asks the stage that wrote it rather than comparing file times of its own.
     ("stages.status", "stages.record"): "the rule that decides a recording is stale",
+    ("stages.cue", "stages.record"): "the rule that decides a recording's catalog is still the page's",
+    ("stages.cue", "stages.storyboard"): "the one way a page that changed since its recording is opened and read",
     # A take is named by narrate's digest alone, so the report that lists the takes no section plays
     # names each section's take the way narrate does rather than spelling a digest of its own.
     ("stages.status", "stages.narrate"): "the take state of every section, which narrate plans by",
@@ -99,6 +101,7 @@ ALLOWED_STAGE_EDGES: dict[tuple[str, str], str] = {
     ("stages.narrate", "stages.cost"): "what the takes cost, priced and charged by the one cost rule",
     ("stages.score", "stages.cost"): "what the sounds cost, priced and charged by the one cost rule",
     ("stages.build", "stages.cost"): "the stages' costs added into the one total the run is capped and reported at",
+    ("stages.check", "stages.cost"): "the rate each voice's turns are billed at, stated by the one cost rule",
 }
 """Every import that points sideways between stages, each with the reason it exists.
 

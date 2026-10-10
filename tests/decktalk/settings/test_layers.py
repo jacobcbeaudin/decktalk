@@ -11,7 +11,7 @@ import tomlkit
 
 from decktalk.errors import ErrorCode, InputError
 from decktalk.results import Layer, Scope
-from decktalk.settings import BY_ID, KEYS, STANDALONE_ENV, Settings
+from decktalk.settings import BY_ID, KEYS, STANDALONE_ENV, TEMPLATES, Settings, VoiceConfig
 from decktalk.settings.layers import (
     env_warnings,
     key_warnings,
@@ -204,19 +204,20 @@ class TestScope:
     def test_a_voice_id_that_could_leave_its_path_segment_is_refused_at_load(self, hostile: str) -> None:
         """The id is a path segment of every speech request, so a stranger's project cannot aim the key elsewhere."""
         places: list[dict[str, Any]] = [
-            {"project": {"voice": {"id": hostile}}, "environ": {}},
-            {"project": {}, "environ": {"DECKTALK_VOICE_ID": hostile}},
+            {"project": {"voices": {"narrator": {"id": hostile}}}, "environ": {}},
+            {"project": {}, "environ": {"DECKTALK_VOICES_NARRATOR_ID": hostile}},
         ]
         for where in places:
-            with pytest.raises(InputError, match="voice.id"):
+            with pytest.raises(InputError, match="voices.narrator.id"):
                 load(machine={}, **where)
 
     def test_the_voice_id_is_read_from_the_project_and_overridden_by_its_variable(self) -> None:
-        project = {"voice": {"id": "03SG2XsqDqqfP8RMUXX1"}}
-        assert load(machine={}, project=project, environ={}).settings.voice.id == "03SG2XsqDqqfP8RMUXX1"
-        exported = load(machine={}, project=project, environ={"DECKTALK_VOICE_ID": "kept_private-1"})
-        assert exported.settings.voice.id == "kept_private-1"
-        assert exported.layers.winner("voice.id").layer is Layer.ENVIRONMENT
+        project = {"voices": {"narrator": {"id": "03SG2XsqDqqfP8RMUXX1"}}}
+        voices = load(machine={}, project=project, environ={}).settings.voices
+        assert voices["narrator"].own.id == "03SG2XsqDqqfP8RMUXX1"
+        exported = load(machine={}, project=project, environ={"DECKTALK_VOICES_NARRATOR_ID": "kept_private-1"})
+        assert exported.settings.voices["narrator"].own.id == "kept_private-1"
+        assert exported.layers.winner("voices.narrator.id").layer is Layer.ENVIRONMENT
 
     def test_a_project_key_in_a_project_is_let_through_and_read(self) -> None:
         project = {"verify": {"cue_offset_max_ms": 400}}
@@ -333,11 +334,6 @@ class TestCrossTableRelations:
 
 
 MOVED: list[tuple[str, str, Any]] = [
-    ("voice.stability", "elevenlabs.stability", 0.4),
-    ("voice.similarity_boost", "elevenlabs.similarity_boost", 0.6),
-    ("voice.style", "elevenlabs.style", 0.2),
-    ("voice.speaker_boost", "elevenlabs.speaker_boost", False),
-    ("voice.dollars_per_1000_characters", "elevenlabs.dollars_per_1000_characters", 0.3),
     ("narration.model", "elevenlabs.model", "eleven_flash_v2_5"),
     ("audio.duck_ramp_seconds", "mix.duck_ramp_seconds", 0.25),
     ("audio.ambience_ramp_seconds", "mix.ambience_ramp_seconds", 2.0),
@@ -387,7 +383,7 @@ def tables_of(dotted: str, value: object) -> dict[str, Any]:
 
 
 class TestTheRegroup:
-    """Each provider owns its table, `[voice]` keeps three keys, and a moved key has no alias."""
+    """Each provider owns its table, a voice keeps three keys of its own, and a moved key has no alias."""
 
     @pytest.mark.parametrize(("old", "new", "value"), MOVED, ids=[new for _old, new, _value in MOVED])
     def test_a_moved_key_is_read_from_its_new_table(self, old: str, new: str, value: object) -> None:
@@ -425,7 +421,6 @@ class TestTheRegroup:
         ("variable", "meant"),
         [
             ("DECKTALK_ELEVENLABS_MUSIC_MODEL", "DECKTALK_SCORE_MUSIC_MODEL"),
-            ("DECKTALK_VOICE_STABILITY", "DECKTALK_ELEVENLABS_STABILITY"),
             ("DECKTALK_VIDEO_SAMPLE_RATE", "DECKTALK_AUDIO_SAMPLE_RATE"),
             ("DECKTALK_VIDEO_CRV", "DECKTALK_VIDEO_CRF"),
         ],
@@ -441,13 +436,92 @@ class TestTheRegroup:
         offered = said.split("did you mean '", 1)[1].split("'", 1)[0]
         assert offered in {BY_ID[key].environment for key in ("elevenlabs.model", "dtsp.model")}
 
-    def test_a_voice_model_is_no_key_and_is_warned_about_as_unknown(self, tmp_path: Path) -> None:
-        """A model is set in its provider's table alone, so one value is never stated under two keys."""
-        project = load_project(tmp_path, MINIMAL_TOML + '\n[voice]\nmodel = "eleven_v3"\n', environ={})
-        assert project.settings.elevenlabs.model == Settings().elevenlabs.model
-        (said,) = [note for note in project.notes if "'model'" in note]
-        assert said.startswith("decktalk.toml: [voice]: ignoring unknown key 'model'")
+    def test_a_voice_holds_the_three_keys_every_voice_has_and_the_chosen_keys_of_its_provider(self) -> None:
+        own = sorted(field for field in VoiceConfig.__dataclass_fields__)
+        assert own == ["id", "provider", "speed"]
+        assert [key.name for key in TEMPLATES][: len(own)] == ["provider", "id", "speed"]
 
-    def test_voice_holds_the_three_keys_every_voice_has(self) -> None:
-        voice = sorted(key.name for key in KEYS if key.table == "voice")
-        assert voice == ["id", "provider", "speed"]
+
+class TestTheVoices:
+    """Each voice's keys are layered like every key, and a key it inherits shows where it came from."""
+
+    def test_an_inherited_key_shows_its_providers_rows_then_the_voices_own(self, tmp_path: Path) -> None:
+        (tmp_path / "decktalk.toml").write_text(
+            "[voices.narrator]\nstability = 0.4\n\n[elevenlabs]\nstability = 0.6\n", encoding="utf-8"
+        )
+        here = load(tmp_path, machine={}, environ={})
+        rows = here.layers.of("voices.narrator.stability")
+        assert [(row.layer, row.key, row.value) for row in rows] == [
+            (Layer.DEFAULT, "elevenlabs.stability", 0.55),
+            (Layer.PROJECT, "elevenlabs.stability", 0.6),
+            (Layer.PROJECT, None, 0.4),
+        ]
+        assert [row.line for row in rows[1:]] == [5, 2]
+        assert here.layers.winner("voices.narrator.stability").value == 0.4
+
+    def test_a_voice_that_states_no_key_of_its_own_shows_its_providers_rows_alone(self) -> None:
+        environ = {"DECKTALK_ELEVENLABS_STABILITY": "0.2"}
+        here = load(machine={}, project={"elevenlabs": {"stability": 0.6}}, environ=environ)
+        rows = here.layers.of("voices.narrator.stability")
+        assert [(row.layer, row.key) for row in rows] == [
+            (Layer.DEFAULT, "elevenlabs.stability"),
+            (Layer.PROJECT, "elevenlabs.stability"),
+            (Layer.ENVIRONMENT, "elevenlabs.stability"),
+        ]
+        assert rows[-1].value == 0.2
+
+    def test_a_voices_own_key_is_layered_like_every_key(self) -> None:
+        here = load(
+            machine={},
+            project={"voices": {"narrator": {"speed": 0.9}}},
+            environ={"DECKTALK_VOICES_NARRATOR_SPEED": "1.1"},
+            overrides=("voices.narrator.speed=1.2",),
+        )
+        rows = here.layers.of("voices.narrator.speed")
+        assert [(row.layer, row.key) for row in rows] == [
+            (Layer.DEFAULT, None),
+            (Layer.PROJECT, None),
+            (Layer.ENVIRONMENT, None),
+            (Layer.OVERRIDE, None),
+        ]
+        assert rows[-1].value == 1.2
+
+    def test_every_voice_is_listed_with_its_keys_after_every_other_key(self) -> None:
+        here = load(machine={}, project={"voices": {"narrator": {}, "guest": {"provider": "dtsp"}}}, environ={})
+        listed = [key.id for key in here.keys]
+        voices = [key for key in listed if key.startswith("voices.")]
+        assert listed[-len(voices) :] == voices
+        assert [key for key in voices if key.startswith("voices.guest.")] == [
+            "voices.guest.provider",
+            "voices.guest.id",
+            "voices.guest.speed",
+            "voices.guest.model",
+        ]
+        assert voices[0] == "voices.narrator.provider"
+        assert len([key for key in voices if key.startswith("voices.narrator.")]) == len(TEMPLATES)
+
+    def test_a_voice_variable_is_known_with_no_project_open(self) -> None:
+        """Doctor reads the machine alone, so a voice's variable is never called a typo before a project opens."""
+        assert env_warnings({"DECKTALK_VOICES_GUEST_ID": "x"}) == []
+        assert env_warnings({"DECKTALK_VOICES_GUEST_SIMILARITY_BOOST": "0.5"}) == []
+        (said,) = env_warnings({"DECKTALK_VOICES_GUEST_IDD": "x"})
+        assert said == (
+            "environment: ignoring unknown key 'DECKTALK_VOICES_GUEST_IDD' (did you mean 'DECKTALK_VOICES_GUEST_ID'?)."
+        )
+
+    def test_a_machine_file_holds_no_voice(self, tmp_path: Path) -> None:
+        path = tmp_path / "machine.toml"
+        path.write_text('[voices.narrator]\nid = "v"\n', encoding="utf-8")
+        with pytest.raises(InputError, match="'voices.narrator.id' is project-scoped"):
+            read_machine_toml(path)
+
+    def test_a_set_names_a_voice_key_by_its_voice(self) -> None:
+        assert route(("voices.guest.id=v",)) == {"voices.guest.id": "v"}
+        assert scoped({"voices.guest.id": "v"}, Scope.PROJECT) == {"voices.guest.id": "v"}
+        with pytest.raises(InputError, match="is not a settings key"):
+            route(("voices.guest.base_url=x",))
+
+    def test_value_of_reads_a_voice_key_off_its_voice(self) -> None:
+        here = load(machine={}, project={"voices": {"narrator": {"style": 0.2}}}, environ={})
+        assert value_of(here.settings, "voices.narrator.style") == 0.2
+        assert value_of(here.settings, "voices.narrator.provider") == "elevenlabs"

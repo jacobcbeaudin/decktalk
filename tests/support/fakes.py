@@ -43,12 +43,13 @@ from decktalk.speech import (
     SpeechProvider,
     SpeechRequest,
 )
+from decktalk.tomlmap import variable
 
 BROWSERS_VARIABLE = "PLAYWRIGHT_BROWSERS_PATH"
 """The variable Playwright's driver reads for where its browsers live, spelled here as Playwright documents it."""
 
 FAKE_VOICE_NAME = "elevenlabs"
-"""The `[voice] provider` a project under test names, which `fake_voice` answers for in place of the shipped voice.
+"""The provider a project under test reads its voice with, which `fake_voice` answers for in place of the shipped one.
 
 A fake stands in under the shipped name, so the project reads the shipped voice's own table, its
 default model and its stated rate, and the fake is registered only on the machine of the test's runs.
@@ -56,6 +57,9 @@ default model and its stated rate, and the fake is registered only on the machin
 
 FREE_VOICE_NAME = "dtsp"
 """The voice DeckTalk ships that bills nothing, which a project under test names to be read by a free voice."""
+
+NARRATOR_ID = variable("voices.narrator.id")
+"""The variable that names the voice id of `narrator`, the default voice every project under test is read in."""
 
 
 def refusing_voices() -> dict[str, SpeechFactory]:

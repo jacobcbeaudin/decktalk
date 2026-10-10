@@ -103,3 +103,22 @@ def test_the_command_writes_nothing(tmp_path: Path) -> None:
     run = a_run(tmp_path)
     words(an_inputs(tmp_path), run)
     assert run.written == []
+
+
+def test_words_labels_each_turn_with_its_voice(tmp_path: Path) -> None:
+    """A dialogue section's words run on one clock, and each turn says which voice reads it and how many words."""
+    write_project(tmp_path, TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n')
+    inputs = Inputs.load(tmp_path, environ={})
+    first = a_take(1, spoken="Hello, there.", tail_seconds=0.3, digest="0000000000000001")
+    second = a_take(1, turn=2, voice="guest", spoken="Again.", tail_seconds=0.7, digest="0000000000000002")
+    said = {
+        (1, 1): [Word(word="Hello", start=0.0, end=0.4), Word(word="there", start=0.5, end=0.9)],
+        (1, 2): [Word(word="Again", start=0.0, end=0.4)],
+    }
+    narrated(inputs, first, second, words=said)
+    (section,) = words(inputs, a_run(tmp_path)).sections
+    assert [word.word for word in section.words] == ["Hello,", "there.", "Again."]
+    assert [(turn.turn, turn.voice, turn.word_count, turn.estimated) for turn in section.turns] == [
+        (1, "narrator", 2, False),
+        (2, "guest", 1, False),
+    ]

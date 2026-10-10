@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from decktalk.errors import InputError
+from decktalk.findings import Code
 from decktalk.inputs.script import parse_script
 from decktalk.stages.narrate.script_rules import (
     ascending,
@@ -13,7 +14,11 @@ from decktalk.stages.narrate.script_rules import (
     shown,
     spoken_lines,
     symbol_tokens,
+    voice_refusals,
 )
+
+NAMES = ("narrator", "guest")
+"""The voices of the project every script here is judged against, the default first."""
 
 CLEAN = """## 1. Open
 
@@ -57,7 +62,7 @@ def test_a_spoken_line_knows_which_section_it_is_in() -> None:
 
 def test_a_refused_script_names_every_line_and_the_rule() -> None:
     with pytest.raises(InputError) as refused:
-        check_script("script.md", "## 1. Open\n\nA ball {x} [which is red] falls.\n")
+        check_script("script.md", "## 1. Open\n\nA ball {x} [which is red] falls.\n", NAMES)
     assert "script.md has 2 things" in str(refused.value)
     assert "line 3" in str(refused.value)
     assert refused.value.hint is not None
@@ -65,7 +70,7 @@ def test_a_refused_script_names_every_line_and_the_rule() -> None:
 
 
 def test_a_clean_script_raises_nothing() -> None:
-    check_script("script.md", CLEAN)
+    check_script("script.md", CLEAN, NAMES)
 
 
 def test_a_digit_or_a_symbol_is_named_word_by_word() -> None:
@@ -91,3 +96,57 @@ def test_headings_that_count_backwards_name_the_pair_that_does_not_ascend() -> N
     assert out_of_order is not None
     first, second = out_of_order
     assert (first.number, second.number) == (2, 1)
+
+
+# ---- voice directions ---------------------------------------------------------------------------
+
+UNKNOWN = Code.SCRIPT_VOICE_UNKNOWN
+UNMARKED = Code.SCRIPT_VOICE_UNMARKED
+
+
+def test_a_direction_naming_no_declared_voice_is_refused_with_the_nearest_name() -> None:
+    script = "## 1. Talk\n\n[voice narrator]\n\nHello.\n\n[voice gest]\n\nHi.\n"
+    assert voice_refusals(script, NAMES) == [
+        (7, UNKNOWN, "[voice gest] names no voice, and the voices are narrator, guest. Did you mean 'guest'?")
+    ]
+
+
+@pytest.mark.parametrize("claimed", ["[Voice over the chart.]", "[voice.guest]", "[voice]", "[voice guest please]"])
+def test_a_line_that_opens_with_voice_and_is_no_direction_is_refused(claimed: str) -> None:
+    inner = claimed[1:-1]
+    rows = voice_refusals(f"## 1. Talk\n\nHello.\n\n{claimed}\n\nHi.\n", NAMES)
+    assert rows == [(5, UNKNOWN, f"[{inner}] is not a voice direction, which is written [voice NAME]")]
+
+
+def test_a_section_that_names_a_voice_names_one_before_its_first_turn() -> None:
+    script = "## 1. Open\n\nNobody names me.\n\n## 2. Talk\n\nHello.\n\n[voice guest]\n\nHi.\n"
+    assert voice_refusals(script, NAMES) == [
+        (7, UNMARKED, "section 2 names a voice, and the turn that starts here names none")
+    ]
+
+
+def test_a_section_that_names_no_voice_needs_no_direction() -> None:
+    assert voice_refusals("## 1. Open\n\nHello.\n\n[beat]\n\nHi.\n", NAMES) == []
+    assert voice_refusals("## 1. Open\n\n[voice guest]\n\nHello.\n", NAMES) == []
+
+
+def test_a_voice_direction_inside_a_paragraph_keeps_its_refusal() -> None:
+    with pytest.raises(InputError) as refused:
+        check_script("script.md", "## 1. Talk\n\n[voice guest] Hello there.\n", NAMES)
+    assert "line 3: [voice guest] inside a paragraph" in str(refused.value)
+
+
+def test_narrate_is_refused_every_voice_direction_it_cannot_read_at_once() -> None:
+    script = "## 1. Talk\n\nHello.\n\n[voice gest]\n\nHi.\n\n[voice]\n\nBye.\n"
+    with pytest.raises(InputError) as refused:
+        check_script("script.md", script, NAMES)
+    assert str(refused.value) == (
+        "script.md has 3 voice directions narrate cannot read:\n"
+        "  line 3: section 1 names a voice, and the turn that starts here names none\n"
+        "  line 5: [voice gest] names no voice, and the voices are narrator, guest. Did you mean 'guest'?\n"
+        "  line 9: [voice] is not a voice direction, which is written [voice NAME]"
+    )
+    assert refused.value.hint == (
+        "A voice direction is a line holding only [voice NAME], where NAME is a [voices.NAME] table of "
+        "decktalk.toml. A section that names a voice names one before every turn, its first included."
+    )

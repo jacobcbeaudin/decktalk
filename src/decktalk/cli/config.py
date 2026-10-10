@@ -149,7 +149,8 @@ def unset_key(
             f"{path.as_posix()} is not there, so it sets nothing to remove.",
             hint=f"Run decktalk config set {key} VALUE first.",
         )
-    whole = key in settings.BY_ID or session.approve(table or None, f"Remove everything {key} sets?")
+    whole = settings.key_of(key) is not None or session.approve(table or None, f"Remove everything {key} sets?")
+
     going = edit.stating(path, key, whole_table=whole)
     with _told(session):
         return edit.unset(path, *going, scope=scope, environ=session.machine.environ)

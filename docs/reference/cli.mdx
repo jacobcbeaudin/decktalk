@@ -111,6 +111,10 @@ A finding carries its code, its sentence, its severity and often a fix an agent 
 | [`SCRIPT_UNFINISHED`](/reference/findings/SCRIPT_UNFINISHED) | error | The script still holds an unfilled blank such as [NUMBER], so a voiced run would read it out. |
 | [`SCRIPT_SPOKEN_SYMBOL`](/reference/findings/SCRIPT_SPOKEN_SYMBOL) | warning | The script holds a symbol the voice reads as its name rather than as the thing it means. |
 | [`SCRIPT_PAUSE_DROPPED`](/reference/findings/SCRIPT_PAUSE_DROPPED) | error | The script asks for a timed pause the voice's model does not render, so a voiced run would drop it. |
+| [`SCRIPT_VOICE_UNKNOWN`](/reference/findings/SCRIPT_VOICE_UNKNOWN) | error | A voice direction names no voice the project declares, or a line opens with the word voice and is not a voice direction. |
+| [`SCRIPT_VOICE_UNMARKED`](/reference/findings/SCRIPT_VOICE_UNMARKED) | error | A section that names a voice starts a turn no voice direction names. |
+| [`SCRIPT_VOICE_BARE`](/reference/findings/SCRIPT_VOICE_BARE) | warning | A note is exactly the name of a voice the project declares, so it plays as a beat rather than handing the turns after it to that voice. |
+| [`VOICE_UNUSED`](/reference/findings/VOICE_UNUSED) | warning | The project declares a voice no turn of the script is read by. |
 | [`TAKE_MISSING`](/reference/findings/TAKE_MISSING) | warning | A section's take is not on disk, so a placeholder plays in its place until its voice makes one. |
 | [`TAKE_UNALIGNED`](/reference/findings/TAKE_UNALIGNED) | warning | A take came with no word times and no aligner timed them, so its section plays estimated words. Only narrate raises it. |
 | [`CUT_SPEECH`](/reference/findings/CUT_SPEECH) | error | Speech is still sounding at a section cut, so the film slices a word in two. |
@@ -136,7 +140,7 @@ It answers with the `init` result: `decktalk schema init`.
 | Option | Meaning |
 |---|---|
 | `--name` `NAME` | The project's name. |
-| `--example` `NAME` | The packaged example to write: lesson, product (reserved), tutorial (reserved). |
+| `--example` `NAME` | The packaged example to write: lesson, interview, product (reserved), tutorial (reserved). |
 | `--no-skills` | Leave the packaged skills out. |
 | `--overwrite` | Write into a directory that already holds files. |
 

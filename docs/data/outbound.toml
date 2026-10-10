@@ -25,7 +25,7 @@ note = "Rebuilding one section still sends that section's neighbours, because th
 [[service]]
 host = "127.0.0.1:9361"
 name = "Narration by the local voice"
-sent_by = "`decktalk narrate` and `decktalk build`, when `[voice] provider = \"dtsp\"`"
+sent_by = "`decktalk narrate` and `decktalk build`, when `[voices.NAME] provider = \"dtsp\"`"
 body = "The section's spoken text, the voice id, the model name, the speed and the audio format."
 credential = "No key is sent. The host is the one `[dtsp] base_url` names, `127.0.0.1:9361` by default, and only this machine's own file, environment or `--set` can name another. A project file that sets it is refused."
 note = "The local voice bills nothing, so a run with `--no-spend` still sends the text. At the default address the text never leaves the machine."

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from decktalk.errors import InputError
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import ClipSection, Document, Mix, PageSection, Transition, frame_dip
 from support.projects import MINIMAL_TOML, write_project
@@ -71,3 +74,12 @@ def test_the_plural_effect_table_is_named_as_unknown() -> None:
     )
     assert doc.mix.effects == ()
     assert any("effects" in note for note in doc.notes), doc.notes
+
+
+def test_an_unknown_table_is_refused_with_the_nearest_one() -> None:
+    """The one-voice table of an older file meets the shape that replaced it, by its nearest name."""
+    with pytest.raises(InputError) as refused:
+        Document.from_toml({"voice": {"provider": "elevenlabs"}}, default_name="t")
+    said = str(refused.value)
+    assert said.startswith("decktalk.toml: unknown table(s) ['voice']. The known tables are [")
+    assert said.endswith("]. Did you mean 'voices'?")

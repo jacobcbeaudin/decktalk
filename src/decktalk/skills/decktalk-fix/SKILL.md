@@ -58,6 +58,11 @@ touching anything, and never parse a printed table when the JSON is right there.
 - A recording that stalls is usually the page waiting for something that never arrives.
 - Maths that shows as red or as raw source is a typesetting refusal, and maths that shows as plain
   text means the typesetter never loaded.
+- `SCRIPT_VOICE_UNKNOWN` is a `[voice NAME]` line whose name no `[voices.NAME]` table declares,
+  usually a misspelling the finding names the nearest voice for. Fix the line, or declare the voice.
+- `SCRIPT_VOICE_UNMARKED` is a section that names a voice with prose before its first direction. Put
+  a `[voice NAME]` line before that prose.
+- `SCRIPT_VOICE_BARE` is a note such as `[guest]` that is exactly a voice's name. Write `[voice guest]`.
 
 ## Rules
 

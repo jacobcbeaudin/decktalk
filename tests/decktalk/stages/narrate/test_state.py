@@ -22,6 +22,7 @@ from decktalk.artifacts import (
     Take,
     TimedBy,
     is_placeholder,
+    take_file,
 )
 from decktalk.errors import InputError
 from decktalk.inputs import Inputs
@@ -29,7 +30,7 @@ from decktalk.inputs.script import ScriptSection, estimated_words, spoken_words
 from decktalk.results import TakeOutcome, TakeState, Word
 from decktalk.speech import canonical_text
 from decktalk.stages.cost import cost_of
-from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE, placeholder_inputs, take_inputs
+from decktalk.stages.narrate.plan import placeholder_inputs, take_inputs
 from decktalk.stages.narrate.state import (
     CHANGED,
     FILES_GONE,
@@ -38,19 +39,21 @@ from decktalk.stages.narrate.state import (
     REPLACED,
     SHARED,
     UNINDEXED,
-    WITHOUT_A_VOICE,
+    NarratePlan,
     TakeStates,
     take_states,
+    without_a_voice,
 )
+from support.fakes import NARRATOR_ID
 from support.projects import load_project
-from support.takes import a_take, damage_take, hold_take, write_takes
+from support.takes import TAKE_SUFFIX, a_take, damage_take, hold_take, write_takes
 
-from .conftest import ENVIRON, FREE_TOML, SCRIPT, TOML, VOICE_ID
+from .conftest import DIALOGUE, ENVIRON, FREE_TOML, SCRIPT, TOML, VOICE_ID, WITH_A_GUEST
 
 MOVED = re.compile(r"the takes directory \S+ holds none of the (\d+) takes? this project played before")
 """The moved clause, which names the folder and a count, so it is matched rather than compared."""
 
-NAMELESS = {key: value for key, value in ENVIRON.items() if key != VOICE_ID_VARIABLE}
+NAMELESS = {key: value for key, value in ENVIRON.items() if key != NARRATOR_ID}
 """The machine with the credential and no voice named."""
 
 SHARED_SCRIPT = SCRIPT.replace("Every picture waited for its word.", "A bowl. [beat] A ball.")
@@ -75,7 +78,7 @@ def section_of(inputs: Inputs, number: int) -> ScriptSection:
 def digest_of(inputs: Inputs, number: int, *, voice: str = VOICE_ID) -> str:
     """The voiced take this section's current text names under `voice`."""
     section = section_of(inputs, number)
-    return take_inputs(inputs, section, provider=inputs.voice.provider, voice_id=voice, model=inputs.voice.model).digest
+    return take_inputs(section, replace(inputs.voices["narrator"], id=voice)).digest
 
 
 def stand_in_of(inputs: Inputs, number: int) -> str:
@@ -134,7 +137,8 @@ def test_a_voiced_take_of_the_current_inputs_the_index_plays_is_voiced_and_settl
 
 def test_the_take_state_names_takes_by_the_voice_in_force(inputs: Inputs) -> None:
     """The state reads the voice the project is read in, so another voice in force names other takes."""
-    other = replace(inputs, voice=replace(inputs.voice, id="someone-else"))
+    voices = {"narrator": replace(inputs.voices["narrator"], id="someone-else")}
+    other = replace(inputs, voices=voices)
     named = [state.digest for state in take_states(other).values()]
     assert named == [digest_of(inputs, number, voice="someone-else") for number in (1, 2, 3)]
     assert named != [state.digest for state in take_states(inputs).values()]
@@ -153,7 +157,7 @@ def test_a_held_voiced_take_the_index_does_not_play_is_voiced_and_not_settled(in
 
 def test_a_voice_change_with_the_old_take_held_is_stale(inputs: Inputs) -> None:
     bought(inputs)
-    revoiced = reload(inputs, {**ENVIRON, VOICE_ID_VARIABLE: "another-voice"})
+    revoiced = reload(inputs, {**ENVIRON, NARRATOR_ID: "another-voice"})
     states = take_states(revoiced)
     assert states[1].state is TakeState.STALE
     assert states[1].reason == CHANGED
@@ -167,8 +171,8 @@ def test_a_voice_change_with_the_old_take_held_is_stale(inputs: Inputs) -> None:
 def test_a_voice_change_with_the_old_take_gone_is_missing_its_files(inputs: Inputs) -> None:
     bought(inputs)
     gone = digest_of(inputs, 1)
-    (inputs.workspace.takes / inputs.workspace.take_file(gone)).unlink()
-    states = take_states(reload(inputs, {**ENVIRON, VOICE_ID_VARIABLE: "another-voice"}))
+    (inputs.workspace.takes / take_file(gone, TAKE_SUFFIX)).unlink()
+    states = take_states(reload(inputs, {**ENVIRON, NARRATOR_ID: "another-voice"}))
     assert states[1].state is TakeState.MISSING
     assert states[1].reason == FILES_GONE
     assert states[1].takes_dir_gone is False, "the takes directory still holds the other sections' takes"
@@ -246,8 +250,8 @@ def test_with_no_voice_named_a_held_take_of_this_text_is_unchecked_and_kept(inpu
     bought(inputs)
     states = take_states(reload(inputs, NAMELESS))
     assert states[1].state is TakeState.UNCHECKED
-    assert states[1].reason == WITHOUT_A_VOICE
-    assert VOICE_ID_VARIABLE in WITHOUT_A_VOICE
+    assert states[1].reason == without_a_voice(inputs.voices["narrator"])
+    assert NARRATOR_ID in states[1].reason
     assert states[1].digest is None
     plan = states.plan(spend=False)
     assert [p.outcome for p in plan.takes] == [TakeOutcome.KEPT] * 3
@@ -266,7 +270,7 @@ def test_with_no_voice_named_an_edited_section_with_its_old_take_held_is_stale(i
 
 def test_with_no_voice_named_a_take_whose_files_are_gone_is_missing(inputs: Inputs) -> None:
     bought(inputs)
-    (inputs.workspace.takes / inputs.workspace.take_file(digest_of(inputs, 1))).unlink()
+    (inputs.workspace.takes / take_file(digest_of(inputs, 1), TAKE_SUFFIX)).unlink()
     states = take_states(reload(inputs, NAMELESS))
     assert states[1].state is TakeState.MISSING
     assert states[1].reason == FILES_GONE
@@ -556,7 +560,7 @@ def test_certain_sections_are_listed_before_uncertain_ones(inputs: Inputs) -> No
 
 def test_the_price_builds_no_provider(make_inputs: Callable[..., Inputs]) -> None:
     """A price is over names and text, none of them secret, so a machine with no key prices exactly."""
-    project = Inputs.load(make_inputs().root, environ={VOICE_ID_VARIABLE: VOICE_ID})
+    project = Inputs.load(make_inputs().root, environ={NARRATOR_ID: VOICE_ID})
     plan = take_states(project).plan(spend=True)
     assert all(p.digest is not None for p in plan.takes)
     assert plan.cost.sections == (1, 2, 3)
@@ -678,3 +682,153 @@ def test_settled_judges_takes_and_not_their_timing(inputs: Inputs) -> None:
         ),
     )
     assert take_states(reload(inputs)).settled is True
+
+
+# ---- voices -------------------------------------------------------------------------------------
+
+GUEST = TOML.replace(
+    '[voices.narrator]\nprovider = "elevenlabs"\n', '[voices.narrator]\nprovider = "elevenlabs"\n\n[voices.guest]\n'
+)
+"""The project with a second ElevenLabs voice, the guest, whose id nobody names."""
+
+ECHO = "## 1. Open\n\nA bowl.\n\n## 2. Middle\n\n[voice guest]\n\nA bowl.\n\n## 3. Close\n\nDone.\n"
+"""The narrator and the guest each saying the same words, in sections 1 and 2."""
+
+
+def test_an_unnamed_voices_section_is_matched_by_its_voice_and_its_text_never_by_text_alone(
+    make_inputs: Callable[..., Inputs],
+) -> None:
+    """The narrator's take of the words the guest says is not the guest's, so an unnamed guest never plays it."""
+    inputs = make_inputs(toml=GUEST, script=ECHO)
+    narrator = digest_of(inputs, 1)
+    hold_take(inputs, narrator)
+    write_takes(inputs, row(inputs, 1, narrator))
+    states = take_states(inputs)
+    assert states[1].state is TakeState.VOICED
+    assert (states[2].state, states[2].reason) == (TakeState.MISSING, "it has no voiced take yet")
+    guest = "00000000000beef0"
+    hold_take(inputs, guest)
+    write_takes(inputs, row(inputs, 1, narrator), a_take(2, digest=guest, spoken="A bowl.", voice="guest"))
+    again = take_states(inputs)
+    assert again[2].state is TakeState.UNCHECKED
+    assert again[2].reason == without_a_voice(inputs.voices["guest"])
+    assert again.plan(spend=False).takes[1].digest == guest
+
+
+# ---- turns ---------------------------------------------------------------------------------------
+
+BOTH_PAID = WITH_A_GUEST.replace('provider = "dtsp"\nid = "af_heart"', 'id = "guest-voice"')
+"""The dialogue project with an ElevenLabs guest of its own id beside the narrator."""
+
+
+def hold_turns(inputs: Inputs, *, skip: tuple[str, ...] = ()) -> Inputs:
+    """Hold and index a voiced take of every turn whose voice is not in `skip`, as a paid run leaves them."""
+    rows = []
+    for section in inputs.spoken():
+        for turn in section.turns:
+            voice = inputs.voice_of(turn)
+            if voice.name in skip:
+                continue
+            digest = take_inputs(turn, voice).digest
+            hold_take(inputs, digest, words=(Word(word="said", start=0.0, end=0.4),))
+            rows.append(a_take(section.number, turn=turn.number, voice=voice.name, digest=digest, spoken=turn.spoken))
+    # The index counts each section's turns from one, so a turn left out ends its section's rows there.
+    indexed = [
+        row
+        for row in rows
+        if all((row.section, earlier) in {(r.section, r.turn) for r in rows} for earlier in range(1, row.turn))
+    ]
+    write_takes(inputs, *indexed)
+    return inputs
+
+
+def test_the_section_state_is_the_worst_of_its_turns(make_inputs: Callable[..., Inputs]) -> None:
+    inputs = hold_turns(make_inputs(toml=BOTH_PAID, script=DIALOGUE), skip=("guest",))
+    states = take_states(inputs)
+    assert [turn.state for turn in states[2].turns] == [TakeState.VOICED, TakeState.MISSING, TakeState.VOICED]
+    assert states[2].state is TakeState.MISSING
+    assert states[2].reason == f"{NO_VOICED_TAKE}, in turn 2, which guest reads"
+    assert states[1].state is TakeState.VOICED
+
+
+def test_a_section_of_one_turn_keeps_todays_reason_word_for_word(inputs: Inputs) -> None:
+    states = take_states(inputs)
+    assert states[1].reason == NO_VOICED_TAKE
+    assert [turn.reason for turn in states[1].turns] == [NO_VOICED_TAKE]
+
+
+def test_a_placeholder_turn_among_voiced_turns_makes_its_section_estimated(make_inputs: Callable[..., Inputs]) -> None:
+    inputs = hold_turns(make_inputs(toml=BOTH_PAID, script=DIALOGUE), skip=("guest",))
+    states = take_states(inputs)
+    assert states.planned_words(2).estimated
+    assert not states.planned_words(1).estimated
+
+
+BEFORE = SCRIPT.replace("It steps down the bowl.\n", "It steps down the bowl.\n\nThen it stops.\n")
+"""Section 2 read whole by the narrator, before a guest is put in the middle of it."""
+
+AFTER = SCRIPT.replace(
+    "It steps down the bowl.\n",
+    "[voice narrator]\n\nIt steps down the bowl.\n\n[voice guest]\n\nAnd it rolls.\n\n"
+    "[voice narrator]\n\nThen it stops.\n",
+)
+"""The same section with a guest's turn put in the middle."""
+
+
+def test_inserting_a_turn_voices_again_only_the_turns_whose_text_changed(make_inputs: Callable[..., Inputs]) -> None:
+    """The narrator's one take of the section now reads as two turns of new text, and nothing else moves."""
+    before = hold_turns(make_inputs(toml=BOTH_PAID, script=BEFORE))
+    after = make_inputs(toml=BOTH_PAID, script=AFTER)
+    assert after.root == before.root
+    states = take_states(after)
+    assert [state.state for state in states.values()] == [TakeState.VOICED, TakeState.MISSING, TakeState.VOICED]
+    assert [(turn.state, turn.reason) for turn in states[2].turns] == [
+        (TakeState.STALE, CHANGED),
+        (TakeState.MISSING, NO_VOICED_TAKE),
+        (TakeState.STALE, CHANGED),
+    ]
+
+
+def test_two_voices_saying_the_same_words_never_share_a_take(make_inputs: Callable[..., Inputs]) -> None:
+    echo = SCRIPT.replace("It steps down the bowl.\n", "[voice narrator]\n\nYes.\n\n[voice guest]\n\nYes.\n")
+    plan = take_states(make_inputs(toml=BOTH_PAID, script=echo)).plan(spend=True)
+    turns = [take for take in plan.takes if take.section.number == 2]
+    assert [take.outcome for take in turns] == [TakeOutcome.VOICED, TakeOutcome.VOICED]
+    assert turns[0].digest != turns[1].digest
+
+
+def test_two_turns_with_one_digest_are_bought_and_priced_once(make_inputs: Callable[..., Inputs]) -> None:
+    again = SCRIPT.replace(
+        "It steps down the bowl.\n", "[voice narrator]\n\nYes.\n\n[voice guest]\n\nNo.\n\n[voice narrator]\n\nYes.\n"
+    )
+    plan = take_states(make_inputs(toml=BOTH_PAID, script=again)).plan(spend=True)
+    turns = [take for take in plan.takes if take.section.number == 2]
+    assert [(take.turn.number, take.outcome) for take in turns] == [
+        (1, TakeOutcome.VOICED),
+        (2, TakeOutcome.VOICED),
+        (3, TakeOutcome.KEPT),
+    ]
+    assert turns[2].digest == turns[0].digest and turns[2].reason == SHARED
+    every = sum(len(canonical_text(section.pieces)) for section in plan_sections(plan) if section.number != 2)
+    assert plan.cost.characters == every + len("Yes.") + len("No.")
+
+
+def plan_sections(plan: NarratePlan) -> list[ScriptSection]:
+    """Every section a plan holds a take of, once each, in plan order."""
+    return list({take.section.number: take.section for take in plan.takes}.values())
+
+
+def test_a_renamed_voice_buys_nothing(make_inputs: Callable[..., Inputs]) -> None:
+    """The table, `[narration] voice` and every direction renamed together name the same takes."""
+    bought = hold_turns(make_inputs(toml=BOTH_PAID, script=DIALOGUE))
+    toml = (
+        BOTH_PAID.replace("[narration]\n", '[narration]\nvoice = "host"\n')
+        .replace("[voices.narrator]", "[voices.host]")
+        .replace("[voices.guest]", "[voices.visitor]")
+    )
+    script = DIALOGUE.replace("[voice narrator]", "[voice host]").replace("[voice guest]", "[voice visitor]")
+    environ = {"ELEVENLABS_API_KEY": ENVIRON["ELEVENLABS_API_KEY"], "DECKTALK_VOICES_HOST_ID": VOICE_ID}
+    renamed = rewritten(bought, script, toml=toml, environ=environ)
+    states = take_states(renamed)
+    assert {state.state for state in states.values()} == {TakeState.VOICED}
+    assert not states.plan(spend=True).cost.buys

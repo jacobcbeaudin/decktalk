@@ -137,6 +137,37 @@ class TestTheLayerView:
         assert row.line == 2
 
 
+class TestAVoicesKey:
+    """A voice's key is explained like any key, with the rows of the provider key it inherits from."""
+
+    def test_explain_names_where_a_voice_inherits_a_value(self, tmp_path: Path) -> None:
+        (tmp_path / "decktalk.toml").write_text(
+            PROJECT_TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nstability = 0.3\n\n'
+            "[elevenlabs]\nstability = 0.6\n",
+            encoding="utf-8",
+        )
+        inherited = explain("voices.narrator.stability", project=tmp_path)
+        assert inherited.value == 0.6
+        assert [(row.layer, row.key) for row in inherited.layers] == [
+            (Layer.DEFAULT, "elevenlabs.stability"),
+            (Layer.PROJECT, "elevenlabs.stability"),
+        ]
+        assert inherited.environment == "DECKTALK_VOICES_NARRATOR_STABILITY"
+        assert inherited.docs.endswith("/configuration#voices")
+        own = explain("voices.guest.stability", project=tmp_path)
+        assert own.value == 0.3
+        assert own.layers[-1].key is None and own.layer is Layer.PROJECT
+
+    def test_a_candidate_for_a_voices_key_is_judged_against_the_voice(self, tmp_path: Path) -> None:
+        (tmp_path / "decktalk.toml").write_text(PROJECT_TOML + '\n[voices.narrator]\nid = "n"\n', encoding="utf-8")
+        assert explain("voices.narrator.speed", project=tmp_path, value="1.1").candidate == 1.1
+
+    def test_a_voice_the_project_does_not_declare_is_refused_by_name(self, tmp_path: Path) -> None:
+        (tmp_path / "decktalk.toml").write_text(PROJECT_TOML + '\n[voices.narrator]\nid = "n"\n', encoding="utf-8")
+        with pytest.raises(InputError, match=r"declares no \[voices.gest\] table"):
+            explain("voices.gest.speed", project=tmp_path)
+
+
 class TestTheNumbersTheKeyFeeds:
     """A setting is only understood once the arithmetic above it is visible."""
 
@@ -221,3 +252,10 @@ class TestWhereTheExplainerReads:
         found = explained("tools.timeout_seconds", machine=here)
         assert [row.layer for row in found.layers] == [Layer.DEFAULT, Layer.MACHINE, Layer.ENVIRONMENT]
         assert found.value == 40.0
+
+
+def test_a_template_of_the_voices_family_is_explained_as_the_default_voices_key() -> None:
+    found = explain("voices.<name>.speed")
+    assert found.key == "voices.narrator.speed"
+    assert found.value == 1.0
+    assert found.environment == "DECKTALK_VOICES_NARRATOR_SPEED"

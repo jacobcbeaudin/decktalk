@@ -278,7 +278,7 @@ uv run python -c "from decktalk import page; print(page.REPORT)"
 
 The telemetry the probe keeps is what only the runtime can describe. A cue row carries the second it
 was due, the second it ran, the frame that ran it and the sentence its reveals describe themselves
-as, and it grows two more stamps afterwards, the frame after the one that ran the cue and the one
+as, leaving out any sentence an earlier cue of the same slide already wrote, and it grows two more stamps afterwards, the frame after the one that ran the cue and the one
 after that, because a cue that ran on time but whose next frame began late was held up by the frame
 that drew it rather than before it. A word row carries the line, the second its cue ran, the second
 the voice reaches it and the second its first word was drawn, which the debug log prints. Frame gaps and long frames say how well the compositor kept up, because a recording is

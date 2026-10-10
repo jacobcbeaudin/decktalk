@@ -100,9 +100,9 @@ decktalk.toml: [elevenlabs]: ignoring unknown key 'stabilty' (did you mean 'stab
 A key spelled under a table it does not live in is warned about the same way, and the closest key is
 named with its own table, because no key is read under any name but its own.
 
-{/* sample: key-in-the-wrong-table, decktalk status, on a fresh decktalk init my-lesson with stability = 0.5 added under [voice], the first line */}
+{/* sample: key-in-the-wrong-table, decktalk status, on a fresh decktalk init my-lesson with tail_seconds = 1.0 added under [voices.narrator], the first line */}
 ```text
-decktalk.toml: [voice]: ignoring unknown key 'stability' (did you mean 'elevenlabs.stability'?).
+decktalk.toml: [voices.narrator]: ignoring unknown key 'tail_seconds' (did you mean 'narration.tail_seconds'?).
 ```
 
 A page section key written on a clip section, or the reverse, gets a warning of its own that names
@@ -212,29 +212,67 @@ FLAC, AAC, PNG, JPEG and WebP. A file in any other format is refused, and so is 
 or DASH manifest, an ffmpeg concat list or an image sequence, because each of those opens files or
 hosts the project never named.
 
-## `[voice]`
+## `[voices.NAME]` and `[narration] voice`
 
-`[voice]` is a settings table of the three keys every voice has. Everything a provider is particular
-about is in that provider's own table, `[elevenlabs]` for ElevenLabs and `[dtsp]` for the local
-voice, so changing `provider` never sends one vendor's fields or model to another.
+Each voice a project reads in is one `[voices.NAME]` table, and `[narration] voice` names the default
+voice, which reads every section no `[voice NAME]` line in the script names. A voice name is a
+lower-case letter followed by lower-case letters and digits, such as `narrator`, `guest` or `host2`,
+so it spells one environment variable. Everything a provider is particular about is in that
+provider's own table, `[elevenlabs]` for ElevenLabs and `[dtsp]` for the local voice, and a voice
+may set any of that table's voice settings for itself alone.
+
+```toml decktalk.toml
+[narration]
+voice = "narrator"            # the default voice, which reads every section no [voice NAME] line names
+
+[voices.narrator]
+provider = "elevenlabs"
+id = "21m00Tcm4TlvDq8ikWAM"
+speed = 1.0
+
+[voices.guest]
+provider = "dtsp"
+id = "af_heart"
+speed = 1.1                   # this voice's own pace
+model = "kokoro-82m"          # over [dtsp] model, for this voice alone
+
+[elevenlabs]                  # every ElevenLabs voice's defaults, and what the plan charges
+dollars_per_1000_characters = 0.30
+stability = 0.55
+similarity_boost = 0.75
+```
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `provider` | string | `elevenlabs` | The speech provider this project is read by. It is a name the machine's own map answers. An unregistered name loads, and it fails when a run asks that voice for a take. A run that does not spend plays placeholders and never asks. DeckTalk ships `elevenlabs` and `dtsp`. |
-| `id` | string | empty | The voice that reads the script. It is a published name rather than a credential, so it is committed with the project, and `DECKTALK_VOICE_ID` in the environment overrides it for anyone who keeps it out of the file. |
-| `speed` | number | `1.0` | How fast the voice speaks, as a multiple of its natural pace. |
+| `provider` | string | `elevenlabs` | The speech provider that reads this voice. It is a name the machine's own map answers. An unregistered name loads, and it fails when a run asks that voice for a take. A run that does not spend plays placeholders and never asks. DeckTalk ships `elevenlabs` and `dtsp`, and one film may mix them. |
+| `id` | string | empty | The provider's id of this voice. It is a published name rather than a credential, so it is committed with the project, and `DECKTALK_VOICES_<NAME>_ID`, such as `DECKTALK_VOICES_GUEST_ID`, overrides it for anyone who keeps it out of the file. |
+| `speed` | number | `1.0` | How fast the voice speaks, as a multiple of its natural pace. Speed is set on each voice alone. |
+
+Any other key of a voice table is a voice setting of its provider's table, such as `model`,
+`stability` or `output_format`, and its value wins over that table's for this voice, whatever layer
+set either. A key of another provider's table is refused when the project loads, and so is the rate
+a provider charges, which every voice of that provider is billed at, and a key only the machine may
+set, such as `base_url`.
+
+A project that writes no `[voices.NAME]` table is read by the default voice at every default. Once
+one table is written, every voice the project reads in needs its own, the default included, and
+`[narration] voice` must name one of them. A variable or a `--set` for a voice the project does not
+declare is refused, because a voice renamed in the file would otherwise leave its variable buying in
+the wrong voice. A voice's name is
+never part of a take's digest, so renaming a voice, with its `[voice NAME]` lines, voices nothing.
+[Write a dialogue](/guides/dialogue) shows a section read by two voices.
 
 The ElevenLabs API key is the one secret, so it lives in `.env` as `ELEVENLABS_API_KEY`, or in the
 environment. The local voice needs none.
 
 `[elevenlabs]` holds `model`, `stability`, `similarity_boost`, `style`, `speaker_boost`,
 `dollars_per_1000_characters`, `output_format` and `base_url`. ElevenLabs bills per character, so its
-rate is stated per thousand characters. `model` is the model that reads the script, and it is set
-here alone, never under `[voice]`. The score stage buys from the same API with the same key and
+rate is stated per thousand characters. `model` is the model every ElevenLabs voice reads in unless
+its own table sets one. The score stage buys from the same API with the same key and
 `base_url`, and its own request settings and its rates per minute of audio are in `[score]`.
 [Configuration](/reference/configuration#elevenlabs) has each one with its range. The voice id, the
 model, `speed`, the four voice fields and `output_format` are part of a take's input digest, so
-changing one makes the next voiced build voice every section again. The price and the base URL are
+changing one makes the next voiced build voice again every turn that voice reads. The price and the base URL are
 not. `base_url` is machine-scoped, so it is set in this machine's file and a `decktalk.toml` that
 sets it is refused.
 
@@ -398,7 +436,7 @@ its hazard by `decktalk schema setting` and documented in full on
 | Table | What it sets |
 |---|---|
 | [`[narration]`](/reference/configuration#narration) | The pacing, the lead and the tail, the take folders and where a take's sound ends. |
-| [`[voice]`](/reference/configuration#voice) | The three keys every voice has: its provider, its id and its speed. |
+| [`[voices.NAME]`](/reference/configuration#voices) | One table per voice: its provider, its id, its speed and any of its provider's voice settings. |
 | [`[elevenlabs]`](/reference/configuration#elevenlabs) | ElevenLabs's own keys: the fields its speech takes, its default model, what your plan charges and its API. |
 | [`[dtsp]`](/reference/configuration#dtsp) | The local voice's own keys: its model and where its server listens. |
 | [`[record]`](/reference/configuration#record) | How the recorder drives Chromium, finds the start of the section clock and judges a stalled or short recording. |
@@ -408,10 +446,27 @@ its hazard by `decktalk schema setting` and documented in full on
 | [`[score]`](/reference/configuration#score) | How each sound and the music are asked for: their models, their lengths and how the music is joined. |
 | [`[verify]`](/reference/configuration#verify) | Every limit the finished film is measured against. |
 | [`[motion]`](/reference/configuration#motion) | Reduced motion and the multiplier on every declared motion span. |
-| [`[output]`](/reference/configuration#output) | The timestamped copy of the final mp4. |
+| [`[output]`](/reference/configuration#output) | The timestamped copy of the final mp4, and whether the captions of a dialogue name its voices. |
 | [`[events]`](/reference/configuration#events) | How many runs of event files are kept, and how large one may grow. |
 
 `decktalk config list` prints every key with the layer that set it.
+
+The captions of a section spoken in more than one voice carry the words alone by default. Turn on
+`caption_voices` to name the voice of every one of those captions, as a WebVTT voice span in the
+`.vtt` and as the name before the line in the `.srt`:
+
+```toml
+[output]
+caption_voices = true
+```
+
+```text
+00:00:03.494 --> 00:00:05.120
+<v engineer>Says who? Every demo says that.</v>
+```
+
+The `.srt` writes the same caption as `engineer: Says who? Every demo says that.`, and those turns
+are wrapped short enough that the name and the line still fit on one caption line.
 
 ## Related
 

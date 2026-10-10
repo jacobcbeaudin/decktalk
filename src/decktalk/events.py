@@ -121,6 +121,9 @@ class SectionStart(Event):
     event: Literal["section.start"] = Field("section.start", description=MOMENT)
     stage: Stage = Field(description="The stage this line is about.")
     section: SectionNumber
+    turn: int | None = Field(
+        None, ge=1, description="The turn of the section this line is about, which narrate names, or null."
+    )
 
 
 class SectionDone(Event):
@@ -129,6 +132,10 @@ class SectionDone(Event):
     event: Literal["section.done"] = Field("section.done", description=MOMENT)
     stage: Stage = Field(description="The stage this line is about.")
     section: SectionNumber
+    turn: int | None = Field(
+        None, ge=1, description="The turn of the section this line is about, which narrate names, or null."
+    )
+
     outcome: Outcome = Field(
         description="Whether the section ran, was skipped, kept what an earlier run made, was stopped, or failed."
     )
@@ -178,9 +185,14 @@ class TakeCharged(Event):
 
     event: Literal["take.charged"] = Field("take.charged", description=MOMENT)
     section: SectionNumber
+    turn: int = Field(ge=1, description="The turn of its section this take reads, counted from one.")
+
     digest: str = Field(pattern=r"^[0-9a-f]+$", description="The take's digest, which names its files.")
+    voice: str = Field(description="The voice that read this take, by its name in decktalk.toml.")
+    provider: str = Field(description="The speech provider that was paid for this take, which that voice names.")
     characters: int = Field(ge=0, description="How many characters were sent for this take.")
-    dollars: float = Field(ge=0, description="What this take cost at the price in force, in US dollars.")
+    dollars: float = Field(ge=0, description="What this take cost at its voice's bill, in US dollars.")
+
     possibly_charged: bool = Field(
         False,
         description=(

@@ -64,6 +64,10 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
         "TAKE_UNALIGNED",
         "CUT_SPEECH",
@@ -535,6 +539,14 @@
       "description": "True when the packaged skills were written into the project.",
       "title": "Skills Written",
       "type": "boolean"
+    },
+    "voices": {
+      "description": "The voices the project's decktalk.toml declares, the default first, read with no machine setting or variable.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Voices",
+      "type": "array"
     }
   },
   "required": [
@@ -543,7 +555,8 @@
     "root",
     "name",
     "example",
-    "skills_written"
+    "skills_written",
+    "voices"
   ],
   "title": "InitResult",
   "type": "object"

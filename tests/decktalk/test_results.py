@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import typing
@@ -63,12 +64,11 @@ def test_every_result_that_can_buy_says_whether_it_could_and_what_it_cost() -> N
     assert results.ScoreResult.spends
 
 
-def test_doctor_names_the_api_key_as_set_missing_or_not_needed() -> None:
-    """A voice that takes no key is reported as needing none, never as a key that is set."""
-    doctor = sample(results.DoctorResult).model_copy(update={"api_key_state": results.ApiKeyState.NOT_NEEDED})
-    written = doctor.model_dump(mode="json")
-    assert written["api_key"] == "not_needed"
-    assert "api_key_state" not in written
+def test_doctor_names_each_api_key_as_set_or_missing_and_never_its_value() -> None:
+    key = results.ProviderKey(provider="elevenlabs", variable="ELEVENLABS_API_KEY", state=results.ApiKeyState.SET)
+    doctor = sample(results.DoctorResult).model_copy(update={"api_keys": (key,)})
+    written = json.loads(doctor.model_dump_json())
+    assert written["api_keys"] == [{"provider": "elevenlabs", "variable": "ELEVENLABS_API_KEY", "state": "set"}]
 
 
 def test_every_result_that_spends_also_reports_what_it_judged() -> None:
@@ -109,10 +109,10 @@ def test_no_collection_field_is_a_list() -> None:
             assert typing.get_origin(field.annotation) is not list, f"{model.__name__}.{name}"
 
 
-def test_the_only_aliases_in_the_package_are_schema_and_api_key() -> None:
-    """`schema` shadows a pydantic name, and `api_key` is a state in Python that must never read as the key itself."""
+def test_the_only_alias_in_the_package_is_schema() -> None:
+    """`schema` shadows a pydantic name, which is the one reason a field is published under another name."""
     aliased = {field.alias for model in models() for field in model.model_fields.values() if field.alias}
-    assert aliased == {"schema", "api_key"}
+    assert aliased == {"schema"}
 
 
 def test_model_class_names_are_unique() -> None:
@@ -185,14 +185,16 @@ def test_the_cost_of_a_rebuild_that_was_never_priced_is_unpriced() -> None:
 
 
 def test_a_stage_cost_dumps_its_stage_after_the_shared_fields() -> None:
-    """A row reads as the price it is, with the stage it prices last, and a cost's rows come after its own fields."""
+    """A row reads as the price it is, with the provider it pays and the stage it prices last, and a cost's rows
+    come after its own fields."""
     cost = a_cost(0.14, 0.14)
     dumped = cost.model_dump(mode="json")
     assert list(dumped)[-1] == "stages"
     (row,) = dumped["stages"]
     assert list(row)[-1] == "stage"
     assert row["stage"] == "narrate"
-    assert {key: value for key, value in row.items() if key != "stage"} == {
+    assert row["provider"] == "elevenlabs"
+    assert {key: value for key, value in row.items() if key not in ("stage", "provider")} == {
         key: value for key, value in dumped.items() if key != "stages"
     }
 

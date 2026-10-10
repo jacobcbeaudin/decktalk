@@ -242,10 +242,13 @@ class Run:
         """Open and close one stage on the stream, whatever the stage does inside."""
         return self._timed(StageStart, StageDone, stage=stage, opening={"index": index, "count": count})
 
-    def section(self, stage: Stage, section: int) -> AbstractContextManager[Ending]:
-        """Open and close one section of one stage on the stream, and check the cancel token first."""
+    def section(self, stage: Stage, section: int, *, turn: int | None = None) -> AbstractContextManager[Ending]:
+        """Open and close one section of one stage on the stream, or one turn of it, and check the cancel token
+        first."""
         self.check()
-        return self._timed(SectionStart, SectionDone, stage=stage, section=section)
+        if turn is None:
+            return self._timed(SectionStart, SectionDone, stage=stage, section=section)
+        return self._timed(SectionStart, SectionDone, stage=stage, section=section, turn=turn)
 
     @contextmanager
     def _timed(

@@ -19,7 +19,7 @@ hold_seconds = 1.5
 [narration]
 tail_seconds = 1.3
 
-[voice]
+[voices.narrator]
 provider = "elevenlabs"
 id = ""   # the voice that reads the script, a published name rather than a secret, so commit it
 speed = 1.0

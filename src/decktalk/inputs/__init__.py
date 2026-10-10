@@ -11,7 +11,7 @@
     paths.py       how a path and a place are published, which is project-relative
 
 `Inputs` is the thin composer of the parsed document, the workspace, the project's secrets, the
-settings in force and the voice in force. It resolves relative paths against the project root,
+settings in force and every voice in force. It resolves relative paths against the project root,
 answers the questions that need more than one of them, and reads the artifacts under `build/`. Every
 rule lives in one of the modules above, so a reader who wants the rule rather than the answer opens
 that module.
@@ -30,6 +30,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any, Literal, overload
 
 from decktalk.artifacts import (
@@ -40,6 +41,7 @@ from decktalk.artifacts import (
     Placements,
     ProviderWords,
     RecordingLog,
+    Take,
     Takes,
     TimedBy,
     Unreadable,
@@ -68,7 +70,7 @@ from decktalk.inputs.document import (
 from decktalk.inputs.env import Env
 from decktalk.inputs.markers import Markers, load_markers
 from decktalk.inputs.paths import at, contained, relative
-from decktalk.inputs.script import ScriptSection, estimated_words, read_script
+from decktalk.inputs.script import VOICE_HINT, ScriptSection, Turn, estimated_words, read_script
 from decktalk.inputs.take_places import TakePlaces
 from decktalk.inputs.workspace import Workspace
 from decktalk.page import PREVIEW_CUE_TIMES
@@ -76,6 +78,7 @@ from decktalk.pipeline import Artifact
 from decktalk.settings import BY_ID, PROJECT_FILE, Layers, Loaded, Settings
 from decktalk.settings.layers import key_warnings, load, machine_folder, read_project_toml, value_of
 from decktalk.speech import VoiceInForce
+from decktalk.tomlmap.suggest import did_you_mean
 
 log = logging.getLogger(__name__)
 
@@ -103,8 +106,10 @@ class Inputs:
     env: Env
     settings: Settings
     layers: Layers
-    voice: VoiceInForce
-    """The voice this project is read in, resolved once from its settings, which every reader asks."""
+    voices: Mapping[str, VoiceInForce]
+    """Every voice this project declares by its name, the default first, each resolved once from its settings."""
+    default_voice: str
+    """The name of the voice that reads every section no voice direction names, which `[narration] voice` gives."""
     notes: tuple[str, ...] = ()
     """Every sentence the load wanted to say, which a caller reports as a line rather than printing."""
 
@@ -136,7 +141,8 @@ class Inputs:
         toml = read_project_toml(root)
         document = Document.from_toml(toml, default_name=root.name)
         loaded = load(root, project=toml, machine=machine, environ=environ, overrides=overrides)
-        voice = VoiceInForce.of(loaded.settings)
+        voices = MappingProxyType({name: VoiceInForce.of(voice) for name, voice in loaded.settings.voices.items()})
+        default_voice = loaded.settings.narration.voice
         build = contained(root, document.build)
         paid = {key: cls._paid_folder(root, loaded.settings, key, build, document.build) for key in PAID_FOLDERS}
         store = cls._take_store(root, loaded, environ, store)
@@ -149,7 +155,6 @@ class Inputs:
                 root=root,
                 build=build,
                 name=document.name,
-                suffix=voice.output.suffix,
                 takes=paid["narration.takes_dir"],
                 score_dir=paid["score.dir"],
                 store=store,
@@ -157,7 +162,8 @@ class Inputs:
             env=Env(file=root / ENV_FILE, environ=environ),
             settings=loaded.settings,
             layers=loaded.layers,
-            voice=voice,
+            voices=voices,
+            default_voice=default_voice,
             notes=notes,
         )
 
@@ -278,6 +284,23 @@ class Inputs:
         declared = {section.number for section in self.document.sections}
         return tuple(read_script(self.script_path, self.root, declared=declared))
 
+    def voice_of(self, turn: Turn) -> VoiceInForce:
+        """The voice that reads one turn: the one its direction names, or the default voice when it names none.
+
+        A turn naming a voice the project does not declare is refused, which narrate and check have
+        refused already with the line it sits on.
+        """
+        name = turn.voice or self.default_voice
+        found = self.voices.get(name)
+        if found is None:
+            listed = ", ".join(self.voices)
+            raise InputError(
+                f"[voice {name}] names no voice, and the voices are {listed}.{did_you_mean(name, self.voices)}",
+                hint=VOICE_HINT,
+                location=at(self.script_path, self.root),
+            )
+        return found
+
     def spoken(self) -> tuple[ScriptSection, ...]:
         """Every section the voice reads, which is every one that does not play a clip."""
         clips = self.document.clip_numbers
@@ -340,6 +363,14 @@ class Inputs:
 
     # ---- where the narration sits ---------------------------------------------------------
 
+    def gap_seconds(self, turn: Turn) -> float:
+        """Silence after one turn of a section before the next, in seconds.
+
+        It is the timed pause written where the voice changes, or `[narration] turn_gap_seconds` when none
+        is written, and like the lead it is placement rather than take content.
+        """
+        return round(self.settings.narration.turn_gap_seconds if turn.gap is None else turn.gap, 3)
+
     def lead_seconds(self, section: int) -> float:
         """Silence before the first word of one section, in seconds.
 
@@ -377,32 +408,60 @@ class Inputs:
     def words(self, number: int) -> Words:
         """One section's words on its section clock, as the kind that timed them, and never None.
 
-        A page section answers its take's words as its take index row says they were timed, moved later by the
-        section's lead. A row its provider timed answers the words read through `take_words` by its digest, and
-        one whose words file is gone answers no words of the kind its digest names, so a placeholder still says
-        its times are estimates. A row an aligner timed answers the aligned words its `alignment` names, when
-        that file reads under its own key. A voiced row no aligner timed, or whose aligned words are gone,
-        answers the row's spoken words estimated over the take's sound. A clip section answers the words file
-        its `words` key names, which already runs on the clip's own clock, and one that does not read is refused
-        as `INPUT`. No take index, no row, or no such section answers an empty `Words`.
-        Every answer is a copy for reading, which no writer puts on disk.
+        A page section of one turn answers its take's words as its take index row says they were timed,
+        moved later by the section's lead. A row its provider timed answers the words read through
+        `take_words` by its digest, and one whose words file is gone answers no words of the kind its
+        digest names, so a placeholder still says its times are estimates. A row an aligner timed answers
+        the aligned words its `alignment` names, when that file reads under its own key. A voiced row no
+        aligner timed, or whose aligned words are gone, answers the row's spoken words estimated over the
+        take's sound. A section of several turns answers every turn's words in turn order on one clock,
+        each turn moved by the section's lead and every earlier turn's span, as `EstimatedWords` when any
+        turn's are estimated and as plain `Words` otherwise. A clip section answers the words file its
+        `words` key names, which already runs on the clip's own clock, and one that does not read is
+        refused as `INPUT`. No take index, no row, or no such section answers an empty `Words`. Every
+        answer is a copy for reading, which no writer puts on disk.
         """
         found = self.document.section(number)
         if isinstance(found, ClipSection):
             return on_section_clock(self.clip_words(found) or Words(), 0.0)
-        index = self.takes()
-        take = index.of(number) if index is not None and found is not None else None
-        if take is None:
+        turns = self.turn_words(number)
+        if not turns:
             return on_section_clock(Words(), 0.0)
-        lead = self.lead_seconds(number)
+        if len(turns) == 1:
+            return turns[0].words
+        joined = tuple(word for turn in turns for word in turn.words.words)
+        kind = EstimatedWords if any(turn.estimated for turn in turns) else Words
+        return on_section_clock(kind(words=joined), 0.0)
+
+    def turn_words(self, number: int) -> tuple[TurnWords, ...]:
+        """Every turn's words of one page section on its section clock, in turn order, or none without a take.
+
+        A turn's words move by the section's lead and by the span of every turn before it, which is the
+        lead, each earlier take to its sound end and the gap after it, as its take index rows hold them.
+        """
+        found = self.document.section(number)
+        index = self.takes()
+        if not isinstance(found, PageSection) or index is None:
+            return ()
+        rows = index.turns_of(number)
+        out: list[TurnWords] = []
+        at = 0.0
+        for row in rows:
+            # A section of one turn is moved by the lead its settings name today, as it always has been.
+            offset = self.lead_seconds(number) if len(rows) == 1 else round(at + row.lead_seconds, 3)
+            said = on_section_clock(self._take_words_of(row), offset)
+            out.append(TurnWords(turn=row.turn, voice=row.voice, spoken=row.spoken, words=said))
+            at += row.span_seconds
+        return tuple(out)
+
+    def _take_words_of(self, take: Take) -> Words:
+        """One row's words on its take's own clock, as the kind that timed them."""
         aligned = self._aligned(take.alignment) if take.alignment is not None else None
         if aligned is not None:
-            return on_section_clock(aligned, lead)
+            return aligned
         if take.voiced and take.timed_by is not TimedBy.PROVIDER:
-            estimate = estimated_words(take.spoken, take.sound_seconds)
-            return on_section_clock(EstimatedWords(words=tuple(estimate)), lead)
-        said = self.take_words(take.digest) or _words_kind(take.digest)()
-        return on_section_clock(said, lead)
+            return EstimatedWords(words=tuple(estimated_words(take.spoken, take.sound_seconds)))
+        return self.take_words(take.digest) or _words_kind(take.digest)()
 
     def _aligned(self, key: str) -> AlignedWords | None:
         """The aligned words kept under `key`, or None when there are none that read under that key."""
@@ -553,6 +612,21 @@ class Inputs:
         )
 
 
+@dataclass(frozen=True)
+class TurnWords:
+    """One turn's words on its section's clock, with the voice that reads it and the text it says."""
+
+    turn: int
+    voice: str
+    spoken: str
+    words: Words
+
+    @property
+    def estimated(self) -> bool:
+        """Whether DeckTalk estimated these words rather than a voice or an aligner timing them."""
+        return self.words.estimated
+
+
 def _words_kind(digest: str) -> type[ProviderWords] | type[EstimatedWords]:
     """Who timed the words of the take with this digest: DeckTalk for a placeholder, its provider for any other."""
     return EstimatedWords if is_placeholder(digest) else ProviderWords
@@ -608,5 +682,6 @@ __all__ = [
     "SoundSpec",
     "Score",
     "Transition",
+    "TurnWords",
     "Workspace",
 ]

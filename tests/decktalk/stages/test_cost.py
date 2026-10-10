@@ -22,7 +22,7 @@ from hypothesis import strategies as st
 from decktalk.inputs import Inputs
 from decktalk.pipeline import Stage
 from decktalk.results import BillingBasis, Cost, CostState, Layer, SoundKind, money, rate_money, up_to_the_cent
-from decktalk.stages.cost import Buy, charge_of, cost_of, is_free, total
+from decktalk.stages.cost import Buy, charge_of, cost_of, total
 from support.costs import a_cost
 from support.fakes import FREE_VOICE_NAME
 from support.projects import MINIMAL_TOML, load_project
@@ -102,7 +102,7 @@ duration_seconds = 10
 """
 """One ten-second effect at twelve cents a minute, which is two cents."""
 
-HOUSE_VOICE = '\n[voice]\nprovider = "house"\n'
+HOUSE_VOICE = '\n[voices.narrator]\nprovider = "house"\n'
 """What names a voice DeckTalk does not ship, which a host registers itself."""
 
 HOUSE_SOUND = '\n[score]\nprovider = "house"\n'
@@ -115,8 +115,21 @@ THE_RATED_SCORE = (
 )
 """What the score project asks for: 25 s of bed, half a second of effect and thirty seconds of music."""
 
-TAKES = (Buy(characters=39, seconds=3.8, sections=(1,)), Buy(characters=21, seconds=2.0, sections=(2,)))
-"""Two takes of 39 and 21 characters, which run 3.8 and 2 seconds."""
+
+def take(
+    inputs: Inputs, *, characters: int = 0, seconds: float = 0.0, sections: tuple[int, ...] = (), certain: bool = True
+) -> Buy:
+    """One take the project's default voice reads, counted every way a voice could bill it."""
+    voice = inputs.voices[inputs.default_voice]
+    return Buy(characters=characters, seconds=seconds, sections=sections, certain=certain, voice=voice)
+
+
+def takes(inputs: Inputs) -> tuple[Buy, Buy]:
+    """Two takes of 39 and 21 characters, which run 3.8 and 2 seconds, read by the default voice."""
+    return (
+        take(inputs, characters=39, seconds=3.8, sections=(1,)),
+        take(inputs, characters=21, seconds=2.0, sections=(2,)),
+    )
 
 
 def project(tmp_path: Path, toml: str) -> Inputs:
@@ -124,7 +137,7 @@ def project(tmp_path: Path, toml: str) -> Inputs:
     return load_project(tmp_path, toml, environ={})
 
 
-FREE_VOICE = f'\n[voice]\nprovider = "{FREE_VOICE_NAME}"\n'
+FREE_VOICE = f'\n[voices.narrator]\nprovider = "{FREE_VOICE_NAME}"\n'
 """What names the voice DeckTalk ships that bills nothing."""
 
 
@@ -136,9 +149,9 @@ def an_effect(seconds: float, *, sections: tuple[int, ...] = (1,)) -> Buy:
 # ---- the bill and the rate ----------------------------------------------------------------------
 
 
-def test_a_buy_counted_below_zero_is_refused() -> None:
+def test_a_buy_counted_below_zero_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="nothing bought is counted below zero"):
-        Buy(characters=-1)
+        take(project(tmp_path, MINIMAL_TOML), characters=-1)
     with pytest.raises(ValueError, match="nothing bought is counted below zero"):
         Buy(seconds=-0.5, kind=SoundKind.EFFECT)
 
@@ -146,11 +159,12 @@ def test_a_buy_counted_below_zero_is_refused() -> None:
 def test_takes_and_sounds_are_priced_apart(tmp_path: Path) -> None:
     """A take and a sound are two stages, two providers and two bills, which `total` adds."""
     with pytest.raises(ValueError, match="one cost prices one stage"):
-        cost_of(project(tmp_path, SOUND), [Buy(characters=10), an_effect(1.0)])
+        inputs = project(tmp_path, SOUND)
+        cost_of(inputs, [take(inputs, characters=10), an_effect(1.0)])
 
 
 @pytest.mark.parametrize(
-    ("toml", "take", "sound"),
+    ("toml", "take_bill", "sound_bill"),
     [
         (SOUND + HOUSE_VOICE, BillingBasis.UNDECLARED, BillingBasis.PER_SECOND),
         (SOUND + HOUSE_SOUND, BillingBasis.PER_CHARACTER, BillingBasis.UNDECLARED),
@@ -158,11 +172,11 @@ def test_takes_and_sounds_are_priced_apart(tmp_path: Path) -> None:
     ids=["a-host-voice", "a-host-sound-provider"],
 )
 def test_a_take_is_paid_to_the_voice_and_a_sound_to_the_scores_provider(
-    tmp_path: Path, toml: str, take: BillingBasis, sound: BillingBasis
+    tmp_path: Path, toml: str, take_bill: BillingBasis, sound_bill: BillingBasis
 ) -> None:
     inputs = project(tmp_path, toml)
-    assert cost_of(inputs, [Buy(characters=10)]).billing is take
-    assert cost_of(inputs, [an_effect(10.0)]).billing is sound
+    assert cost_of(inputs, [take(inputs, characters=10)]).billing is take_bill
+    assert cost_of(inputs, [an_effect(10.0)]).billing is sound_bill
 
 
 VOICE_BILLS = (BillingBasis.PER_CHARACTER, BillingBasis.PER_SECOND, BillingBasis.FREE, BillingBasis.UNDECLARED)
@@ -178,7 +192,7 @@ def a_voice_billed(tmp_path: Path, bill: BillingBasis) -> Inputs:
     """
     if bill is BillingBasis.PER_SECOND:
         inputs = project(tmp_path, SPEECH)
-        return replace(inputs, voice=replace(inputs.voice, billing=BillingBasis.PER_SECOND))
+        return replace(inputs, voices={"narrator": replace(inputs.voices["narrator"], billing=BillingBasis.PER_SECOND)})
     if bill is BillingBasis.FREE:
         return project(tmp_path, SPEECH + FREE_VOICE)
     return project(tmp_path, SPEECH + HOUSE_VOICE if bill is BillingBasis.UNDECLARED else SPEECH)
@@ -186,7 +200,7 @@ def a_voice_billed(tmp_path: Path, bill: BillingBasis) -> Inputs:
 
 @pytest.mark.parametrize("bill", VOICE_BILLS)
 def test_a_take_is_priced_at_the_bill_its_provider_declares(tmp_path: Path, bill: BillingBasis) -> None:
-    spend = cost_of(a_voice_billed(tmp_path, bill), TAKES)
+    spend = cost_of(a_voice_billed(tmp_path, bill), takes(a_voice_billed(tmp_path, bill)))
     assert spend.billing is bill
     assert spend.state is CostState.ESTIMATE
     assert spend.sections == (1, 2)
@@ -213,22 +227,23 @@ def test_a_take_is_priced_at_the_bill_its_provider_declares(tmp_path: Path, bill
 
 def test_the_rate_is_the_one_the_providers_own_table_states(tmp_path: Path) -> None:
     inputs = project(tmp_path, SPEECH)
-    assert charge_of(inputs, Buy(characters=2000)) == 0.6
+    assert charge_of(inputs, take(inputs, characters=2000)) == 0.6
     assert cost_of(inputs).price_layer is Layer.PROJECT
 
 
 def test_a_voice_with_no_table_is_priced_at_a_rate_nobody_stated(tmp_path: Path) -> None:
-    """Changing `[voice] provider` never carries ElevenLabs's rate into another voice's price."""
+    """Changing `[voices.NAME] provider` never carries ElevenLabs's rate into another voice's price."""
     inputs = project(tmp_path, MINIMAL_TOML + HOUSE_VOICE)
     nothing = cost_of(inputs)
     assert nothing.dollars_per_1000_characters == nothing.dollars_per_minute == 0.0
     assert nothing.price_layer is Layer.DEFAULT
-    assert charge_of(inputs, Buy(characters=100)) == 0.0
+    assert charge_of(inputs, take(inputs, characters=100)) == 0.0
 
 
 def test_a_price_nobody_stated_is_reported_as_the_default(tmp_path: Path) -> None:
     """`--max-cost` refuses while the price is the default, so the layer has to travel with it."""
-    spend = cost_of(project(tmp_path, MINIMAL_TOML), [Buy(characters=7, sections=(1,))])
+    inputs = project(tmp_path, MINIMAL_TOML)
+    spend = cost_of(inputs, [take(inputs, characters=7, sections=(1,))])
     assert spend.price_layer is Layer.DEFAULT
     assert spend.price_key == "elevenlabs.dollars_per_1000_characters"
     assert spend.dollars_per_1000_characters == pytest.approx(0.0)
@@ -303,7 +318,7 @@ def test_a_price_no_layer_records_is_the_default_price_and_not_a_crash(
         raise KeyError(key)
 
     monkeypatch.setattr(type(inputs.layers), "winner", unstated)
-    assert cost_of(inputs, TAKES).price_layer is Layer.DEFAULT
+    assert cost_of(inputs, takes(inputs)).price_layer is Layer.DEFAULT
     assert cost_of(inputs, [an_effect(10.0)]).price_layer is Layer.DEFAULT
 
 
@@ -335,8 +350,9 @@ def test_a_cost_of_nothing_names_the_voices_rate_and_layer(tmp_path: Path) -> No
 
 def test_a_possible_take_moves_the_ceiling_and_never_the_price(tmp_path: Path) -> None:
     """A take that may already be on disk counts into the ceiling alone, and its section after the certain ones."""
-    possible = Buy(characters=100, seconds=8.0, sections=(1,), certain=False)
-    priced = cost_of(project(tmp_path, SPEECH), [Buy(characters=39, seconds=3.8, sections=(3,)), possible])
+    inputs = project(tmp_path, SPEECH)
+    possible = take(inputs, characters=100, seconds=8.0, sections=(1,), certain=False)
+    priced = cost_of(inputs, [take(inputs, characters=39, seconds=3.8, sections=(3,)), possible])
     assert priced.dollars == 0.02
     assert priced.ceiling_dollars == up_to_the_cent([0.0117, 0.03]) == 0.05
     assert (priced.characters, priced.seconds) == (39, 3.8)
@@ -345,9 +361,10 @@ def test_a_possible_take_moves_the_ceiling_and_never_the_price(tmp_path: Path) -
 
 def test_a_charged_cost_counts_a_possible_buy_into_its_ceiling_alone(tmp_path: Path) -> None:
     """A request whose reply broke may have been billed, so it raises the ceiling and never the dollars spent."""
-    possible = Buy(characters=100, seconds=8.0, sections=(1,), certain=False)
+    inputs = project(tmp_path, SPEECH)
+    possible = take(inputs, characters=100, seconds=8.0, sections=(1,), certain=False)
     charged = cost_of(
-        project(tmp_path, SPEECH), [Buy(characters=39, seconds=3.8, sections=(3,)), possible], state=CostState.CHARGED
+        inputs, [take(inputs, characters=39, seconds=3.8, sections=(3,)), possible], state=CostState.CHARGED
     )
     assert charged.state is CostState.CHARGED
     assert (charged.dollars, charged.ceiling_dollars) == (0.02, 0.05)
@@ -361,7 +378,10 @@ def test_a_total_of_speech_and_sound_says_it_is_mixed_and_counts_both(tmp_path: 
     """Characters and seconds are two bills, so the total names neither one's rate as the whole run's."""
     inputs = project(tmp_path, SOUND)
     whole = total(
-        [cost_of(inputs, [Buy(characters=1000, seconds=70.0, sections=(1,))]), cost_of(inputs, [an_effect(120.0)])]
+        [
+            cost_of(inputs, [take(inputs, characters=1000, seconds=70.0, sections=(1,))]),
+            cost_of(inputs, [an_effect(120.0)]),
+        ]
     )
     assert whole.billing is BillingBasis.MIXED
     assert (whole.characters, whole.seconds) == (1000, 120.0)
@@ -384,14 +404,14 @@ def test_a_total_that_buys_only_sound_is_billed_the_way_sound_is(tmp_path: Path)
 def test_a_free_voice_beside_paid_sound_leaves_the_sound_to_bill_the_total(tmp_path: Path) -> None:
     """The free takes cost nothing and state no rate, so the total names the rate somebody stated."""
     inputs = project(tmp_path, SOUND + FREE_VOICE)
-    whole = total([cost_of(inputs, TAKES), cost_of(inputs, [an_effect(60.0)])])
+    whole = total([cost_of(inputs, takes(inputs)), cost_of(inputs, [an_effect(60.0)])])
     assert whole.billing is BillingBasis.PER_SECOND
     assert (whole.price_key, whole.price_layer) == ("score.effects.dollars_per_minute", Layer.PROJECT)
 
 
 def test_a_voice_that_declares_no_bill_leaves_the_whole_total_undeclared(tmp_path: Path) -> None:
     inputs = project(tmp_path, SOUND + HOUSE_VOICE)
-    whole = total([cost_of(inputs, TAKES), cost_of(inputs, [an_effect(60.0)])])
+    whole = total([cost_of(inputs, takes(inputs)), cost_of(inputs, [an_effect(60.0)])])
     assert whole.billing is BillingBasis.UNDECLARED
     assert "cannot price it" in whole.sentence
 
@@ -417,7 +437,9 @@ def test_a_charged_total_counts_only_the_stages_that_had_leave_to_buy(
     """A score that only priced what it would buy is never reported as spent beside a narration that bought."""
     inputs = project(tmp_path, SOUND + voice)
     characters = 39 if voice else 1000
-    narrated = cost_of(inputs, [Buy(characters=characters, seconds=3.9, sections=(1,))], state=CostState.CHARGED)
+    narrated = cost_of(
+        inputs, [take(inputs, characters=characters, seconds=3.9, sections=(1,))], state=CostState.CHARGED
+    )
     whole = total([narrated, cost_of(inputs, [an_effect(60.0)])])
     assert whole.state is CostState.CHARGED
     assert whole.dollars == whole.ceiling_dollars == dollars
@@ -432,7 +454,7 @@ def test_a_total_of_nothing_is_refused() -> None:
 def test_a_total_adds_only_billed_seconds(tmp_path: Path) -> None:
     """A per-character narration's expected seconds are not billed, so they are not sound the total counts."""
     inputs = project(tmp_path, SOUND)
-    narrated = cost_of(inputs, [Buy(characters=39, seconds=3.8, sections=(1,))])
+    narrated = cost_of(inputs, [take(inputs, characters=39, seconds=3.8, sections=(1,))])
     assert narrated.seconds == 3.8
     whole = total([narrated, cost_of(inputs, [an_effect(60.0)])])
     assert (whole.characters, whole.seconds) == (39, 60.0)
@@ -448,23 +470,24 @@ def test_free_is_what_the_voice_declares_and_never_a_rate_of_zero(tmp_path: Path
     assert a_cost(0.0, 0.0, billing=BillingBasis.FREE, layer=Layer.DEFAULT).free
     zero_rate = MINIMAL_TOML + "\n[elevenlabs]\ndollars_per_1000_characters = 0.0\n"
     zero = project(tmp_path / "a-paid-voice", zero_rate)
-    assert not is_free(zero) and not cost_of(zero, TAKES).free
+    assert not zero.voices["narrator"].free and not cost_of(zero, takes(zero)).free
     free = project(tmp_path / "a-free-voice", zero_rate + FREE_VOICE)
-    assert is_free(free) and cost_of(free, TAKES).free
+    assert free.voices["narrator"].free and cost_of(free, takes(free)).free
 
 
 @pytest.mark.parametrize("bill", VOICE_BILLS)
-def test_is_free_charge_of_and_the_costs_billing_read_one_declaration(tmp_path: Path, bill: BillingBasis) -> None:
+def test_free_charge_of_and_the_costs_billing_read_one_declaration(tmp_path: Path, bill: BillingBasis) -> None:
     inputs = a_voice_billed(tmp_path, bill)
-    free = is_free(inputs)
-    assert free is (charge_of(inputs, TAKES[0]) is None)
-    assert free is (cost_of(inputs, TAKES).billing is BillingBasis.FREE)
+    free = inputs.voices["narrator"].free
+    assert free is (charge_of(inputs, takes(inputs)[0]) is None)
+    assert free is (cost_of(inputs, takes(inputs)).billing is BillingBasis.FREE)
     assert free is (bill is BillingBasis.FREE)
 
 
 def test_charge_of_is_the_exact_decimal_of_one_request(tmp_path: Path) -> None:
     """A charge is worked out in decimals, so 7 characters at 30 cents per 1,000 is $0.0021 and not a float near it."""
-    assert charge_of(project(tmp_path / "speech", SPEECH), Buy(characters=7)) == 0.0021
+    speech = project(tmp_path / "speech", SPEECH)
+    assert charge_of(speech, take(speech, characters=7)) == 0.0021
     assert charge_of(project(tmp_path / "sound", SOUND), an_effect(35.0)) == 0.07
 
 
@@ -473,9 +496,11 @@ def test_charge_of_is_the_exact_decimal_of_one_request(tmp_path: Path) -> None:
 
 def test_a_certain_price_rounds_up_to_the_cent_with_its_ceiling(tmp_path: Path) -> None:
     """39 characters at 30 cents per 1,000 is $0.0117, which a run can pay, so it is never stated as a cent less."""
-    priced = cost_of(project(tmp_path, SPEECH), [Buy(characters=39, seconds=3.8, sections=(1,))])
+    inputs = project(tmp_path, SPEECH)
+    priced = cost_of(inputs, [take(inputs, characters=39, seconds=3.8, sections=(1,))])
     assert priced.dollars == priced.ceiling_dollars == 0.02
-    free = cost_of(project(tmp_path, SPEECH + FREE_VOICE), [Buy(sections=(1,))])
+    gratis = project(tmp_path, SPEECH + FREE_VOICE)
+    free = cost_of(gratis, [take(gratis, sections=(1,))])
     assert free.dollars == free.ceiling_dollars == 0.0
     assert money(free.dollars) == "$0.00"
 
@@ -487,7 +512,7 @@ def test_each_stage_rounds_once_and_the_total_adds_the_rounded_stages(tmp_path: 
         + "\n[elevenlabs]\ndollars_per_1000_characters = 0.1\n\n[score.effects]\ndollars_per_minute = 0.149\n"
     )
     inputs = project(tmp_path, toml)
-    narrated, scored = cost_of(inputs, [Buy(characters=149, sections=(1,))]), cost_of(inputs, [an_effect(6.0)])
+    narrated, scored = cost_of(inputs, [take(inputs, characters=149, sections=(1,))]), cost_of(inputs, [an_effect(6.0)])
     assert narrated.dollars == scored.dollars == 0.02
     whole = total([narrated, scored])
     assert whole.dollars == whole.ceiling_dollars == 0.04
@@ -500,17 +525,21 @@ def priced(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, Input
     yield {name: project(tmp_path_factory.mktemp(name), toml) for name, toml in rates.items()}
 
 
-TAKE_BUYS = st.lists(
-    st.builds(
-        Buy,
-        characters=st.integers(min_value=0, max_value=5000),
-        seconds=st.integers(min_value=0, max_value=1200).map(lambda tenths: tenths / 10),
-        sections=st.integers(min_value=1, max_value=40).map(lambda number: (number,)),
-        certain=st.booleans(),
-    ),
-    max_size=40,
-)
-"""Up to forty takes, each a count of characters and the seconds the script gives it, to a tenth."""
+def take_buys(inputs: Inputs) -> st.SearchStrategy[list[Buy]]:
+    """Up to forty takes the project's default voice reads, each a count of characters and the seconds the script
+    gives it, to a tenth."""
+    return st.lists(
+        st.builds(
+            Buy,
+            characters=st.integers(min_value=0, max_value=5000),
+            seconds=st.integers(min_value=0, max_value=1200).map(lambda tenths: tenths / 10),
+            sections=st.integers(min_value=1, max_value=40).map(lambda number: (number,)),
+            certain=st.booleans(),
+            voice=st.just(inputs.voices[inputs.default_voice]),
+        ),
+        max_size=40,
+    )
+
 
 SOUND_BUYS = st.lists(
     st.builds(
@@ -527,9 +556,9 @@ PROJECTS = ["speech-0.3", "speech-0.005", "sound"]
 """The rates each invariant is held at: two per-character voices and a score of three per-minute kinds."""
 
 
-def buys_for(name: str) -> st.SearchStrategy[list[Buy]]:
+def buys_for(name: str, inputs: Inputs) -> st.SearchStrategy[list[Buy]]:
     """The buys a project of this name is searched over: takes for a voice, sounds for a score."""
-    return SOUND_BUYS if name == "sound" else TAKE_BUYS
+    return SOUND_BUYS if name == "sound" else take_buys(inputs)
 
 
 def exact(inputs: Inputs, buys: Sequence[Buy]) -> Fraction:
@@ -554,7 +583,7 @@ def test_a_stages_charges_add_up_to_its_charged_cost_to_the_cent(priced: dict[st
     """
     inputs = priced[name]
 
-    @given(buys=buys_for(name))
+    @given(buys=buys_for(name, inputs))
     def holds(buys: list[Buy]) -> None:
         charged = cost_of(inputs, buys, state=CostState.CHARGED)
         assert charged.dollars == up_to_the_cent(charge_of(inputs, buy) or 0.0 for buy in buys if buy.certain)
@@ -568,7 +597,7 @@ def test_a_charged_cost_never_exceeds_the_ceiling_it_was_approved_at(priced: dic
     """Whatever part of an approved plan a run bought, its charged price is under the ceiling it was approved at."""
     inputs = priced[name]
 
-    @given(buys=buys_for(name), data=st.data())
+    @given(buys=buys_for(name, inputs), data=st.data())
     def holds(buys: list[Buy], data: st.DataObject) -> None:
         bought = data.draw(st.lists(st.sampled_from(buys), unique_by=id)) if buys else []
         approved = cost_of(inputs, buys)
@@ -582,7 +611,7 @@ def test_a_ceiling_is_never_below_what_the_buys_can_cost(priced: dict[str, Input
     """The ceiling is rounded up from the exact bill, so it is at or above it and less than a cent over."""
     inputs = priced[name]
 
-    @given(buys=buys_for(name))
+    @given(buys=buys_for(name, inputs))
     def holds(buys: list[Buy]) -> None:
         owed = exact(inputs, buys)
         ceiling = Fraction(Decimal(repr(cost_of(inputs, buys).ceiling_dollars)))
@@ -594,12 +623,12 @@ def test_a_ceiling_is_never_below_what_the_buys_can_cost(priced: dict[str, Input
 def test_a_totals_figures_are_its_counted_stages_figures_added(tmp_path: Path) -> None:
     """A reader who adds the stages a total counts gets the total, and a stage it does not count is left out."""
     inputs = project(tmp_path, SOUND)
-    narrated = cost_of(inputs, [Buy(characters=39, seconds=3.8, sections=(1,))])
+    narrated = cost_of(inputs, [take(inputs, characters=39, seconds=3.8, sections=(1,))])
     scored = cost_of(inputs, [an_effect(10.0), an_effect(25.0)])
     whole = total([narrated, scored])
     assert whole.dollars == round(narrated.dollars + scored.dollars, 2)
     assert whole.ceiling_dollars == round(narrated.ceiling_dollars + scored.ceiling_dollars, 2)
-    charged = cost_of(inputs, [Buy(characters=39, seconds=3.8, sections=(1,))], state=CostState.CHARGED)
+    charged = cost_of(inputs, [take(inputs, characters=39, seconds=3.8, sections=(1,))], state=CostState.CHARGED)
     assert total([charged, scored]).dollars == charged.dollars
 
 
@@ -609,7 +638,7 @@ def test_a_totals_figures_are_its_counted_stages_figures_added(tmp_path: Path) -
 def test_each_stage_that_buys_has_one_row_in_pipeline_order(tmp_path: Path) -> None:
     """A stage's own cost is its one row, and a total holds every stage's row in pipeline order."""
     inputs = project(tmp_path, SOUND)
-    narrated, scored = cost_of(inputs, TAKES), cost_of(inputs, [an_effect(60.0)])
+    narrated, scored = cost_of(inputs, takes(inputs)), cost_of(inputs, [an_effect(60.0)])
     assert [row.stage for row in narrated.stages] == [Stage.NARRATE]
     assert [row.stage for row in scored.stages] == [Stage.SCORE]
     assert narrated.stages[0].dollars == narrated.dollars
@@ -620,7 +649,7 @@ def test_each_stage_that_buys_has_one_row_in_pipeline_order(tmp_path: Path) -> N
 def test_a_stage_row_keeps_its_own_state_in_a_charged_total(tmp_path: Path) -> None:
     """A free voice voiced and the score only priced, so the score's row stays an estimate and is not spent."""
     inputs = project(tmp_path, SOUND + FREE_VOICE)
-    narrated = cost_of(inputs, [Buy(characters=39, seconds=3.9, sections=(1,))], state=CostState.CHARGED)
+    narrated = cost_of(inputs, [take(inputs, characters=39, seconds=3.9, sections=(1,))], state=CostState.CHARGED)
     whole = total([narrated, cost_of(inputs, [an_effect(60.0)])])
     assert [(row.stage, row.state) for row in whole.stages] == [
         (Stage.NARRATE, CostState.CHARGED),
@@ -633,8 +662,10 @@ def test_a_stage_row_keeps_its_own_state_in_a_charged_total(tmp_path: Path) -> N
 
 def test_one_stage_in_two_costs_is_refused(tmp_path: Path) -> None:
     inputs = project(tmp_path, SPEECH)
-    with pytest.raises(ValueError, match="narrate is in two of the costs added, which would count it twice"):
-        total([cost_of(inputs, TAKES), cost_of(inputs, TAKES)])
+    with pytest.raises(
+        ValueError, match="narrate on elevenlabs is in two of the costs added, which would count it twice"
+    ):
+        total([cost_of(inputs, takes(inputs)), cost_of(inputs, takes(inputs))])
 
 
 def two_stages(tmp_path: Path, state: CostState = CostState.ESTIMATE, voice: str = "") -> Cost:
@@ -643,7 +674,7 @@ def two_stages(tmp_path: Path, state: CostState = CostState.ESTIMATE, voice: str
     `voice` is what the project adds to name its voice, which is the paid one when it adds nothing.
     """
     inputs = project(tmp_path, SOUND + voice)
-    narrated = cost_of(inputs, [Buy(characters=39, seconds=3.9, sections=(1,))], state=state)
+    narrated = cost_of(inputs, [take(inputs, characters=39, seconds=3.9, sections=(1,))], state=state)
     return total([narrated, cost_of(inputs, [an_effect(60.0)], state=state)])
 
 
@@ -682,7 +713,7 @@ def test_a_free_voice_beside_a_paid_score_names_both(tmp_path: Path, state: Cost
 def test_takes_nobody_could_match_beside_a_score_name_the_whole_ceiling(tmp_path: Path) -> None:
     """The narration may cost nothing or up to $0.14, so the sentence names the run's whole ceiling of $0.26."""
     inputs = project(tmp_path, SOUND)
-    unmatched = cost_of(inputs, [Buy(characters=466, seconds=39.0, sections=(1,), certain=False)])
+    unmatched = cost_of(inputs, [take(inputs, characters=466, seconds=39.0, sections=(1,), certain=False)])
     assert (unmatched.dollars, unmatched.ceiling_dollars) == (0.0, 0.14)
     whole = total([unmatched, cost_of(inputs, [an_effect(60.0)])])
     assert (whole.dollars, whole.ceiling_dollars) == (0.12, 0.26)
@@ -696,7 +727,86 @@ def test_takes_nobody_could_match_beside_a_score_name_the_whole_ceiling(tmp_path
 def test_a_score_is_never_called_takes_on_disk(tmp_path: Path) -> None:
     """Only takes are matched to a voice, so no clause about the score borrows the words of an unchecked take."""
     inputs = project(tmp_path, SOUND)
-    unmatched = cost_of(inputs, [Buy(characters=466, seconds=39.0, sections=(1,), certain=False)])
+    unmatched = cost_of(inputs, [take(inputs, characters=466, seconds=39.0, sections=(1,), certain=False)])
     scored = cost_of(inputs, [an_effect(2.0)])
     for said in (scored.sentence, two_stages(tmp_path).sentence, total([unmatched, scored]).sentence):
         assert all("take" not in clause for clause in said.split(", and ") if "score" in clause or "audio" in clause)
+
+
+# ---- each take at its own voice's bill ---------------------------------------------------------
+
+MIXED = SPEECH + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nprovider = "dtsp"\nid = "af_heart"\n'
+"""A paid narrator at 30 cents per 1,000 characters beside a free guest."""
+
+
+def read_by(inputs: Inputs, name: str, characters: int, section: int) -> Buy:
+    """One take of this many characters that the named voice reads."""
+    return Buy(characters=characters, seconds=1.0, sections=(section,), voice=inputs.voices[name])
+
+
+def test_a_paid_take_beside_a_free_take_is_priced_at_each_bill(tmp_path: Path) -> None:
+    inputs = project(tmp_path, MIXED)
+    priced = cost_of(inputs, [read_by(inputs, "narrator", 1000, 1), read_by(inputs, "guest", 500, 2)])
+    assert [(row.stage, row.provider, row.billing, row.characters, row.dollars) for row in priced.stages] == [
+        (Stage.NARRATE, "elevenlabs", BillingBasis.PER_CHARACTER, 1000, 0.30),
+        (Stage.NARRATE, "dtsp", BillingBasis.FREE, 500, 0.0),
+    ]
+    assert (priced.billing, priced.dollars, priced.ceiling_dollars) == (BillingBasis.PER_CHARACTER, 0.30, 0.30)
+    assert priced.sections == (1, 2)
+    assert priced.sentence == (
+        "This run costs $0.30 for the narration's 1,000 characters on elevenlabs at $0.30 per 1,000 characters, "
+        "and voices 500 characters on dtsp for nothing, because the provider is free."
+    )
+
+
+@pytest.mark.parametrize("paid_first", [True, False], ids=["paid-first", "free-first"])
+def test_a_free_bill_never_names_the_price_of_a_paid_one(tmp_path: Path, paid_first: bool) -> None:
+    """A free row stated at nobody's rate must never make a paid take beside it read as free."""
+    inputs = project(tmp_path, MIXED)
+    buys = [read_by(inputs, "narrator", 400, 1), read_by(inputs, "guest", 1000, 2)]
+    priced = cost_of(inputs, buys if paid_first else buys[::-1])
+    assert priced.billing is BillingBasis.PER_CHARACTER
+    assert not priced.free
+    assert (priced.price_key, priced.price_layer) == ("elevenlabs.dollars_per_1000_characters", Layer.PROJECT)
+    assert priced.dollars_per_1000_characters == 0.3
+    assert priced.dollars == 0.12
+
+
+def test_a_cost_of_one_voice_is_todays_cost(tmp_path: Path) -> None:
+    """One row is the whole price, so a project read by one voice prices exactly as it always has."""
+    inputs = project(tmp_path, SPEECH)
+    priced = cost_of(inputs, takes(inputs))
+    (row,) = priced.stages
+    assert row.provider == "elevenlabs"
+    assert priced.model_dump(exclude={"stages"}) == row.model_dump(exclude={"stage", "provider"})
+    assert (priced.dollars, priced.characters, priced.billing) == (0.02, 60, BillingBasis.PER_CHARACTER)
+    assert priced.sentence == "This run costs $0.02 for 60 characters at $0.30 per 1,000 characters."
+
+
+def test_charge_of_reads_the_bill_of_the_buys_own_voice(tmp_path: Path) -> None:
+    inputs = project(tmp_path, MIXED)
+    assert charge_of(inputs, read_by(inputs, "narrator", 1000, 1)) == 0.3
+    assert charge_of(inputs, read_by(inputs, "guest", 1000, 1)) is None
+
+
+def test_a_take_names_its_voice_and_a_sound_names_none(tmp_path: Path) -> None:
+    voice = project(tmp_path, SPEECH).voices["narrator"]
+    with pytest.raises(ValueError, match="a take names the voice that reads it"):
+        Buy(characters=10)
+    with pytest.raises(ValueError, match="a sound names no voice"):
+        Buy(seconds=1.0, kind=SoundKind.EFFECT, voice=voice)
+
+
+def test_a_build_total_keeps_one_narration_row_per_provider(tmp_path: Path) -> None:
+    inputs = project(tmp_path, MIXED + "\n[score.effects]\ndollars_per_minute = 0.12\n")
+    narrated = cost_of(inputs, [read_by(inputs, "narrator", 1000, 1), read_by(inputs, "guest", 500, 2)])
+    whole = total([narrated, cost_of(inputs, [an_effect(60.0)])])
+    assert [(row.stage, row.provider) for row in whole.stages] == [
+        (Stage.NARRATE, "elevenlabs"),
+        (Stage.NARRATE, "dtsp"),
+        (Stage.SCORE, "elevenlabs"),
+    ]
+    assert (whole.dollars, whole.characters, whole.seconds) == (0.42, 1500, 60.0)
+    assert whole.billing is BillingBasis.MIXED
+    with pytest.raises(ValueError, match="narrate on elevenlabs is in two of the costs added"):
+        total([narrated, narrated])

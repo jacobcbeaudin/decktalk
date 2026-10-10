@@ -66,7 +66,7 @@ from decktalk.machine.run import Run
 from decktalk.media import ffmpeg
 from decktalk.page import Q
 from decktalk.pipeline import PIPELINE, Stage
-from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult, UnplayedTakes
+from decktalk.results import LiveRun, SectionKind, SectionStatus, StatusResult, TurnStatus, UnplayedTakes, VoiceStatus
 from decktalk.stages.kept import BUILT, assembled, read_kept, verify_digest
 from decktalk.stages.narrate import TakeStates, take_states
 from decktalk.stages.record import stale_recording
@@ -180,6 +180,11 @@ def section_rows(
                 source=source_of(section),
                 take_state=state.state if state is not None else None,
                 take_reason=state.reason if state is not None else None,
+                turns=tuple(
+                    TurnStatus(turn=one.turn.number, voice=one.voice.name, take_state=one.state, take_reason=one.reason)
+                    for one in (state.turns if state is not None else ())
+                ),
+                voices=tuple(dict.fromkeys(one.voice.name for one in state.turns)) if state is not None else (),
                 recorded=recorded,
                 assembled=inputs.workspace.section_video(section.key).is_file(),
                 recording_stale=_stale(inputs, run, section, recorded=recorded, said=section.number in refused),
@@ -306,12 +311,14 @@ def played_takes(inputs: Inputs, states: TakeStates | None) -> set[str] | None:
 
     A take is played when the take index names it, since the film plays that take until narrate runs
     again, or when a section's current text, voice and settings name it, since the next narrate plays
-    that one. Both are counted, so no take the film still needs is ever called unplayed. With no voice
-    named, or no take states read, the script's own takes have no digest, so nothing is claimed.
+    that one. Both are counted, so no take the film still needs is ever called unplayed. While a voice
+    that reads a selected turn has no id, or with no take states read, the script's own takes have no
+    digest, so nothing is claimed.
     """
-    if states is None or not inputs.voice.id:
+    turns = [one for state in states.values() for one in state.turns] if states is not None else []
+    if states is None or not all(inputs.voice_of(one.turn).named for one in turns):
         return None
-    named = {state.digest for state in states.values() if state.digest is not None}
+    named = {one.digest for one in turns if one.digest is not None}
     index = inputs.takes()
     return named | ({row.digest for row in index.sections} if index is not None else set())
 
@@ -334,7 +341,12 @@ def _played_matches(inputs: Inputs, states: TakeStates | None, played: set[str])
     A take's words are its index row's spoken text when the index names it, and its section's otherwise.
     """
     index = inputs.takes()
-    spoken = {state.digest: state.section.spoken for state in (states or {}).values() if state.digest is not None}
+    spoken = {
+        one.digest: one.turn.spoken
+        for state in (states or {}).values()
+        for one in state.turns
+        if one.digest is not None
+    }
     spoken |= {row.digest: row.spoken for row in index.sections} if index is not None else {}
     matches: set[str] = set()
     for digest in played & spoken.keys():
@@ -420,6 +432,16 @@ def status(inputs: Inputs, run: Run) -> StatusResult:
         script=inputs.relative(inputs.script_path),
         cues_file=inputs.relative(inputs.cues_path),
         sections=rows,
+        voices=tuple(
+            VoiceStatus(
+                name=voice.name,
+                provider=voice.provider,
+                default=voice.name == inputs.default_voice,
+                named=voice.named,
+                billing=voice.billing,
+            )
+            for voice in inputs.voices.values()
+        ),
         film=inputs.relative(film) if built else None,
         film_seconds=ffmpeg.probe_duration(film) if built else None,
         runs=live_runs(inputs, run),

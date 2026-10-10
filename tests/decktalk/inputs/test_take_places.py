@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import PLACEHOLDER_PREFIX, AudioPrint, ProviderWords, take_file, words_file
+from decktalk.artifacts import PLACEHOLDER_PREFIX, VOICED_SUFFIX, AudioPrint, ProviderWords, take_file, words_file
 from decktalk.errors import InputError, ProjectLocked, ProviderError
 from decktalk.events import Level
 from decktalk.inputs.paths import at
@@ -117,7 +117,6 @@ def a_workspace(root: Path, *, store: Path | None) -> Workspace:
         root=root,
         build=root / "build",
         name="demo",
-        suffix=TAKE_SUFFIX,
         takes=root / "takes",
         score_dir=root / "score",
         store=store,
@@ -161,9 +160,17 @@ def unreadable(place: Path) -> set[str]:
 
 
 def voice(
-    take_places: TakePlaces, spoken: Voice, witness: Witness, *, replacing: bool = False, section: int = 1
+    take_places: TakePlaces,
+    spoken: Voice,
+    witness: Witness,
+    *,
+    replacing: bool = False,
+    section: int = 1,
+    suffix: str = TAKE_SUFFIX,
 ) -> TakeOutcome:
-    return take_places.voice(DIGEST, spoken.speak, spoken.charge, witness, section=section, replacing=replacing)
+    return take_places.voice(
+        DIGEST, spoken.speak, spoken.charge, witness, section=section, replacing=replacing, suffix=suffix
+    )
 
 
 @pytest.fixture
@@ -763,7 +770,9 @@ def test_the_take_stores_files_are_never_recorded_as_written(tmp_path: Path) -> 
 def test_a_placeholder_is_never_voiced(workspace: Workspace) -> None:
     spoken = Voice()
     with pytest.raises(ValueError, match="is a placeholder"):
-        places(workspace).voice(PLACEHOLDER, spoken.speak, spoken.charge, Witnessed(), section=1, replacing=False)
+        places(workspace).voice(
+            PLACEHOLDER, spoken.speak, spoken.charge, Witnessed(), section=1, replacing=False, suffix=TAKE_SUFFIX
+        )
     assert spoken.spoken == 0
 
 
@@ -784,3 +793,24 @@ def test_the_model_a_voice_served_is_kept_with_its_words(workspace: Workspace) -
     assert said is not None
     assert said.model_digest == "sha256:5eed"
     assert said.timed is True
+
+
+# ---- the suffix a take is written under ---------------------------------------------------------
+
+
+def test_a_take_is_written_under_its_own_voices_suffix(no_store: Workspace) -> None:
+    """Each voice declares the suffix of what it returns, so two voices' takes are each named by what they hold."""
+    take_places = places(no_store)
+    assert voice(take_places, Voice(), Witnessed(), suffix=".wav") is TakeOutcome.VOICED
+    assert (no_store.takes / take_file(DIGEST, ".wav")).read_bytes() == Voice().audio
+    said = ProviderWords.read(no_store.takes / words_file(DIGEST))
+    assert said is not None and said.audio is not None and said.audio.suffix == ".wav"
+    assert take_places.find(DIGEST).audio == no_store.takes / take_file(DIGEST, ".wav")
+    assert take_places.find(DIGEST).held
+
+
+def test_a_take_whose_words_name_no_suffix_is_looked_for_as_mp3(no_store: Workspace) -> None:
+    """A words file that records no audio says nothing about its suffix, and every shipped voice writes mp3."""
+    (no_store.takes / take_file(DIGEST, VOICED_SUFFIX)).write_bytes(b"take")
+    ProviderWords(words=WORDS).write(no_store.takes / words_file(DIGEST))
+    assert places(no_store).find(DIGEST).audio == no_store.takes / f"{DIGEST}.mp3"

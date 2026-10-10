@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import WORDS_SUFFIX, ClipWords, Take
+from decktalk.artifacts import WORDS_SUFFIX, ClipWords
 from decktalk.errors import InputError, NotBuiltError
 from decktalk.events import Level
 from decktalk.inputs import Inputs, PageSection
@@ -79,15 +79,15 @@ def clip(
     """
     played = _page_section(inputs, section)
     video = _section_video(inputs, played)
-    take, source = _take_of(inputs, section)
+    sound = _sound_of(inputs, section)
     settings = inputs.settings.video
     fps = settings.fps
     span = _span(inputs, video, start=start, end=end, hold_seconds=hold_seconds, fps=fps)
     film = _out_path(inputs, out, video)
     words_file = film.with_name(film.stem + WORDS_SUFFIX)
 
-    _render(inputs, video, source, film, span=span, lead=take.lead_seconds, gain_db=gain_db, fps=fps)
-    said = row_of(inputs, take)
+    _render(inputs, video, sound, film, span=span, gain_db=gain_db, fps=fps)
+    said = row_of(inputs, inputs.takes(required=True), section)
     inside, cut = _clip_words(said, span.first_seconds, span.last_seconds)
     for word in cut:
         run.note(
@@ -174,24 +174,45 @@ def _section_video(inputs: Inputs, section: PageSection) -> Path:
     return video
 
 
-def _take_of(inputs: Inputs, number: int) -> tuple[Take, Path]:
-    """One section's take and the file that holds it, or a refusal naming the command that makes it."""
+@dataclass(frozen=True)
+class _Sound:
+    """Where a clip's sound is cut from: a file, how far into it the section starts, and the silence before it."""
+
+    path: Path
+    at: float
+    """Where the section's clock starts in `path`, in seconds."""
+    lead: float
+    """The silence the section opens on that `path` does not hold, which is added before the sound."""
+
+
+def _sound_of(inputs: Inputs, number: int) -> _Sound:
+    """Where one section's sound is cut from, or a refusal naming the command that makes it.
+
+    A section of one turn is its take, after the lead the take index places before it. A dialogue is
+    its turns joined with their gaps, which is the joined narration at the section's own place, so a
+    clip of it carries every turn.
+    """
     takes = inputs.takes(required=True)
-    take = takes.of(number)
-    if take is None:
+    rows = takes.turns_of(number)
+    if not rows:
         raise NotBuiltError(
             f"section {number} has no take in {inputs.relative(inputs.workspace.takes_path)}.",
             hint=Artifact.TAKES.next_step,
             location=at(inputs.workspace.takes_path, inputs.root, section=number),
         )
-    source = inputs.take_places.find(take.digest).audio
+    if len(rows) == 1:
+        source = inputs.take_places.find(rows[0].digest).audio
+        sound = _Sound(path=source, at=0.0, lead=rows[0].lead_seconds)
+    else:
+        source = inputs.workspace.narration_path
+        sound = _Sound(path=source, at=takes.placed[number].start, lead=0.0)
     if not source.is_file():
         raise NotBuiltError(
             f"section {number} names the take {source.name}, which is not on disk.",
             hint=Artifact.TAKES.next_step,
             location=at(source, inputs.root, section=number),
         )
-    return take, source
+    return sound
 
 
 def _span(inputs: Inputs, video: Path, *, start: float, end: float, hold_seconds: float, fps: int) -> _Span:
@@ -235,23 +256,22 @@ def _out_path(inputs: Inputs, out: Path, video: Path) -> Path:
     return film
 
 
-def _render(
-    inputs: Inputs, video: Path, source: Path, film: Path, *, span: _Span, lead: float, gain_db: float, fps: int
-) -> None:
+def _render(inputs: Inputs, video: Path, sound: _Sound, film: Path, *, span: _Span, gain_db: float, fps: int) -> None:
     """Cut the picture and the sound of one span into one file, in a single pass.
 
     The picture passes through the frame rate filter before the hold, because ffmpeg clones only two
-    frames after a trim otherwise, and the sound is the take moved to where the span starts so that
-    a span opening inside the section's lead opens on the silence the film has there.
+    frames after a trim otherwise, and the sound is moved to where the span starts so that a span
+    opening inside the section's lead opens on the silence the film has there.
     """
     rate = inputs.settings.audio.sample_rate
+    lead, source = sound.lead, sound.path
     head = max(0.0, lead - span.first_seconds)
-    begins = max(0.0, span.first_seconds - lead)
-    ends = max(begins + LEAST_AUDIO_SECONDS, span.last_seconds - lead)
+    begins = sound.at + max(0.0, span.first_seconds - lead)
+    ends = max(begins + LEAST_AUDIO_SECONDS, sound.at + span.last_seconds - lead)
     played = span.last_seconds - span.first_seconds
     fade_out_at = max(played - EDGE_FADE_SECONDS, 0.0)
     total = span.total_seconds
-    sound = (
+    heard = (
         f"[1:a]aresample={rate},atrim=start={begins:.6f}:end={ends:.6f},asetpts=PTS-STARTPTS,"
         f"adelay=delays={round(head * rate)}S:all=1,volume={gain_db:g}dB,"
         f"afade=t=in:d={EDGE_FADE_SECONDS},afade=t=out:st={fade_out_at:.6f}:d={EDGE_FADE_SECONDS},"
@@ -264,7 +284,7 @@ def _render(
     encoder = Encoder(inputs.settings.video, inputs.settings.audio)
     ffmpeg.run(
         *ffmpeg.source(video), *ffmpeg.source(source),
-        "-filter_complex", f"{picture};{sound}",
+        "-filter_complex", f"{picture};{heard}",
         "-map", "[v]", "-map", "[a]", "-r", str(fps), *encoder.venc, *encoder.aenc,
         "-t", f"{total:.6f}", "-movflags", "+faststart", str(film),
     )  # fmt: skip

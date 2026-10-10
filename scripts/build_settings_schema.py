@@ -31,7 +31,7 @@ from typing import Any
 
 import generated
 from decktalk.results import Scope
-from decktalk.settings import DOCUMENT_TABLES, KEYS, SHARED_TABLES, Settings
+from decktalk.settings import DOCUMENT_TABLES, KEYS, SHARED_TABLES, VOICE_NAME, VOICES_TABLE, Settings, VoiceConfig
 from decktalk.settings.layers import json_value
 from decktalk.settings.numbers import NUMBERS
 from decktalk.tomlmap import Key
@@ -60,6 +60,12 @@ MACHINE_DESCRIPTION = (
 TYPES = {bool: "boolean", int: "integer", float: "number", str: "string"}
 """The JSON Schema type for each scalar a key can be declared as."""
 
+FAMILY_SENTENCE = (
+    "Every voice of the project, one table per voice, each named by the name a voice direction in the script "
+    "calls it by. The table `[narration] voice` names is the default voice."
+)
+"""The sentence of the voices' family, whose tables the author names, so no dataclass declares the family's table."""
+
 DOCUMENT_SENTENCES = {
     "project": "The film itself: its name, its deck and the files it is built from.",
     "section": "One section of the script, in the order the film plays them.",
@@ -76,8 +82,12 @@ def type_of(key: Key) -> dict[str, Any]:
 
 
 def property_of(key: Key) -> dict[str, Any]:
-    """One key as the schema publishes it, which is its type, its safe range and its whole record."""
-    out: dict[str, Any] = {"description": key.description, **type_of(key), "default": json_value(key.default)}
+    """One key as the schema publishes it, which is its type, its safe range and its whole record.
+
+    A voice's key that inherits its provider's value has no default of its own, so it publishes none.
+    """
+    own = {} if key.default is None else {"default": json_value(key.default)}
+    out: dict[str, Any] = {"description": key.description, **type_of(key), **own}
     if key.bounds is not None:
         bounds = key.bounds.json_schema()
         if out["type"] == "array":
@@ -118,6 +128,23 @@ def table_of(name: str, keys: list[Key]) -> dict[str, Any]:
         "x-kind": "mixed" if shared else "tuning",
         "properties": properties,
         "additionalProperties": shared,
+    }
+
+
+def family_of(keys: list[Key]) -> dict[str, Any]:
+    """The voices' family: any table whose name is a voice name, each holding the keys every voice may state."""
+    return {
+        "type": "object",
+        "description": FAMILY_SENTENCE,
+        "x-kind": "family",
+        "propertyNames": {"pattern": VOICE_NAME},
+        "additionalProperties": {
+            "type": "object",
+            "description": " ".join((VoiceConfig.__doc__ or "").split()),
+            "x-kind": "tuning",
+            "properties": {key.name: property_of(key) for key in keys},
+            "additionalProperties": False,
+        },
     }
 
 
@@ -173,7 +200,9 @@ def document(*, machine: bool) -> dict[str, Any]:
     keys = [key for key in KEYS if not machine or key.scope is Scope.MACHINE]
     properties: dict[str, Any] = {}
     for table in dict.fromkeys(key.table.split(".")[0] for key in keys):
-        properties[table] = table_of(table, [key for key in keys if key.table.split(".")[0] == table])
+        held = [key for key in keys if key.table.split(".")[0] == table]
+        properties[table] = family_of(held) if table == VOICES_TABLE else table_of(table, held)
+
     if not machine:
         for table in DOCUMENT_TABLES:
             properties[table] = document_table(table)

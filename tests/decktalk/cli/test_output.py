@@ -20,15 +20,21 @@ from decktalk.findings import Code, Severity
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import (
     RESULTS,
+    ApiKeyState,
     ConfigGetResult,
     ConfigSetResult,
     ConfigUnsetResult,
     CueCheck,
+    DoctorResult,
     ErrorResult,
     Layer,
+    ProviderKey,
     Result,
     Scope,
     ScoreResult,
+    SectionStatus,
+    SectionTurn,
+    SectionWords,
     SettingValue,
     SoundItem,
     SoundKind,
@@ -36,6 +42,8 @@ from decktalk.results import (
     StatusResult,
     TakeState,
     VerifyResult,
+    Word,
+    WordsResult,
 )
 from support.samples import sample
 
@@ -110,7 +118,7 @@ Loudness 20.2 LUFS against 23.2.
 Found 1 finding, 1 error.
 """,
         "BuildResult": """\
-     Stopped at score, $19.25, 1 finding
+     Stopped at assemble, $19.25, 1 finding
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,
@@ -118,7 +126,7 @@ Found 1 finding, 1 error.
 Checking build/judged12.
 This run spent $17.25 on 15 characters and about 16 seconds of audio, and up to $18.25 if the provider billed the
 requests it never answered, at the rates each stage states.
-Storyboard build/storyboard36
+Storyboard build/storyboard37
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,
@@ -132,9 +140,9 @@ key10 = value13 (override)
   sentence12
   type type11, default default14, range16
   unit unit15
-  hazard hazard41
-  decides PAGE_THIN_DRAW
-  docs docs42
+  hazard hazard42
+  decides PAGE_NO_DESCRIPTION
+  docs docs43
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,
@@ -180,13 +188,14 @@ Found 1 finding, 1 error.
 
 Python    python15
 Platform  platform16
-API key   not needed
-Bias      18 ms
+API key   provider17 variable18 missing
+Bias      20 ms
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,
         "InitResult": """\
 Wrote build/root12 from the example14 example, 1 file.
+Voices voices15 (default)
 Next   cd build/root12 && decktalk build --no-spend
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
@@ -203,12 +212,12 @@ Found 1 finding, 1 error.
 """,
         "NarrateResult": """\
 
- Section   Take          Characters   Seconds
- ────────────────────────────────────────────
- 12        placeholder   15           16.2
+ Section   Take   Characters   Seconds
+ ─────────────────────────────────────
+ 12        kept   17           18.2
 
-This run spent $23.25 on 21 characters, and up to $24.25 if the provider billed the requests it never answered, at
-$26.25 per 1,000 characters.
+This run spent $25.25 on 23 characters, and up to $26.25 if the provider billed the requests it never answered, at
+$28.25 per 1,000 characters.
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,
@@ -239,15 +248,15 @@ Found 1 finding, 1 error.
 """,
         "StatusResult": """\
 
- Section   Key     Plays      Take          Recorded   Assembled   Stale
- ───────────────────────────────────────────────────────────────────────
- 14        key15   source17   placeholder   no         yes         no
+ Section   Key     Plays      Voices     Take          Recorded   Assembled   Stale
+ ──────────────────────────────────────────────────────────────────────────────────
+ 14        key15   source17   voices24   placeholder   no         yes         no
 
-Film   build/film20, 0:21 long
-Live   run22 writing build/events_file23
-Takes  26 takes and 27 aligned words files in build/directory25/ that no section plays (28 bytes). DeckTalk never
+Film   build/film28, 0:29 long
+Live   run30 writing build/events_file31
+Takes  34 takes and 35 aligned words files in build/directory33/ that no section plays (36 bytes). DeckTalk never
 deletes from the takes directory, so remove the ones you no longer want with git rm.
-Next   next30
+Next   next38
 2.1:formula: CUE_OFF It lands 340 ms late.
 Found 1 finding, 1 error.
 """,
@@ -508,3 +517,35 @@ def test_a_stale_take_shows_its_section_as_stale() -> None:
     said = recorded(result.model_copy(update={"sections": (row,)}), width=200)
     (line,) = [line for line in said.splitlines() if line.split()[:1] == [str(row.section)]]
     assert line.split()[-1] == "yes", said
+
+
+# ---- voices and turns ----------------------------------------------------------------------------
+
+
+def test_the_status_table_names_the_voices_of_each_section() -> None:
+    section = sample(SectionStatus).model_copy(update={"voices": ("narrator", "guest")})
+    shown = recorded(sample(StatusResult).model_copy(update={"sections": (section,)}))
+    assert "Voices" in shown
+    assert "narrator, guest" in shown
+
+
+def test_the_words_of_a_dialogue_are_headed_by_each_turn_and_its_voice() -> None:
+    said = (Word(word="Hello", start=0.0, end=0.4), Word(word="Again", start=1.0, end=1.4))
+    turns = (
+        SectionTurn(turn=1, voice="narrator", estimated=False, word_count=1),
+        SectionTurn(turn=2, voice="guest", estimated=False, word_count=1),
+    )
+    section = SectionWords(section=3, key="03", estimated=False, words=said, turns=turns)
+    shown = recorded(sample(WordsResult).model_copy(update={"sections": (section,)}))
+    assert "Section 3, turn 1, narrator" in shown
+    assert "Section 3, turn 2, guest" in shown
+    one = SectionWords(section=1, key="01", estimated=False, words=said[:1], turns=turns[:1])
+    alone = recorded(sample(WordsResult).model_copy(update={"sections": (one,)}))
+    assert "Section 1   Start" in alone
+    assert "turn" not in alone
+
+
+def test_doctor_says_one_line_per_key() -> None:
+    keys = (ProviderKey(provider="elevenlabs", variable="ELEVENLABS_API_KEY", state=ApiKeyState.MISSING),)
+    shown = recorded(sample(DoctorResult).model_copy(update={"api_keys": keys}))
+    assert "API key   elevenlabs ELEVENLABS_API_KEY missing" in shown

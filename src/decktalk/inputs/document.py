@@ -7,7 +7,8 @@
     [score]                  the prompts `decktalk score` generates from
 
 Everything here changes per presentation. What a setting changes is tuning and lives in `settings`,
-which is also where `[voice]` lives, and secrets live only in `.env`. `[mix]` and `[score]` are
+which is also where each voice's `[voices.NAME]` table lives, and secrets live only in `.env`.
+ `[mix]` and `[score]` are
 shared: this module reads the content half and the settings layer reads the settings, so neither
 warns about the other's keys. Every value is
 read through `tomlmap.Table`, so a bad file fails at load with the table, the key and the line
@@ -26,7 +27,7 @@ from decktalk.page import Q
 from decktalk.results import SectionKind, SoundKind, section_key
 from decktalk.settings import BY_ID, PROJECT_FILE, Settings
 from decktalk.tomlmap.read import Table
-from decktalk.tomlmap.suggest import unknown_key_message
+from decktalk.tomlmap.suggest import did_you_mean, unknown_key_message
 
 
 @dataclass(frozen=True)
@@ -211,7 +212,10 @@ class Document:
         known = TOP_TABLES | set(Settings.__dataclass_fields__)
         unknown = top.unknown(known)
         if unknown:
-            raise InputError(f"{PROJECT_FILE}: unknown table(s) {unknown}. The known tables are {sorted(known)}.")
+            raise InputError(
+                f"{PROJECT_FILE}: unknown table(s) {unknown}. The known tables are {sorted(known)}."
+                f"{did_you_mean(unknown[0], known)}"
+            )
         project = Table(top.get_table("project") or {}, f"{PROJECT_FILE}: [project]")
         notes = project.note_unknown(PROJECT_KEYS)
         sections = parse_sections(doc, notes)

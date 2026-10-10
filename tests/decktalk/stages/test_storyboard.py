@@ -329,3 +329,16 @@ def test_a_page_the_browser_will_not_load_is_a_tool_failure_and_not_a_bug(tmp_pa
     inputs = a_project(tmp_path, cues=CUES)
     with pytest.raises(ToolError, match=r"^could not load http"):
         stage.reports_of(Unreachable(FakeContext(tmp_path)).page(), inputs, ["deck/index.html"])
+
+
+def test_the_storyboard_names_the_voices_of_each_section(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path)
+    panels = [
+        Panel(section=1, slide="1.1", cue=None, at_seconds=0.0, image=Path("build/storyboard/01/a.png")),
+        Panel(section=2, slide="2.1", cue=None, at_seconds=0.0, image=Path("build/storyboard/02/b.png")),
+    ]
+    text = write_page(inputs.workspace, panels, title="demo", voices={1: ("narrator", "guest")}).read_text(
+        encoding="utf-8"
+    )
+    assert "0.00s &middot; read by narrator, guest</figcaption>" in text
+    assert "section 2 &middot; slide 2.1 &middot; opening &middot; 0.00s</figcaption>" in text

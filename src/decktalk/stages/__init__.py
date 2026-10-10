@@ -35,14 +35,14 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from decktalk.inputs import Inputs
-from decktalk.speech import SpeechContext
+from decktalk.speech import SpeechContext, VoiceInForce
 
 SECTION_START_SECONDS = 0.0
 """Where a section's own clock begins, which is when its first slide is already on screen."""
 
 
-def speech_context(inputs: Inputs) -> SpeechContext:
-    """What the voice in force is built from, taken from its own table, this project's tuning and its own `.env`.
+def speech_context(inputs: Inputs, voice: VoiceInForce) -> SpeechContext:
+    """What one voice is built from, taken from its own table, this project's tuning and its own `.env`.
 
     The base URL is its own table's `base_url`, which only the machine sets, so a provider with no
     table is handed none.
@@ -50,7 +50,7 @@ def speech_context(inputs: Inputs) -> SpeechContext:
     settings = inputs.settings
     return SpeechContext(
         secrets=inputs.env,
-        base_url=inputs.voice.base_url,
+        base_url=voice.base_url,
         context_characters=settings.narration.context_characters,
         speech_timeout_seconds=settings.narration.timeout_seconds,
     )

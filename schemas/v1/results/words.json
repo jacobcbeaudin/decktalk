@@ -64,6 +64,10 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
         "TAKE_UNALIGNED",
         "CUT_SPEECH",
@@ -440,6 +444,42 @@
       "title": "Location",
       "type": "object"
     },
+    "SectionTurn": {
+      "additionalProperties": false,
+      "description": "One turn of a section's words: the voice that reads it and how many of the section's words are its own.",
+      "properties": {
+        "turn": {
+          "description": "The turn of its section, counted from one.",
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        },
+        "voice": {
+          "description": "The voice that reads this turn, by its name in decktalk.toml.",
+          "title": "Voice",
+          "type": "string"
+        },
+        "estimated": {
+          "description": "True when this turn's words are estimates, as a placeholder's are.",
+          "title": "Estimated",
+          "type": "boolean"
+        },
+        "word_count": {
+          "description": "How many of the section's words, in order, this turn speaks.",
+          "minimum": 0,
+          "title": "Word Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "turn",
+        "voice",
+        "estimated",
+        "word_count"
+      ],
+      "title": "SectionTurn",
+      "type": "object"
+    },
     "SectionWords": {
       "additionalProperties": false,
       "description": "One section's spoken words, in seconds after that section starts.",
@@ -467,13 +507,22 @@
           },
           "title": "Words",
           "type": "array"
+        },
+        "turns": {
+          "description": "Every turn of the section in order, whose word counts divide `words` among them.",
+          "items": {
+            "$ref": "#/$defs/SectionTurn"
+          },
+          "title": "Turns",
+          "type": "array"
         }
       },
       "required": [
         "section",
         "key",
         "estimated",
-        "words"
+        "words",
+        "turns"
       ],
       "title": "SectionWords",
       "type": "object"

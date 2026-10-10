@@ -50,6 +50,7 @@ from decktalk.findings import (
     Threshold,
     judge,
 )
+from decktalk.inputs import Inputs
 from decktalk.inputs.env import reading_dotenv
 from decktalk.inputs.paths import relative
 from decktalk.inputs.workspace import EVENTS_SUFFIX
@@ -66,6 +67,7 @@ from decktalk.results import (
     InitResult,
     InstalledTool,
     InstallResult,
+    ProviderKey,
     Scope,
 )
 from decktalk.secret import register_environment
@@ -83,12 +85,12 @@ from decktalk.settings.layers import (
 )
 from decktalk.speech import (
     ALIGNERS,
+    DECLARED,
     PROVIDERS,
     Aligner,
     AlignerContext,
     SpeechFactory,
     SpeechProviders,
-    VoiceInForce,
 )
 from decktalk.speech.sound import SOUNDS, SoundFactory, SoundProviders
 from decktalk.toolchain import assets, chromium_fetch
@@ -358,20 +360,21 @@ class Machine:
         return child
 
     @property
-    def api_key_state(self) -> ApiKeyState:
-        """Whether the API key a voiced run would use is set, which is asked and never revealed.
+    def api_keys(self) -> tuple[ProviderKey, ...]:
+        """Whether the key of every shipped provider that is bought with one is set, asked and never revealed.
 
-        The variable is the one the voice `[voice] provider` names declares, and a voice that declares
-        none needs none. A machine has no project, so the provider is the one its own layers name.
+        A machine has no project, so it cannot know which voices a run will read, and it names the key
+        of every provider DeckTalk ships that declares one.
         """
-        mine = _machine_overrides(self.overrides)
-        settings = load(project={}, machine=self.tables, environ=self.environ, overrides=mine).settings
-        # The machine's default voice, which no project names: doctor runs with no project open.
-        default_voice = VoiceInForce.of(settings)
-        variable = default_voice.key_variable
-        if variable is None:
-            return ApiKeyState.NOT_NEEDED
-        return ApiKeyState.SET if self.environ.get(variable) else ApiKeyState.MISSING
+        return tuple(
+            ProviderKey(
+                provider=name,
+                variable=declared.key_variable,
+                state=ApiKeyState.SET if self.environ.get(declared.key_variable) else ApiKeyState.MISSING,
+            )
+            for name, declared in DECLARED.items()
+            if declared.key_variable is not None
+        )
 
     # ---- opening a run ------------------------------------------------------------------
 
@@ -501,7 +504,7 @@ class Machine:
                 cache=self.cache_dir,
                 python=f"{sys.version.split()[0]} ({sys.executable})",
                 platform=f"{platform.platform()} ({sys.platform})",
-                api_key_state=self.api_key_state,
+                api_keys=self.api_keys,
                 bias_ms=self._bias(measure=measure),
             )
 
@@ -599,6 +602,7 @@ def init(
             name=name or root.name,
             example=example or STARTER,
             skills_written=skills,
+            voices=tuple(Inputs.load(root, environ={}, machine={}).voices),
         )
 
 

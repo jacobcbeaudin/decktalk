@@ -77,7 +77,7 @@ decktalk schema cues        # the shape of cues.json
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "6e3fd488c259",
+  "run": "21fcc8aec005",
   "name": "my-lesson",
   "script": "script.md",
   "cues_file": "cues.json",
@@ -89,6 +89,15 @@ decktalk schema cues        # the shape of cues.json
       "source": "deck/index.html?scene=1",
       "take_state": "missing",
       "take_reason": "it has no voiced take yet",
+      "turns": [
+        {
+          "turn": 1,
+          "voice": "narrator",
+          "take_state": "missing",
+          "take_reason": "it has no voiced take yet"
+        }
+      ],
+      "voices": ["narrator"],
       "recorded": false,
       "assembled": false,
       "recording_stale": false
@@ -100,6 +109,15 @@ decktalk schema cues        # the shape of cues.json
       "source": "deck/index.html?scene=2",
       "take_state": "missing",
       "take_reason": "it has no voiced take yet",
+      "turns": [
+        {
+          "turn": 1,
+          "voice": "narrator",
+          "take_state": "missing",
+          "take_reason": "it has no voiced take yet"
+        }
+      ],
+      "voices": ["narrator"],
       "recorded": false,
       "assembled": false,
       "recording_stale": false
@@ -111,9 +129,27 @@ decktalk schema cues        # the shape of cues.json
       "source": "deck/index.html?scene=3",
       "take_state": "missing",
       "take_reason": "it has no voiced take yet",
+      "turns": [
+        {
+          "turn": 1,
+          "voice": "narrator",
+          "take_state": "missing",
+          "take_reason": "it has no voiced take yet"
+        }
+      ],
+      "voices": ["narrator"],
       "recorded": false,
       "assembled": false,
       "recording_stale": false
+    }
+  ],
+  "voices": [
+    {
+      "name": "narrator",
+      "provider": "elevenlabs",
+      "default": true,
+      "named": false,
+      "billing": "per_character"
     }
   ],
   "film": null,
@@ -148,7 +184,7 @@ cost, so it is the one call an agent makes to learn the price of a run.
   "ok": true,
   "findings": [],
   "error": null,
-  "run": "78f02beea511",
+  "run": "2e0185dd0c0e",
   "written": [],
   "judged": ["script.md", "cues.json"],
   "pages_opened": false,
@@ -180,6 +216,7 @@ cost, so it is the one call an agent makes to learn the price of a run.
         "price_key": "elevenlabs.dollars_per_1000_characters",
         "averaged": false,
         "price_layer": "project",
+        "provider": "elevenlabs",
         "stage": "narrate"
       }
     ]
@@ -213,9 +250,9 @@ judgements about the project rather than a reason the command could not run.
   "findings": [
     {
       "code": "SCRIPT_UNFINISHED",
-      "message": "script.md line 14 holds something a voiced run would read out or swallow, which is that [VERSION] is still open, so a voiced run would read 'VERSION' out.",
+      "message": "script.md line 17 holds something a voiced run would read out or swallow, which is that [VERSION] is still open, so a voiced run would read 'VERSION' out.",
       "severity": "error",
-      "location": { "where": "script.md", "file": "script.md", "line": 14, "section": 1, "cue": null },
+      "location": { "where": "script.md", "file": "script.md", "line": 17, "section": 1, "cue": null },
       "stage": null,
       "fix": null,
       "docs": "https://docs.decktalk.ai/reference/findings/SCRIPT_UNFINISHED"
@@ -237,7 +274,7 @@ judgements about the project rather than a reason the command could not run.
     }
   ],
   "error": null,
-  "run": "94a68b6ad345",
+  "run": "b95709a46799",
   "written": [],
   "judged": ["script.md", "cues.json"],
   "pages_opened": false,
@@ -269,6 +306,7 @@ judgements about the project rather than a reason the command could not run.
         "price_key": "elevenlabs.dollars_per_1000_characters",
         "averaged": false,
         "price_layer": "project",
+        "provider": "elevenlabs",
         "stage": "narrate"
       }
     ]
@@ -291,8 +329,8 @@ the script does not speak, cut to the keys a build adds.
   "ok": false,
   "error": null,
   "stages": [
-    { "stage": "narrate", "outcome": "ran", "elapsed_seconds": 0.338 },
-    { "stage": "cue", "outcome": "ran", "elapsed_seconds": 0.006 },
+    { "stage": "narrate", "outcome": "ran", "elapsed_seconds": 0.324 },
+    { "stage": "cue", "outcome": "ran", "elapsed_seconds": 0.005 },
     { "stage": "record", "outcome": "skipped", "elapsed_seconds": 0.0 },
     { "stage": "score", "outcome": "skipped", "elapsed_seconds": 0.0 },
     { "stage": "assemble", "outcome": "skipped", "elapsed_seconds": 0.0 },
@@ -486,12 +524,12 @@ appends nothing.
 
 {/* sample: build-events, decktalk build --no-spend --events --json, the first six lines of stderr, on a fresh decktalk init my-lesson */}
 ```jsonl
-{"event":"run.start","time":"2026-10-04T04:39:28.558263Z","seq":0,"run":"ff86210428e8","events_file":"build/events/ff86210428e8.jsonl"}
-{"event":"run.log","time":"2026-10-04T04:39:28.559554Z","seq":1,"run":"ff86210428e8","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":42725,"lock":".lock"}}
-{"event":"stage.start","time":"2026-10-04T04:39:28.559778Z","seq":2,"run":"ff86210428e8","stage":"narrate","index":1,"count":6}
-{"event":"run.log","time":"2026-10-04T04:39:28.561651Z","seq":3,"run":"ff86210428e8","level":"debug","message":"3 takes are made on 2 workers.","source":"stages.narrate","stage":"narrate","section":null,"data":{"workers":2,"jobs":3,"requested":2}}
-{"event":"section.start","time":"2026-10-04T04:39:28.562033Z","seq":4,"run":"ff86210428e8","stage":"narrate","section":1}
-{"event":"section.start","time":"2026-10-04T04:39:28.562307Z","seq":5,"run":"ff86210428e8","stage":"narrate","section":2}
+{"event":"run.start","time":"2026-10-07T17:54:44.592871Z","seq":0,"run":"95e2d89e6edb","events_file":"build/events/95e2d89e6edb.jsonl"}
+{"event":"run.log","time":"2026-10-07T17:54:44.593855Z","seq":1,"run":"95e2d89e6edb","level":"debug","message":"This run holds the build directory.","source":"project","stage":null,"section":null,"data":{"pid":80006,"lock":".lock"}}
+{"event":"stage.start","time":"2026-10-07T17:54:44.594020Z","seq":2,"run":"95e2d89e6edb","stage":"narrate","index":1,"count":6}
+{"event":"run.log","time":"2026-10-07T17:54:44.595263Z","seq":3,"run":"95e2d89e6edb","level":"debug","message":"3 takes are made on 2 workers.","source":"stages.narrate","stage":"narrate","section":null,"data":{"workers":2,"jobs":3,"requested":2}}
+{"event":"section.start","time":"2026-10-07T17:54:44.595492Z","seq":4,"run":"95e2d89e6edb","stage":"narrate","section":1,"turn":1}
+{"event":"section.start","time":"2026-10-07T17:54:44.595629Z","seq":5,"run":"95e2d89e6edb","stage":"narrate","section":2,"turn":1}
 ```
 
 Under `--events` every line of stderr is one JSON object. The sentences DeckTalk would otherwise

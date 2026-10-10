@@ -3,11 +3,10 @@
   "$id": "doctor.json",
   "$defs": {
     "ApiKeyState": {
-      "description": "Whether the API key a voiced run would use is in reach, which is asked and never revealed.",
+      "description": "Whether the API key a provider's voiced run would use is in reach, which is asked and never revealed.",
       "enum": [
         "set",
-        "missing",
-        "not_needed"
+        "missing"
       ],
       "title": "ApiKeyState",
       "type": "string"
@@ -74,6 +73,10 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
         "TAKE_UNALIGNED",
         "CUT_SPEECH",
@@ -499,6 +502,33 @@
       "title": "Location",
       "type": "object"
     },
+    "ProviderKey": {
+      "additionalProperties": false,
+      "description": "Whether the key one shipped provider is bought with is set on this machine, asked and never revealed.",
+      "properties": {
+        "provider": {
+          "description": "The speech provider DeckTalk ships that the key buys from.",
+          "title": "Provider",
+          "type": "string"
+        },
+        "variable": {
+          "description": "The variable the key is read from.",
+          "title": "Variable",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ApiKeyState",
+          "description": "Whether that variable is set."
+        }
+      },
+      "required": [
+        "provider",
+        "variable",
+        "state"
+      ],
+      "title": "ProviderKey",
+      "type": "object"
+    },
     "Severity": {
       "description": "Whether a finding fails the default run or is reported and passes.\n\n`--fail-on` names the least severe finding that fails a run, so its values are these two words\nplus `never`, and a reader meets one vocabulary on the flag and on the field.",
       "enum": [
@@ -588,9 +618,13 @@
       "title": "Platform",
       "type": "string"
     },
-    "api_key": {
-      "$ref": "#/$defs/ApiKeyState",
-      "description": "Whether the API key a voiced run would use is set, missing, or not needed because its voice takes none."
+    "api_keys": {
+      "description": "Every key a shipped provider is bought with, and whether it is set. A machine has no project, so it names every provider's that needs one.",
+      "items": {
+        "$ref": "#/$defs/ProviderKey"
+      },
+      "title": "Api Keys",
+      "type": "array"
     },
     "bias_ms": {
       "anyOf": [
@@ -613,7 +647,7 @@
     "cache",
     "python",
     "platform",
-    "api_key"
+    "api_keys"
   ],
   "title": "DoctorResult",
   "type": "object"

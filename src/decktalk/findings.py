@@ -394,6 +394,35 @@ class Code(Enum):
         RaisedBy.PYTHON,
         (CHECK,),
     )
+    SCRIPT_VOICE_UNKNOWN = (
+        "SCRIPT_VOICE_UNKNOWN",
+        "A voice direction names no voice the project declares, or a line opens with the word voice and is not a "
+        "voice direction.",
+        RaisedBy.PYTHON,
+        (CHECK,),
+    )
+    SCRIPT_VOICE_UNMARKED = (
+        "SCRIPT_VOICE_UNMARKED",
+        "A section that names a voice starts a turn no voice direction names.",
+        RaisedBy.PYTHON,
+        (CHECK,),
+    )
+    SCRIPT_VOICE_BARE = (
+        "SCRIPT_VOICE_BARE",
+        "A note is exactly the name of a voice the project declares, so it plays as a beat rather than handing the "
+        "turns after it to that voice.",
+        RaisedBy.PYTHON,
+        (CHECK,),
+        Severity.WARNING,
+    )
+    VOICE_UNUSED = (
+        "VOICE_UNUSED",
+        "The project declares a voice no turn of the script is read by.",
+        RaisedBy.PYTHON,
+        (CHECK,),
+        Severity.WARNING,
+    )
+
     TAKE_MISSING = (
         "TAKE_MISSING",
         "A section's take is not on disk, so a placeholder plays in its place until its voice makes one.",

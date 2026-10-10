@@ -29,6 +29,9 @@ from decktalk.results import Nature, Scope, Source
 ENV_PREFIX = "DECKTALK_"
 """What every variable DeckTalk reads starts with, which is the one place the prefix is spelled."""
 
+FAMILY = "family"
+"""The metadata a field carries when it holds tables an author names, which the registry and the reader pass by."""
+
 
 def variable(dotted: str) -> str:
     """The environment variable that sets the key `dotted`, which is its id in upper case under the prefix."""
@@ -248,11 +251,15 @@ def registry(cls: type[Any], *, prefix: tuple[str, ...] = ()) -> tuple[Key, ...]
     """Every key of a dataclass tree, in declaration order, with its dotted id.
 
     The walk is the same recursion `from_mapping` makes, so a nested table is published, loaded and
-    named from one reading of the fields and a table added later needs no second edit anywhere.
+    named from one reading of the fields and a table added later needs no second edit anywhere. A
+    field whose metadata names a `family` holds tables the author names, such as one per voice, so
+    its keys are templates its owner publishes and the walk passes it by.
     """
     out: list[Key] = []
     hints = get_type_hints(cls)
     for f in fields(cast("Any", cls)):
+        if FAMILY in f.metadata:
+            continue
         annotation = hints.get(f.name, f.type)
         if is_dataclass(annotation):
             out += registry(cast("type[Any]", annotation), prefix=(*prefix, f.name))

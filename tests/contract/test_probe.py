@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from contract.test_runtime import MARKUP_SCENE, deck
+from decktalk.findings import Code
 from decktalk.media.origin import Allowed, page_url, route_pages
 from decktalk.page import REPORT
 from decktalk.toolchain.assets import PROBE_FILE, package_file, probe_path
@@ -208,6 +209,41 @@ def test_the_recorder_reads_the_whole_page_back_in_one_call(page, tmp_path):
     # The transcript is composed by the runtime, one sentence per cue, in document order.
     assert report["cues"][0]["describe"] == "a ball rests in the bowl appears. A ball"
     assert report["version"] == page.evaluate("() => window.__decktalk.version")
+
+
+TICKS = """
+<div data-scene="5">
+  <template data-slide="5.1">
+    <i class="tick" data-class="a:hit" data-describe-class="a:its tick lights"></i>
+    <i class="tick" data-class="b:hit" data-describe-class="b:its tick lights"></i>
+    <p data-in="b" data-describe="the second line">two</p>
+    <i class="tick" data-class="c:hit" data-describe-class="c:its tick lights"></i>
+  </template>
+  <template data-slide="5.2">
+    <i class="tick" data-class="d:hit" data-describe-class="d:its tick lights"></i>
+  </template>
+</div>
+"""
+
+
+def test_a_slide_writes_each_sentence_once_where_it_first_applies(page, tmp_path):
+    """Forty ticks that each say "its tick lights" read forty times say nothing new after the first.
+
+    The sentence is written at the first cue of a slide that says it, and a later cue of the same slide
+    says only what it adds. The next slide is new to the reader, so it may say the sentence again.
+    """
+    url = write_page(tmp_path, "ticks.html", TICKS)
+    page.goto(f"{url}?scene=5&t0=0&cues=5.1:a@0.1,5.1:b@0.2,5.1:c@0.3,5.2:d@0.5")
+    page.wait_for_function("() => window.__decktalk.fired.length === 4")
+    report = page.evaluate("() => window.__decktalkProbe.report()")
+    assert [row["describe"] for row in report["cues"]] == [
+        "its tick lights",
+        "the second line appears. two",
+        None,
+        "its tick lights",
+    ]
+    # A cue that ran its moments and had nothing new to say is still a cue the slide declares.
+    assert Code.PAGE_CUE_UNKNOWN.value not in [row["code"] for row in report["warnings"]]
 
 
 def test_a_synced_line_reports_itself_through_the_seam(page, tmp_path):

@@ -29,6 +29,7 @@ from playwright.sync_api import Page
 from decktalk.events import Level
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import PageSection
+from decktalk.inputs.script import ScriptSection
 from decktalk.inputs.workspace import Workspace
 from decktalk.machine.run import Run
 from decktalk.media.browser import Chromium, chromium
@@ -293,29 +294,51 @@ def _at(
     return wanted
 
 
-def write_page(workspace: Workspace, panels: Sequence[Panel], *, title: str) -> Path:
+def section_voices(inputs: Inputs, sections: Sequence[ScriptSection]) -> dict[int, tuple[str, ...]]:
+    """The voices that read each of these sections, in turn order, unless the default voice reads every one.
+
+    A voice is named as its direction names it, so a sheet of a script with a direction no project
+    voice answers still names who it meant. A film the default voice reads whole names nobody, so its
+    sheet reads as it always has.
+    """
+    named = {
+        section.number: tuple(dict.fromkeys(turn.voice or inputs.default_voice for turn in section.turns))
+        for section in sections
+    }
+    return {} if all(voices == (inputs.default_voice,) for voices in named.values()) else named
+
+
+def write_page(
+    workspace: Workspace,
+    panels: Sequence[Panel],
+    *,
+    title: str,
+    voices: Mapping[int, tuple[str, ...]] | None = None,
+) -> Path:
     """Lay every panel out on one page and give back where it was written.
 
     The page sits beside the stills rather than among them, so a reader opens one file and a rebuild
     replaces the whole sheet. One writer draws it whether `storyboard` or `check` froze the frames,
-    because two contact sheets of one deck would be two answers to one question.
+    because two contact sheets of one deck would be two answers to one question. `voices` names the
+    voices that read each section, in turn order, which each of its panels says.
     """
     build = workspace.build.relative_to(workspace.root) if workspace.build.is_relative_to(workspace.root) else None
-    figures = "\n".join(_figure(panel, build) for panel in panels)
+    figures = "\n".join(_figure(panel, build, (voices or {}).get(panel.section, ())) for panel in panels)
     page = workspace.storyboard_path
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(_document(title, len(panels), figures), encoding="utf-8")
     return page
 
 
-def _figure(panel: Panel, build: Path | None) -> str:
-    """One panel as a figure, with the picture above the moment it shows."""
+def _figure(panel: Panel, build: Path | None, voices: tuple[str, ...]) -> str:
+    """One panel as a figure, with the picture above the moment it shows and the voices that read its section."""
     image = Path(panel.image)
     src = image.relative_to(build) if build is not None and image.is_relative_to(build) else image
     # Every part of the caption is escaped, because a cue id and a slide id are whatever the project's
     # author typed, and the storyboard is a page a person opens in a browser.
     moment = f"cue {panel.cue}" if panel.cue else "opening"
-    parts = (f"section {panel.section}", f"slide {panel.slide}", moment, f"{panel.at_seconds:.2f}s")
+    read = (f"read by {', '.join(voices)}",) if voices else ()
+    parts = (f"section {panel.section}", f"slide {panel.slide}", moment, f"{panel.at_seconds:.2f}s", *read)
     caption = " &middot; ".join(html.escape(part) for part in parts)
     alt = " · ".join(parts)
     return (
@@ -370,7 +393,9 @@ def storyboard(
     wanted = selects(only)
     sections = [one for one in inputs.document.page_sections if wanted(one.number)]
     panels = _draw(inputs, run, sections, chosen) if sections else []
-    page = write_page(inputs.workspace, panels, title=inputs.document.name) if panels else None
+    voices = section_voices(inputs, inputs.spoken())
+    page = write_page(inputs.workspace, panels, title=inputs.document.name, voices=voices) if panels else None
+
     if page is not None:
         run.wrote(page)
     return run.result(
@@ -417,6 +442,7 @@ __all__ = [
     "Selection",
     "Sheet",
     "reports_of",
+    "section_voices",
     "freeze_url",
     "panels_of",
     "still",

@@ -10,7 +10,9 @@ a setting are four renderings of one row.
 
 A project key is set by four layers, lowest to highest: the default here, the project's
 `decktalk.toml`, the environment variable named `DECKTALK_<TABLE>_<KEY>`, and a `--set
-table.key=value` given for one run. A machine key is set by its default, the per-machine file, its
+table.key=value` given for one run. A voice is a table the author names, `[voices.NAME]`, so its keys
+are a family: one template per key, published under `voices.<name>`, which each declared voice fills
+with its own name. A machine key is set by its default, the per-machine file, its
 variable and `--set`. `load()` returns both the resolved tree and the record of which layer set each
 key, because a caller that is told a value and not its layer cannot tell a deliberate choice from a
 default.
@@ -24,19 +26,23 @@ so a reader who cannot find a setting learns the number is deliberately not one.
     __init__.py   the tables, the key registry and the record of which layer set each key
     numbers.py    every number that is not a setting, with its formula and its reason
     layers.py     the five layers read, merged and held to their scopes, which is `load()`
+    voices.py     each voice the project declares, resolved over its provider's table
     edit.py       one key written into or removed from a settings file
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields, replace
+from typing import get_type_hints
 
 from pydantic import Field
 
 from decktalk.errors import InputError
 from decktalk.findings import Code, Model
-from decktalk.results import LayerValue, Scope, SoundKind
-from decktalk.tomlmap import A_LUMA, A_PERCENT, A_SHARE, ENV_PREFIX, Bounds, Key, Nature, Source, registry, tune
+from decktalk.results import LayerValue, Scope, SoundKind, Source
+from decktalk.tomlmap import A_LUMA, A_PERCENT, A_SHARE, ENV_PREFIX, FAMILY, Bounds, Key, Nature, registry, tune
 from decktalk.tomlmap.suggest import did_you_mean
 
 PROJECT_FILE = "decktalk.toml"
@@ -49,6 +55,18 @@ COLOR_SCHEMES = ("light", "dark", "no-preference")
 
 VOICE_ID = r"^[A-Za-z0-9_-]*$"
 """Truth: the letters a provider's voice id is spelled in, and nothing that could leave a path segment."""
+
+VOICE_NAME = r"^[a-z][a-z0-9]*$"
+"""Truth: what a voice is called, so every name spells one shell variable and no two names spell the same one."""
+
+VOICES_TABLE = "voices"
+"""The table that holds one table per voice, each named by the voice's name."""
+
+MEMBER = "<name>"
+"""What stands for a voice's name in a key the family publishes, such as voices.<name>.id."""
+
+PROVIDER_TABLES = ("elevenlabs", "dtsp")
+"""The settings tables a shipped speech provider owns, each named after the provider, which a test holds to DECLARED."""
 
 SOME_PATH = r"^.+$"
 """Truth: a path with at least one character in it, which is what a folder that must exist is named by."""
@@ -128,6 +146,14 @@ class VideoConfig:
 class NarrationConfig:
     """These keys govern how the script is turned into audio."""
 
+    voice: str = tune(
+        "narrator",
+        "The default voice: the voice that reads every section no voice direction in the script names, and every "
+        "turn of a section that names none. It names a [voices.NAME] table, and with no such table written it is a "
+        "voice at every default.",
+        bounds=Bounds(pattern=VOICE_NAME),
+        see_also=("narration.turn_gap_seconds",),
+    )
     concurrency: int = tune(
         2,
         "How many sections `narrate` voices at once.",
@@ -167,6 +193,14 @@ class NarrationConfig:
         "speaks. A section's own `lead_seconds` replaces it.",
         unit="seconds",
         bounds=Bounds(ge=0, le=5),
+    )
+    turn_gap_seconds: float = tune(
+        0.3,
+        "Silence between two turns of a section when no timed pause is written where the voice changes. A "
+        "[pause N] written there replaces it, and neither is part of either turn's take.",
+        unit="seconds",
+        bounds=Bounds(ge=0, le=5),
+        see_also=("narration.lead_seconds", "narration.tail_seconds"),
     )
     placeholder_beat_seconds: float = tune(
         0.7,
@@ -619,15 +653,16 @@ class VerifyConfig:
 
 @dataclass(frozen=True)
 class VoiceConfig:
-    """These keys are the three every voice has: which provider reads the script, in which voice and at what pace.
+    """These keys are the three every voice has: which provider reads its turns, in which voice and at what pace.
 
-    Everything a provider is particular about, its own fields, its model and its rate, is in that
-    provider's own table, so changing `provider` never sends one vendor's fields or model to another.
+    Each voice is one `[voices.NAME]` table. Everything a provider is particular about, its own fields,
+    its model and its rate, is in that provider's own table, and a voice may state any of that table's
+    chosen keys for itself alone, so changing `provider` never sends one vendor's fields or model to another.
     """
 
     provider: str = tune(
         "elevenlabs",
-        "The speech provider that reads the script, which is a name the machine's own map answers. An "
+        "The speech provider that reads this voice's turns, which is a name the machine's own map answers. An "
         "unregistered name loads, and fails only when a run asks it for a take, which a run that does not "
         "spend never does. DeckTalk ships `elevenlabs`, the "
         "cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose "
@@ -635,9 +670,9 @@ class VoiceConfig:
     )
     id: str = tune(
         "",
-        "The voice that reads the script, as the provider names it. It is a published name rather than a "
+        "The voice that reads this voice's turns, as the provider names it. It is a published name rather than a "
         "credential, so it is committed with the project, and it is one of the inputs every take is named by. "
-        "`DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file.",
+        "`DECKTALK_VOICES_<NAME>_ID` overrides it for anyone who keeps it out of the file.",
         bounds=Bounds(pattern=VOICE_ID),
         hazard=(
             "The id is placed in the path of every speech request, so a value that could hold a slash, a dot "
@@ -741,7 +776,7 @@ class ElevenLabsConfig:
 
     model: str = tune(
         "eleven_multilingual_v2",
-        "The ElevenLabs model that reads the script when `[voice] provider` is `elevenlabs`.",
+        "The ElevenLabs model every ElevenLabs voice reads with, unless its own `[voices.NAME]` table names another.",
     )
     stability: float = tune(
         0.55,
@@ -762,7 +797,7 @@ class ElevenLabsConfig:
     )
     speaker_boost: bool = tune(
         True,
-        "Whether ElevenLabs applies its own speaker boost to the take.",
+        "Whether ElevenLabs applies the boost it calls use_speaker_boost to the take.",
     )
     dollars_per_1000_characters: float = tune(
         0.0,
@@ -825,7 +860,8 @@ class DtspConfig:
     )
     model: str = tune(
         "kokoro-82m",
-        "The model the local server reads the script with when `[voice] provider` is `dtsp`, as the server names it.",
+        "The model the local server reads every `dtsp` voice with, as the server names it, unless the voice's own "
+        "`[voices.NAME]` table names another.",
     )
 
 
@@ -985,6 +1021,12 @@ class OutputConfig:
     """These keys switch the files a build writes beside the final mp4."""
 
     timestamped_copy: bool = tune(False, "Write a second copy of the final mp4 named with the date and time.")
+    caption_voices: bool = tune(
+        False,
+        "Name the voice of every caption in a section spoken in more than one voice: a WebVTT voice span such as "
+        "`<v narrator>` in the .vtt, and the name before the line, such as `narrator: `, in the .srt. Off, the "
+        "captions carry the words alone, and the transcript names the voices of a dialogue either way.",
+    )
 
 
 @dataclass(frozen=True)
@@ -1059,6 +1101,37 @@ class ToolsConfig:
 
 
 @dataclass(frozen=True)
+class Voice:
+    """One voice of the project resolved: its name, its own keys, and its provider's table with its own values over it.
+
+    A voice of a provider DeckTalk ships reads every key of that provider's table it does not state
+    itself, and `table` already holds its own values in their place, so a reader asks the table and
+    never merges anything. A provider a host registered owns no table, so its voice has its own three
+    keys alone.
+    """
+
+    name: str
+    own: VoiceConfig
+    table: ProviderTable | None
+    """Its provider's table with this voice's own values over it, or None for a provider a host registered."""
+    stated: tuple[str, ...] = ()
+    """The keys of its provider's table this voice states itself, in name order, which explain renders as its own
+    rows."""
+
+    def value(self, key: str) -> object:
+        """The value this voice reads for one key: its own key, or its provider's table's key with its own over it."""
+        if key in OWN_KEYS:
+            return getattr(self.own, key)
+        if self.table is None or key not in {f.name for f in fields(self.table)}:
+            raise KeyError(f"{VOICES_TABLE}.{self.name}.{key}")
+        return getattr(self.table, key)
+
+
+OWN_KEYS = tuple(f.name for f in fields(VoiceConfig))
+"""The keys every voice has of its own, whatever its provider, in the order the family publishes them."""
+
+
+@dataclass(frozen=True)
 class Settings:
     """Every setting with its default, in the order the reference and the schema publish them."""
 
@@ -1067,7 +1140,12 @@ class Settings:
     record: RecordConfig = field(default_factory=RecordConfig)
     audio: AudioConfig = field(default_factory=AudioConfig)
     verify: VerifyConfig = field(default_factory=VerifyConfig)
-    voice: VoiceConfig = field(default_factory=VoiceConfig)
+    voices: Mapping[str, Voice] = field(default_factory=dict, metadata={FAMILY: VOICES_TABLE})
+    """Every voice the project declares, the default first, which the loader resolves and nothing reads before it.
+
+    It is a plain mapping rather than a read-only view so the tree stays a tree of plain values, which a
+    digest over the whole settings reads field by field. The tree is frozen and no reader writes it.
+    """
     mix: MixConfig = field(default_factory=MixConfig)
     motion: MotionConfig = field(default_factory=MotionConfig)
     elevenlabs: ElevenLabsConfig = field(default_factory=ElevenLabsConfig)
@@ -1078,11 +1156,90 @@ class Settings:
     tools: ToolsConfig = field(default_factory=ToolsConfig)
 
 
-KEYS: tuple[Key, ...] = registry(Settings)
-"""Every settings key in declaration order, which is the one list every surface renders."""
+def provider_tables() -> dict[str, type[ElevenLabsConfig | DtspConfig]]:
+    """Every table a shipped speech provider owns, by its name, read off the fields of `Settings`."""
+    hints = get_type_hints(Settings)
+    return {table: hints[table] for table in PROVIDER_TABLES}
+
+
+def voice_keys() -> tuple[Key, ...]:
+    """The family's template keys: a voice's own three, then each chosen project key a provider table declares.
+
+    A provider table's key that is project-scoped and chosen describes how its voices sound, so any
+    voice may state it for itself. The rate is stated rather than chosen and the base URL is the
+    machine's, so neither is a key a voice holds. A key two tables declare, such as `model`, is one
+    template, which a test holds to one type and one range.
+    """
+    prefix = f"{VOICES_TABLE}.{MEMBER}"
+    own = [replace(key, id=f"{prefix}.{key.name}") for key in registry(VoiceConfig)]
+    inherited: dict[str, list[Key]] = {}
+    for table, cls in provider_tables().items():
+        for key in registry(cls, prefix=(table,)):
+            if key.scope is Scope.PROJECT and key.source is Source.CHOSEN:
+                inherited.setdefault(key.name, []).append(key)
+    for name, keys in inherited.items():
+        tables = " or ".join(key.table for key in keys)
+        first = keys[0]
+        own.append(
+            Key(
+                id=f"{prefix}.{name}",
+                description=f"This voice's own {name}, over [{tables}] {name}, which every voice of that provider "
+                "reads unless it sets its own.",
+                default=None,
+                annotation=first.annotation,
+                bounds=first.bounds,
+                unit=first.unit,
+                hazard=first.hazard,
+                see_also=tuple(key.id for key in keys),
+            )
+        )
+    return tuple(own)
+
+
+STATIC_KEYS: tuple[Key, ...] = registry(Settings)
+"""Every key of a fixed table, in declaration order, which is every key but the voices' family."""
+
+TEMPLATES: tuple[Key, ...] = voice_keys()
+"""The voices' family, one template per key any voice may hold, each id spelled with `MEMBER` for the name."""
+
+KEYS: tuple[Key, ...] = STATIC_KEYS + TEMPLATES
+"""Every settings key in declaration order, the family's templates last, which is the one list every surface renders."""
 
 BY_ID: dict[str, Key] = {key.id: key for key in KEYS}
-"""Every key by the dotted name a diagnostic prints, `config set` takes and `--set` spells."""
+"""Every key by the dotted name a diagnostic prints, `config set` takes and `--set` spells, a template by its own."""
+
+
+def family(key: Key) -> bool:
+    """Whether a key belongs to the voices' family, as a template or as one voice's member."""
+    return key.table.split(".")[0] == VOICES_TABLE
+
+
+def key_of(dotted: str) -> Key | None:
+    """The key a dotted name spells: a fixed key, a template, one voice's member key, or None for none of these.
+
+    A member key is its template with the voice's name in the id, so it carries the template's whole
+    record and its own variable, such as `DECKTALK_VOICES_GUEST_ID` for `voices.guest.id`.
+    """
+    known = BY_ID.get(dotted)
+    if known is not None:
+        return known
+    table, _, rest = dotted.partition(".")
+    name, _, key = rest.partition(".")
+    if table != VOICES_TABLE or not re.fullmatch(VOICE_NAME, name):
+        return None
+    template = BY_ID.get(f"{VOICES_TABLE}.{MEMBER}.{key}")
+    return None if template is None else replace(template, id=dotted)
+
+
+def member_keys(voice: Voice) -> tuple[Key, ...]:
+    """Every key one voice holds, in the family's order: its own three, then each key of its provider's table."""
+    held = set(OWN_KEYS) | ({f.name for f in fields(voice.table)} if voice.table is not None else set())
+    return tuple(
+        replace(template, id=f"{VOICES_TABLE}.{voice.name}.{template.name}")
+        for template in TEMPLATES
+        if template.name in held
+    )
+
 
 SHARED_TABLES = frozenset(("mix", "score", "score.ambience", "score.effects", "score.music"))
 """The tables that hold settings beside project content, so the settings loader warns for neither.
@@ -1119,8 +1276,8 @@ def not_a_key(key: str) -> InputError:
 
 
 def key_named(key: str) -> Key:
-    """The settings key called `key`, or the one refusal every reader of a key's name gives."""
-    known = BY_ID.get(key)
+    """The settings key called `key`, a voice's key included, or the one refusal every reader of a key's name gives."""
+    known = key_of(key)
     if known is None:
         raise not_a_key(key)
     return known
@@ -1162,6 +1319,11 @@ class Loaded:
     settings: Settings
     layers: Layers
 
+    @property
+    def keys(self) -> tuple[Key, ...]:
+        """Every key these settings hold: the fixed keys, then every key of every voice, the default voice first."""
+        return STATIC_KEYS + tuple(key for voice in self.settings.voices.values() for key in member_keys(voice))
+
 
 __all__ = [
     "AmbienceConfig",
@@ -1183,5 +1345,6 @@ __all__ = [
     "ToolsConfig",
     "VerifyConfig",
     "VideoConfig",
+    "Voice",
     "VoiceConfig",
 ]

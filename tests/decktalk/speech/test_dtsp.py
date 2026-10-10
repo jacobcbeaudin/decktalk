@@ -30,7 +30,8 @@ from decktalk.errors import ProviderError
 from decktalk.findings import Code
 from decktalk.media import audio
 from decktalk.results import BillingBasis, TakeOutcome
-from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, DtspConfig, Settings, VoiceConfig
+from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, DtspConfig
+from decktalk.settings.layers import load
 from decktalk.speech import (
     DECLARED,
     PROVIDERS,
@@ -111,7 +112,8 @@ def request(**over: Any) -> SpeechRequest:
 
 def test_it_is_in_the_closed_set_free_keyless_and_renders_every_pause():
     assert sorted(PROVIDERS) == sorted(DECLARED) == ["dtsp", "elevenlabs"]
-    voice = VoiceInForce.of(Settings(voice=VoiceConfig(provider="dtsp")))
+    settings = load(project={"voices": {"narrator": {"provider": "dtsp"}}}, environ={}).settings
+    voice = VoiceInForce.of(settings.voices["narrator"])
     assert voice.billing is BillingBasis.FREE
     assert voice.key_variable is None
     assert voice.renders_pauses
@@ -220,7 +222,7 @@ LESSON_TOML = """
 [project]
 name = "local"
 
-[voice]
+[voices.narrator]
 provider = "dtsp"
 id = "{voice}"
 
@@ -264,7 +266,7 @@ def machine_without_a_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     """A process with no voice key and no machine file, so nothing but the project decides the voice."""
     for name in [declared.key_variable for declared in DECLARED.values() if declared.key_variable]:
         monkeypatch.delenv(name, raising=False)
-    for name in ("DECKTALK_VOICE_ID", "DECKTALK_PROJECT"):
+    for name in ("DECKTALK_VOICES_NARRATOR_ID", "DECKTALK_PROJECT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(MACHINE_FILE_VARIABLE, str(tmp_path / "no-machine.toml"))
     monkeypatch.setenv("TTY_COMPATIBLE", "0")

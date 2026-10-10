@@ -42,7 +42,20 @@ FRONT = (REPO / "README.md", SRC / "template" / "AGENTS.md")
 HISTORY = frozenset({DOCS / "changelog.mdx"})
 """The published changelog, which records the words a release used and is never rewritten."""
 
-SEEDS = frozenset({"knob", "wire id", "soundscape", "paid take", "bought take", "certainty", "spending", "silent take"})
+SEEDS = frozenset(
+    {
+        "knob",
+        "wire id",
+        "soundscape",
+        "paid take",
+        "bought take",
+        "certainty",
+        "spending",
+        "silent take",
+        "speaker",
+        "utterance",
+    }
+)
 """Words the glossary must keep retiring, so a column that stops parsing fails rather than passes empty."""
 
 

@@ -30,7 +30,8 @@ def locate(text: str, key: str) -> int | None:
 
     The key is dotted from the top of the file, such as `verify.cue_offset_max_ms`, which is the
     same string a diagnostic prints and `config set` takes. A key written inside its table and a
-    key written dotted at the top of the file are the same key and both are found.
+    key written dotted at the top of the file are the same key and both are found. A name that is a
+    table, such as `voices.guest`, is found on its header.
     """
     wanted = _path(key)
     here: tuple[str, ...] = ()
@@ -38,6 +39,8 @@ def locate(text: str, key: str) -> int | None:
         header = TABLE.match(line)
         if header:
             here = _path(header.group(1))
+            if here == wanted:
+                return number
             continue
         assignment = ASSIGNMENT.match(line)
         if assignment and here + _path(assignment.group(1)) == wanted:

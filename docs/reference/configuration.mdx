@@ -102,12 +102,14 @@ These keys govern how the script is turned into audio.
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
+| `voice` | string | `"narrator"` | must match the pattern ^[a-z][a-z0-9]*$ |  | project |  | The default voice: the voice that reads every section no voice direction in the script names, and every turn of a section that names none. It names a [voices.NAME] table, and with no such table written it is a voice at every default. |
 | `concurrency` | integer | `2` | must be between 1 and 8 |  | machine |  | How many sections `narrate` voices at once. |
 | `retries` | integer | `3` | must be between 0 and 10 |  | machine |  | How many more times `narrate` asks again when the voice provider or the aligner answers that it is busy or failed. |
 | `mp3_bitrate` | string | `"128k"` | must be one of 64k, 96k, 128k, 160k, 192k, 256k |  | project |  | Bitrate of the mp3 files that DeckTalk writes, which are the placeholders and the joined narration. |
 | `words_per_minute` | integer | `140` | must be between 60 and 300 | words per minute | project |  | Pacing of the estimated length in the narrate table. |
 | `placeholder_words_per_minute` | integer | `150` | must be between 60 and 300 | words per minute | project |  | Pacing of a placeholder, the click audio a section plays until its take is voiced. |
 | `lead_seconds` | number | `0.5` | must be between 0 and 5 | seconds | project |  | Silence before the first word of every spoken section, so the picture changes before the voice speaks. A section's own `lead_seconds` replaces it. |
+| `turn_gap_seconds` | number | `0.3` | must be between 0 and 5 | seconds | project |  | Silence between two turns of a section when no timed pause is written where the voice changes. A [pause N] written there replaces it, and neither is part of either turn's take. |
 | `placeholder_beat_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project |  | Seconds each beat adds to the length of a placeholder take. |
 | `tail_seconds` | number | `0.7` | must be between 0 and 10 | seconds | project | `CUT_SPEECH` | Silence after the last word of every spoken section, so a cut never falls on speech. The take is placed so that exactly this much follows its last sound. A section's own `tail_seconds` replaces it. |
 | `takes_dir` | string | `"takes"` | must match the pattern ^.+$ | path | project |  | Directory inside the project that holds every take the film plays and the words its voice sent with each, which you commit so a fresh clone builds the film with no key. The take index stays under the build, because it is a cache built again from the takes. A take is looked for here first and in the machine's take store, `store_dir`, second, and a take this project voices or finds there is written here. |
@@ -221,23 +223,6 @@ These keys are the limits `verify` judges the assembled mp4 against.
 
 </Warning>
 
-## `[voice]`
-
-These keys are the three every voice has: which provider reads the script, in which voice and at what pace. Everything a provider is particular about, its own fields, its model and its rate, is in that provider's own table, so changing `provider` never sends one vendor's fields or model to another.
-
-| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
-|---|---|---|---|---|---|---|---|
-| `provider` | string | `"elevenlabs"` | takes any value of its type |  | project |  | The speech provider that reads the script, which is a name the machine's own map answers. An unregistered name loads, and fails only when a run asks it for a take, which a run that does not spend never does. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose own keys are `[dtsp]`. |
-| `id` | string | `""` | must match the pattern ^[A-Za-z0-9_-]*$ |  | project |  | The voice that reads the script, as the provider names it. It is a published name rather than a credential, so it is committed with the project, and it is one of the inputs every take is named by. `DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file. |
-| `speed` | number | `1.0` | must be between 0.7 and 1.2 |  | project |  | How fast the voice speaks, as a multiple of its natural pace. |
-
-<Warning>
-**`voice.id`** The id is placed in the path of every speech request, so a value that could hold a slash, a dot or a query would let a project somebody else wrote send the key to another endpoint of the service.
-
-**`voice.speed`** The provider refuses a multiple outside its own range, so a slower read is a script change rather than a setting.
-
-</Warning>
-
 ## `[mix]`
 
 The settings half of `[mix]`, which is how each layer is ramped. Its files and levels are project content.
@@ -270,11 +255,11 @@ These keys are ElevenLabs's own: its speech fields, its model, its rate, its out
 
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
-| `model` | string | `"eleven_multilingual_v2"` | takes any value of its type |  | project |  | The ElevenLabs model that reads the script when `[voice] provider` is `elevenlabs`. |
+| `model` | string | `"eleven_multilingual_v2"` | takes any value of its type |  | project |  | The ElevenLabs model every ElevenLabs voice reads with, unless its own `[voices.NAME]` table names another. |
 | `stability` | number | `0.55` | must be between 0 and 1 |  | project |  | How closely the voice holds one delivery across takes. |
 | `similarity_boost` | number | `0.75` | must be between 0 and 1 |  | project |  | How closely the voice holds to the original recording it was cloned from. |
 | `style` | number | `0.0` | must be between 0 and 1 |  | project |  | How much expressive style the voice adds beyond the words. |
-| `speaker_boost` | boolean | `true` | takes any value of its type |  | project |  | Whether ElevenLabs applies its own speaker boost to the take. |
+| `speaker_boost` | boolean | `true` | takes any value of its type |  | project |  | Whether ElevenLabs applies the boost it calls use_speaker_boost to the take. |
 | `dollars_per_1000_characters` | number | `0.0` | must be between 0 and 100 | US dollars per 1000 characters | project |  | What this project's ElevenLabs plan charges in US dollars per thousand characters of speech. |
 | `output_format` | string | `"mp3_44100_128"` | must be one of mp3_22050_32, mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192 |  | project |  | Audio format ElevenLabs returns each take in, as its own codec_rate_bitrate token. It is part of every take's digest, and its codec names the take's file. |
 | `base_url` | string | `"https://api.elevenlabs.io/v1"` | takes any value of its type |  | machine |  | Base URL of the ElevenLabs API, which the voice and the score both send their requests and the key to. |
@@ -298,7 +283,7 @@ These keys are the `dtsp` provider's own: where its local server listens, the mo
 |---|---|---|---|---|---|---|---|
 | `base_url` | string | `"http://127.0.0.1:9361"` | takes any value of its type |  | machine |  | Base URL of decktalk-voice, the local server that reads the script for `dtsp` and times the words of a take that came without them. Port 9361 is assigned to nothing at IANA and listed in no /etc/services, so no other service is expected to answer there. |
 | `handshake_seconds` | integer | `5` | must be between 1 and 60 | seconds | machine |  | Seconds the local server has to say which aligner it serves, asked at most once per run and only when a take has no aligned words kept. It is short because a server that is up answers at once, so a port held by a process that never answers costs this wait and not `[narration] timeout_seconds`. |
-| `model` | string | `"kokoro-82m"` | takes any value of its type |  | project |  | The model the local server reads the script with when `[voice] provider` is `dtsp`, as the server names it. |
+| `model` | string | `"kokoro-82m"` | takes any value of its type |  | project |  | The model the local server reads every `dtsp` voice with, as the server names it, unless the voice's own `[voices.NAME]` table names another. |
 
 <Warning>
 **`dtsp.base_url`** The script, and for a provider that bills the API key, travels to whatever host this names, so only the machine names it and a project file that sets it is refused.
@@ -378,6 +363,7 @@ These keys switch the files a build writes beside the final mp4.
 | Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
 |---|---|---|---|---|---|---|---|
 | `timestamped_copy` | boolean | `false` | takes any value of its type |  | project |  | Write a second copy of the final mp4 named with the date and time. |
+| `caption_voices` | boolean | `false` | takes any value of its type |  | project |  | Name the voice of every caption in a section spoken in more than one voice: a WebVTT voice span such as `<v narrator>` in the .vtt, and the name before the line, such as `narrator: `, in the .srt. Off, the captions carry the words alone, and the transcript names the voices of a dialogue either way. |
 
 ## `[events]`
 
@@ -410,7 +396,43 @@ These keys name the tools DeckTalk drives, for a machine that supplies its own.
 
 </Warning>
 
+## `[voices]`
+
+Every voice of the project, one table per voice, each named by the name a voice direction in the script calls it by. The table `[narration] voice` names is the default voice.
+
+These keys are the three every voice has: which provider reads its turns, in which voice and at what pace. Each voice is one `[voices.NAME]` table. Everything a provider is particular about, its own fields, its model and its rate, is in that provider's own table, and a voice may state any of that table's chosen keys for itself alone, so changing `provider` never sends one vendor's fields or model to another.
+
+Write one table per voice, named by the name the script's voice directions use, such as
+`[voices.guest]`. A voice name is a lower-case letter followed by lower-case letters and digits. Each
+key below is set for that voice alone, and its variable spells the voice's name, such as
+`DECKTALK_VOICES_GUEST_ID`. A key that names a provider table's key reads that table's value until
+the voice states its own.
+
+| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |
+|---|---|---|---|---|---|---|---|
+| `provider` | string | `"elevenlabs"` | takes any value of its type |  | project |  | The speech provider that reads this voice's turns, which is a name the machine's own map answers. An unregistered name loads, and fails only when a run asks it for a take, which a run that does not spend never does. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose own keys are `[dtsp]`. |
+| `id` | string | `""` | must match the pattern ^[A-Za-z0-9_-]*$ |  | project |  | The voice that reads this voice's turns, as the provider names it. It is a published name rather than a credential, so it is committed with the project, and it is one of the inputs every take is named by. `DECKTALK_VOICES_<NAME>_ID` overrides it for anyone who keeps it out of the file. |
+| `speed` | number | `1.0` | must be between 0.7 and 1.2 |  | project |  | How fast the voice speaks, as a multiple of its natural pace. |
+| `model` | string | `elevenlabs.model` or `dtsp.model` | takes any value of its type |  | project |  | This voice's own model, over [elevenlabs or dtsp] model, which every voice of that provider reads unless it sets its own. |
+| `stability` | number | `elevenlabs.stability` | must be between 0 and 1 |  | project |  | This voice's own stability, over [elevenlabs] stability, which every voice of that provider reads unless it sets its own. |
+| `similarity_boost` | number | `elevenlabs.similarity_boost` | must be between 0 and 1 |  | project |  | This voice's own similarity_boost, over [elevenlabs] similarity_boost, which every voice of that provider reads unless it sets its own. |
+| `style` | number | `elevenlabs.style` | must be between 0 and 1 |  | project |  | This voice's own style, over [elevenlabs] style, which every voice of that provider reads unless it sets its own. |
+| `speaker_boost` | boolean | `elevenlabs.speaker_boost` | takes any value of its type |  | project |  | This voice's own speaker_boost, over [elevenlabs] speaker_boost, which every voice of that provider reads unless it sets its own. |
+| `output_format` | string | `elevenlabs.output_format` | must be one of mp3_22050_32, mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192 |  | project |  | This voice's own output_format, over [elevenlabs] output_format, which every voice of that provider reads unless it sets its own. |
+
+<Warning>
+**`voices.<name>.id`** The id is placed in the path of every speech request, so a value that could hold a slash, a dot or a query would let a project somebody else wrote send the key to another endpoint of the service.
+
+**`voices.<name>.speed`** The provider refuses a multiple outside its own range, so a slower read is a script change rather than a setting.
+
+**`voices.<name>.stability`** ElevenLabs takes a share and refuses anything else, so a value read as a percentage fails the request rather than the load.
+
+**`voices.<name>.output_format`** Every take already bought was bought in the format named here, so another one buys every take again.
+
+</Warning>
+
 ## The numbers that are not settings
+
 
 These are the numbers that decide something and are still not settings. A derived number is written
 as its expression, so it follows the keys it reads at every frame size and every rate. A constant is

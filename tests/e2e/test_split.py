@@ -169,7 +169,7 @@ def test_the_api_key_never_reaches_the_render_job_or_a_page(tmp_path: Path) -> N
     init(voice_root, machine=here, skills=False)
 
     voiced = tmp_path / "voice" / "result.json"
-    voice_env = carried(**{KEY: SENTINEL, "DECKTALK_VOICE_ID": "house-voice"})
+    voice_env = carried(**{KEY: SENTINEL, "DECKTALK_VOICES_NARRATOR_ID": "house-voice"})
     job(VOICE_JOB, [str(voice_root), str(here.cache_dir), str(voiced)], voice_env, voice_root)
     said = json.loads(voiced.read_text(encoding="utf-8"))
     assert said["ok"] and said["voiced"], "the voice job voiced nothing"
@@ -180,7 +180,10 @@ def test_the_api_key_never_reaches_the_render_job_or_a_page(tmp_path: Path) -> N
     rendered = tmp_path / "render" / "result.json"
     # The voice is a published name and travels with the project, so the render job is handed it and no key.
     render_env = carried(
-        **{MACHINE_FILE_VARIABLE: str(tmp_path / "render" / "machine.toml"), "DECKTALK_VOICE_ID": "house-voice"}
+        **{
+            MACHINE_FILE_VARIABLE: str(tmp_path / "render" / "machine.toml"),
+            "DECKTALK_VOICES_NARRATOR_ID": "house-voice",
+        }
     )
     assert KEY not in render_env
     job(RENDER_JOB, [str(render_root), str(rendered)], render_env, render_root)

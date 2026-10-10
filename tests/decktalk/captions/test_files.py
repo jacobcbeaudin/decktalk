@@ -25,6 +25,27 @@ def test_vtt_opens_with_its_header_and_stamps_with_a_full_stop():
     assert text.startswith("WEBVTT\n\n00:00:00.500 --> 00:00:02.250\n")
 
 
+VOICED = CaptionCue(start=0.0, end=2.0, lines=("[door opens]", "Says who?", "Every demo says that.", "[ball bounces]"),
+                    voice="engineer", spoken=(1, 3))  # fmt: skip
+"""A cue a voice speaks, with a sound caption before its speech and another after it."""
+
+
+def test_vtt_tags_the_lines_a_voice_speaks_with_its_name():
+    """A WebVTT voice span names who speaks, and the sounds either side of the speech stay outside it."""
+    text = vtt_text([VOICED])
+    assert "[door opens]\n<v engineer>Says who?\nEvery demo says that.</v>\n[ball bounces]\n" in text
+
+
+def test_srt_puts_the_voice_before_the_first_line_it_speaks():
+    text = srt_text([VOICED])
+    assert "[door opens]\nengineer: Says who?\nEvery demo says that.\n[ball bounces]\n" in text
+
+
+def test_a_cue_no_voice_is_named_on_is_written_as_it_reads():
+    plain = CaptionCue(start=0.0, end=1.0, lines=("Hello.",))
+    assert "<v" not in vtt_text([plain]) and ": " not in srt_text([plain]).split("\n", 2)[2]
+
+
 def ffmetadata_read(escaped: str) -> str:
     """What ffmpeg reads back from one escaped value, refusing a special character left bare."""
     read, rest = [], iter(escaped)
@@ -76,6 +97,19 @@ def test_the_transcript_is_one_plain_page_a_viewer_can_read():
     assert "A clip plays here: media/b.mp4." in text
     # The page carries no script and no external reference, so it opens anywhere and offline.
     assert "<script" not in text and "http" not in text
+
+
+def test_a_turn_of_a_dialogue_names_its_voice_in_an_element_of_its_own():
+    """A screen reader reads the voice, then the line, and the two never run together into one word."""
+    said = (Said("Says who?", voice="engineer"), Said("Nobody does.", voice="narrator"))
+    text = transcript_html("film", [TranscriptSection(chapter="Talk", start=0.0, end=4.0, said=said)])
+    assert '<p><span class="who">engineer:</span> Says who?</p>' in text
+    assert '<p><span class="who">narrator:</span> Nobody does.</p>' in text
+
+
+def test_a_paragraph_of_one_voice_names_nobody():
+    text = transcript_html("film", [TranscriptSection(chapter="Open", start=0.0, end=4.0, said=(Said("Hello."),))])
+    assert "<p>Hello.</p>" in text and 'class="who"' not in text
 
 
 def test_a_time_is_written_to_the_nearest_second_the_one_way_a_person_reads_it() -> None:

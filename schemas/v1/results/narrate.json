@@ -76,6 +76,10 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
         "TAKE_UNALIGNED",
         "CUT_SPEECH",
@@ -581,7 +585,7 @@
     },
     "SectionTake": {
       "additionalProperties": false,
-      "description": "One section's take: what it cost, how long it runs and what the run did about it.",
+      "description": "One turn's take: what it cost, how long it runs and what the run did about it.",
       "properties": {
         "section": {
           "description": "The section this row is about, as the author numbered it.",
@@ -592,6 +596,17 @@
         "key": {
           "description": "The section's key, which names its files under build/.",
           "title": "Key",
+          "type": "string"
+        },
+        "turn": {
+          "description": "The turn of its section this take reads, counted from one.",
+          "minimum": 1,
+          "title": "Turn",
+          "type": "integer"
+        },
+        "voice": {
+          "description": "The voice that reads this turn, by its name in decktalk.toml.",
+          "title": "Voice",
           "type": "string"
         },
         "outcome": {
@@ -641,6 +656,8 @@
       "required": [
         "section",
         "key",
+        "turn",
+        "voice",
         "outcome",
         "characters",
         "digest"
@@ -749,6 +766,11 @@
           "$ref": "#/$defs/Layer",
           "description": "Which layer set that rate, where default means nobody stated it."
         },
+        "provider": {
+          "description": "The provider this row pays, which for the narration is one row per provider its voices name.",
+          "title": "Provider",
+          "type": "string"
+        },
         "stage": {
           "$ref": "#/$defs/Stage",
           "description": "The stage this row is about."
@@ -767,6 +789,7 @@
         "price_key",
         "averaged",
         "price_layer",
+        "provider",
         "stage"
       ],
       "title": "StageCost",

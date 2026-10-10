@@ -7,7 +7,7 @@
     {
       "case": "elevenlabs-defaults",
       "covers": "The shipped cloud provider at every default, its voice id written in the file.",
-      "config": "[voice]\nprovider = \"elevenlabs\"\nid = \"03SG2XsqDqqfP8RMUXX1\"\n",
+      "config": "[voices.narrator]\nprovider = \"elevenlabs\"\nid = \"03SG2XsqDqqfP8RMUXX1\"\n",
       "environ": {},
       "digests": {
         "1": "edcbaaa1db7507bd",
@@ -18,9 +18,9 @@
     {
       "case": "elevenlabs-environment-id",
       "covers": "The same voice named by DECKTALK_VOICE_ID over another id in the file.",
-      "config": "[voice]\nprovider = \"elevenlabs\"\nid = \"file-voice\"\n",
+      "config": "[voices.narrator]\nprovider = \"elevenlabs\"\nid = \"file-voice\"\n",
       "environ": {
-        "DECKTALK_VOICE_ID": "03SG2XsqDqqfP8RMUXX1"
+        "DECKTALK_VOICES_NARRATOR_ID": "03SG2XsqDqqfP8RMUXX1"
       },
       "digests": {
         "1": "edcbaaa1db7507bd",
@@ -31,7 +31,7 @@
     {
       "case": "elevenlabs-tuned",
       "covers": "A non-default model and format, a lower stability, a style, no speaker boost and a faster speed.",
-      "config": "[voice]\nprovider = \"elevenlabs\"\nid = \"03SG2XsqDqqfP8RMUXX1\"\nspeed = 1.1\n\n[elevenlabs]\nmodel = \"eleven_flash_v2_5\"\nstability = 0.4\nstyle = 0.2\nspeaker_boost = false\noutput_format = \"mp3_44100_192\"\n",
+      "config": "[voices.narrator]\nprovider = \"elevenlabs\"\nid = \"03SG2XsqDqqfP8RMUXX1\"\nspeed = 1.1\nstyle = 0.2\n\n[elevenlabs]\nmodel = \"eleven_flash_v2_5\"\nstability = 0.4\nspeaker_boost = false\noutput_format = \"mp3_44100_192\"\n",
       "environ": {},
       "digests": {
         "1": "1f08efbd01bd5960",
@@ -42,7 +42,7 @@
     {
       "case": "dtsp-defaults",
       "covers": "The shipped local provider at every default.",
-      "config": "[voice]\nprovider = \"dtsp\"\nid = \"af_heart\"\n",
+      "config": "[narration]\nvoice = \"host\"\n\n[voices.host]\nprovider = \"dtsp\"\nid = \"af_heart\"\n",
       "environ": {},
       "digests": {
         "1": "0b619a9083b7aa11",
@@ -53,9 +53,9 @@
     {
       "case": "dtsp-tuned",
       "covers": "The local provider on a non-default model at a slower speed, its voice named by DECKTALK_VOICE_ID.",
-      "config": "[voice]\nprovider = \"dtsp\"\nspeed = 0.9\n\n[dtsp]\nmodel = \"kokoro-82m-int8\"\n",
+      "config": "[voices.narrator]\nprovider = \"dtsp\"\nspeed = 0.9\n\n[dtsp]\nmodel = \"kokoro-82m-int8\"\n",
       "environ": {
-        "DECKTALK_VOICE_ID": "af_heart"
+        "DECKTALK_VOICES_NARRATOR_ID": "af_heart"
       },
       "digests": {
         "1": "2be6909668004623",

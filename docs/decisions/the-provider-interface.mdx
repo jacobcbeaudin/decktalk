@@ -39,7 +39,7 @@ Each adapter declares, in one place:
   declared with `tune()` and layered by `tomlmap` like every other table, with the adapter's own
   bounds. Every vendor field lives there, `stability`, `similarity_boost`, `style` and
   `speaker_boost` among them.
-- **Its model**, set in its own table alone, so changing `[voice] provider` never sends one
+- **Its model**, set in its own table alone, so changing `[voices.NAME] provider` never sends one
   vendor's model id to another.
 - **Its key variable**, such as `ELEVENLABS_API_KEY`, or none. `doctor`, the plan and every hint
   name the variable the adapter declares.
@@ -51,7 +51,8 @@ Each adapter declares, in one place:
 - **Its output format and the file suffix** a take is written under, so a take is named by what it
   holds.
 
-`[voice]` keeps the three keys every voice has: `provider`, `id` and `speed`. Each adapter
+Each `[voices.NAME]` table keeps the three keys every voice has: `provider`, `id` and `speed`, and may
+set any chosen key of its provider's table for itself alone. Each adapter
 bounds `speed` to its own range. The protocol carries no `cache_key`. The digest is taken in one
 place above the boundary, from the take identity the adapter declares.
 
@@ -108,7 +109,7 @@ the run exits 0.
 
 ### The voice id
 
-The voice id is `[voice] id` in `decktalk.toml`, and `DECKTALK_VOICE_ID` in the environment
+The voice id is `[voices.narrator] id` in `decktalk.toml`, and `DECKTALK_VOICES_NARRATOR_ID` in the environment
 overrides it for anyone who keeps it out of the file. The id is a published name, not a credential.
 It names which voice reads the script, the way a model name names which model answers, and it grants
 nothing on its own: a voice cloned on an ElevenLabs account is usable only with that account's key.
@@ -207,7 +208,7 @@ layering test holds, and lets a test build one from a few numbers and a source o
 - No markup in a request, and no pause dropped without a finding.
 - No `cache_key` on the protocol, and no digest spelled outside the one place takes are named.
 - No retry of a paid request whose reply broke after sending.
-- Cloning is a separate command that records the speaker's consent. A build never clones, so a build
+- Cloning is a separate command that records the person's consent. A build never clones, so a build
   can never spend on a clone.
 - No licence gate. Each model entry in the local server's registry carries a plain licence field, any
   model may be used locally, and nothing in DeckTalk filters on that field.

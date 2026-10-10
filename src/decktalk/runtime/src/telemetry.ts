@@ -25,7 +25,7 @@ export type CueEvent = {
   readonly ran: number;
   /** The second the animation frame that ran it began, or null before the clock has started. */
   readonly frame: number | null;
-  /** What this cue's reveals describe themselves as, joined into one sentence, or null. */
+  /** What this cue's reveals describe themselves as that the slide has not already said, as one sentence, or null. */
   readonly describe: string | null;
 };
 

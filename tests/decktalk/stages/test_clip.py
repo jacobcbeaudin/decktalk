@@ -202,3 +202,27 @@ def test_a_project_with_no_take_index_names_the_command_that_writes_one(tmp_path
 def test_a_take_the_index_names_and_the_project_has_not_got_is_refused(tmp_path: Path) -> None:
     with pytest.raises(NotBuiltError, match="which is not on disk"):
         cut_a_clip(a_project(tmp_path, take_on_disk=False), a_run(tmp_path))
+
+
+# ---- a dialogue ----------------------------------------------------------------------------------
+
+
+def test_a_clip_of_a_dialogue_section_carries_every_turn(tmp_path: Path, fake_ffmpeg: FakeFfmpeg) -> None:
+    """A dialogue section's sound is its turns joined with their gaps, which is the joined narration at its place."""
+    toml = TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n'
+    inputs = load_project(tmp_path, toml, page=SCENE_ONE, media=("media/b-roll.mp4",))
+    first = a_take(1, seconds=0.3, lead_seconds=0.2, tail_seconds=0.1, digest="0000000000000001", spoken="Hello.")
+    second = a_take(1, turn=2, voice="guest", seconds=0.3, tail_seconds=0.7, digest="0000000000000002", spoken="there.")
+    words = {(1, 1): (Word(word="Hello", start=0.0, end=0.2),), (1, 2): (Word(word="there", start=0.0, end=0.2),)}
+    narrated(inputs, first, second, words=words)
+    inputs.workspace.narration_path.parent.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.narration_path.write_bytes(b"joined")
+    inputs.workspace.section_video("01").parent.mkdir(parents=True, exist_ok=True)
+    inputs.workspace.section_video("01").write_bytes(b"")
+    cut_a_clip(inputs, a_run(tmp_path), end=1.0)
+    (call,) = [call for call in fake_ffmpeg.calls if "-filter_complex" in call]
+    assert str(inputs.workspace.narration_path) in call
+    assert "adelay=delays=0S" in graph_of(fake_ffmpeg)
+    said = Words.read(tmp_path / "media" / "answer.words.json")
+    assert said is not None
+    assert [word.word for word in said.words] == ["Hello.", "there."]

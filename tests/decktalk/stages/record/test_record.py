@@ -26,7 +26,7 @@ from decktalk.media.pagereport import PageReport, Recording
 from decktalk.media.recording import RecordingSink
 from decktalk.pipeline import Outcome
 from decktalk.results import Word
-from decktalk.stages.record import pool, record, stale_recording
+from decktalk.stages.record import plan, pool, record, stale_recording
 from support.logs import decisions
 from support.pages import TWO_SCENE_PAGE, a_report
 from support.projects import load_project
@@ -432,3 +432,18 @@ def test_a_page_section_numbered_zero_is_recorded_and_logged(tmp_path: Path) -> 
     assert [row.section for row in result.sections] == [0, 2]
     log = RecordingLog.read(inputs.workspace.recording_log("00"))
     assert log is not None and log.section == 0
+
+
+def test_a_dialogue_section_is_recorded_for_its_whole_span(tmp_path: Path) -> None:
+    """The page plays under every turn of its section, so it is recorded for the turns, their gaps and the tail."""
+    inputs = load_project(tmp_path, TOML + "\n[voices.narrator]\n\n[voices.guest]\n", page=TWO_SCENE_PAGE)
+    turns = (
+        a_take(1, seconds=SPAN_SECONDS, voiced=False, tail_seconds=0.3),
+        a_take(1, turn=2, voice="guest", seconds=SPAN_SECONDS, voiced=False, tail_seconds=0.7),
+        a_take(2, seconds=SPAN_SECONDS, voiced=False),
+    )
+    write_takes(inputs, *turns)
+    loaded = Inputs.load(tmp_path, environ={})
+    jobs = plan(loaded, a_run(tmp_path), None)
+    margin = loaded.document.page_sections[0].record_margin_seconds
+    assert [job.seconds for job in jobs] == [round(2 * SPAN_SECONDS + 1.0, 3) + margin, SPAN_SECONDS + margin]

@@ -25,7 +25,7 @@ import tomlkit
 
 import build_settings_schema
 import generated
-from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE
+from decktalk.settings import BY_ID, MACHINE_FILE_VARIABLE, MEMBER
 from decktalk.settings.layers import machine_config_path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -75,7 +75,14 @@ travels and a path or a limit that is right on one machine is wrong on the next.
 machine's file with `decktalk config set KEY VALUE --scope machine`, or set its environment variable.
 """
 
+FAMILY_LEAD = """Write one table per voice, named by the name the script's voice directions use, such as
+`[voices.guest]`. A voice name is a lower-case letter followed by lower-case letters and digits. Each
+key below is set for that voice alone, and its variable spells the voice's name, such as
+`DECKTALK_VOICES_GUEST_ID`. A key that names a provider table's key reads that table's value until
+the voice states its own."""
+
 NUMBERS_LEAD = """## The numbers that are not settings
+
 
 These are the numbers that decide something and are still not settings. A derived number is written
 as its expression, so it follows the keys it reads at every frame size and every rate. A constant is
@@ -128,7 +135,9 @@ def keys(document: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
 
 
 def _walk(table: str, body: dict[str, Any]) -> list[tuple[str, str, dict[str, Any]]]:
-    """One table's own keys, then the keys of every table nested inside it."""
+    """One table's own keys, then the keys of every table nested inside it, a family's under its member's name."""
+    if body.get("x-kind") == "family":
+        return _walk(f"{table}.{MEMBER}", body["additionalProperties"])
     own = [(table, name, prop) for name, prop in body.get("properties", {}).items() if "x-scope" in prop]
     nested: list[tuple[str, str, dict[str, Any]]] = []
     for name, prop in body.get("properties", {}).items():
@@ -164,16 +173,24 @@ def tables(document: dict[str, Any], rows: list[tuple[str, str, dict[str, Any]]]
     out: list[str] = []
     for table in dict.fromkeys(name for name, _key, _property in rows):
         body = _table(document, table)
-        out.append(f"## `[{table}]`\n")
+        out.append(f"## `[{table.removesuffix(f'.{MEMBER}')}]`\n")
         out.append(f"{body['description']}\n")
+        if body.get("x-kind") == "family":
+            out.append(f"{body['additionalProperties']['description']}\n")
+            out.append(f"{FAMILY_LEAD}\n")
         out.append("| Key | Type | Default | Safe range | Unit | Scope | Decides | Meaning |")
         out.append("|---|---|---|---|---|---|---|---|")
         for name, prop in ((name, prop) for t, name, prop in rows if t == table):
             decides = ", ".join(f"`{code}`" for code in prop.get("x-decides", []))
-            # tomlkit writes the default as `decktalk.toml` would hold it, escapes and all.
-            default = tomlkit.item(prop["default"]).as_string()
+            # tomlkit writes the default as `decktalk.toml` would hold it, escapes and all, and a key with no
+            # default of its own reads the keys it inherits from.
+            default = (
+                f"`{tomlkit.item(prop['default']).as_string()}`"
+                if "default" in prop
+                else " or ".join(f"`{key}`" for key in prop["x-see-also"])
+            )
             out.append(
-                f"| `{name}` | {prop['type']} | `{default}` | {cell(prop['x-range'])} "
+                f"| `{name}` | {prop['type']} | {default} | {cell(prop['x-range'])} "
                 f"| {prop.get('x-unit', '')} | {prop['x-scope']} | {decides} | {cell(prop['description'])} |"
             )
         out.append("")
@@ -190,10 +207,12 @@ def hazards(table: str, rows: list[tuple[str, str, dict[str, Any]]]) -> list[str
 
 
 def _table(document: dict[str, Any], dotted: str) -> dict[str, Any]:
-    """One table of the schema by its dotted name."""
+    """One table of the schema by its dotted name, a family by its own name."""
     outer, *inner = dotted.split(".")
     body = document["properties"][outer]
     for part in inner:
+        if part == MEMBER:
+            return body
         body = body["properties"][part]
     return body
 

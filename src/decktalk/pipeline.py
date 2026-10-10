@@ -145,8 +145,9 @@ PIPELINE: tuple[StageSpec, ...] = (
         reads=(Artifact.TAKES,),
         writes=(Artifact.CUE_TIMES,),
         holds_api_key=False,
-        opens_pages=False,
-        why="Each cue phrase becomes a second on its section clock, which the recorder plays to.",
+        opens_pages=True,
+        why="Each cue phrase becomes a second on its section clock, which the recorder plays to, and is read "
+        "against the moments the page declares, opening the page when it changed since it was recorded.",
     ),
     StageSpec(
         stage=Stage.RECORD,

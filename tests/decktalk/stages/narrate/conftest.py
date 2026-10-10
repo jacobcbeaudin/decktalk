@@ -24,14 +24,14 @@ from support.takes import a_take
 VOICE_ID = "voice-under-test"
 """The voice every project here is read in, which is one of the inputs a take's digest is over."""
 
-ENVIRON = {"ELEVENLABS_API_KEY": "key-under-test", "DECKTALK_VOICE_ID": VOICE_ID}
+ENVIRON = {"ELEVENLABS_API_KEY": "key-under-test", "DECKTALK_VOICES_NARRATOR_ID": VOICE_ID}
 """What a machine hands a project, which is the credential and the published voice name."""
 
 TOML = """
 [project]
 name = "t"
 
-[voice]
+[voices.narrator]
 provider = "elevenlabs"
 
 [elevenlabs]
@@ -76,6 +76,20 @@ It steps down the bowl.
 
 Every picture waited for its word.
 """
+
+
+NARRATOR_TABLE = '[voices.narrator]\nprovider = "elevenlabs"\n'
+"""The narrator's table every project here writes, which a second voice's table is added after."""
+
+WITH_A_GUEST = TOML.replace(NARRATOR_TABLE, f'{NARRATOR_TABLE}\n[voices.guest]\nprovider = "dtsp"\nid = "af_heart"\n')
+"""The project with a free guest beside its paid narrator."""
+
+DIALOGUE = SCRIPT.replace(
+    "## 2. Middle\n\nIt steps down the bowl.\n",
+    "## 2. Middle\n\n[voice narrator]\n\nIt steps down the bowl.\n\n[pause 1]\n\n[voice guest]\n\nAnd it rolls.\n\n"
+    "[voice narrator]\n\nThen it stops.\n",
+)
+"""The script whose second section is a dialogue: the narrator, the guest after a one-second pause, the narrator."""
 
 
 @pytest.fixture

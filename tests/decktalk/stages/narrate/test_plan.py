@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from decktalk.artifacts import TakeInputs
+from decktalk.artifacts import TakeInputs, take_file
 from decktalk.inputs import Inputs
 from decktalk.inputs.script import parse_script
 from decktalk.speech import canonical_text
@@ -66,12 +66,13 @@ def test_a_project_at_the_defaults_names_each_paid_take_by_what_elevenlabs_decla
 ) -> None:
     """What `[elevenlabs]` declares at its defaults, identity and format, is what every take was paid under."""
     golden = GOLDEN["inputs"]
-    project = load_project(tmp_path, MINIMAL_TOML, environ={})
+    project = load_project(tmp_path, MINIMAL_TOML, environ={"DECKTALK_VOICES_NARRATOR_ID": golden["voice"]})
     (parsed,) = parse_script(markdown)
-    made = take_inputs(project, parsed, provider="elevenlabs", voice_id=golden["voice"], model=golden["model"])
+    made = take_inputs(parsed.turns[0], project.voice_of(parsed.turns[0]))
     assert made.output_format == golden["output_format"]
+    assert made.model == golden["model"]
     assert made.digest == digest, f"{film} section {section} would be voiced again"
-    assert project.workspace.take_file(digest) == f"{digest}.mp3"
+    assert take_file(digest, project.voice_of(parsed.turns[0]).output.suffix) == f"{digest}.mp3"
 
 
 def test_a_voice_a_host_registered_keeps_the_digest_its_takes_were_named_by(
@@ -80,22 +81,93 @@ def test_a_voice_a_host_registered_keeps_the_digest_its_takes_were_named_by(
     """It declares no format, so it is asked for the one every take was asked for before adapters declared theirs."""
     project = make_inputs(toml=TOML.replace('provider = "elevenlabs"', 'provider = "house"'), name="house")
     (section, *_rest) = project.spoken()
-    made = take_inputs(project, section, provider="house", voice_id=VOICE_ID, model="m")
+    voice = project.voice_of(section.turns[0])
+    made = take_inputs(section.turns[0], voice)
     assert made.output_format == "mp3_44100_128"
     assert (
         made.digest
         == TakeInputs.of(
             provider="house",
             voice=VOICE_ID,
-            model="m",
+            model="",
             output_format="mp3_44100_128",
             settings={"speed": 1.0},
             text=canonical_text(section.pieces),
         ).digest
     )
-    assert project.workspace.take_file(made.digest) == f"{made.digest}.mp3"
+    assert take_file(made.digest, voice.output.suffix) == f"{made.digest}.mp3"
     spend = take_states(project, [section]).plan(spend=True).cost
     assert "declares no bill" in spend.sentence
+
+
+TWO_VOICES = """
+[project]
+name = "t"
+
+[narration]
+voice = "narrator"
+
+[voices.narrator]
+id = "voice-one"
+
+[voices.guest]
+provider = "dtsp"
+id = "af_heart"
+speed = 1.1
+
+[[section]]
+number = 1
+page = "deck/index.html"
+scene = "1"
+
+[[section]]
+number = 2
+page = "deck/index.html"
+scene = "2"
+"""
+
+TWO_SECTIONS = "## 1. Open\n\nThe narrator reads this.\n\n## 2. Guest\n\n[voice guest]\n\nThe guest reads this.\n"
+
+
+def digests_of(project: Inputs) -> list[str | None]:
+    """The voiced take each spoken section names, read as narrate reads it."""
+    return [state.digest for state in take_states(project).values()]
+
+
+def test_a_take_is_named_by_its_voices_values_and_never_by_its_name(tmp_path: Path) -> None:
+    """Renaming a voice in its table, in `[narration] voice` and in every direction voices nothing."""
+    before = load_project(tmp_path / "before", TWO_VOICES, script=TWO_SECTIONS, environ={})
+    renamed = TWO_VOICES.replace("narrator", "host").replace("guest", "visitor")
+    after = load_project(
+        tmp_path / "after", renamed, script=TWO_SECTIONS.replace("[voice guest]", "[voice visitor]"), environ={}
+    )
+    assert digests_of(after) == digests_of(before)
+    assert None not in digests_of(before)
+    twins = TWO_VOICES.replace(
+        '[voices.guest]\nprovider = "dtsp"\nid = "af_heart"\nspeed = 1.1', '[voices.guest]\nid = "voice-one"'
+    )
+    shared = load_project(
+        tmp_path / "shared",
+        twins,
+        script="## 1. Open\n\nSame words.\n\n## 2. Guest\n\n[voice guest]\n\nSame words.\n",
+        environ={},
+    )
+    first, second = digests_of(shared)
+    assert first == second, "two names with one set of values read one sentence as one take"
+
+
+def test_a_section_the_guest_reads_is_named_by_the_guests_voice(tmp_path: Path) -> None:
+    project = load_project(tmp_path, TWO_VOICES, script=TWO_SECTIONS, environ={})
+    guest = project.voices["guest"]
+    expected = TakeInputs.of(
+        provider="dtsp",
+        voice="af_heart",
+        model="kokoro-82m",
+        output_format=guest.output.format,
+        settings={"speed": 1.1},
+        text="The guest reads this.",
+    )
+    assert digests_of(project)[1] == expected.digest
 
 
 def test_every_name_the_plan_exports_is_read_somewhere_else() -> None:

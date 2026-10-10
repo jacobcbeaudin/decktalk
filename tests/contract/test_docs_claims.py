@@ -265,7 +265,7 @@ def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(tmp
     (tmp_path / "deck" / "index.html").write_text("<html></html>", encoding="utf-8")
     voice = ClosedVoice()
     machine = decktalk.Machine.of(
-        environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+        environ={"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"},
         machine_file=tmp_path / "machine.toml",
         cwd=tmp_path,
         cache_dir=tmp_path / "cache",

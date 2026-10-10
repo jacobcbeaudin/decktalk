@@ -1363,6 +1363,7 @@
         for (const one of stops) one();
         stops.length = 0;
       },
+      said: /* @__PURE__ */ new Set(),
     };
     const onLeave = (fn) => stops.push(fn);
     for (const target of momentElements(el)) {
@@ -1519,14 +1520,16 @@
   }
   function fire(mounted, cue) {
     const list = mounted?.actions.get(cue);
-    if (!list?.length) return null;
+    if (!mounted || !list?.length) return void 0;
     for (const action of list) action.run();
     const arrived = list.some((action) => action.attr === ATTR.in && action.line !== null);
     const lines = [];
     for (const action of list) {
       if (action.line === null) continue;
       if (arrived && action.attr === ATTR.back) continue;
-      if (!lines.includes(action.line)) lines.push(action.line);
+      if (mounted.said.has(action.line)) continue;
+      mounted.said.add(action.line);
+      lines.push(action.line);
     }
     return lines.length ? lines.join(" ") : null;
   }
@@ -1655,10 +1658,10 @@
         warn("PAGE_HANDLER_THREW", slide?.id ?? null, cue, { value: String(err) });
       }
     }
-    if (sentence === null && !own && !handled(cue) && !findSlide(cue)) {
+    if (sentence === void 0 && !own && !handled(cue) && !findSlide(cue)) {
       warn("PAGE_CUE_UNKNOWN", slide?.id ?? null, cue);
     }
-    recorder().cue({ id: cue, due: round(due), ran: round(now()), frame: frameAt(), describe: sentence });
+    recorder().cue({ id: cue, due: round(due), ran: round(now()), frame: frameAt(), describe: sentence ?? null });
   }
   function parseCues(raw) {
     return raw

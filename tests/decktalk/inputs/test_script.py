@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -9,7 +11,8 @@ from hypothesis import strategies as st
 from decktalk.errors import InputError
 from decktalk.inputs.script import estimated_words, parse_script, read_script, spoken_words, strip_markdown
 from decktalk.settings import Settings
-from decktalk.speech import BEAT, Piece
+from decktalk.speech import BEAT, Piece, canonical_text
+from support.paths import DATA
 
 SCRIPT = """# Title
 
@@ -138,3 +141,139 @@ def test_every_estimated_word_is_one_of_the_spoken_words(tokens: list[str], seco
     assert tuple(word.word for word in section.estimated_words(seconds)) == spoken_words(section.spoken)
     assert all(word.word for word in section.estimated_words(seconds))
     assert section.estimated_words(seconds) == estimated_words(section.spoken, seconds)
+
+
+# ---- voices and turns --------------------------------------------------------------------------
+
+HASHED = [
+    take["markdown"]
+    for name in ("take_hash.json", "take_hash_pauses.json")
+    for take in json.loads((DATA / name).read_text(encoding="utf-8"))["takes"]
+]
+"""Every section whose digest a take was bought under, which a section with no voice direction must read alike."""
+
+
+def body(markdown: str) -> str:
+    """The text under a section's heading, which is what `strip_markdown` is handed."""
+    return markdown.split("\n", 1)[1]
+
+
+@pytest.mark.parametrize("markdown", HASHED, ids=[f"take-{place}" for place in range(len(HASHED))])
+def test_a_section_with_no_voice_direction_is_one_turn_of_todays_pieces(markdown: str) -> None:
+    (section,) = parse_script(markdown)
+    (turn,) = section.turns
+    assert (turn.number, turn.voice, turn.gap) == (1, None, None)
+    assert turn.pieces == section.pieces == strip_markdown(body(markdown))
+
+
+def test_a_leading_direction_changes_no_piece() -> None:
+    plain = parse_script("## 1. Open\n\nHello there. [beat] General Kenobi.\n")[0]
+    marked = parse_script("## 1. Open\n\n[voice narrator]\n\nHello there. [beat] General Kenobi.\n")[0]
+    assert marked.pieces == plain.pieces
+    (turn,) = marked.turns
+    assert turn.voice == "narrator"
+
+
+def test_a_direction_naming_the_voice_in_force_is_no_boundary() -> None:
+    """It is removed, so it adds no pause and no piece, and the text either side stays one turn."""
+    (section,) = parse_script("## 1. Open\n\n[voice host]\n\nHello there.\n[voice host]\nGeneral Kenobi.\n")
+    (turn,) = section.turns
+    assert turn.pieces == (Piece("Hello there. General Kenobi."),)
+    assert "—" not in canonical_text(turn.pieces)
+
+
+DIALOGUE = """## 2. The interview
+
+[Scene 2. The question, then the answer.]
+
+[voice narrator]
+
+Sam, what made you start?
+
+[pause 1.5]
+
+[voice guest]
+
+I wanted a film I could change one sentence at a time.
+
+[voice narrator]
+
+And now?
+
+## 3. Close
+
+That is all.
+"""
+
+
+def test_each_change_of_voice_starts_a_turn_and_each_section_starts_in_the_default() -> None:
+    interview, close = parse_script(DIALOGUE)
+    assert [(turn.number, turn.voice) for turn in interview.turns] == [(1, "narrator"), (2, "guest"), (3, "narrator")]
+    assert [turn.pieces for turn in interview.turns] == [
+        (Piece("Sam, what made you start?"),),
+        (Piece("I wanted a film I could change one sentence at a time."),),
+        (Piece("And now?"),),
+    ]
+    assert interview.pieces == tuple(piece for turn in interview.turns for piece in turn.pieces)
+    assert [(turn.voice, turn.gap) for turn in close.turns] == [(None, None)]
+
+
+@pytest.mark.parametrize(
+    ("between", "gap"),
+    [
+        ("[pause 1.5]\n\n[voice guest]", 1.5),
+        ("[voice guest]\n\n[pause 2]", 2.0),
+        ("[pause 1]\n\n[voice guest]\n\n[pause 2.5]", 2.5),
+        ("[beat]\n\n[voice guest]", None),
+        ("[voice guest]", None),
+        ('<break time="800ms" />\n\n[voice guest]', 0.8),
+    ],
+    ids=["before", "after", "both-the-longest", "a-beat", "none", "a-break-tag"],
+)
+def test_the_pause_written_where_the_voice_changes_is_the_gap_and_in_neither_turns_text(
+    between: str, gap: float | None
+) -> None:
+    """The pause is placement, never take content, so retiming a dialogue buys nothing."""
+    markdown = f"## 1. Talk\n\n[voice host]\n\nHello there.\n\n{between}\n\nGeneral Kenobi.\n"
+    first, second = parse_script(markdown)[0].turns
+    assert first.gap == gap
+    assert second.gap is None
+    assert first.pieces == (Piece("Hello there."),)
+    assert second.pieces == (Piece("General Kenobi."),)
+
+
+@pytest.mark.parametrize(
+    "claimed", ["[Voice over the chart.]", "[voice.guest]", "[voice Guest]", "[voice]", "[voice guest please]"]
+)
+def test_every_whole_line_that_opens_with_the_word_voice_is_claimed_and_never_a_beat(claimed: str) -> None:
+    (section,) = parse_script(f"## 1. Open\n\nHello there.\n\n{claimed}\n\nGeneral Kenobi.\n")
+    (turn,) = section.turns
+    assert turn.pieces == (Piece("Hello there."), Piece("General Kenobi."))
+    assert "—" not in canonical_text(section.pieces)
+
+
+def test_a_note_that_merely_starts_with_voice_is_still_a_beat() -> None:
+    (section,) = parse_script("## 1. Open\n\nHello there.\n\n[voiceover]\n\nGeneral Kenobi.\n")
+    assert section.pieces == (Piece("Hello there.", BEAT), Piece("General Kenobi."))
+
+
+def test_a_turn_knows_the_line_its_first_prose_sits_on() -> None:
+    interview, close = parse_script(DIALOGUE)
+    lines = DIALOGUE.splitlines()
+    assert [lines[turn.line - 1] for turn in interview.turns] == [
+        "Sam, what made you start?",
+        "I wanted a film I could change one sentence at a time.",
+        "And now?",
+    ]
+    assert lines[close.turns[0].line - 1] == "That is all."
+
+
+def test_a_turn_is_measured_like_a_section() -> None:
+    interview = parse_script(DIALOGUE)[0]
+    cfg = Settings().narration
+    assert sum(turn.word_count for turn in interview.turns) == interview.word_count
+    second = interview.turns[1]
+    assert second.spoken == "I wanted a film I could change one sentence at a time."
+    assert second.placeholder_seconds(cfg) == round(second.word_count / cfg.placeholder_words_per_minute * 60, 3)
+    assert second.estimated_seconds(cfg) == round(second.word_count / cfg.words_per_minute * 60, 1)
+    assert [word.word for word in second.estimated_words(3.0)][:2] == ["I", "wanted"]

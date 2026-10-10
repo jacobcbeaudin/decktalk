@@ -76,6 +76,10 @@
         "SCRIPT_UNFINISHED",
         "SCRIPT_SPOKEN_SYMBOL",
         "SCRIPT_PAUSE_DROPPED",
+        "SCRIPT_VOICE_UNKNOWN",
+        "SCRIPT_VOICE_UNMARKED",
+        "SCRIPT_VOICE_BARE",
+        "VOICE_UNUSED",
         "TAKE_MISSING",
         "TAKE_UNALIGNED",
         "CUT_SPEECH",
@@ -680,6 +684,11 @@
           "$ref": "#/$defs/Layer",
           "description": "Which layer set that rate, where default means nobody stated it."
         },
+        "provider": {
+          "description": "The provider this row pays, which for the narration is one row per provider its voices name.",
+          "title": "Provider",
+          "type": "string"
+        },
         "stage": {
           "$ref": "#/$defs/Stage",
           "description": "The stage this row is about."
@@ -698,6 +707,7 @@
         "price_key",
         "averaged",
         "price_layer",
+        "provider",
         "stage"
       ],
       "title": "StageCost",

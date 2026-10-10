@@ -65,6 +65,8 @@ export type Mounted = {
   readonly slide: Slide;
   readonly actions: Map<string, Action[]>;
   readonly stop: () => void;
+  /** Every sentence a cue of this slide has written, so a later cue of it never writes one again. */
+  readonly said: Set<string>;
 };
 
 /**
@@ -90,6 +92,7 @@ export function prepare(el: HTMLElement, slide: Slide, playing: Playing): Mounte
       for (const one of stops) one();
       stops.length = 0;
     },
+    said: new Set(),
   };
   const onLeave = (fn: () => void) => stops.push(fn);
   for (const target of momentElements(el)) {
@@ -302,19 +305,27 @@ function subject(el: Element, attr: Attr): string | null {
  * Run every moment of one cue, in document order, and answer with the sentence they wrote together.
  *
  * A step back that shares its cue with an arrival writes nothing, because it is the shadow of that
- * arrival rather than an event of its own, and a return to the front always writes a line, because
- * it is an attention event that a viewer is meant to notice.
+ * arrival rather than an event of its own, and a return to the front writes a line, because it is
+ * an attention event that a viewer is meant to notice. A line the slide has already written, at
+ * this cue or an earlier one, is not written again: forty ticks that each say "its tick lights"
+ * tell a reader something the first time and nothing the other thirty-nine, so the transcript says
+ * it once, where it first applies. The next slide starts with nothing said.
+ *
+ * The answer is undefined when the slide declares nothing at this cue, and null when it declares
+ * moments that write nothing new, so a cue that ran its moments is never mistaken for a stray name.
  */
-export function fire(mounted: Mounted | null, cue: string): string | null {
+export function fire(mounted: Mounted | null, cue: string): string | null | undefined {
   const list = mounted?.actions.get(cue);
-  if (!list?.length) return null;
+  if (!mounted || !list?.length) return undefined;
   for (const action of list) action.run();
   const arrived = list.some((action) => action.attr === ATTR.in && action.line !== null);
   const lines: string[] = [];
   for (const action of list) {
     if (action.line === null) continue;
     if (arrived && action.attr === ATTR.back) continue;
-    if (!lines.includes(action.line)) lines.push(action.line);
+    if (mounted.said.has(action.line)) continue;
+    mounted.said.add(action.line);
+    lines.push(action.line);
   }
   return lines.length ? lines.join(" ") : null;
 }

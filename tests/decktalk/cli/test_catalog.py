@@ -13,7 +13,7 @@ from decktalk.errors import ErrorCode
 from decktalk.findings import Code
 from decktalk.pipeline import PIPELINE
 from decktalk.results import RESULTS, Scope
-from decktalk.settings import BY_ID, KEYS
+from decktalk.settings import BY_ID, KEYS, MEMBER, TEMPLATES, VOICE_NAME
 
 from .conftest import commands
 
@@ -107,11 +107,26 @@ def _ids(properties: dict[str, object], prefix: str = "") -> list[str]:
         if not isinstance(schema, dict):
             continue
         inside = schema.get("properties")
+        member = schema.get("additionalProperties")
         if isinstance(inside, dict):
             found += _ids(inside, f"{prefix}{name}.")
+        elif isinstance(member, dict) and isinstance(member.get("properties"), dict):
+            found += _ids(member["properties"], f"{prefix}{name}.{MEMBER}.")
         elif "x-scope" in schema:
             found.append(f"{prefix}{name}")
     return found
+
+
+def test_the_schema_lists_every_voice_key_under_its_family() -> None:
+    """A voice is named by its author, so the schema publishes one table of keys any voice name may hold."""
+    committed = json.loads((SCHEMA_DIR / "decktalk.json").read_text(encoding="utf-8"))
+    voices = committed["properties"]["voices"]
+    assert voices["propertyNames"] == {"pattern": VOICE_NAME}
+    assert list(voices["additionalProperties"]["properties"]) == [key.name for key in TEMPLATES]
+    published = [key["id"] for key in catalog.settings_schema()["keys"]]
+    assert [key for key in published if key.startswith("voices.")] == [key.id for key in TEMPLATES]
+    machine = json.loads((SCHEMA_DIR / "machine.json").read_text(encoding="utf-8"))
+    assert "voices" not in machine["properties"]
 
 
 def test_the_machine_document_is_the_machine_scoped_keys() -> None:

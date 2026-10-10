@@ -85,7 +85,7 @@ def cut_checks(
         if take is None or at is None:
             continue
         end = at.end
-        window = min(verify.cut_window_seconds, take.span_seconds)
+        window = min(verify.cut_window_seconds, takes.span_seconds(section.number))
         speech = audio.rms_db(narration, max(0.0, end - window), window)
         at = round(offsets[section.number] + end, 3)
         step = _step_dbfs(film, at)

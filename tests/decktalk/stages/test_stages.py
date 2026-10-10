@@ -3,7 +3,7 @@
 These helpers are the only code the stage package holds above its own stages, so what they
 promise is held here rather than in each of the twelve modules that call them.
 
-The voice helpers read `[voice]` and the speech provider's own table and never name a vendor. The
+The voice helpers read `[voices.NAME]` and the speech provider's own table and never name a vendor. The
 voiced-take rule is held here from the other side of `tests/contract/test_take_hash.py`: the settings
 and the model a take's digest is taken over, assembled from the provider's own table at its
 defaults, are byte for byte the inputs every voiced take was bought under.
@@ -46,15 +46,15 @@ def test_an_empty_selection_selects_no_section() -> None:
 def test_the_digest_inputs_from_the_providers_table_are_the_ones_every_paid_take_was_bought_under(
     tmp_path: Path,
 ) -> None:
-    """The ElevenLabs fields sit in `[elevenlabs]` and speed in `[voice]`, and the JSON they make has not moved."""
+    """The ElevenLabs fields sit in `[elevenlabs]` and speed in a voice's table, and their JSON has not moved."""
     project = load_project(tmp_path, MINIMAL_TOML, environ={})
-    identity = dict(project.voice.identity)
-    assert project.voice.model == GOLDEN["model"]
+    identity = dict(project.voices["narrator"].identity)
+    assert project.voices["narrator"].model == GOLDEN["model"]
     assert identity == GOLDEN["settings"]
     built = TakeInputs.of(
-        provider=project.settings.voice.provider,
+        provider=project.voices["narrator"].provider,
         voice=GOLDEN["voice"],
-        model=project.voice.model,
+        model=project.voices["narrator"].model,
         output_format=project.settings.elevenlabs.output_format,
         settings=identity,
         text="hello",
@@ -65,18 +65,18 @@ def test_the_digest_inputs_from_the_providers_table_are_the_ones_every_paid_take
 
 
 def test_the_providers_own_fields_reach_the_digest_from_its_own_table(tmp_path: Path) -> None:
-    project = load_project(tmp_path, MINIMAL_TOML + "\n[elevenlabs]\nstability = 0.4\n[voice]\nspeed = 1.1\n")
-    assert dict(project.voice.identity)["stability"] == 0.4
-    assert dict(project.voice.identity)["speed"] == 1.1
+    project = load_project(tmp_path, MINIMAL_TOML + "\n[elevenlabs]\nstability = 0.4\n[voices.narrator]\nspeed = 1.1\n")
+    assert dict(project.voices["narrator"].identity)["stability"] == 0.4
+    assert dict(project.voices["narrator"].identity)["speed"] == 1.1
 
 
 def test_a_voice_with_no_table_is_sent_no_vendors_model_and_no_vendors_fields(tmp_path: Path) -> None:
-    """Changing `[voice] provider` never carries ElevenLabs's model or its fields into another voice's digest."""
-    project = load_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "house"\n', environ={})
-    assert project.voice.model == ""
-    assert dict(project.voice.identity) == {"speed": 1.0}
+    """Changing `[voices.NAME] provider` never carries ElevenLabs's model or its fields into another voice's digest."""
+    project = load_project(tmp_path, MINIMAL_TOML + '\n[voices.narrator]\nprovider = "house"\n', environ={})
+    assert project.voices["narrator"].model == ""
+    assert dict(project.voices["narrator"].identity) == {"speed": 1.0}
 
 
 def test_the_model_is_the_one_the_providers_own_table_names(tmp_path: Path) -> None:
     project = load_project(tmp_path, MINIMAL_TOML + '\n[elevenlabs]\nmodel = "eleven_turbo_v2_5"\n', environ={})
-    assert project.voice.model == "eleven_turbo_v2_5"
+    assert project.voices["narrator"].model == "eleven_turbo_v2_5"

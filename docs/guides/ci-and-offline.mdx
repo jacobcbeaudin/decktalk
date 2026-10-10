@@ -53,7 +53,7 @@ agent cannot answer and a flag that does not exist are the same failure.
 
 The refusal is the whole of what a caller needs.
 
-{/* sample: narrate-no-terminal, decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voice] id set and no API key, which exits 2 */}
+{/* sample: narrate-no-terminal, decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which exits 2 */}
 ```text
 error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
   hint: Run decktalk narrate --spend to approve that cost, or decktalk narrate --no-spend to play a placeholder wherever a take is missing.
@@ -82,8 +82,8 @@ stderr with neither in the other's way.
 
 {/* sample: status-events, decktalk status --json --events, its stderr, on a fresh decktalk init my-lesson */}
 ```jsonl
-{"event":"run.start","time":"2026-10-04T04:38:52.298788Z","seq":0,"run":"7a0a76a666bc","events_file":"build/events/7a0a76a666bc.jsonl"}
-{"event":"run.done","time":"2026-10-04T04:38:52.301461Z","seq":1,"run":"7a0a76a666bc","outcome":"ran","elapsed_seconds":0.003,"error":null,"dropped":0}
+{"event":"run.start","time":"2026-10-07T17:45:08.206670Z","seq":0,"run":"8949fdfca49b","events_file":"build/events/8949fdfca49b.jsonl"}
+{"event":"run.done","time":"2026-10-07T17:45:08.209288Z","seq":1,"run":"8949fdfca49b","outcome":"ran","elapsed_seconds":0.003,"error":null,"dropped":0}
 ```
 
 `event` is the discriminator. A `stage.done` and a `section.done` each carry an `outcome` of `ran`,
@@ -138,7 +138,8 @@ reach, so a docs-only job, a pre-commit hook and a container with no Chromium ca
 
 {/* sample: check-no-pages, decktalk check --no-pages, on a fresh decktalk init my-lesson with no API key and no voice id */}
 ```text
-No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+The voice narrator reads 3 turns of 476 characters on elevenlabs, at $0.30 per 1,000 characters.
+The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 no page was opened, so these judgements were not reached: CUE_UNLISTED, CUE_UNKNOWN, CUE_OVERLAP, PAGE_MOTION_OVERRUN, PAGE_STAGGER_OVERRUN, PAGE_NO_DESCRIPTION, PAGE_SWAP_APART, PAGE_CDN_ASSET, CUE_NO_CHANGE, CUE_THIN_CHANGE, PAGE_THIN_DRAW, CUT_POP.
 frames were asked for and no page was opened, so no frame was frozen either.
 Checking script.md, cues.json.
@@ -258,7 +259,7 @@ with a score does the same with `decktalk score --spend` and `score/`, which hol
 and their ledger, while the music joined from its parts stays under `build/score/`.
 
 ```toml
-[voice]
+[voices.narrator]
 id = "<your voice id>"
 ```
 
@@ -275,7 +276,7 @@ score/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
 
 The voice id is a published name rather than a secret, so it is committed beside the takes and the
 job is handed nothing at all. A project that keeps the id out of the file hands the job
-`DECKTALK_VOICE_ID` instead, and still leaves the key out.
+`DECKTALK_VOICES_NARRATOR_ID` instead, and still leaves the key out.
 
 A run with `--no-spend` plays every take on disk and never builds a voice that bills, so it reads no
 key. Each section whose take is missing plays a placeholder and is reported as

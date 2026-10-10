@@ -51,7 +51,10 @@ class CueRow(Model):
     due: float = Field(description="The second the cue was due.")
     ran: float = Field(description="The second the cue actually ran.")
     frame: float | None = Field(None, description="The second the frame that ran it began, or null before t=0.")
-    describe: str | None = Field(None, description="What this cue's reveals describe themselves as, or null.")
+    describe: str | None = Field(
+        None,
+        description="What this cue's reveals describe themselves as that an earlier cue of its slide did not, or null.",
+    )
     next: float | None = Field(None, description="The second the frame after that one began, or null.")
     after: float | None = Field(None, description="The second the frame after the next one began, or null.")
 

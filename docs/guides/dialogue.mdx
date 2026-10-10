@@ -1,0 +1,108 @@
+---
+title: Write a dialogue
+description: Give a section to two voices, a narrator and a guest, with one line before each turn, and build it on placeholders before buying a take.
+---
+
+A film may be read by more than one voice. Each voice is a table of `decktalk.toml`, and a line
+holding only `[voice NAME]` in `script.md` hands what follows to that voice. A section that names no
+voice is read by the default voice whole, exactly as a one-voice film is.
+
+`decktalk init --example interview my-interview` writes a project whose second section is a
+dialogue between a narrator and a guest, both ElevenLabs voices with their ids left empty, so it
+builds on placeholders until you name them.
+
+## Declare the voices
+
+Write one `[voices.NAME]` table per voice, and name the default voice in `[narration] voice`. A voice
+name is a lower-case letter followed by lower-case letters and digits.
+
+```toml decktalk.toml
+[narration]
+voice = "narrator"            # the default voice, which reads every section no [voice NAME] line names
+
+[voices.narrator]
+provider = "elevenlabs"
+id = "<the narrator's voice id>"
+
+[voices.guest]
+provider = "elevenlabs"
+id = "<the guest's voice id>"
+speed = 1.05                  # this voice's own pace
+stability = 0.4               # over [elevenlabs] stability, for this voice alone
+```
+
+Once one voice table is written, every voice needs its own, the default included. A voice may set any
+voice setting of its provider's table for itself, and the two voices may sit on different providers.
+A voice id may also come from the environment as `DECKTALK_VOICES_<NAME>_ID`, such as
+`DECKTALK_VOICES_GUEST_ID`.
+
+## Hand the turns to them
+
+In the section that is a dialogue, open every turn with a voice direction, the first included.
+
+```markdown script.md
+## 2. The interview
+
+[voice narrator]
+
+How do you write a film one sentence at a time?
+
+[voice guest]
+
+I write the sentence first. [beat] Then the picture waits for it.
+
+[pause 1]
+
+[voice narrator]
+
+And when the sentence changes?
+
+[voice guest]
+
+Only that part is made again.
+```
+
+Each stretch one voice reads is a **turn**, and each turn is voiced as its own take, so changing the
+guest's last sentence voices that turn alone. Where the voice changes, the turns are joined across
+`[narration] turn_gap_seconds`, `0.3` seconds by default, and a `[pause N]` written there wins, as the
+one second above does. The next section starts with the default voice again.
+
+A cue phrase in `cues.json` may sit in any turn of its section, because a section's words run on one
+clock. The transcript names the voice before each turn of a section spoken in more than one voice,
+so a reader who cannot hear the film knows who says each line. The captions carry the words alone
+unless you turn on `[output] caption_voices`, which names the voice of every caption of a dialogue:
+`<v guest>` in the `.vtt`, and `guest: ` before the line in the `.srt`.
+
+```toml
+[output]
+caption_voices = true
+```
+
+## Check it before you build
+
+`decktalk check --no-pages` reads the directions against the voices you declared, and says how much
+each voice reads and what it costs.
+
+- [`SCRIPT_VOICE_UNKNOWN`](/reference/findings/SCRIPT_VOICE_UNKNOWN): a direction names no declared voice,
+  with the nearest name.
+- [`SCRIPT_VOICE_UNMARKED`](/reference/findings/SCRIPT_VOICE_UNMARKED): a section that names a voice has a
+  turn no direction opens.
+- [`SCRIPT_VOICE_BARE`](/reference/findings/SCRIPT_VOICE_BARE): a note such as `[guest]` is exactly a voice's
+  name, so it plays as a beat. Write `[voice guest]`.
+- [`VOICE_UNUSED`](/reference/findings/VOICE_UNUSED): a declared voice reads no turn.
+
+`decktalk status` names the voices of every section and the take state of every turn, and
+`decktalk words` heads each turn's words with its voice.
+
+## Build it
+
+`decktalk build --no-spend` plays a placeholder for every turn with no voiced take, so the pacing and
+the cues are real before anything is bought. A voice with no id plays placeholders whatever the run
+may spend, and the `TAKE_MISSING` finding of its turns names the `[voices.NAME] id` to set. With both
+ids set and the key in `.env`, `decktalk build --spend` buys every turn's take.
+
+## Related
+
+- [script.md](/reference/script-md#voice-directions-and-turns) for every rule a voice direction follows.
+- [decktalk.toml](/reference/decktalk-toml) for the voice tables and their keys.
+- [Rebuild one section](/guides/rebuild-one-section) for what each change voices again.

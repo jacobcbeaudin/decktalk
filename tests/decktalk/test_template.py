@@ -24,7 +24,7 @@ from support.git import git
 
 
 def test_every_example_is_named_once_and_a_reserved_one_says_so() -> None:
-    assert [found.name for found in EXAMPLES] == ["lesson", "product", "tutorial"]
+    assert [found.name for found in EXAMPLES] == ["lesson", "interview", "product", "tutorial"]
     assert "product (reserved)" in listed_names()
     assert example("lesson").shipped and not example("product").shipped
 
@@ -74,11 +74,20 @@ def test_the_starter_writes_a_project_that_already_builds(tmp_path: Path) -> Non
     assert len(written) == len(set(written))  # every path is reported once
 
 
-@pytest.mark.parametrize("example_name", [None, "lesson"])
+@pytest.mark.parametrize("example_name", [None, "lesson", "interview"])
 def test_every_project_init_writes_loads_with_nothing_to_warn_about(tmp_path: Path, example_name: str | None) -> None:
     """A key a template still spells under a table it left would be read by nothing, so it is held here."""
     write_project(tmp_path, name="demo", example_name=example_name, skills=False, force=False)
     assert Inputs.load(tmp_path, environ={}).notes == ()
+
+
+def test_the_starter_names_its_default_voice_and_its_one_voice(tmp_path: Path) -> None:
+    """A new author sees where the default voice is named and the one table that declares it."""
+    write_project(tmp_path, name="demo", example_name=None, skills=False, force=False)
+    text = (tmp_path / "decktalk.toml").read_text(encoding="utf-8")
+    assert 'voice = "narrator"' in text
+    assert [line for line in text.splitlines() if line.startswith("[voices.")] == ["[voices.narrator]"]
+    assert list(Inputs.load(tmp_path, environ={}).voices) == ["narrator"]
 
 
 def test_the_starter_keeps_its_takes_in_the_default_takes_directory(tmp_path: Path) -> None:
@@ -88,7 +97,7 @@ def test_the_starter_keeps_its_takes_in_the_default_takes_directory(tmp_path: Pa
     assert Inputs.load(tmp_path, environ={}).workspace.takes == tmp_path.resolve() / "takes"
 
 
-@pytest.mark.parametrize("example_name", [None, "lesson"])
+@pytest.mark.parametrize("example_name", [None, "lesson", "interview"])
 def test_every_project_init_writes_commits_its_takes_and_its_score_and_ignores_the_build(
     tmp_path: Path, example_name: str | None
 ) -> None:
@@ -152,7 +161,7 @@ def test_the_starter_is_the_default_and_is_not_itself_an_example() -> None:
 # ---- the runtime and KaTeX are the engine's -----------------------------------------------------
 
 
-@pytest.mark.parametrize("example_name", [None, "lesson"])
+@pytest.mark.parametrize("example_name", [None, "lesson", "interview"])
 def test_init_writes_no_copy_of_the_runtime_or_katex(tmp_path: Path, example_name: str | None) -> None:
     """The origin serves both from the installed engine, so a project never holds a copy to go stale."""
     written = write_project(tmp_path, name="demo", example_name=example_name, skills=False, force=False)

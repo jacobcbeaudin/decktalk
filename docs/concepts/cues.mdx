@@ -208,10 +208,12 @@ applies nothing.
 
 Both comparisons read the moments off the catalog the page itself published rather than off a scan of
 its markup, because `data-spotlight`, `data-class` and `data-owns` all declare moments no text scan can
-see. `check` reads a catalog live, `cue` reads the one the last recording kept, and the two reach the
-same judgements. A section whose page has never been opened is left unjudged rather than guessed at,
-so `check --no-pages` reaches neither `CUE_UNLISTED` nor `CUE_UNKNOWN` and names both as judgements it
-could not make.
+see. `check` reads a catalog live. `cue` reads the one the last recording kept while that recording
+still stands, and opens the page and reads it as it is now once anything the recording was made from
+has changed, so a cue renamed in the page and in `cues.json` together is judged by its new name before
+`record` has run. The two reach the same judgements. A section whose page has never been opened is
+left unjudged rather than guessed at, so `check --no-pages` reaches neither `CUE_UNLISTED` nor
+`CUE_UNKNOWN` and names both as judgements it could not make.
 
 The fix writes `{"id": "<cue id>", "phrase": ""}` and leaves `phrase` empty, because the phrase is your
 line and not DeckTalk's. A project with no `cues.json` at all gets one whole file with a row for

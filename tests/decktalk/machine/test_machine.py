@@ -239,15 +239,16 @@ def test_a_browser_is_built_from_the_machines_environment_and_never_the_process(
 
 
 def test_the_credential_is_asked_about_and_never_read(tmp_path: Path) -> None:
-    assert a_machine(tmp_path).api_key_state is ApiKeyState.MISSING
-    assert a_machine(tmp_path, ELEVENLABS_API_KEY="sk_real").api_key_state is ApiKeyState.SET
+    assert [key.state for key in a_machine(tmp_path).api_keys] == [ApiKeyState.MISSING]
+    assert [key.state for key in a_machine(tmp_path, ELEVENLABS_API_KEY="sk_real").api_keys] == [ApiKeyState.SET]
 
 
-def test_the_credential_asked_about_is_the_one_the_voice_declares(tmp_path: Path) -> None:
-    """A voice DeckTalk does not ship declares no variable, so nothing is reported missing for it."""
-    assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="house").api_key_state is ApiKeyState.NOT_NEEDED
-    assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="elevenlabs").api_key_state is ApiKeyState.MISSING
-    assert a_machine(tmp_path, DECKTALK_VOICE_PROVIDER="dtsp").api_key_state is ApiKeyState.NOT_NEEDED
+def test_doctor_reports_the_key_of_every_shipped_provider_that_needs_one(tmp_path: Path) -> None:
+    """A machine has no project, so it cannot know which voices a run reads, and names every key one could need."""
+    keys = a_machine(tmp_path, DECKTALK_VOICES_GUEST_PROVIDER="dtsp").doctor().api_keys
+    assert [(key.provider, key.variable, key.state) for key in keys] == [
+        ("elevenlabs", "ELEVENLABS_API_KEY", ApiKeyState.MISSING)
+    ]
 
 
 def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -260,7 +261,7 @@ def test_from_environment_is_the_one_reading_of_this_machine(monkeypatch: pytest
 
 # ---- a machine a host builds -----------------------------------------------------------------
 
-HOST_SECRETS = {"ELEVENLABS_API_KEY": "sk-host-owned", "DECKTALK_VOICE_ID": "house-voice"}
+HOST_SECRETS = {"ELEVENLABS_API_KEY": "sk-host-owned", "DECKTALK_VOICES_NARRATOR_ID": "house-voice"}
 """What a host hands its voice job: the key and the voice, and nothing else from its own process."""
 
 
@@ -377,7 +378,7 @@ def test_the_voice_a_host_supplies_is_the_one_narrate_calls(tmp_path: Path) -> N
 def test_a_host_machine_answers_no_voice_its_host_left_out(tmp_path: Path) -> None:
     here = a_host(tmp_path, speech_providers={"house": lambda _context: FakeVoice()})
     with here._run() as run, pytest.raises(InputError, match="not a voice this machine answers for"):
-        run.machine.speech_providers.provider("elevenlabs", a_context())
+        run.machine.speech_providers.provider("elevenlabs", a_context(), voice="narrator")
 
 
 def test_two_machines_in_one_process_answer_with_their_own_voices(tmp_path: Path) -> None:
@@ -386,8 +387,8 @@ def test_two_machines_in_one_process_answer_with_their_own_voices(tmp_path: Path
     two = a_host(tmp_path, speech_providers={"elevenlabs": lambda _context: second})
     with one._run() as outer:
         with two._run() as inner:
-            assert inner.machine.speech_providers.provider("elevenlabs", a_context()) is second
-        assert outer.machine.speech_providers.provider("elevenlabs", a_context()) is first
+            assert inner.machine.speech_providers.provider("elevenlabs", a_context(), voice="narrator") is second
+        assert outer.machine.speech_providers.provider("elevenlabs", a_context(), voice="narrator") is first
 
 
 def test_a_thread_started_without_the_runs_context_answers_with_the_hosts_voices(tmp_path: Path) -> None:
@@ -397,7 +398,9 @@ def test_a_thread_started_without_the_runs_context_answers_with_the_hosts_voices
     project = open_project(a_starter(tmp_path, here), machine=here)
     answered: list[object] = []
     with here._run() as run:
-        worker = threading.Thread(target=lambda: answered.append(speech_provider(run, project._inputs)))
+        inputs = project._inputs
+        voice = inputs.voices[inputs.default_voice]
+        worker = threading.Thread(target=lambda: answered.append(speech_provider(run, inputs, voice)))
         worker.start()
         worker.join()
     assert answered == [house]
@@ -408,7 +411,7 @@ def test_the_machines_retries_are_stamped_on_every_voice_it_builds(tmp_path: Pat
     seen: list[SpeechContext] = []
     here = a_host(tmp_path, speech_providers={"elevenlabs": seen.append}, overrides=("narration.retries=5",))
     with here._run() as run:
-        run.machine.speech_providers.provider("elevenlabs", a_context())
+        run.machine.speech_providers.provider("elevenlabs", a_context(), voice="narrator")
     assert seen[0].retries == 5
 
 
@@ -461,7 +464,7 @@ def keyed(voice: FakeVoice) -> Callable[[SpeechContext], FakeVoice]:
 
 
 def named_in_the_file(root: Path, voice_id: str) -> None:
-    """Name the voice in the starter's own `[voice] id`, which is where a project commits it."""
+    """Name the voice in the starter's own `[voices.NAME] id`, which is where a project commits it."""
     toml = root / "decktalk.toml"
     toml.write_text(toml.read_text(encoding="utf-8").replace('id = ""', f'id = "{voice_id}"'), encoding="utf-8")
 
@@ -749,6 +752,11 @@ def test_init_writes_a_project_and_says_what_it_wrote(tmp_path: Path) -> None:
     assert result.name == "demo" and result.example == "starter" and not result.skills_written
     assert Path("decktalk.toml") in result.written
     assert (tmp_path / "demo" / "decktalk.toml").exists()
+
+
+def test_init_says_which_voices_the_project_declares(tmp_path: Path) -> None:
+    result = init(tmp_path / "demo", machine=a_machine(tmp_path), skills=False)
+    assert result.voices == ("narrator",)
 
 
 def test_a_run_binds_the_toolchain_and_the_download_listener_for_its_own_length(tmp_path: Path) -> None:

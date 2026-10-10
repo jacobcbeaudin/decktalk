@@ -70,7 +70,15 @@ PAYLOADS: dict[str, dict[str, object]] = {
     "stage.progress": {"stage": Stage.NARRATE, "done": 1, "total": 3, "unit": Unit.TAKE, "label": "section 1"},
     "finding.raised": {"finding": FINDING},
     "cost.priced": {"cost": COST},
-    "take.charged": {"section": 2, "digest": "0f3a9c1e", "characters": 118, "dollars": 0.04},
+    "take.charged": {
+        "section": 2,
+        "turn": 3,
+        "digest": "0f3a9c1e",
+        "voice": "guest",
+        "provider": "elevenlabs",
+        "characters": 118,
+        "dollars": 0.04,
+    },
     "sound.charged": {
         "name": "chime",
         "kind": SoundKind.EFFECT,
@@ -333,7 +341,17 @@ def test_a_bounded_file_keeps_every_lifecycle_and_money_line_and_counts_what_it_
             if number % 500 == 0:
                 stream.emit("r1", StageStart, stage=Stage.ASSEMBLE, index=1, count=1)
                 stream.emit("r1", FindingRaised, finding=FINDING)
-                stream.emit("r1", TakeCharged, section=1, digest="0f3a9c1e", characters=10, dollars=0.01)
+                stream.emit(
+                    "r1",
+                    TakeCharged,
+                    section=1,
+                    turn=1,
+                    digest="0f3a9c1e",
+                    voice="narrator",
+                    provider="elevenlabs",
+                    characters=10,
+                    dollars=0.01,
+                )
                 stream.emit("r1", StageDone, stage=Stage.ASSEMBLE, outcome=Outcome.RAN, elapsed_seconds=1.0)
                 sent_kept += 4
     lines = [json.loads(line) for line in path.read_text("utf-8").splitlines()]

@@ -208,3 +208,45 @@ class TestTheNames:
         with pytest.raises(InputError, match="a whole table"):
             stating(path, "video", whole_table=False)
         assert set(stating(path, "video", whole_table=True)) == {"video.crf", "video.preset"}
+
+
+class TestTheVoices:
+    """A voice's key is written into that voice's table, and the whole file is judged before it lands."""
+
+    def test_config_set_writes_a_voice_key_into_its_voice_table(self, tmp_path: Path) -> None:
+        path = tmp_path / "decktalk.toml"
+        path.write_text('[voices.narrator]\nid = "n"\n\n[voices.guest]\nprovider = "dtsp"\n', encoding="utf-8")
+        written = write(path, "voices.guest.speed", "1.1", scope=Scope.PROJECT, environ={})
+        assert (written.value, written.effective, written.layer) == (1.1, 1.1, Layer.PROJECT)
+        text = path.read_text(encoding="utf-8")
+        assert text == '[voices.narrator]\nid = "n"\n\n[voices.guest]\nprovider = "dtsp"\nspeed = 1.1\n'
+
+    def test_config_set_writes_a_new_voice_table_as_its_own_header(self, tmp_path: Path) -> None:
+        path = tmp_path / "decktalk.toml"
+        path.write_text("", encoding="utf-8")
+        write(path, "voices.narrator.id", "n", scope=Scope.PROJECT, environ={})
+        assert path.read_text(encoding="utf-8") == '[voices.narrator]\nid = "n"\n'
+
+    def test_config_set_refuses_a_key_the_voices_provider_has_not(self, tmp_path: Path) -> None:
+        path = tmp_path / "decktalk.toml"
+        before = '[voices.narrator]\nprovider = "dtsp"\n'
+        path.write_text(before, encoding="utf-8")
+        with pytest.raises(InputError, match=r"\[voices.narrator\] stability is a key of \[elevenlabs\]"):
+            write(path, "voices.narrator.stability", "0.4", scope=Scope.PROJECT, environ={})
+        assert path.read_text(encoding="utf-8") == before
+
+    def test_config_unset_takes_a_voice_key_out_and_the_providers_value_shows_through(self, tmp_path: Path) -> None:
+        path = tmp_path / "decktalk.toml"
+        path.write_text("[voices.narrator]\nstability = 0.3\n\n[elevenlabs]\nstability = 0.6\n", encoding="utf-8")
+        assert stating(path, "voices.narrator", whole_table=True) == ("voices.narrator.stability",)
+        removed = unset(path, "voices.narrator.stability", scope=Scope.PROJECT, environ={})
+        assert (removed.previous, removed.effective, removed.layer) == (0.3, 0.6, Layer.PROJECT)
+
+    def test_a_voice_table_is_a_name_unset_takes(self) -> None:
+        key_or_table("voices.guest")
+        key_or_table("voices.guest.id")
+
+    def test_config_list_lists_every_key_of_every_voice(self) -> None:
+        loaded = load(None, project={"voices": {"narrator": {}, "guest": {"provider": "dtsp"}}}, environ={})
+        listed = [row.key for row in rows(loaded, "voices.guest", defaults=False, changed=False)]
+        assert listed == ["voices.guest.provider", "voices.guest.id", "voices.guest.speed", "voices.guest.model"]

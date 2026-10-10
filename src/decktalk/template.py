@@ -80,6 +80,11 @@ EXAMPLES: tuple[Example, ...] = (
         "examples/lesson",
     ),
     Example(
+        "interview",
+        "an interview between a narrator and a guest, whose second section is a dialogue read by two voices",
+        "examples/interview",
+    ),
+    Example(
         "product",
         "the project behind the product film, which is that film's deck and script without its voice",
         None,

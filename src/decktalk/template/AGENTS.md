@@ -3,6 +3,8 @@
 A DeckTalk project: `script.md` is what the voice says, `decktalk.toml` lists one `[[section]]` per
 script section, `cues.json` says which spoken phrase each moment lands on, and `deck/` holds the
 pages. The section number, the scene its `[[section]]` names and the slide ids of its cues agree.
+`[narration] voice` names the default voice, and a line holding only `[voice NAME]` in `script.md`
+hands the turns after it to `[voices.NAME]`, until the next one or the next section.
 
 `decktalk --help` is the instruction set. `decktalk schema` prints every command, flag, finding and
 result, `decktalk schema setting` prints every setting, `decktalk schema page` prints every page

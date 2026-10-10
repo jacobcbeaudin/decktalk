@@ -39,6 +39,7 @@ from decktalk.artifacts import (
     Take,
     Takes,
     TimedBy,
+    TurnKey,
     Words,
     alignment_match,
     is_placeholder,
@@ -153,9 +154,9 @@ def kept_alignment(
 
 @dataclass(frozen=True)
 class _Untimed:
-    """One take of this run whose voice sent no word times, and the section that plays it."""
+    """One take of this run whose voice sent no word times, and the turn that plays it."""
 
-    number: int
+    key: TurnKey
     digest: str
     audio_print: str
     words: tuple[str, ...]
@@ -165,27 +166,31 @@ class _Untimed:
 class _Pass:
     """What one alignment pass has settled so far: the rows, the findings, and the notes it owes the run."""
 
-    rows: dict[int, Take]
+    rows: dict[TurnKey, Take]
     found: list[Finding] = field(default_factory=list)
-    ties: dict[int, list[AlignedWords]] = field(default_factory=dict)
-    live: dict[int, str] = field(default_factory=dict)
+    ties: dict[TurnKey, list[AlignedWords]] = field(default_factory=dict)
+    live: dict[TurnKey, str] = field(default_factory=dict)
     """The key each take is kept under by the aligner that answered the handshake, when one did."""
+
+    def several(self, section: int) -> bool:
+        """Whether this section has more than one turn, which a finding then names."""
+        return sum(key.section == section for key in self.rows) > 1
 
 
 def time_takes(
     inputs: Inputs,
     run: Run,
-    rows: Mapping[int, Take],
+    rows: Mapping[TurnKey, Take],
     previous: Takes | None,
     *,
-    made: Collection[int],
+    made: Collection[TurnKey],
     force: bool,
-) -> tuple[dict[int, Take], list[Finding]]:
+) -> tuple[dict[TurnKey, Take], list[Finding]]:
     """Every take this run made whose voice sent no word times: settled from its kept aligned words, else aligned
     one at a time on this thread after the pool, asking the aligner only when a take has none kept or `force` is set.
 
     It gives back the rows, retimed where the take now plays aligned words, and a `TAKE_UNALIGNED`
-    finding for every section whose take plays estimated words because no aligner timed it.
+    finding for every turn whose take plays estimated words because no aligner timed it.
     """
     state = _Pass(rows=dict(rows))
     untimed = _untimed(inputs, state, made)
@@ -196,45 +201,46 @@ def time_takes(
             down = _align_every(inputs, run, state, untimed, aligner)
             _reuse_note(inputs, run, state, aligner.identity)
         for take in untimed:
-            if state.rows[take.number].timed_by is TimedBy.ESTIMATED:
-                state.found.append(_unaligned(inputs, take.number, down or NO_ALIGNER))
+            if state.rows[take.key].timed_by is TimedBy.ESTIMATED:
+                state.found.append(_unaligned(inputs, state, take.key, down or NO_ALIGNER))
     _tie_note(run, state)
     return state.rows, state.found
 
 
-def _untimed(inputs: Inputs, state: _Pass, made: Collection[int]) -> list[_Untimed]:
-    """The takes this run made whose voice sent no word times, in section order.
+def _untimed(inputs: Inputs, state: _Pass, made: Collection[TurnKey]) -> list[_Untimed]:
+    """The takes this run made whose voice sent no word times, in section and turn order.
 
     A take whose words file carries no audio print cannot be keyed, so it gets its finding here instead.
     """
     untimed: list[_Untimed] = []
-    for number in sorted(made):
-        row = state.rows.get(number)
+    for key in sorted(made):
+        row = state.rows.get(key)
         if row is None or not row.voiced or row.timed_by is not TimedBy.ESTIMATED:
             continue
         said = inputs.take_words(row.digest)
         if not isinstance(said, ProviderWords) or said.timed:
             continue
         if said.audio is None:
-            state.found.append(_unaligned(inputs, number, NO_PRINT))
+            state.found.append(_unaligned(inputs, state, key, NO_PRINT))
             continue
-        untimed.append(_Untimed(number, row.digest, said.audio.blake3, spoken_words(row.spoken)))
+        untimed.append(_Untimed(key, row.digest, said.audio.blake3, spoken_words(row.spoken)))
     return untimed
 
 
 def _settle(inputs: Inputs, state: _Pass, untimed: list[_Untimed], previous: Takes | None) -> bool:
     """Play every take's kept aligned words, with no server, and say whether any take has none kept."""
     missed = False
+    before = {row.turn_key: row for row in previous.sections} if previous is not None else {}
     for take in untimed:
-        last = previous.of(take.number) if previous is not None else None
-        prefer = last.alignment if last is not None and last.digest == state.rows[take.number].digest else None
+        last = before.get(take.key)
+        prefer = last.alignment if last is not None and last.digest == state.rows[take.key].digest else None
         aligned, tied = _kept(inputs, take.audio_print, take.words, prefer=prefer)
         if aligned is None:
             missed = True
             continue
-        state.rows[take.number] = retimed(state.rows[take.number], aligned)
+        state.rows[take.key] = retimed(state.rows[take.key], aligned)
         if tied:
-            state.ties[take.number] = tied
+            state.ties[take.key] = tied
     return missed
 
 
@@ -271,10 +277,10 @@ def _align_every(inputs: Inputs, run: Run, state: _Pass, untimed: list[_Untimed]
             revision=identity.revision,
             model_digest=identity.model_digest,
         )
-        state.live[take.number] = keyed.key
+        state.live[take.key] = keyed.key
         hit = _plays(inputs.workspace.aligned_words(keyed.key), take.audio_print, take.words)
         if hit is not None:
-            state.rows[take.number] = retimed(state.rows[take.number], hit)
+            state.rows[take.key] = retimed(state.rows[take.key], hit)
         else:
             asking.append((take, keyed))
     total = len({keyed.key for _take, keyed in asking})
@@ -287,16 +293,16 @@ def _align_every(inputs: Inputs, run: Run, state: _Pass, untimed: list[_Untimed]
                 if failure.reached and not failure.retryable:
                     raise
                 return _down_reason(failure)
-            row = state.rows[take.number]
+            row = state.rows[take.key]
             run.progress(
                 Stage.NARRATE,
                 done=len(aligned),
                 total=total,
                 unit=Unit.TAKE,
                 label=f"aligning {row.chapter}",
-                section=take.number,
+                section=take.key.section,
             )
-        state.rows[take.number] = retimed(state.rows[take.number], aligned[keyed.key])
+        state.rows[take.key] = retimed(state.rows[take.key], aligned[keyed.key])
     return None
 
 
@@ -319,12 +325,16 @@ def _align_one(inputs: Inputs, run: Run, take: _Untimed, keyed: AlignmentInputs,
     return aligned
 
 
-def _unaligned(inputs: Inputs, number: int, down: _Down) -> Finding:
-    """The finding for one section whose take plays estimated words, saying why no aligner timed it."""
+def _unaligned(inputs: Inputs, state: _Pass, key: TurnKey, down: _Down) -> Finding:
+    """The finding for one turn whose take plays estimated words, saying why no aligner timed it.
+
+    A section of one turn is named alone, and a section of several names the turn too.
+    """
+    number = key.section
+    take = f"Section {number}'s take of turn {key.turn}" if state.several(number) else f"Section {number}'s take"
     return judge(
         Code.TAKE_UNALIGNED,
-        f"Section {number}'s take came with no word times, and {down.why}, so it plays estimated words. "
-        f"{down.action(number)}",
+        f"{take} came with no word times, and {down.why}, so it plays estimated words. {down.action(number)}",
         Location(where=f"section {number}", file=inputs.relative(inputs.script_path), section=number),
         stage=Stage.NARRATE,
     )
@@ -332,11 +342,13 @@ def _unaligned(inputs: Inputs, number: int, down: _Down) -> Finding:
 
 def _reuse_note(inputs: Inputs, run: Run, state: _Pass, identity: AlignerIdentity) -> None:
     """Say which sections still play words an earlier aligner measured, once an aligner that answered went down."""
-    numbers = [
-        number
-        for number, key in state.live.items()
-        if state.rows[number].timed_by is TimedBy.ALIGNED and state.rows[number].alignment != key
-    ]
+    numbers = list(
+        dict.fromkeys(
+            turn.section
+            for turn, key in state.live.items()
+            if state.rows[turn].timed_by is TimedBy.ALIGNED and state.rows[turn].alignment != key
+        )
+    )
     if numbers:
         run.note(
             f"The aligner at {inputs.settings.dtsp.base_url.rstrip('/')} is {identity.id} {identity.revision}, and "
@@ -347,10 +359,10 @@ def _reuse_note(inputs: Inputs, run: Run, state: _Pass, identity: AlignerIdentit
 
 def _tie_note(run: Run, state: _Pass) -> None:
     """Name the aligners a take's kept words tied between, once, when the take still plays the one the tie chose."""
-    for number, tied in state.ties.items():
-        if state.rows[number].alignment == tied[0].inputs.key:
+    for turn, tied in state.ties.items():
+        if state.rows[turn].alignment == tied[0].inputs.key:
             run.note(
-                f"Section {number}'s take has aligned words from {len(tied)} aligners kept at one generation, so "
+                f"Section {turn.section}'s take has aligned words from {len(tied)} aligners kept at one generation, so "
                 f"{tied[0].inputs.key}{WORDS_SUFFIX} plays. Remove the others from takes/aligned with git rm."
             )
             return

@@ -151,6 +151,7 @@ cache paths.
     {/* sample: init, decktalk init my-lesson, in an empty folder */}
     ```text
     Wrote my-lesson from the starter example, 14 files.
+    Voices narrator (default)
     Next   cd my-lesson && decktalk build --no-spend
     ```
 
@@ -179,7 +180,7 @@ cache paths.
 
     {/* sample: build, decktalk build --no-spend, on a fresh decktalk init my-lesson, which exits 0 */}
     ```text
-    run fc3e5b583fcd, events build/events/fc3e5b583fcd.jsonl
+    run 9f1bb781ea41, events build/events/9f1bb781ea41.jsonl
          Narrate    0:00
              Cue    0:00
           Record    0:22
@@ -189,9 +190,9 @@ cache paths.
         Assemble    0:03
           Verify    0:02
            Built build/final/my-lesson.mp4, $0.00, 3 findings
-    script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
-    script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
-    script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
+    script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 1 --spend to buy its take.
+    script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 2 --spend to buy its take.
+    script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 3 --spend to buy its take.
     Found 3 findings, 0 errors.
     ```
 
@@ -258,11 +259,11 @@ cache paths.
 
     {/* sample: status-built, decktalk status, after the build above */}
     ```text
-     Section   Key   Plays                     Take          Recorded   Assembled   Stale
-     ────────────────────────────────────────────────────────────────────────────────────
-     1         01    deck/index.html?scene=1   placeholder   yes        yes         no
-     2         02    deck/index.html?scene=2   placeholder   yes        yes         no
-     3         03    deck/index.html?scene=3   placeholder   yes        yes         no
+     Section   Key   Plays                     Voices     Take          Recorded   Assembled   Stale
+     ───────────────────────────────────────────────────────────────────────────────────────────────
+     1         01    deck/index.html?scene=1   narrator   placeholder   yes        yes         no
+     2         02    deck/index.html?scene=2   narrator   placeholder   yes        yes         no
+     3         03    deck/index.html?scene=3   narrator   placeholder   yes        yes         no
 
     Film   build/final/my-lesson.mp4, 0:50 long
     ```
@@ -337,15 +338,15 @@ film.
       </Tab>
     </Tabs>
 
-    Replace the placeholder with your key, and write the id of the voice to speak in as `[voice] id`
-    in `decktalk.toml`.
+    Replace the placeholder with your key, and write the id of the voice that reads the script as
+    `[voices.narrator] id` in `decktalk.toml`.
 
     ```dotenv .env
     ELEVENLABS_API_KEY=<your-elevenlabs-key>
     ```
 
     ```toml decktalk.toml
-    [voice]
+    [voices.narrator]
     provider = "elevenlabs"
     id = "<your voice id>"
     ```
@@ -355,7 +356,7 @@ film.
     line or an error message. The voice id is a published name rather than a secret, so it is
     committed with the project. It says which voice to speak in and grants nothing, since a cloned
     voice is usable only with its own account's key, and it is part of what names a take, so changing
-    it voices every section again. `DECKTALK_VOICE_ID` in the environment overrides it for anyone who
+    it voices every section again. `DECKTALK_VOICES_NARRATOR_ID` in the environment overrides it for anyone who
     keeps it out of the file.
 
     A value that still starts with `<` counts as unset, so the example file as it ships approves
@@ -405,6 +406,7 @@ film.
           "price_key": "elevenlabs.dollars_per_1000_characters",
           "averaged": false,
           "price_layer": "project",
+          "provider": "elevenlabs",
           "stage": "narrate"
         }
       ]
@@ -445,7 +447,7 @@ film.
     when the most it can cost is over N US dollars, and the refusal names the figure that would let
     it through. A ceiling of five cents on this project reads:
 
-    {/* sample: build-over-the-ceiling, decktalk build --spend --max-cost 0.05, on the starter with [voice] id set and no API key, which exits 2 before any request */}
+    {/* sample: build-over-the-ceiling, decktalk build --spend --max-cost 0.05, on the starter with [voices.narrator] id set and no API key, which exits 2 before any request */}
     ```text
     error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.15, is over the $0.05 ceiling --max-cost set.
       hint: Raise the ceiling to --max-cost 0.15, or narrow the run with --section.
@@ -460,7 +462,7 @@ film.
     there is nobody to ask, so it refuses rather than guessing, and the refusal carries the price, so
     one call prices the run.
 
-    {/* sample: build-no-terminal, decktalk build --no-input, on the starter with [voice] id set and no API key, which exits 2 */}
+    {/* sample: build-no-terminal, decktalk build --no-input, on the starter with [voices.narrator] id set and no API key, which exits 2 */}
     ```text
     error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. No terminal is here to approve it.
       hint: Run decktalk build --spend to approve that cost, or decktalk build --no-spend to play a placeholder wherever a take is missing and silence where a sound is unbought.

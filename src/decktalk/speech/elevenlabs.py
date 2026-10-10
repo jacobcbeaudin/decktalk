@@ -45,7 +45,7 @@ refused a timed pause rather than trusted with one.
 
 
 def voice_settings(table: ElevenLabsConfig, speed: float) -> dict[str, Any]:
-    """What `[elevenlabs]` and `[voice] speed` ask the service for, under the service's own names.
+    """What a voice's `[elevenlabs]` values and its speed ask the service for, under the service's own names.
 
     The names differ in one place, because the service calls the speaker boost `use_speaker_boost`
     while the key an author writes is `speaker_boost`. These five values are sent with every request

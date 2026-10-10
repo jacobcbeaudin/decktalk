@@ -119,6 +119,7 @@ def test_a_kept_artifact_keeps_its_bytes(tmp_path: Path) -> None:
     """Every file under build/ is hashed by the assemble key and by the kept record's intact check."""
     row = Take(
         section=1,
+        turn=1,
         key="01",
         chapter="Café",
         digest="0123456789abcdef",
@@ -128,6 +129,7 @@ def test_a_kept_artifact_keeps_its_bytes(tmp_path: Path) -> None:
         estimated_seconds=1e-07,
         duration_seconds=2.0,
         spoken="Zoë speaks",
+        voice="narrator",
         timed_by=TimedBy.PROVIDER,
         alignment=None,
         model_digest=None,

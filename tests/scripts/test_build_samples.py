@@ -268,8 +268,8 @@ def test_which_worker_starts_first_is_held_by_its_place_in_the_events_sample() -
     """Two narrate workers start at once, so the run decides which section's start is written first."""
     row = next(row for row in build_samples.rows() if row.id == "build-events")
     page = row.page.read_text(encoding="utf-8")
-    raced = page.replace('"section":1}', '"section":@}').replace('"section":2}', '"section":1}')
-    raced = raced.replace('"section":@}', '"section":2}')
+    raced = page.replace('"section":1,"turn"', '"section":@,"turn"').replace('"section":2,"turn"', '"section":1,"turn"')
+    raced = raced.replace('"section":@,"turn"', '"section":2,"turn"')
     assert raced != page
     masks = {one.id: (one.varies, one.masks) for one in build_samples.rows() if one.page == row.page}
     assert build_samples.why_differs(page, raced, masks) is None

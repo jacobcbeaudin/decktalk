@@ -126,6 +126,20 @@
       "description": "These keys govern how the script is turned into audio.",
       "x-kind": "tuning",
       "properties": {
+        "voice": {
+          "description": "The default voice: the voice that reads every section no voice direction in the script names, and every turn of a section that names none. It names a [voices.NAME] table, and with no such table written it is a voice at every default.",
+          "type": "string",
+          "default": "narrator",
+          "pattern": "^[a-z][a-z0-9]*$",
+          "x-range": "must match the pattern ^[a-z][a-z0-9]*$",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-see-also": [
+            "narration.turn_gap_seconds"
+          ],
+          "x-environment": "DECKTALK_NARRATION_VOICE"
+        },
         "concurrency": {
           "description": "How many sections `narrate` voices at once.",
           "type": "integer",
@@ -207,6 +221,23 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_NARRATION_LEAD_SECONDS"
+        },
+        "turn_gap_seconds": {
+          "description": "Silence between two turns of a section when no timed pause is written where the voice changes. A [pause N] written there replaces it, and neither is part of either turn's take.",
+          "type": "number",
+          "default": 0.3,
+          "minimum": 0,
+          "maximum": 5,
+          "x-range": "must be between 0 and 5",
+          "x-unit": "seconds",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-see-also": [
+            "narration.lead_seconds",
+            "narration.tail_seconds"
+          ],
+          "x-environment": "DECKTALK_NARRATION_TURN_GAP_SECONDS"
         },
         "placeholder_beat_seconds": {
           "description": "Seconds each beat adds to the length of a placeholder take.",
@@ -1027,49 +1058,6 @@
       },
       "additionalProperties": false
     },
-    "voice": {
-      "type": "object",
-      "description": "These keys are the three every voice has: which provider reads the script, in which voice and at what pace. Everything a provider is particular about, its own fields, its model and its rate, is in that provider's own table, so changing `provider` never sends one vendor's fields or model to another.",
-      "x-kind": "tuning",
-      "properties": {
-        "provider": {
-          "description": "The speech provider that reads the script, which is a name the machine's own map answers. An unregistered name loads, and fails only when a run asks it for a take, which a run that does not spend never does. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose own keys are `[dtsp]`.",
-          "type": "string",
-          "default": "elevenlabs",
-          "x-range": "takes any value of its type",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-environment": "DECKTALK_VOICE_PROVIDER"
-        },
-        "id": {
-          "description": "The voice that reads the script, as the provider names it. It is a published name rather than a credential, so it is committed with the project, and it is one of the inputs every take is named by. `DECKTALK_VOICE_ID` overrides it for anyone who keeps it out of the file.",
-          "type": "string",
-          "default": "",
-          "pattern": "^[A-Za-z0-9_-]*$",
-          "x-range": "must match the pattern ^[A-Za-z0-9_-]*$",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-hazard": "The id is placed in the path of every speech request, so a value that could hold a slash, a dot or a query would let a project somebody else wrote send the key to another endpoint of the service.",
-          "x-environment": "DECKTALK_VOICE_ID"
-        },
-        "speed": {
-          "description": "How fast the voice speaks, as a multiple of its natural pace.",
-          "type": "number",
-          "default": 1.0,
-          "minimum": 0.7,
-          "maximum": 1.2,
-          "x-range": "must be between 0.7 and 1.2",
-          "x-scope": "project",
-          "x-nature": "taste",
-          "x-source": "chosen",
-          "x-hazard": "The provider refuses a multiple outside its own range, so a slower read is a script change rather than a setting.",
-          "x-environment": "DECKTALK_VOICE_SPEED"
-        }
-      },
-      "additionalProperties": false
-    },
     "mix": {
       "type": "object",
       "description": "The settings half of `[mix]`, which is how each layer is ramped. Its files and levels are project content.",
@@ -1194,7 +1182,7 @@
       "x-kind": "tuning",
       "properties": {
         "model": {
-          "description": "The ElevenLabs model that reads the script when `[voice] provider` is `elevenlabs`.",
+          "description": "The ElevenLabs model every ElevenLabs voice reads with, unless its own `[voices.NAME]` table names another.",
           "type": "string",
           "default": "eleven_multilingual_v2",
           "x-range": "takes any value of its type",
@@ -1241,7 +1229,7 @@
           "x-environment": "DECKTALK_ELEVENLABS_STYLE"
         },
         "speaker_boost": {
-          "description": "Whether ElevenLabs applies its own speaker boost to the take.",
+          "description": "Whether ElevenLabs applies the boost it calls use_speaker_boost to the take.",
           "type": "boolean",
           "default": true,
           "x-range": "takes any value of its type",
@@ -1332,7 +1320,7 @@
           "x-environment": "DECKTALK_DTSP_HANDSHAKE_SECONDS"
         },
         "model": {
-          "description": "The model the local server reads the script with when `[voice] provider` is `dtsp`, as the server names it.",
+          "description": "The model the local server reads every `dtsp` voice with, as the server names it, unless the voice's own `[voices.NAME]` table names another.",
           "type": "string",
           "default": "kokoro-82m",
           "x-range": "takes any value of its type",
@@ -1636,6 +1624,16 @@
           "x-nature": "taste",
           "x-source": "chosen",
           "x-environment": "DECKTALK_OUTPUT_TIMESTAMPED_COPY"
+        },
+        "caption_voices": {
+          "description": "Name the voice of every caption in a section spoken in more than one voice: a WebVTT voice span such as `<v narrator>` in the .vtt, and the name before the line, such as `narrator: `, in the .srt. Off, the captions carry the words alone, and the transcript names the voices of a dialogue either way.",
+          "type": "boolean",
+          "default": false,
+          "x-range": "takes any value of its type",
+          "x-scope": "project",
+          "x-nature": "taste",
+          "x-source": "chosen",
+          "x-environment": "DECKTALK_OUTPUT_CAPTION_VOICES"
         }
       },
       "additionalProperties": false
@@ -1746,6 +1744,146 @@
         }
       },
       "additionalProperties": false
+    },
+    "voices": {
+      "type": "object",
+      "description": "Every voice of the project, one table per voice, each named by the name a voice direction in the script calls it by. The table `[narration] voice` names is the default voice.",
+      "x-kind": "family",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "description": "These keys are the three every voice has: which provider reads its turns, in which voice and at what pace. Each voice is one `[voices.NAME]` table. Everything a provider is particular about, its own fields, its model and its rate, is in that provider's own table, and a voice may state any of that table's chosen keys for itself alone, so changing `provider` never sends one vendor's fields or model to another.",
+        "x-kind": "tuning",
+        "properties": {
+          "provider": {
+            "description": "The speech provider that reads this voice's turns, which is a name the machine's own map answers. An unregistered name loads, and fails only when a run asks it for a take, which a run that does not spend never does. DeckTalk ships `elevenlabs`, the cloud voice whose own keys are `[elevenlabs]`, and `dtsp`, a provider served by a local server, whose own keys are `[dtsp]`.",
+            "type": "string",
+            "default": "elevenlabs",
+            "x-range": "takes any value of its type",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-environment": "DECKTALK_VOICES_<NAME>_PROVIDER"
+          },
+          "id": {
+            "description": "The voice that reads this voice's turns, as the provider names it. It is a published name rather than a credential, so it is committed with the project, and it is one of the inputs every take is named by. `DECKTALK_VOICES_<NAME>_ID` overrides it for anyone who keeps it out of the file.",
+            "type": "string",
+            "default": "",
+            "pattern": "^[A-Za-z0-9_-]*$",
+            "x-range": "must match the pattern ^[A-Za-z0-9_-]*$",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-hazard": "The id is placed in the path of every speech request, so a value that could hold a slash, a dot or a query would let a project somebody else wrote send the key to another endpoint of the service.",
+            "x-environment": "DECKTALK_VOICES_<NAME>_ID"
+          },
+          "speed": {
+            "description": "How fast the voice speaks, as a multiple of its natural pace.",
+            "type": "number",
+            "default": 1.0,
+            "minimum": 0.7,
+            "maximum": 1.2,
+            "x-range": "must be between 0.7 and 1.2",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-hazard": "The provider refuses a multiple outside its own range, so a slower read is a script change rather than a setting.",
+            "x-environment": "DECKTALK_VOICES_<NAME>_SPEED"
+          },
+          "model": {
+            "description": "This voice's own model, over [elevenlabs or dtsp] model, which every voice of that provider reads unless it sets its own.",
+            "type": "string",
+            "x-range": "takes any value of its type",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-see-also": [
+              "elevenlabs.model",
+              "dtsp.model"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_MODEL"
+          },
+          "stability": {
+            "description": "This voice's own stability, over [elevenlabs] stability, which every voice of that provider reads unless it sets its own.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "x-range": "must be between 0 and 1",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-hazard": "ElevenLabs takes a share and refuses anything else, so a value read as a percentage fails the request rather than the load.",
+            "x-see-also": [
+              "elevenlabs.stability"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_STABILITY"
+          },
+          "similarity_boost": {
+            "description": "This voice's own similarity_boost, over [elevenlabs] similarity_boost, which every voice of that provider reads unless it sets its own.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "x-range": "must be between 0 and 1",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-see-also": [
+              "elevenlabs.similarity_boost"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_SIMILARITY_BOOST"
+          },
+          "style": {
+            "description": "This voice's own style, over [elevenlabs] style, which every voice of that provider reads unless it sets its own.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "x-range": "must be between 0 and 1",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-see-also": [
+              "elevenlabs.style"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_STYLE"
+          },
+          "speaker_boost": {
+            "description": "This voice's own speaker_boost, over [elevenlabs] speaker_boost, which every voice of that provider reads unless it sets its own.",
+            "type": "boolean",
+            "x-range": "takes any value of its type",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-see-also": [
+              "elevenlabs.speaker_boost"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_SPEAKER_BOOST"
+          },
+          "output_format": {
+            "description": "This voice's own output_format, over [elevenlabs] output_format, which every voice of that provider reads unless it sets its own.",
+            "type": "string",
+            "enum": [
+              "mp3_22050_32",
+              "mp3_44100_32",
+              "mp3_44100_64",
+              "mp3_44100_96",
+              "mp3_44100_128",
+              "mp3_44100_192"
+            ],
+            "x-range": "must be one of mp3_22050_32, mp3_44100_32, mp3_44100_64, mp3_44100_96, mp3_44100_128, mp3_44100_192",
+            "x-scope": "project",
+            "x-nature": "taste",
+            "x-source": "chosen",
+            "x-hazard": "Every take already bought was bought in the format named here, so another one buys every take again.",
+            "x-see-also": [
+              "elevenlabs.output_format"
+            ],
+            "x-environment": "DECKTALK_VOICES_<NAME>_OUTPUT_FORMAT"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     "project": {
       "type": "object",

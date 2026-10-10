@@ -16,7 +16,7 @@ from decktalk.findings import Code
 from decktalk.results import SCHEMA
 from decktalk.settings import MACHINE_FILE_VARIABLE, PROJECT_VARIABLE
 from decktalk.speech import DECLARED
-from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE
+from decktalk.tomlmap import variable
 
 HOSTILE_DIRECTORY = "jacob's fïlms 2"
 """The name every temporary root of these suites sits under, because a path is an input like any other.
@@ -44,14 +44,15 @@ def codes(doc: dict[str, Any]) -> list[Code]:
 
 
 def clean_environ(config_dir: Path) -> dict[str, str]:
-    """This process's environment without the credential, the voice, the project or the machine settings.
+    """This process's environment without the credential, the voices, the project or the machine settings.
 
     A key or a settings file belonging to whoever runs the suite must not reach the build, because a
     project has to build on a machine that has never seen either.
     """
     env = dict(os.environ)
     keys = [declared.key_variable for declared in DECLARED.values() if declared.key_variable]
-    for name in (PROJECT_VARIABLE, *keys, VOICE_ID_VARIABLE):
+    voices = [name for name in env if name.startswith(variable("voices.")) or name == variable("narration.voice")]
+    for name in (PROJECT_VARIABLE, *keys, *voices):
         env.pop(name, None)
     env[MACHINE_FILE_VARIABLE] = str(config_dir / "no-machine-config.toml")
     return env

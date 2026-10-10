@@ -139,7 +139,8 @@ decktalk check --section 4 --no-frames
 
 {/* sample: first-deck-check, decktalk check --section 4 --no-frames, on a fresh decktalk init my-lesson with the four pastes above, which exits 1 */}
 ```text
-No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+The voice narrator reads 1 turn of 111 characters on elevenlabs, at $0.30 per 1,000 characters.
+The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
 cues.json: CUE_UNLISTED section 4 declares 1 moment(s) that cues.json does not list, which is 4.1:waits, so nothing gives them a second.
@@ -157,7 +158,8 @@ decktalk check --section 4 --no-frames --fix
 
 {/* sample: first-deck-fix, decktalk check --section 4 --no-frames --fix, on the same project, which exits 1 */}
 ```text
-No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+The voice narrator reads 1 turn of 111 characters on elevenlabs, at $0.30 per 1,000 characters.
+The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
 cues.json:37: CUE_UNRESOLVED the cue 4.1:waits has no phrase yet, so write the words it lands on into its 'phrase' and it will have a second.
@@ -191,7 +193,8 @@ decktalk check --section 4 --no-frames
 
 {/* sample: first-deck-phrase-written, decktalk check --section 4 --no-frames, on the same project with the phrase written, which exits 0 */}
 ```text
-No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+The voice narrator reads 1 turn of 111 characters on elevenlabs, at $0.30 per 1,000 characters.
+The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, cues.json, deck/index.html.
 This run costs $0.04 for 111 characters at $0.30 per 1,000 characters.
 ```
@@ -212,7 +215,7 @@ decktalk build --no-spend
 
 {/* sample: first-deck-build, decktalk build --no-spend, on the same project, which exits 0 */}
 ```text
-run 2d46c8c4e483, events build/events/2d46c8c4e483.jsonl
+run 0ab1f3cab6d8, events build/events/0ab1f3cab6d8.jsonl
      Narrate    0:00
          Cue    0:00
       Record    0:22
@@ -222,10 +225,10 @@ The loudness pass is skipped because a take is a placeholder, so the soundtrack 
     Assemble    0:03
       Verify    0:02
        Built build/final/my-lesson.mp4, $0.00, 4 findings
-script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
-script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
-script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
-script.md: TAKE_MISSING Section 4 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 4 --spend to buy its take.
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 3 --spend to buy its take.
+script.md: TAKE_MISSING Section 4 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 4 --spend to buy its take.
 Found 4 findings, 0 errors.
 ```
 

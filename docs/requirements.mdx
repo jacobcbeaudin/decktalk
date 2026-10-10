@@ -250,21 +250,22 @@ belongs.
 
 A build that does not spend needs no account, no API key and no network once the tools are on the machine.
 A build voiced by ElevenLabs, the cloud voice, needs two values from ElevenLabs. The local voice,
-`dtsp`, needs only `[voice] id` and `decktalk-voice`, a separate speech server running on this
+`dtsp`, needs only the voice's `[voices.NAME] id` and `decktalk-voice`, a separate speech server running on this
 machine, and no key. The same server times the words of a take whose voice sent none. [The `[dtsp]`
 keys](/reference/configuration#dtsp) say where it listens.
 
 | Value | What it is | Read by |
 |---|---|---|
 | `ELEVENLABS_API_KEY` | Your API key. This is the credential. | a voiced build, `decktalk narrate`, `decktalk score` |
-| `[voice] id` | The id of the voice to speak in. It is a published name rather than a secret. | a voiced build, `decktalk narrate` |
+| `[voices.NAME] id` | The id of each voice, such as `[voices.narrator] id`. It is a published name rather than a secret. | a voiced build, `decktalk narrate` |
 
 Put the key in `.env` beside `decktalk.toml`, or export it. A variable already in the environment
 wins over the file, and a value that still starts with `<`, such as `<your-elevenlabs-key>`, counts
 as unset, so `.env.example` as it ships approves nothing.
 
-The voice id is `[voice] id` in `decktalk.toml`, and `DECKTALK_VOICE_ID` in the environment overrides
-it for anyone who keeps it out of the file. It is committed with the project because it grants
+A voice's id is `[voices.NAME] id` in `decktalk.toml`, and `DECKTALK_VOICES_<NAME>_ID`, such as
+`DECKTALK_VOICES_NARRATOR_ID`, in the environment overrides it for anyone who keeps it out of the file.
+A film may mix voices and providers, so `decktalk check` prices each provider's turns on a row of its own. It is committed with the project because it grants
 nothing: a voice cloned on an ElevenLabs account is usable only with that account's key.
 
 DeckTalk never prints the key. No value read from `.env` or from the environment reaches a `--json`
@@ -359,6 +360,7 @@ decktalk check --json
       "price_key": "elevenlabs.dollars_per_1000_characters",
       "averaged": false,
       "price_layer": "project",
+      "provider": "elevenlabs",
       "stage": "narrate"
     }
   ]
@@ -384,8 +386,8 @@ decktalk check --json
   shown as spent. A total adds only the amounts each row is billed on.
 
 `dollars` and `ceiling_dollars` differ when a section's take cannot be matched. A take is named by
-its text and its voice, so with no `[voice] id` named a voiced take of a section's current text cannot
-be matched to the voice that made it: each such section's characters go into the ceiling and none of
+its text and its voice, so with no voice id named a voiced take of a turn's current text cannot
+be matched to the voice that made it: each such turn's characters go into the ceiling and none of
 them into the price. A section whose text changed, or whose take is gone, needs a take whatever the
 voice is, so its characters go into the price. The key is not needed to price a run, because the price
 never asks the voice anything.
@@ -420,7 +422,7 @@ together first, so a run it refuses has bought nothing. Each request that buys i
 made, against what the run already approved, so a stage that asks for more than the build was
 priced at is still refused, and the refusal says that what the run bought before it is kept.
 
-{/* sample: narrate-over-the-ceiling, decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voice] id set and no API key, which refuses before any request */}
+{/* sample: narrate-over-the-ceiling, decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which refuses before any request */}
 ```text
 error[APPROVAL]: This run costs $0.15 for 476 characters at $0.30 per 1,000 characters. The most it can cost, $0.15, is over the $0.05 ceiling --max-cost set.
   hint: Raise the ceiling to --max-cost 0.15, or narrow the run with --section.

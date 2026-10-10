@@ -39,7 +39,7 @@ changed sections and a written record of what changed and what it cost. Read
 
 ## Rules
 
-- Never change the voice, the model or a voice setting. Each re-voices the whole film.
+- Never change a voice, its model or a voice setting. Each re-voices every turn that voice reads.
 - Never renumber or insert a section without saying that every renumbered section is recorded again.
   No take is voiced twice for its position, so only new words cost money.
 - Never replace a voiced take. Rehearse with a build told not to spend, which plays every voiced take on

@@ -230,10 +230,10 @@ function fireCue(cue: string, due: number): void {
       warn("PAGE_HANDLER_THREW", slide?.id ?? null, cue, { value: String(err) });
     }
   }
-  if (sentence === null && !own && !handled(cue) && !findSlide(cue)) {
+  if (sentence === undefined && !own && !handled(cue) && !findSlide(cue)) {
     warn("PAGE_CUE_UNKNOWN", slide?.id ?? null, cue);
   }
-  recorder().cue({ id: cue, due: round(due), ran: round(now()), frame: frameAt(), describe: sentence });
+  recorder().cue({ id: cue, due: round(due), ran: round(now()), frame: frameAt(), describe: sentence ?? null });
 }
 
 // ---- the modes ---------------------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from decktalk.artifacts import (
     AudioPrint,
@@ -30,10 +31,12 @@ def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: o
     The count of words and characters is read off `spoken`, so a row stays consistent with its own text. Its
     provider timed its words, unless it is a placeholder, whose words DeckTalk estimated. A call site names
     every other field its assertions read, and those replace the defaults. A row that says it was not voiced is
-    named by a placeholder digest, as narrate names one.
+    named by a placeholder digest, as narrate names one. Its voice is `narrator`, the default voice every
+    project under test is read in, unless the call site names another.
     """
     row: dict[str, object] = {
         "section": section,
+        "turn": 1,
         "key": f"{section:02d}",
         "chapter": f"Section {section}",
         "digest": f"{section:016x}",
@@ -45,6 +48,7 @@ def a_take(section: int, *, seconds: float = 1.0, spoken: str = "x", **fields: o
         "speech_end_seconds": seconds,
         "sound_end_seconds": seconds,
         "spoken": spoken,
+        "voice": "narrator",
     }
     if fields.get("voiced") is False and "digest" not in fields:
         row["digest"] = f"{PLACEHOLDER_PREFIX}{section:0{PLACEHOLDER_DIGITS}x}"
@@ -78,15 +82,17 @@ def hold_take(inputs: Inputs, digest: str, *, audio: bytes = b"take", words: tup
     said.write(place / words_file(digest))
 
 
-def narrated(inputs: Inputs, *takes: Take, words: Mapping[int, Sequence[Word]] | None = None) -> Takes:
-    """A project narrated with no stage: the index of these rows, and each row's take held with its section's words.
+def narrated(inputs: Inputs, *takes: Take, words: Mapping[Any, Sequence[Word]] | None = None) -> Takes:
+    """A project narrated with no stage: the index of these rows, and each row's take held with its words.
 
     Each take goes where the reader looks for it and is written as the kind its digest names, so a test
-    states the words a section speaks and never where they are kept or what the file is called.
+    states the words a section, or one turn of it by `(section, turn)`, speaks and never where they are
+    kept or what the file is called.
     """
     said = words or {}
     for take in takes:
-        hold_take(inputs, take.digest, words=tuple(said.get(take.section, ())))
+        spoken = said.get((take.section, take.turn), said.get(take.section, ()))
+        hold_take(inputs, take.digest, words=tuple(spoken))
     return write_takes(inputs, *takes)
 
 

@@ -24,12 +24,12 @@ from decktalk.inputs import Inputs
 from decktalk.inputs.script import spoken_words
 from decktalk.page import Q
 from decktalk.pipeline import Stage
-from decktalk.results import SectionKind, StatusResult, TakeState, Word
+from decktalk.results import BillingBasis, SectionKind, StatusResult, TakeState, Word
 from decktalk.speech import http as speech_http
 from decktalk.stages import kept
 from decktalk.stages import status as stage
 from decktalk.stages.narrate.plan import placeholder_inputs, take_inputs
-from decktalk.stages.narrate.state import CHANGED, UNINDEXED, WITHOUT_A_VOICE, take_states
+from decktalk.stages.narrate.state import CHANGED, UNINDEXED, take_states, without_a_voice
 from decktalk.stages.status import next_command, source_of, status
 from support.fakes import FREE_VOICE_NAME, FakeFfmpeg
 from support.pages import SCENE_ONE
@@ -394,17 +394,28 @@ def test_the_report_names_the_two_files_the_author_writes(tmp_path: Path) -> Non
 
 # ---- takes no section plays --------------------------------------------------------------------
 
-VOICED = TOML.replace("[[section]]", '[voice]\nid = "voice-under-test"\n\n[[section]]', 1)
+VOICED = TOML.replace("[[section]]", '[voices.narrator]\nid = "voice-under-test"\n\n[[section]]', 1)
 """The demo project with its voice named, which is what lets the report name the take each section plays."""
 
-FREE_VOICED = VOICED.replace("[voice]\n", f'[voice]\nprovider = "{FREE_VOICE_NAME}"\n', 1)
+FREE_VOICED = VOICED.replace("[voices.narrator]\n", f'[voices.narrator]\nprovider = "{FREE_VOICE_NAME}"\n', 1)
 """The demo project with its voice named and read by the voice DeckTalk ships that bills nothing."""
 
 
 def test_no_take_is_claimed_played_when_the_voice_in_force_names_none(tmp_path: Path) -> None:
     """Without a voice in force the script's own takes have no digest, so status claims nothing played."""
     inputs = a_project(tmp_path, toml=VOICED)
-    assert stage.played_takes(replace(inputs, voice=replace(inputs.voice, id="")), take_states(inputs)) is None
+    unnamed = {"narrator": replace(inputs.voices["narrator"], id="")}
+    assert stage.played_takes(replace(inputs, voices=unnamed), take_states(inputs)) is None
+
+
+def test_status_claims_no_unplayed_take_while_a_voice_that_reads_a_turn_has_no_id(tmp_path: Path) -> None:
+    """A guest whose id is an override not exported here names no digest, so a take it would play is never unplayed."""
+    toml = VOICED + "\n[voices.guest]\n"
+    script = SCRIPT.replace("## 1. One\n", "## 1. One\n\n[voice guest]\n")
+    inputs = a_project(tmp_path, toml=toml, script=script)
+    assert stage.played_takes(inputs, take_states(inputs)) is None
+    quiet = a_project(tmp_path / "quiet", toml=toml)
+    assert stage.played_takes(quiet, take_states(quiet)) is not None, "a voice no turn reads names no take to miss"
 
 
 def played_digest(inputs: Inputs) -> str:
@@ -415,8 +426,7 @@ def played_digest(inputs: Inputs) -> str:
 def played_digest_of(inputs: Inputs, number: int) -> str:
     """The digest of the take this section plays, taken the one way narrate takes it."""
     section = next(section for section in inputs.spoken() if section.number == number)
-    voice = inputs.voice
-    return take_inputs(inputs, section, provider=voice.provider, voice_id=voice.id, model=voice.model).digest
+    return take_inputs(section, inputs.voice_of(section.turns[0])).digest
 
 
 def a_take_pair(inputs: Inputs, digest: str, *, audio: bytes = b"audio", words: bytes = b"{}") -> list[Path]:
@@ -552,7 +562,7 @@ def test_with_no_voice_named_a_held_take_is_unchecked_and_names_no_build(tmp_pat
     finished(inputs, played)
     result = status(inputs, a_run(tmp_path))
     assert result.sections[0].take_state is TakeState.UNCHECKED
-    assert result.sections[0].take_reason == WITHOUT_A_VOICE
+    assert result.sections[0].take_reason == without_a_voice(inputs.voices["narrator"])
     assert result.next is None
 
 
@@ -699,3 +709,38 @@ def test_status_opens_no_socket_on_an_aligned_project(tmp_path: Path, monkeypatc
 
     monkeypatch.setattr(speech_http, "urlopen", refused)
     assert status(inputs, a_run(tmp_path)).ok
+
+
+# ---- voices and turns ----------------------------------------------------------------------------
+
+DIALOGUE_TOML = (
+    TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nprovider = "dtsp"\n\n[voices.aside]\nid = "a"\n'
+)
+"""The demo project with a narrator, a free guest with no id, and a voice no turn reads."""
+
+DIALOGUE_SCRIPT = "# Demo\n\n## 1. One\n\n[voice narrator]\n\nHello there.\n\n[voice guest]\n\nAgain.\n"
+"""Section one as a dialogue: the narrator, then the guest."""
+
+
+def test_status_reports_every_turn_with_its_voice_and_its_state(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=DIALOGUE_TOML, script=DIALOGUE_SCRIPT)
+    result = status(inputs, a_run(tmp_path))
+    one, clip = result.sections
+    assert one.voices == ("narrator", "guest")
+    assert [(turn.turn, turn.voice, turn.take_state) for turn in one.turns] == [
+        (1, "narrator", TakeState.MISSING),
+        (2, "guest", TakeState.MISSING),
+    ]
+    assert one.turns[1].take_reason.startswith("it has no voiced take yet")
+    assert one.take_reason == f"{one.turns[0].take_reason}, in turn 1, which narrator reads"
+    assert (clip.turns, clip.voices) == ((), ())
+
+
+def test_status_names_every_voice_its_provider_and_whether_it_has_an_id(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=DIALOGUE_TOML, script=DIALOGUE_SCRIPT)
+    result = status(inputs, a_run(tmp_path))
+    assert [(voice.name, voice.provider, voice.default, voice.named, voice.billing) for voice in result.voices] == [
+        ("narrator", "elevenlabs", True, True, BillingBasis.PER_CHARACTER),
+        ("aside", "elevenlabs", False, True, BillingBasis.PER_CHARACTER),
+        ("guest", "dtsp", False, False, BillingBasis.FREE),
+    ]

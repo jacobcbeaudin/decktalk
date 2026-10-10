@@ -28,7 +28,8 @@ is what it measured. It prints its own sentences, then one line per judgement, t
 
 {/* sample: cues-file-missing, decktalk check, on a fresh decktalk init my-lesson with cues.json deleted, which exits 1 */}
 ```text
-No voice is named, so no take on disk can be matched, because [voice] id is empty and DECKTALK_VOICE_ID is not set.
+The voice narrator reads 3 turns of 476 characters on elevenlabs, at $0.30 per 1,000 characters.
+The voice narrator has no id, so no take on disk can be matched to its turns, because [voices.narrator] id is empty and DECKTALK_VOICES_NARRATOR_ID is not set.
 Checking script.md, deck/index.html.
 This run costs $0.15 for 476 characters at $0.30 per 1,000 characters.
 cues.json: CUE_UNLISTED the deck declares 12 moment(s) and there is no cues.json, so nothing gives any of them a second.
@@ -109,7 +110,7 @@ its findings are printed and in the JSON, the money narrate already spent is in 
 
 {/* sample: build-stopped, decktalk build --no-spend, on a fresh decktalk init my-lesson whose cue 3.1:idea waits for "a phrase nobody says", which exits 1 */}
 ```text
-run 9227734468d0, events build/events/9227734468d0.jsonl
+run 7f4bb775b9d2, events build/events/7f4bb775b9d2.jsonl
      Narrate    0:00
          Cue    0:00
 Cue made 1 finding that the build stops on, so the build stopped before record rather than carry it into the film.
@@ -118,9 +119,9 @@ Cue made 1 finding that the build stops on, so the build stopped before record r
     Assemble    0:00   skipped
       Verify    0:00   skipped
      Stopped at cue, $0.00, 4 findings
-script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 1 --spend to buy its take.
-script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 2 --spend to buy its take.
-script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Run decktalk narrate --section 3 --spend to buy its take.
+script.md: TAKE_MISSING Section 1 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 1 --spend to buy its take.
+script.md: TAKE_MISSING Section 2 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 2 --spend to buy its take.
+script.md: TAKE_MISSING Section 3 plays a placeholder, because it has no voiced take yet. Name the voice narrator in [voices.narrator] id, then run decktalk narrate --section 3 --spend to buy its take.
 cues.json:30: CUE_UNRESOLVED the cue 3.1:idea waits for 'a phrase nobody says' and section 3 speaks 25 words, none of which is that phrase.
 Found 4 findings, 1 error.
 ```
@@ -411,7 +412,7 @@ does:
 
 {/* sample: no-cover, decktalk record --section 2 --force --set record.cover_min_chroma=255, on a starter after narrate --no-spend and cue, the warning line */}
 ```text
-Section 2 shows no cover, so the start of the section clock is a guess at 1.434s (the first painted frame and the settle), and every reveal in the section moves with it.
+Section 2 shows no cover, so the start of the section clock is a guess at 1.436s (the first painted frame and the settle), and every reveal in the section moves with it.
 ```
 
 Treat that warning as the first thing to fix, because a guessed start moves every reveal in the
@@ -662,7 +663,7 @@ missing take fail a run.
 
 A take is found by its text, its voice, its model and its voice settings, so a section reports it after any of
 those changed, and on a fresh clone whose takes were never committed. Without a voice id no voiced take
-can be matched at all, and the run says so in one line before the findings. Set `[voice] id` in
+can be matched at all, and the run says so in one line before the findings. Set `[voices.narrator] id` in
 `decktalk.toml`, which is a published name rather than a secret and is committed with the project,
 and the takes on disk play again.
 

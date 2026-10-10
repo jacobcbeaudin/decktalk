@@ -12,7 +12,7 @@ from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hin
 from decktalk.errors import InputError
 from decktalk.findings import Location
 from decktalk.locate import locate
-from decktalk.tomlmap import Bounds, variable
+from decktalk.tomlmap import FAMILY, Bounds, variable
 from decktalk.tomlmap.suggest import unknown_key_warnings
 
 
@@ -180,13 +180,16 @@ def from_mapping[T](
     `environ` that `variable` names for the field's dotted key. `environ` is
     required and never the process's own, because the machine is the one reader of the process.
     `said` names the layer a key's value came from, given its dotted key and whether `environ`
-    carried it, which is what a refusal ends on.
+    carried it, which is what a refusal ends on. A field that names a `family` is left at its
+    default, because its tables are named by the author and its owner reads them.
     """
     table = base or {}
     env = environ
     hints = get_type_hints(cls)
     args: dict[str, Any] = {}
     for f in fields(cast("Any", cls)):
+        if FAMILY in f.metadata:
+            continue
         annotation = hints.get(f.name, f.type)
         if is_dataclass(annotation):
             nested = table.get(f.name)

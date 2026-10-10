@@ -11,7 +11,7 @@ take again, and it fails here.
 project can be read in today and the digest of every section under each. The cases cover both
 shipped providers at their defaults and tuned, a non-default model and format, a changed speed and
 ElevenLabs stability, a section with a beat and a timed pause, two sections with the same text, and
-the voice id named by `DECKTALK_VOICE_ID` over the file. The digests were written from the code
+the voice id named by `DECKTALK_VOICES_<NAME>_ID` over the file. The digests were written from the code
 they pin and are never updated. A change to how a voice is configured rewrites a case's `config`
 and `environ` into the new shape stating the same voice, and leaves its `digests` alone.
 
@@ -80,6 +80,11 @@ def renamed(text: str, pairs: list[list[str]]) -> str:
     return text
 
 
+def voice_of(config: dict[str, Any]) -> dict[str, Any]:
+    """The table of the voice a case's config reads every section in, which is its default voice."""
+    return config["voices"][config.get("narration", {}).get("voice", "narrator")]
+
+
 def golden(case: dict[str, Any]) -> list[str]:
     return list(case["digests"].values())
 
@@ -104,21 +109,23 @@ def test_renaming_nothing_the_voice_reads_moves_a_digest(case: dict[str, Any], r
 def test_the_same_values_in_another_key_order_name_the_same_takes(case: dict[str, Any], tmp_path: Path):
     toml = project_file(case)
     shuffled = tomlkit.dumps(reordered(tomllib.loads(toml)))
-    assert shuffled.index("[voice]") < shuffled.index("[project]"), "the rewrite kept the original order"
+    assert shuffled.index("[voices.") < shuffled.index("[project]"), "the rewrite kept the original order"
     assert digests(tmp_path, shuffled, GOLDEN["script"], case["environ"]) == golden(case)
 
 
 def test_the_golden_cases_cover_every_shape_a_one_voice_project_takes_today():
     """Both providers, tuned and not, the override, and sections that pause and repeat, so none moves unseen."""
     configs = [tomllib.loads(case["config"]) for case in CASES]
-    providers = {config["voice"]["provider"] for config in configs}
+    providers = {voice_of(config)["provider"] for config in configs}
     assert providers == {"elevenlabs", "dtsp"}
-    assert any("speed" in config["voice"] for config in configs)
+    assert any("speed" in voice_of(config) for config in configs)
     assert any("stability" in config.get("elevenlabs", {}) for config in configs)
     assert {name for config in configs for name in ("elevenlabs", "dtsp") if "model" in config.get(name, {})} == (
         providers
     )
-    assert sum("DECKTALK_VOICE_ID" in case["environ"] for case in CASES) >= 2
+    assert sum(any(name.startswith("DECKTALK_VOICES_") for name in case["environ"]) for case in CASES) >= 2
+    assert any("style" in voice_of(config) for config in configs), "a case states an inherited key in its voice"
+    assert any(config.get("narration", {}).get("voice", "narrator") != "narrator" for config in configs)
     script = GOLDEN["script"]
     assert "[beat]" in script and "[pause " in script
     for case in CASES:

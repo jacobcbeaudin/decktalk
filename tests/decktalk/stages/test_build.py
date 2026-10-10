@@ -88,13 +88,13 @@ A ball.
 """
 
 
-VOICED = {"DECKTALK_VOICE_ID": "voice-under-test"}
+VOICED = {"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"}
 """What a machine that names the voice hands a project, so a take on disk can be matched to it."""
 
 
 def priced(stage: Stage, **fields: Any) -> Cost:
     """One stage's price from its fields, with the one row that stage reports."""
-    return Cost(**fields, stages=(StageCost(stage=stage, **fields),))
+    return Cost(**fields, stages=(StageCost(stage=stage, provider="elevenlabs", **fields),))
 
 
 def price(dollars: float = 0.0, *, state: CostState = CostState.ESTIMATE, stage: Stage = Stage.NARRATE) -> Cost:
@@ -423,8 +423,8 @@ def test_the_library_build_never_draws_the_storyboard(
 
 @pytest.mark.parametrize(
     ("stages", "refused"),
-    [(None, True), ((Stage.NARRATE, Stage.CUE), False)],
-    ids=["a plan that opens pages", "a plan that opens none"],
+    [(None, True), ((Stage.NARRATE, Stage.CUE), True), ((Stage.NARRATE,), False)],
+    ids=["a plan that opens pages", "a plan that reads a changed page", "a plan that opens none"],
 )
 def test_a_run_that_may_spend_is_refused_an_untrusted_page_before_its_first_stage(
     tmp_path: Path,
@@ -442,7 +442,7 @@ def test_a_run_that_may_spend_is_refused_an_untrusted_page_before_its_first_stag
         assert calls.names == []
     else:
         build(sealed, run, stages=stages)
-        assert calls.names == ["narrate", "cue"]
+        assert calls.names == ["narrate"]
 
 
 def test_each_stage_is_handed_the_options_it_declares(inputs: Inputs, watched: Watched, calls: Calls) -> None:

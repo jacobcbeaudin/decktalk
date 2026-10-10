@@ -34,7 +34,7 @@ placeholder narration that carries real word times, so the pacing, the cues and 
 real. Nothing contacts a paid speech service, and no key is read. `--no-spend` gates money only, so a
 project whose voice is the free local `dtsp` is still voiced by it.
 
-A build voiced by ElevenLabs needs an ElevenLabs API key in `.env` and a voice id as `[voice] id`
+A build voiced by ElevenLabs needs an ElevenLabs API key in `.env` and a voice id as `[voices.narrator] id`
 in `decktalk.toml`. The voice id is a published name rather than a credential: it says which voice reads
 the script, the way a model name says which model answers, and a cloned voice is usable only with its
 own account's key, so the id is committed with the project.
@@ -43,7 +43,7 @@ own account's key, so the id is committed with the project.
 
 Yes, a local one. DeckTalk ships two voices: `elevenlabs`, the cloud voice, and `dtsp`, which speaks
 the DeckTalk speech protocol to `decktalk-voice`, a separate local server that is not part of this
-repository. Set `provider = "dtsp"` under `[voice]`. It needs no key and costs nothing, so it makes
+repository. Set `provider = "dtsp"` under the voice's `[voices.NAME]` table. It needs no key and costs nothing, so it makes
 its takes with or without `--spend`, `--no-spend` included. The server's address is
 `[dtsp] base_url`, `http://127.0.0.1:9361` by default, and only this machine sets it, so a project
 someone else wrote cannot send its script anywhere else. When the server is not running, each missing take plays a placeholder with a
@@ -57,12 +57,20 @@ pages name no service, and a build with `--no-spend` needs none, so the files ou
 The one thing DeckTalk asks of any voice is a start and an end time for every word, because the cut
 is made on words, and that requirement is what a second provider would have to meet.
 
+## Can two voices read one film?
+
+Yes. Declare each voice as its own `[voices.NAME]` table, and a line holding only `[voice NAME]` in
+`script.md` hands the turns after it to that voice until the next such line or the next section. The
+voices may be on different providers, and `decktalk check` prices each provider's turns on a row of
+its own. [Write a dialogue](/guides/dialogue) shows the whole task, and
+`decktalk init --example interview` writes a project that does it.
+
 ## How does the voice sound?
 
 It sounds like the ElevenLabs voice you pick. Any voice id works, including a clone of your own.
 
 `[elevenlabs]` in `decktalk.toml` sets `stability`, `similarity_boost`, `style` and `speaker_boost`,
-and `[voice] speed` sets the pace. DeckTalk also sends up to `[narration] context_characters` of the text before and after each
+and `[voices.NAME] speed` sets the pace. DeckTalk also sends up to `[narration] context_characters` of the text before and after each
 section with the request, so the rhythm and the tone stay even across a cut that the listener never
 hears as one.
 

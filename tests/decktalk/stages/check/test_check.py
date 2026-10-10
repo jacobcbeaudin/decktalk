@@ -276,7 +276,8 @@ def test_a_timed_pause_on_a_model_that_reads_no_break_tag_is_an_error(tmp_path: 
 def test_the_pause_finding_reads_the_voice_in_force(tmp_path: Path) -> None:
     """The finding asks the voice the project is read in, never the provider's table again."""
     inputs = a_project(tmp_path, toml=on_model("eleven_multilingual_v2"), script=PAUSED_SCRIPT)
-    dropping = replace(inputs, voice=replace(inputs.voice, model="a-model-that-drops-it", renders_pauses=False))
+    narrator = replace(inputs.voices["narrator"], model="a-model-that-drops-it", renders_pauses=False)
+    dropping = replace(inputs, voices={"narrator": narrator})
     result = check(dropping, a_run(tmp_path), pages=False)
     (dropped,) = [one for one in result.findings if one.code is Code.SCRIPT_PAUSE_DROPPED]
     assert "a-model-that-drops-it" in dropped.message
@@ -294,3 +295,55 @@ def test_check_marks_a_take_with_no_word_times_estimated_and_reports_no_unresolv
     result = check(inputs, a_run(tmp_path), pages=False)
     assert Code.CUE_UNRESOLVED not in {one.code for one in result.findings}
     assert result.ok is True
+
+
+UNREADABLE_VOICES = """# Demo
+
+## 1. One
+
+Hello there again.
+
+## 2. Two
+
+[voice gest]
+
+Second section speaks as well.
+"""
+"""The demo script with a voice direction naming a voice the project never declares."""
+
+
+def test_a_script_whose_voices_do_not_read_is_judged_and_nothing_is_priced(tmp_path: Path) -> None:
+    inputs = a_project(tmp_path, toml=PRICED, script=UNREADABLE_VOICES, cues=CUES)
+    run = a_run(tmp_path)
+    said = notes(run)
+    result = check(inputs, run, pages=False)
+    (unknown,) = [one for one in result.findings if one.code is Code.SCRIPT_VOICE_UNKNOWN]
+    assert unknown.location.line == 9
+    assert result.ok is False
+    assert (result.cost.dollars, result.cost.characters) == (0.0, 0)
+    assert said.count("The script names voices this project cannot read, so no take was planned or priced.") == 1
+
+
+def test_a_timed_pause_is_judged_against_the_model_of_the_voice_that_reads_it(tmp_path: Path) -> None:
+    """A guest on a model that drops a pause beside a narrator whose model renders one is judged turn by turn."""
+    toml = on_model("eleven_multilingual_v2") + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nmodel = "eleven_v3"\n'
+    script = PAUSED_SCRIPT.replace("## 1. One\n", "## 1. One\n\n[voice guest]\n")
+    inputs = a_project(tmp_path, toml=toml, script=script)
+    result = check(inputs, a_run(tmp_path), pages=False)
+    (dropped,) = [one for one in result.findings if one.code is Code.SCRIPT_PAUSE_DROPPED]
+    assert dropped.location.section == 1
+    assert dropped.message.startswith(
+        "section 1 asks for a timed pause in a turn the voice guest reads, and 'elevenlabs' renders none on model "
+        "'eleven_v3', so a voiced run would drop it."
+    )
+
+
+def test_check_says_which_voice_reads_how_many_turns_on_which_bill(tmp_path: Path) -> None:
+    toml = PRICED + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nprovider = "dtsp"\nid = "af_heart"\n'
+    script = SCRIPT.replace("## 2. Two\n", "## 2. Two\n\n[voice guest]\n")
+    inputs = a_project(tmp_path, toml=toml, script=script, cues=CUES)
+    run = a_run(tmp_path)
+    said = notes(run)
+    check(inputs, run, pages=False)
+    assert "The voice narrator reads 1 turn of 18 characters on elevenlabs, at $0.30 per 1,000 characters." in said
+    assert "The voice guest reads 1 turn of 30 characters on dtsp, which bills nothing." in said

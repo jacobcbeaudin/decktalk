@@ -24,7 +24,7 @@ from decktalk.inputs import PAID_FOLDERS as LOADED_PAID_FOLDERS
 from decktalk.inputs import Inputs
 from decktalk.inputs.document import ClipSection
 from decktalk.inputs.env import reading_dotenv
-from decktalk.inputs.script import estimated_words, spoken_words
+from decktalk.inputs.script import estimated_words, parse_script, spoken_words
 from decktalk.pipeline import Artifact
 from decktalk.results import BillingBasis, CueTime, SectionCues, Word
 from decktalk.speech import VoiceInForce
@@ -169,7 +169,7 @@ def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monk
     monkeypatch.setenv("DECKTALK_MACHINE_FILE", str(tmp_path / "no-user-config.toml"))
     toml = (
         "[project]\nname = 't'\nscirpt = 'script.md'\n"
-        "[voice]\nstabilty = 0.4\n"
+        "[voices.narrator]\nstabilty = 0.4\n"
         "[[section]]\nnumber = 1\npage = 'deck/a.html'\nscnee = 2\nslate_seconds = 3\n"
         "[[section]]\nnumber = 2\nclip = 'b.mp4'\nzebra = 1\n"
         "[mix]\nmusic_dbb = -20\n"
@@ -187,7 +187,7 @@ def test_project_notes_every_unknown_key_and_suggests_the_closest(tmp_path, monk
         f"decktalk.toml: [mix]: ignoring unknown key 'music_dbb' (did you mean 'music_db'?){page}",
         f"decktalk.toml: [score.music]: ignoring unknown key 'second' (did you mean 'duration_seconds'?){page}",
         f"decktalk.toml: [video]: ignoring unknown key 'presett' (did you mean 'preset'?){page}",
-        f"decktalk.toml: [voice]: ignoring unknown key 'stabilty' (did you mean 'elevenlabs.stability'?){page}",
+        f"decktalk.toml: [voices.narrator]: ignoring unknown key 'stabilty' (did you mean 'stability'?){page}",
     )
     # A warning, not an error: the load succeeds and every misspelled key keeps its default.
     assert p.settings.elevenlabs.stability == 0.55
@@ -200,7 +200,7 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     """Each key is written once, as a field, so a table's reader and its class cannot drift apart."""
     toml = (
         "[project]\nname = 't'\nscript = 'script.md'\ncues = 'cues.json'\nbuild = 'build'\nlanguage = 'fr'\n"
-        "[voice]\nprovider = 'elevenlabs'\n"
+        "[voices.narrator]\nprovider = 'elevenlabs'\n"
         "[elevenlabs]\nmodel = 'm'\nstability = 0.5\ndollars_per_1000_characters = 0.3\n"
         "[transition]\ndips = [[1, 2]]\ndip_seconds = 0.2\npage_fades_in = true\n"
         "[[section]]\nnumber = 1\npage = 'deck/a.html'\n"
@@ -218,7 +218,7 @@ def test_a_table_reads_every_key_its_dataclass_declares(tmp_path):
     assert p.notes == ()
     assert p.document.language == "fr"
     # `[mix]` is shared, so the document reads its half and neither warns about the other.
-    assert (p.settings.voice.provider, p.settings.elevenlabs.model) == ("elevenlabs", "m")
+    assert (p.settings.voices["narrator"].own.provider, p.settings.elevenlabs.model) == ("elevenlabs", "m")
     assert p.settings.elevenlabs.dollars_per_1000_characters == 0.3
     assert p.settings.audio.range_max_lu == 9
     assert (p.settings.score.music.duration_seconds, p.settings.score.music.model) == (60, "music")
@@ -814,18 +814,37 @@ def test_the_default_paid_folders_sit_beside_the_build_directory_and_load(tmp_pa
 
 
 def test_a_project_is_read_in_the_voice_its_settings_name_and_its_takes_are_named_by_it(tmp_path: Path) -> None:
-    """The voice is resolved once at load, and the suffix take places look under is the one it is asked for."""
-    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "dtsp"\n'), environ={})
-    assert inputs.voice == VoiceInForce.of(inputs.settings)
-    assert inputs.voice.provider == "dtsp"
-    assert inputs.workspace.suffix == inputs.voice.output.suffix
+    """The voice is resolved once at load, and a turn no direction names is read by it."""
+    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML + '\n[voices.narrator]\nprovider = "dtsp"\n'), environ={})
+    (section,) = parse_script("## 1. Open\n\nHello there.\n")
+    voice = inputs.voice_of(section.turns[0])
+    assert voice == inputs.voices["narrator"] == VoiceInForce.of(inputs.settings.voices["narrator"])
+    assert voice.provider == "dtsp"
+    assert voice.output.suffix == ".mp3"
+
+
+def test_a_project_holds_every_voice_it_declares_by_name_and_names_its_default(tmp_path: Path) -> None:
+    """Each voice is resolved once at load, under the name the script calls it by, the default first."""
+    toml = (
+        MINIMAL_TOML
+        + '\n[narration]\nvoice = "host"\n\n[voices.host]\nid = "h"\n\n[voices.guest]\nprovider = "dtsp"\nid = "g"\n'
+    )
+    inputs = Inputs.load(write_project(tmp_path, toml), environ={"DECKTALK_VOICES_GUEST_SPEED": "1.1"})
+    assert inputs.default_voice == "host"
+    assert list(inputs.voices) == ["host", "guest"]
+    assert inputs.voices["guest"] == VoiceInForce.of(inputs.settings.voices["guest"])
+    assert (inputs.voices["guest"].name, inputs.voices["guest"].provider) == ("guest", "dtsp")
+    assert dict(inputs.voices["guest"].identity) == {"speed": 1.1}
+    assert inputs.voices["host"].id == "h"
 
 
 def test_a_project_naming_a_voice_no_machine_answers_for_still_loads(tmp_path: Path) -> None:
     """Only a run that must build the voice refuses an unknown name, so a watch that reloads never fails on one."""
-    inputs = Inputs.load(write_project(tmp_path, MINIMAL_TOML + '\n[voice]\nprovider = "nosuch"\n'), environ={})
-    assert inputs.voice.provider == "nosuch"
-    assert inputs.voice.billing is BillingBasis.UNDECLARED
+    inputs = Inputs.load(
+        write_project(tmp_path, MINIMAL_TOML + '\n[voices.narrator]\nprovider = "nosuch"\n'), environ={}
+    )
+    assert inputs.voices["narrator"].provider == "nosuch"
+    assert inputs.voices["narrator"].billing is BillingBasis.UNDECLARED
 
 
 SPOKEN = "A bowl, a ball."
@@ -906,3 +925,36 @@ def test_only_the_readers_that_know_an_untimed_take_read_a_takes_own_words():
         if ".take_words(" in path.read_text(encoding="utf-8")
     }
     assert readers <= TAKE_WORDS_READERS, readers - TAKE_WORDS_READERS
+
+
+THERE = (Word(word="there", start=0.0, end=0.4),)
+"""One word the second turn says, on its own take's clock."""
+
+
+def test_a_dialogue_sections_words_run_on_one_clock_across_its_turns(tmp_path):
+    """Each turn's words move by the lead and every earlier turn's span, so one clock runs across the section."""
+    toml = LEAD_TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n'
+    inputs = Inputs.load(write_project(tmp_path, toml), environ={})
+    first = a_take(1, seconds=1.0, lead_seconds=0.5, tail_seconds=0.3, digest="0000000000000001")
+    second = a_take(1, turn=2, voice="guest", seconds=1.0, tail_seconds=0.7, digest="0000000000000002")
+    narrated(inputs, first, second, words={(1, 1): HELLO, (1, 2): THERE})
+    heard = inputs.words(1)
+    assert type(heard) is Words and heard.estimated is False
+    assert heard.words == (Word(word="hello", start=0.5, end=0.9), Word(word="there", start=1.8, end=2.2))
+    turns = inputs.turn_words(1)
+    assert [(turn.turn, turn.voice, turn.estimated) for turn in turns] == [(1, "narrator", False), (2, "guest", False)]
+    assert [turn.words.words for turn in turns] == [(heard.words[0],), (heard.words[1],)]
+    placeholder = a_take(1, turn=2, voice="guest", voiced=False, seconds=1.0, tail_seconds=0.7)
+    narrated(inputs, first, placeholder, words={(1, 1): HELLO, (1, 2): THERE})
+    assert type(inputs.words(1)) is EstimatedWords
+
+
+def test_a_section_of_one_turn_answers_todays_words(tmp_path):
+    """One turn answers the kind its take was timed by, moved by the lead, as a section always has."""
+    inputs = Inputs.load(write_project(tmp_path, LEAD_TOML), environ={})
+    narrated(inputs, a_take(1), words={1: HELLO})
+    heard = inputs.words(1)
+    assert type(heard) is ProviderWords
+    assert heard.words == (Word(word="hello", start=0.5, end=0.9),)
+    (turn,) = inputs.turn_words(1)
+    assert (turn.turn, turn.voice, turn.words.words) == (1, "narrator", heard.words)

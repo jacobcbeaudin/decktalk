@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from decktalk.artifacts import Placement, Placements, Words
-from decktalk.captions import CaptionCue
+from decktalk.captions import CAPTION_MAX_CHARS, CaptionCue, Said
 from decktalk.errors import ErrorCode, InputError, ToolError
 from decktalk.inputs import Inputs
 from decktalk.media import browser, pages
@@ -28,6 +28,7 @@ from decktalk.stages.assemble.publish import (
     clip_captions,
     clip_speech,
     described_cues,
+    dialogue_turns,
     one_at_a_time,
     placement_note,
     poster_query,
@@ -39,8 +40,19 @@ from decktalk.stages.assemble.publish import (
     with_sound_captions,
 )
 from support.pages import write_log
+from support.takes import a_take, narrated
 
-from .conftest import MID_CLIP_TOML, TITLED_TOML, cue_times, open_run, rendered, spoken, take_index, write_project
+from .conftest import (
+    MID_CLIP_TOML,
+    PAGES_TOML,
+    TITLED_TOML,
+    cue_times,
+    open_run,
+    rendered,
+    spoken,
+    take_index,
+    write_project,
+)
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 
@@ -94,6 +106,68 @@ def test_sections_that_share_a_chapter_share_one_transcript_entry(tmp_path):
     assert [entry.chapter for entry in entries] == ["Open", "The edit", "Close"]
     # The clip and the page that share "The edit" are one heading with two paragraphs under it.
     assert len(entries[1].said) == 2
+
+
+TWO_VOICES = PAGES_TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n'
+"""The two-section project with a guest beside its narrator."""
+
+
+def test_each_turn_of_a_section_in_two_voices_is_a_paragraph_naming_its_voice(tmp_path):
+    """A reader who cannot hear the film learns who said each line, and a section of one voice is left as it was."""
+    inputs = write_project(tmp_path, TWO_VOICES)
+    first = a_take(1, seconds=1.0, spoken="Says who?", voice="guest", digest="0000000000000001")
+    second = a_take(1, turn=2, seconds=1.0, spoken="Nobody does.", digest="0000000000000002")
+    alone = a_take(2, seconds=1.0, spoken="One voice. Two turns.", digest="0000000000000003")
+    again = a_take(2, turn=2, seconds=1.0, spoken="Still one.", digest="0000000000000004")
+    narrated(inputs, first, second, alone, again)
+    takes = inputs.takes(required=True)
+    rows = rendered(inputs, {1: 2.0, 2: 2.0})
+    entries = transcript_sections(
+        inputs, placements_of(inputs, rows), caption_texts(inputs, takes), dialogue_turns(takes)
+    )
+    said = [one for entry in entries for one in entry.said]
+    assert said == [
+        Said("Says who?", voice="guest"),
+        Said("Nobody does.", voice="narrator"),
+        Said("One voice. Two turns. Still one."),
+    ]
+
+
+@pytest.mark.parametrize("named", [False, True])
+def test_captions_name_the_voice_of_a_dialogue_only_when_the_project_asks(tmp_path, named):
+    """Words alone by default, and the voice of every turn of a two-voice section once `caption_voices` is on."""
+    asks = "\n[output]\ncaption_voices = true\n" if named else ""
+    inputs = write_project(tmp_path, TWO_VOICES + asks)
+    first = a_take(1, seconds=1.0, spoken="alpha beta", tail_seconds=0.3, voice="guest", digest="0000000000000001")
+    second = a_take(1, turn=2, seconds=1.0, spoken="gamma delta", digest="0000000000000002")
+    alone = a_take(2, seconds=1.0, spoken="epsilon", digest="0000000000000003")
+    words = {(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta"), 2: spoken("epsilon")}
+    narrated(inputs, first, second, alone, words=words)
+    takes = inputs.takes(required=True)
+    cues = build_captions(inputs, takes, {1: 0.0, 2: 0.0}, caption_texts(inputs, takes))
+    expected = ["guest", "narrator", None] if named else [None, None, None]
+    assert [cue.voice for cue in cues] == expected
+
+
+def test_a_named_voice_leaves_room_on_the_line_for_its_name(tmp_path):
+    """The .srt writes the name before the line, so the line is wrapped short enough to carry it."""
+    inputs = write_project(tmp_path, TWO_VOICES + "\n[output]\ncaption_voices = true\n")
+    said = "one two three four five six seven eight nine"  # 44 characters: two lines either way
+    near = "one two three four five six seven eight"  # 39 characters: one line alone, two beside a name
+    first = a_take(1, seconds=1.0, spoken=said, tail_seconds=0.3, digest="0000000000000001")
+    second = a_take(1, turn=2, seconds=1.0, spoken=near, voice="guest", digest="0000000000000002")
+    narrated(inputs, first, second, words={(1, 1): spoken(said), (1, 2): spoken(near)})
+    takes = inputs.takes(required=True)
+    cues = build_captions(inputs, takes, {1: 0.0}, caption_texts(inputs, takes))
+    assert all(len(f"{cue.voice}: {cue.lines[0]}") <= CAPTION_MAX_CHARS for cue in cues)
+    assert len(cues[-1].lines) == 2
+
+
+def test_a_sound_before_a_voiced_line_stays_outside_the_voice():
+    speech = CaptionCue(start=1.2, end=3.0, lines=("Says who?",), voice="guest")
+    sound = CaptionCue(start=1.0, end=1.0 + SOUND_CAPTION_SECONDS, lines=("[door opens]",))
+    (joined,) = with_sound_captions([speech], [sound])
+    assert joined.lines == ("[door opens]", "Says who?") and joined.voice == "guest" and joined.spoken == (1, 2)
 
 
 def test_a_clip_that_names_a_words_file_is_read_into_the_transcript(tmp_path):
@@ -371,3 +445,15 @@ def test_an_untrusted_project_draws_its_poster_untrusted(tmp_path, monkeypatch):
     monkeypatch.setattr(browser, "chromium", refuse)
     render_poster(inputs, opened.run, tmp_path / "poster.png")
     assert launched == ["untrusted"]
+
+
+def test_a_caption_never_spans_two_turns(tmp_path):
+    """Two voices' sentences a short gap apart are two captions, the way two sections' are."""
+    inputs = write_project(tmp_path, PAGES_TOML + '\n[voices.narrator]\nid = "n"\n\n[voices.guest]\nid = "g"\n')
+    first = a_take(1, seconds=1.0, spoken="alpha beta", tail_seconds=0.3, digest="0000000000000001")
+    second = a_take(1, turn=2, voice="guest", seconds=1.0, spoken="gamma delta", digest="0000000000000002")
+    narrated(inputs, first, second, words={(1, 1): spoken("alpha beta"), (1, 2): spoken("gamma delta")})
+    takes = inputs.takes(required=True)
+    cues = build_captions(inputs, takes, {1: 0.0}, caption_texts(inputs, takes))
+    assert [cue.lines for cue in cues] == [("alpha beta",), ("gamma delta",)]
+    assert cues[1].start >= 1.3

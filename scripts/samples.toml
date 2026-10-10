@@ -235,8 +235,8 @@ head = 1
 
 [key-in-the-wrong-table]
 page = "docs/reference/decktalk-toml.mdx"
-what = "decktalk status, on a fresh decktalk init my-lesson with stability = 0.5 added under [voice], the first line"
-edits = [["decktalk.toml", "speed = 1.0\n", "speed = 1.0\nstability = 0.5\n"]]
+what = "decktalk status, on a fresh decktalk init my-lesson with tail_seconds = 1.0 added under [voices.narrator], the first line"
+edits = [["decktalk.toml", "speed = 1.0\n", "speed = 1.0\ntail_seconds = 1.0\n"]]
 run = [["status"]]
 stream = "both"
 head = 1
@@ -245,7 +245,7 @@ head = 1
 
 [narrate-over-the-ceiling]
 page = "docs/requirements.mdx"
-what = "decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voice] id set and no API key, which refuses before any request"
+what = "decktalk narrate --spend --max-cost 0.05, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which refuses before any request"
 edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
 run = [["narrate", "--spend", "--max-cost", "0.05"]]
 exit = 2
@@ -264,7 +264,7 @@ stream = "both"
 
 [narrate-no-terminal]
 page = "docs/guides/ci-and-offline.mdx"
-what = "decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voice] id set and no API key, which exits 2"
+what = "decktalk narrate --no-input, on a fresh decktalk init my-lesson with [voices.narrator] id set and no API key, which exits 2"
 edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
 run = [["narrate", "--no-input"]]
 exit = 2
@@ -272,7 +272,7 @@ stream = "both"
 
 [build-over-the-ceiling]
 page = "docs/quickstart.mdx"
-what = "decktalk build --spend --max-cost 0.05, on the starter with [voice] id set and no API key, which exits 2 before any request"
+what = "decktalk build --spend --max-cost 0.05, on the starter with [voices.narrator] id set and no API key, which exits 2 before any request"
 edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
 run = [["build", "--spend", "--max-cost", "0.05"]]
 exit = 2
@@ -281,7 +281,7 @@ masks = ['[0-9a-f]{12}']
 
 [build-no-terminal]
 page = "docs/quickstart.mdx"
-what = "decktalk build --no-input, on the starter with [voice] id set and no API key, which exits 2"
+what = "decktalk build --no-input, on the starter with [voices.narrator] id set and no API key, which exits 2"
 edits = [["decktalk.toml", 'id = ""', 'id = "a-voice-id"']]
 run = [["build", "--no-input"]]
 exit = 2

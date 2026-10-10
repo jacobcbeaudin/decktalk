@@ -158,9 +158,12 @@ def _status(*, stale: bool = False) -> StatusResult:
                 source="deck/index.html",
                 take_state=TakeState.STALE if stale else TakeState.VOICED,
                 take_reason=CHANGED if stale else HELD,
+                turns=(),
+                voices=("narrator",),
                 recorded=True,
                 assembled=True,
                 recording_stale=False,
             ),
         ),
+        voices=(),
     )

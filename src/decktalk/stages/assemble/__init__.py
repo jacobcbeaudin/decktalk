@@ -164,7 +164,7 @@ def _write_deliverables(inputs: Inputs, run: Run, rows: list[Rendered], takes: T
     write_caption_files(paths, cues, chapters)
     placements = placements_of(inputs, rows)
     placements.write(paths["placements"])
-    write_transcript_page(inputs, paths["transcript"], placements, texts)
+    write_transcript_page(inputs, paths["transcript"], placements, texts, takes)
     for name in ("srt", "vtt", "chapters", "placements", "transcript"):
         run.wrote(paths[name])
     return placements

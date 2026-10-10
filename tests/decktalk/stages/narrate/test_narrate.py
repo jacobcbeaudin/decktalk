@@ -43,13 +43,13 @@ from decktalk.media import audio
 from decktalk.pipeline import Outcome, Stage
 from decktalk.results import CostState, NarrateResult, TakeOutcome, Word, up_to_the_cent
 from decktalk.settings import MACHINE_FILE_VARIABLE
-from decktalk.speech import Piece, Speech, SpeechContext, SpeechFactory, SpeechRequest
+from decktalk.speech import Piece, Speech, SpeechContext, SpeechFactory, SpeechProvider, SpeechRequest
 from decktalk.speech.elevenlabs import ElevenLabs
 from decktalk.stages import narrate as narrate_stage
 from decktalk.stages.cost import charge_of
 from decktalk.stages.narrate import narrate, take_states
-from decktalk.stages.narrate.plan import VOICE_ID_VARIABLE
-from support.fakes import FAKE_VOICE_NAME, FREE_VOICE_NAME, FakeVoice
+from decktalk.stages.narrate.plan import id_variable, no_voice_note
+from support.fakes import FAKE_VOICE_NAME, FREE_VOICE_NAME, NARRATOR_ID, FakeVoice
 from support.git import committed_clone, git, tracked_copy
 from support.interrupts import aimed_signals, interrupts_raise, press_ctrl_c
 from support.logs import data_of, decisions
@@ -57,7 +57,7 @@ from support.projects import load_project
 from support.runs import Watched, a_voiced_run
 from support.takes import TAKE_SUFFIX, damage_take
 
-from .conftest import ENVIRON, FREE_TOML, SCRIPT, TOML, VOICE_ID
+from .conftest import DIALOGUE, ENVIRON, FREE_TOML, NARRATOR_TABLE, SCRIPT, TOML, VOICE_ID, WITH_A_GUEST
 
 LEAVE_GAP_SECONDS = 0.3
 """Calibration: how long after the first Ctrl-C the second is pressed, long enough for the first to be answered."""
@@ -357,7 +357,7 @@ def counted(voices: dict[str, SpeechFactory]) -> CountedVoice:
 
 def without_the_key(inputs: Inputs) -> tuple[Inputs, Recorded]:
     """The same project on a machine that names the voice and holds no key, with every lookup recorded."""
-    environ = Recorded({VOICE_ID_VARIABLE: VOICE_ID})
+    environ = Recorded({NARRATOR_ID: VOICE_ID})
     return Inputs.load(inputs.root, environ=environ), environ
 
 
@@ -410,13 +410,13 @@ def test_paid_takes_that_cannot_be_matched_are_kept_and_say_why_and_a_fresh_proj
     fresh = Inputs.load(inputs.root, environ={})
     first = make_run(fresh)
     narrate(fresh, first.run)
-    assert not [line for line in first.of(RunLog) if VOICE_ID_VARIABLE in line.message]
+    assert not [line for line in first.of(RunLog) if id_variable("narrator") in line.message]
     narrate(inputs, make_run(inputs, spend=True).run, force=True)
     played = {row.digest for row in inputs.takes(required=True).sections}
     nameless = Inputs.load(inputs.root, environ={})
     again = make_run(nameless)
     result = narrate(nameless, again.run)
-    assert [line for line in again.of(RunLog) if VOICE_ID_VARIABLE in line.message]
+    assert [line for line in again.of(RunLog) if id_variable("narrator") in line.message]
     assert missing_sections(result) == []
     assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert {row.digest for row in inputs.takes(required=True).sections} == played
@@ -619,7 +619,7 @@ def test_a_second_run_without_spend_says_what_the_first_said_of_each_placeholder
     inputs: Inputs, make_run: Callable[..., Watched], named: bool
 ) -> None:
     """The placeholder the first run made is not a voiced take, so the second run's reason is the first's."""
-    environ = ENVIRON if named else {key: value for key, value in ENVIRON.items() if key != VOICE_ID_VARIABLE}
+    environ = ENVIRON if named else {key: value for key, value in ENVIRON.items() if key != NARRATOR_ID}
     project = Inputs.load(inputs.root, environ=environ)
     first = [found.message for found in narrate(project, make_run(project).run).findings]
     second = [found.message for found in narrate(project, make_run(project).run).findings]
@@ -634,7 +634,7 @@ def test_a_voice_change_says_the_voice_may_have_changed_and_not_that_the_text_di
 ) -> None:
     """A new voice moves every digest, and the old takes still sit on disk, so the plan's own reason is the one said."""
     narrate(inputs, make_run(inputs, spend=True).run)
-    revoiced = Inputs.load(inputs.root, environ={**ENVIRON, VOICE_ID_VARIABLE: "another-voice"})
+    revoiced = Inputs.load(inputs.root, environ={**ENVIRON, NARRATOR_ID: "another-voice"})
     result = narrate(revoiced, make_run(revoiced).run)
     assert missing_sections(result) == [1, 2, 3]
     for found in result.findings:
@@ -1216,7 +1216,7 @@ def test_a_clone_of_a_project_that_commits_its_takes_plays_them_with_no_key(
     assert counted.built == 1
     clone = tracked_copy(bought.root, tmp_path / "clone")
     assert not (clone / "build").exists()
-    environ = Recorded({VOICE_ID_VARIABLE: VOICE_ID})
+    environ = Recorded({NARRATOR_ID: VOICE_ID})
     fresh = Inputs.load(clone, environ=environ)
     result = narrate(fresh, make_run(fresh).run)
     assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
@@ -1267,7 +1267,7 @@ def test_a_take_only_the_machine_cache_holds_is_found_and_kept_in_the_project(
     narrate(elsewhere, make_run(elsewhere, spend=True).run)
     assert len(take_files(tmp_path / "machine-takes")) == 6
     load_project(tmp_path / "proj", IN_THE_PROJECT, script=SCRIPT)
-    environ = Recorded({VOICE_ID_VARIABLE: VOICE_ID})
+    environ = Recorded({NARRATOR_ID: VOICE_ID})
     project = Inputs.load(tmp_path / "proj", environ=environ, machine=shared)
     watched = make_run(project)
     result = narrate(project, watched.run)
@@ -1821,7 +1821,7 @@ def test_a_model_that_drops_a_timed_pause_still_buys_a_section_without_one(
 
 # ---- the voice id ----------------------------------------------------------------------------
 
-NAMED = TOML.replace("[voice]\n", f'[voice]\nid = "{VOICE_ID}"\n')
+NAMED = TOML.replace("[voices.narrator]\n", f'[voices.narrator]\nid = "{VOICE_ID}"\n')
 """The test project with its voice named in `decktalk.toml`, which is where the published name lives."""
 
 KEY_ONLY = {KEY: "key-under-test"}
@@ -1842,7 +1842,7 @@ def test_decktalk_voice_id_in_the_environment_overrides_the_file(
 ) -> None:
     """Somebody who keeps the id out of the file exports it, and the export wins over a committed one."""
     project = make_inputs(toml=NAMED)
-    private = Inputs.load(project.root, environ={**KEY_ONLY, "DECKTALK_VOICE_ID": "kept-private"})
+    private = Inputs.load(project.root, environ={**KEY_ONLY, "DECKTALK_VOICES_NARRATOR_ID": "kept-private"})
     narrate(private, make_run(private, spend=True).run)
     assert {request.voice_id for request in fake_voice.requests} == {"kept-private"}
 
@@ -1856,13 +1856,13 @@ def test_elevenlabs_voice_id_alone_no_longer_names_the_voice(
     old = Inputs.load(project.root, environ={**KEY_ONLY, "ELEVENLABS_VOICE_ID": VOICE_ID})
     with pytest.raises(InputError) as refused:
         narrate(old, make_run(old, spend=True).run)
-    assert "[voice] id" in str(refused.value) and "DECKTALK_VOICE_ID" in str(refused.value)
+    assert "[voices.narrator] id" in str(refused.value) and NARRATOR_ID in str(refused.value)
 
 
 def test_a_clone_that_commits_its_voice_id_and_its_takes_plays_them_with_no_environment(
     make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], counted: CountedVoice, tmp_path: Path
 ) -> None:
-    """With `[voice] id` committed beside `takes_dir`, a fresh clone matches every voiced take and misses none."""
+    """With `[voices.NAME] id` committed beside `takes_dir`, a fresh clone matches every voiced take and misses none."""
     bought = make_inputs(toml=NAMED.replace("[narration]\n", '[narration]\ntakes_dir = "voice"\n'))
     narrate(bought, make_run(bought, spend=True).run)
     clone = tracked_copy(bought.root, tmp_path / "clone")
@@ -1938,7 +1938,7 @@ def test_a_take_index_that_does_not_read_with_no_voice_named_buys_nothing(
     nameless = Inputs.load(inputs.root, environ=KEY_ONLY)
     with pytest.raises(InputError) as refused:
         narrate(nameless, make_run(nameless, spend=True).run)
-    assert VOICE_ID_VARIABLE in str(refused.value)
+    assert NARRATOR_ID in str(refused.value)
     assert len(counted.voice.requests) == sent
     result = narrate(nameless, make_run(nameless).run)
     assert missing_sections(result) == [1, 2, 3]
@@ -1959,3 +1959,336 @@ def test_a_placeholder_only_take_index_that_does_not_read_is_rebuilt_not_refused
     assert {row.outcome for row in result.sections} == {TakeOutcome.KEPT}
     assert missing_sections(result) == [1, 2, 3]
     assert Takes.read(inputs.workspace.takes_path) == before
+
+
+# ---- voices the script names ------------------------------------------------------------------
+
+
+def test_narrate_refuses_an_unreadable_voice_direction_before_anything_is_priced(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
+) -> None:
+    project = make_inputs(script=SCRIPT.replace("## 2. Middle\n", "## 2. Middle\n\n[voice gest]\n"))
+    watched = make_run(project, spend=True)
+    with pytest.raises(InputError) as refused:
+        narrate(project, watched.run)
+    assert str(refused.value).startswith("script.md has 1 voice direction narrate cannot read:\n  line ")
+    assert "[voice gest] names no voice, and the voices are narrator." in str(refused.value)
+    assert watched.of(CostPriced) == []
+    assert fake_voice.requests == []
+
+
+GUEST_READS_TWO = SCRIPT.replace("## 2. Middle\n", "## 2. Middle\n\n[voice guest]\n")
+"""The script whose second section the guest reads whole."""
+
+FREE_NARRATOR = TOML.replace(
+    NARRATOR_TABLE,
+    f'[voices.narrator]\nprovider = "{FREE_VOICE_NAME}"\n\n'
+    '[voices.guest]\nprovider = "elevenlabs"\nid = "paid-guest"\n',
+)
+"""A project whose default voice is free and whose guest bills."""
+
+
+@dataclass
+class Built:
+    """A fake voice and how many times its provider was built."""
+
+    voice: FakeVoice | Unreachable
+    times: int = 0
+
+    def factory(self, _context: SpeechContext) -> SpeechProvider:
+        self.times += 1
+        return self.voice
+
+
+def test_each_section_is_voiced_by_the_provider_of_its_own_voice(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    paid, free = Built(FakeVoice()), Built(FakeVoice(name=FREE_VOICE_NAME))
+    voices[FAKE_VOICE_NAME], voices[FREE_VOICE_NAME] = paid.factory, free.factory
+    project = make_inputs(toml=WITH_A_GUEST, script=GUEST_READS_TWO)
+    result = narrate(project, make_run(project, spend=True).run)
+    assert {row.outcome for row in result.sections} == {TakeOutcome.VOICED}
+    assert [request.voice_id for request in paid.voice.requests] == [VOICE_ID, VOICE_ID]
+    assert [request.voice_id for request in free.voice.requests] == ["af_heart"]
+    assert free.voice.requests[0].model == "kokoro-82m"
+    assert (paid.times, free.times) == (1, 1)
+
+
+def test_a_run_that_may_not_spend_voices_a_free_voices_sections_and_stands_in_for_a_paid_ones(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    """Whether a section voices is its own voice's question, so a free voice is called while a paid one waits."""
+    paid, free = Built(FakeVoice()), Built(FakeVoice(name=FREE_VOICE_NAME))
+    voices[FAKE_VOICE_NAME], voices[FREE_VOICE_NAME] = paid.factory, free.factory
+    project = make_inputs(toml=FREE_NARRATOR, script=GUEST_READS_TWO)
+    result = narrate(project, make_run(project).run)
+    assert [row.outcome for row in result.sections] == [
+        TakeOutcome.VOICED,
+        TakeOutcome.PLACEHOLDER,
+        TakeOutcome.VOICED,
+    ]
+    assert paid.voice.requests == [] and paid.times == 0
+    assert len(free.voice.requests) == 2
+    assert missing_sections(result) == [2]
+
+
+def test_a_paid_voice_is_never_stood_in_for_when_a_free_voice_is_down(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    paid = Built(FakeVoice())
+    voices[FAKE_VOICE_NAME], voices[FREE_VOICE_NAME] = paid.factory, Built(Unreachable()).factory
+    project = make_inputs(toml=WITH_A_GUEST, script=GUEST_READS_TWO)
+    result = narrate(project, make_run(project, spend=True).run)
+    assert [row.outcome for row in result.sections] == [
+        TakeOutcome.VOICED,
+        TakeOutcome.PLACEHOLDER,
+        TakeOutcome.VOICED,
+    ]
+    assert len(paid.voice.requests) == 2
+    (found,) = result.findings
+    assert "could not be reached" in found.message and found.location.section == 2
+
+
+def test_a_paid_voice_that_nothing_answers_fails_the_run_rather_than_standing_in(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    voices[FAKE_VOICE_NAME] = Built(Unreachable()).factory
+    voices[FREE_VOICE_NAME] = Built(FakeVoice(name=FREE_VOICE_NAME)).factory
+    project = make_inputs(toml=WITH_A_GUEST, script=GUEST_READS_TWO)
+    with pytest.raises(ProviderError):
+        narrate(project, make_run(project, spend=True).run)
+
+
+def test_a_voice_with_no_id_names_itself_in_the_refusal_and_the_note(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
+) -> None:
+    unnamed = WITH_A_GUEST.replace('id = "af_heart"\n', "")
+    project = make_inputs(toml=unnamed, script=GUEST_READS_TWO)
+    with pytest.raises(InputError) as refused:
+        narrate(project, make_run(project, spend=True).run)
+    assert str(refused.value) == (
+        "no voice id is named for the voice guest, because neither [voices.guest] id in decktalk.toml nor "
+        "DECKTALK_VOICES_GUEST_ID is set."
+    )
+    assert refused.value.hint == (
+        'Add id = "<its voice id>" under [voices.guest] in decktalk.toml, or export DECKTALK_VOICES_GUEST_ID, which '
+        "is read from the environment and never from .env."
+    )
+    assert fake_voice.requests == []
+    assert no_voice_note(project.voices["guest"]) == (
+        "The voice guest has no id, so no take on disk can be matched to its turns, because [voices.guest] id is "
+        "empty and DECKTALK_VOICES_GUEST_ID is not set."
+    )
+
+
+def test_a_placeholder_for_an_unnamed_paid_voice_says_to_name_it_first(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    voices[FREE_VOICE_NAME] = Built(FakeVoice(name=FREE_VOICE_NAME)).factory
+    unnamed = FREE_NARRATOR.replace('id = "paid-guest"\n', "")
+    project = make_inputs(toml=unnamed, script=GUEST_READS_TWO)
+    result = narrate(project, make_run(project).run)
+    (found,) = [one for one in result.findings if one.location.section == 2]
+    assert found.message.endswith(
+        "Name the voice guest in [voices.guest] id, then run decktalk narrate --section 2 --spend to buy its take."
+    )
+
+
+def test_a_paid_voices_section_never_passes_no_spend_or_the_cap_beside_a_free_voices_section(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    """The skeptic's probe: a paid take beside a free one is never bought without spend, nor past the cap."""
+    paid, free = Built(FakeVoice()), Built(FakeVoice(name=FREE_VOICE_NAME))
+    voices[FAKE_VOICE_NAME], voices[FREE_VOICE_NAME] = paid.factory, free.factory
+    project = make_inputs(toml=WITH_A_GUEST, script=GUEST_READS_TWO)
+    result = narrate(project, make_run(project).run)
+    assert paid.voice.requests == []
+    assert [row.outcome for row in result.sections] == [
+        TakeOutcome.PLACEHOLDER,
+        TakeOutcome.VOICED,
+        TakeOutcome.PLACEHOLDER,
+    ]
+    capped = make_inputs(
+        toml=WITH_A_GUEST, script=GUEST_READS_TWO.replace("A bowl.", "A different bowl."), name="capped"
+    )
+    with pytest.raises(ApprovalRequired):
+        narrate(capped, make_run(capped, spend=True, max_cost=0.01).run)
+    assert paid.voice.requests == []
+
+
+def test_every_charge_line_names_its_voice_and_its_provider(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    paid, free = Built(FakeVoice()), Built(FakeVoice(name=FREE_VOICE_NAME))
+    voices[FAKE_VOICE_NAME], voices[FREE_VOICE_NAME] = paid.factory, free.factory
+    guest = WITH_A_GUEST.replace('provider = "dtsp"\nid = "af_heart"', 'provider = "elevenlabs"\nid = "paid-guest"')
+    project = make_inputs(toml=guest, script=GUEST_READS_TWO)
+    watched = make_run(project, spend=True)
+    narrate(project, watched.run)
+    assert sorted((line.section, line.voice, line.provider) for line in watched.of(TakeCharged)) == [
+        (1, "narrator", "elevenlabs"),
+        (2, "guest", "elevenlabs"),
+        (3, "narrator", "elevenlabs"),
+    ]
+
+
+# ---- a dialogue, turn by turn -------------------------------------------------------------------
+
+BOTH_PAID = WITH_A_GUEST.replace('provider = "dtsp"\nid = "af_heart"', 'id = "guest-voice"')
+"""The dialogue project with an ElevenLabs guest of its own id beside the narrator."""
+
+
+def turns_of(result: NarrateResult) -> list[tuple[int, int | None, TakeOutcome]]:
+    """Each take a run reports, as (section, turn, outcome), in the order it reports them."""
+    return [(row.section, row.turn, row.outcome) for row in result.sections]
+
+
+def test_a_dialogue_is_voiced_turn_by_turn_by_each_voices_own_provider(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    paid, free = Built(FakeVoice()), Built(FakeVoice(name=FREE_VOICE_NAME))
+    voices[FAKE_VOICE_NAME], voices[FREE_VOICE_NAME] = paid.factory, free.factory
+    project = make_inputs(toml=WITH_A_GUEST, script=DIALOGUE)
+    result = narrate(project, make_run(project, spend=True).run)
+    assert turns_of(result) == [
+        (1, 1, TakeOutcome.VOICED),
+        (2, 1, TakeOutcome.VOICED),
+        (2, 2, TakeOutcome.VOICED),
+        (2, 3, TakeOutcome.VOICED),
+        (3, 1, TakeOutcome.VOICED),
+    ]
+    assert [request.pieces for request in free.voice.requests] == [(Piece("And it rolls."),)]
+    assert [request.voice_id for request in free.voice.requests] == ["af_heart"]
+    assert {request.voice_id for request in paid.voice.requests} == {VOICE_ID}
+    assert len(paid.voice.requests) == 4
+    assert (paid.times, free.times) == (1, 1)
+    assert [row.voice for row in result.sections] == ["narrator", "narrator", "guest", "narrator", "narrator"]
+
+
+def test_a_dialogue_with_no_spend_plays_one_placeholder_per_paid_turn_and_voices_the_free_ones(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    free = Built(FakeVoice(name=FREE_VOICE_NAME))
+    voices[FREE_VOICE_NAME] = free.factory
+    project = make_inputs(toml=WITH_A_GUEST, script=DIALOGUE)
+    result = narrate(project, make_run(project).run)
+    assert turns_of(result) == [
+        (1, 1, TakeOutcome.PLACEHOLDER),
+        (2, 1, TakeOutcome.PLACEHOLDER),
+        (2, 2, TakeOutcome.VOICED),
+        (2, 3, TakeOutcome.PLACEHOLDER),
+        (3, 1, TakeOutcome.PLACEHOLDER),
+    ]
+    said = [found.message for found in result.findings if found.location.section == 2]
+    assert said == [
+        "Section 2 plays a placeholder for turn 1, which narrator reads, because it has no voiced take yet. "
+        "Run decktalk narrate --section 2 --spend to buy its take.",
+        "Section 2 plays a placeholder for turn 3, which narrator reads, because it has no voiced take yet. "
+        "Run decktalk narrate --section 2 --spend to buy its take.",
+    ]
+    (one,) = [found.message for found in result.findings if found.location.section == 1]
+    assert one.startswith("Section 1 plays a placeholder, because it has no voiced take yet.")
+
+
+def test_a_paid_turn_never_passes_no_spend_or_the_cap_beside_a_free_turn_of_its_section(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    paid, free = Built(FakeVoice()), Built(FakeVoice(name=FREE_VOICE_NAME))
+    voices[FAKE_VOICE_NAME], voices[FREE_VOICE_NAME] = paid.factory, free.factory
+    project = make_inputs(toml=WITH_A_GUEST, script=DIALOGUE)
+    with pytest.raises(ApprovalRequired):
+        narrate(project, make_run(project, spend=True, max_cost=0.01).run, only=[2])
+    assert paid.voice.requests == [] and free.voice.requests == []
+    narrate(project, make_run(project).run, only=[2])
+    assert paid.voice.requests == []
+    assert len(free.voice.requests) == 1
+
+
+def test_a_free_turns_voice_down_stands_in_that_turn_and_buys_every_paid_turn(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    paid = Built(FakeVoice())
+    voices[FAKE_VOICE_NAME], voices[FREE_VOICE_NAME] = paid.factory, Built(Unreachable()).factory
+    project = make_inputs(toml=WITH_A_GUEST, script=DIALOGUE)
+    result = narrate(project, make_run(project, spend=True).run)
+    assert [outcome for _section, _turn, outcome in turns_of(result)] == [
+        TakeOutcome.VOICED,
+        TakeOutcome.VOICED,
+        TakeOutcome.PLACEHOLDER,
+        TakeOutcome.VOICED,
+        TakeOutcome.VOICED,
+    ]
+    assert len(paid.voice.requests) == 4
+    (found,) = result.findings
+    assert found.message.startswith("Section 2 plays a placeholder for turn 2, which guest reads, because its voice")
+
+
+class FailsOn:
+    """A paid voice that answers every request but the one holding `text`, which fails as `failure` does."""
+
+    name = FAKE_VOICE_NAME
+
+    def __init__(self, text: str, failure: ProviderError) -> None:
+        self.text, self.failure = text, failure
+        self.requests: list[SpeechRequest] = []
+
+    def speak(self, request: SpeechRequest) -> Speech:
+        self.requests.append(request)
+        if any(self.text in piece.text for piece in request.pieces):
+            raise self.failure
+        return Speech(b"take", (Word(word="x", start=0.0, end=0.5),))
+
+
+def in_order(make_inputs: Callable[..., Inputs], toml: str, script: str) -> Inputs:
+    """The project on a machine that voices one turn at a time, so the pool works in script order."""
+    project = make_inputs(toml=toml, script=script)
+    return Inputs.load(project.root, environ=ENVIRON, machine={"narration": {"concurrency": 1}})
+
+
+def test_a_reply_that_breaks_after_sending_counts_its_turn_toward_the_ceiling_alone(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    broken = ProviderError("the reply broke after the request was sent.", possibly_charged=True)
+    voice = FailsOn("Then it stops.", broken)
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
+    project = in_order(make_inputs, BOTH_PAID, DIALOGUE)
+    watched = make_run(project, spend=True)
+    with pytest.raises(ProviderError) as refused:
+        narrate(project, watched.run, only=[2])
+    lines = [(line.section, line.turn, line.possibly_charged) for line in watched.of(TakeCharged)]
+    assert lines == [(2, 1, False), (2, 2, False), (2, 3, True)]
+    result = refused.value.result
+    assert isinstance(result, NarrateResult)
+    paid = [line.dollars for line in watched.of(TakeCharged) if not line.possibly_charged]
+    every = [line.dollars for line in watched.of(TakeCharged)]
+    assert result.cost.dollars == up_to_the_cent(paid)
+    assert result.cost.ceiling_dollars == up_to_the_cent(every)
+
+
+def test_a_stopped_dialogue_keeps_every_turn_it_paid_for(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory]
+) -> None:
+    voice = FailsOn("Then it stops.", ProviderError("the voice refused the request.", reached=True))
+    voices[FAKE_VOICE_NAME] = lambda _context: voice
+    project = in_order(make_inputs, BOTH_PAID, DIALOGUE)
+    with pytest.raises(ProviderError) as refused:
+        narrate(project, make_run(project, spend=True).run)
+    result = refused.value.result
+    assert isinstance(result, NarrateResult)
+    assert [(row.section, row.turn) for row in result.sections] == [(1, 1), (2, 1), (2, 2)]
+    index = Takes.read(project.workspace.takes_path)
+    assert index is not None
+    assert [(row.section, row.turn) for row in index.sections] == [(1, 1), (2, 1), (2, 2)]
+    assert all(project.take_places.find(row.digest).held for row in index.sections)
+
+
+def test_each_turn_opens_and_closes_its_own_section_line(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], fake_voice: FakeVoice
+) -> None:
+    project = make_inputs(toml=BOTH_PAID, script=DIALOGUE)
+    watched = make_run(project, spend=True)
+    narrate(project, watched.run)
+    keys = [(1, 1), (2, 1), (2, 2), (2, 3), (3, 1)]
+    assert sorted((line.section, line.turn) for line in watched.of(SectionStart)) == keys
+    assert sorted((line.section, line.turn) for line in watched.of(SectionDone)) == keys
+    assert len(fake_voice.requests) == len(keys)

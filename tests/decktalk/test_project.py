@@ -120,7 +120,13 @@ def _filler(name: str) -> dict[str, Any]:
         "cue": {"sections": (), "elapsed_seconds": 0.0},
         "record": {"sections": (), "elapsed_seconds": 0.0},
         "build": {"stages": (), "spend": False, "cost": priced, "elapsed_seconds": 0.0},
-        "status": {"name": "t", "script": Path("script.md"), "cues_file": Path("cues.json"), "sections": ()},
+        "status": {
+            "name": "t",
+            "script": Path("script.md"),
+            "cues_file": Path("cues.json"),
+            "sections": (),
+            "voices": (),
+        },
         "check": {"judged": (), "pages_opened": True, "frames_compared": True, "cost": priced},
     }[name]
 
@@ -394,7 +400,7 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
     load_project(tmp_path, PAYING_TOML, script="## 1. Open\n\nA bowl.\n")
     bought = Bought()
     machine = Machine(
-        environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+        environ={"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"},
         tables={},
         machine_file=tmp_path / "config.toml",
         cwd=tmp_path,
@@ -426,7 +432,7 @@ def test_force_through_the_facade_never_buys_again_and_each_replace_flag_does(
 def test_a_result_that_is_not_the_one_the_command_is_named_after_is_a_bug(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    answer = {"name": "t", "script": Path("s"), "cues_file": Path("c"), "sections": ()}
+    answer = {"name": "t", "script": Path("s"), "cues_file": Path("c"), "sections": (), "voices": ()}
     a_stage(monkeypatch, "cue", lambda _inputs, run, **_options: run.result(StatusResult, **answer))
     with pytest.raises(TypeError, match="cue answered with StatusResult"):
         a_project(tmp_path).cue()
@@ -806,7 +812,7 @@ def test_a_hosts_voice_table_never_changes_the_voice_a_project_is_read_in(tmp_pa
     voices, prices = [], []
     for factories in tables:
         machine = Machine(
-            environ={"DECKTALK_VOICE_ID": "voice-under-test"},
+            environ={"DECKTALK_VOICES_NARRATOR_ID": "voice-under-test"},
             tables={},
             machine_file=tmp_path / "config.toml",
             cwd=tmp_path,
@@ -814,7 +820,7 @@ def test_a_hosts_voice_table_never_changes_the_voice_a_project_is_read_in(tmp_pa
             speech_providers=SpeechProviders(factories=factories),
         )
         project = decktalk.open(tmp_path, machine=machine)
-        voices.append(project._inputs.voice)
+        voices.append(project._inputs.voices[project._inputs.default_voice])
         prices.append(project.price())
     assert voices[0] == voices[1] == voices[2]
     assert prices[0] == prices[1] == prices[2]

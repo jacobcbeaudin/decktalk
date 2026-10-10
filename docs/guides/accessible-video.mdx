@@ -63,11 +63,17 @@ A clip section captions its own speech when it names a words file with `words`, 
 it otherwise, because the captions are built from the narration's word times and a clip's speech is
 not in the narration. [Add a clip section](/guides/clip-section) has the file's shape.
 
+In a section spoken in more than one voice, `[output] caption_voices = true` names the voice of every
+caption: a WebVTT voice span such as `<v guest>` in the `.vtt`, and `guest: ` before the line in the
+`.srt`. It is off by default, so the captions carry the words alone, and the transcript names the
+voices of a dialogue either way. [Write a dialogue](/guides/dialogue) has the whole of it.
+
 ## The transcript, and the words a reveal is described in
 
 The transcript page carries, for every chapter in the order it plays: a heading, the span in the
 finished film, the spoken text of each section under it, the speech inside a clip that names a words
-file, and a list of that chapter's described reveals with the second each one fired.
+file, and a list of that chapter's described reveals with the second each one fired. A section spoken in
+more than one voice is one paragraph per turn, each opening with the name of its voice.
 
 What it cannot carry on its own is what a reveal meant. Three attributes are where you write that,
 and each one is read by the runtime and reported into the recording log, which is what the transcript
@@ -90,6 +96,11 @@ is built from.
 Describe the reveals that carry meaning. A decorative flourish needs no description, and an empty
 `data-describe` is how you say so on purpose rather than by leaving the attribute off. A description
 of every flourish only makes the transcript harder to read.
+
+A slide writes each sentence once, where it first applies. When a later cue of the same slide would
+write a sentence the slide has already written, such as `its tick lights` on every tick of a row, the
+transcript leaves it out there, so the reader meets it at the first tick and not at every one. The
+next slide starts with nothing said.
 
 The starter writes a description on every cued element, so a first project's transcript already reads end
 to end. [The page contract](/concepts/page-contract) is every attribute in context, and

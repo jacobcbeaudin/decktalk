@@ -30,6 +30,7 @@ from decktalk.results import (
     DoctorResult,
     InitResult,
     InstallResult,
+    ProviderKey,
     Result,
     ServeResult,
     StatusResult,
@@ -170,7 +171,9 @@ def finding(code: Code = Code.CUE_UNRESOLVED, *, fix: bool = False) -> Finding:
 
 
 ANSWERS: dict[str, Result] = {
-    "init": InitResult(ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills_written=True),
+    "init": InitResult(
+        ok=True, run="r", root=Path("demo"), name="demo", example="starter", skills_written=True, voices=("narrator",)
+    ),
     "install": InstallResult(ok=True, run="r", tools=(), cache=Path("cache")),
     "doctor": DoctorResult(
         ok=True,
@@ -179,10 +182,10 @@ ANSWERS: dict[str, Result] = {
         cache=Path("cache"),
         python="3.12",
         platform="test",
-        api_key_state=ApiKeyState.MISSING,
+        api_keys=(ProviderKey(provider="elevenlabs", variable="ELEVENLABS_API_KEY", state=ApiKeyState.MISSING),),
     ),
     "status": StatusResult(
-        ok=True, run="r", name="demo", script=Path("script.md"), cues_file=Path("cues.json"), sections=()
+        ok=True, run="r", name="demo", script=Path("script.md"), cues_file=Path("cues.json"), sections=(), voices=()
     ),
     "check": CheckResult(
         ok=True, run="r", judged=(Path("script.md"),), pages_opened=True, frames_compared=True, cost=a_cost()

@@ -5,6 +5,9 @@ short pause, `[pause 4]` is a four second pause, and anything else in brackets i
 yourself. Write numbers and symbols the way you want them said ("forty one", not "41"), because
 the cue phrases in `cues.json` match spoken words.
 
+A line holding only `[voice NAME]` hands what follows to that voice until the next such line or the
+next section. A section that names a voice names one before every turn.
+
 ---
 
 ## 1. Open

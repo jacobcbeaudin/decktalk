@@ -38,13 +38,27 @@ _CLAUSE_END_RE = re.compile(r"[,;:—–-]$")
 
 @dataclass(frozen=True)
 class CaptionCue:
+    """One caption: when it shows, its lines, and the voice that speaks them when the project names it.
+
+    `spoken` is the first line the voice speaks and the line after its last, which is every line
+    unless a sound's caption joined the cue before or after the speech, so a file that names the
+    voice names it where the speech starts and never on a sound.
+    """
+
     start: float
     end: float
     lines: tuple[str, ...]
+    voice: str | None = None
+    spoken: tuple[int, int] | None = None
 
     @property
     def text(self) -> str:
         return "\n".join(self.lines)
+
+    @property
+    def speech(self) -> tuple[int, int]:
+        """The first line the voice speaks and the line after its last."""
+        return self.spoken if self.spoken is not None else (0, len(self.lines))
 
 
 def _ends_sentence(token: str) -> bool:

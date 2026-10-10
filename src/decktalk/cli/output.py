@@ -53,6 +53,7 @@ from decktalk.results import (
     StoryboardResult,
     TakeState,
     VerifyResult,
+    Word,
     WordsResult,
     counted,
     money,
@@ -291,6 +292,9 @@ def _init(result: InitResult) -> Iterable[RenderableType]:
     yield Text(
         f"Wrote {result.root.as_posix()} from the {result.example} example, {counted(len(result.written), 'file')}."
     )
+    if result.voices:
+        default, *others = result.voices
+        yield Text(f"Voices {', '.join((f'{default} (default)', *others))}")
     yield Text(f"Next   cd {result.root.as_posix()} && decktalk build --no-spend", style=QUIET_STYLE)
 
 
@@ -310,18 +314,20 @@ def _doctor(result: DoctorResult) -> Iterable[RenderableType]:
     yield _tools(result.tools)
     yield Text(f"Python    {result.python}")
     yield Text(f"Platform  {result.platform}")
-    yield Text(f"API key   {result.api_key_state.value.replace('_', ' ')}")
+    for key in result.api_keys:
+        yield Text(f"API key   {key.provider} {key.variable} {key.state.value}")
     if result.bias_ms is not None:
         yield Text(f"Bias      {result.bias_ms:.0f} ms")
 
 
 def _status(result: StatusResult) -> Iterable[RenderableType]:
-    table = _table("Section", "Key", "Plays", "Take", "Recorded", "Assembled", "Stale")
+    table = _table("Section", "Key", "Plays", "Voices", "Take", "Recorded", "Assembled", "Stale")
     for section in result.sections:
         table.add_row(
             str(section.section),
             section.key,
             section.source,
+            ", ".join(section.voices),
             section.take_state.value if section.take_state else "",
             _yes(section.recorded),
             _yes(section.assembled),
@@ -347,10 +353,22 @@ def _check(result: CheckResult) -> Iterable[RenderableType]:
 
 def _words(result: WordsResult) -> Iterable[RenderableType]:
     for section in result.sections:
-        table = _table(f"Section {section.section}", "Start", "End")
-        for word in section.words:
-            table.add_row(word.word, f"{word.start:.2f}", f"{word.end:.2f}")
-        yield table
+        if not section.turns[1:]:
+            yield _word_table(f"Section {section.section}", section.words)
+            continue
+        at = 0
+        for turn in section.turns:
+            heading = f"Section {section.section}, turn {turn.turn}, {turn.voice}"
+            yield _word_table(heading, section.words[at : at + turn.word_count])
+            at += turn.word_count
+
+
+def _word_table(heading: str, words: Iterable[Word]) -> Table:
+    """One table of words under its heading, each with its start and its end."""
+    table = _table(heading, "Start", "End")
+    for word in words:
+        table.add_row(word.word, f"{word.start:.2f}", f"{word.end:.2f}")
+    return table
 
 
 def _storyboard(result: StoryboardResult) -> Iterable[RenderableType]:

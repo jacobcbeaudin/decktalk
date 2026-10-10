@@ -12,23 +12,29 @@ section's take, found by the digest its take index row names, and writes the sec
 fires at.
 
 The two files are read against each other as well, because a cue and the moment it fires are one
-thing written twice. The page's side is the catalog the runtime published, which the recordings
-keep whole, so a moment with no row and a row no page declares are both named from what the page
-itself said rather than from a scan of its markup. A section whose page has never been recorded is
-left unjudged rather than guessed at, and `check` makes the same comparison against a catalog it
-reads live.
+thing written twice. The page's side is the catalog the runtime published, so a moment with no row
+and a row no page declares are both named from what the page itself said rather than from a scan of
+its markup. That catalog has to be the page as it is now. A section's recording keeps the catalog
+its page published when it was recorded, and it is read from there while that recording still
+stands, by the one rule `record` and `status` decide a recording is stale with. Once anything it
+was made from has changed, the page, its cues or its words, the page is opened and read as it is
+now, the way `check` reads it, because `record` runs after this stage and an edit that renamed a
+cue in the page and in `cues.json` would otherwise be judged against the name the page had before.
+A section that has never been recorded is left unjudged rather than guessed at, and `check` makes
+the same comparison against a catalog it reads live.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from decktalk.artifacts import CueTimes
 from decktalk.events import Level
 from decktalk.findings import Finding
-from decktalk.inputs import CuedSection, Inputs
+from decktalk.inputs import CuedSection, Inputs, PageSection
 from decktalk.machine.run import Run
+from decktalk.media.browser import chromium
 from decktalk.media.pagereport import MeasuredScene
 from decktalk.pagescan import measured_rows, overlap_findings, scene_entry
 from decktalk.pipeline import Stage
@@ -36,6 +42,8 @@ from decktalk.results import CueResult, SectionCues, Word
 from decktalk.stages import selects
 from decktalk.stages.cue.catalog import cue_findings, declared_cues
 from decktalk.stages.cue.resolve import resolve_sections, short_section
+from decktalk.stages.record import stale_recording
+from decktalk.stages.storyboard import open_project_page, reports_of
 
 __all__ = ["cue"]
 
@@ -50,7 +58,7 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> CueRe
     wanted = selects(only)
     takes = inputs.takes(required=True)
     cued = [block for block in inputs.cues() if wanted(block.number)]
-    heard = {take.section: inputs.words(take.section) for take in takes.sections}
+    heard = {number: inputs.words(number) for number in takes.numbers}
     words = {number: said.words for number, said in heard.items()}
     estimated = {number for number, said in heard.items() if said.estimated}
 
@@ -68,9 +76,10 @@ def cue(inputs: Inputs, run: Run, *, only: Sequence[int] | None = None) -> CueRe
             _say_what_was_chosen(run, block, words.get(block.number, ()), notes.get(block.number, ()))
     for found in judged:
         run.found(found)
-    for found in _catalog_findings(inputs, only):
+    catalogs = _catalogs(inputs, run)
+    for found in _catalog_findings(inputs, catalogs, only):
         run.found(found)
-    for found in _overlap_findings(inputs, sections):
+    for found in _overlap_findings(inputs, catalogs, sections):
         run.found(found)
 
     written = _write(inputs, sections, replacing=bool(only))
@@ -96,11 +105,15 @@ def _say_what_was_chosen(run: Run, block: CuedSection, words: Sequence[Word], ch
         run.note(short, level=Level.WARNING)
 
 
-def _catalog_findings(inputs: Inputs, only: Sequence[int] | None) -> list[Finding]:
-    """Every moment with no row and every row no page declares, judged from what the pages published."""
+def _catalog_findings(
+    inputs: Inputs, catalogs: Mapping[int, tuple[MeasuredScene, ...]], only: Sequence[int] | None
+) -> list[Finding]:
+    """Every moment with no row and every row no page declares, judged from what the pages publish now."""
     wanted = selects(only)
-    sections = [section for section in inputs.document.page_sections if wanted(section.number)]
-    declared = declared_cues(_catalogs(inputs), sections)
+    declared: dict[int, tuple[str, ...]] = {}
+    for section in inputs.document.page_sections:
+        if wanted(section.number) and section.number in catalogs:
+            declared |= declared_cues({section.page: catalogs[section.number]}, [section])
     cued = [block for block in inputs.cues() if wanted(block.number)]
     return cue_findings(
         declared,
@@ -111,38 +124,55 @@ def _catalog_findings(inputs: Inputs, only: Sequence[int] | None) -> list[Findin
     )
 
 
-def _catalogs(inputs: Inputs) -> dict[str, tuple[MeasuredScene, ...]]:
-    """The catalog each page published, read from the recording the last run left beside it.
+def _catalogs(inputs: Inputs, run: Run) -> dict[int, tuple[MeasuredScene, ...]]:
+    """The catalog each recorded section's page publishes now, by section number.
 
-    A recording log keeps the page's whole report, so the catalog is the page's own document rather
-    than a reading of its markup. A page nothing has recorded is absent from this map, which is what
-    leaves its sections unjudged instead of judged against nothing.
+    A recording log keeps the page's whole report, so while a section's recording still stands its
+    catalog is the page's own document as it is now, and no browser is opened for it. A recording
+    that no longer stands kept a catalog the page may have moved on from, so that page is opened and
+    read once, the way `check` reads it. A section nothing has recorded is absent from this map,
+    which is what leaves it unjudged instead of judged against nothing.
     """
-    out: dict[str, tuple[MeasuredScene, ...]] = {}
+    out: dict[int, tuple[MeasuredScene, ...]] = {}
+    changed: list[PageSection] = []
     for section in inputs.document.page_sections:
-        if section.page in out:
-            continue
         log = inputs.recording_log(section.key)
-        if log is not None and log.recording.report.catalog:
-            out[section.page] = tuple(log.recording.report.catalog)
+        if log is None or not log.recording.report.catalog:
+            continue
+        if stale_recording(inputs, section) is None:
+            out[section.number] = tuple(log.recording.report.catalog)
+        else:
+            changed.append(section)
+    if not changed:
+        return out
+    pages = list(dict.fromkeys(section.page for section in changed))
+    run.note(f"Read {', '.join(pages)} as it is now, because it changed since it was recorded.")
+    with chromium(inputs.settings.tools.chromium, policy=inputs.settings.record.page_policy, spend=run.spend) as opened:
+        page, _assets = open_project_page(opened, inputs)
+        reports = reports_of(page, inputs, pages)
+    for section in changed:
+        report = reports.get(section.page)
+        if report is not None and report.catalog:
+            out[section.number] = tuple(report.catalog)
     return out
 
 
-def _overlap_findings(inputs: Inputs, sections: Sequence[SectionCues]) -> list[Finding]:
+def _overlap_findings(
+    inputs: Inputs, catalogs: Mapping[int, tuple[MeasuredScene, ...]], sections: Sequence[SectionCues]
+) -> list[Finding]:
     """Every pair of cues that fire closer together than the first one is still moving for.
 
-    The span comes from the measured rows the page published, so a pair is judged against the motion
+    The span comes from the measured rows the page publishes, so a pair is judged against the motion
     the deck actually declares. A section whose page nothing has recorded has no spans to judge
     against, and a ceiling guessed for it would report every quick reveal in the deck as an overlap,
     so it is left alone.
     """
-    catalogs = _catalogs(inputs)
     scale = inputs.settings.motion.scale
     by_number = {block.section: block for block in sections}
     found: list[Finding] = []
     for section in inputs.document.page_sections:
         block = by_number.get(section.number)
-        entry = scene_entry(catalogs.get(section.page), section.scene)
+        entry = scene_entry(catalogs.get(section.number), section.scene)
         if block is None or entry is None:
             continue
         times = {row.id: row.seconds for row in block.cues if row.seconds is not None}

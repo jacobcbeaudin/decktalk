@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from decktalk.settings import Loaded, Settings, key_named
+from decktalk.settings import MEMBER, PROJECT_FILE, VOICES_TABLE, Loaded, Settings, family, key_named
 from decktalk.settings.edit import nested
 from decktalk.settings.layers import effective, json_value, load, value_of
 from decktalk.settings.numbers import NUMBERS, NUMBERS_BY_ID
@@ -48,7 +48,9 @@ def explain(
     alone, which is what an agent reading the instruction set before it has a project needs.
     `machine` is the machine whose file and environment are the layers under and over the project,
     which is this process's own when none is given, as it is for `init`.
+    A template of the voices' family, such as `voices.<name>.id`, is explained as the default voice's.
     `value` is a candidate spelled the way a command line spells it, held to the same safe range as
+
     a value that is written, because an explanation of a value the loader would refuse is a lie
     with arithmetic in it.
     """
@@ -60,6 +62,10 @@ def explain(
         if opened
         else load(project, machine=on.tables, machine_path=on.machine_file, environ=on.environ)
     )
+    if MEMBER in known.id:
+        # A template names no voice, so it is explained as the default voice's own key.
+        known = key_named(known.id.replace(MEMBER, here.settings.narration.voice))
+    _refuse_undeclared(known, here)
     candidate = _candidate(known, here, value)
     cues = _cues(opened) if opened else ()
     layers = here.layers.of(known.id)
@@ -88,8 +94,22 @@ def explain(
         candidate=None if candidate is None else json_value(value_of(candidate, known.id)),
         clamped=_clamped(known, candidate or here.settings, cues),
         measured=bool(cues),
-        docs=f"{DOCS}/configuration#{known.table.replace('.', '-')}",
+        docs=f"{DOCS}/configuration#{VOICES_TABLE if family(known) else known.table.replace('.', '-')}",
     )
+
+
+def _refuse_undeclared(key: Key, here: Loaded) -> None:
+    """Refuse a voice's key whose voice these settings do not hold, which has no value to explain."""
+    if family(key) and key.id not in here.layers.rows:
+        name = key.id.split(".")[1]
+        listed = ", ".join(
+            dict.fromkeys(row.split(".")[1] for row in here.layers.rows if row.startswith(f"{VOICES_TABLE}."))
+        )
+        raise InputError(
+            f"{key.id} is a key of the voice {name!r}, and {PROJECT_FILE} declares no [voices.{name}] table. "
+            f"The voices are {listed}.",
+            hint="Explain a key of a voice the project declares, or run decktalk config list voices.",
+        )
 
 
 def _opened(project: Path, machine: Machine) -> Inputs | None:
@@ -123,7 +143,14 @@ def _layer(here: Loaded, scope: Scope) -> dict[str, Any]:
     if scope is not Scope.PROJECT:
         return {}
     rows = here.layers.rows.items()
-    return nested({key: said[-1].value for key, row in rows if (said := [r for r in row if r.layer is Layer.PROJECT])})
+    # A row a voice inherits names the provider key it was stated under, which is the file's own row of that key.
+    return nested(
+        {
+            key: said[-1].value
+            for key, row in rows
+            if (said := [r for r in row if r.layer is Layer.PROJECT and r.key is None])
+        }
+    )
 
 
 def _numbers(key: Key, here: Settings, candidate: Settings | None) -> tuple[NumberView, ...]:

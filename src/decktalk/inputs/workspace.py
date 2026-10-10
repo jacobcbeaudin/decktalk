@@ -29,7 +29,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from decktalk.artifacts import WORDS_SUFFIX, take_file
+from decktalk.artifacts import WORDS_SUFFIX
 from decktalk.inputs.paths import confined
 from decktalk.pipeline import Artifact
 
@@ -62,8 +62,6 @@ class Workspace:
     root: Path
     build: Path
     name: str
-    suffix: str
-    """What a voiced take is written under, which the voice's adapter declares for the format it asks for."""
     takes: Path
     """The project's takes directory, which `[narration] takes_dir` names inside the project."""
     score_dir: Path
@@ -105,10 +103,6 @@ class Workspace:
     def aligned_words(self, key: str) -> Path:
         """Where the aligned words kept under `key` are, which names the take they time and the aligner that did."""
         return self.aligned_dir / f"{key}{WORDS_SUFFIX}"
-
-    def take_file(self, digest: str) -> str:
-        """The name a take of this digest is written under, which is the suffix of the voice's own format."""
-        return take_file(digest, self.suffix)
 
     @property
     def takes_path(self) -> Path:

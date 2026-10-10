@@ -9,7 +9,7 @@ package, each declared once in `DECLARED`:
     elevenlabs   the cloud voice, over https, bought with ELEVENLABS_API_KEY
     dtsp         a voice served by a separate local server, by default on a loopback address, free and keyless
 
-    [voice]
+    [voices.narrator]
     provider = "dtsp"   # the name an adapter is declared under
 
 There are no entry points and no plugin loading. A project file names an adapter by its key and can
@@ -50,7 +50,7 @@ from typing import Any, Protocol, cast
 from ..errors import InputError
 from ..results import BillingBasis, Word
 from ..secret import Secret
-from ..settings import DtspConfig, ElevenLabsConfig, ProviderTable, Settings
+from ..settings import DtspConfig, ElevenLabsConfig, ProviderTable, Voice
 
 PUNCT = "\"'“”‘’.,;:!?()[]—–-…"
 """What is stripped from either end of a spoken word, so a voice's words and a placeholder's read alike."""
@@ -226,7 +226,8 @@ class Declared:
     renders_pauses: Callable[[str], bool]
     """Whether a model of it renders a timed pause. A beat is a dash every model reads as one."""
     identity: Callable[[ProviderTable, float], dict[str, Any]]
-    """Its own table and `[voice] speed` as the settings a take's digest is taken over, under its own names."""
+    """Its own table, with a voice's own values over it, and that voice's speed as the settings a take's digest
+    is taken over, under its own names."""
     billing: Billing
     """How it bills, per character, per second or free, and the key in its own table that states the rate."""
     output: Callable[[ProviderTable], Output]
@@ -307,28 +308,33 @@ DECLARED: Mapping[str, Declared] = MappingProxyType(
 
 A provider a host registered itself is not here. It owns no table, needs no key DeckTalk knows of,
 is handed the pieces and renders their pauses its own way, is asked for `HOST_OUTPUT`, and its takes are named
-by `[voice] speed` alone among the settings. Its bill is undeclared, so DeckTalk prices it at nothing
+by its voice's speed alone among the settings. Its bill is undeclared, so DeckTalk prices it at nothing
 anybody stated and `--max-cost` refuses to guard it.
 """
 
 
 @dataclass(frozen=True)
 class VoiceInForce:
-    """The voice one project is read in: what it is called, what it declares, and what names its takes.
+    """One voice as this machine reads it: its name, what its provider declares, and what names its takes.
 
-    It is resolved once from the settings, which already hold `[voice]`, the provider's own table and
-    `DECKTALK_VOICE_ID`, and from the closed set in `DECLARED`. It holds no factory and no secret, so it
-    can never build the provider or read its key. `SpeechProviders.provider` builds the provider. A
-    provider DeckTalk does not declare is one a host registered: it owns no table, its takes are named
-    by `[voice] speed` alone, and its bill is undeclared.
+    It is resolved once per voice from the voice the settings hold, which already carries its own
+    `[voices.NAME]` keys, its provider's table with the voice's own values over it and every override,
+    and from the closed set in `DECLARED`. It holds no factory and no secret, so it can never build
+    the provider or read its key. `SpeechProviders.provider` builds the provider. A provider DeckTalk
+    does not declare is one a host registered: it owns no table, its takes are named by the voice's
+    speed alone, and its bill is undeclared. The voice's name is a label and never part of what
+    names a take.
     """
 
+    name: str
+    """The voice's name in `decktalk.toml`, the NAME of `[voices.NAME]`, which a voice direction spells."""
     provider: str
-    """`[voice] provider`, the name the machine builds the voice by and the first input of every take digest."""
+    """`[voices.NAME] provider`, the name the machine builds the voice by and the first input of every take digest."""
     id: str
-    """`[voice] id`, which `DECKTALK_VOICE_ID` overrides, or empty when neither names one."""
+    """`[voices.NAME] id`, which `DECKTALK_VOICES_<NAME>_ID` overrides, or empty when neither names one."""
     model: str
-    """The `model` of the provider's own table, the model asked for and never the one served.
+    """The `model` this voice reads with, its own or its provider table's, the model asked for and never the one
+    served.
 
     It is empty for a provider with no table.
     """
@@ -355,15 +361,26 @@ class VoiceInForce:
     start_hint: str
     """The sentence that starts it when nothing answered, naming its server and the setting that says where."""
 
+    @property
+    def free(self) -> bool:
+        """Whether this voice bills nothing, so a run that may not spend still voices its turns."""
+        return self.billing is BillingBasis.FREE
+
+    @property
+    def named(self) -> bool:
+        """Whether a voice id names this voice, without which no take can be matched to its turns."""
+        return bool(self.id)
+
     @classmethod
-    def of(cls, settings: Settings) -> VoiceInForce:
-        """The voice these settings name, with a provider absent from `DECLARED` given a host's defaults."""
-        name, speed = settings.voice.provider, settings.voice.speed
-        declared = DECLARED.get(name)
-        if declared is None:
+    def of(cls, voice: Voice) -> VoiceInForce:
+        """One voice the settings hold, in force, with a provider absent from `DECLARED` given a host's defaults."""
+        provider, speed = voice.own.provider, voice.own.speed
+        declared = DECLARED.get(provider)
+        if declared is None or voice.table is None:
             return cls(
-                provider=name,
-                id=settings.voice.id,
+                name=voice.name,
+                provider=provider,
+                id=voice.own.id,
                 model="",
                 output=HOST_OUTPUT,
                 billing=BillingBasis.UNDECLARED,
@@ -372,13 +389,14 @@ class VoiceInForce:
                 renders_pauses=True,
                 base_url="",
                 key_variable=None,
-                start_hint=f"Start the voice [voice] provider = {name!r} answers from",
+                start_hint=f"Start the voice [voices.{voice.name}] provider = {provider!r} answers from",
             )
-        table = cast("ProviderTable", getattr(settings, declared.table))
+        table = voice.table
         rate = declared.billing.rate
         return cls(
-            provider=name,
-            id=settings.voice.id,
+            name=voice.name,
+            provider=provider,
+            id=voice.own.id,
             model=table.model,
             output=declared.output(table),
             billing=declared.billing.by,
@@ -461,7 +479,7 @@ def _dtsp_aligner(context: AlignerContext) -> Aligner:
 ALIGNERS: Mapping[str, Callable[[AlignerContext], Aligner]] = MappingProxyType({ALIGNER: _dtsp_aligner})
 """The aligners DeckTalk ships, which is the table a machine answers with unless its host gave another.
 
-There is one, the local server's, and it is never chosen by `[voice] provider`: a take of any voice that
+There is one, the local server's, and it is never chosen by a voice's provider: a take of any voice that
 sent no word times is timed by it. Like `PROVIDERS`, it cannot be changed in place.
 """
 
@@ -473,8 +491,8 @@ class SpeechProviders:
     factories: Mapping[str, SpeechFactory]
     retries: int = 0
 
-    def provider(self, name: str, context: SpeechContext) -> SpeechProvider:
-        """The provider these voices register under `name`, built for this context.
+    def provider(self, name: str, context: SpeechContext, *, voice: str) -> SpeechProvider:
+        """The provider these voices register under `name`, built for this context, for the voice called `voice`.
 
         The machine's own decision about how often a busy request is sent again replaces whatever the
         context says, so a stage cannot widen it.
@@ -482,7 +500,7 @@ class SpeechProviders:
         factory = self.factories.get(name)
         if factory is None:
             raise InputError(
-                f"[voice] provider = {name!r} is not a voice this machine answers for.",
+                f"[voices.{voice}] provider = {name!r} is not a voice this machine answers for.",
                 hint=f"The providers it knows are {', '.join(sorted(self.factories))}.",
             )
         return factory(replace(context, retries=self.retries))

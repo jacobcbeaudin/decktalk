@@ -278,6 +278,7 @@ def _status(*found: object) -> StatusResult:
         script="script.md",
         cues_file="cues.json",
         sections=(),
+        voices=(),
     )
 
 

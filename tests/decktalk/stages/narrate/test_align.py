@@ -21,6 +21,7 @@ from decktalk.artifacts import (
     Take,
     Takes,
     TimedBy,
+    TurnKey,
     take_file,
     words_file,
 )
@@ -54,7 +55,7 @@ from support.runs import Watched
 from support.takes import TAKE_SUFFIX
 from support.voice_server import VoiceServer
 
-from .conftest import ENVIRON, FREE_TOML, SCRIPT, TOML
+from .conftest import DIALOGUE, ENVIRON, FREE_TOML, SCRIPT, TOML, WITH_A_GUEST
 
 pytestmark = pytest.mark.usefixtures("fake_ffmpeg")
 """Every test here writes audio, and none of them may run ffmpeg to do it."""
@@ -559,3 +560,30 @@ def test_a_take_whose_words_file_carries_no_fingerprint_is_never_aligned(
     (found,) = [found for found in result.findings if found.code is Code.TAKE_UNALIGNED]
     assert found.location.section == 1
     assert "carries no fingerprint" in found.message and "--replace-voiced" in found.message
+
+
+# ---- one turn of a dialogue ----------------------------------------------------------------------
+
+
+def test_a_guest_turn_that_came_without_words_is_aligned_alone_and_placed_on_the_section_clock(
+    make_inputs: Callable[..., Inputs], make_run: Callable[..., Watched], voices: dict[str, SpeechFactory],
+    aligner: FakeAligner,
+) -> None:  # fmt: skip
+    """The narrator's turns came with their words, so only the guest's is aligned, and it plays after the narrator's."""
+    narrator = FakeVoice()
+    voices[FAKE_VOICE_NAME] = lambda _context: narrator
+    voices[FREE_VOICE_NAME] = lambda _context: FakeVoice(name=FREE_VOICE_NAME, words=None, model_digest=SERVED)
+    aligner.words = [Word(word="And", start=0.0, end=0.3), Word(word="it", start=0.3, end=0.5),
+                     Word(word="rolls", start=0.5, end=0.9)]  # fmt: skip
+    project = make_inputs(toml=WITH_A_GUEST, script=DIALOGUE)
+    result = narrate(project, make_run(project, spend=True).run)
+    assert result.ok and unaligned(result) == []
+    assert [request.words for request in aligner.requests] == [("And", "it", "rolls")]
+    index = Takes.read(project.workspace.takes_path)
+    assert index is not None
+    guest = index.placed_turns[TurnKey(2, 2)]
+    start = index.placed[2].start
+    heard = project.words(2).words
+    assert [word.word for word in heard][2:5] == ["And", "it", "rolls"]
+    assert heard[2].start == round(guest.start - start, 3)
+    assert [row.timed_by for row in index.turns_of(2)] == [TimedBy.PROVIDER, TimedBy.ALIGNED, TimedBy.PROVIDER]

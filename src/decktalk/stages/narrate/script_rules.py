@@ -6,6 +6,11 @@ paragraph is worse than read out, because the parser turns it into a silent paus
 `narrate` refuses each of those with the line it sits on, before it plans anything, because a run
 that has already paid cannot take the money back.
 
+A voice direction narrate cannot read is refused the same way and first: a line that opens with the
+word voice and is no direction, a direction naming a voice the project does not declare, and the
+first turn of a section that names a voice when no direction names that turn. Any of them would buy
+a take in a voice nobody chose.
+
 `narrate` judges nothing beyond that refusal. A digit or a symbol the voice may misread, and an unfilled
 blank a voiced run would read out, are findings rather than refusals, and they are raised by
 `check`, which is the command that reports what a build would cost and show. This module is
@@ -15,12 +20,24 @@ therefore the one home of both rules, and `stages/check/script.py` reads them fr
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass
+from enum import StrEnum
 from itertools import pairwise
 
 from decktalk.errors import InputError
-from decktalk.inputs.script import SECTION_RE, ScriptSection
+from decktalk.findings import Code
+from decktalk.inputs.script import (
+    SECTION_RE,
+    VOICE_HINT,
+    WHOLE_BRACKET_RE,
+    ScriptSection,
+    claimed,
+    directed,
+    parse_script,
+)
 from decktalk.results import counted
+from decktalk.tomlmap.suggest import did_you_mean
 
 INLINE_DIRECTION_RE = re.compile(r"^(?:beat|pause\s+\d+(?:\.\d+)?)$", re.IGNORECASE)
 """The two directions a paragraph may hold, which the parser turns into a pause the author asked for.
@@ -83,12 +100,98 @@ def script_refusals(markdown: str) -> list[tuple[int, str]]:
     return out
 
 
-def check_script(where: str, markdown: str) -> None:
-    """Refuse a script whose spoken text holds something the voice would read out or swallow.
+class Misread(StrEnum):
+    """How one line of a script fails the voice rule, which narrate and check each word their own way."""
+
+    NOT_A_DIRECTION = "not-a-direction"
+    UNKNOWN = "unknown"
+    UNMARKED = "unmarked"
+    BARE = "bare"
+
+
+MISREAD_CODES = {
+    Misread.NOT_A_DIRECTION: Code.SCRIPT_VOICE_UNKNOWN,
+    Misread.UNKNOWN: Code.SCRIPT_VOICE_UNKNOWN,
+    Misread.UNMARKED: Code.SCRIPT_VOICE_UNMARKED,
+    Misread.BARE: Code.SCRIPT_VOICE_BARE,
+}
+"""The code each way of failing the voice rule is judged under."""
+
+
+@dataclass(frozen=True)
+class VoiceLine:
+    """One line of a script the voice rule judges: where it sits, how it fails, and the bracket it holds."""
+
+    line: int
+    section: int
+    misread: Misread
+    inner: str
+    """The text inside the bracket, or the voice a direction names, or nothing for an unmarked turn."""
+
+    @property
+    def code(self) -> Code:
+        return MISREAD_CODES[self.misread]
+
+
+def voice_lines(markdown: str, sections: Sequence[ScriptSection], names: Sequence[str]) -> list[VoiceLine]:
+    """Every line of the spoken text that fails the voice rule, in line order, judged against the declared names.
+
+    A claimed line that is no direction, a direction naming no declared voice, and the first turn of
+    a section that holds a direction when no direction names that turn are what narrate refuses. A
+    note that is exactly a declared voice's name is a slip check warns about, because it plays as a
+    beat rather than handing the turns to that voice.
+    """
+    found: list[VoiceLine] = []
+    directing: set[int] = set()
+    for number, section, line in spoken_lines(markdown):
+        stripped = line.strip()
+        if claimed(line):
+            name = directed(line)
+            if name is None:
+                found.append(VoiceLine(number, section, Misread.NOT_A_DIRECTION, stripped[1:-1].strip()))
+                continue
+            directing.add(section)
+            if name not in names:
+                found.append(VoiceLine(number, section, Misread.UNKNOWN, name))
+        elif WHOLE_BRACKET_RE.fullmatch(stripped) and stripped[1:-1].strip() in names:
+            found.append(VoiceLine(number, section, Misread.BARE, stripped[1:-1].strip()))
+    for section in sections:
+        first = section.turns[0]
+        if section.number in directing and first.voice is None and first.pieces:
+            found.append(VoiceLine(first.line, section.number, Misread.UNMARKED, ""))
+    return sorted(found, key=lambda one: one.line)
+
+
+def voice_refusals(markdown: str, names: Sequence[str]) -> list[tuple[int, Code, str]]:
+    """(line, code, what) for every voice direction narrate cannot read, judged against the declared names."""
+    listed = ", ".join(names)
+    rows: list[tuple[int, Code, str]] = []
+    for one in voice_lines(markdown, parse_script(markdown), names):
+        if one.misread is Misread.NOT_A_DIRECTION:
+            rows.append((one.line, one.code, f"[{one.inner}] is not a voice direction, which is written [voice NAME]"))
+        elif one.misread is Misread.UNKNOWN:
+            near = did_you_mean(one.inner, names)
+            rows.append((one.line, one.code, f"[voice {one.inner}] names no voice, and the voices are {listed}.{near}"))
+        elif one.misread is Misread.UNMARKED:
+            what = f"section {one.section} names a voice, and the turn that starts here names none"
+            rows.append((one.line, one.code, what))
+    return rows
+
+
+def check_script(where: str, markdown: str, names: Sequence[str]) -> None:
+    """Refuse a script whose voice directions narrate cannot read, or whose spoken text holds something the voice
+    would read out or swallow.
 
     `where` is the script's path as the reader sees it, which the caller has already made relative
-    to the project root.
+    to the project root, and `names` is every voice the project declares, the default first.
     """
+    voices = voice_refusals(markdown, names)
+    if voices:
+        rows = "\n  ".join(f"line {number}: {what}" for number, _code, what in voices)
+        raise InputError(
+            f"{where} has {counted(len(voices), 'voice direction')} narrate cannot read:\n  {rows}",
+            hint=VOICE_HINT,
+        )
     refusals = script_refusals(markdown)
     if not refusals:
         return
@@ -125,10 +228,14 @@ def ascending(sections: Iterable[ScriptSection]) -> tuple[ScriptSection, ScriptS
 
 __all__ = [
     "SYMBOL_RE",
+    "Misread",
+    "VoiceLine",
     "ascending",
     "check_script",
     "script_refusals",
     "shown",
     "spoken_lines",
     "symbol_tokens",
+    "voice_lines",
+    "voice_refusals",
 ]
