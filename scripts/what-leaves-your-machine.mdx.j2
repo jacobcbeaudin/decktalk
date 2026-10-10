@@ -121,6 +121,7 @@ and none of them is a DeckTalk feature you have to wait for.
 [Requirements and costs](/requirements) has the full managed-machine section, with the package index
 mirror and the `[tools]` keys.
 
-`decktalk doctor` reports what is installed and which browser and media build a run would use,
-without fetching anything, and `decktalk doctor --json` prints the same reading as one object with
+`decktalk doctor` reports what is installed and which browser and media build a run would use. It
+fetches nothing unless it is on a terminal, where it offers once to fetch what is missing, or `--fix` is
+passed, and `decktalk doctor --json` prints the same reading as one object with
 no credential in it.

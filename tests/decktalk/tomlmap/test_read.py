@@ -76,6 +76,23 @@ class TestLoading:
         with pytest.raises(InputError, match="not an int"):
             from_mapping(Outer, base={"inner": {"count": "5"}}, environ={})
 
+    @pytest.mark.parametrize(
+        ("base", "environ"),
+        [({"inner": {"count": "5"}}, {}), ({}, {"DECKTALK_INNER_COUNT": "five"})],
+        ids=["mapping", "environment"],
+    )
+    def test_a_value_of_the_wrong_type_names_its_layer_as_a_range_refusal_does(
+        self, base: dict[str, object], environ: dict[str, str]
+    ) -> None:
+        def said(where: str, from_env: bool) -> str:
+            return f"the {'variable' if from_env else 'file'} for {where}"
+
+        with pytest.raises(InputError) as caught:
+            from_mapping(Outer, base=base, environ=environ, said=said)
+        layer = said("inner.count", bool(environ))
+        assert str(caught.value).endswith(f" in {layer}."), str(caught.value)
+        assert "expected int" in str(caught.value)
+
     def test_an_array_is_judged_element_by_element(self) -> None:
         with pytest.raises(InputError, match="must be above 0"):
             from_mapping(Outer, base={"delays": [0.7, -1.0]}, environ={})

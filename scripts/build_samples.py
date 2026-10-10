@@ -18,9 +18,12 @@ answers the DeckTalk speech protocol with a tone the length of the words it was 
 and spends nothing, and the take it makes is a voiced take like any other.
 
 The runs need ffmpeg and Chromium, so this runs in the e2e row beside the tools it needs rather than
-in generated. The encoder decides a take's bytes and the machine decides how long a stage takes, so
-a row names the keys and the patterns whose values a run decides, and `--check` holds those in its
-own block by their place rather than by their value, so the same run on another platform passes.
+in generated. The encoder decides a take's bytes, so a row names the keys and the patterns whose
+values a run decides, and `--check` holds those in its own block by their place rather than by their
+value. The machine decides how long a stage takes, so every block holds a stage's time that way
+without a row naming it. Every run prints at one width in UTF-8, and `--check` reads both sides
+without their line endings and trailing space, so the same run on Linux, macOS and Windows passes.
+A slower machine records a stalled section again and says so in one line, which no block shows.
 
 A row whose last command verifies the film names in `measured` the findings a slower machine can
 add to that verdict, because a page is recorded in real time and a starved recording lands a reveal
@@ -53,9 +56,11 @@ import generated
 from decktalk.findings import Code, Severity
 from decktalk.machine import MACHINE_FILE_VARIABLE, Machine, Toolchain
 from decktalk.media import ffmpeg
+from decktalk.pipeline import Stage
 from decktalk.settings import BY_ID
 from decktalk.speech import DECLARED
 from decktalk.speech.dtsp import SPEECH_PATH
+from decktalk.stages.record import STALLED
 from decktalk.toolchain.cache import standard_cache_dir
 
 ROOT = generated.ROOT
@@ -95,6 +100,12 @@ FINDINGS_EXIT = 1
 
 CODE_WORD = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b")
 """A word shaped like a finding code, which output names in a line, a JSON field or an event."""
+
+STAGE_TIME = re.compile(rf"^(\s*(?:{'|'.join(stage.value.title() for stage in Stage)}) .*?   )\d+(?::\d\d){{1,2}}\b")
+"""The time on a stage's line, which the machine decides and `--check` holds by its place in every block."""
+
+RETRY = re.compile("^" + re.escape(STALLED).replace("%d", r"\d+") + "$")
+"""The line a slower machine prints when it records a stalled section again, which no block shows."""
 
 
 @dataclass(frozen=True)
@@ -296,7 +307,10 @@ def environment(scratch: Path) -> dict[str, str]:
         "TTY_COMPATIBLE": "0",
         # Each write reaches the pipe as it is made, so both streams read in the order they were printed.
         "PYTHONUNBUFFERED": "1",
+        # A table is laid out at the width and in the characters the docs show, whatever console runs this:
+        # rich reads the width from COLUMNS, and draws its boxes in ASCII on a stream that is not UTF-8.
         "COLUMNS": str(LINE_WIDTH),
+        "PYTHONIOENCODING": "utf-8",
     }
 
 
@@ -468,6 +482,11 @@ def only_measured(printed: str, measured: tuple[str, ...]) -> bool:
     return bool(named) and named <= set(measured)
 
 
+def steady(text: str) -> str:
+    """`text` without the retry lines a stalled recording adds, which a slower machine prints and the docs did not."""
+    return "\n".join(line for line in text.splitlines() if not RETRY.match(line))
+
+
 def unmeasured(text: str, measured: tuple[str, ...]) -> str:
     """`text` without the lines of a measured finding, each with the fix line printed under it."""
     if not measured:
@@ -593,7 +612,7 @@ def block(row: Row, ran: Ran) -> str:
         value = cut(unmeasured_value(json.loads(text), row.measured), key=row.key, only=row.only, keep=row.keep)
         shown = fragment(row.key, value) if row.fragment and row.key else dumped(value)
     else:
-        shown = shown_text(unmeasured(text, row.measured), head=row.head, grep=row.grep)
+        shown = shown_text(unmeasured(steady(text), row.measured), head=row.head, grep=row.grep)
     return f"{FENCE}{fence}\n{shown}\n{FENCE}\n"
 
 
@@ -623,7 +642,8 @@ def spliced(text: str, blocks: dict[str, tuple[str, str]], *, where: Path) -> st
 
 
 def masked(text: str, keys: tuple[str, ...], patterns: tuple[str, ...] = ()) -> str:
-    """`text` with the value of every key in `keys`, and every match of `patterns`, written as `...`."""
+    """`text` with the value of every key in `keys`, each match of `patterns` and each stage's time written as `...`."""
+    text = STAGE_TIME.sub(r"\g<1>...", text)
     for key in keys:
         text = re.sub(rf'("{re.escape(key)}": ?)("[^"]*"|[-0-9.eE]+|null|true|false)', r"\1...", text)
     for pattern in patterns:
@@ -675,14 +695,36 @@ def files() -> dict[Path, str]:
     return pages
 
 
+def lines_of(text: str) -> list[str]:
+    """`text` as lines with no line ending, no trailing space and no blank line after the last, on every platform."""
+    lines = [line.rstrip() for line in text.splitlines()]
+    while lines and not lines[-1]:
+        lines.pop()
+    return lines
+
+
+def why_differs(committed: str, written: str, masks: dict[str, tuple[tuple[str, ...], tuple[str, ...]]]) -> str | None:
+    """The first line of `committed` that `written` changes once every value a run decides is masked, or None.
+
+    The reason quotes the line on both sides as it is, before the masks, so a failed check says what
+    the page holds and what this run wrote rather than only where they part.
+    """
+    pages = lines_of(committed), lines_of(written)
+    held, wrote = (lines_of(masked_page("\n".join(page), masks)) for page in pages)
+    if held == wrote:
+        return None
+    parted = (at for at, (old, new) in enumerate(zip(held, wrote, strict=False)) if old != new)
+    line = next(parted, min(len(held), len(wrote)))
+    page, run = (repr(lines[line]) if line < len(lines) else "the end of the page" for lines in pages)
+    return f"line {line + 1} is {page} where this run writes {run}"
+
+
 def why_stale(path: Path, text: str) -> str | None:
     """`generated.differs`, with every value a run decides held in its own block by its place alone."""
     masks = {row.id: (row.varies, row.masks) for row in rows() if row.page == path}
     if not path.exists():
         return generated.differs(path, text)
-    committed, written = (masked_page(page, masks) for page in (path.read_text(encoding="utf-8"), text))
-    # The line named is the first that differs once every value a run decides is masked on both sides.
-    return generated.moved(committed, written)
+    return why_differs(path.read_text(encoding="utf-8"), text, masks)
 
 
 if __name__ == "__main__":

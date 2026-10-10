@@ -25,9 +25,10 @@ there and fetches nothing, so it is safe to leave in a job forever.
 - On Linux, `install` is also what installs Chromium's system libraries, which needs root. A build
   never installs them. On a terminal it asks before it does, and without a terminal it goes ahead,
   because a job that ran `install` asked for exactly this.
-- `decktalk doctor` reports what this machine holds and what a run would use, and fetches nothing,
-  unless `--fix` is passed. Its `cache` field is the directory to cache, read from the machine rather
-  than guessed.
+- `decktalk doctor` reports what this machine holds and what a run would use. Without a terminal, or
+  under `--json` or `--no-input`, it fetches nothing unless `--fix` is passed, and on a terminal
+  otherwise it offers once to fetch what is missing. Its `cache` field is the directory to cache, read
+  from the machine rather than guessed.
 
 After `install`, DeckTalk itself reaches the network only to buy speech or sound, and a build with
 `--no-spend` never does. A free provider such as `dtsp` is still called under `--no-spend` once a voice is named, on the

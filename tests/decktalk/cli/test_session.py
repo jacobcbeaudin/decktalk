@@ -248,7 +248,7 @@ def test_no_spend_never_buys_from_a_voice_that_bills_nothing() -> None:
 
 @pytest.mark.parametrize("layer", [Layer.DEFAULT, Layer.PROJECT])
 def test_a_price_of_zero_on_a_voice_that_bills_is_still_asked_about(layer: Layer) -> None:
-    """Free is what the voice declares, so a zero rate, stated or the default, never skips the question."""
+    """Free is what the provider declares, so a zero rate, stated or the default, never skips the question."""
     made = session()
     made.terminal = terminal(is_terminal=False)
     zero = a_cost(0.0, 0.0, layer=layer).model_copy(update={"dollars_per_1000_characters": 0.0})

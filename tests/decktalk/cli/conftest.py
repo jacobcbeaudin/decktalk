@@ -108,7 +108,7 @@ class Fake:
             if line is not None:
                 self.events.emit("r", line[0], **line[1])
             answer = self.answers.get(name)
-            if isinstance(answer, Exception):
+            if isinstance(answer, BaseException):
                 raise answer
             if isinstance(answer, Result) and answer.error is None:
                 threshold = cast("Threshold", keywords.get("threshold", self.threshold))

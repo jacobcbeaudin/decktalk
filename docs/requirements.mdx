@@ -44,7 +44,8 @@ and ffmpeg with ffprobe to cut, mix and encode them.
 The first command that opens a page fetches Chromium, and the first command that encodes fetches
 ffmpeg. Each download is announced before it starts and reports its bytes as they arrive, and under
 `--events` it is one `tool.fetch` line per step on stderr. `decktalk doctor` reports on both and fetches
-neither, and `decktalk doctor --fix` runs `decktalk install` to fetch what is absent.
+neither unless it is on a terminal, where it offers once to fetch what is absent, or `--fix` is passed, which
+runs `decktalk install` to fetch it under any flag.
 
 | Download | Where it comes from | How it is checked |
 |---|---|---|
@@ -288,7 +289,7 @@ either flag once a voice is named, because it costs nothing. With neither flag, 
 prices the run and asks on a terminal, once, about its takes and its sounds added together. Without a
 terminal it refuses and names the two flags that answer, so a script or a CI job cannot spend by
 accident. A build whose takes are all on disk buys nothing, so it asks nothing and reads no key, and
-a voice that declares itself free, such as `dtsp`, is never asked about, because it costs nothing.
+a provider that declares itself free, such as `dtsp`, is never asked about, because it costs nothing.
 
 Everything else spends nothing: `init`, `install`, `doctor`, `status`, `check`, `words`,
 `storyboard`, `serve`, `config`, `schema`, `cue`, `record`, `assemble`, `verify`, `clip`, and any
@@ -366,7 +367,7 @@ decktalk check --json
 - `state` is `estimate` for what a run would cost and `charged` for what one did cost.
 - `sections` are the sections the price covers, in script order.
 - `characters` is what would be sent, and `seconds` is how long the takes are expected to run.
-- `billing` is how the voice declares it bills: `per_character`, `per_second`, `free`, or
+- `billing` is how the provider declares it bills: `per_character`, `per_second`, `free`, or
   `undeclared` for a voice or a sound provider a host registered itself. A build's total is `mixed`
   when it adds characters of speech to seconds of sound, and then carries both rates.
 - `dollars` is the characters or the seconds the bill counts, at the stated rate, rounded up to the cent.

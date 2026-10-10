@@ -468,6 +468,22 @@ def test_a_spotlight_brings_each_child_forward_and_steps_the_ones_before_it_back
     assert page.evaluate("() => window.__decktalk.catalog[0].cues['7.1']") == ["7.1:first", "7.1:second"]
 
 
+SWAP_FRAMES = """() => new Promise((done) => {
+  const outgoing = document.querySelector('.wrong');
+  const incoming = document.querySelector('.right');
+  const frames = [];
+  const read = () => {
+    const fired = window.__decktalk.fired.length;
+    const opacity = Number(getComputedStyle(outgoing).opacity);
+    frames.push({ fired, arriving: incoming.getAnimations().length > 0, outgoing: opacity });
+    if (fired === 2 && opacity < 0.5) done(frames);
+    else requestAnimationFrame(read);
+  };
+  requestAnimationFrame(read);
+})"""
+"""Every frame of the swap test: how many cues have fired, whether the entrance plays, and the outgoing opacity."""
+
+
 def test_a_swap_holds_what_it_replaces_until_it_has_arrived(page, tmp_path):
     """A swap with nothing under it is a cut, so the outgoing element waits for the incoming one."""
     scene = """
@@ -478,10 +494,15 @@ def test_a_swap_holds_what_it_replaces_until_it_has_arrived(page, tmp_path):
       </template>
     </div>
     """
-    page.goto(f"{write_page(tmp_path, 'swap.html', scene)}?scene=8&t0=0&cues=8.1:show@0.05,8.1:fix@0.4")
-    page.wait_for_function("() => window.__decktalk.fired.length === 2")
-    assert page.evaluate("() => getComputedStyle(document.querySelector('.wrong')).opacity") == "1"
-    page.wait_for_function("() => Number(getComputedStyle(document.querySelector('.wrong')).opacity) < 0.5")
+    page.goto(f"{write_page(tmp_path, 'swap.html', scene)}?scene=8&t0=0&cues=8.1:show@0.05,8.1:fix@1")
+    page.wait_for_function("() => window.__decktalk.fired.length === 1")
+    # Every frame from before the swap's cue until the outgoing element is half gone, read in the page,
+    # so the test judges the frames the page drew rather than the moment a round trip came back.
+    frames = page.evaluate(SWAP_FRAMES)
+    arriving = [frame for frame in frames if frame["fired"] == 2 and frame["arriving"]]
+    assert arriving, "no frame was read while the incoming element was arriving"
+    assert {frame["outgoing"] for frame in arriving} == {1}
+    assert frames[-1]["outgoing"] < 0.5
     assert warnings_of(page) == []
 
 

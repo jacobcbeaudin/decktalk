@@ -321,7 +321,7 @@ except decktalk.ApprovalRequired as refused:
 | `seconds` | How many seconds of audio this price is for, which a per-second bill is priced on. |
 | `dollars` | The price at the stated rate, rounded up to the cent. |
 | `ceiling_dollars` | The most this run can cost, rounded up to the cent for each stage, which is what `max_cost` is compared against. |
-| `billing` | How the voice declares it bills: `BillingBasis.PER_CHARACTER`, `PER_SECOND`, `FREE` or `UNDECLARED`. A build's total that adds characters to seconds is `MIXED` and carries both rates. |
+| `billing` | How the provider declares it bills: `BillingBasis.PER_CHARACTER`, `PER_SECOND`, `FREE` or `UNDECLARED`. A build's total that adds characters to seconds is `MIXED` and carries both rates. |
 | `dollars_per_1000_characters` | The rate a per-character bill was worked out at, in US dollars per 1,000 characters. |
 | `dollars_per_minute` | The rate a per-second bill was worked out at, in US dollars per minute of audio, which is the unit a sound's `dollars_per_minute` setting is typed in. |
 | `price_key` | The dotted key that states the rate, or `None` when the voice has no rate to state. |
@@ -330,7 +330,7 @@ except decktalk.ApprovalRequired as refused:
 | `stages` | One `StageCost` per stage that buys, in pipeline order, each with the same fields, its own `state` and the `stage` it prices. A charged cost counts only its charged rows. |
 
 Set the rate under the key `price_key` names, `[elevenlabs] dollars_per_1000_characters` for
-ElevenLabs, so that a ceiling guards a real number. A voice that declares itself free is never asked
+ElevenLabs, so that a ceiling guards a real number. A provider that declares itself free is never asked
 about and passes any ceiling.
 
 ## `Cancel`
@@ -829,7 +829,7 @@ A `cost.priced` line prices a whole run, before or after it. A `take.charged` li
 the provider is paid for one take, once per take, after the provider answered and before anything
 that could fail writes the take. So a host that keeps its own ledger records every take it paid for,
 including one whose file never reached the disk, and a run that fails on its fourth take still leaves
-three lines. A voice that declares it bills nothing, such as `dtsp`, is paid nothing, so its takes
+three lines. A provider that declares it bills nothing, such as `dtsp`, is paid nothing, so its takes
 write no `take.charged` line.
 
 | Field | Meaning |
@@ -904,7 +904,7 @@ machine = decktalk.Machine.of(environ={}, machine_file=Path("machine.toml"), cwd
 ```
 
 A project opened on that machine with `provider = "silent"` voices through it, and can name no voice
-the table leaves out. A host's voice declares no bill, so a run that buys from it is priced at
+the table leaves out. A host's provider declares no bill, so a run that buys from it is priced at
 nothing anybody stated, and `max_cost` refuses to guard it.
 
 ## Settings

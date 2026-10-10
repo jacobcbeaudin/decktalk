@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import json
 import shutil
-from collections.abc import Callable, Iterator, Mapping
+import sys
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -817,6 +818,52 @@ def test_a_ctrl_c_anywhere_in_a_build_is_cancelled(
     assert result.cost.dollars == pytest.approx(1.0)
     assert [row.outcome for row in result.stages][:3] == [Outcome.RAN, Outcome.RAN, Outcome.STOPPED]
     assert calls.names == ["narrate", "cue"]
+
+
+def test_a_ctrl_c_while_the_build_is_priced_is_cancelled(
+    inputs: Inputs, make_run: Callable[..., Watched], calls: Calls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ceiling's pricing runs before any stage, and an interrupt there is the same `Cancelled`, carrying nothing."""
+
+    def interrupted(*_args: object, **_options: object) -> Cost:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(sys.modules[build.__module__], "price", interrupted)
+    with pytest.raises(Cancelled) as raised:
+        build(inputs, make_run(inputs, spend=True, max_cost=5.0).run)
+    assert isinstance(raised.value.__cause__, KeyboardInterrupt)
+    assert raised.value.result is None
+    assert calls.names == []
+
+
+def test_a_ctrl_c_after_the_last_stage_is_cancelled_with_what_the_build_bought(
+    inputs: Inputs,
+    make_run: Callable[..., Watched],
+    answers: Answers,
+    calls: Calls,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every stage ran and the result is being made when the interrupt lands, so the charges still reach the caller."""
+    answers.narrate_cost = price(1.0, state=CostState.CHARGED)
+    module = sys.modules[build.__module__]
+    adding = module.total
+    landed: list[bool] = []
+
+    def interrupted_once(costs: Sequence[Cost]) -> Cost:
+        if not landed:
+            landed.append(True)
+            raise KeyboardInterrupt
+        return adding(costs)
+
+    monkeypatch.setattr(module, "total", interrupted_once)
+    with pytest.raises(Cancelled) as raised:
+        build(inputs, make_run(inputs, spend=True).run)
+    assert isinstance(raised.value.__cause__, KeyboardInterrupt)
+    result = raised.value.result
+    assert isinstance(result, BuildResult)
+    assert result.cost.dollars == pytest.approx(1.0)
+    assert [row.outcome for row in result.stages] == [Outcome.RAN] * len(Stage)
+    assert calls.names == [stage.value for stage in Stage]
 
 
 def test_a_refusal_after_a_narrate_that_paid_nothing_carries_no_build(

@@ -252,7 +252,7 @@ def test_nothing_is_bought_unless_the_run_may_spend(tmp_path: Path) -> None:
 def test_a_free_voice_is_never_asked_for_approval_even_by_a_run_that_may_not_spend(
     tmp_path: Path, max_cost: float | None
 ) -> None:
-    """Spend gates money, so a voice that declares it bills nothing passes the gate whatever the run may spend."""
+    """Spend gates money, so a provider that declares it bills nothing passes the gate whatever the run may spend."""
     here = a_machine(tmp_path)
     free = a_cost(0.0, 0.0, billing=BillingBasis.FREE)
     assert free.free
@@ -274,17 +274,19 @@ def test_a_cap_lets_a_free_voice_through_with_no_rate_stated(tmp_path: Path) -> 
         assert run.approve(free) == free
 
 
-def test_a_cap_is_refused_for_a_voice_that_declares_no_bill_with_what_to_declare(tmp_path: Path) -> None:
+def test_a_cap_is_refused_for_a_provider_that_declares_no_bill_with_what_to_declare(tmp_path: Path) -> None:
+    """The refusal names the speech provider, which bills, and never the voice, which is its speaker."""
     here = a_machine(tmp_path)
     undeclared = a_cost(0.0, 0.0, billing=BillingBasis.UNDECLARED, layer=Layer.DEFAULT)
     with here._run(spend=True, max_cost=1.0) as run, pytest.raises(ApprovalRequired) as refused:
         run.approve(undeclared)
-    assert "declares no bill" in str(refused.value)
+    assert "the speech provider declares no bill" in str(refused.value)
+    assert "the voice" not in str(refused.value)
     assert "per character, per second or free" in (refused.value.hint or "")
 
 
 def test_a_cap_over_an_undeclared_sound_beside_a_paid_voice_names_the_scores_provider(tmp_path: Path) -> None:
-    """The refusal names the stage whose provider declares no bill, never the voice that declares one."""
+    """The refusal names the stage whose provider declares no bill, never the speech provider that declares one."""
     here = a_machine(tmp_path)
     undeclared = a_cost(0.0, 0.0, billing=BillingBasis.UNDECLARED, stage=Stage.SCORE)
     whole = total([a_cost(0.12, 0.12), undeclared])

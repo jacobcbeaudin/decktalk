@@ -416,7 +416,8 @@ run = [["build", "--no-spend", "--events", "--json"]]
 stream = "stderr"
 fence = "jsonl"
 head = 6
-varies = ["time", "run", "events_file", "pid", "elapsed_seconds"]
+# Two narrate workers start at once, so the run decides which section's start comes first.
+varies = ["time", "run", "events_file", "pid", "elapsed_seconds", "section"]
 
 [status-built]
 page = "docs/quickstart.mdx"

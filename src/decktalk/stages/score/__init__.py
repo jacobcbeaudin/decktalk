@@ -604,12 +604,14 @@ def score(
     covered = _covered(inputs, only)
     estimate = cost_of(inputs, _buys([item for item in planned if item.name in fresh], held, covered=covered))
     buying = bool(fresh) and run.spend
-    if buying:
-        run.approve(estimate)
-    client = client_for(run, inputs) if buying else None
     rows: list[SoundItem] = []
     charged: list[Buy] = []
     try:
+        # One handler from the approval to the result, so an interrupt anywhere in the stage is
+        # `Cancelled` and carries every charge the run made.
+        if buying:
+            run.approve(estimate)
+        client = client_for(run, inputs) if buying else None
         for done, item in enumerate(planned):
             run.check()
             run.progress(Stage.SCORE, done=done, total=len(planned), unit=Unit.SCORE_ITEM, label=item.name)
@@ -623,29 +625,29 @@ def score(
                 run, inputs, client, item, ledger, path, held=held[item.name], covered=covered, paid=charged
             )
             rows.append(row)
+        run.progress(Stage.SCORE, done=len(planned), total=len(planned), unit=Unit.SCORE_ITEM, label="score")
+        if not planned:
+            run.note("The project declares no score for this run, so there is nothing to generate.", level=Level.INFO)
+        for item, row in zip(planned, rows, strict=True):
+            # A run that bought said why an item it could not finish is missing, so only an unbought item is said here.
+            if row.outcome is SoundOutcome.PLANNED and not item.out.is_file() and not buying:
+                run.found(
+                    judge(
+                        Code.SOUND_MISSING,
+                        f"{_named(item)} is not bought yet, so the film plays silence where it would be. Buying it "
+                        f"with `decktalk score --spend` asks for {_to_buy(ledger, item, replace=replace):g} seconds of "
+                        "audio.",
+                        _missing(inputs, item),
+                        stage=Stage.SCORE,
+                    )
+                )
+        cost = cost_of(inputs, charged, state=CostState.CHARGED) if buying else estimate
+        return run.result(ScoreResult, spend=run.spend, items=tuple(rows), cost=cost)
     except HALTS as failure:
         refusal = _carrying(as_refusal(failure), run, inputs, rows, charged)
         if refusal is failure:
             raise
         raise refusal from failure
-    run.progress(Stage.SCORE, done=len(planned), total=len(planned), unit=Unit.SCORE_ITEM, label="score")
-    if not planned:
-        run.note("The project declares no score for this run, so there is nothing to generate.", level=Level.INFO)
-    for item, row in zip(planned, rows, strict=True):
-        # A run that bought said why an item it could not finish is missing, so only an unbought item is said here.
-        if row.outcome is SoundOutcome.PLANNED and not item.out.is_file() and not buying:
-            run.found(
-                judge(
-                    Code.SOUND_MISSING,
-                    f"{_named(item)} is not bought yet, so the film plays silence where it would be. Buying it "
-                    f"with `decktalk score --spend` asks for {_to_buy(ledger, item, replace=replace):g} seconds of "
-                    "audio.",
-                    _missing(inputs, item),
-                    stage=Stage.SCORE,
-                )
-            )
-    cost = cost_of(inputs, charged, state=CostState.CHARGED) if buying else estimate
-    return run.result(ScoreResult, spend=run.spend, items=tuple(rows), cost=cost)
 
 
 __all__ = [

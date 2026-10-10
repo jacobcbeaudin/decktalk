@@ -8,7 +8,7 @@ import pytest
 
 from decktalk.cli import watch
 from decktalk.cli.session import Globals, Session
-from decktalk.errors import Cancelled, InputError
+from decktalk.errors import Cancelled, ErrorCode, InputError
 from decktalk.results import UNPRICED, BuildResult, SectionKind, SectionStatus, ServeResult, StatusResult, TakeState
 from decktalk.stages.narrate.state import CHANGED, HELD
 from support.costs import a_cost
@@ -56,6 +56,19 @@ def test_a_rebuild_stopped_by_an_interrupt_ends_the_loop_as_the_interrupt_does(m
     origin = Origin()
     project = Fake(serve=origin, build=BUILT, status=_status(), authored_files=())
     assert watch.loop(session(), project.project()) is BUILT
+    assert origin.closed
+
+
+@pytest.mark.parametrize("stop", [Cancelled("The run was interrupted."), KeyboardInterrupt()])
+def test_a_first_build_stopped_by_an_interrupt_ends_the_loop_as_a_rebuild_does(stop, capsys) -> None:
+    """The first build sits under the same handling as every rebuild: it says "Stopped." and closes the origin."""
+    origin = Origin()
+    project = Fake(serve=origin, build=stop, status=_status(), authored_files=())
+    built = watch.loop(Session(Globals(), command="build"), project.project())
+    assert built.ok is False
+    assert built.error is not None
+    assert built.error.code is ErrorCode.CANCELLED
+    assert "Stopped." in capsys.readouterr().err
     assert origin.closed
 
 

@@ -192,7 +192,8 @@ fetches both the first time a command needs them and keeps them in a per-user ca
 **What to do.**
 
 1. Run `decktalk doctor`. It prints a row per component with its version and where it came from. On
-   a terminal it then offers once to fetch what is missing, and with `--no-input` it fetches nothing.
+   a terminal it then offers once to fetch what is missing, and with `--no-input` and no `--fix` it
+   fetches nothing.
 2. Run `decktalk install`, or `decktalk doctor --fix`, which applies the safe `command` fix that
    each `FILE_MISSING` carries. Both fetch the toolchain up front rather than in the middle of a
    build.

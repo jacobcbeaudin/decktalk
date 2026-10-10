@@ -304,9 +304,9 @@ class _Priced(Model):
 
     @property
     def free(self) -> bool:
-        """True when the voice declares that it bills nothing, so the command line buys without asking.
+        """True when the provider declares that it bills nothing, so the command line buys without asking.
 
-        Free is what the adapter declares and never a rate of zero, because a zero rate on a voice
+        Free is what the adapter declares and never a rate of zero, because a zero rate on a provider
         that bills is somebody's statement about their plan, and a cap or a question still guards it.
         """
         return self.billing is BillingBasis.FREE

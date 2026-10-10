@@ -202,3 +202,84 @@ def test_a_row_masks_only_its_own_block() -> None:
     assert build_samples.masked_page(other, masks) == held
     assert build_samples.masked_page(page.replace("Record 0:22 in", "Record 0:23 in"), masks) != held
     assert build_samples.masked_page(page.replace('"seq": 0', '"seq": 1'), masks) != held
+
+
+BUILT = """\
+run fc3e5b583fcd, events build/events/fc3e5b583fcd.jsonl
+     Narrate    0:00
+         Cue    0:00
+      Record    0:22
+       Built build/final/my-lesson.mp4, $0.00, 3 findings"""
+
+
+def test_a_stage_duration_is_held_by_its_place_in_every_block() -> None:
+    """How long a stage takes is the machine's, so a row holds the stage and not its seconds without asking."""
+    page = f"{{/* sample: one, a build */}}\n```text\n{BUILT}\n```\n"
+    slower = page.replace("Narrate    0:00", "Narrate    0:01").replace("Record    0:22", "Record    1:05")
+    masks: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {"one": ((), ())}
+    assert build_samples.masked_page(slower, masks) == build_samples.masked_page(page, masks)
+    renamed = page.replace("Record    0:22", "Recorded    0:22")
+    assert build_samples.masked_page(renamed, masks) != build_samples.masked_page(page, masks)
+
+
+def test_a_retry_a_stalled_recording_adds_is_left_out_of_the_block() -> None:
+    """A slower machine records a stalled section again and says so, which the docs machine never had to."""
+    stalled = BUILT.replace(
+        "      Record",
+        "Section 3 stalled for 412 ms, which is over the 150 ms limit, so it is recorded again (1 of 2).\n      Record",
+    )
+    assert build_samples.steady(stalled) == BUILT
+    assert build_samples.steady(BUILT) == BUILT
+
+
+STATUS_FRESH = next(row for row in build_samples.rows() if row.id == "status-fresh")
+
+
+def committed_block(row: build_samples.Row) -> str:
+    """The block a page holds under a row's comment, fences included."""
+    lines = row.page.read_text(encoding="utf-8").splitlines(keepends=True)
+    at = next(i for i, line in enumerate(lines) if build_samples.COMMENT.match(line.strip()) and f" {row.id}," in line)
+    end = next(i for i in range(at + 2, len(lines)) if lines[i].strip() == build_samples.FENCE)
+    return "".join(lines[at + 1 : end + 1])
+
+
+@pytest.mark.parametrize(
+    "parent",
+    [{"COLUMNS": "40"}, {"COLUMNS": "200"}, {"PYTHONIOENCODING": "cp1252"}],
+    ids=["a narrower terminal", "a wider terminal", "a console that is not UTF-8"],
+)
+def test_a_table_is_laid_out_the_same_whatever_terminal_runs_the_generator(
+    parent: dict[str, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run is given its width and its encoding, so a table's columns are the docs machine's on every platform."""
+    for name, value in parent.items():
+        monkeypatch.setenv(name, value)
+    runs = build_samples.Runs(tmp_path)
+    assert build_samples.block(STATUS_FRESH, runs.reach(STATUS_FRESH)) == committed_block(STATUS_FRESH)
+
+
+def test_a_page_checked_out_with_crlf_and_trailing_space_is_not_stale() -> None:
+    committed = "Prose.  \r\n{/* sample: one, a run */}\r\n```text\r\n Section   Key\r\n```\r\n\r\n"
+    written = "Prose.\n{/* sample: one, a run */}\n```text\n Section   Key\n```\n"
+    assert build_samples.why_differs(committed, written, {}) is None
+
+
+def test_which_worker_starts_first_is_held_by_its_place_in_the_events_sample() -> None:
+    """Two narrate workers start at once, so the run decides which section's start is written first."""
+    row = next(row for row in build_samples.rows() if row.id == "build-events")
+    page = row.page.read_text(encoding="utf-8")
+    raced = page.replace('"section":1}', '"section":@}').replace('"section":2}', '"section":1}')
+    raced = raced.replace('"section":@}', '"section":2}')
+    assert raced != page
+    masks = {one.id: (one.varies, one.masks) for one in build_samples.rows() if one.page == row.page}
+    assert build_samples.why_differs(page, raced, masks) is None
+
+
+def test_a_stale_line_is_named_with_what_the_page_says_and_what_a_run_wrote() -> None:
+    committed = "{/* sample: one, a run */}\n```text\n Section   Key\n```\n"
+    written = "{/* sample: one, a run */}\n```text\n+--------+\n```\n"
+    reason = build_samples.why_differs(committed, written, {})
+    assert reason is not None
+    assert "line 3" in reason and "' Section   Key'" in reason and "'+--------+'" in reason
+    shorter = build_samples.why_differs(committed, committed + "more\n", {})
+    assert shorter is not None and "line 5" in shorter and "'more'" in shorter

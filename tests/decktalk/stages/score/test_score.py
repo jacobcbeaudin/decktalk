@@ -889,6 +889,29 @@ def test_a_score_interrupted_after_it_bought_is_cancelled_with_what_it_bought(
 
 
 @pytest.mark.usefixtures("fake_ffmpeg", "joined", "service")
+def test_a_score_interrupted_after_its_loop_is_cancelled_with_what_it_bought(tmp_path: Path) -> None:
+    """A Ctrl-C after the last item was bought, as the stage closes, still carries every charge."""
+    lines: list[Event] = []
+    run = a_run(tmp_path, spend=True, lines=lines)
+    progress = run.progress
+
+    def closing(stage_: Stage, *, done: int, total: int, **rest: Any) -> None:
+        if done == total:
+            raise KeyboardInterrupt
+        progress(stage_, done=done, total=total, **rest)
+
+    run.progress = closing  # ty: ignore[invalid-assignment]
+    with pytest.raises(Cancelled) as stopped:
+        score(an_inputs(tmp_path, RATED), run)
+    assert isinstance(stopped.value.__cause__, KeyboardInterrupt)
+    result = stopped.value.result
+    assert isinstance(result, ScoreResult)
+    charged = [line.dollars for line in lines if isinstance(line, SoundCharged)]
+    assert charged
+    assert result.cost.dollars == up_to_the_cent(charged)
+
+
+@pytest.mark.usefixtures("fake_ffmpeg", "joined", "service")
 def test_a_sound_the_disk_refuses_after_it_was_paid_for_reports_what_the_run_bought(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

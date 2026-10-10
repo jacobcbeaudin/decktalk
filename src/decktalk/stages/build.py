@@ -105,37 +105,40 @@ def build(
     stage out is a run that does not want its sound, and a second switch for the same decision would
     let a caller skip the stage and still be refused for the file it never asked for.
     """
-    plan = _plan(stages, skip)
-    score = Stage.SCORE not in skip
-    _require_what_the_plan_skips(inputs, plan, score=score)
-    options: dict[str, object] = {
-        "only": only,
-        "force": force,
-        "replace_voiced": replace_voiced,
-        "replace_score": replace_score,
-        "score": score,
-        "loudness": loudness,
-        "strict": strict,
-    }
-    _refuse_a_key_beside_a_page(inputs, run, plan)
-    _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
     going = _Going()
     try:
+        plan = _plan(stages, skip)
+        score = Stage.SCORE not in skip
+        _require_what_the_plan_skips(inputs, plan, score=score)
+        options: dict[str, object] = {
+            "only": only,
+            "force": force,
+            "replace_voiced": replace_voiced,
+            "replace_score": replace_score,
+            "score": score,
+            "loudness": loudness,
+            "strict": strict,
+        }
+        _refuse_a_key_beside_a_page(inputs, run, plan)
+        _hold_to_ceiling(inputs, run, plan, only=only, replace_voiced=replace_voiced, replace_score=replace_score)
         film, stopped_at = _stages(inputs, run, plan, options, going, force=force)
+        return run.result(
+            BuildResult,
+            stages=tuple(going.rows),
+            spend=run.spend,
+            cost=total(going.spends) if going.spends else cost_of(inputs),
+            film=film,
+            stopped_at=stopped_at,
+        )
     except HALTS as failure:
+        # One handler for the whole build, from its first check to its result, so a refusal or an
+        # interrupt in the pricing before the first stage, in a stage, between two or while the
+        # result is made carries what the run bought.
         refusal = as_refusal(failure)
         refusal.result = _bought_before(refusal, run, going)
         if refusal is failure:
             raise
         raise refusal from failure
-    return run.result(
-        BuildResult,
-        stages=tuple(going.rows),
-        spend=run.spend,
-        cost=total(going.spends) if going.spends else cost_of(inputs),
-        film=film,
-        stopped_at=stopped_at,
-    )
 
 
 @dataclass
@@ -158,8 +161,8 @@ def _stages(
     """Run, keep or skip every stage in pipeline order, recording each as it goes, and give back the film and the
     stage the run stopped at.
 
-    Everything the build does stage by stage happens here, so a refusal or an interrupt anywhere in it,
-    in a stage or between two, is met by the one handler in `build` with `going` as far as it got.
+    A refusal or an interrupt in a stage or between two reaches the one handler in `build` with
+    `going` as far as it got.
     """
     kept = read_kept(inputs)
     fresh: dict[Stage, KeptStage] = {}

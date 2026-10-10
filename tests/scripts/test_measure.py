@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 import measure
+from decktalk.results import ConfigGetResult, Layer, SettingValue
 from decktalk.stages.verify.plan import HALF_FRAME
 
 
@@ -134,3 +135,12 @@ def test_the_machine_names_its_tools_without_a_path() -> None:
     versions = measure.versions(doctor, decktalk="decktalk 0.5.0")
     assert versions == {"decktalk": "0.5.0", "python": "3.13.1", "chromium": "153.0.8010.12", "ffmpeg": "8.1.2"}
     assert "someone" not in str(versions)
+
+
+def test_a_setting_is_read_from_the_field_config_get_answers_with() -> None:
+    """The measurement reads a limit off `config get --json`, so it must read the field that result names."""
+    answer = ConfigGetResult(
+        ok=True,
+        setting=SettingValue(key="verify.cue_offset_max_ms", value=80.0, default=80.0, layer=Layer.DEFAULT),
+    )
+    assert measure.setting_value(answer.model_dump(mode="json")) == 80.0

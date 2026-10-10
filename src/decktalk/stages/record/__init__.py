@@ -63,6 +63,9 @@ from decktalk.stages.record.start import find_start
 
 log = logging.getLogger(__name__)
 
+STALLED = "Section %d stalled for %d ms, which is over the %d ms limit, so it is recorded again (%d of %d)."
+"""The line a retry prints: the section, its worst frame gap, the limit, the attempt and the retries allowed."""
+
 
 @dataclass(frozen=True, eq=False)
 class LogSink:
@@ -241,7 +244,7 @@ def capture(
             break
         # A retry is a standard record, so a host's own logging hears why a section took twice as long.
         log.warning(
-            "Section %d stalled for %d ms, which is over the %d ms limit, so it is recorded again (%d of %d).",
+            STALLED,
             job.section.number,
             gap,
             recorder.frame_gap_max_ms,
@@ -378,6 +381,7 @@ def record(
 
 
 __all__ = [
+    "STALLED",
     "LogSink",
     "record",
     "stale_recording",

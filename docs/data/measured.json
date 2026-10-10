@@ -4,7 +4,7 @@
     "measure": {
       "what": "the starter `decktalk init` writes, built with placeholders",
       "command": "uv run python scripts/measure.py",
-      "commit": "b649b8089e5ec61ef453564771bfc069da656ebd",
+      "commit": "33d6f3148cdde539a514b729c1f64b4c314da2d2",
       "source_changed": false,
       "machine": {
         "platform": "macOS 26.6.2 arm64",
@@ -18,7 +18,7 @@
         "ffmpeg": "8.1.2"
       },
       "repeats": 3,
-      "load": 6.63
+      "load": 6.66
     }
   },
   "landing": [
@@ -30,21 +30,21 @@
       "skipped": 0,
       "over_limit": 0,
       "worst_ms": 59.0,
-      "median_ms": 43.0,
+      "median_ms": 36.5,
       "cues": [
         {
           "cue": "1.1:title",
           "offsets_ms": [
-            56.0,
-            56.0,
-            16.0
+            16.0,
+            16.0,
+            -24.0
           ]
         },
         {
           "cue": "1.1:files",
           "offsets_ms": [
-            35.0,
-            35.0,
+            -5.0,
+            -5.0,
             -5.0
           ]
         },
@@ -59,16 +59,16 @@
         {
           "cue": "1.2:deck",
           "offsets_ms": [
-            48.0,
-            48.0,
+            8.0,
+            8.0,
             8.0
           ]
         },
         {
           "cue": "1.2:word",
           "offsets_ms": [
-            37.0,
-            37.0,
+            -3.0,
+            -3.0,
             -3.0
           ]
         },
@@ -109,7 +109,7 @@
           "offsets_ms": [
             30.0,
             30.0,
-            -10.0
+            30.0
           ]
         },
         {
@@ -117,7 +117,7 @@
           "offsets_ms": [
             46.0,
             46.0,
-            6.0
+            46.0
           ]
         },
         {
@@ -125,7 +125,7 @@
           "offsets_ms": [
             54.0,
             54.0,
-            14.0
+            54.0
           ]
         }
       ]
@@ -145,9 +145,9 @@
       {
         "build": "cold",
         "seconds": [
-          27.05,
-          27.27,
-          27.07
+          28.19,
+          26.96,
+          27.05
         ],
         "recorded": [
           3,
@@ -158,9 +158,9 @@
       {
         "build": "unchanged",
         "seconds": [
-          1.21,
-          0.62,
-          0.51
+          0.6,
+          0.53,
+          0.58
         ],
         "recorded": [
           0,
@@ -171,9 +171,9 @@
       {
         "build": "one section changed",
         "seconds": [
-          19.1,
-          19.06,
-          18.87
+          19.04,
+          19.01,
+          18.95
         ],
         "recorded": [
           1,
@@ -186,9 +186,9 @@
   "coverage": {
     "run": "measure",
     "command": "uv run python scripts/check.py --group unit,browser,media,e2e,coverage",
-    "percent": 98.1,
-    "statements": 12177,
-    "covered": 11943,
+    "percent": 98.3,
+    "statements": 13459,
+    "covered": 13231,
     "suites": [
       "browser",
       "e2e",

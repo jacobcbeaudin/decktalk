@@ -213,6 +213,11 @@ def decktalk(*args: str, cwd: Path) -> tuple[dict[str, Any], float]:
     return answer, seconds
 
 
+def setting_value(answer: dict[str, Any]) -> float:
+    """The number in force that one `config get --json` answer names, read from its `setting`."""
+    return float(answer["setting"]["value"])
+
+
 def one_project(scratch: Path) -> tuple[list[dict[str, Any]], dict[str, Any], tuple[float, int], dict[str, Any]]:
     """Build one fresh starter three ways and verify its first film.
 
@@ -225,8 +230,8 @@ def one_project(scratch: Path) -> tuple[list[dict[str, Any]], dict[str, Any], tu
     cold, seconds = decktalk("build", "--no-spend", cwd=project)
     builds.append({"build": BUILDS[0], "seconds": seconds, "recorded": recorded_sections(cold)})
     verified, _ = decktalk("verify", cwd=project)
-    limit = decktalk("config", "get", LIMIT_KEY, cwd=project)[0]["key"]["value"]
-    fps = decktalk("config", "get", FPS_KEY, cwd=project)[0]["key"]["value"]
+    limit = setting_value(decktalk("config", "get", LIMIT_KEY, cwd=project)[0])
+    fps = int(setting_value(decktalk("config", "get", FPS_KEY, cwd=project)[0]))
     again, seconds = decktalk("build", "--no-spend", cwd=project)
     builds.append({"build": BUILDS[1], "seconds": seconds, "recorded": recorded_sections(again)})
     script = project / "script.md"

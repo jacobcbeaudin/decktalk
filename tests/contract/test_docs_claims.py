@@ -283,3 +283,25 @@ def test_the_ceiling_a_refusal_names_is_the_lowest_one_that_lets_the_run_buy(tmp
     with pytest.raises(ProviderError):
         project.narrate(spend=True, max_cost=ceiling)
     assert voice.requests, f"--max-cost {ceiling:.2f}, the ceiling the refusal named, was refused"
+
+
+FETCHES_NOTHING = re.compile(r"fetch(?:es)? (?:nothing|neither)|without fetching anything")
+"""How a page says a command fetches nothing, which for `decktalk doctor` is true only in some cases."""
+
+
+def test_no_page_says_doctor_fetches_nothing_without_saying_when_it_does() -> None:
+    """`doctor` offers to fetch on a terminal and `--fix` fetches under any flag, as its help says.
+
+    So a sentence about `decktalk doctor` that says it fetches nothing names both cases, or a reader
+    in front of a terminal, or one who passes `--fix` beside `--json`, meets a download the page
+    promised would not happen.
+    """
+    wrong = []
+    for page in reader_pages():
+        for paragraph in re.split(r"\n\s*\n|\n\s*(?=\d+\. |- )", page.read_text(encoding="utf-8")):
+            if "decktalk doctor" not in paragraph:
+                continue
+            for sentence in re.split(r"(?<=\.)\s+(?=[A-Z`])", " ".join(paragraph.split())):
+                if FETCHES_NOTHING.search(sentence) and not ("--fix" in sentence and "terminal" in sentence):
+                    wrong.append(f"{page.relative_to(REPO)}: {sentence}")
+    assert not wrong, "\n".join(wrong)

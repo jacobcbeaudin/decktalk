@@ -1,4 +1,4 @@
-The graphics under assets/, docs/images/, docs/logo/ and docs/favicon.svg carry subsets of the faces below, embedded as base64 WOFF2 or traced into outline paths. The fonts themselves and the generator that embeds them live with the site's sources, not in this repository.
+The graphics under assets/, docs/images/ and docs/logo/ carry subsets of the faces below, embedded as base64 WOFF2 or traced into outline paths. The fonts themselves and the generator that embeds them live with the site's sources, not in this repository.
 
 Instrument Sans, Copyright 2022 The Instrument Sans Project Authors.
 Licensed under the SIL Open Font License, Version 1.1: https://openfontlicense.org

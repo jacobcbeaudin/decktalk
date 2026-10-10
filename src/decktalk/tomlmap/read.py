@@ -238,15 +238,15 @@ def read_value(
 
     A number that is not finite is refused before any range is, whatever the key's range, because
     NaN compares false against both ends of a range and an infinity is no amount at all. TOML spells
-    both and a float reads both from a string, so every layer can carry one. Both refusals are
-    `out_of_range`'s, so each names the layer `said` gives and a reader knows which file, variable
-    or flag to correct.
+    both and a float reads both from a string, so every layer can carry one. Every refusal here, of
+    a value of the wrong type, one that is not finite or one out of range, is `out_of_range`'s, so
+    each names the layer `said` gives and a reader knows which file, variable or flag to correct.
     """
     try:
         value = _coerce(annotation, raw) if from_env else _as_written(annotation, raw)
     except (TypeError, ValueError) as exc:
         wanted = getattr(annotation, "__name__", str(annotation))
-        raise InputError(f"{where}: expected {wanted}, got {raw!r} ({exc}).") from exc
+        raise out_of_range(where, f"expected {wanted} ({exc})", raw, said=said, hazard=hazard) from exc
     if not finite(value):
         raise out_of_range(where, "must be a finite number", value, said=said, hazard=hazard)
     if bounds is not None and not bounds.holds(value):
@@ -256,6 +256,8 @@ def read_value(
 
 def out_of_range(where: str, wanted: str, value: Any, *, said: str, hazard: str | None) -> InputError:
     """The refusal of a value its key does not take: the key, what it takes, the value and the layer it came from.
+
+    It is the one rule for a value of the wrong type, one that is not finite and one out of range.
 
     The hint is the key's hazard, which says what a value past the edge would break.
     """
